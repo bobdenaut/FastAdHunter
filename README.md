@@ -421,7 +421,7 @@ FastAdHunter/
 ├── PERFORMANCE.md            ✅ golden rules + numeric budgets
 ├── SECURITY.md               ✅ API key, TLS, certificates, docker hardening
 ├── CONTRIBUTING.md           ✅ conventions and local quality gates
-├── LICENSE                   ✅ GPLv3
+├── LICENSE                   ✅ ❌ None (private repository)
 │
 └── docs/
     ├── images/               ✅ RB5009UGS.png
@@ -431,3 +431,8 @@ FastAdHunter/
 
 No CI service is used (deliberate) — quality gates run locally,
 see [CONTRIBUTING.md](CONTRIBUTING.md).
+
+# Repository
+
+- Visibility: Private
+- License: None (proprietary until public release, if ever!)
