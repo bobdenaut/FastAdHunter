@@ -1,0 +1,15 @@
+[package]
+name = "fah-rules"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+fah-model = { path = "../fah-model" }
+fah-config = { path = "../fah-config" }
+fah-common = { path = "../fah-common" }
+fah-logging = { path = "../fah-logging" }

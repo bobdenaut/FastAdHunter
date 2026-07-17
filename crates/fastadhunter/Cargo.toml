@@ -1,0 +1,30 @@
+[package]
+name = "fastadhunter"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[[bin]]
+name = "fastadhunter"
+path = "src/main.rs"
+
+[dependencies]
+fah-dns = { path = "../fah-dns" }
+fah-api = { path = "../fah-api" }
+fah-stats = { path = "../fah-stats" }
+fah-metrics = { path = "../fah-metrics" }
+fah-rules = { path = "../fah-rules" }
+fah-model = { path = "../fah-model" }
+fah-config = { path = "../fah-config" }
+fah-common = { path = "../fah-common" }
+fah-logging = { path = "../fah-logging" }
+tokio.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+
+[dev-dependencies]
+tempfile = "3"

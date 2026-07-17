@@ -1,0 +1,15 @@
+/target
+/.git
+/.claude
+/.vscode
+/plan
+/docs
+/dashboard
+/benches
+/tests
+*.md
+!crates/**/*.md
+.dockerignore
+Dockerfile
+*.code-workspace
+.gitignore

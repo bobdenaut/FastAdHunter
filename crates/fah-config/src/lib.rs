@@ -1,0 +1,328 @@
+//! TOML config loading, merging, precedence, and hot-reload (ARCHITECTURE.md L1).
+
+mod env;
+mod error;
+mod schema;
+
+use std::fs;
+use std::net::IpAddr;
+use std::path::Path;
+
+pub use error::ConfigError;
+pub use schema::{
+    ApiConfig, BlockingMode, Config, DnsBlockingConfig, DnsCacheConfig, DnsConfig, DnsListenConfig,
+    DnsUpstreamsConfig, EngineConfig, EngineMode, LogConfig, LogFormat, LogLevel, QueryLogConfig,
+    RuleListConfig, RulesConfig, StatsConfig, UpstreamProtocol, UpstreamServerConfig,
+    UpstreamStrategy,
+};
+
+impl Config {
+    /// Loads config with the documented precedence: defaults < file < `FAH__` env vars
+    /// (CONFIGURATION.md). First boot (`path` doesn't exist): writes the default TOML to
+    /// `path`, then proceeds with in-memory defaults as the file layer.
+    pub fn load(path: &Path) -> Result<Config, ConfigError> {
+        let config = if path.exists() {
+            let text = fs::read_to_string(path).map_err(|source| ConfigError::Io {
+                path: path.to_path_buf(),
+                source,
+            })?;
+            Config::from_toml_str(&text)?
+        } else {
+            let defaults = Config::default();
+            let text = defaults.to_toml_string()?;
+            fs::write(path, text).map_err(|source| ConfigError::Io {
+                path: path.to_path_buf(),
+                source,
+            })?;
+            defaults
+        };
+
+        let pairs = env::collect_env_pairs();
+        let config = env::apply_env_overrides(config, &pairs)?;
+        validate(&config)?;
+        Ok(config)
+    }
+
+    /// Parses a TOML string into a `Config`, filling in documented defaults for any
+    /// absent section or field. Does not run [`validate`] — callers that need a fully
+    /// validated, effective config should go through [`Config::load`].
+    pub fn from_toml_str(toml_str: &str) -> Result<Config, ConfigError> {
+        Ok(toml::from_str(toml_str)?)
+    }
+
+    /// Serializes to a pretty TOML string, used for first-boot file generation.
+    pub fn to_toml_string(&self) -> Result<String, ConfigError> {
+        Ok(toml::to_string_pretty(self)?)
+    }
+}
+
+fn validate(config: &Config) -> Result<(), ConfigError> {
+    config
+        .dns
+        .listen
+        .address
+        .parse::<IpAddr>()
+        .map_err(|source| ConfigError::Validation {
+            key: "dns.listen.address",
+            message: source.to_string(),
+        })?;
+    config
+        .api
+        .address
+        .parse::<IpAddr>()
+        .map_err(|source| ConfigError::Validation {
+            key: "api.address",
+            message: source.to_string(),
+        })?;
+
+    if config.dns.cache.min_ttl_seconds > config.dns.cache.max_ttl_seconds {
+        return Err(ConfigError::Validation {
+            key: "dns.cache.min_ttl_seconds",
+            message: format!(
+                "must be <= max_ttl_seconds ({} > {})",
+                config.dns.cache.min_ttl_seconds, config.dns.cache.max_ttl_seconds
+            ),
+        });
+    }
+
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::env::apply_env_overrides;
+
+    #[test]
+    fn defaults_match_configuration_md_sample() {
+        let config = Config::default();
+        assert_eq!(config.dns.cache.max_entries, 10_000);
+        assert_eq!(config.api.port, 8443);
+        assert_eq!(config.log.level, LogLevel::Info);
+        assert_eq!(config.dns.upstreams.servers.len(), 2);
+        assert_eq!(config.dns.upstreams.servers[0].address, "1.1.1.1");
+        assert_eq!(
+            config.dns.upstreams.servers[0].protocol,
+            UpstreamProtocol::Udp
+        );
+        assert_eq!(config.dns.upstreams.servers[1].address, "9.9.9.9");
+        assert_eq!(config.rules.lists.len(), 1);
+        assert_eq!(config.rules.lists[0].id, "oisd-basic");
+        assert_eq!(config.rules.lists[0].url, "https://small.oisd.nl");
+    }
+
+    #[test]
+    fn parses_full_reference_toml_verbatim() {
+        let toml_str = r#"
+[engine]
+mode = "dns"
+
+[dns.listen]
+address = "0.0.0.0"
+port = 53
+
+[dns.blocking]
+mode = "null_ip"
+ttl_seconds = 10
+
+[dns.cache]
+max_entries = 10000
+min_ttl_seconds = 0
+max_ttl_seconds = 86400
+negative_ttl_max_seconds = 60
+serve_stale = true
+
+[dns.upstreams]
+strategy = "fallback"
+timeout_ms = 2000
+
+[[dns.upstreams.servers]]
+address = "1.1.1.1"
+protocol = "udp"
+
+[[dns.upstreams.servers]]
+address = "9.9.9.9"
+protocol = "udp"
+
+[rules]
+refresh_hours_default = 24
+
+[[rules.lists]]
+id = "oisd-basic"
+url = "https://small.oisd.nl"
+enabled = true
+
+[query_log]
+enabled = true
+ring_entries = 10000
+retention_days = 7
+retention_max_mb = 500
+flush_interval_seconds = 5
+
+[stats]
+snapshot_interval_seconds = 300
+
+[api]
+address = "0.0.0.0"
+port = 8443
+tls = true
+metrics_public = true
+
+[log]
+level = "info"
+format = "text"
+"#;
+        let config = Config::from_toml_str(toml_str).unwrap();
+        assert_eq!(config, Config::default());
+    }
+
+    #[test]
+    fn partial_section_override_keeps_other_fields_default() {
+        let config = Config::from_toml_str("[dns.cache]\nmax_entries = 500\n").unwrap();
+        assert_eq!(config.dns.cache.max_entries, 500);
+        assert_eq!(config.dns.cache.max_ttl_seconds, 86_400);
+        assert_eq!(config.dns.listen, DnsListenConfig::default());
+    }
+
+    #[test]
+    fn missing_section_uses_full_section_defaults() {
+        let config = Config::from_toml_str("[engine]\nmode = \"dns+http\"\n").unwrap();
+        assert_eq!(config.engine.mode, EngineMode::DnsHttp);
+        assert_eq!(config.dns, DnsConfig::default());
+        assert_eq!(config.api, ApiConfig::default());
+    }
+
+    #[test]
+    fn unknown_top_level_section_is_rejected() {
+        let err = Config::from_toml_str("[bogus]\nx = 1\n").unwrap_err();
+        assert!(err.to_string().contains("bogus"));
+    }
+
+    #[test]
+    fn unknown_nested_key_is_rejected() {
+        let err = Config::from_toml_str("[dns.cache]\nmax_entrees = 500\n").unwrap_err();
+        assert!(err.to_string().contains("max_entrees"));
+    }
+
+    #[test]
+    fn engine_mode_rejects_unknown_variant() {
+        let err = Config::from_toml_str("[engine]\nmode = \"dns+bogus\"\n").unwrap_err();
+        assert!(err.to_string().contains("dns+bogus"));
+    }
+
+    #[test]
+    fn upstream_server_missing_address_is_rejected() {
+        let err =
+            Config::from_toml_str("[[dns.upstreams.servers]]\nprotocol = \"udp\"\n").unwrap_err();
+        assert!(err.to_string().contains("address"));
+    }
+
+    #[test]
+    fn env_override_wins_over_file_and_defaults() {
+        let config = Config::from_toml_str("[dns.cache]\nmax_entries = 500\n").unwrap();
+        let pairs = vec![(
+            "FAH__DNS__CACHE__MAX_ENTRIES".to_string(),
+            "100000".to_string(),
+        )];
+        let config = apply_env_overrides(config, &pairs).unwrap();
+        assert_eq!(config.dns.cache.max_entries, 100_000);
+    }
+
+    #[test]
+    fn env_bool_and_numeric_coercion_succeeds() {
+        let pairs = vec![
+            ("FAH__API__TLS".to_string(), "false".to_string()),
+            ("FAH__API__PORT".to_string(), "9443".to_string()),
+        ];
+        let config = apply_env_overrides(Config::default(), &pairs).unwrap();
+        assert!(!config.api.tls);
+        assert_eq!(config.api.port, 9443);
+    }
+
+    #[test]
+    fn env_invalid_numeric_value_names_key_and_expected_form() {
+        let pairs = vec![("FAH__API__PORT".to_string(), "notanumber".to_string())];
+        let err = apply_env_overrides(Config::default(), &pairs).unwrap_err();
+        let message = err.to_string();
+        assert!(message.contains("FAH__API__PORT"));
+        assert!(message.contains("u16"));
+    }
+
+    #[test]
+    fn env_unknown_key_is_rejected() {
+        let pairs = vec![("FAH__DNS__TYPOX".to_string(), "1".to_string())];
+        let err = apply_env_overrides(Config::default(), &pairs).unwrap_err();
+        assert!(matches!(err, ConfigError::UnknownEnvKey { .. }));
+    }
+
+    #[test]
+    fn env_array_of_tables_paths_rejected_with_explanation() {
+        let pairs = vec![("FAH__DNS__UPSTREAMS__SERVERS".to_string(), "x".to_string())];
+        let err = apply_env_overrides(Config::default(), &pairs).unwrap_err();
+        assert!(err.to_string().contains("array-of-tables"));
+
+        let pairs = vec![("FAH__RULES__LISTS".to_string(), "x".to_string())];
+        let err = apply_env_overrides(Config::default(), &pairs).unwrap_err();
+        assert!(err.to_string().contains("array-of-tables"));
+    }
+
+    #[test]
+    fn first_boot_generates_file_with_defaults() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("fastadhunter.toml");
+        let config = Config::load(&path).unwrap();
+        assert_eq!(config, Config::default());
+
+        let written = fs::read_to_string(&path).unwrap();
+        let reparsed = Config::from_toml_str(&written).unwrap();
+        assert_eq!(reparsed, Config::default());
+    }
+
+    #[test]
+    fn existing_file_is_left_untouched_and_used() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("fastadhunter.toml");
+        let custom = "[dns.cache]\nmax_entries = 42\n";
+        fs::write(&path, custom).unwrap();
+
+        let config = Config::load(&path).unwrap();
+        assert_eq!(config.dns.cache.max_entries, 42);
+        assert_eq!(fs::read_to_string(&path).unwrap(), custom);
+    }
+
+    #[test]
+    fn to_toml_string_round_trips_through_from_toml_str() {
+        let original = Config::default();
+        let text = original.to_toml_string().unwrap();
+        let reparsed = Config::from_toml_str(&text).unwrap();
+        assert_eq!(original, reparsed);
+    }
+
+    #[test]
+    fn validation_rejects_min_ttl_greater_than_max_ttl() {
+        let toml_str = "[dns.cache]\nmin_ttl_seconds = 100\nmax_ttl_seconds = 10\n";
+        let config = Config::from_toml_str(toml_str).unwrap();
+        let err = validate(&config).unwrap_err();
+        assert!(matches!(
+            err,
+            ConfigError::Validation {
+                key: "dns.cache.min_ttl_seconds",
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn validation_rejects_unparseable_bind_address() {
+        let toml_str = "[dns.listen]\naddress = \"not-an-ip\"\n";
+        let config = Config::from_toml_str(toml_str).unwrap();
+        let err = validate(&config).unwrap_err();
+        assert!(matches!(
+            err,
+            ConfigError::Validation {
+                key: "dns.listen.address",
+                ..
+            }
+        ));
+    }
+}

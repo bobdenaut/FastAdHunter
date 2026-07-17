@@ -13,12 +13,12 @@ binary before the image that ships it. Every task leaves the workspace green.
 
 | # | Task file | Outcome | MODEL | STATUS |
 |---|-----------|---------|-------|--------|
-| 1 | `p0-01-workspace-skeleton.md` | Workspace + 10 stub crates, layering enforced, gates green | Sonnet | WAITING |
-| 2 | `p0-02-model-types.md` | `fah-model`: Query, Verdict, Client, QueryEvent compile + tests | Sonnet | WAITING |
-| 3 | `p0-03-common-logging.md` | `fah-common` error types + `fah-logging` tracing init | Sonnet | WAITING |
-| 4 | `p0-04-config-loading.md` | `fah-config`: TOML + defaults + env precedence, typed, tested | Sonnet | WAITING |
-| 5 | `p0-05-binary-bootstrap.md` | `fastadhunter` boots Tokio, loads config, `--healthcheck` works | Sonnet | WAITING |
-| 6 | `p0-06-docker-image.md` | Static musl build in distroless image, arm64 + amd64 | Sonnet | WAITING |
+| 1 | `p0-01-workspace-skeleton.md` | Workspace + 10 stub crates, layering enforced, gates green | Sonnet | DONE |
+| 2 | `p0-02-model-types.md` | `fah-model`: Query, Verdict, Client, QueryEvent compile + tests | Sonnet | DONE |
+| 3 | `p0-03-common-logging.md` | `fah-common` error types + `fah-logging` tracing init | Sonnet | DONE |
+| 4 | `p0-04-config-loading.md` | `fah-config`: TOML + defaults + env precedence, typed, tested | Sonnet | DONE |
+| 5 | `p0-05-binary-bootstrap.md` | `fastadhunter` boots Tokio, loads config, `--healthcheck` works | Sonnet | DONE |
+| 6 | `p0-06-docker-image.md` | Static musl build in distroless image, arm64 + amd64 | Sonnet | DONE |
 
 **Definition of done:** `cargo test --workspace` green; `cargo run -- --healthcheck`
 exits 0; `docker build` produces an image that starts, logs its config source,

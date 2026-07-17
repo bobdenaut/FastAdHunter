@@ -1,0 +1,27 @@
+[workspace]
+resolver = "2"
+members = ["crates/*"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.96"
+publish = false
+
+[workspace.dependencies]
+serde = { version = "1", features = ["derive", "rc"] }
+serde_json = "1"
+thiserror = "2"
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal"] }
+toml = "0.8"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["json", "registry"] }
+
+[workspace.lints.clippy]
+all = { level = "deny", priority = -1 }
+
+# PERFORMANCE.md: container image size budget is <= 30MB.
+[profile.release]
+strip = true
+lto = true
+codegen-units = 1
