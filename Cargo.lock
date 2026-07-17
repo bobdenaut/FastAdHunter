@@ -33,13 +33,6 @@ dependencies = [
 [[package]]
 name = "fah-api"
 version = "0.1.0"
-dependencies = [
- "fah-common",
- "fah-config",
- "fah-logging",
- "fah-model",
- "fah-rules",
-]
 
 [[package]]
 name = "fah-common"
@@ -61,13 +54,6 @@ dependencies = [
 [[package]]
 name = "fah-dns"
 version = "0.1.0"
-dependencies = [
- "fah-common",
- "fah-config",
- "fah-logging",
- "fah-model",
- "fah-rules",
-]
 
 [[package]]
 name = "fah-logging"
@@ -80,13 +66,6 @@ dependencies = [
 [[package]]
 name = "fah-metrics"
 version = "0.1.0"
-dependencies = [
- "fah-common",
- "fah-config",
- "fah-logging",
- "fah-model",
- "fah-rules",
-]
 
 [[package]]
 name = "fah-model"
@@ -99,39 +78,21 @@ dependencies = [
 [[package]]
 name = "fah-rules"
 version = "0.1.0"
-dependencies = [
- "fah-common",
- "fah-config",
- "fah-logging",
- "fah-model",
-]
 
 [[package]]
 name = "fah-stats"
 version = "0.1.0"
-dependencies = [
- "fah-common",
- "fah-config",
- "fah-logging",
- "fah-model",
- "fah-rules",
-]
 
 [[package]]
 name = "fastadhunter"
 version = "0.1.0"
 dependencies = [
- "fah-api",
- "fah-common",
  "fah-config",
- "fah-dns",
  "fah-logging",
- "fah-metrics",
  "fah-model",
- "fah-rules",
- "fah-stats",
  "tempfile",
  "tokio",
+ "toml",
  "tracing",
  "tracing-subscriber",
 ]

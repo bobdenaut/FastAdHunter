@@ -1,5 +1,7 @@
 use serde::{Deserialize, Serialize};
 
+use crate::schema::default_true;
+
 /// `[api]` (CONFIGURATION.md).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields, default)]
@@ -31,8 +33,4 @@ fn default_address() -> String {
 
 fn default_port() -> u16 {
     8443
-}
-
-fn default_true() -> bool {
-    true
 }

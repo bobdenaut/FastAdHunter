@@ -8,8 +8,6 @@ publish.workspace = true
 [lints]
 workspace = true
 
+# No dependencies yet — Phase 0 stub. Downstream edges (ARCHITECTURE.md L2) get
+# added when the consuming code lands; the layering guard test enforces them.
 [dependencies]
-fah-model = { path = "../fah-model" }
-fah-config = { path = "../fah-config" }
-fah-common = { path = "../fah-common" }
-fah-logging = { path = "../fah-logging" }

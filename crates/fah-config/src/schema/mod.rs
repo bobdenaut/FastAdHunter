@@ -19,6 +19,12 @@ pub use stats::StatsConfig;
 
 use serde::{Deserialize, Serialize};
 
+/// Shared serde `default` for boolean fields that default to `true`. serde's
+/// `#[serde(default = "…")]` needs a function, and `bool::default()` is `false`.
+pub(crate) fn default_true() -> bool {
+    true
+}
+
 /// The full typed configuration tree, mirroring CONFIGURATION.md's sections.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields, default)]

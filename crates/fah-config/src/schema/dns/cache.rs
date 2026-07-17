@@ -1,5 +1,7 @@
 use serde::{Deserialize, Serialize};
 
+use crate::schema::default_true;
+
 /// `[dns.cache]` (CONFIGURATION.md).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields, default)]
@@ -38,8 +40,4 @@ fn default_max_ttl_seconds() -> u32 {
 
 fn default_negative_ttl_max_seconds() -> u32 {
     60
-}
-
-fn default_true() -> bool {
-    true
 }

@@ -8,9 +8,9 @@ publish.workspace = true
 [lints]
 workspace = true
 
+# No dependencies yet — this crate is a Phase 0 stub. Its downstream edges
+# (fah-rules, fah-model, fah-config, fah-common, fah-logging, per
+# ARCHITECTURE.md L3) get added when the consuming code lands. The layering
+# guard test (fastadhunter/tests/layering.rs) enforces direction on whatever
+# edges exist.
 [dependencies]
-fah-rules = { path = "../fah-rules" }
-fah-model = { path = "../fah-model" }
-fah-config = { path = "../fah-config" }
-fah-common = { path = "../fah-common" }
-fah-logging = { path = "../fah-logging" }

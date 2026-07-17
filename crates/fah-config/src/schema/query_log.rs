@@ -1,5 +1,7 @@
 use serde::{Deserialize, Serialize};
 
+use crate::schema::default_true;
+
 /// `[query_log]` (CONFIGURATION.md).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields, default)]
@@ -26,10 +28,6 @@ impl Default for QueryLogConfig {
             flush_interval_seconds: default_flush_interval_seconds(),
         }
     }
-}
-
-fn default_true() -> bool {
-    true
 }
 
 fn default_ring_entries() -> u32 {

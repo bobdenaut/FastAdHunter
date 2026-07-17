@@ -12,19 +12,17 @@ workspace = true
 name = "fastadhunter"
 path = "src/main.rs"
 
+# Only the crates the binary actually wires today. The remaining crates
+# (fah-dns, fah-api, fah-stats, fah-metrics, fah-rules) get added as their
+# wiring lands in later phases; the layering guard test keeps edges downward.
 [dependencies]
-fah-dns = { path = "../fah-dns" }
-fah-api = { path = "../fah-api" }
-fah-stats = { path = "../fah-stats" }
-fah-metrics = { path = "../fah-metrics" }
-fah-rules = { path = "../fah-rules" }
-fah-model = { path = "../fah-model" }
 fah-config = { path = "../fah-config" }
-fah-common = { path = "../fah-common" }
 fah-logging = { path = "../fah-logging" }
 tokio.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
 
 [dev-dependencies]
+fah-model = { path = "../fah-model" }
 tempfile = "3"
+toml.workspace = true

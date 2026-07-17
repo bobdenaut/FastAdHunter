@@ -5,7 +5,7 @@ fn bin() -> Command {
 }
 
 #[test]
-fn healthcheck_exits_zero_on_fresh_tempdir_config() {
+fn healthcheck_exits_zero_without_writing_config() {
     let dir = tempfile::tempdir().unwrap();
     let config_path = dir.path().join("fastadhunter.toml");
 
@@ -19,7 +19,11 @@ fn healthcheck_exits_zero_on_fresh_tempdir_config() {
         "stderr: {}",
         String::from_utf8_lossy(&output.stderr)
     );
-    assert!(config_path.exists());
+    // A healthcheck must observe, not mutate: it must not create the config file.
+    assert!(
+        !config_path.exists(),
+        "healthcheck wrote the config file; it should be read-only"
+    );
 }
 
 #[test]

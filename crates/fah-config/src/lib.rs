@@ -21,6 +21,18 @@ impl Config {
     /// (CONFIGURATION.md). First boot (`path` doesn't exist): writes the default TOML to
     /// `path`, then proceeds with in-memory defaults as the file layer.
     pub fn load(path: &Path) -> Result<Config, ConfigError> {
+        Self::load_inner(path, true)
+    }
+
+    /// Like [`Config::load`] but never writes to disk: a missing file yields
+    /// in-memory defaults as the file layer instead of generating one. Used by
+    /// `--healthcheck`, which must observe the effective config without the
+    /// side effect of creating the very file whose absence signals a problem.
+    pub fn load_readonly(path: &Path) -> Result<Config, ConfigError> {
+        Self::load_inner(path, false)
+    }
+
+    fn load_inner(path: &Path, write_missing: bool) -> Result<Config, ConfigError> {
         let config = if path.exists() {
             let text = fs::read_to_string(path).map_err(|source| ConfigError::Io {
                 path: path.to_path_buf(),
@@ -29,11 +41,10 @@ impl Config {
             Config::from_toml_str(&text)?
         } else {
             let defaults = Config::default();
-            let text = defaults.to_toml_string()?;
-            fs::write(path, text).map_err(|source| ConfigError::Io {
-                path: path.to_path_buf(),
-                source,
-            })?;
+            if write_missing {
+                let text = defaults.to_toml_string()?;
+                write_atomic(path, &text)?;
+            }
             defaults
         };
 
@@ -56,24 +67,36 @@ impl Config {
     }
 }
 
+/// Writes `text` to `path` atomically: ensures the parent directory exists,
+/// writes to a sibling temp file, then renames it into place. A crash or a
+/// second instance booting concurrently can never observe a half-written
+/// config — readers see either the old file or the complete new one.
+fn write_atomic(path: &Path, text: &str) -> Result<(), ConfigError> {
+    let at = |p: &Path| {
+        let p = p.to_path_buf();
+        move |source| ConfigError::Io { path: p, source }
+    };
+
+    if let Some(parent) = path.parent() {
+        if !parent.as_os_str().is_empty() {
+            fs::create_dir_all(parent).map_err(at(parent))?;
+        }
+    }
+
+    let mut tmp_name = path.file_name().unwrap_or_default().to_os_string();
+    tmp_name.push(format!(".tmp.{}", std::process::id()));
+    let tmp = path.with_file_name(tmp_name);
+
+    fs::write(&tmp, text).map_err(at(&tmp))?;
+    fs::rename(&tmp, path).map_err(at(path))
+}
+
 fn validate(config: &Config) -> Result<(), ConfigError> {
-    config
-        .dns
-        .listen
-        .address
-        .parse::<IpAddr>()
-        .map_err(|source| ConfigError::Validation {
-            key: "dns.listen.address",
-            message: source.to_string(),
-        })?;
-    config
-        .api
-        .address
-        .parse::<IpAddr>()
-        .map_err(|source| ConfigError::Validation {
-            key: "api.address",
-            message: source.to_string(),
-        })?;
+    validate_ip("dns.listen.address", &config.dns.listen.address)?;
+    validate_ip("api.address", &config.api.address)?;
+
+    validate_nonzero_port("dns.listen.port", config.dns.listen.port)?;
+    validate_nonzero_port("api.port", config.api.port)?;
 
     if config.dns.cache.min_ttl_seconds > config.dns.cache.max_ttl_seconds {
         return Err(ConfigError::Validation {
@@ -85,6 +108,51 @@ fn validate(config: &Config) -> Result<(), ConfigError> {
         });
     }
 
+    if config.dns.upstreams.servers.is_empty() {
+        return Err(ConfigError::Validation {
+            key: "dns.upstreams.servers",
+            message: "at least one upstream server is required".to_string(),
+        });
+    }
+    for server in &config.dns.upstreams.servers {
+        let encrypted = match server.protocol {
+            UpstreamProtocol::Dot => Some("dot"),
+            UpstreamProtocol::Doh => Some("doh"),
+            UpstreamProtocol::Udp => None,
+        };
+        if let Some(proto) = encrypted {
+            if server.hostname.as_deref().unwrap_or("").is_empty() {
+                return Err(ConfigError::Validation {
+                    key: "dns.upstreams.servers.hostname",
+                    message: format!(
+                        "{proto} upstream {} requires a hostname for certificate verification",
+                        server.address
+                    ),
+                });
+            }
+        }
+    }
+
+    Ok(())
+}
+
+fn validate_ip(key: &'static str, address: &str) -> Result<(), ConfigError> {
+    address
+        .parse::<IpAddr>()
+        .map(|_| ())
+        .map_err(|source| ConfigError::Validation {
+            key,
+            message: source.to_string(),
+        })
+}
+
+fn validate_nonzero_port(key: &'static str, port: u16) -> Result<(), ConfigError> {
+    if port == 0 {
+        return Err(ConfigError::Validation {
+            key,
+            message: "must be a non-zero port".to_string(),
+        });
+    }
     Ok(())
 }
 
@@ -324,5 +392,71 @@ format = "text"
                 ..
             }
         ));
+    }
+
+    #[test]
+    fn validation_rejects_zero_port() {
+        let config = Config::from_toml_str("[dns.listen]\nport = 0\n").unwrap();
+        let err = validate(&config).unwrap_err();
+        assert!(matches!(
+            err,
+            ConfigError::Validation {
+                key: "dns.listen.port",
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn validation_rejects_empty_upstreams() {
+        let mut config = Config::default();
+        config.dns.upstreams.servers.clear();
+        let err = validate(&config).unwrap_err();
+        assert!(matches!(
+            err,
+            ConfigError::Validation {
+                key: "dns.upstreams.servers",
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn validation_rejects_encrypted_upstream_without_hostname() {
+        let toml_str = "[[dns.upstreams.servers]]\naddress = \"1.1.1.1\"\nprotocol = \"dot\"\n";
+        let config = Config::from_toml_str(toml_str).unwrap();
+        let err = validate(&config).unwrap_err();
+        assert!(matches!(
+            err,
+            ConfigError::Validation {
+                key: "dns.upstreams.servers.hostname",
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn validation_accepts_encrypted_upstream_with_hostname() {
+        let toml_str = "[[dns.upstreams.servers]]\naddress = \"1.1.1.1\"\nprotocol = \"dot\"\nhostname = \"cloudflare-dns.com\"\n";
+        let config = Config::from_toml_str(toml_str).unwrap();
+        assert!(validate(&config).is_ok());
+    }
+
+    #[test]
+    fn readonly_load_does_not_create_missing_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("fastadhunter.toml");
+        let config = Config::load_readonly(&path).unwrap();
+        assert_eq!(config, Config::default());
+        assert!(!path.exists(), "healthcheck load must not write to disk");
+    }
+
+    #[test]
+    fn first_boot_creates_missing_parent_directories() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("nested").join("deeper").join("fah.toml");
+        let config = Config::load(&path).unwrap();
+        assert_eq!(config, Config::default());
+        assert!(path.exists());
     }
 }
