@@ -433,61 +433,59 @@ container on two failed health checks and will fight a deploy in progress.
 > Policies) become impossible to apply. The redirect is what preserves client
 > identity.
 
-### IPv6 bypass — check this before believing the deployment failed
+### IPv6 — establish where it resolves before trusting any measurement
 
-FastAdHunter listens on IPv4 only: `[dns.listen] address` defaults to
-`0.0.0.0`, which is the IPv4 wildcard and does **not** accept IPv6. The DHCP
-setting above therefore only steers IPv4 resolution.
+FastAdHunter binds `[dns.listen] address`, `0.0.0.0` by default — the IPv4
+wildcard, which does **not** accept IPv6. The DHCP setting above steers IPv4
+only, so on a dual-stack LAN some resolution happens somewhere else.
 
-If the LAN also runs IPv6 and advertises DNS servers over RA or DHCPv6, dual
--stack clients will prefer those and resolve **without ever reaching
-FastAdHunter**. Every check in §6 passes, `/api/v1/stats` shows traffic from
-the hosts that are IPv4-only, and ads still appear on the phone. Nothing is
-broken — the queries simply never arrive.
+That is not a deployment fault and this guide does not prescribe a firewall for
+it. What deployment needs is the answer to one question: **do IPv6 queries
+reach FastAdHunter, another resolver, or nothing?** Each answer changes what
+the §6 checks and the §9 soak actually prove. Read all five before concluding
+anything — the answer is never in one of them alone:
 
 ```routeros
-/ipv6/nd/print detail          # is RA advertising DNS servers?
+/ipv6/nd/print detail          # is RA advertising a DNS server, and which?
 /ipv6/dhcp-server/print
 /ipv6/dhcp-server/option/print
-/ipv6/firewall/nat/print       # is IPv6 :53 already redirected somewhere?
-/ipv6/firewall/filter/print    # is IPv6 :53 to WAN blocked at all?
+/ipv6/address/print            # does the advertised address exist on this router?
+/ipv6/firewall/nat/print       # is IPv6 :53 redirected somewhere first?
 ```
 
-Check all five. A real deployment turned up a combination none of them shows
-alone: RA advertising a DNS server, *and* a `dstnat` rule capturing every
-IPv6 `:53` from the bridge and sending it to a container that was no longer
-running. Clients were being steered to a dead resolver and only reached IPv4
-after a timeout — working, but slow on every fresh name, and invisible unless
-both are read together.
+A real deployment produced a combination no single command reveals: RA
+advertising `dns=` an address belonging to an **expired prefix delegation**,
+*and* a `dstnat` capturing every IPv6 `:53` from the bridge and sending it to a
+container address that no longer answered. The redirect was masking the stale
+RA — clients queried a dead address, the router hijacked the packet anyway, and
+IPv6 resolution worked or failed entirely on the redirect's target.
 
-Two traps in diagnosing this:
+Three things that guide made harder than it needed to be:
 
-- **The IPv4 filter chain tells you nothing on its own.** A missing `:53` drop
-  looks like an open path to external resolvers until you read `/ipv6/firewall
-  /nat`, where a redirect may be catching that traffic first.
-- **Rule comments name whoever was there when they were written.** Resolve the
-  target instead: `/ipv6/neighbor/print where address=<target>`. A
-  `status="failed"` entry means nothing answers there, whatever the comment
-  claims — and that is decisive, since a `dstnat` pointing at the address
-  guarantees the router had reason to resolve it.
+- **A rule comment names whoever was there when it was written.** Resolve the
+  target instead: `/ipv6/neighbor/print where address=<target>` plus a `ping`.
+  `status="failed"` and 100% loss mean nothing answers there, whatever the
+  comment claims.
+- **Reading one table tells you nothing.** A `filter` chain with no `:53` drop
+  looks like an open path to external resolvers until `nat` shows a redirect
+  catching that traffic first. Symmetrically, a redirect proves nothing until
+  its target is verified alive.
+- **Hardcoded global addresses expire.** Where a prefix comes from a dynamic
+  delegation, an address literal written into `dns=`, a `dstnat` target, or a
+  static interface address survives the delegation that made it valid. Prefer
+  link-local or pool-derived addresses; when a literal is unavoidable, expect
+  to re-verify it after any prefix change.
 
-Prefer `reject` with `icmp-admin-prohibited` over `drop` when blocking IPv6
-`:53`: clients fall back to IPv4 immediately instead of waiting out a timeout.
+If IPv6 resolves somewhere other than FastAdHunter, the soak measures IPv4
+traffic only. Record that in the completion note — it biases QPS and cache-hit
+figures downward against PERFORMANCE.md budgets.
 
-Options, in order of preference:
-
-1. Stop advertising IPv6 DNS servers, so clients fall back to the IPv4
-   resolver they were handed. Simplest, and keeps IPv6 connectivity intact.
-2. Disable IPv6 on the LAN for the duration of the soak. Blunt, but removes
-   the variable entirely while validating budgets.
-3. Leave it, and accept that soak numbers cover IPv4 traffic only — record
-   this in the completion note, because it biases QPS and cache-hit figures
-   downward against PERFORMANCE.md budgets.
-
-Serving DNS *over* IPv6 (binding `::`) is not in Phase 1 scope. Note that the
-container's veth may hold a globally routable address, so binding `::` would
-publish the listener to the internet with no NAT in front of it — that needs
-a firewall review first, not just a config edit.
+Serving DNS *over* IPv6 (binding `::`) is not in Phase 1 scope, but it is
+smaller than it looks: RouterOS assigns container addresses in
+`/interface/veth`, so the veth may already hold one — check with
+`/interface/veth/print detail`. If it does, dual-stack is a bind-address change
+plus retargeting whatever steers IPv6 `:53`. Confirm first whether that address
+is globally routable, since nothing NATs in front of it.
 
 ## 6. On-device verification checklist
 

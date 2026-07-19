@@ -50,12 +50,17 @@ on the current instance — delete, restart, still gone.
 
 **Remaining to close p1-11:**
 
-1. Apply the IPv6 fix (RA advertises a DNS server and a stale `dstnat` sends
-   all IPv6 `:53` to a dead host — see deploy-rb5009.md §5). Without it,
-   dual-stack clients bypass FastAdHunter and the soak measures IPv4 only.
-2. Run the `dns-fah` cutover script and confirm all six IPv4 rules moved.
-3. Set `start-on-boot=yes`.
-4. Run the 24h soak, then measure sustained throughput.
+1. Run the `dns-fah` cutover script and confirm all six IPv4 rules moved.
+2. Set `start-on-boot=yes`.
+3. Run the 24h soak, then measure sustained throughput.
+
+IPv6 DNS was repaired on 2026-07-19 (the `dstnat` pointed at a dead ULA;
+retargeted to AdGuard's real address). It currently routes to AdGuard, **not**
+to FastAdHunter, so the soak still measures IPv4 only — acceptable, since the
+IPv6 path is now filtered rather than bypassing. Moving IPv6 onto FastAdHunter
+needs the listener to bind `::` as well as `0.0.0.0`; veth2 already has
+`2a02:2f04:5008:bb00::11/64`, so it is a bind-address change plus a one-line
+`to-address` move. Not in Phase 1.
 
 Two known metric defects do not gate closure but should be recorded in the
 completion note: ruleset gauges are polled on a 10 s timer, so a scrape right
