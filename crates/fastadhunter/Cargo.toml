@@ -12,17 +12,44 @@ workspace = true
 name = "fastadhunter"
 path = "src/main.rs"
 
-# Only the crates the binary actually wires today. The remaining crates
-# (fah-dns, fah-api, fah-stats, fah-metrics, fah-rules) get added as their
-# wiring lands in later phases; the layering guard test keeps edges downward.
+# The binary is the only crate that may see every other one — it is what
+# wires the L3 siblings together (ARCHITECTURE.md §Dependency Layering:
+# "the binary wires them via channels and handles"), including implementing
+# fah-api's port traits over fah-stats and fah-metrics.
 [dependencies]
+fah-api = { path = "../fah-api" }
 fah-config = { path = "../fah-config" }
+fah-dns = { path = "../fah-dns" }
 fah-logging = { path = "../fah-logging" }
+fah-metrics = { path = "../fah-metrics" }
+fah-model = { path = "../fah-model" }
+fah-rules = { path = "../fah-rules" }
+fah-stats = { path = "../fah-stats" }
 tokio.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
 
 [dev-dependencies]
-fah-model = { path = "../fah-model" }
+criterion = { workspace = true }
+# Crafting DNS wire messages for the benches and the end-to-end test's mock
+# upstream. Not a runtime dependency: the binary never speaks wire format
+# itself, it delegates to fah-dns.
+hickory-proto = { workspace = true }
+reqwest = { workspace = true, features = ["json"] }
+# The end-to-end test speaks to the appliance's self-signed certificate;
+# tungstenite needs an explicit rustls config to accept it.
+rustls = { workspace = true }
+serde_json = { workspace = true }
 tempfile = "3"
+tokio = { workspace = true, features = ["macros", "net", "rt-multi-thread", "sync", "time"] }
+tokio-tungstenite = { version = "0.29", default-features = false, features = ["rustls-tls-webpki-roots"] }
+futures-util = { version = "0.3", default-features = false, features = ["sink", "std"] }
 toml.workspace = true
+
+# Whole-product budgets from PERFORMANCE.md that no single crate can answer —
+# blocked-query latency, forward-path overhead, sustained throughput, startup
+# from cached lists, steady-state memory (p1-10).
+# harness=false: the criterion runner replaces libtest so `cargo bench` drives it.
+[[bench]]
+name = "pipeline"
+harness = false

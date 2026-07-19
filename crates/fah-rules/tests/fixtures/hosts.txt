@@ -1,0 +1,9 @@
+# Title: FastAdHunter test hosts fixture
+# A small excerpt in StevenBlack-style hosts format.
+
+0.0.0.0 doubleclick.net
+0.0.0.0 googlesyndication.com
+0.0.0.0 googleadservices.com www.googleadservices.com
+127.0.0.1 ads.example.com
+this-line-has-no-ip-and-is-broken
+0.0.0.0

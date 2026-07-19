@@ -51,6 +51,35 @@ Notes:
   regression on a hot-path bench needs an explicit justification
   (see [CONTRIBUTING.md](CONTRIBUTING.md)).
 
+## Measuring reliably
+
+The hot-path benches resolve sub-microsecond work, which is below the noise
+floor of a loaded desktop. An unpinned `cargo bench` on a busy dev machine has
+been observed swinging **6×** between consecutive runs of an unmodified binary
+— enough to manufacture a "+159% regression" that does not exist. Before
+believing any regression, re-measure with the process pinned to one core:
+
+```powershell
+# Windows: run the bench executable directly, one core, high priority
+$p = Start-Process -FilePath 'target\release\deps\<bench>-<hash>.exe' `
+     -ArgumentList '--bench','--sample-size','200' -NoNewWindow -PassThru
+$p.ProcessorAffinity = 4; $p.PriorityClass = 'High'; $p.WaitForExit()
+```
+
+```sh
+# Linux
+taskset -c 2 nice -n -5 cargo bench -p <crate> --bench <bench>
+```
+
+Pinned, the same benches hold a confidence interval under 1%. Trust a criterion
+delta only when its interval is narrow relative to the change it reports — a
+result quoted as `[366.0 ns 366.8 ns 367.5 ns]` is a measurement; one quoted as
+`[737 ns 882 ns 1.04 µs]` is noise wearing a number's clothes.
+
+Throughput is the exception to core-pinning: restrict it to four cores
+(`ProcessorAffinity = 15` / `taskset -c 0-3`) so the figure is shaped like the
+RB5009's quad-core budget rather than a dev box's full core count.
+
 ## Positioning
 
 Beat AdGuard Home and Blocky on **both** axes:

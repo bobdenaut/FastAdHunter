@@ -1,0 +1,9 @@
+! Title: FastAdHunter test AdGuard DNS filter fixture
+! Excerpt showing AdGuard DNS-specific extensions.
+
+||ads.adguard-test.example^
+||telemetry.example.net^$dnstype=A|AAAA
+||redirect.example.org^$dnsrewrite=0.0.0.0
+@@||safe.example.com^
+||kids-blocked.example.com^$client=192.168.1.50
+||mixed.example.com^$dnstype=A,client=192.168.1.50

@@ -8,6 +8,41 @@ publish.workspace = true
 [lints]
 workspace = true
 
-# No dependencies yet — Phase 0 stub. Downstream edges (ARCHITECTURE.md L3) get
-# added when the consuming code lands; the layering guard test enforces them.
+# L3 sibling: serves the whole API.md surface over axum+rustls (SECURITY.md:
+# HTTPS by default, rcgen self-signed cert, bearer-key auth). Depends downward
+# only: fah-rules (L2) and fah-config/fah-model (L1) are held directly;
+# fah-stats/fah-metrics/fah-dns data arrives through this crate's own port
+# traits (`StatsSource`, `TelemetrySource`), implemented in `fastadhunter` —
+# ARCHITECTURE.md rule 2: siblings never import each other, the binary wires
+# them via channels and handles (same pattern as fah-metrics' snapshot DTOs).
 [dependencies]
+fah-config = { path = "../fah-config" }
+fah-model = { path = "../fah-model" }
+fah-rules = { path = "../fah-rules" }
+
+arc-swap = { workspace = true }
+axum = { version = "0.8", features = ["ws"] }
+futures-util = { version = "0.3", default-features = false, features = ["sink"] }
+hyper = { version = "1", features = ["http1", "http2", "server"] }
+hyper-util = { version = "0.1", features = ["server", "server-auto", "service", "tokio"] }
+rand = { workspace = true }
+# rcgen for the self-signed API cert; matches SECURITY.md's fixed crypto set
+# (rustls/rcgen/x509-parser). aws_lc_rs backend to share one crypto provider
+# with the rustls already in-tree (reqwest/hickory-net).
+rcgen = { version = "0.14", default-features = false, features = ["aws_lc_rs", "pem"] }
+rustls = { workspace = true }
+rustls-pemfile = "2"
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+time = { version = "0.3", default-features = false, features = ["formatting", "parsing"] }
+tokio = { workspace = true, features = ["macros", "net", "rt-multi-thread", "sync", "time"] }
+tokio-rustls = { version = "0.26", default-features = false, features = ["aws_lc_rs", "tls12"] }
+tower = { version = "0.5", features = ["util"] }
+tracing = { workspace = true }
+
+[dev-dependencies]
+reqwest = { workspace = true, features = ["json", "blocking"] }
+tempfile = "3"
+tokio-tungstenite = { version = "0.29", default-features = false, features = ["rustls-tls-webpki-roots"] }
+futures-util = { version = "0.3", default-features = false, features = ["sink", "std"] }

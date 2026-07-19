@@ -9,6 +9,27 @@ rust-version = "1.96"
 publish = false
 
 [workspace.dependencies]
+# default-features off drops plotters/rayon: fewer transitive deps, faster
+# builds, and it keeps `cargo bench` buildable offline (PERFORMANCE.md benches).
+criterion = { version = "0.5", default-features = false, features = ["cargo_bench_support"] }
+# arc-swap: lock-free atomic swap of the compiled ruleset (RULE_ENGINE.md
+# §List lifecycle, ARCHITECTURE.md §Runtime Model) — readers never lock.
+arc-swap = "1.9"
+# default-features off drops native-tls/openssl; "rustls" is this project's
+# only TLS backend (SECURITY.md: rustls/rcgen/x509-parser, no other crypto).
+reqwest = { version = "0.13", default-features = false, features = ["rustls"] }
+# DNS wire format only (ARCHITECTURE.md: "hickory-proto; fah-model holds our
+# own domain types only"). No dnssec-* feature: Phase 1 is pass-through, not
+# validation (ARCHITECTURE.md §Listeners).
+hickory-proto = "0.26"
+# DoT/DoH upstream clients (ARCHITECTURE.md §Upstreams: Hickory + rustls).
+# aws-lc-rs matches the rustls provider already in-tree via reqwest, so the
+# workspace carries one crypto backend; webpki-roots because the distroless
+# image has no system certificate store.
+hickory-net = { version = "0.26", default-features = false, features = ["tokio", "https-aws-lc-rs", "webpki-roots"] }
+rand = "0.9"
+rustls = "0.23"
+url = "2"
 serde = { version = "1", features = ["derive", "rc"] }
 serde_json = "1"
 thiserror = "2"

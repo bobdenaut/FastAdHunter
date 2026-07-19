@@ -8,6 +8,21 @@ publish.workspace = true
 [lints]
 workspace = true
 
-# No dependencies yet — Phase 0 stub. Downstream edges (ARCHITECTURE.md L3) get
-# added when the consuming code lands; the layering guard test enforces them.
+# fah-model for the QueryEvent DTO the DNS pipeline emits (siblings never
+# import each other, ARCHITECTURE.md §Dependency Layering: fah-dns/fah-rules
+# hand this crate plain snapshot DTOs of their own counters via the binary,
+# not their own types). arc-swap: lock-free swap for the infrequently-updated
+# upstream/ruleset snapshots, mirroring fah-rules::ListManager's matcher swap.
 [dependencies]
+arc-swap = { workspace = true }
+fah-model = { path = "../fah-model" }
+tokio = { workspace = true, features = ["sync", "rt"] }
+
+[dev-dependencies]
+criterion = { workspace = true }
+tokio = { workspace = true, features = ["sync", "rt", "macros", "rt-multi-thread"] }
+
+# Hot-path instrumentation-cost bench (p1-08 acceptance: single-digit ns/event).
+[[bench]]
+name = "record"
+harness = false

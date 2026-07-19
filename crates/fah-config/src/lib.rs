@@ -65,6 +65,22 @@ impl Config {
     pub fn to_toml_string(&self) -> Result<String, ConfigError> {
         Ok(toml::to_string_pretty(self)?)
     }
+
+    /// Runs the same semantic checks [`Config::load`] applies, on a config
+    /// assembled some other way — `POST /api/v1/config` validates a merged
+    /// candidate before persisting it (CONFIGURATION.md: "API changes are
+    /// validated and written back to the file").
+    pub fn validate(&self) -> Result<(), ConfigError> {
+        validate(self)
+    }
+
+    /// Atomically writes this config back to `path` — the write-back half of
+    /// `POST /api/v1/config` ("no hidden state; the file always reflects the
+    /// running intent"). Same temp-file-then-rename as first-boot generation,
+    /// so a crash mid-write can never truncate a working config.
+    pub fn save(&self, path: &Path) -> Result<(), ConfigError> {
+        write_atomic(path, &self.to_toml_string()?)
+    }
 }
 
 /// Writes `text` to `path` atomically: ensures the parent directory exists,
@@ -115,21 +131,30 @@ fn validate(config: &Config) -> Result<(), ConfigError> {
         });
     }
     for server in &config.dns.upstreams.servers {
-        let encrypted = match server.protocol {
-            UpstreamProtocol::Dot => Some("dot"),
-            UpstreamProtocol::Doh => Some("doh"),
-            UpstreamProtocol::Udp => None,
-        };
-        if let Some(proto) = encrypted {
-            if server.hostname.as_deref().unwrap_or("").is_empty() {
-                return Err(ConfigError::Validation {
-                    key: "dns.upstreams.servers.hostname",
-                    message: format!(
-                        "{proto} upstream {} requires a hostname for certificate verification",
-                        server.address
-                    ),
-                });
+        match server.protocol {
+            UpstreamProtocol::Dot => {
+                if server.hostname.as_deref().unwrap_or("").is_empty() {
+                    return Err(ConfigError::Validation {
+                        key: "dns.upstreams.servers.hostname",
+                        message: format!(
+                            "dot upstream {} requires a hostname for certificate verification",
+                            server.address
+                        ),
+                    });
+                }
             }
+            // DoH takes its certificate name from the URL host
+            // (CONFIGURATION.md's example carries no hostname); the optional
+            // hostname only overrides it for IP-literal URLs.
+            UpstreamProtocol::Doh => {
+                if !server.address.starts_with("https://") {
+                    return Err(ConfigError::Validation {
+                        key: "dns.upstreams.servers.address",
+                        message: format!("doh upstream {} must be an https:// URL", server.address),
+                    });
+                }
+            }
+            UpstreamProtocol::Udp => {}
         }
     }
 
@@ -422,7 +447,7 @@ format = "text"
     }
 
     #[test]
-    fn validation_rejects_encrypted_upstream_without_hostname() {
+    fn validation_rejects_dot_upstream_without_hostname() {
         let toml_str = "[[dns.upstreams.servers]]\naddress = \"1.1.1.1\"\nprotocol = \"dot\"\n";
         let config = Config::from_toml_str(toml_str).unwrap();
         let err = validate(&config).unwrap_err();
@@ -436,10 +461,33 @@ format = "text"
     }
 
     #[test]
-    fn validation_accepts_encrypted_upstream_with_hostname() {
+    fn validation_accepts_dot_upstream_with_hostname() {
         let toml_str = "[[dns.upstreams.servers]]\naddress = \"1.1.1.1\"\nprotocol = \"dot\"\nhostname = \"cloudflare-dns.com\"\n";
         let config = Config::from_toml_str(toml_str).unwrap();
         assert!(validate(&config).is_ok());
+    }
+
+    #[test]
+    fn validation_accepts_doh_upstream_without_hostname() {
+        // CONFIGURATION.md's documented DoH example carries no hostname —
+        // the certificate name comes from the URL host.
+        let toml_str = "[[dns.upstreams.servers]]\naddress = \"https://cloudflare-dns.com/dns-query\"\nprotocol = \"doh\"\n";
+        let config = Config::from_toml_str(toml_str).unwrap();
+        assert!(validate(&config).is_ok());
+    }
+
+    #[test]
+    fn validation_rejects_doh_upstream_without_https_url() {
+        let toml_str = "[[dns.upstreams.servers]]\naddress = \"1.1.1.1\"\nprotocol = \"doh\"\n";
+        let config = Config::from_toml_str(toml_str).unwrap();
+        let err = validate(&config).unwrap_err();
+        assert!(matches!(
+            err,
+            ConfigError::Validation {
+                key: "dns.upstreams.servers.address",
+                ..
+            }
+        ));
     }
 
     #[test]

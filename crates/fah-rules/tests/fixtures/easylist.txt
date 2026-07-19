@@ -1,0 +1,12 @@
+! Title: FastAdHunter test EasyList fixture
+! Excerpt combining network and cosmetic rules.
+
+||doubleclick.net^
+||googlesyndication.com^$third-party
+@@||cdn.example.com^$domain=example.com
+example.com##.ad-banner
+###banner-ad-container
+||ads.example.com^$script,third-party
+/banner/*/ad.js
+||^
+||opt-error.example.com^$script,

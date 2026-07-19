@@ -15,6 +15,12 @@ pub struct QueryEvent {
     pub duration: Duration,
     pub cache_hit: bool,
     pub upstream_used: bool,
+    /// True when this reply came from an expired cache entry served after
+    /// the upstream failed (RFC 8767 §4 minimal serve-stale). Implies
+    /// `cache_hit`; kept as its own field so consumers can tell "answered
+    /// from cache" apart from "answered from cache because the network was
+    /// down" without inferring it from `upstream_used`.
+    pub stale: bool,
 }
 
 impl QueryEvent {
@@ -24,6 +30,7 @@ impl QueryEvent {
         duration: Duration,
         cache_hit: bool,
         upstream_used: bool,
+        stale: bool,
     ) -> Self {
         Self {
             query,
@@ -31,6 +38,7 @@ impl QueryEvent {
             duration,
             cache_hit,
             upstream_used,
+            stale,
         }
     }
 }
@@ -56,6 +64,7 @@ mod tests {
             Duration::from_micros(250),
             false,
             true,
+            false,
         );
         let json = serde_json::to_string(&event).unwrap();
         let back: QueryEvent = serde_json::from_str(&json).unwrap();

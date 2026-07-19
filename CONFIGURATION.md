@@ -64,6 +64,8 @@ protocol = "udp"
 
 # DoT example:  address = "1.1.1.1", protocol = "dot", hostname = "cloudflare-dns.com"
 # DoH example:  address = "https://cloudflare-dns.com/dns-query", protocol = "doh"
+#   (doh cert name comes from the URL host; hostname optionally overrides it,
+#    e.g. for IP-literal URLs)
 
 # ─── Rule lists ────────────────────────────────────────────────────────
 [rules]
@@ -73,7 +75,10 @@ refresh_hours_default = 24    # runtime — per-list override via API
 id = "oisd-basic"             # runtime — shipped default list
 url = "https://small.oisd.nl" # runtime
 enabled = true                # runtime
+# refresh_hours = 6           # runtime — optional per-list override of
+#                             #           refresh_hours_default (omit to follow it)
 # format auto-detected: hosts | domains | easylist-family
+# a mounted file is a list too: url = "/data/lists/local.txt"
 
 # ─── Query log ─────────────────────────────────────────────────────────
 [query_log]

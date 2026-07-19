@@ -30,6 +30,7 @@ fn default_lists() -> Vec<RuleListConfig> {
         id: "oisd-basic".to_string(),
         url: "https://small.oisd.nl".to_string(),
         enabled: true,
+        refresh_hours: None,
     }]
 }
 
@@ -41,4 +42,9 @@ pub struct RuleListConfig {
     pub url: String,
     #[serde(default = "default_true")]
     pub enabled: bool,
+    /// Per-list override of `[rules] refresh_hours_default` (CONFIGURATION.md:
+    /// "per-list override via API" — `PATCH /api/v1/lists/{id}`). Absent means
+    /// "follow the default", so a later change to the default still applies.
+    #[serde(default)]
+    pub refresh_hours: Option<u32>,
 }

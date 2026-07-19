@@ -8,6 +8,26 @@ publish.workspace = true
 [lints]
 workspace = true
 
-# No dependencies yet — Phase 0 stub. Downstream edges (ARCHITECTURE.md L2) get
-# added when the consuming code lands; the layering guard test enforces them.
+# Parsing is pure string -> structured rules, no I/O. The compiled matcher
+# (p1-02) needs fah-model for the shared Verdict / DecisiveRule DTOs. List
+# lifecycle (p1-03) needs fah-config for RulesConfig — an L2->L1 edge,
+# enforced by the layering guard test.
 [dependencies]
+arc-swap = { workspace = true }
+fah-config = { path = "../fah-config" }
+fah-model = { path = "../fah-model" }
+reqwest = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true, features = ["fs", "sync", "time"] }
+tracing = { workspace = true }
+
+[dev-dependencies]
+criterion = { workspace = true }
+tempfile = "3"
+tokio = { workspace = true, features = ["io-util", "macros", "net", "rt-multi-thread", "test-util"] }
+
+# Compiled-matcher benches vs PERFORMANCE.md budgets (p1-02). harness=false: the
+# criterion runner replaces libtest so `cargo bench` drives it.
+[[bench]]
+name = "matcher"
+harness = false

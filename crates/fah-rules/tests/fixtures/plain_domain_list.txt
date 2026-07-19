@@ -1,0 +1,7 @@
+# OISD-style plain domain list excerpt (one domain per line).
+
+ads.example.com
+tracker.example.net
+analytics.example.org
+bad domain with spaces.com
+*.wildcard-not-allowed.com

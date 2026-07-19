@@ -8,6 +8,17 @@ publish.workspace = true
 [lints]
 workspace = true
 
-# No dependencies yet — Phase 0 stub. Downstream edges (ARCHITECTURE.md L3) get
-# added when the consuming code lands; the layering guard test enforces them.
+# Aggregates/query log/client registry: pure state + `/data` persistence, no
+# network. fah-model for the QueryEvent DTO the DNS pipeline emits;
+# fah-config for [stats]/[query_log].
 [dependencies]
+fah-config = { path = "../fah-config" }
+fah-model = { path = "../fah-model" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true, features = ["fs", "io-util", "sync", "time"] }
+tracing = { workspace = true }
+
+[dev-dependencies]
+tempfile = "3"
+tokio = { workspace = true, features = ["fs", "io-util", "sync", "time", "macros", "rt-multi-thread", "test-util"] }
