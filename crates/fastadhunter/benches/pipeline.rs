@@ -25,7 +25,7 @@
 use std::hint::black_box;
 use std::net::{IpAddr, Ipv4Addr};
 use std::str::FromStr;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -236,8 +236,10 @@ fn bench_forwarded_overhead(c: &mut Criterion) {
         .collect();
 
     let before = forwarder.calls.load(Ordering::Relaxed);
+    let ran = AtomicBool::new(false);
     let mut group = c.benchmark_group("full_pipeline");
     group.bench_function("forwarded_query_overhead", |b| {
+        ran.store(true, Ordering::Relaxed);
         let mut i = 0usize;
         b.iter(|| {
             let raw = &queries[i % queries.len()];
@@ -247,10 +249,16 @@ fn bench_forwarded_overhead(c: &mut Criterion) {
     });
     group.finish();
 
-    assert!(
-        forwarder.calls.load(Ordering::Relaxed) > before,
-        "no query reached the forwarder — this measured the cache, not the forward path"
-    );
+    // Criterion never invokes the routine when a `--bench <filter>` argument
+    // excludes it, so the counter would still read `before` and this check
+    // would fire on a run that simply did not measure this path — making the
+    // whole file unfilterable. Only assert when the loop actually ran.
+    if ran.load(Ordering::Relaxed) {
+        assert!(
+            forwarder.calls.load(Ordering::Relaxed) > before,
+            "no query reached the forwarder — this measured the cache, not the forward path"
+        );
+    }
 }
 
 /// PERFORMANCE.md: "Sustained throughput >= 10 000 QPS". A realistic mix —
@@ -362,6 +370,54 @@ fn bench_startup(c: &mut Criterion) {
     group.finish();
 }
 
+/// Splits `startup_from_cached_lists` into its three phases, because "startup
+/// is 3 s" is not actionable — optimising the wrong phase is wasted work.
+///
+/// Boot does: read each `/data/lists/<id>.raw` off disk, parse it into a
+/// `ParsedRuleList`, then feed those into a `MatcherBuilder` and `build()`.
+/// The three benches below time exactly those steps on the same 1M-domain
+/// input the startup bench uses, so their sum should account for the whole.
+///
+/// Disk read is measured against the OS page cache, warm — which is what a
+/// restart on a running router actually sees.
+fn bench_startup_phases(c: &mut Criterion) {
+    let data_dir = tempfile::tempdir().unwrap();
+    let path = data_dir.path().join("blocklist-1m.raw");
+    std::fs::write(&path, hosts_blocklist(BLOCKLIST_SIZE)).unwrap();
+
+    // Warm the page cache so the read bench measures the read, not the SSD.
+    let text = std::fs::read_to_string(&path).unwrap();
+    let parsed = fah_rules::parse_rule_list(&text);
+    println!(
+        "\n[phases] input: {} bytes, {} active rules, {} inactive\n",
+        text.len(),
+        parsed.active_count(),
+        parsed.inactive_count()
+    );
+
+    let mut group = c.benchmark_group("startup_phases");
+    group.sample_size(10);
+    group.measurement_time(Duration::from_secs(20));
+
+    group.bench_function("1_read_from_data", |b| {
+        b.iter(|| black_box(std::fs::read_to_string(&path).unwrap().len()));
+    });
+
+    group.bench_function("2_parse_rule_list", |b| {
+        b.iter(|| black_box(fah_rules::parse_rule_list(black_box(&text)).active_count()));
+    });
+
+    group.bench_function("3_build_matcher", |b| {
+        b.iter(|| {
+            let mut builder = fah_rules::MatcherBuilder::new();
+            builder.add_parsed_list(std::sync::Arc::from("blocklist-1m"), black_box(&parsed));
+            black_box(builder.build().len())
+        });
+    });
+
+    group.finish();
+}
+
 /// PERFORMANCE.md: "RAM steady-state, 1M blocked domains loaded <= 128 MB" and
 /// "Compiled ruleset for 1M domains <= 40 MB".
 ///
@@ -449,6 +505,7 @@ criterion_group!(
     bench_forwarded_overhead,
     bench_throughput,
     bench_startup,
+    bench_startup_phases,
     report_memory
 );
 criterion_main!(benches);

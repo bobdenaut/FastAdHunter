@@ -3,8 +3,6 @@
 //! `<ip> <hostname> [hostname...] [# comment]` per line, matching standard
 //! hosts-file syntax (multiple aliases per line allowed).
 
-use std::sync::Arc;
-
 use crate::domain::normalize_domain;
 use crate::format::{looks_like_ip, RuleFormat};
 use crate::rule::{DomainRule, ParsedRule, RuleAction, RuleKind};
@@ -69,7 +67,6 @@ pub(crate) fn parse(text: &str) -> ParsedRuleList {
             };
             handled = true;
             rules.push(ParsedRule {
-                raw: Arc::from(line),
                 kind: RuleKind::Active(DomainRule {
                     domain,
                     action: RuleAction::Block,

@@ -23,7 +23,7 @@ pub(crate) fn parse(text: &str) -> ParsedRuleList {
         }
 
         if COSMETIC_MARKERS.iter().any(|marker| line.contains(marker)) {
-            rules.push(inactive(line, InactiveReason::Cosmetic));
+            rules.push(inactive(InactiveReason::Cosmetic));
             continue;
         }
 
@@ -31,7 +31,7 @@ pub(crate) fn parse(text: &str) -> ParsedRuleList {
         let body = if exception { &line[2..] } else { line };
 
         let Some(after_anchor) = body.strip_prefix("||") else {
-            rules.push(inactive(line, InactiveReason::UrlPattern));
+            rules.push(inactive(InactiveReason::UrlPattern));
             continue;
         };
 
@@ -46,11 +46,11 @@ pub(crate) fn parse(text: &str) -> ParsedRuleList {
             continue;
         }
         let Some(domain) = normalize_domain(domain_part) else {
-            rules.push(inactive(line, InactiveReason::UrlPattern));
+            rules.push(inactive(InactiveReason::UrlPattern));
             continue;
         };
         if terminator == Some('/') {
-            rules.push(inactive(line, InactiveReason::UrlPattern));
+            rules.push(inactive(InactiveReason::UrlPattern));
             continue;
         }
 
@@ -63,12 +63,11 @@ pub(crate) fn parse(text: &str) -> ParsedRuleList {
         match parse_options(options_str) {
             Ok(options) => {
                 if options.has_other {
-                    rules.push(inactive(line, InactiveReason::HttpOption));
+                    rules.push(inactive(InactiveReason::HttpOption));
                 } else if options.client {
-                    rules.push(inactive(line, InactiveReason::ClientScoped));
+                    rules.push(inactive(InactiveReason::ClientScoped));
                 } else {
                     rules.push(ParsedRule {
-                        raw: Arc::from(line),
                         kind: RuleKind::Active(DomainRule {
                             domain,
                             action: if exception {
@@ -96,9 +95,8 @@ pub(crate) fn parse(text: &str) -> ParsedRuleList {
     }
 }
 
-fn inactive(line: &str, reason: InactiveReason) -> ParsedRule {
+fn inactive(reason: InactiveReason) -> ParsedRule {
     ParsedRule {
-        raw: Arc::from(line),
         kind: RuleKind::Inactive(reason),
     }
 }

@@ -54,10 +54,16 @@ pub enum RuleKind {
     Inactive(InactiveReason),
 }
 
-/// One parsed line from a rule list: its original text plus classification.
+/// One parsed line from a rule list, reduced to its classification.
+///
+/// Deliberately does **not** retain the original line. The compiled matcher
+/// never stored it either — `Matcher::decisive_rule` reconstructs canonical
+/// AdGuard syntax from the compiled record, so the API's `rule` field is fed
+/// by reconstruction, not retention. Keeping the text here cost one
+/// allocation, one copy and one free per rule across the whole list, on the
+/// phase that dominates startup, for a field nothing read.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ParsedRule {
-    pub raw: Arc<str>,
     pub kind: RuleKind,
 }
 

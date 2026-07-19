@@ -1,8 +1,6 @@
 //! Plain domain list format parser (RULE_ENGINE.md: Supported formats —
 //! plain domain list). One bare domain per line.
 
-use std::sync::Arc;
-
 use crate::domain::normalize_domain;
 use crate::format::RuleFormat;
 use crate::rule::{DomainRule, ParsedRule, RuleAction, RuleKind};
@@ -23,7 +21,6 @@ pub(crate) fn parse(text: &str) -> ParsedRuleList {
         }
         match normalize_domain(line) {
             Some(domain) => rules.push(ParsedRule {
-                raw: Arc::from(line),
                 kind: RuleKind::Active(DomainRule {
                     domain,
                     action: RuleAction::Block,
