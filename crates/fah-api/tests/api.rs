@@ -599,6 +599,136 @@ async fn lists_crud_round_trips_through_the_api() {
     assert_eq!(harness.get_json("/api/v1/lists").await["items"], json!([]));
 }
 
+/// A list added through the API has to survive a restart. It used to live
+/// only in the in-memory `ListManager`: it served traffic, its content was
+/// cached under `/data`, and then the next boot read `fastadhunter.toml`,
+/// found no entry, and silently dropped the rules.
+#[tokio::test]
+async fn list_mutations_are_persisted_to_the_config_file() {
+    let harness = start().await;
+
+    // What a restart sees: the file, reparsed, not the running state.
+    let on_disk = || {
+        let text = std::fs::read_to_string(&harness.config_path).unwrap();
+        Config::from_toml_str(&text).unwrap().rules.lists
+    };
+    assert!(on_disk().is_empty());
+
+    for url in [
+        "https://example.org/oisd-basic.txt",
+        "https://example.org/extra.txt",
+    ] {
+        let response = harness
+            .client
+            .post(harness.url("/api/v1/lists"))
+            .bearer_auth(&harness.key)
+            .json(&json!({"url": url, "refresh_hours": 6}))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), 201);
+    }
+
+    let persisted = on_disk();
+    assert_eq!(persisted.len(), 2);
+    assert_eq!(persisted[0].id, "oisd-basic");
+    assert_eq!(persisted[0].url, "https://example.org/oisd-basic.txt");
+    assert_eq!(persisted[0].refresh_hours, Some(6));
+    assert_eq!(persisted[1].id, "extra");
+
+    // A rejected duplicate must not append a second entry.
+    let duplicate = harness
+        .client
+        .post(harness.url("/api/v1/lists"))
+        .bearer_auth(&harness.key)
+        .json(&json!({"url": "https://example.org/oisd-basic.txt"}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(duplicate.status(), 409);
+    assert_eq!(on_disk().len(), 2, "a conflict changes nothing on disk");
+
+    harness
+        .client
+        .patch(harness.url("/api/v1/lists/oisd-basic"))
+        .bearer_auth(&harness.key)
+        .json(&json!({"enabled": false, "refresh_hours": Value::Null}))
+        .send()
+        .await
+        .unwrap();
+    let patched = on_disk();
+    assert!(!patched[0].enabled, "the disable outlives the process");
+    assert_eq!(patched[0].refresh_hours, None);
+
+    harness
+        .client
+        .delete(harness.url("/api/v1/lists/extra"))
+        .bearer_auth(&harness.key)
+        .send()
+        .await
+        .unwrap();
+    let remaining = on_disk();
+    assert_eq!(remaining.len(), 1);
+    assert_eq!(remaining[0].id, "oisd-basic");
+
+    // A 404 on a list that never existed leaves the file alone.
+    harness
+        .client
+        .delete(harness.url("/api/v1/lists/ghost"))
+        .bearer_auth(&harness.key)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(on_disk().len(), 1);
+}
+
+#[tokio::test]
+async fn the_same_source_cannot_be_added_twice_under_different_ids() {
+    let harness = start().await;
+    let url = "https://example.org/oisd-basic.txt";
+
+    let first = harness
+        .client
+        .post(harness.url("/api/v1/lists"))
+        .bearer_auth(&harness.key)
+        .json(&json!({"url": url}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(first.status(), 201);
+
+    // An explicit id sidesteps the id check, so this is the URL check or
+    // nothing — and "nothing" means fetching, caching and compiling the same
+    // list twice.
+    let second = harness
+        .client
+        .post(harness.url("/api/v1/lists"))
+        .bearer_auth(&harness.key)
+        .json(&json!({"url": url, "id": "a-different-name"}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(second.status(), 409);
+    let body: Value = second.json().await.unwrap();
+    let message = body["error"]["message"].as_str().unwrap();
+    assert!(
+        message.contains("oisd-basic"),
+        "the conflict names the list already holding the URL, got: {message}"
+    );
+
+    let lists: Value = harness
+        .client
+        .get(harness.url("/api/v1/lists"))
+        .bearer_auth(&harness.key)
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(lists["items"].as_array().unwrap().len(), 1);
+}
+
 #[tokio::test]
 async fn a_local_file_list_can_be_added_by_path_and_refreshed() {
     let harness = start().await;

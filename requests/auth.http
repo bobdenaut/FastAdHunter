@@ -1,0 +1,37 @@
+# Authentication — API.md §Authentication, SECURITY.md §API access
+#
+# One bearer key, generated on first boot and printed to the log exactly once.
+# Everything under /api/v1/ requires it; /health and /metrics are exempt unless
+# `[api] metrics_public = false`.
+
+@base = {{host}}
+
+### Valid key — the cheapest authenticated call, use it to check a key works.
+GET {{base}}/api/v1/lists
+Authorization: Bearer {{apiKey}}
+
+### No header at all — expect 401 with code "unauthorized".
+GET {{base}}/api/v1/lists
+
+### Wrong key — expect 401, and identically shaped to the request above. The
+### response must not reveal whether the key exists or merely mismatched.
+GET {{base}}/api/v1/lists
+Authorization: Bearer definitely-not-the-key
+
+### Malformed header (no "Bearer " prefix) — expect 401, not 500.
+GET {{base}}/api/v1/lists
+Authorization: {{apiKey}}
+
+### Rotate the key. Returns the new key ONCE and invalidates the old one
+### immediately — update `apiKey` in .vscode/settings.json before running
+### anything else, or every later request 401s.
+###
+### Worth doing after a key has been pasted into a terminal, a chat log or a
+### screenshot.
+POST {{base}}/api/v1/config/apikey/rotate
+Authorization: Bearer {{apiKey}}
+
+### Confirm the OLD key is dead — run after a rotation, before updating the
+### stored value. Expect 401.
+GET {{base}}/api/v1/lists
+Authorization: Bearer {{apiKey}}

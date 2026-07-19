@@ -1,0 +1,24 @@
+# Prometheus metrics — API.md §Health & telemetry
+#
+# Text exposition format, not JSON. Public by default; `[api] metrics_public`
+# (runtime-mutable, see settings.http) moves it behind the API key.
+
+@base = {{host}}
+
+### Full scrape. Content-Type must be
+### `text/plain; version=0.0.4; charset=utf-8` or Prometheus will not parse it.
+GET {{base}}/metrics
+
+### With a key — always accepted, whether or not it is required.
+GET {{base}}/metrics
+Authorization: Bearer {{apiKey}}
+
+# Metrics worth eyeballing after a deploy (grep the response):
+#
+#   fastadhunter_ruleset_rules            compiled rule count — the number that
+#                                         silently dropped to 55866 when list
+#                                         registrations were not persisting
+#   fastadhunter_ruleset_heap_bytes       compiled ruleset size (budget 40 MB)
+#   process_resident_memory_bytes         RSS (budget 128 MB on the RB5009)
+#   fastadhunter_queries_total{verdict}   per-verdict counters
+#   fastadhunter_upstream_attempts_total  upstream health

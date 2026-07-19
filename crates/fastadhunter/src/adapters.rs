@@ -18,6 +18,34 @@ use fah_dns::UpstreamPool;
 use fah_metrics::Metrics;
 use fah_stats::{QueryLogFilter, Stats, VerdictKind};
 
+/// Lets the Rule Engine's list fetcher (L2) resolve download hosts through the
+/// DNS engine's upstreams (L3) — the same crossing as above, in the other
+/// direction: `fah-rules` declares [`fah_rules::HostResolver`] and never
+/// imports `fah-dns`.
+///
+/// Without this the fetcher uses the system resolver, and the container has no
+/// working one: RouterOS ships `/etc/resolv.conf` empty (p1-11 defect 5). A
+/// process that *is* a DNS resolver should not need a second one to fetch its
+/// own lists.
+pub struct UpstreamResolver {
+    upstreams: UpstreamPool,
+}
+
+impl UpstreamResolver {
+    pub fn new(upstreams: UpstreamPool) -> Self {
+        Self { upstreams }
+    }
+}
+
+impl fah_rules::HostResolver for UpstreamResolver {
+    fn resolve(&self, host: String) -> fah_rules::Resolving {
+        // `UpstreamPool` is a cheap `Arc` clone, which is what lets this hand
+        // back the owned `'static` future the port requires.
+        let upstreams = self.upstreams.clone();
+        Box::pin(async move { upstreams.resolve_host(&host).await })
+    }
+}
+
 pub struct StatsAdapter {
     stats: Arc<Stats>,
 }

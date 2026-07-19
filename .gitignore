@@ -1,3 +1,10 @@
 /target
 **/*.rs.bk
 *.pdb
+
+# Build artifacts — image tarballs produced by docs/deploy-rb5009.md §1.
+# Regenerable from any commit; never worth 12 MB of history.
+*.tar
+
+# Local editor settings — contains the API key in plaintext, never commit.
+.vscode/

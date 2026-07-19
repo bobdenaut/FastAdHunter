@@ -47,8 +47,21 @@ COPY --from=builder /build/target/release/fastadhunter /fastadhunter
 COPY --from=builder --chown=65532:65532 /seed/config /config
 COPY --from=builder --chown=65532:65532 /seed/data /data
 
-# Non-root user baked into the `:nonroot` distroless variant (uid/gid 65532).
-USER nonroot:nonroot
+# Root at entry, by design (ADR-0004): the process binds port 53 — which
+# RouterOS permits no other way, having no `cap-add`, no lowered
+# `net.ipv4.ip_unprivileged_port_start`, and no respect for the
+# `CAP_NET_BIND_SERVICE` file capability on import — then permanently drops to
+# uid/gid 65532 before answering a single query, as bind9 and unbound do.
+#
+# This must be stated explicitly. The `:nonroot` base tag carries its own
+# `USER 65532`, so *omitting* a `USER` line here silently inherits it and the
+# bind fails with EACCES. The base tag stays `:nonroot` deliberately — 65532
+# is the uid the binary drops to and the owner `/config` and `/data` are
+# seeded with below — so this line and that tag have to disagree on purpose.
+#
+# Image scanners will flag this as root-by-default: true of the entrypoint,
+# false of the serving process.
+USER 0:0
 
 VOLUME ["/config", "/data"]
 EXPOSE 53/udp 53/tcp 8443/tcp

@@ -1,0 +1,20 @@
+# Health & liveness — API.md §Health & telemetry
+#
+# Unauthenticated by default. `[api] metrics_public = false` puts both this and
+# /metrics behind the API key, which the last request here checks.
+
+@base = {{host}}
+
+### Liveness. `status` is "ok" or "degraded" (every upstream failing —
+### serve-stale is carrying the traffic). This is what the container
+### HEALTHCHECK probes via `fastadhunter --healthcheck`.
+GET {{base}}/health
+
+### Same endpoint with a key. Sending one when none is required is harmless —
+### useful for confirming a key is valid without mutating anything.
+GET {{base}}/health
+Authorization: Bearer {{apiKey}}
+
+### Unknown route — expect 404 in the documented error envelope
+### { "error": { "code": "not_found", "message": "..." } }.
+GET {{base}}/health/nope

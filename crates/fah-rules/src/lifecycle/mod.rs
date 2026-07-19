@@ -16,6 +16,7 @@
 //! never stalls a tokio worker the DNS pipeline shares.
 
 mod cache;
+mod resolver;
 mod source;
 
 use std::collections::HashMap;
@@ -27,6 +28,9 @@ use std::time::{Duration, SystemTime};
 use arc_swap::ArcSwap;
 use fah_config::{RuleListConfig, RulesConfig};
 use tokio::time::Instant;
+
+use resolver::ReqwestResolver;
+pub use resolver::{HostResolver, Resolving};
 
 use self::source::ListSource;
 use crate::matcher::{Matcher, MatcherBuilder};
@@ -121,6 +125,13 @@ pub struct ListStatus {
     /// from `/data`" is a load, not a refresh).
     pub last_refreshed: Option<SystemTime>,
     pub last_result: RefreshResult,
+    /// What this list contributes to the ruleset that is *currently serving*,
+    /// as measured by the last compile. Deliberately independent of
+    /// `last_result`: a failed refresh leaves the previous ruleset in place
+    /// (RULE_ENGINE.md failure policy), so the list keeps contributing its
+    /// rules and must keep reporting them. `None` when it contributes nothing
+    /// — disabled, or no cache copy on disk yet.
+    pub compiled: Option<RefreshStats>,
 }
 
 impl Default for ListStatus {
@@ -128,6 +139,7 @@ impl Default for ListStatus {
         Self {
             last_refreshed: None,
             last_result: RefreshResult::NeverAttempted,
+            compiled: None,
         }
     }
 }
@@ -254,10 +266,46 @@ pub struct ListManager {
 }
 
 impl ListManager {
+    /// Builds a manager whose list downloads use the *system* resolver.
+    ///
+    /// Correct for tests, benches and any host with a working
+    /// `/etc/resolv.conf`. In the shipped container prefer
+    /// [`Self::with_resolver`]: RouterOS leaves `/etc/resolv.conf` empty, so
+    /// the system resolver has no nameserver to ask (p1-11 defect 5).
     pub fn new(config: &RulesConfig, data_dir: PathBuf) -> Result<Self, LifecycleError> {
-        let http = reqwest::Client::builder()
-            .build()
-            .map_err(LifecycleError::Client)?;
+        Self::build(config, data_dir, None)
+    }
+
+    /// Builds a manager that resolves list hosts through `resolver` — in the
+    /// binary, FastAdHunter's own configured upstreams. Removes the dependency
+    /// on `/etc/resolv.conf` entirely: a process that is itself a working DNS
+    /// resolver should not need a second one to fetch its own lists.
+    pub fn with_resolver(
+        config: &RulesConfig,
+        data_dir: PathBuf,
+        resolver: Arc<dyn HostResolver>,
+    ) -> Result<Self, LifecycleError> {
+        Self::build(config, data_dir, Some(resolver))
+    }
+
+    fn build(
+        config: &RulesConfig,
+        data_dir: PathBuf,
+        resolver: Option<Arc<dyn HostResolver>>,
+    ) -> Result<Self, LifecycleError> {
+        let mut client = reqwest::Client::builder()
+            // Explicit, though the `hickory-dns` feature already makes this
+            // the default: the call is gated on that feature, so dropping it
+            // breaks the build instead of silently restoring musl's
+            // `getaddrinfo` and its all-or-nothing A/AAAA lookup (p1-11
+            // defect 2 — a failure that presents as an empty ruleset on a
+            // resolver that is otherwise serving traffic normally).
+            .hickory_dns(true);
+        if let Some(resolver) = resolver {
+            // Supersedes the line above: our own upstreams, not the system's.
+            client = client.dns_resolver(Arc::new(ReqwestResolver(resolver)));
+        }
+        let http = client.build().map_err(LifecycleError::Client)?;
         let entries = config
             .lists
             .iter()
@@ -298,7 +346,7 @@ impl ListManager {
     pub async fn boot(&self) {
         let _guard = self.compile_lock.lock().await;
         let (matcher, stats) = self.compile().await;
-        self.matcher.store(Arc::new(matcher));
+        self.swap_in(matcher, &stats);
 
         let mut status = self.status.lock().unwrap();
         for (id, list_stats) in stats {
@@ -341,14 +389,22 @@ impl ListManager {
                 self.commit_raw(id, text).await;
 
                 let (matcher, mut stats) = self.compile().await;
-                self.matcher.store(Arc::new(matcher));
+                self.swap_in(matcher, &stats);
 
                 let list_stats = stats.remove(id).unwrap_or_default();
                 self.record_status(id, RefreshResult::Ok(list_stats.clone()), true);
                 Ok(list_stats)
             }
             Err(err) => {
-                self.record_status(id, RefreshResult::Failed(err.to_string()), false);
+                // The chain, not just `err`: on a distroless image with no
+                // shell this string is the only diagnostic available, and the
+                // outermost layer cannot tell a DNS failure from a refused
+                // connection or a rejected certificate.
+                self.record_status(
+                    id,
+                    RefreshResult::Failed(fah_common::error_chain(&err)),
+                    false,
+                );
                 Err(err)
             }
         }
@@ -417,8 +473,8 @@ impl ListManager {
         self.pending_cache.lock().unwrap().remove(id);
 
         let _guard = self.compile_lock.lock().await;
-        let (matcher, _) = self.compile().await;
-        self.matcher.store(Arc::new(matcher));
+        let (matcher, stats) = self.compile().await;
+        self.swap_in(matcher, &stats);
 
         if let Err(err) = cache::remove(&self.data_dir, id).await {
             tracing::warn!(list = id, error = %err, "failed to delete cached list copy");
@@ -451,8 +507,8 @@ impl ListManager {
 
         if membership_changed {
             let _guard = self.compile_lock.lock().await;
-            let (matcher, _) = self.compile().await;
-            self.matcher.store(Arc::new(matcher));
+            let (matcher, stats) = self.compile().await;
+            self.swap_in(matcher, &stats);
         }
         Ok(entry.view())
     }
@@ -474,7 +530,7 @@ impl ListManager {
         self.commit_raw(USER_RULES_ID, raw_text).await;
 
         let (matcher, mut stats) = self.compile().await;
-        self.matcher.store(Arc::new(matcher));
+        self.swap_in(matcher, &stats);
 
         let list_stats = stats.remove(USER_RULES_ID).unwrap_or_default();
         self.record_status(USER_RULES_ID, RefreshResult::Ok(list_stats.clone()), true);
@@ -558,7 +614,8 @@ impl ListManager {
         for id in due {
             self.last_attempted.lock().unwrap().insert(id.clone(), now);
             if let Err(err) = self.refresh_list(&id).await {
-                tracing::warn!(list = %id, error = %err, "scheduled list refresh failed");
+                let error = fah_common::error_chain(&err);
+                tracing::warn!(list = %id, %error, "scheduled list refresh failed");
             }
         }
     }
@@ -615,6 +672,25 @@ impl ListManager {
         })
         .await
         .expect("ruleset compile task panicked")
+    }
+
+    /// Publishes a freshly compiled ruleset and, in the same step, records what
+    /// each list contributes to it. Every compile goes through here so the
+    /// reported `compiled` counts cannot drift from the matcher that is
+    /// actually serving.
+    fn swap_in(&self, matcher: Matcher, stats: &HashMap<Arc<str>, RefreshStats>) {
+        self.matcher.store(Arc::new(matcher));
+
+        let mut status = self.status.lock().unwrap();
+        // Known ids first, so a list that dropped out of this compile (removed,
+        // disabled, cache file gone) stops reporting the rules it used to
+        // contribute rather than keeping the last number it ever had.
+        for (id, entry) in status.iter_mut() {
+            entry.compiled = stats.get(id).cloned();
+        }
+        for (id, list_stats) in stats {
+            status.entry(id.clone()).or_default().compiled = Some(list_stats.clone());
+        }
     }
 
     fn record_status(&self, id: &str, result: RefreshResult, refreshed_now: bool) {
@@ -781,7 +857,19 @@ mod tests {
             MatchDecision::Block(_)
         ));
         let status = manager.status("oisd-basic").unwrap();
-        assert!(matches!(status.last_result, RefreshResult::Failed(_)));
+        let RefreshResult::Failed(message) = &status.last_result else {
+            panic!("expected a failed refresh, got {:?}", status.last_result);
+        };
+        // The recorded message must carry the cause, not just reqwest's outer
+        // "error sending request for url (…)" — that sentence is identical for
+        // a DNS failure, a refused connection and a rejected certificate, and
+        // on a distroless image it is the only diagnostic there is.
+        assert!(message.starts_with(&format!("fetch {dead_url} failed")));
+        assert!(
+            message.to_ascii_lowercase().contains("connect"),
+            "the refused connection must be named, not hidden behind reqwest's \
+             generic outer message; got: {message}"
+        );
     }
 
     #[tokio::test]
@@ -871,6 +959,78 @@ mod tests {
             manager.add_list(&list("extra", "https://other.invalid")),
             Err(LifecycleError::DuplicateList(_))
         ));
+    }
+
+    /// Answers every hostname with 127.0.0.1, which the system resolver will
+    /// not do for a `.invalid` name — so a fetch that succeeds proves the
+    /// injected resolver, not `/etc/resolv.conf`, did the work.
+    struct LoopbackResolver;
+
+    impl HostResolver for LoopbackResolver {
+        fn resolve(&self, _host: String) -> Resolving {
+            Box::pin(async { Ok(vec![std::net::IpAddr::V4(std::net::Ipv4Addr::LOCALHOST)]) })
+        }
+    }
+
+    #[tokio::test]
+    async fn list_downloads_go_through_the_injected_resolver() {
+        let data_dir = tempfile::tempdir().unwrap();
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        tokio::spawn(serve_once(listener, "||ads.invalid^\n"));
+
+        // `.invalid` is reserved as never-resolvable (RFC 2606), so the system
+        // resolver cannot reach this — only LoopbackResolver can.
+        let url = format!("http://lists.example.invalid:{port}/");
+        let manager = ListManager::with_resolver(
+            &config_with(vec![list("blocklist", &url)]),
+            data_dir.path().to_path_buf(),
+            Arc::new(LoopbackResolver),
+        )
+        .unwrap();
+
+        let stats = manager.refresh_list("blocklist").await.unwrap();
+        assert_eq!(stats.active, 1);
+    }
+
+    #[tokio::test]
+    async fn compiled_counts_track_the_serving_ruleset_not_the_last_refresh() {
+        let data_dir = tempfile::tempdir().unwrap();
+        let url = local_server("||ads.invalid^\n").await;
+        let manager = ListManager::with_resolver(
+            &config_with(vec![list("blocklist", &url)]),
+            data_dir.path().to_path_buf(),
+            Arc::new(LoopbackResolver),
+        )
+        .unwrap();
+
+        manager.refresh_list("blocklist").await.unwrap();
+        let compiled = manager.status("blocklist").unwrap().compiled.unwrap();
+        assert_eq!(compiled.active, 1);
+
+        // The one-shot server is gone, so this refresh cannot succeed — but the
+        // rule it already compiled keeps blocking, and must keep being counted.
+        assert!(manager.refresh_list("blocklist").await.is_err());
+        let status = manager.status("blocklist").unwrap();
+        assert!(matches!(status.last_result, RefreshResult::Failed(_)));
+        assert_eq!(
+            status.compiled.unwrap().active,
+            1,
+            "a failed fetch leaves the previous ruleset serving"
+        );
+
+        // Disabling *does* remove it from the ruleset, so now the count drops.
+        manager
+            .update_list(
+                "blocklist",
+                &ListPatch {
+                    enabled: Some(false),
+                    refresh_hours: None,
+                },
+            )
+            .await
+            .unwrap();
+        assert_eq!(manager.status("blocklist").unwrap().compiled, None);
     }
 
     #[tokio::test]

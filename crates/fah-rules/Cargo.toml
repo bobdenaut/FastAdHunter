@@ -14,6 +14,7 @@ workspace = true
 # enforced by the layering guard test.
 [dependencies]
 arc-swap = { workspace = true }
+fah-common = { path = "../fah-common" }
 fah-config = { path = "../fah-config" }
 fah-model = { path = "../fah-model" }
 reqwest = { workspace = true }

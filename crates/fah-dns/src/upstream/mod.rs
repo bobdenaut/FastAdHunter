@@ -17,7 +17,8 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use fah_config::{DnsUpstreamsConfig, UpstreamProtocol, UpstreamServerConfig, UpstreamStrategy};
-use hickory_proto::op::Message;
+use hickory_proto::op::{Message, Query as WireQuery};
+use hickory_proto::rr::{Name, RData, RecordType};
 use rustls::pki_types::ServerName;
 use rustls::ClientConfig;
 use tracing::debug;
@@ -87,6 +88,68 @@ impl UpstreamPool {
             servers: servers.into(),
             timeout: Duration::from_millis(u64::from(config.timeout_ms)),
         })
+    }
+
+    /// Resolves a hostname to addresses over the configured upstreams — the
+    /// same servers that answer client queries, reached the same way.
+    ///
+    /// This is *not* the query pipeline: it skips the Rule Engine and the
+    /// cache deliberately. Running it through the pipeline would let a
+    /// blocklist blacklist the host serving the next copy of itself, so a
+    /// single bad rule could stop all future list updates with no way back
+    /// short of editing the config by hand.
+    ///
+    /// `A` and `AAAA` go out concurrently and either one carrying addresses is
+    /// enough. That matters on a v4-only or v6-only link, where the other
+    /// family's query legitimately comes back empty or fails — treating that
+    /// as a total failure is precisely the musl `getaddrinfo` behaviour that
+    /// broke list fetches in the first place (p1-11 defect 2).
+    pub async fn resolve_host(&self, host: &str) -> io::Result<Vec<IpAddr>> {
+        let name = Name::from_utf8(host)
+            .map_err(|err| invalid(format!("invalid hostname {host:?}: {err}")))?;
+
+        let (v4, v6) = tokio::join!(
+            self.lookup(&name, RecordType::A),
+            self.lookup(&name, RecordType::AAAA),
+        );
+
+        let mut addrs = Vec::new();
+        // v4 first: on a link with no working IPv6 this puts a usable address
+        // at the front, and the connector tries them in order.
+        for found in [&v4, &v6].into_iter().flatten() {
+            addrs.extend(found.iter().copied());
+        }
+        if !addrs.is_empty() {
+            return Ok(addrs);
+        }
+        // Nothing usable — report why, preferring a transport error over a
+        // merely empty answer, since that is the actionable one.
+        match (v4, v6) {
+            (Err(err), _) | (_, Err(err)) => Err(err),
+            _ => Err(io::Error::new(
+                io::ErrorKind::NotFound,
+                format!("no addresses for {host}"),
+            )),
+        }
+    }
+
+    async fn lookup(&self, name: &Name, record_type: RecordType) -> io::Result<Vec<IpAddr>> {
+        let mut query = Message::query();
+        query.add_query(WireQuery::query(name.clone(), record_type));
+        query.metadata.recursion_desired = true;
+
+        let response = self.forward(&query).await?;
+        Ok(response
+            .answers
+            .iter()
+            .filter_map(|record| match &record.data {
+                RData::A(a) => Some(IpAddr::V4(a.0)),
+                RData::AAAA(aaaa) => Some(IpAddr::V6(aaaa.0)),
+                // CNAMEs in the chain are ignored: the upstream is recursive,
+                // so the addresses it resolved to are in this same answer.
+                _ => None,
+            })
+            .collect())
     }
 
     pub fn status(&self) -> Vec<UpstreamStatus> {
@@ -342,6 +405,80 @@ mod tests {
         let addr = socket.local_addr().unwrap();
         drop(socket);
         addr
+    }
+
+    /// Serves `count` UDP requests, answering `A` with 93.184.216.34 and
+    /// leaving `AAAA` unanswered when `answer_aaaa` is false — the shape of a
+    /// host with no IPv6, and of the link where musl's all-or-nothing
+    /// `getaddrinfo` broke list fetches (p1-11 defect 2).
+    async fn family_aware_udp_server(count: usize, answer_aaaa: bool) -> SocketAddr {
+        let socket = UdpSocket::bind("127.0.0.1:0").await.unwrap();
+        let addr = socket.local_addr().unwrap();
+        tokio::spawn(async move {
+            for _ in 0..count {
+                let mut buf = [0u8; 4096];
+                let (len, client) = socket.recv_from(&mut buf).await.unwrap();
+                let request = Message::from_vec(&buf[..len]).unwrap();
+                let is_aaaa = request.queries[0].query_type() == RecordType::AAAA;
+                if is_aaaa && !answer_aaaa {
+                    continue; // silence, so the AAAA lookup times out
+                }
+                let mut response = Message::response(request.metadata.id, OpCode::Query);
+                response.metadata.response_code = ResponseCode::NoError;
+                response.queries = request.queries.clone();
+                if !is_aaaa {
+                    response.add_answer(Record::from_rdata(
+                        Name::from_ascii("lists.example.com.").unwrap(),
+                        300,
+                        RData::A(A(Ipv4Addr::new(93, 184, 216, 34))),
+                    ));
+                }
+                let reply = response.to_vec().unwrap();
+                socket.send_to(&reply, client).await.unwrap();
+            }
+        });
+        addr
+    }
+
+    #[tokio::test]
+    async fn resolve_host_uses_the_configured_upstreams() {
+        let addr = family_aware_udp_server(2, true).await;
+        let pool = pool_of(vec![udp_server_config(addr)], 2000);
+
+        let addrs = pool.resolve_host("lists.example.com").await.unwrap();
+        assert_eq!(addrs, vec![IpAddr::V4(Ipv4Addr::new(93, 184, 216, 34))]);
+    }
+
+    #[tokio::test]
+    async fn resolve_host_succeeds_when_only_one_address_family_answers() {
+        // AAAA gets no reply at all; the A answer alone must still be enough.
+        // Treating a dead family as total failure is exactly the bug this
+        // whole port exists to avoid.
+        let addr = family_aware_udp_server(2, false).await;
+        let pool = pool_of(vec![udp_server_config(addr)], 300);
+
+        let addrs = pool.resolve_host("lists.example.com").await.unwrap();
+        assert_eq!(addrs, vec![IpAddr::V4(Ipv4Addr::new(93, 184, 216, 34))]);
+    }
+
+    #[tokio::test]
+    async fn resolve_host_errors_when_no_upstream_answers() {
+        let pool = pool_of(vec![udp_server_config(dead_addr().await)], 200);
+
+        let err = pool.resolve_host("lists.example.com").await.unwrap_err();
+        assert!(
+            !err.to_string().is_empty(),
+            "the caller logs this chain; it must say something"
+        );
+    }
+
+    #[tokio::test]
+    async fn resolve_host_rejects_a_hostname_it_cannot_parse() {
+        let pool = pool_of(vec![udp_server_config(dead_addr().await)], 200);
+
+        // No network round trip should be attempted for this.
+        let err = pool.resolve_host("not a hostname").await.unwrap_err();
+        assert_eq!(err.kind(), io::ErrorKind::InvalidInput);
     }
 
     #[tokio::test]

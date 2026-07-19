@@ -67,6 +67,14 @@ stores verdicts; the Rule Engine runs before the cache on every query.
 An external DNS resolver FastAdHunter forwards unblocked, uncached queries to.
 Speaks plain DNS, DoT, or DoH.
 
+### Port
+
+A trait a lower layer declares to describe what it needs from a higher one, so
+the binary can supply the implementation without the dependency arrow pointing
+upward. `HostResolver` (declared by the Rule Engine, implemented over the
+Upstreams) and `StatsSource`/`TelemetrySource` (declared by the API) are the
+existing ones. See ARCHITECTURE.md §Dependency Layering.
+
 ### Query Log
 
 The bounded, persisted record of individual queries (timestamp, client, domain,

@@ -17,7 +17,18 @@ criterion = { version = "0.5", default-features = false, features = ["cargo_benc
 arc-swap = "1.9"
 # default-features off drops native-tls/openssl; "rustls" is this project's
 # only TLS backend (SECURITY.md: rustls/rcgen/x509-parser, no other crypto).
-reqwest = { version = "0.13", default-features = false, features = ["rustls"] }
+#
+# "hickory-dns" replaces the default `getaddrinfo` resolver with the pure-Rust
+# one. Not a preference: the binary is statically linked against musl, whose
+# `getaddrinfo` issues the A and AAAA queries together and fails the *entire*
+# lookup with EAI_AGAIN when either goes unanswered, instead of returning the
+# family that did resolve. On the RB5009 that silently left the ruleset empty
+# while the resolver itself kept serving traffic. It reuses the hickory-proto
+# already in-tree for the DNS upstreams, so this costs one crate, not a stack.
+reqwest = { version = "0.13", default-features = false, features = [
+    "rustls",
+    "hickory-dns",
+] }
 # DNS wire format only (ARCHITECTURE.md: "hickory-proto; fah-model holds our
 # own domain types only"). No dnssec-* feature: Phase 1 is pass-through, not
 # validation (ARCHITECTURE.md §Listeners).

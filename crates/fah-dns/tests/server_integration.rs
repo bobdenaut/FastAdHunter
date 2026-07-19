@@ -71,7 +71,8 @@ async fn start_server(rules_text: &str) -> (Server, Arc<AtomicU64>, tempfile::Te
         address: "127.0.0.1".to_string(),
         port: 0,
     };
-    let server = Server::bind(&listen, pipeline).await.unwrap();
+    let mut server = Server::bind(&listen).await.unwrap();
+    server.serve(pipeline);
     (server, calls, data_dir)
 }
 
@@ -261,7 +262,8 @@ async fn full_pipeline_forwards_via_upstream_pool_and_caches_the_answer() {
         address: "127.0.0.1".to_string(),
         port: 0,
     };
-    let server = Server::bind(&listen, pipeline).await.unwrap();
+    let mut server = Server::bind(&listen).await.unwrap();
+    server.serve(pipeline);
 
     for _ in 0..2 {
         let reply = udp_roundtrip(server.udp_addr(), &encode_a_query("example.com.")).await;

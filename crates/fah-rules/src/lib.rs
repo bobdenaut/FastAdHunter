@@ -10,7 +10,8 @@ mod rule_list;
 
 pub use format::{detect_format, RuleFormat};
 pub use lifecycle::{
-    LifecycleError, ListEntryView, ListManager, ListPatch, ListStatus, RefreshResult, RefreshStats,
+    HostResolver, LifecycleError, ListEntryView, ListManager, ListPatch, ListStatus, RefreshResult,
+    RefreshStats, Resolving,
 };
 pub use matcher::{MatchDecision, Matcher, MatcherBuilder, RuleRef};
 pub use rule::{DomainRule, InactiveReason, ParsedRule, RuleAction, RuleKind};

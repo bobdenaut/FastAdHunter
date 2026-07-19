@@ -20,6 +20,13 @@ pub struct AppState {
     pub keys: Arc<ApiKeyStore>,
     pub events: EventHub,
     pub started_at: Instant,
+    /// Serializes `POST`/`PATCH`/`DELETE /api/v1/lists`. Each of those reads
+    /// the current list set, writes the resulting set back to
+    /// `fastadhunter.toml`, then mutates the `ListManager` — three steps that
+    /// must not interleave, or two concurrent writers persist list sets that
+    /// each omit the other's change. Admin-plane only; nothing on the DNS hot
+    /// path ever takes it.
+    pub list_mutations: tokio::sync::Mutex<()>,
 }
 
 impl AppState {
@@ -55,6 +62,7 @@ impl AppStateBuilder {
             keys: self.keys,
             events,
             started_at: Instant::now(),
+            list_mutations: tokio::sync::Mutex::new(()),
         })
     }
 }

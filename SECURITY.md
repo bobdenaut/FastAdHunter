@@ -53,7 +53,15 @@ x509-parser only; no hand-rolled TLS or crypto anywhere.
 
 - **Distroless/static image**: no shell, no package manager, no interpreter —
   the attack surface is one static binary plus a CA bundle.
-- Runs as **non-root**; requires no capabilities beyond binding its ports.
+- **Serves as non-root.** The entrypoint starts as root solely to bind port 53,
+  then drops permanently to uid/gid 65532 — supplementary groups cleared,
+  `setgid` before `setuid`, and the drop verified irreversible — before any
+  query is answered or the API is bound. No query, no HTTP request and no
+  write to `/config` or `/data` is ever handled by a privileged process.
+  Started unprivileged (a high port, or a runtime that permits 53), it stays
+  that way and the drop is a no-op. See
+  [ADR-0004](docs/decisions/0004-privileged-port-binding.md) for why file
+  capabilities are not used instead — RouterOS strips them on import.
 - Root filesystem read-only; writes only to the `/config` and `/data` mounts.
 - Healthcheck via `fastadhunter --healthcheck` (self-probe; no shell tools).
 

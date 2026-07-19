@@ -1,0 +1,196 @@
+# Configuration — API.md §Configuration, CONFIGURATION.md
+#
+# POST is a PARTIAL update, deep-merged onto the effective config, validated,
+# written back to /config/fastadhunter.toml, then applied:
+#
+#   runtime-mutable key -> applied live via atomic swap  -> "applied": true
+#   boot-only key       -> persisted, needs a restart    -> "restart_required": true
+#
+# CAUTION: the file is written from the EFFECTIVE config, so any value that
+# came from an environment variable gets baked in permanently. Start the
+# container with FAH__DNS__LISTEN__PORT=5353, POST anything here, and the file
+# now says 5353 even after you remove the variable.
+
+@base = {{host}}/api/v1
+@auth = Authorization: Bearer {{apiKey}}
+
+### Effective config, all sources merged (defaults < file < env < API).
+### Secrets are absent by construction — the API key and TLS private key live
+### in their own /config files and never enter this tree.
+GET {{base}}/config
+{{auth}}
+
+### Runtime key — expect { "applied": true, "restart_required": false }.
+POST {{base}}/config
+{{auth}}
+Content-Type: application/json
+
+{
+  "dns": {
+    "cache": {
+      "max_entries": 20000
+    }
+  }
+}
+
+### Boot-only key — expect { "applied": false, "restart_required": true }.
+### The value is persisted but the running process keeps the old one.
+POST {{base}}/config
+{{auth}}
+Content-Type: application/json
+
+{
+  "api": {
+    "port": 8443
+  }
+}
+
+### Mixed patch — expect both flags true.
+POST {{base}}/config
+{{auth}}
+Content-Type: application/json
+
+{
+  "api": { "port": 8443 },
+  "dns": { "cache": { "max_entries": 10000 } }
+}
+
+### Nested keys merge; siblings are untouched. Only min_ttl_seconds changes
+### here — max_ttl_seconds, serve_stale and the rest survive.
+POST {{base}}/config
+{{auth}}
+Content-Type: application/json
+
+{
+  "dns": {
+    "cache": {
+      "min_ttl_seconds": 30
+    }
+  }
+}
+
+### Blocking mode and TTL.
+POST {{base}}/config
+{{auth}}
+Content-Type: application/json
+
+{
+  "dns": {
+    "blocking": {
+      "mode": "null_ip",
+      "ttl_seconds": 10
+    }
+  }
+}
+
+### Put /health and /metrics behind the API key.
+POST {{base}}/config
+{{auth}}
+Content-Type: application/json
+
+{
+  "api": {
+    "metrics_public": false
+  }
+}
+
+### Log level — runtime-mutable, no restart.
+POST {{base}}/config
+{{auth}}
+Content-Type: application/json
+
+{
+  "log": {
+    "level": "debug"
+  }
+}
+
+### Query log retention.
+POST {{base}}/config
+{{auth}}
+Content-Type: application/json
+
+{
+  "query_log": {
+    "enabled": true,
+    "retention_days": 7,
+    "retention_max_mb": 500
+  }
+}
+
+### Upstream servers. ARRAYS REPLACE WHOLESALE — they do not merge, so send
+### the complete set. Same for [[rules.lists]]: a partial array would silently
+### drop the entries you left out.
+POST {{base}}/config
+{{auth}}
+Content-Type: application/json
+
+{
+  "dns": {
+    "upstreams": {
+      "strategy": "fallback",
+      "timeout_ms": 2000,
+      "servers": [
+        { "address": "1.1.1.1", "protocol": "udp" },
+        { "address": "9.9.9.9", "protocol": "udp" }
+      ]
+    }
+  }
+}
+
+### Encrypted upstreams (DoT). Opt-in — without them the ISP sees every query
+### in plaintext (SECURITY.md §Upstream privacy).
+POST {{base}}/config
+{{auth}}
+Content-Type: application/json
+
+{
+  "dns": {
+    "upstreams": {
+      "servers": [
+        { "address": "1.1.1.1", "protocol": "dot", "hostname": "cloudflare-dns.com" }
+      ]
+    }
+  }
+}
+
+### Unknown key — expect 422. `deny_unknown_fields` turns a typo into an error
+### rather than a silently ignored setting, and NOTHING is persisted.
+POST {{base}}/config
+{{auth}}
+Content-Type: application/json
+
+{
+  "dns": {
+    "cache": {
+      "max_entrees": 1
+    }
+  }
+}
+
+### Semantically invalid — expect 422 naming the constraint. A rejected patch
+### leaves both the file and the running config untouched.
+POST {{base}}/config
+{{auth}}
+Content-Type: application/json
+
+{
+  "dns": {
+    "listen": {
+      "port": 0
+    }
+  }
+}
+
+### No-op patch — same value as current. Expect both flags false.
+POST {{base}}/config
+{{auth}}
+Content-Type: application/json
+
+{
+  "dns": {
+    "cache": {
+      "max_entries": 10000
+    }
+  }
+}

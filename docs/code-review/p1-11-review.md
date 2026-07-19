@@ -2,8 +2,9 @@
 
 **Scope:** `docs/deploy-rb5009.md` · on-device deployment to a live MikroTik
 RB5009 (RouterOS 7, arm64) · **Date:** 2026-07-19 · **Status:** deployment
-validated, budgets measured at 1.19M rules; 24h soak NOT run; six defects
-found, none fixed yet.
+validated, budgets measured at 1.19M rules; 24h soak NOT run. Six defects
+found: 1, 3 and 4 fixed and verified on the device; 2 fixed pending a device
+check; 5 worked around; 6 open.
 
 ## Overall assessment
 
@@ -18,7 +19,18 @@ contract*. Four documented assumptions turned out to be wrong on RouterOS
 API silently loses data across restart. None of these are visible from a
 development machine running Docker, which is exactly why this task exists.
 
-No code was changed. The only repository change is `docs/deploy-rb5009.md`.
+Four of the six have since been fixed and three of those re-verified against the
+live RB5009 — list persistence survives a restart, the privileged-port question
+is settled as [ADR-0004](../decisions/0004-privileged-port-binding.md), and the
+fetch failures now name their cause. Defect 2's fix awaits a device check;
+defects 5 and 6 remain open. Deployment findings are in
+`docs/deploy-rb5009.md`.
+
+Worth recording: **two of the six were initially misdiagnosed**, and both
+misdiagnoses were downstream of defect 3. Reasoning from a stripped error
+message produced a confident, wrong root cause for defect 2 and a fix direction
+that would have been a no-op. Fixing the diagnostics first is what made the
+rest cheap.
 
 ---
 
@@ -164,7 +176,7 @@ drop, where it has no effect.
 
 ## 3. Defects
 
-### 1. HIGH — list mutations via the API are never persisted
+### 1. HIGH — list mutations via the API are never persisted — **FIXED**
 
 `POST /api/v1/lists` returns `201 Created`, the list downloads, compiles and
 blocks live traffic — and disappears on restart, silently.
@@ -202,7 +214,43 @@ reboots the router, and is unprotected with no indication anything changed.
 `post_config` so persistence cannot be forgotten again. Needs a regression test
 that restarts a `ListManager` against the same `/config` and `/data`.
 
-### 2. MEDIUM — no IPv4 fallback when IPv6 is broken
+#### Persistence fix as applied (2026-07-19)
+
+All three handlers now read the current list set, write the resulting set back
+through `ConfigStore::apply_patch`, and only then mutate the `ListManager`.
+
+- **Persist before mutating.** The durable record is the step allowed to fail.
+  A failed write returns `500` and the mutation does not happen, so the file
+  and the engine cannot disagree — the reverse order would need a rollback that
+  can itself fail.
+- **One shared path.** `persist_lists` goes through `apply_patch`, the same
+  validated + atomic write `post_config` uses; `merge` already replaces arrays
+  wholesale, which is the right semantics for `[[rules.lists]]`.
+- **`AppState::list_mutations`.** Read-modify-write across three steps needs
+  serializing, or two concurrent writers each persist a set omitting the
+  other's change. Admin-plane only — nothing on the DNS hot path takes it.
+
+Regression test: `list_mutations_are_persisted_to_the_config_file`
+([tests/api.rs](../../crates/fah-api/tests/api.rs)) — reparses the TOML from
+disk (what a restart actually sees) after create/patch/delete, and asserts a
+rejected duplicate and a 404 delete leave the file untouched. Verified to fail
+against the unfixed code (0 lists persisted, expected 2).
+
+**Known side effect, accepted:** `apply_patch` writes the *effective* config,
+so env-var overrides get baked into the file — on the RB5009 the first list
+mutation writes `port = 5353` into `fastadhunter.toml`. This is pre-existing
+behaviour of `POST /api/v1/config` ("the file always reflects the running
+intent", CONFIGURATION.md), now reachable via list edits too. Harmless here
+since the value matches the deployment, but removing `FAH__DNS__LISTEN__PORT`
+later would no longer revert the port. Separating file-sourced from effective
+config is a larger design question — not taken on here.
+
+### 2. MEDIUM — list fetches fail in name resolution — **FIXED, pending device check**
+
+> The original title was "no IPv4 fallback when IPv6 is broken". That diagnosis
+> was wrong in both halves — there is a fallback, and IPv6 was never the
+> problem. The original text is kept below, followed by the correction and the
+> measured root cause, because how it was misread is the useful part.
 
 The list fetcher resolves a hostname, gets an AAAA, attempts IPv6, and fails
 after ~2 s with no fallback to the A record.
@@ -227,7 +275,78 @@ the v6 route. Whichever it is, the client should not depend on it.
 **Fix direction:** happy-eyeballs (RFC 8305) or explicit A-record fallback in
 the `reqwest` client.
 
-### 3. MEDIUM — fetch errors discard their cause
+#### Correction (2026-07-19): the above diagnosis does not hold
+
+Happy-eyeballs is **already enabled**. `reqwest` builds on hyper-util's
+`HttpConnector`, whose `happy_eyeballs_timeout` defaults to `Some(300ms)`
+(`hyper-util-0.1.20/src/client/legacy/connect/http.rs:231`); `ConnectingTcp::new`
+splits the resolved addresses by family and races the second family after that
+delay. A fallback path exists whenever the resolver returns both an A and an
+AAAA, so "attempts IPv6, no fallback to the A record" cannot be what happened —
+and adding happy-eyeballs would have been a no-op patch.
+
+The failure is therefore more likely *before* the connect, in name resolution,
+where there is no fallback to speak of. Leading unconfirmed hypothesis: this is
+a static **musl** binary and `reqwest`'s default resolver is `GaiResolver`, i.e.
+musl's `getaddrinfo`, which queries A and AAAA in parallel and fails the whole
+lookup if one query goes unanswered rather than returning the family that did
+resolve. That would fit the observed table exactly — the A-only host resolved,
+the A+AAAA host did not, and an IP literal needed no resolution at all.
+
+**Why this was not caught the first time:** defect 3. The only evidence on the
+device was reqwest's outer message, which is identical for a DNS failure and a
+connect failure, so "IPv6 was attempted" was inferred rather than observed.
+
+#### Root cause, measured on the device (2026-07-19)
+
+The very first boot carrying defect 3's fix named it outright:
+
+```text
+fetch https://small.oisd.nl failed: error sending request for url (…):
+  client error (Connect): dns error:
+  failed to lookup address information: Try again
+```
+
+`Try again` is **`EAI_AGAIN`** from `getaddrinfo`. The connection was never
+attempted — the hostname never resolved. This confirms the hypothesis above and
+kills the original entry: IPv6 was never reached, so no amount of fallback
+logic would have helped.
+
+The `~2 s` in the original report corroborates it independently: that is the
+`timeout:2` in the container's mounted `resolv.conf`, a *resolver* timeout. A
+refused connection returns immediately and an unreachable route fails on a
+different clock entirely.
+
+**Fix as applied:** the `hickory-dns` feature on `reqwest`, replacing musl's
+`getaddrinfo` with the pure-Rust resolver, plus an explicit `.hickory_dns(true)`
+in `ListManager::new`. The call is feature-gated, so dropping the feature later
+breaks the build instead of silently restoring the old behaviour. It reuses the
+`hickory-proto` already in-tree for DNS upstreams — one added crate, not a
+second DNS stack.
+
+**Verified on hardware (2026-07-19).** With the hickory resolver, the boot
+scheduler refreshed every remote list without a word — successful refreshes log
+nothing — where the previous image failed `small.oisd.nl` at the same point
+with `dns error: … Try again`. The only failure in that run was a local-file
+list pointing at a path that genuinely did not exist:
+
+```text
+WARN scheduled list refresh failed list=custom
+     error=read local list "/data/lists/custom.txt": No such file or directory (os error 2)
+```
+
+which is defect 3's fix demonstrating itself on an unrelated code path.
+
+#### What this cost, and why
+
+Defect 3 is the reason this took two attempts. Yesterday the only evidence was
+reqwest's outer message, which reads identically for a DNS failure and a
+connect failure, so "IPv6 was attempted" was *inferred* and written up as
+observed. The inference then survived into a fix direction (happy-eyeballs)
+that would have changed nothing, since hyper-util already does it by default.
+Fixing the diagnostics first turned a day of bisecting into one log line.
+
+### 3. MEDIUM — fetch errors discard their cause — **FIXED**
 
 ```text
 fetch https://small.oisd.nl failed: error sending request for url (https://small.oisd.nl/)
@@ -244,7 +363,32 @@ unnecessary.
 
 **Fix direction:** walk `source()` and include the underlying error.
 
-### 4. DESIGN / ADR — port 53 cannot be bound on RouterOS
+#### Error-chain fix as applied (2026-07-19)
+
+`fah_common::error_chain(&dyn Error)` walks the `source()` chain and joins it,
+skipping any layer whose own `Display` already interpolates its source (so
+`LifecycleError::Fetch`'s `"fetch {url} failed: {source}"` does not stutter).
+Applied at the three places an error stops being typed: the recorded
+`RefreshResult::Failed` status, the scheduler's warning, and the API's
+manual-refresh warning.
+
+```text
+before  fetch http://…/ failed: error sending request for url (http://…/)
+after   fetch http://…/ failed: error sending request for url (http://…/):
+        client error (Connect): tcp connect error: …refused it. (os error 10061)
+```
+
+`error_chain` lives in `fah-common` (L1) since `fah-rules` and `fah-api` both
+need it; both edges point downward. Covered by unit tests in `fah-common` and
+an assertion in `kill_the_network_keeps_previous_ruleset_and_surfaces_failure`
+that the refused connection is named.
+
+**Still missing:** `GET /api/v1/lists` maps `RefreshResult::Failed(_)` to the
+bare string `"failed"` and drops the message, so this diagnostic is reachable
+only through the container log. Exposing it would mean a new field in API.md's
+list object — worth doing, not done here.
+
+### 4. DESIGN / ADR — port 53 cannot be bound on RouterOS — **RESOLVED**
 
 RouterOS honours the image's `USER nonroot` (uid 65532) and does **not** set
 `net.ipv4.ip_unprivileged_port_start=0` as Docker does. Binding 53 fails with
@@ -272,7 +416,35 @@ RouterOS image variant, matching the category norm; (c) document the redirect
 requirement, which is the worst outcome for a product whose competitor needs
 none. Needs an ADR and a SECURITY.md correction either way.
 
-### 5. DEPLOYMENT — RouterOS does not populate `/etc/resolv.conf`
+**Resolved (2026-07-19)** as [ADR-0004](../decisions/0004-privileged-port-binding.md),
+by measurement rather than preference. Option (c) was rejected outright: it
+closes the LAN-IP + DHCP topology for every user, not only those who already
+have a redirect. Option (a) — non-root plus `setcap` — was the better outcome
+and was tested first. BuildKit preserves the capability xattr (verified by
+decoding it out of the shipped layer); **RouterOS does not honour it**, and the
+container died with the same `EACCES`. So option B: root at entry, bind 53,
+drop to uid 65532 before serving.
+
+Validated on the device:
+
+```text
+DNS listeners bound udp=0.0.0.0:53 tcp=0.0.0.0:53
+dropped privileges after binding uid=65532 gid=65532
+generated API key — store it now; it is not shown again
+API listening url=https://0.0.0.0:8443
+```
+
+The order is the guarantee. `fah_dns::Server::bind` was split from
+`Server::serve` for exactly this: previously `bind` spawned its listener tasks,
+so any drop afterwards left a window where queries were answered as root. The
+sockets now sit idle until the drop completes. The API key being written after
+the drop confirms `/config` is writable as the service user.
+
+**Not yet exercised:** the `chown` *adopt* branch. `/config` was already owned
+by 65532 on this run, so the skip branch ran. A first boot onto a root-owned
+volume remains untested.
+
+### 5. DEPLOYMENT — RouterOS does not populate `/etc/resolv.conf` — **FIXED (2026-07-19), pending device check**
 
 RouterOS accepts `dns=` on the container and displays it in
 `/container/print detail`, but does not write it into the container's
@@ -286,7 +458,41 @@ cost of hardcoding a resolver — worth considering alongside defect 2, since
 both stem from the list fetcher depending on the *system* resolver while the
 process is itself a fully configured DNS resolver.
 
-### 6. LOW — status and id defects
+#### Fix as applied (2026-07-19)
+
+Took the last sentence at its word rather than baking in a `resolv.conf`. The
+fetcher now resolves list hosts through `[[dns.upstreams.servers]]` — the same
+servers already answering client queries — so `/etc/resolv.conf` is never
+consulted and the mount is gone from the deployment guide. This also removes
+the hardcoded-resolver privacy question a baked-in file would have created:
+list downloads go wherever the operator's upstreams point, encrypted if those
+are DoT/DoH.
+
+**Layering.** `fah-rules` is L2 and `fah-dns` is L3, so the fetcher cannot
+import the DNS engine. `fah-rules` declares a `HostResolver` port; the binary
+implements it over `UpstreamPool` in `adapters.rs`, next to the existing
+`StatsSource`/`TelemetrySource` adapters. Arrows still point down only, and the
+new port is documented in ARCHITECTURE.md §Dependency Layering.
+
+**Two deliberate choices:**
+
+- *Not through the pipeline.* `UpstreamPool::resolve_host` skips the Rule
+  Engine and the cache. Routing it through the pipeline would let a blocklist
+  block the host serving its own next copy — a self-inflicted, unrecoverable
+  state short of hand-editing the config.
+- *Either address family is enough.* `A` and `AAAA` go out concurrently and a
+  failure or empty answer on one is not fatal. That is defect 2's root cause
+  (musl's all-or-nothing `getaddrinfo`) fixed structurally rather than by
+  swapping resolver libraries, and it directly covers the veth IPv6 trap in
+  §3.1 of the deployment guide.
+
+`ListManager::new` still uses the system resolver and is what tests and benches
+use; the binary calls `ListManager::with_resolver`. Regression test
+`list_downloads_go_through_the_injected_resolver` fetches from a `.invalid`
+hostname — unresolvable by any system resolver — and was confirmed to fail
+against `ListManager::new` before being kept.
+
+### 6. LOW — status and id defects — **FIXED (2026-07-19), pending device check**
 
 - **Stale status after boot.** Post-restart, `oisd-basic` reported
   `status=failed, rules=0, last_refresh=null` while the matcher was actively
@@ -297,7 +503,51 @@ process is itself a fully configured DNS resolver.
   `409 conflict`. Two unrelated lists cannot coexist without an explicit id.
 - **Undocumented `id` field.** `POST /api/v1/lists` accepts `id`, which is what
   works around the collision, but API.md documents only
-  `{url, enabled, refresh_hours}`.
+  `{url, enabled, refresh_hours}`. *(Documented 2026-07-19.)*
+- **Nothing rejects two lists sharing a URL.** Only ids are checked for
+  uniqueness, so `POST` without an `id` on a URL that is already configured
+  under a different id succeeds and the same list is fetched, cached and
+  compiled twice — double bandwidth, double heap, duplicate rules in the
+  matcher. Hit accidentally on 2026-07-19: the shipped default carries
+  `https://small.oisd.nl` as `oisd-basic`, and adding that URL without an `id`
+  derived `small.oisd.nl` and was accepted. At ~30 MB per large list this is
+  not a trivial waste on a 1 GB router. Either reject a duplicate URL with 409,
+  or return the existing entry.
+
+#### Fixes as applied (2026-07-19)
+
+**Status.** The root cause was one field doing two jobs: `rules_total` was read
+out of `last_result`, so any refresh failure reported zero rules for a list
+whose rules were still compiled and still blocking — the API said "unprotected"
+at exactly the moment protection was in fact intact. `ListStatus` now carries a
+separate `compiled: Option<RefreshStats>` — what the list contributes to the
+ruleset that is *serving* — and `last_result` keeps meaning "what the last
+fetch did". `GET /api/v1/lists` reads the counts from the former and
+`last_status` from the latter, so `"failed"` alongside a non-zero `rules_total`
+is now the expected shape and is documented in API.md.
+
+`compiled` is written by a single new `ListManager::swap_in`, which publishes
+the matcher and records the per-list counts in the same step. All five compile
+sites (boot, refresh, add, remove, user rules) go through it, so the reported
+numbers cannot drift from the matcher actually installed; two of those sites
+previously discarded the stats entirely. A list that drops out of a compile
+(disabled, removed, cache file gone) has `compiled` cleared rather than keeping
+a number it no longer earns.
+
+**Duplicate URL.** `POST /api/v1/lists` now rejects a source already held by
+another list with `409` naming that list, regardless of the `id` offered. The
+check sits in the same `list_mutations`-guarded read-then-write section as the
+id check, so it cannot race a concurrent add.
+
+**Derived-id collision.** Left as-is — an explicit `id` is the right answer and
+inventing a suffix would silently create near-identical ids. The `409` now says
+the id was *derived* and points at the `id` field, so the caller is not left
+wondering why a name they never chose is taken.
+
+**Not changed:** boot-from-cache still reports `last_status: "ok"` with
+`last_refresh: null`. That pair reads as "loaded from cache, not yet refreshed
+this run", which is accurate; the counts, which were the misleading part, now
+come from elsewhere.
 
 ---
 
@@ -313,11 +563,27 @@ hosts + 1Hosts Xtra).
 | Verdict + cache hit p99 | <1 ms | **0.034 ms** | pass |
 | Blocked query p99 | <1 ms | **0.042 ms** | pass |
 | Container image size | ≤30 MB | **12 MB** | pass |
-| Startup to serving @1M | 1–3 s | 153 ms **@55k only** | **not validated** |
+| Startup to serving @1M | 1–3 s | **2.99 s** @1.19M | pass, no margin |
 | Sustained throughput | ≥10k QPS | not measured | **not validated** |
 
 Cost per rule: **33.2 bytes**. Memory was flat across a 2-minute observation at
 full ruleset — no growth.
+
+**Startup, measured 2026-07-19** (boot to API listening, 1,188,420 rules
+compiled from `/data` cache):
+
+```text
+11:32:46.739  fastadhunter starting
+11:32:49.721  ruleset compiled from cache rules=1188420
+11:32:49.726  API listening
+```
+
+2.99 s against a 1–3 s budget: inside it, with no margin at all. Essentially
+all of it is compiling the cached lists — the bind, drop and API start take
+5 ms between them. This is startup-only work, but it is also how long a router
+reboot leaves the LAN without filtering, so the budget is the right one to hold
+and the current number does not survive a larger ruleset. Worth profiling
+before Phase 2 adds to it.
 
 Functional verification: `doubleclick.net`, `ads.pubmatic.com` and
 `googlesyndication.com` all returned `0.0.0.0`; `example.com` and `github.com`

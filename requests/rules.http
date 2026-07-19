@@ -1,0 +1,119 @@
+# User rules and verdict testing — API.md §Rule lists & rules
+#
+# Inline personal rules are a separate source from the downloaded lists
+# (RULE_ENGINE.md §Sources) and are stored in /data, not in the config file.
+
+@base = {{host}}/api/v1
+@auth = Authorization: Bearer {{apiKey}}
+
+### Current inline rules, one per line in a JSON array.
+GET {{base}}/rules/user
+{{auth}}
+
+### Replace the whole set — this is a PUT, not an append. Validated, then
+### atomically swapped.
+PUT {{base}}/rules/user
+{{auth}}
+Content-Type: application/json
+
+{
+  "rules": [
+    "||tracker.example.com^",
+    "@@||goodsite.example.com^",
+    "! comments and blank lines are fine",
+    "0.0.0.0 ads.example.net"
+  ]
+}
+
+### Invalid syntax — expect 422 with PER-LINE messages naming the line number
+### and quoting the offending text.
+###
+### Unlike a downloaded list, where unparseable lines are skipped and counted
+### so a bad upstream cannot drop protection, hand-typed rules reject the whole
+### request: silently dropping one would leave you believing you are protected.
+PUT {{base}}/rules/user
+{{auth}}
+Content-Type: application/json
+
+{
+  "rules": [
+    "||ads.example.com^",
+    "||^",
+    "@@||good.example.com^"
+  ]
+}
+
+### DNS-inactive rules are still ACCEPTED (ADR-0003) — cosmetic and URL-pattern
+### rules parse fine, they just do not participate in DNS matching. Rejecting
+### them would break pasting a real-world list.
+PUT {{base}}/rules/user
+{{auth}}
+Content-Type: application/json
+
+{
+  "rules": [
+    "||ads.example.com^",
+    "example.com##.ad-banner",
+    "/ads/banner.gif"
+  ]
+}
+
+### Clear all inline rules.
+PUT {{base}}/rules/user
+{{auth}}
+Content-Type: application/json
+
+{
+  "rules": []
+}
+
+### Dry-run a verdict without making a query. Answers which rule decided and
+### which list it came from — the fastest way to explain "why is this blocked".
+POST {{base}}/rules/test
+{{auth}}
+Content-Type: application/json
+
+{
+  "domain": "doubleclick.net",
+  "qtype": "A"
+}
+
+### Expect verdict "pass" — no rule matched.
+POST {{base}}/rules/test
+{{auth}}
+Content-Type: application/json
+
+{
+  "domain": "example.com",
+  "qtype": "A"
+}
+
+### Subdomain matching: a rule on the parent covers this.
+POST {{base}}/rules/test
+{{auth}}
+Content-Type: application/json
+
+{
+  "domain": "ads.doubleclick.net",
+  "qtype": "AAAA"
+}
+
+### Per-client evaluation.
+POST {{base}}/rules/test
+{{auth}}
+Content-Type: application/json
+
+{
+  "domain": "doubleclick.net",
+  "qtype": "A",
+  "client": "192.168.10.15"
+}
+
+### Empty domain — expect 422.
+POST {{base}}/rules/test
+{{auth}}
+Content-Type: application/json
+
+{
+  "domain": ""
+}

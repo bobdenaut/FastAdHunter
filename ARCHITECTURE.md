@@ -127,6 +127,22 @@ L1:  fah-model   fah-config   fah-common   fah-logging
    logic, no network access, no parsers, no cache.
 4. `fah-common` is for genuinely shared small utilities — not a dumping ground.
 
+**Ports.** When a lower layer needs something a higher one owns, it declares a
+trait describing what it needs and the binary supplies the implementation — the
+dependency arrow stays pointing down. Two of these exist:
+
+| Port                             | Declared by      | Implemented in `fastadhunter` over       |
+| -------------------------------- | ---------------- | ---------------------------------------- |
+| `StatsSource`, `TelemetrySource` | `fah-api` (L3)   | `fah-stats`, `fah-metrics` (L3 siblings) |
+| `HostResolver`                   | `fah-rules` (L2) | `fah-dns`'s `UpstreamPool` (L3)          |
+
+`HostResolver` is what lets the Rule Engine's list downloader resolve its
+sources through FastAdHunter's own configured upstreams rather than the
+system's `/etc/resolv.conf` — the container has no working one. It deliberately
+bypasses the query pipeline: resolution for list downloads must not be
+filterable, or a blocklist could block the host serving its own next copy and
+permanently prevent its own replacement.
+
 Cargo enforces acyclicity natively; the layering above is enforced by review
 against this document.
 

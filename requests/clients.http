@@ -1,0 +1,67 @@
+# Clients — API.md §Clients
+#
+# Clients are discovered by source IP as they query; there is no registration
+# step. Names are cosmetic labels for the dashboard and query log.
+
+@base = {{host}}/api/v1
+@auth = Authorization: Bearer {{apiKey}}
+
+### Every observed client with first/last seen and 24h counters.
+GET {{base}}/clients
+{{auth}}
+
+### Name a client. Returns the updated object.
+PUT {{base}}/clients/192.168.10.15
+{{auth}}
+Content-Type: application/json
+
+{
+  "name": "liviu-phone"
+}
+
+### Clear the name — explicit null.
+PUT {{base}}/clients/192.168.10.15
+{{auth}}
+Content-Type: application/json
+
+{
+  "name": null
+}
+
+### An empty/whitespace name is treated as a clear, not as a client literally
+### named "".
+PUT {{base}}/clients/192.168.10.15
+{{auth}}
+Content-Type: application/json
+
+{
+  "name": "   "
+}
+
+### IPv6 clients work the same way.
+PUT {{base}}/clients/2a02:2f04:5008:bb00::20
+{{auth}}
+Content-Type: application/json
+
+{
+  "name": "liviu-laptop-v6"
+}
+
+### A client that has never queried — expect 404. Naming only applies to
+### observed clients.
+PUT {{base}}/clients/10.99.99.99
+{{auth}}
+Content-Type: application/json
+
+{
+  "name": "ghost"
+}
+
+### Not an IP address — expect 400.
+PUT {{base}}/clients/not-an-ip
+{{auth}}
+Content-Type: application/json
+
+{
+  "name": "nope"
+}

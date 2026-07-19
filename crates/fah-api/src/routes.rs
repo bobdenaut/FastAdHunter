@@ -204,11 +204,20 @@ fn list_response(
     status: &ListStatus,
     default_hours: u32,
 ) -> ListResponse {
-    let (last_status, active, inactive) = match &status.last_result {
-        RefreshResult::Ok(stats) => ("ok", stats.active, stats.inactive),
-        RefreshResult::Failed(_) => ("failed", 0, 0),
-        RefreshResult::NeverAttempted => ("never", 0, 0),
+    let last_status = match &status.last_result {
+        RefreshResult::Ok(_) => "ok",
+        RefreshResult::Failed(_) => "failed",
+        RefreshResult::NeverAttempted => "never",
     };
+    // Counts describe the ruleset that is *serving*, not the last refresh
+    // attempt. A failed refresh keeps the previous ruleset live
+    // (RULE_ENGINE.md failure policy), so `last_status: "failed"` alongside a
+    // non-zero `rules_total` is the correct — and operationally important —
+    // report: the fetch broke, protection did not.
+    let (active, inactive) = status
+        .compiled
+        .as_ref()
+        .map_or((0, 0), |stats| (stats.active, stats.inactive));
     ListResponse {
         id: entry.id,
         url: entry.url,
@@ -245,9 +254,9 @@ async fn create_list(
         }
     };
 
-    let id = match body.id {
-        Some(id) => id,
-        None => derive_id(&source),
+    let (id, id_was_derived) = match body.id {
+        Some(id) => (id, false),
+        None => (derive_id(&source), true),
     };
     if id.is_empty() {
         return Err(ApiError::ValidationFailed(
@@ -261,6 +270,36 @@ async fn create_list(
         enabled: body.enabled,
         refresh_hours: body.refresh_hours,
     };
+
+    let _guard = state.list_mutations.lock().await;
+    let current = configured_lists(&state);
+    if current.iter().any(|list| list.id == config.id) {
+        // Derivation collides across sources that merely share a filename —
+        // StevenBlack's `hosts` and 1Hosts' `Xtra/hosts.txt` both derive to
+        // `hosts`. Say so, rather than leaving the caller to guess why an id
+        // they never chose is taken.
+        let hint = if id_was_derived {
+            " — id was derived from the source; pass an explicit `id` to disambiguate"
+        } else {
+            ""
+        };
+        return Err(ApiError::Conflict(format!(
+            "list {} already exists{hint}",
+            config.id
+        )));
+    }
+    // Two ids over one source would fetch, cache and compile it twice — on a
+    // 1 GB box that is a silent doubling of the largest thing in memory.
+    if let Some(existing) = current.iter().find(|list| list.url == config.url) {
+        return Err(ApiError::Conflict(format!(
+            "{} is already configured as list {}",
+            config.url, existing.id
+        )));
+    }
+    // The new set is the current one plus this entry — borrowed, not moved in,
+    // so `config` is still ours to hand to the engine below.
+    persist_lists(&state, current.iter().chain([&config]))?;
+
     let entry = state.rules.add_list(&config).map_err(|err| match err {
         fah_rules::LifecycleError::DuplicateList(id) => {
             ApiError::Conflict(format!("list {id} already exists"))
@@ -304,6 +343,21 @@ async fn patch_list(
         enabled: body.enabled,
         refresh_hours: body.refresh_hours,
     };
+
+    let _guard = state.list_mutations.lock().await;
+    let mut next = configured_lists(&state);
+    let target = next
+        .iter_mut()
+        .find(|list| list.id == id)
+        .ok_or_else(|| ApiError::NotFound(format!("no such list: {id}")))?;
+    if let Some(enabled) = patch.enabled {
+        target.enabled = enabled;
+    }
+    if let Some(refresh_hours) = patch.refresh_hours {
+        target.refresh_hours = refresh_hours;
+    }
+    persist_lists(&state, &next)?;
+
     let entry = state
         .rules
         .update_list(&id, &patch)
@@ -319,12 +373,61 @@ async fn delete_list(
     State(state): State<Arc<AppState>>,
     Path(id): Path<String>,
 ) -> ApiResult<StatusCode> {
+    let _guard = state.list_mutations.lock().await;
+    let mut next = configured_lists(&state);
+    let before = next.len();
+    next.retain(|list| list.id != id);
+    if next.len() == before {
+        return Err(ApiError::NotFound(format!("no such list: {id}")));
+    }
+    persist_lists(&state, &next)?;
+
     state
         .rules
         .remove_list(&id)
         .await
         .map_err(|err| unknown_list(&id, err))?;
     Ok(StatusCode::NO_CONTENT)
+}
+
+/// The configured list set as it currently stands in the engine — the shape
+/// `[[rules.lists]]` wants, so a mutation is "read this, change it, write it
+/// back".
+fn configured_lists(state: &AppState) -> Vec<RuleListConfig> {
+    state
+        .rules
+        .lists()
+        .into_iter()
+        .map(|view| RuleListConfig {
+            id: view.id,
+            url: view.url,
+            enabled: view.enabled,
+            refresh_hours: view.refresh_hours,
+        })
+        .collect()
+}
+
+/// Writes a list set back to `fastadhunter.toml` through the same validated,
+/// atomic path `POST /api/v1/config` uses.
+///
+/// Callers persist *before* touching the `ListManager`: a list that lives only
+/// in memory serves traffic until the next restart and then silently vanishes,
+/// taking its rules with it, so the durable record has to be the thing that
+/// can fail. Writing first means a failed write leaves the engine and the file
+/// still agreeing — the mutation simply did not happen.
+/// Takes references rather than an owned set so a caller adding an entry can
+/// lend the one it still needs afterwards.
+fn persist_lists<'a>(
+    state: &AppState,
+    lists: impl IntoIterator<Item = &'a RuleListConfig>,
+) -> ApiResult<()> {
+    let lists: Vec<&RuleListConfig> = lists.into_iter().collect();
+    let patch = serde_json::json!({ "rules": { "lists": lists } });
+    state
+        .config
+        .apply_patch(&patch)
+        .map_err(|err| ApiError::Internal(format!("persisting the list set: {err}")))?;
+    Ok(())
 }
 
 /// `202 Accepted`: the refresh runs in the background and its outcome shows
@@ -343,7 +446,10 @@ async fn refresh_list(
         let status = match rules.refresh_list(&id).await {
             Ok(_) => "ok",
             Err(err) => {
-                tracing::warn!(list = %id, error = %err, "manual list refresh failed");
+                // A manual refresh is what an operator reaches for when a list
+                // is failing, so this line has to name the actual cause.
+                let error = fah_common::error_chain(&err);
+                tracing::warn!(list = %id, %error, "manual list refresh failed");
                 "failed"
             }
         };
@@ -614,13 +720,15 @@ mod tests {
             enabled: true,
             refresh_hours: None,
         };
+        let stats = fah_rules::RefreshStats {
+            active: 198_500,
+            inactive: 15_501,
+            parse_errors: 0,
+        };
         let status = ListStatus {
             last_refreshed: Some(SystemTime::UNIX_EPOCH),
-            last_result: RefreshResult::Ok(fah_rules::RefreshStats {
-                active: 198_500,
-                inactive: 15_501,
-                parse_errors: 0,
-            }),
+            last_result: RefreshResult::Ok(stats.clone()),
+            compiled: Some(stats),
         };
 
         let response = list_response(entry, &status, 24);
@@ -633,6 +741,35 @@ mod tests {
         assert_eq!(response.rules_active_dns, 198_500);
         assert_eq!(response.rules_inactive, 15_501);
         assert_eq!(response.format, "auto");
+    }
+
+    #[test]
+    fn a_failed_refresh_still_reports_the_rules_that_are_serving() {
+        let entry = fah_rules::ListEntryView {
+            id: "hosts".to_string(),
+            url: "https://example.org/hosts".to_string(),
+            enabled: true,
+            refresh_hours: None,
+        };
+        // The shape after a boot-from-cache followed by a refresh that could
+        // not reach the network: the previous ruleset is still live.
+        let status = ListStatus {
+            last_refreshed: None,
+            last_result: RefreshResult::Failed("dns error: EAI_AGAIN".to_string()),
+            compiled: Some(fah_rules::RefreshStats {
+                active: 55_866,
+                inactive: 0,
+                parse_errors: 0,
+            }),
+        };
+
+        let response = list_response(entry, &status, 24);
+        assert_eq!(response.last_status, "failed", "the fetch did fail");
+        assert_eq!(
+            response.rules_total, 55_866,
+            "but those rules are still blocking — reporting 0 would say the \
+             list is not protecting anything, which is false"
+        );
     }
 
     #[test]

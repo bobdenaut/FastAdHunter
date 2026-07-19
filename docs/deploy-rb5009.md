@@ -216,29 +216,26 @@ your LAN.
   src=kingston/fastadhunter/config dst=/config
 /container/mounts/add name=fah-data \
   src=kingston/fastadhunter/data   dst=/data
-/container/mounts/add name=fah-resolv \
-  src=kingston/fastadhunter/resolv.conf dst=/etc/resolv.conf
 ```
 
-**The `resolv.conf` mount is required.** RouterOS accepts a `dns=` setting on
-the container and shows it in `/container/print detail`, but does **not** write
-it into `/etc/resolv.conf` — which the distroless image ships as a 0-byte file.
-With no nameserver, musl's resolver has nothing to query and every list
-download fails after ~5 s with a useless `error sending request for url`.
-DNS *forwarding* is unaffected (upstreams are IP literals), so the container
-looks healthy while downloading nothing.
+Confirm both attached — `/container/print detail` must list them.
 
-Create the file on the SSD before starting the container:
+**No `resolv.conf` mount is needed.** Earlier builds required one: RouterOS
+accepts a `dns=` setting on the container and shows it in
+`/container/print detail`, but does **not** write it into `/etc/resolv.conf`,
+which the distroless image ships as a 0-byte file. With no nameserver, every
+list download failed after ~5 s with a useless `error sending request for url`,
+while DNS *forwarding* kept working (upstreams are IP literals) — so the
+container looked healthy while downloading nothing.
 
-```text
-nameserver 1.1.1.1
-nameserver 9.9.9.9
-options timeout:2 attempts:2
+FastAdHunter now resolves its own list sources through the servers in
+`[[dns.upstreams.servers]]` and never consults `/etc/resolv.conf`
+(ARCHITECTURE.md §Dependency Layering → Ports). If you are upgrading and still
+have the mount, drop it:
+
+```routeros
+/container/mounts/remove [find name=fah-resolv]
 ```
-
-Confirm it attached — `/container/print detail` must list all three mounts. A
-useful tell that the file is really being read: the failure timing changes from
-musl's 5 s default to whatever `options timeout:` says.
 
 `ram-high=256M` mirrors the PERFORMANCE.md hard ceiling — the container is
 throttled rather than allowed to starve RouterOS of the shared 1 GB.

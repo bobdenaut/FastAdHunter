@@ -157,15 +157,48 @@ Returns the updated client object. `DELETE` of the name: send `{ "name": null }`
 }
 ```
 
+`last_status` (`ok` | `failed` | `never`) reports the last *refresh attempt*;
+the `rules_*` counts report what the list contributes to the ruleset that is
+**currently serving**. They are deliberately independent: a failed refresh
+leaves the previous ruleset in place (RULE_ENGINE.md §Failure policy), so
+`"last_status": "failed"` with a non-zero `rules_total` is the normal and
+correct report for a list whose download broke but whose rules keep blocking.
+The counts only reach zero when the list genuinely contributes nothing —
+disabled, or never yet fetched on a first-ever boot.
+
+`last_refresh` is `null` until the first successful refresh *in this process*;
+a boot-from-cache is a load, not a refresh.
+
 ### `POST /api/v1/lists`
 
 Add a list. Body: `{ "url": "...", "enabled": true, "refresh_hours": 24 }`
 (or `{ "path": "/data/lists/local.txt" }` for a mounted file).
 Format auto-detected. Returns the created list object.
 
+`id` is optional and derived from the URL's file stem or host when omitted
+(`https://small.oisd.nl` → `small.oisd.nl`, `.../Xtra/hosts.txt` → `hosts`).
+Derivation collides across sources that share a filename — two different
+repositories' `hosts.txt` both derive to `hosts`, and the second returns
+`409 conflict` saying so. Pass `id` explicitly to disambiguate.
+
+A source may only be configured once: adding a `url`/`path` that another list
+already holds is `409 conflict` naming that list, even under a different `id`.
+Two ids over one source would fetch, cache and compile it twice.
+
 ### `PATCH /api/v1/lists/{id}` / `DELETE /api/v1/lists/{id}`
 
 Enable/disable, change refresh interval, remove.
+
+### Persistence
+
+`POST`, `PATCH` and `DELETE` rewrite `[[rules.lists]]` in
+`/config/fastadhunter.toml` before the change reaches the engine, so a list
+added through the API survives a restart. A failed write is a `500` and the
+mutation does not happen — the file and the running engine never disagree.
+
+Downloaded list *content* is cached separately under `/data/lists/`. That cache
+is keyed by list id and only read for lists the config declares, so a `.raw`
+file whose entry has been deleted is inert.
 
 ### `POST /api/v1/lists/{id}/refresh`
 

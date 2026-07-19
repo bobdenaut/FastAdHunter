@@ -9,6 +9,7 @@
 //! ([`adapters`]).
 
 mod adapters;
+mod privilege;
 
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
@@ -206,10 +207,18 @@ impl Engine {
     ) -> Result<Self, Box<dyn std::error::Error>> {
         let config_dir = config_path.parent().unwrap_or(Path::new("."));
 
+        // ── Upstreams (L3) ──
+        // Built first because the Rule Engine's list fetcher resolves download
+        // hosts through them (see `adapters::UpstreamResolver`). Cheap and
+        // network-free to construct — the servers are IP literals, so nothing
+        // here needs name resolution and there is no bootstrap cycle.
+        let upstreams = fah_dns::UpstreamPool::from_config(&config.dns.upstreams)?;
+
         // ── Rule Engine (L2) ──
-        let rules = Arc::new(fah_rules::ListManager::new(
+        let rules = Arc::new(fah_rules::ListManager::with_resolver(
             &config.rules,
             data_dir.to_path_buf(),
+            Arc::new(adapters::UpstreamResolver::new(upstreams.clone())),
         )?);
         rules.boot().await;
         tracing::info!(rules = rules.matcher().len(), "ruleset compiled from cache");
@@ -224,7 +233,6 @@ impl Engine {
         let metrics = Arc::new(fah_metrics::Metrics::new());
 
         // ── DNS engine (L3) ──
-        let upstreams = fah_dns::UpstreamPool::from_config(&config.dns.upstreams)?;
         let (events_tx, events_rx) = tokio::sync::mpsc::channel(EVENT_CHANNEL_CAPACITY);
         let pipeline = Arc::new(fah_dns::Pipeline::new(
             Arc::clone(&rules),
@@ -233,8 +241,17 @@ impl Engine {
             &config.dns.cache,
             events_tx,
         ));
-        let dns = fah_dns::Server::bind(&config.dns.listen, Arc::clone(&pipeline)).await?;
+        let mut dns = fah_dns::Server::bind(&config.dns.listen).await?;
         tracing::info!(udp = %dns.udp_addr(), tcp = %dns.tcp_addr(), "DNS listeners bound");
+
+        // ── Privilege drop (ADR-0004) ──
+        // Port 53 is the only thing here that needs root, and it is now bound.
+        // Everything below runs unprivileged: the API listens on 8443, and the
+        // API key, TLS certificate and every later write to /config and /data
+        // are created as the service user rather than root. The DNS listeners
+        // are spawned *after* this point, so no query is ever answered by a
+        // privileged process.
+        privilege::drop_to_service_user(&[config_dir, data_dir])?;
 
         // ── API (L3) ──
         let (keys, generated) = fah_api::ApiKeyStore::load_or_create(config_dir)?;
@@ -270,6 +287,9 @@ impl Engine {
         )
         .await?;
         tracing::info!(url = %api.base_url(), "API listening");
+
+        // Unprivileged from here — start answering (ADR-0004).
+        dns.serve(Arc::clone(&pipeline));
 
         // ── The edges between the siblings ──
         let tasks = vec![

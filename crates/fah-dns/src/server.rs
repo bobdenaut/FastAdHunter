@@ -20,14 +20,19 @@ use crate::{tcp, udp};
 pub struct Server {
     udp_addr: SocketAddr,
     tcp_addr: SocketAddr,
+    /// Bound, not yet accepting — taken by [`Server::serve`].
+    sockets: Option<(UdpSocket, TcpListener)>,
     handles: Vec<JoinHandle<()>>,
 }
 
 impl Server {
-    pub async fn bind<F: Forwarder>(
-        listen: &DnsListenConfig,
-        pipeline: Arc<Pipeline<F>>,
-    ) -> io::Result<Self> {
+    /// Binds both listeners **without** accepting anything yet.
+    ///
+    /// Binding and serving are deliberately separate: port 53 requires
+    /// privilege, answering queries must not have it (ADR-0004). The caller
+    /// binds, drops privileges, then calls [`Server::serve`] — so no query is
+    /// ever processed by a privileged process.
+    pub async fn bind(listen: &DnsListenConfig) -> io::Result<Self> {
         let addr: SocketAddr = format!("{}:{}", listen.address, listen.port)
             .parse()
             .map_err(|err| {
@@ -37,8 +42,12 @@ impl Server {
                 )
             })?;
 
-        let udp_socket = UdpSocket::bind(addr).await?;
-        let tcp_listener = TcpListener::bind(addr).await?;
+        let udp_socket = UdpSocket::bind(addr)
+            .await
+            .map_err(|err| bind_error("UDP", addr, err))?;
+        let tcp_listener = TcpListener::bind(addr)
+            .await
+            .map_err(|err| bind_error("TCP", addr, err))?;
         // `listen.port == 0` (tests only — production always pins port 53)
         // asks the OS for an ephemeral port independently per socket type, so
         // UDP and TCP can land on different numbers; record each actual bound
@@ -46,14 +55,24 @@ impl Server {
         let udp_addr = udp_socket.local_addr()?;
         let tcp_addr = tcp_listener.local_addr()?;
 
-        let udp_handle = tokio::spawn(udp::run(udp_socket, Arc::clone(&pipeline)));
-        let tcp_handle = tokio::spawn(tcp::run(tcp_listener, pipeline));
-
         Ok(Self {
             udp_addr,
             tcp_addr,
-            handles: vec![udp_handle, tcp_handle],
+            sockets: Some((udp_socket, tcp_listener)),
+            handles: Vec::new(),
         })
+    }
+
+    /// Spawns the listener tasks. Call after any privilege drop; a second call
+    /// does nothing, since the sockets have already been handed over.
+    pub fn serve<F: Forwarder>(&mut self, pipeline: Arc<Pipeline<F>>) {
+        let Some((udp_socket, tcp_listener)) = self.sockets.take() else {
+            return;
+        };
+        self.handles
+            .push(tokio::spawn(udp::run(udp_socket, Arc::clone(&pipeline))));
+        self.handles
+            .push(tokio::spawn(tcp::run(tcp_listener, pipeline)));
     }
 
     pub fn udp_addr(&self) -> SocketAddr {
@@ -68,5 +87,76 @@ impl Server {
         for handle in &self.handles {
             handle.abort();
         }
+    }
+}
+
+/// Names the socket that failed and, for the two failures that actually
+/// happen in the field, says which one it is.
+///
+/// They need opposite fixes and a bare errno does not distinguish them:
+/// `EACCES` means the process may not bind a privileged port (ADR-0004 — the
+/// RB5009 hits this because RouterOS honours the image's non-root user,
+/// grants no `CAP_NET_BIND_SERVICE`, and unlike Docker does not lower
+/// `net.ipv4.ip_unprivileged_port_start`), while `EADDRINUSE` means something
+/// else in this network namespace already holds the port. Reading the first
+/// as the second sends an operator hunting a conflict that does not exist.
+fn bind_error(proto: &str, addr: SocketAddr, err: io::Error) -> io::Error {
+    let hint = match err.kind() {
+        io::ErrorKind::PermissionDenied => {
+            " — a port below 1024 needs CAP_NET_BIND_SERVICE, a runtime that \
+             lowers net.ipv4.ip_unprivileged_port_start, or a port above 1023 \
+             ([dns.listen] port, or FAH__DNS__LISTEN__PORT)"
+        }
+        io::ErrorKind::AddrInUse => " — another process in this network namespace already holds it",
+        _ => "",
+    };
+    io::Error::new(err.kind(), format!("binding {proto} {addr}: {err}{hint}"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn message(kind: io::ErrorKind) -> String {
+        let addr: SocketAddr = "0.0.0.0:53".parse().unwrap();
+        bind_error("UDP", addr, io::Error::new(kind, "os says no")).to_string()
+    }
+
+    /// The distinction gate 2 of ADR-0004 turns on: a permission failure must
+    /// never read as a port conflict.
+    #[test]
+    fn permission_denied_names_the_privilege_problem_not_a_conflict() {
+        let text = message(io::ErrorKind::PermissionDenied);
+        assert!(text.contains("binding UDP 0.0.0.0:53"), "got: {text}");
+        assert!(text.contains("CAP_NET_BIND_SERVICE"), "got: {text}");
+        assert!(!text.contains("already holds"), "got: {text}");
+    }
+
+    #[test]
+    fn address_in_use_names_the_conflict_not_the_privilege() {
+        let text = message(io::ErrorKind::AddrInUse);
+        assert!(text.contains("already holds"), "got: {text}");
+        assert!(!text.contains("CAP_NET_BIND_SERVICE"), "got: {text}");
+    }
+
+    /// An unexpected errno still gets the socket and address it failed on.
+    #[test]
+    fn other_errors_are_still_located() {
+        let text = message(io::ErrorKind::AddrNotAvailable);
+        assert!(
+            text.contains("binding UDP 0.0.0.0:53: os says no"),
+            "got: {text}"
+        );
+    }
+
+    #[test]
+    fn the_error_kind_survives_the_added_context() {
+        let addr: SocketAddr = "0.0.0.0:53".parse().unwrap();
+        let err = bind_error(
+            "TCP",
+            addr,
+            io::Error::from(io::ErrorKind::PermissionDenied),
+        );
+        assert_eq!(err.kind(), io::ErrorKind::PermissionDenied);
     }
 }

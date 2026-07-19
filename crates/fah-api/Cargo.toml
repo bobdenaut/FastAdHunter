@@ -16,6 +16,7 @@ workspace = true
 # ARCHITECTURE.md rule 2: siblings never import each other, the binary wires
 # them via channels and handles (same pattern as fah-metrics' snapshot DTOs).
 [dependencies]
+fah-common = { path = "../fah-common" }
 fah-config = { path = "../fah-config" }
 fah-model = { path = "../fah-model" }
 fah-rules = { path = "../fah-rules" }

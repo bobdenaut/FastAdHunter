@@ -26,6 +26,27 @@ benches against PERFORMANCE.md budgets and the on-device soak.
 | 10 | `p1-10-benches-integration.md` | criterion benches vs budgets + end-to-end integration tests | Sonnet | DONE |
 | 11 | `p1-11-rb5009-deploy.md` | Deployment guide + on-device soak on the RB5009 | Sonnet | WAITING |
 
+**p1-11 status (2026-07-19):** deployment guide complete and validated against
+the live RB5009 — container runs, blocking works, and every measured budget
+passes at 1.19M rules (49.6 MB RSS, 37.7 MB ruleset, 0.042 ms blocked p99,
+12 MB image). Six defects found on-device, recorded in
+[docs/code-review/p1-11-review.md](../../../docs/code-review/p1-11-review.md).
+
+Defect 1 (list mutations not persisted) is **fixed** — `POST/PATCH/DELETE
+/api/v1/lists` now write `[[rules.lists]]` back through `ConfigStore` before
+mutating the engine, with a regression test that reparses the TOML from disk.
+That unblocks the soak and the two unmeasured budgets (startup-to-serving at
+1M rules, sustained throughput), all of which need the ruleset to survive a
+restart.
+
+**Remaining to close p1-11:** rebuild and redeploy the image to the RB5009,
+re-add the 1M-rule lists (they will persist this time), measure startup@1M and
+sustained throughput, then run the 24h soak. Defects 2–6 stay open and do not
+gate it.
+
+Phase 1 code (p1-01..p1-10) is committed at `4d72fd2`; the phase stays in `wip`
+until p1-11 closes.
+
 **Definition of done:** a phone pointed at the container's IP browses with ads
 blocked; `GET /api/v1/stats` shows real counters; benches meet PERFORMANCE.md
 budgets on dev hardware; container runs on the RB5009 through real household

@@ -1,0 +1,188 @@
+# Rule lists — API.md §Rule lists & rules
+#
+# Mutations rewrite [[rules.lists]] in /config/fastadhunter.toml *before* the
+# change reaches the engine, so a list added here survives a restart. A failed
+# write is a 500 and the mutation does not happen.
+#
+# ─────────────────────────────────────────────────────────────────────────────
+# THESE ARE INDIVIDUAL EXAMPLES, NOT A SUITE. Do not run top to bottom.
+#
+# Every request here mutates persistent state. Running the file in order adds
+# lists, disables one and leaves it disabled, then deletes one.
+#
+# Clean up with the last requests in this file.
+# ─────────────────────────────────────────────────────────────────────────────
+
+@base = {{host}}/api/v1
+@auth = Authorization: Bearer {{apiKey}}
+
+### Every configured list with its refresh state.
+###
+### `last_status` ("ok" | "failed" | "never") is about the last FETCH; the
+### rules_* counts are about what is CURRENTLY SERVING. "failed" next to a
+### non-zero rules_total is correct and expected — the download broke, the
+### previously compiled rules keep blocking.
+GET {{base}}/lists
+{{auth}}
+
+### Add a remote list. `id` is optional — derived from the URL's file stem or
+### host when omitted, so this one lands as id "small.oisd.nl".
+###
+### NOTE: if the shipped default config already carries this URL as
+### "oisd-basic", this returns 409 naming that list — a source may only be
+### configured once, whatever id you give it. Check GET /lists first.
+POST {{base}}/lists
+{{auth}}
+Content-Type: application/json
+
+{
+  "url": "https://small.oisd.nl",
+  "enabled": true,
+  "refresh_hours": 24
+}
+
+### Add with an EXPLICIT id. Derivation collides across sources that share a
+### filename — StevenBlack's `hosts` and 1Hosts' `Xtra/hosts.txt` both derive
+### to "hosts", and the second returns 409. Pass `id` to disambiguate.
+POST {{base}}/lists
+{{auth}}
+Content-Type: application/json
+
+{
+  "url": "https://raw.githubusercontent.com/StevenBlack/hosts/master/hosts",
+  "id": "hosts"
+}
+
+###
+POST {{base}}/lists
+{{auth}}
+Content-Type: application/json
+
+{
+  "url": "https://raw.githubusercontent.com/badmojr/1Hosts/master/Xtra/hosts.txt",
+  "id": "1hosts-xtra"
+}
+
+### Add a LOCAL file instead of a URL — path is relative to /data.
+### Mutually exclusive with `url`; sending both is 422.
+POST {{base}}/lists
+{{auth}}
+Content-Type: application/json
+
+{
+  "path": "lists/custom.txt",
+  "id": "custom"
+}
+
+### Duplicate id — expect 409 "list hosts already exists".
+### After a restart this is also the persistence check: a 409 means the
+### registration survived; a 201 means it did not.
+POST {{base}}/lists
+{{auth}}
+Content-Type: application/json
+
+{
+  "url": "https://raw.githubusercontent.com/StevenBlack/hosts/master/hosts",
+  "id": "hosts"
+}
+
+### Neither url nor path — expect 422 validation_failed.
+POST {{base}}/lists
+{{auth}}
+Content-Type: application/json
+
+{
+  "enabled": true
+}
+
+### Disable a list without removing it. Recompiles and swaps immediately, so
+### protection changes take effect without waiting for a refresh.
+PATCH {{base}}/lists/hosts
+{{auth}}
+Content-Type: application/json
+
+{
+  "enabled": false
+}
+
+### Re-enable it and set a per-list refresh interval.
+PATCH {{base}}/lists/hosts
+{{auth}}
+Content-Type: application/json
+
+{
+  "enabled": true,
+  "refresh_hours": 6
+}
+
+### Clear the per-list override — explicit null, not omission. The list falls
+### back to [rules] refresh_hours_default, so a later change to the default
+### applies to it again.
+PATCH {{base}}/lists/hosts
+{{auth}}
+Content-Type: application/json
+
+{
+  "refresh_hours": null
+}
+
+### Force a refresh now. 202 Accepted — it runs in the background and the
+### outcome lands in `last_status` and a `list_refreshed` WebSocket event.
+POST {{base}}/lists/hosts/refresh
+{{auth}}
+
+### Unknown id — expect 404 for all three verbs.
+PATCH {{base}}/lists/ghost
+{{auth}}
+Content-Type: application/json
+
+{
+  "enabled": false
+}
+
+###
+POST {{base}}/lists/ghost/refresh
+{{auth}}
+
+###
+DELETE {{base}}/lists/ghost
+{{auth}}
+
+### Remove a list. 204. The entry leaves the ruleset first, then its /data
+### cache file is deleted. An orphaned .raw left behind by an interrupted
+### refresh is inert — compile only reads configured lists.
+DELETE {{base}}/lists/custom
+{{auth}}
+
+### Same source under a different id — expect 409 naming the list that already
+### holds it. Two ids over one URL would download and compile it twice.
+POST {{base}}/lists
+{{auth}}
+Content-Type: application/json
+
+{
+  "url": "https://raw.githubusercontent.com/StevenBlack/hosts/master/hosts",
+  "id": "hosts-again"
+}
+
+# ─── Cleanup ─────────────────────────────────────────────────────────────────
+# Undo the side effects of the examples above.
+
+### Drop the list the "add without an id" example created.
+DELETE {{base}}/lists/small.oisd.nl
+{{auth}}
+
+### Re-enable the list the PATCH example disabled. Skipping this leaves it
+### disabled permanently — the change is persisted, so a restart will not
+### undo it.
+PATCH {{base}}/lists/hosts
+{{auth}}
+Content-Type: application/json
+
+{
+  "enabled": true
+}
+
+### Confirm the end state: oisd-basic, hosts and 1hosts-xtra, all enabled.
+GET {{base}}/lists
+{{auth}}
