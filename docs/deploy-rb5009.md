@@ -363,6 +363,76 @@ shorten the lease time temporarily.
 > router's LAN address, not on `172.17.0.3`, so the two do not collide. Leave
 > it configured as a fallback you can revert to (see §8).
 
+### Replacing an existing resolver — keep both, switch with a script
+
+If the router already runs another DNS filter (AdGuard Home, Pi-hole) and
+redirects `:53` to it, clients never see the container's address: the
+redirect decides which resolver answers. Cutover is then a set of value
+changes, not a DHCP change — and the old resolver stays running as a
+one-command rollback.
+
+Find every rule that names the current resolver before touching anything;
+there are usually more than expected:
+
+```routeros
+/ip/firewall/nat/print detail where dst-port=53
+/ip/firewall/filter/print detail where dst-port=53
+/ip/dns/print
+```
+
+A typical setup has six: two `dstnat` redirects, two `srcnat` accepts that
+exempt VPN clients from masquerade (these match the *post-dstnat* address,
+which is why they break if only the redirects are changed), and two `forward`
+accepts. Save one script per direction:
+
+```routeros
+/system/script/add name=dns-fah source={
+  /ip/firewall/filter/set [find comment~"DNS filter redirect"] dst-address=172.17.0.3
+  /ip/firewall/nat/set [find comment="Redirect catre DNS filter(docker)"] to-addresses=172.17.0.3
+  /ip/firewall/nat/set [find comment~"No NAT WG DNS"] dst-address=172.17.0.3
+  /ip/dns/set servers=172.17.0.3
+  /ip/dns/cache/flush
+}
+
+/system/script/add name=dns-adguard source={
+  /ip/firewall/nat/set [find comment="Redirect catre DNS filter(docker)"] to-addresses=172.17.0.2
+  /ip/firewall/nat/set [find comment~"No NAT WG DNS"] dst-address=172.17.0.2
+  /ip/firewall/filter/set [find comment~"DNS filter redirect"] dst-address=172.17.0.2
+  /ip/dns/set servers=172.17.0.2
+  /ip/dns/cache/flush
+}
+```
+
+Match on comments rather than rule numbers — numbers shift when rules are
+added. Adjust the comment strings to whatever the existing rules use.
+
+**The two scripts order their statements differently on purpose.** Switching
+*to* FastAdHunter opens the forward path before the redirect starts using it;
+switching *back* stops the redirect before the path closes. Reverse either one
+and traffic is briefly forwarded to an address the filter chain has not
+accepted yet — which a default `drop` at the end of `forward` will swallow.
+
+Once FastAdHunter serves production, every redeploy becomes:
+
+```routeros
+/system/script/run dns-adguard
+/system/scheduler/disable fah-liveness
+# ... container remove / add / start (§4) ...
+/system/scheduler/enable fah-liveness
+/system/script/run dns-fah
+```
+
+Disabling the scheduler is not optional — the watchdog (§7) restarts the
+container on two failed health checks and will fight a deploy in progress.
+
+> **Do not replace the redirect with `servers=172.17.0.3,172.17.0.2` and let
+> RouterOS fail over on its own.** It works, and it is tempting because the
+> failover is automatic — but then every query reaches FastAdHunter from the
+> router's address instead of the client's. Per-client statistics and the
+> `$client` rules the parser already classifies as `ClientScoped` (Phase 2,
+> Policies) become impossible to apply. The redirect is what preserves client
+> identity.
+
 ### IPv6 bypass — check this before believing the deployment failed
 
 FastAdHunter listens on IPv4 only: `[dns.listen] address` defaults to
