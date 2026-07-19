@@ -32,17 +32,35 @@ passes at 1.19M rules (49.6 MB RSS, 37.7 MB ruleset, 0.042 ms blocked p99,
 12 MB image). Six defects found on-device, recorded in
 [docs/code-review/p1-11-review.md](../../../docs/code-review/p1-11-review.md).
 
-Defect 1 (list mutations not persisted) is **fixed** — `POST/PATCH/DELETE
-/api/v1/lists` now write `[[rules.lists]]` back through `ConfigStore` before
-mutating the engine, with a regression test that reparses the TOML from disk.
-That unblocks the soak and the two unmeasured budgets (startup-to-serving at
-1M rules, sustained throughput), all of which need the ruleset to survive a
-restart.
+**All six defects are now fixed** (`64c3e32`) and verified on-device across
+several boots: port 53 bound via start-as-root then drop to uid 65532
+(ADR-0004), list downloads resolved through the configured upstreams rather
+than the empty `/etc/resolv.conf`, `last_status` decoupled from rule counts,
+duplicate list sources rejected with 409.
 
-**Remaining to close p1-11:** rebuild and redeploy the image to the RB5009,
-re-add the 1M-rule lists (they will persist this time), measure startup@1M and
-sustained throughput, then run the 24h soak. Defects 2–6 stay open and do not
-gate it.
+**Startup at 1M rules is measured and inside budget.** 2 440 ms at 1 213 640
+rules, down from 3 113 ms — `c61c00b` removed two allocations per rule after
+`bench_startup_phases` showed parse at 81% of startup and disk read at 3%.
+See PERFORMANCE.md.
+
+A suspected list-persistence regression was investigated and **is not a code
+defect**: the writes were lost by a previous container instance whose
+`/config` mount was not effective, and died with `container/remove`. Verified
+on the current instance — delete, restart, still gone.
+
+**Remaining to close p1-11:**
+
+1. Apply the IPv6 fix (RA advertises a DNS server and a stale `dstnat` sends
+   all IPv6 `:53` to a dead host — see deploy-rb5009.md §5). Without it,
+   dual-stack clients bypass FastAdHunter and the soak measures IPv4 only.
+2. Run the `dns-fah` cutover script and confirm all six IPv4 rules moved.
+3. Set `start-on-boot=yes`.
+4. Run the 24h soak, then measure sustained throughput.
+
+Two known metric defects do not gate closure but should be recorded in the
+completion note: ruleset gauges are polled on a 10 s timer, so a scrape right
+after a list change reads the previous ruleset (`GET /api/v1/lists` is live);
+and `compile_duration_seconds` is hardcoded to zero.
 
 Phase 1 code (p1-01..p1-10) is committed at `4d72fd2`; the phase stays in `wip`
 until p1-11 closes.

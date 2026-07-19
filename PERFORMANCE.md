@@ -45,6 +45,17 @@ Reference hardware: MikroTik RB5009 — Marvell Armada quad-core ARMv8 @ 1.4 GHz
 Notes:
 
 - In-engine latency excludes upstream RTT — we measure what we add.
+- **Measured on the RB5009, 2026-07-19, at 1 213 640 rules:** startup to
+  serving **2 440 ms**, compiled ruleset 28.3 MiB. Startup was 3 113 ms before
+  `c61c00b` removed two allocations per rule from the parser — the only budget
+  that has ever been outside its range. Parse dominates what remains (~75%),
+  so chunked parallel parsing is the next lever if list sizes grow.
+  `bench_startup_phases` splits read/parse/build; run it before optimising, as
+  the split is not what intuition suggests.
+- Startup is timed from container log timestamps, not from the process:
+  `compile_duration_seconds` is still hardcoded to zero, so the figure carries
+  the RouterOS log's one-second resolution. Fix that metric before trying to
+  demonstrate anything finer than ~10%.
 - 10k QPS is ~100× a busy household's peak; the headroom is the proof of
   efficiency, and it's what keeps p99 flat at real loads.
 - Budgets are compared against `main` on every perf-relevant change; a >10%

@@ -448,7 +448,31 @@ broken — the queries simply never arrive.
 ```routeros
 /ipv6/nd/print detail          # is RA advertising DNS servers?
 /ipv6/dhcp-server/print
+/ipv6/dhcp-server/option/print
+/ipv6/firewall/nat/print       # is IPv6 :53 already redirected somewhere?
+/ipv6/firewall/filter/print    # is IPv6 :53 to WAN blocked at all?
 ```
+
+Check all five. A real deployment turned up a combination none of them shows
+alone: RA advertising a DNS server, *and* a `dstnat` rule capturing every
+IPv6 `:53` from the bridge and sending it to a container that was no longer
+running. Clients were being steered to a dead resolver and only reached IPv4
+after a timeout — working, but slow on every fresh name, and invisible unless
+both are read together.
+
+Two traps in diagnosing this:
+
+- **The IPv4 filter chain tells you nothing on its own.** A missing `:53` drop
+  looks like an open path to external resolvers until you read `/ipv6/firewall
+  /nat`, where a redirect may be catching that traffic first.
+- **Rule comments name whoever was there when they were written.** Resolve the
+  target instead: `/ipv6/neighbor/print where address=<target>`. A
+  `status="failed"` entry means nothing answers there, whatever the comment
+  claims — and that is decisive, since a `dstnat` pointing at the address
+  guarantees the router had reason to resolve it.
+
+Prefer `reject` with `icmp-admin-prohibited` over `drop` when blocking IPv6
+`:53`: clients fall back to IPv4 immediately instead of waiting out a timeout.
 
 Options, in order of preference:
 
