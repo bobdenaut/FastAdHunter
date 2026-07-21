@@ -33,7 +33,10 @@ mode = "dns"                  # boot    — "dns" | "dns+http" | "dns+http+https
 
 # ─── DNS listener ──────────────────────────────────────────────────────
 [dns.listen]
-address = "0.0.0.0"           # boot    — bind address
+address = "0.0.0.0"           # boot    — bind address; "::" = one dual-stack
+                              #           socket serving IPv4 + IPv6 (IPV6_V6ONLY
+                              #           off explicitly; v4 clients are reported
+                              #           canonically, never as ::ffff:… mapped)
 port = 53                     # boot    — UDP + TCP
 
 # ─── Blocking behavior ─────────────────────────────────────────────────

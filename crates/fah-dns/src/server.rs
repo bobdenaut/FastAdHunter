@@ -2,7 +2,7 @@
 //! tasks (ARCHITECTURE.md §Listeners: UDP mandatory, TCP mandatory fallback).
 
 use std::io;
-use std::net::SocketAddr;
+use std::net::{IpAddr, SocketAddr};
 use std::sync::Arc;
 
 use fah_config::DnsListenConfig;
@@ -33,19 +33,21 @@ impl Server {
     /// binds, drops privileges, then calls [`Server::serve`] — so no query is
     /// ever processed by a privileged process.
     pub async fn bind(listen: &DnsListenConfig) -> io::Result<Self> {
-        let addr: SocketAddr = format!("{}:{}", listen.address, listen.port)
-            .parse()
-            .map_err(|err| {
-                io::Error::new(
-                    io::ErrorKind::InvalidInput,
-                    format!("invalid [dns.listen] address: {err}"),
-                )
-            })?;
+        // Parsed as an IP, not via `"{addr}:{port}"` string assembly — an
+        // IPv6 literal needs brackets in socket-address syntax, so the
+        // round-trip through a string would reject `::` as `:::53`.
+        let ip: IpAddr = listen.address.parse().map_err(|err| {
+            io::Error::new(
+                io::ErrorKind::InvalidInput,
+                format!("invalid [dns.listen] address: {err}"),
+            )
+        })?;
+        let addr = SocketAddr::new(ip, listen.port);
 
-        let udp_socket = UdpSocket::bind(addr)
+        let udp_socket = bind_udp(addr)
             .await
             .map_err(|err| bind_error("UDP", addr, err))?;
-        let tcp_listener = TcpListener::bind(addr)
+        let tcp_listener = bind_tcp(addr)
             .await
             .map_err(|err| bind_error("TCP", addr, err))?;
         // `listen.port == 0` (tests only — production always pins port 53)
@@ -88,6 +90,54 @@ impl Server {
             handle.abort();
         }
     }
+}
+
+/// Whether this bind address means "both stacks": `::` serves IPv4 and IPv6
+/// on one dual-stack socket (CONFIGURATION.md `[dns.listen]`). Only the
+/// unspecified v6 address qualifies — a concrete v6 address binds v6 alone.
+fn dual_stack(addr: SocketAddr) -> bool {
+    matches!(addr.ip(), IpAddr::V6(v6) if v6.is_unspecified())
+}
+
+/// tokio's `bind`, except that for `::` the socket is made dual-stack
+/// *explicitly* (`IPV6_V6ONLY` off) instead of inheriting the host's
+/// `net.ipv6.bindv6only` — the deployment must not change behavior with a
+/// sysctl. IPv4 peers then arrive as v4-mapped addresses, which the
+/// pipeline canonicalizes back to plain IPv4.
+async fn bind_udp(addr: SocketAddr) -> io::Result<UdpSocket> {
+    if !dual_stack(addr) {
+        return UdpSocket::bind(addr).await;
+    }
+    let socket = socket2::Socket::new(
+        socket2::Domain::IPV6,
+        socket2::Type::DGRAM,
+        Some(socket2::Protocol::UDP),
+    )?;
+    socket.set_only_v6(false)?;
+    socket.bind(&addr.into())?;
+    socket.set_nonblocking(true)?;
+    UdpSocket::from_std(socket.into())
+}
+
+async fn bind_tcp(addr: SocketAddr) -> io::Result<TcpListener> {
+    if !dual_stack(addr) {
+        return TcpListener::bind(addr).await;
+    }
+    let socket = socket2::Socket::new(
+        socket2::Domain::IPV6,
+        socket2::Type::STREAM,
+        Some(socket2::Protocol::TCP),
+    )?;
+    socket.set_only_v6(false)?;
+    // Match what tokio's own TcpListener::bind sets: SO_REUSEADDR on Unix
+    // (fast restart out of TIME_WAIT; deliberately not set on Windows, where
+    // it means something less safe) and its default accept backlog.
+    #[cfg(unix)]
+    socket.set_reuse_address(true)?;
+    socket.bind(&addr.into())?;
+    socket.listen(1024)?;
+    socket.set_nonblocking(true)?;
+    TcpListener::from_std(socket.into())
 }
 
 /// Names the socket that failed and, for the two failures that actually

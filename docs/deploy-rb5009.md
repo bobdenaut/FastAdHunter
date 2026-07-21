@@ -480,12 +480,25 @@ If IPv6 resolves somewhere other than FastAdHunter, the soak measures IPv4
 traffic only. Record that in the completion note — it biases QPS and cache-hit
 figures downward against PERFORMANCE.md budgets.
 
-Serving DNS *over* IPv6 (binding `::`) is not in Phase 1 scope, but it is
-smaller than it looks: RouterOS assigns container addresses in
-`/interface/veth`, so the veth may already hold one — check with
-`/interface/veth/print detail`. If it does, dual-stack is a bind-address change
-plus retargeting whatever steers IPv6 `:53`. Confirm first whether that address
-is globally routable, since nothing NATs in front of it.
+Serving DNS *over* IPv6 is supported: set `[dns.listen] address = "::"` and
+one dual-stack socket serves both stacks (CONFIGURATION.md — `IPV6_V6ONLY`
+is cleared explicitly, so this does not depend on the host's `bindv6only`
+sysctl; IPv4 clients keep their plain addresses in stats and the query log).
+The cutover is then:
+
+1. `/interface/veth/print detail` — confirm the veth's IPv6 address (the
+   reference deployment: `2a02:2f04:5008:bb00::11/64` on veth2).
+2. Edit `/config/fastadhunter.toml`: `[dns.listen] address = "::"`, restart
+   the container, and verify both binds from a LAN client:
+   `nslookup example.com <veth-IPv4>` and `nslookup example.com <veth-IPv6>`.
+3. Retarget whatever steers IPv6 `:53` (the reference deployment: two
+   `/ipv6/firewall/nat` dstnat rules — move `to-address` to the veth's IPv6).
+4. Watch the dstnat counters and `GET /api/v1/queries`: IPv6-sourced clients
+   appear under their own IPv6 addresses.
+
+Confirm first whether the veth address is globally routable, since nothing
+NATs in front of it — LAN-side firewalling is the operator's, not the
+guide's.
 
 ## 6. On-device verification checklist
 

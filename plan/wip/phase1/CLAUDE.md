@@ -62,16 +62,23 @@ AdGuard stays running: it is the rollback target (`dns-adguard`) *and* the
 IPv6 resolver the v6 `dstnat` points at. Stopping it would break IPv6 for the
 whole LAN.
 
+**Update 2026-07-21:** liviu stopped AdGuard entirely ~2026-07-19 — the note
+above is obsolete. FastAdHunter has been the LAN's only resolver since (v6
+DNS blackholes at the dead dstnat target and clients fall back to IPv4);
+54.4 MB RSS after 2 days of full household traffic. Rollback now requires
+starting the AdGuard container before `dns-adguard`.
+
 **Remaining:** run the 24h soak (§9 of deploy-rb5009.md), then measure
 sustained throughput.
 
 IPv6 DNS was repaired on 2026-07-19 (the `dstnat` pointed at a dead ULA;
-retargeted to AdGuard's real address). It currently routes to AdGuard, **not**
-to FastAdHunter, so the soak still measures IPv4 only — acceptable, since the
-IPv6 path is now filtered rather than bypassing. Moving IPv6 onto FastAdHunter
-needs the listener to bind `::` as well as `0.0.0.0`; veth2 already has
-`2a02:2f04:5008:bb00::11/64`, so it is a bind-address change plus a one-line
-`to-address` move. Not in Phase 1.
+retargeted to AdGuard's real address). With AdGuard stopped that target is
+dead again — and as of 2026-07-21 the dual-stack listener is **implemented**
+(`[dns.listen] address = "::"` serves both stacks on one socket, v4-mapped
+client addresses canonicalized; deploy-rb5009.md §IPv6 has the cutover
+steps). Remaining on-device: set `address = "::"` in the config, deploy the
+new build, move the two v6 dstnat `to-address` values to veth2's
+`2a02:2f04:5008:bb00::11`.
 
 Two known metric defects do not gate closure but should be recorded in the
 completion note: ruleset gauges are polled on a 10 s timer, so a scrape right

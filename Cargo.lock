@@ -586,6 +586,7 @@ dependencies = [
  "rand 0.9.5",
  "rcgen",
  "rustls",
+ "socket2",
  "tempfile",
  "tokio",
  "tokio-rustls",

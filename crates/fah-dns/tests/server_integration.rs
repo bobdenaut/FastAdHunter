@@ -40,6 +40,13 @@ impl Forwarder for SpyForwarder {
 /// in the test so the directory is removed on drop, not leaked into the OS
 /// temp dir.
 async fn start_server(rules_text: &str) -> (Server, Arc<AtomicU64>, tempfile::TempDir) {
+    start_server_on("127.0.0.1", rules_text).await
+}
+
+async fn start_server_on(
+    address: &str,
+    rules_text: &str,
+) -> (Server, Arc<AtomicU64>, tempfile::TempDir) {
     let data_dir = tempfile::tempdir().unwrap();
     let manager = Arc::new(
         ListManager::new(
@@ -68,7 +75,7 @@ async fn start_server(rules_text: &str) -> (Server, Arc<AtomicU64>, tempfile::Te
         tx,
     ));
     let listen = DnsListenConfig {
-        address: "127.0.0.1".to_string(),
+        address: address.to_string(),
         port: 0,
     };
     let mut server = Server::bind(&listen).await.unwrap();
@@ -86,7 +93,13 @@ fn encode_a_query(name: &str) -> Vec<u8> {
 }
 
 async fn udp_roundtrip(server_addr: SocketAddr, request: &[u8]) -> Vec<u8> {
-    let socket = UdpSocket::bind("127.0.0.1:0").await.unwrap();
+    // The client socket must match the target's address family.
+    let bind = if server_addr.is_ipv6() {
+        "[::1]:0"
+    } else {
+        "127.0.0.1:0"
+    };
+    let socket = UdpSocket::bind(bind).await.unwrap();
     socket.send_to(request, server_addr).await.unwrap();
     let mut buf = [0u8; 4096];
     let len = timeout(Duration::from_secs(5), socket.recv(&mut buf))
@@ -109,6 +122,47 @@ async fn tcp_roundtrip(server_addr: SocketAddr, request: &[u8]) -> Vec<u8> {
     let mut reply = vec![0u8; reply_len];
     stream.read_exact(&mut reply).await.unwrap();
     reply
+}
+
+/// `[dns.listen] address = "::"` serves both stacks on one socket
+/// (CONFIGURATION.md) — the RB5009 IPv6 cutover binds this way. The same
+/// engine, the same verdicts, over IPv6 and IPv4 alike, on UDP and TCP.
+#[tokio::test]
+async fn dual_stack_listener_answers_the_same_engine_on_both_stacks() {
+    let (server, calls, _data_dir) = start_server_on("::", "||ads.example.com^\n").await;
+    let query = encode_a_query("ads.example.com.");
+
+    let udp_port = server.udp_addr().port();
+    let udp_targets = [
+        SocketAddr::from((std::net::Ipv6Addr::LOCALHOST, udp_port)),
+        SocketAddr::from((Ipv4Addr::LOCALHOST, udp_port)),
+    ];
+    for target in udp_targets {
+        let reply = udp_roundtrip(target, &query).await;
+        let decoded = Message::from_vec(&reply).unwrap();
+        assert_eq!(decoded.metadata.response_code, ResponseCode::NoError);
+        assert!(
+            matches!(decoded.answers[0].data, RData::A(A(ip)) if ip == Ipv4Addr::UNSPECIFIED),
+            "expected the synthesized blocked answer over {target}"
+        );
+    }
+
+    let tcp_port = server.tcp_addr().port();
+    for target in [
+        SocketAddr::from((std::net::Ipv6Addr::LOCALHOST, tcp_port)),
+        SocketAddr::from((Ipv4Addr::LOCALHOST, tcp_port)),
+    ] {
+        let reply = tcp_roundtrip(target, &query).await;
+        let decoded = Message::from_vec(&reply).unwrap();
+        assert_eq!(decoded.metadata.response_code, ResponseCode::NoError);
+    }
+
+    assert_eq!(
+        calls.load(Ordering::Relaxed),
+        0,
+        "blocked on both stacks — the forwarder must never be reached"
+    );
+    server.shutdown();
 }
 
 #[tokio::test]

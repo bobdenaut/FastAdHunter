@@ -93,6 +93,12 @@ impl<F: Forwarder> Pipeline<F> {
         client_ip: IpAddr,
         transport: Transport,
     ) -> Option<Vec<u8>> {
+        // The dual-stack listener reports IPv4 peers as v4-mapped IPv6
+        // (`::ffff:192.168.10.15`). Canonicalized once here — the single
+        // entry point for every transport — so stats, client names, the
+        // query log and future client-scoped rules all see one address per
+        // client. A handful of integer compares, free for the common case.
+        let client_ip = client_ip.to_canonical();
         let request = match Message::from_vec(raw) {
             Ok(message) => message,
             Err(err) => {
@@ -371,6 +377,30 @@ mod tests {
         assert_eq!(event.verdict, Verdict::Pass);
         assert!(event.upstream_used);
         assert!(!event.cache_hit);
+    }
+
+    #[tokio::test]
+    async fn v4_mapped_client_address_is_canonicalized_in_events() {
+        // What a dual-stack `::` listener hands us for an IPv4 peer. The
+        // event must carry plain IPv4, or the same phone would appear as two
+        // different clients depending on which stack its query came in on.
+        let (rules, _data_dir) = manager_with_user_rules("").await;
+        let forwarder = SpyForwarder {
+            calls: Arc::new(AtomicU64::new(0)),
+            outcome: ForwarderOutcome::Ok,
+        };
+        let (tx, mut rx) = mpsc::channel(8);
+        let pipeline = Pipeline::new(rules, forwarder, 10, &DnsCacheConfig::default(), tx);
+
+        let mapped: IpAddr = "::ffff:192.168.10.15".parse().unwrap();
+        let raw = encode_query("example.com.", RecordType::A);
+        pipeline.handle(&raw, mapped, Transport::Udp).await.unwrap();
+
+        let event = rx.try_recv().unwrap();
+        assert_eq!(
+            event.query.client_ip,
+            "192.168.10.15".parse::<IpAddr>().unwrap()
+        );
     }
 
     #[tokio::test]
