@@ -150,6 +150,62 @@ async fn the_binary_blocks_resolves_reports_and_reconfigures_live() {
         "the forwarded query must be in the query log, got {logged:?}"
     );
 
+    // ── the cache, inspected and cleaned through the admin API ──
+    // A repeat of the forwarded query is served by the cache, and the real
+    // cache's counters must reach the API through the binary's CacheSource
+    // adapter — fah-api's own tests fake that source, so only this test
+    // proves the wiring.
+    let answer = resolve(dns_port, "allowed.example.com").await;
+    assert_eq!(answer.a_records, vec![UPSTREAM_IP]);
+
+    let cache: Value = get_json(&http, &base, &key, "/api/v1/cache").await;
+    assert!(
+        cache["entries"].as_u64().expect("entries") >= 1,
+        "the forwarded answer must have been cached, got {cache}"
+    );
+    assert!(
+        cache["hits"].as_u64().expect("hits") >= 1,
+        "the repeated query must have been a cache hit, got {cache}"
+    );
+    assert_eq!(
+        cache["fresh"], cache["entries"],
+        "seconds-old entries are all still fresh, got {cache}"
+    );
+
+    let clean: Value = post_json(&http, &base, &key, "/api/v1/cache/clean").await;
+    assert_eq!(
+        clean["removed_expired"], 0,
+        "nothing has had time to expire, got {clean}"
+    );
+    assert_eq!(
+        clean["removed_stale"], 0,
+        "stale entries are kept by default — and none exist yet, got {clean}"
+    );
+    assert_eq!(
+        clean["entries_after"], cache["entries"],
+        "a clean of an all-fresh cache removes nothing"
+    );
+
+    let memory: Value = get_json(&http, &base, &key, "/api/v1/debug/memory").await;
+    assert!(
+        memory["ruleset_bytes"].as_u64().expect("ruleset_bytes") > 0,
+        "one user rule still compiles to a non-empty ruleset"
+    );
+    assert!(
+        memory["cache_estimated_bytes"]
+            .as_u64()
+            .expect("cache_estimated_bytes")
+            > 0,
+        "a populated cache must estimate above zero bytes"
+    );
+    assert!(
+        memory
+            .as_object()
+            .expect("memory object")
+            .contains_key("process_rss"),
+        "process_rss must be present even when null off-Linux"
+    );
+
     // ── a verdict that flips live, with no restart ──
     let answer = resolve(dns_port, "flip.example.net").await;
     assert_eq!(

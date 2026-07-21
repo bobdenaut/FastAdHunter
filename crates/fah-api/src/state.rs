@@ -10,12 +10,13 @@ use fah_rules::ListManager;
 use crate::config_store::ConfigStore;
 use crate::events::EventHub;
 use crate::keys::ApiKeyStore;
-use crate::ports::{StatsSource, TelemetrySource};
+use crate::ports::{CacheSource, StatsSource, TelemetrySource};
 
 pub struct AppState {
     pub rules: Arc<ListManager>,
     pub stats: Arc<dyn StatsSource>,
     pub telemetry: Arc<dyn TelemetrySource>,
+    pub cache: Arc<dyn CacheSource>,
     pub config: Arc<ConfigStore>,
     pub keys: Arc<ApiKeyStore>,
     pub events: EventHub,
@@ -48,6 +49,7 @@ pub struct AppStateBuilder {
     pub rules: Arc<ListManager>,
     pub stats: Arc<dyn StatsSource>,
     pub telemetry: Arc<dyn TelemetrySource>,
+    pub cache: Arc<dyn CacheSource>,
     pub config: Arc<ConfigStore>,
     pub keys: Arc<ApiKeyStore>,
 }
@@ -58,6 +60,7 @@ impl AppStateBuilder {
             rules: self.rules,
             stats: self.stats,
             telemetry: self.telemetry,
+            cache: self.cache,
             config: self.config,
             keys: self.keys,
             events,

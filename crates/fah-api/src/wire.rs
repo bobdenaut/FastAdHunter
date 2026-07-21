@@ -8,7 +8,7 @@ use std::net::IpAddr;
 use fah_model::QueryType;
 use serde::{Deserialize, Serialize};
 
-use crate::ports::{ClientEntry, QueryLogPage, QueryRecord, StatsOverview};
+use crate::ports::{CacheClean, CacheStats, ClientEntry, QueryLogPage, QueryRecord, StatsOverview};
 use crate::timestamp;
 
 #[derive(Debug, Serialize)]
@@ -312,6 +312,90 @@ pub struct RuleTestResponse {
 }
 
 #[derive(Debug, Serialize)]
+pub struct CacheStatsResponse {
+    pub entries: u64,
+    pub capacity: u64,
+    pub fresh: u64,
+    pub stale: u64,
+    pub expired: u64,
+    pub hits: u64,
+    pub misses: u64,
+    pub evictions: u64,
+    /// `entries / capacity`, in percent, rounded to two decimals.
+    pub load_percent: f64,
+}
+
+impl From<CacheStats> for CacheStatsResponse {
+    fn from(stats: CacheStats) -> Self {
+        let load_percent = if stats.capacity == 0 {
+            0.0
+        } else {
+            round2(stats.entries as f64 * 100.0 / stats.capacity as f64)
+        };
+        Self {
+            entries: stats.entries,
+            capacity: stats.capacity,
+            fresh: stats.fresh,
+            stale: stats.stale,
+            expired: stats.expired,
+            hits: stats.hits,
+            misses: stats.misses,
+            evictions: stats.evictions,
+            load_percent,
+        }
+    }
+}
+
+#[derive(Debug, Serialize)]
+pub struct CacheCleanResponse {
+    pub removed_expired: u64,
+    pub removed_stale: u64,
+    pub entries_before: u64,
+    pub entries_after: u64,
+    /// Coarse heap estimate (API.md §Cache) — good for a dashboard bar, not
+    /// an allocator audit.
+    pub freed_bytes: u64,
+    pub duration_ms: f64,
+}
+
+impl From<CacheClean> for CacheCleanResponse {
+    fn from(clean: CacheClean) -> Self {
+        Self {
+            removed_expired: clean.removed_expired,
+            removed_stale: clean.removed_stale,
+            entries_before: clean.entries_before,
+            entries_after: clean.entries_after,
+            freed_bytes: clean.freed_bytes,
+            duration_ms: clean.duration.as_secs_f64() * 1000.0,
+        }
+    }
+}
+
+/// `POST /api/v1/cache/clean`'s query string.
+#[derive(Debug, Deserialize)]
+pub struct CacheCleanParams {
+    /// `?stale=true` also purges the RFC 8767 stale window — an explicit
+    /// choice, because stale entries are the outage insurance.
+    #[serde(default)]
+    pub stale: bool,
+}
+
+#[derive(Debug, Serialize)]
+pub struct MemoryResponse {
+    pub ruleset_bytes: u64,
+    pub cache_entries: u64,
+    pub cache_estimated_bytes: u64,
+    /// `null` off Linux — the deployment target is a Linux container; a dev
+    /// box on another OS simply has no `/proc/self/status` to read.
+    pub process_rss: Option<u64>,
+}
+
+/// Two-decimal rounding for percentages — `72.61`, not `72.61000000000001`.
+fn round2(value: f64) -> f64 {
+    (value * 100.0).round() / 100.0
+}
+
+#[derive(Debug, Serialize)]
 pub struct ConfigUpdateResponse {
     pub applied: bool,
     pub restart_required: bool,
@@ -400,6 +484,79 @@ mod tests {
             assert_eq!(parse_qtype(&qtype_name(&qtype)), qtype);
         }
         assert_eq!(parse_qtype("aaaa"), QueryType::Aaaa);
+    }
+
+    #[test]
+    fn cache_stats_serialize_with_a_rounded_load_percent() {
+        let response = CacheStatsResponse::from(CacheStats {
+            entries: 7_261,
+            capacity: 10_000,
+            fresh: 7_026,
+            stale: 52,
+            expired: 183,
+            hits: 18_639_283,
+            misses: 1_543_921,
+            evictions: 21_483,
+            estimated_bytes: 2_846_720,
+        });
+        let json = serde_json::to_value(&response).unwrap();
+
+        assert_eq!(json["entries"], 7_261);
+        assert_eq!(json["capacity"], 10_000);
+        assert_eq!(json["fresh"], 7_026);
+        assert_eq!(json["stale"], 52);
+        assert_eq!(json["expired"], 183);
+        assert_eq!(json["hits"], 18_639_283u64);
+        assert_eq!(json["misses"], 1_543_921);
+        assert_eq!(json["evictions"], 21_483);
+        assert_eq!(json["load_percent"], 72.61);
+        assert!(
+            json.get("estimated_bytes").is_none(),
+            "the byte estimate belongs to /debug/memory, not the cache view"
+        );
+    }
+
+    #[test]
+    fn an_empty_cache_reports_zero_load_not_a_division_error() {
+        let response = CacheStatsResponse::from(CacheStats {
+            entries: 0,
+            capacity: 0,
+            fresh: 0,
+            stale: 0,
+            expired: 0,
+            hits: 0,
+            misses: 0,
+            evictions: 0,
+            estimated_bytes: 0,
+        });
+        assert_eq!(response.load_percent, 0.0);
+    }
+
+    #[test]
+    fn cache_clean_reports_duration_in_milliseconds() {
+        let response = CacheCleanResponse::from(CacheClean {
+            removed_expired: 1_834,
+            removed_stale: 0,
+            entries_before: 9_095,
+            entries_after: 7_261,
+            freed_bytes: 2_846_720,
+            duration: Duration::from_micros(4_700),
+        });
+        let json = serde_json::to_value(&response).unwrap();
+        assert_eq!(json["removed_expired"], 1_834);
+        assert_eq!(json["removed_stale"], 0);
+        assert_eq!(json["entries_before"], 9_095);
+        assert_eq!(json["entries_after"], 7_261);
+        assert_eq!(json["freed_bytes"], 2_846_720);
+        assert_eq!(json["duration_ms"], 4.7);
+    }
+
+    #[test]
+    fn clean_params_default_to_keeping_stale_entries() {
+        let params: CacheCleanParams = serde_json::from_str("{}").unwrap();
+        assert!(!params.stale);
+        let params: CacheCleanParams = serde_json::from_str(r#"{"stale": true}"#).unwrap();
+        assert!(params.stale);
     }
 
     #[test]

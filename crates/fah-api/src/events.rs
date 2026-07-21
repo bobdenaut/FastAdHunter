@@ -27,6 +27,14 @@ const CHANNEL_CAPACITY: usize = 256;
 /// ~2s").
 const STATS_INTERVAL: Duration = Duration::from_secs(2);
 
+/// A send must make progress within this budget or the socket is dropped. A
+/// peer that vanishes without closing (a phone leaving Wi-Fi — the normal
+/// dashboard client) otherwise parks this task inside `send` once the TCP
+/// buffer fills, and the lag-disconnect can never fire because the task is
+/// no longer receiving. The 2s stats cadence guarantees traffic to trip
+/// this even on an idle network.
+const SEND_TIMEOUT: Duration = Duration::from_secs(15);
+
 /// What the server pushes to clients. Serialized as
 /// `{ "type": …, "data": … }`.
 #[derive(Debug, Clone)]
@@ -69,6 +77,14 @@ impl EventHub {
 
     pub fn subscribe(&self) -> broadcast::Receiver<Event> {
         self.sender.subscribe()
+    }
+
+    /// Whether any events socket is currently connected. The binary's
+    /// fan-out checks this before doing per-query publish work (client-name
+    /// lookup, boxing the record) that the hub would otherwise throw away —
+    /// and no-dashboard-connected is the appliance's idle state ~24h/day.
+    pub fn has_subscribers(&self) -> bool {
+        self.sender.receiver_count() > 0
     }
 }
 
@@ -146,8 +162,10 @@ pub async fn run_socket<S: StatsSource + ?Sized>(
             }
         };
 
-        if socket.send(Message::Text(text.into())).await.is_err() {
-            break;
+        match tokio::time::timeout(SEND_TIMEOUT, socket.send(Message::Text(text.into()))).await {
+            Ok(Ok(())) => {}
+            // A transport error or a peer that stopped draining: drop it.
+            Ok(Err(_)) | Err(_) => break,
         }
     }
 
@@ -224,6 +242,21 @@ mod tests {
             let event = receiver.recv().await.unwrap();
             assert!(matches!(event, Event::Query(_)));
         }
+    }
+
+    #[tokio::test]
+    async fn subscriber_presence_is_reported_live() {
+        let hub = EventHub::new();
+        assert!(!hub.has_subscribers(), "idle by default");
+
+        let receiver = hub.subscribe();
+        assert!(hub.has_subscribers());
+
+        drop(receiver);
+        assert!(
+            !hub.has_subscribers(),
+            "a disconnected dashboard stops the per-query publish work"
+        );
     }
 
     #[tokio::test]

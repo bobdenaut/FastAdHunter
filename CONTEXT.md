@@ -61,6 +61,11 @@ The synthesized DNS answer returned for a blocked query: `0.0.0.0` for A,
 
 The bounded in-memory store of **upstream answers only**. The cache never
 stores verdicts; the Rule Engine runs before the cache on every query.
+An entry passes through three lifetime stages: **fresh** (within TTL —
+answers queries directly), **stale** (past TTL but within the serve-stale
+window — answers only after a failed forward), **expired** (past the stale
+window — dead weight until eviction or a **cache clean**, the admin
+operation that removes it).
 
 ### Upstream
 
@@ -72,8 +77,8 @@ Speaks plain DNS, DoT, or DoH.
 A trait a lower layer declares to describe what it needs from a higher one, so
 the binary can supply the implementation without the dependency arrow pointing
 upward. `HostResolver` (declared by the Rule Engine, implemented over the
-Upstreams) and `StatsSource`/`TelemetrySource` (declared by the API) are the
-existing ones. See ARCHITECTURE.md §Dependency Layering.
+Upstreams) and `StatsSource`/`TelemetrySource`/`CacheSource` (declared by
+the API) are the existing ones. See ARCHITECTURE.md §Dependency Layering.
 
 ### Query Log
 

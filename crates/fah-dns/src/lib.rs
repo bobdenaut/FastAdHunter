@@ -13,6 +13,7 @@ mod tcp;
 mod udp;
 mod upstream;
 
+pub use cache::{CacheClean, CacheStats};
 pub use pipeline::{Pipeline, Transport};
 pub use server::Server;
 pub use upstream::{Forwarder, UpstreamPool, UpstreamStatus};

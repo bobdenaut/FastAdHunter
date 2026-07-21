@@ -25,15 +25,15 @@ Every non-2xx response:
 ```json
 {
   "error": {
-    "code": "invalid_rule_syntax",
-    "message": "line 14: unknown option '$foo'"
+    "code": "validation_failed",
+    "message": "line 14: invalid rule syntax: \"||^\""
   }
 }
 ```
 
 `code` is a stable machine-readable slug; `message` is human-readable.
-Common codes: `unauthorized`, `not_found`, `validation_failed`,
-`restart_required`, `internal`.
+The full code set: `unauthorized` (401), `bad_request` (400), `not_found`
+(404), `conflict` (409), `validation_failed` (422), `internal` (500).
 
 ---
 
@@ -131,6 +131,62 @@ Observed clients (by source IP) with stats and optional names.
 
 Assign/change a client name. Body: `{ "name": "liviu-phone" }`.
 Returns the updated client object. `DELETE` of the name: send `{ "name": null }`.
+
+---
+
+## Cache
+
+### `GET /api/v1/cache`
+
+DNS-cache usage for the dashboard. Entries are counted by lifetime stage:
+**fresh** (still within TTL, answers directly), **stale** (past TTL but
+within the RFC 8767 serve-stale window — answers only after a failed
+forward), **expired** (past the stale window — dead weight awaiting eviction
+or a clean). `hits`/`misses`/`evictions` are process-lifetime counters.
+
+```json
+{
+  "entries": 7261,
+  "capacity": 10000,
+  "fresh": 7026,
+  "stale": 52,
+  "expired": 183,
+  "hits": 18639283,
+  "misses": 1543921,
+  "evictions": 21483,
+  "load_percent": 72.61
+}
+```
+
+`capacity` is the cache's real bound (per-shard capacity × shard count),
+which can round slightly below `dns.cache.max_entries`.
+
+### `POST /api/v1/cache/clean`
+
+Removes expired entries now instead of waiting for capacity eviction.
+Stale-window entries are **kept by default** — they are the serve-stale
+insurance an upstream outage is survived on; pass `?stale=true` to purge
+them too (an explicit admin choice).
+
+```json
+{
+  "removed_expired": 1834,
+  "removed_stale": 0,
+  "entries_before": 9095,
+  "entries_after": 7261,
+  "freed_bytes": 2846720,
+  "duration_ms": 4.7
+}
+```
+
+`cache_estimated_bytes` (under `/debug/memory`) counts the hash-table slabs
+— every bucket, occupied or not, at hashbrown's 8/7-of-capacity sizing —
+plus each entry's own heap (key string, refcounted answer block, record
+buffers, a flat per-record allowance for what hickory owns internally), each
+block rounded to 16-byte allocator granularity. `freed_bytes` counts only
+the removed entries' own heap: a clean never shrinks the table slab, which
+is also why RSS does not drop by `freed_bytes` after one. Built so the gap
+to RSS is explainable — not an allocator audit.
 
 ---
 
@@ -265,6 +321,28 @@ Server → client messages:
 ```
 
 Slow consumers are disconnected rather than back-pressuring the engine.
+
+---
+
+## Debug
+
+### `GET /api/v1/debug/memory`
+
+Where the RAM goes — for checking the PERFORMANCE.md memory budget against a
+live box. The gap between `process_rss` and the parts is runtime + allocator
+retained memory.
+
+```json
+{
+  "ruleset_bytes": 40470816,
+  "cache_entries": 7261,
+  "cache_estimated_bytes": 2846720,
+  "process_rss": 488000000
+}
+```
+
+`process_rss` is read from `/proc/self/status` and is `null` on platforms
+without procfs (a non-Linux dev machine).
 
 ---
 

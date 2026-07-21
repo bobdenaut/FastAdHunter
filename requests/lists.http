@@ -25,6 +25,21 @@
 GET {{base}}/lists
 {{auth}}
 
+### Force a refresh now. 202 Accepted — it runs in the background and the
+### outcome lands in `last_status` and a `list_refreshed` WebSocket event.
+POST {{base}}/lists/hosts/refresh
+{{auth}}
+
+### Refresh a list now. 202 Accepted — it runs in the background and the
+### outcome lands in `last_status` and a `list_refreshed` WebSocket event
+POST {{base}}/lists/1hosts-xtra/refresh
+{{auth}}
+
+### Refresh a list now. 202 Accepted — it runs in the background and the
+### outcome lands in `last_status` and a `list_refreshed` WebSocket event
+POST {{base}}/lists/oisd-basic/refresh
+{{auth}}
+
 ### Add a remote list. `id` is optional — derived from the URL's file stem or
 ### host when omitted, so this one lands as id "small.oisd.nl".
 ###
@@ -126,11 +141,6 @@ Content-Type: application/json
   "refresh_hours": null
 }
 
-### Force a refresh now. 202 Accepted — it runs in the background and the
-### outcome lands in `last_status` and a `list_refreshed` WebSocket event.
-POST {{base}}/lists/hosts/refresh
-{{auth}}
-
 ### Unknown id — expect 404 for all three verbs.
 PATCH {{base}}/lists/ghost
 {{auth}}
@@ -182,7 +192,3 @@ Content-Type: application/json
 {
   "enabled": true
 }
-
-### Confirm the end state: oisd-basic, hosts and 1hosts-xtra, all enabled.
-GET {{base}}/lists
-{{auth}}

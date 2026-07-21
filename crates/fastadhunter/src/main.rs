@@ -281,6 +281,7 @@ impl Engine {
                     Arc::clone(&metrics),
                     upstreams.clone(),
                 )),
+                cache: Arc::new(adapters::CacheAdapter::new(Arc::clone(&pipeline))),
                 config: Arc::new(fah_api::ConfigStore::new(config, config_path.to_path_buf())),
                 keys: Arc::new(keys),
             },
@@ -329,12 +330,19 @@ fn spawn_event_fanout(
     tokio::spawn(async move {
         while let Some(event) = events.recv().await {
             metrics.record(&event);
-            let client_ip = event.query.client_ip;
-            stats.record(event.clone());
-            // Resolved after `record` so a first-ever query already carries
-            // whatever name the registry has.
-            let client_name = stats.client_name(client_ip);
-            hub.publish_query(event, client_name);
+            // The WS publish work (a clone, a boxed record, a client-name
+            // lookup) is only bought when a dashboard is actually connected —
+            // no-subscribers is the appliance's idle state ~24h/day.
+            if hub.has_subscribers() {
+                let client_ip = event.query.client_ip;
+                stats.record(event.clone());
+                // Resolved after `record` so a first-ever query already
+                // carries whatever name the registry has.
+                let client_name = stats.client_name(client_ip);
+                hub.publish_query(event, client_name);
+            } else {
+                stats.record(event);
+            }
         }
     })
 }
@@ -374,7 +382,10 @@ fn spawn_telemetry_poll(
                 rules: matcher.len(),
                 heap_bytes: matcher.heap_bytes(),
                 // Compile timing belongs to the lifecycle, which does not
-                // report it yet; the gauge stays at its last set value.
+                // report it yet — and because this poll overwrites the whole
+                // snapshot every tick, wiring it up later must give compile
+                // duration its own setter written on compile events, not a
+                // field here (anything set here is erased within 10 s).
                 compile_duration: std::time::Duration::ZERO,
             });
         }

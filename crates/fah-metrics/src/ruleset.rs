@@ -6,19 +6,9 @@
 
 use std::time::Duration;
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
 pub struct RulesetSnapshot {
     pub rules: usize,
     pub heap_bytes: usize,
     pub compile_duration: Duration,
-}
-
-impl Default for RulesetSnapshot {
-    fn default() -> Self {
-        Self {
-            rules: 0,
-            heap_bytes: 0,
-            compile_duration: Duration::ZERO,
-        }
-    }
 }

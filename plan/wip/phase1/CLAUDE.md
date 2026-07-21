@@ -50,9 +50,20 @@ on the current instance — delete, restart, still gone.
 
 **Remaining to close p1-11:**
 
-1. Run the `dns-fah` cutover script and confirm all six IPv4 rules moved.
-2. Set `start-on-boot=yes`.
-3. Run the 24h soak, then measure sustained throughput.
+**Cutover done 2026-07-19.** All six IPv4 rules on `172.17.0.3` (including the
+two WireGuard `srcnat` accepts), `start-on-boot=yes`, `status=running`.
+`GET /api/v1/queries` shows real household traffic from multiple LAN clients
+with their own source addresses, blocked verdicts carrying rule and list
+attribution, and durations of 0.013–0.148 ms against a 1 ms p99 budget. The
+populated `rule` field is on-device confirmation that removing `ParsedRule.raw`
+(`c61c00b`) did not break attribution — `decisive_rule` reconstructs it.
+
+AdGuard stays running: it is the rollback target (`dns-adguard`) *and* the
+IPv6 resolver the v6 `dstnat` points at. Stopping it would break IPv6 for the
+whole LAN.
+
+**Remaining:** run the 24h soak (§9 of deploy-rb5009.md), then measure
+sustained throughput.
 
 IPv6 DNS was repaired on 2026-07-19 (the `dstnat` pointed at a dead ULA;
 retargeted to AdGuard's real address). It currently routes to AdGuard, **not**

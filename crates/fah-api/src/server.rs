@@ -9,17 +9,34 @@
 use std::io;
 use std::net::SocketAddr;
 use std::sync::Arc;
+use std::time::Duration;
 
 use axum::Router;
 use hyper_util::rt::{TokioExecutor, TokioIo};
 use hyper_util::server::conn::auto::Builder;
 use hyper_util::service::TowerToHyperService;
 use tokio::net::{TcpListener, TcpStream};
+use tokio::sync::Semaphore;
 use tokio::task::JoinHandle;
 use tokio_rustls::TlsAcceptor;
 
 use crate::events::EventHub;
 use crate::state::AppStateBuilder;
+
+/// Ceiling on concurrently-served connections (hard rule 4: bounded
+/// everything — this listener was the one place memory could grow with
+/// traffic). A dashboard uses a handful of h2 connections; 64 leaves room
+/// for several browsers, scrapers and WS streams while capping what a
+/// misbehaving LAN client can pin. At the ceiling the loop stops *accepting*
+/// (rather than accept-then-drop), so waiting clients queue in the kernel
+/// backlog, which is itself bounded.
+const MAX_CONNECTIONS: usize = 64;
+
+/// A connection must complete its TLS handshake within this budget or be
+/// dropped. Without it, a socket opened and then abandoned (portscan,
+/// slowloris) pins a task, an fd and a connection slot until the peer's OS
+/// gives up — potentially hours.
+const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(10);
 
 /// A bound, running API server.
 pub struct ApiServer {
@@ -86,14 +103,22 @@ impl ApiServer {
 }
 
 async fn accept(listener: TcpListener, router: Router, acceptor: Option<TlsAcceptor>) {
+    let slots = Arc::new(Semaphore::new(MAX_CONNECTIONS));
     loop {
+        // Take the slot before accepting: at the ceiling the listener simply
+        // pauses, and pending clients wait in the (bounded) kernel backlog.
+        // The semaphore is never closed, so acquire cannot fail.
+        let Ok(slot) = Arc::clone(&slots).acquire_owned().await else {
+            return;
+        };
+
         let (stream, peer) = match listener.accept().await {
             Ok(accepted) => accepted,
             Err(err) => {
                 // A per-connection accept error (fd exhaustion, a client
                 // vanishing mid-handshake) must not kill the listener.
                 tracing::warn!(error = %err, "API accept failed");
-                tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+                tokio::time::sleep(Duration::from_millis(50)).await;
                 continue;
             }
         };
@@ -101,6 +126,8 @@ async fn accept(listener: TcpListener, router: Router, acceptor: Option<TlsAccep
         let router = router.clone();
         let acceptor = acceptor.clone();
         tokio::spawn(async move {
+            // Moved in so the slot frees exactly when the connection ends.
+            let _slot = slot;
             if let Err(err) = serve_connection(stream, peer, router, acceptor).await {
                 tracing::debug!(%peer, error = %err, "API connection ended");
             }
@@ -124,7 +151,9 @@ async fn serve_connection(
 
     match acceptor {
         Some(acceptor) => {
-            let stream = acceptor.accept(stream).await?;
+            let stream = tokio::time::timeout(HANDSHAKE_TIMEOUT, acceptor.accept(stream))
+                .await
+                .map_err(|_| "TLS handshake timed out")??;
             builder
                 .serve_connection_with_upgrades(TokioIo::new(stream), hyper_service)
                 .await

@@ -96,7 +96,7 @@ pub fn encode(metrics: &Metrics) -> String {
         &mut out,
         "fastadhunter_query_duration_seconds",
         "histogram",
-        "In-engine query latency, by the pipeline stage that answered (PERFORMANCE.md budgets).",
+        "Query latency by answering path: block/cache_hit are in-engine (PERFORMANCE.md <1ms p99 budgets); forward is end-to-end including the upstream round trip.",
     );
     write_histogram(
         &mut out,
@@ -121,7 +121,7 @@ pub fn encode(metrics: &Metrics) -> String {
         &mut out,
         "fastadhunter_events_dropped_total",
         "counter",
-        "QueryEvents dropped because a consumer channel (stats/metrics) was full.",
+        "QueryEvents dropped because the observers' event channel was full.",
     );
     writeln_metric(
         &mut out,
@@ -247,25 +247,40 @@ pub fn encode(metrics: &Metrics) -> String {
 }
 
 fn write_help_type(out: &mut String, name: &str, kind: &str, help: &str) {
-    let _ = writeln!(out, "# HELP {name} {help}");
+    out.push_str("# HELP ");
+    out.push_str(name);
+    out.push(' ');
+    escape_help_into(out, help);
+    out.push('\n');
     let _ = writeln!(out, "# TYPE {name} {kind}");
 }
 
 fn write_histogram(out: &mut String, name: &str, stage: &str, hist: &Histogram) {
     let cumulative = hist.cumulative_counts();
-    for (bound, count) in BUCKETS_SECONDS.iter().zip(cumulative.iter()) {
+    // One count read shared by `+Inf` and `_count` (the spec requires them
+    // equal), clamped to the last finite bucket: the buckets and the count
+    // are separate relaxed atomics, so a scrape racing `observe` could
+    // otherwise print a `+Inf` below a finite bucket — invalid exposition.
+    let count = hist
+        .count()
+        .max(cumulative.last().copied().unwrap_or_default());
+    let bucket_name = format!("{name}_bucket");
+    let mut bound_str = String::with_capacity(8);
+    for (bound, cumulative_count) in BUCKETS_SECONDS.iter().zip(cumulative.iter()) {
+        bound_str.clear();
+        let _ = write!(bound_str, "{bound}");
         writeln_metric(
             out,
-            &format!("{name}_bucket"),
-            &[("stage", stage), ("le", &format_bound(*bound))],
-            *count as f64,
+            &bucket_name,
+            &[("stage", stage), ("le", &bound_str)],
+            *cumulative_count as f64,
         );
     }
     writeln_metric(
         out,
-        &format!("{name}_bucket"),
+        &bucket_name,
         &[("stage", stage), ("le", "+Inf")],
-        hist.count() as f64,
+        count as f64,
     );
     writeln_metric(
         out,
@@ -277,42 +292,66 @@ fn write_histogram(out: &mut String, name: &str, stage: &str, hist: &Histogram) 
         out,
         &format!("{name}_count"),
         &[("stage", stage)],
-        hist.count() as f64,
+        count as f64,
     );
 }
 
-fn format_bound(bound: f64) -> String {
-    format!("{bound}")
-}
-
+/// Writes one sample line straight into `out` — no intermediate strings; the
+/// only per-line work beyond the value formatting is pushing slices.
 fn writeln_metric(out: &mut String, name: &str, labels: &[(&str, &str)], value: f64) {
-    if labels.is_empty() {
-        let _ = writeln!(out, "{name} {}", format_value(value));
-        return;
+    out.push_str(name);
+    if let Some(((first_key, first_value), rest)) = labels.split_first() {
+        out.push('{');
+        push_label(out, first_key, first_value);
+        for (key, label_value) in rest {
+            out.push(',');
+            push_label(out, key, label_value);
+        }
+        out.push('}');
     }
-    let rendered: Vec<String> = labels
-        .iter()
-        .map(|(k, v)| format!("{k}=\"{}\"", escape_label_value(v)))
-        .collect();
-    let _ = writeln!(
-        out,
-        "{name}{{{}}} {}",
-        rendered.join(","),
-        format_value(value)
-    );
+    let _ = writeln!(out, " {value}");
 }
 
-fn format_value(value: f64) -> String {
-    format!("{value}")
+fn push_label(out: &mut String, key: &str, value: &str) {
+    out.push_str(key);
+    out.push_str("=\"");
+    escape_label_into(out, value);
+    out.push('"');
 }
 
 /// Prometheus text format label-value escaping: backslash, double-quote and
-/// newline are the only characters that need it.
-fn escape_label_value(value: &str) -> String {
-    value
-        .replace('\\', "\\\\")
-        .replace('"', "\\\"")
-        .replace('\n', "\\n")
+/// newline are the only characters that need it. Escape-free values (the
+/// overwhelmingly common case) are appended as one slice.
+fn escape_label_into(out: &mut String, value: &str) {
+    if !value.contains(['\\', '"', '\n']) {
+        out.push_str(value);
+        return;
+    }
+    for c in value.chars() {
+        match c {
+            '\\' => out.push_str("\\\\"),
+            '"' => out.push_str("\\\""),
+            '\n' => out.push_str("\\n"),
+            other => out.push(other),
+        }
+    }
+}
+
+/// HELP-line escaping per the exposition format: only backslash and newline
+/// (double quotes are legal in HELP text). All current help strings are
+/// escape-free literals; this keeps the next one honest.
+fn escape_help_into(out: &mut String, help: &str) {
+    if !help.contains(['\\', '\n']) {
+        out.push_str(help);
+        return;
+    }
+    for c in help.chars() {
+        match c {
+            '\\' => out.push_str("\\\\"),
+            '\n' => out.push_str("\\n"),
+            other => out.push(other),
+        }
+    }
 }
 
 #[cfg(test)]
@@ -435,6 +474,15 @@ mod tests {
 
     #[test]
     fn label_values_are_escaped() {
-        assert_eq!(escape_label_value("a\"b\\c\nd"), "a\\\"b\\\\c\\nd");
+        let mut out = String::new();
+        escape_label_into(&mut out, "a\"b\\c\nd");
+        assert_eq!(out, "a\\\"b\\\\c\\nd");
+    }
+
+    #[test]
+    fn help_text_is_escaped() {
+        let mut out = String::new();
+        write_help_type(&mut out, "m", "counter", "line\\one\nline two");
+        assert!(out.starts_with("# HELP m line\\\\one\\nline two\n"));
     }
 }

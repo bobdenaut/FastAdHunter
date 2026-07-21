@@ -154,6 +154,45 @@ fn client(view: fah_stats::ClientView) -> ClientEntry {
     }
 }
 
+pub struct CacheAdapter {
+    pipeline: Arc<fah_dns::Pipeline<UpstreamPool>>,
+}
+
+impl CacheAdapter {
+    pub fn new(pipeline: Arc<fah_dns::Pipeline<UpstreamPool>>) -> Self {
+        Self { pipeline }
+    }
+}
+
+impl fah_api::CacheSource for CacheAdapter {
+    fn stats(&self) -> fah_api::CacheStats {
+        let stats = self.pipeline.cache_stats();
+        fah_api::CacheStats {
+            entries: stats.entries,
+            capacity: stats.capacity,
+            fresh: stats.fresh,
+            stale: stats.stale,
+            expired: stats.expired,
+            hits: stats.hits,
+            misses: stats.misses,
+            evictions: stats.evictions,
+            estimated_bytes: stats.estimated_bytes,
+        }
+    }
+
+    fn clean(&self, purge_stale: bool) -> fah_api::CacheClean {
+        let clean = self.pipeline.cache_clean(purge_stale);
+        fah_api::CacheClean {
+            removed_expired: clean.removed_expired,
+            removed_stale: clean.removed_stale,
+            entries_before: clean.entries_before,
+            entries_after: clean.entries_after,
+            freed_bytes: clean.freed_bytes,
+            duration: clean.duration,
+        }
+    }
+}
+
 pub struct TelemetryAdapter {
     metrics: Arc<Metrics>,
     upstreams: UpstreamPool,

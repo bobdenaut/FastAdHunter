@@ -18,10 +18,7 @@ Content-Type: application/json
 
 {
   "rules": [
-    "||tracker.example.com^",
-    "@@||goodsite.example.com^",
-    "! comments and blank lines are fine",
-    "0.0.0.0 ads.example.net"
+    "||bing.com^"
   ]
 }
 

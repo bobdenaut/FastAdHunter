@@ -1,0 +1,27 @@
+# DNS cache admin — API.md §Cache, §Debug
+#
+# Entry stages (CONTEXT.md §Cache): fresh (within TTL), stale (past TTL but
+# inside the RFC 8767 serve-stale window — outage insurance), expired (dead
+# weight awaiting eviction or a clean).
+
+@base = {{host}}
+
+### Usage snapshot: entries by stage, lifetime hit/miss/eviction counters,
+### and load_percent = entries / capacity.
+GET {{base}}/api/v1/cache
+Authorization: Bearer {{apiKey}}
+
+### Remove expired entries now. Stale entries are kept — expect
+### removed_stale: 0 here; they are what serve-stale survives an upstream
+### outage on.
+POST {{base}}/api/v1/cache/clean
+Authorization: Bearer {{apiKey}}
+
+### Explicitly purge the stale window too (an admin choice, not the default).
+POST {{base}}/api/v1/cache/clean?stale=true
+Authorization: Bearer {{apiKey}}
+
+### Where the RAM goes: compiled ruleset, cache estimate, process RSS
+### (RSS is null off Linux — no procfs on a Windows dev box).
+GET {{base}}/api/v1/debug/memory
+Authorization: Bearer {{apiKey}}

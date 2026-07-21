@@ -2,10 +2,11 @@
 //!
 //! [`Stats`] is the crate's one public handle — owns the aggregates
 //! ([`aggregates`]), the client registry ([`client_registry`]) and the query
-//! log (in-RAM ring + `/data` JSONL segments, [`query_log`]). It consumes
-//! [`fah_model::QueryEvent`]s from a bounded channel the DNS pipeline emits
-//! into ([`Stats::spawn_collector`]) and persists periodic snapshots
-//! ([`snapshot`]) so a restart isn't zero'd (ADR-0002: no embedded DB).
+//! log (in-RAM ring + `/data` JSONL segments, [`query_log`]). The binary's
+//! event fan-out — the single consumer of the DNS pipeline's bounded
+//! [`fah_model::QueryEvent`] channel — calls [`Stats::record`] per event,
+//! and periodic snapshots ([`snapshot`]) persist the aggregates so a
+//! restart isn't zero'd (ADR-0002: no embedded DB).
 
 mod aggregates;
 mod bucket;

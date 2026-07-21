@@ -13,14 +13,14 @@ workspace = true
 # hand this crate plain snapshot DTOs of their own counters via the binary,
 # not their own types). arc-swap: lock-free swap for the infrequently-updated
 # upstream/ruleset snapshots, mirroring fah-rules::ListManager's matcher swap.
+# No tokio: the binary's fan-out task calls `Metrics::record` directly; this
+# crate spawns nothing.
 [dependencies]
 arc-swap = { workspace = true }
 fah-model = { path = "../fah-model" }
-tokio = { workspace = true, features = ["sync", "rt"] }
 
 [dev-dependencies]
 criterion = { workspace = true }
-tokio = { workspace = true, features = ["sync", "rt", "macros", "rt-multi-thread"] }
 
 # Hot-path instrumentation-cost bench (p1-08 acceptance: single-digit ns/event).
 [[bench]]

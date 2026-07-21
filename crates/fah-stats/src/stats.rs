@@ -12,7 +12,6 @@ use std::time::{Duration, SystemTime};
 
 use fah_config::{QueryLogConfig, StatsConfig};
 use fah_model::QueryEvent;
-use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
 
 use crate::aggregates::Aggregates;
@@ -98,7 +97,8 @@ impl Stats {
     }
 
     /// Records one completed query. The sole write path — called by the
-    /// event-consumer task ([`Self::spawn_collector`]) and directly in tests.
+    /// binary's event fan-out task (the single consumer of the pipeline's
+    /// `QueryEvent` channel) and directly in tests.
     pub fn record(&self, event: QueryEvent) {
         let at = event.query.timestamp;
         let blocked = matches!(event.verdict, fah_model::Verdict::Block(_));
@@ -132,22 +132,6 @@ impl Stats {
     /// on the producer (`fah_dns::Pipeline::dropped_events`).
     pub fn query_log_overflow_dropped(&self) -> u64 {
         self.pending_dropped.load(Ordering::Relaxed)
-    }
-
-    /// Consumes `QueryEvent`s until the sender side closes (a slow consumer's
-    /// drops are already counted on the producer side —
-    /// `fah_dns::Pipeline::dropped_events`; the collector itself never drops,
-    /// it just processes as fast as `record` allows).
-    pub fn spawn_collector(
-        self: &Arc<Self>,
-        mut events: mpsc::Receiver<QueryEvent>,
-    ) -> JoinHandle<()> {
-        let stats = Arc::clone(self);
-        tokio::spawn(async move {
-            while let Some(event) = events.recv().await {
-                stats.record(event);
-            }
-        })
     }
 
     pub fn spawn_snapshot_scheduler(self: &Arc<Self>) -> JoinHandle<()> {
@@ -365,30 +349,6 @@ mod tests {
         let page = stats.query_log(&QueryLogFilter::default(), 10, None);
         assert_eq!(page.items[0].client_name.as_deref(), Some("liviu-phone"));
         assert_eq!(page.items[1].client_name, None);
-    }
-
-    #[tokio::test]
-    async fn collector_consumes_events_from_the_channel() {
-        let (stats_config, query_log_config) = config();
-        let dir = tempfile::tempdir().unwrap();
-        let stats = Arc::new(Stats::new(
-            &stats_config,
-            &query_log_config,
-            dir.path().to_path_buf(),
-        ));
-        stats.boot().await;
-
-        let (tx, rx) = mpsc::channel(8);
-        let handle = stats.spawn_collector(rx);
-
-        let client = IpAddr::V4(Ipv4Addr::new(192, 168, 1, 10));
-        tx.send(event("example.com", client, Verdict::Pass))
-            .await
-            .unwrap();
-        drop(tx);
-        handle.await.unwrap();
-
-        assert_eq!(stats.snapshot(SystemTime::now()).queries_total, 1);
     }
 
     #[tokio::test]

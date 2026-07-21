@@ -3,10 +3,10 @@
 //!
 //! **Layering.** `fah-stats`, `fah-metrics` and `fah-dns` are L3 siblings, so
 //! this crate never imports them. It declares what it needs as the
-//! [`ports::StatsSource`] / [`ports::TelemetrySource`] traits and the binary
-//! implements them — ARCHITECTURE.md's "the binary wires them together via
-//! channels and handles". Only `fah-rules` (L2) and `fah-config`/`fah-model`
-//! (L1) are held directly.
+//! [`ports::StatsSource`] / [`ports::TelemetrySource`] / [`ports::CacheSource`]
+//! traits and the binary implements them — ARCHITECTURE.md's "the binary wires
+//! them together via channels and handles". Only `fah-rules` (L2) and
+//! `fah-config`/`fah-model` (L1) are held directly.
 //!
 //! ```text
 //! ApiServer::bind ─ routes::router ─ auth::require_api_key ─┬─ /health, /metrics
@@ -20,6 +20,7 @@ mod events;
 mod keys;
 mod ports;
 mod routes;
+mod rss;
 mod server;
 mod state;
 mod timestamp;
@@ -31,8 +32,9 @@ pub use error::ApiError;
 pub use events::{Event, EventHub};
 pub use keys::ApiKeyStore;
 pub use ports::{
-    BucketCount, ClientCount, ClientEntry, DomainCount, QueryLogPage, QueryLogRequest, QueryRecord,
-    StatsOverview, StatsSource, TelemetrySource, VerdictFilter,
+    BucketCount, CacheClean, CacheSource, CacheStats, ClientCount, ClientEntry, DomainCount,
+    QueryLogPage, QueryLogRequest, QueryRecord, StatsOverview, StatsSource, TelemetrySource,
+    VerdictFilter,
 };
 pub use server::ApiServer;
 pub use state::AppStateBuilder;

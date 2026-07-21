@@ -11,9 +11,9 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime};
 
 use fah_api::{
-    ApiKeyStore, ApiServer, AppStateBuilder, BucketCount, ClientCount, ClientEntry, ConfigStore,
-    DomainCount, QueryLogPage, QueryLogRequest, QueryRecord, StatsOverview, StatsSource,
-    TelemetrySource,
+    ApiKeyStore, ApiServer, AppStateBuilder, BucketCount, CacheClean, CacheSource, CacheStats,
+    ClientCount, ClientEntry, ConfigStore, DomainCount, QueryLogPage, QueryLogRequest, QueryRecord,
+    StatsOverview, StatsSource, TelemetrySource,
 };
 use fah_config::{Config, RulesConfig};
 use fah_model::{DecisiveRule, Query, QueryEvent, QueryType, Verdict};
@@ -128,6 +128,36 @@ impl StatsSource for FakeStats {
     }
 }
 
+struct FakeCache;
+
+impl CacheSource for FakeCache {
+    fn stats(&self) -> CacheStats {
+        CacheStats {
+            entries: 7_261,
+            capacity: 10_000,
+            fresh: 7_026,
+            stale: 52,
+            expired: 183,
+            hits: 18_639_283,
+            misses: 1_543_921,
+            evictions: 21_483,
+            estimated_bytes: 2_846_720,
+        }
+    }
+
+    fn clean(&self, purge_stale: bool) -> CacheClean {
+        CacheClean {
+            removed_expired: 183,
+            // Echoes the flag so the route test proves `?stale=true` lands.
+            removed_stale: if purge_stale { 52 } else { 0 },
+            entries_before: 7_261,
+            entries_after: if purge_stale { 7_026 } else { 7_078 },
+            freed_bytes: 71_744,
+            duration: Duration::from_micros(4_700),
+        }
+    }
+}
+
 struct FakeTelemetry {
     degraded: bool,
 }
@@ -218,6 +248,7 @@ async fn start_with(options: HarnessOptions) -> Harness {
         telemetry: Arc::new(FakeTelemetry {
             degraded: options.degraded,
         }),
+        cache: Arc::new(FakeCache),
         config: Arc::new(ConfigStore::new(config, config_path.clone())),
         keys: Arc::new(keys),
     };
@@ -304,7 +335,9 @@ async fn every_v1_route_requires_the_key() {
         "/api/v1/clients",
         "/api/v1/lists",
         "/api/v1/rules/user",
+        "/api/v1/cache",
         "/api/v1/config",
+        "/api/v1/debug/memory",
     ] {
         let response = harness.client.get(harness.url(path)).send().await.unwrap();
         assert_eq!(response.status(), 401, "{path} must require the key");
@@ -476,6 +509,73 @@ async fn query_filters_are_validated() {
             .await
             .status(),
         200
+    );
+}
+
+// ─── Cache & memory ────────────────────────────────────────────────────
+
+#[tokio::test]
+async fn cache_stats_match_the_documented_shape() {
+    let harness = start().await;
+    let body = harness.get_json("/api/v1/cache").await;
+
+    assert_eq!(body["entries"], 7_261);
+    assert_eq!(body["capacity"], 10_000);
+    assert_eq!(body["fresh"], 7_026);
+    assert_eq!(body["stale"], 52);
+    assert_eq!(body["expired"], 183);
+    assert_eq!(body["hits"], 18_639_283u64);
+    assert_eq!(body["misses"], 1_543_921);
+    assert_eq!(body["evictions"], 21_483);
+    assert_eq!(body["load_percent"], 72.61);
+}
+
+#[tokio::test]
+async fn cache_clean_keeps_stale_by_default_and_purges_on_request() {
+    let harness = start().await;
+
+    let body: Value = harness
+        .client
+        .post(harness.url("/api/v1/cache/clean"))
+        .bearer_auth(&harness.key)
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(body["removed_expired"], 183);
+    assert_eq!(body["removed_stale"], 0, "stale is RFC 8767 insurance");
+    assert_eq!(body["entries_before"], 7_261);
+    assert_eq!(body["entries_after"], 7_078);
+    assert_eq!(body["freed_bytes"], 71_744);
+    assert_eq!(body["duration_ms"], 4.7);
+
+    let purged: Value = harness
+        .client
+        .post(harness.url("/api/v1/cache/clean?stale=true"))
+        .bearer_auth(&harness.key)
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(purged["removed_stale"], 52, "?stale=true reaches the port");
+}
+
+#[tokio::test]
+async fn debug_memory_reports_the_resident_parts() {
+    let harness = start().await;
+    let body = harness.get_json("/api/v1/debug/memory").await;
+
+    assert!(body["ruleset_bytes"].is_u64());
+    assert_eq!(body["cache_entries"], 7_261);
+    assert_eq!(body["cache_estimated_bytes"], 2_846_720);
+    assert!(
+        body["process_rss"].is_u64() || body["process_rss"].is_null(),
+        "a number on the Linux target, null elsewhere — got {:?}",
+        body["process_rss"]
     );
 }
 
@@ -680,6 +780,35 @@ async fn list_mutations_are_persisted_to_the_config_file() {
         .await
         .unwrap();
     assert_eq!(on_disk().len(), 1);
+}
+
+#[tokio::test]
+async fn a_traversal_shaped_id_or_path_is_rejected_at_the_boundary() {
+    let harness = start().await;
+
+    for body in [
+        json!({"url": "https://example.org/l.txt", "id": "../../config/apikey"}),
+        json!({"url": "https://example.org/l.txt", "id": "UPPER"}),
+        json!({"path": "../outside.txt"}),
+    ] {
+        let response = harness
+            .client
+            .post(harness.url("/api/v1/lists"))
+            .bearer_auth(&harness.key)
+            .json(&body)
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), 422, "{body} must be rejected");
+        let error: Value = response.json().await.unwrap();
+        assert_eq!(error["error"]["code"], "validation_failed");
+    }
+
+    assert_eq!(
+        harness.get_json("/api/v1/lists").await["items"],
+        json!([]),
+        "nothing was persisted"
+    );
 }
 
 #[tokio::test]

@@ -11,12 +11,12 @@ GET {{base}}/clients
 {{auth}}
 
 ### Name a client. Returns the updated object.
-PUT {{base}}/clients/192.168.10.15
+PUT {{base}}/clients/192.168.10.17
 {{auth}}
 Content-Type: application/json
 
 {
-  "name": "liviu-phone"
+  "name": "alina-laptop-hp"
 }
 
 ### Clear the name — explicit null.

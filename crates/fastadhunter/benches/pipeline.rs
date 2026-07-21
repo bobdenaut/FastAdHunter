@@ -25,7 +25,7 @@
 use std::hint::black_box;
 use std::net::{IpAddr, Ipv4Addr};
 use std::str::FromStr;
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -41,16 +41,25 @@ use hickory_proto::rr::{Name, RData, Record, RecordType};
 /// states both budgets against "1M blocked domains loaded".
 const BLOCKLIST_SIZE: usize = 1_000_000;
 
-/// Distinct domains cycled through the forward-path benches. Larger than the
-/// cache so the timed loop keeps missing and actually walks the forward path
-/// instead of settling into the cache-hit path `fah-dns`'s bench already
-/// measures.
-const FORWARD_DOMAINS: usize = 4096;
+/// Distinct domains cycled through the forward-path benches — more than the
+/// default cache's 10 000 entries, so with oldest-first eviction the entry a
+/// query would hit is always gone again before the cycle returns to it. The
+/// timed loop therefore misses every time and actually walks the forward path
+/// — including the eviction a full cache pays per insert, which is the steady
+/// state a long-running resolver serves from — instead of settling into the
+/// cache-hit path `fah-dns`'s bench already measures.
+const FORWARD_DOMAINS: usize = 16_384;
 
-/// Concurrent in-flight queries in the throughput bench. The RB5009 has four
-/// cores; a queue several times deeper than that is what a sustained-load
-/// measurement needs to keep every core busy without measuring queueing.
-const CONCURRENCY: usize = 64;
+/// Queries in flight per wave of the throughput bench: a third blocked, a
+/// third cache-hit, a third forwarded. Several times the RB5009's four cores
+/// is what a sustained-load measurement needs to keep every core busy without
+/// turning into a measurement of queue depth.
+const WAVE: usize = 192;
+
+/// Never-yet-seen names for the throughput bench's forwarded third, consumed
+/// through a cursor shared across waves. Bigger than the cache, so by the
+/// time the pool wraps a reused name has long been evicted and still misses.
+const FRESH_POOL: usize = 16_384;
 
 const CLIENT: IpAddr = IpAddr::V4(Ipv4Addr::new(192, 168, 1, 10));
 
@@ -93,6 +102,28 @@ fn hosts_blocklist(count: usize) -> String {
         text.push('\n');
     }
     text
+}
+
+/// Writes the 1M-domain hosts blocklist where a previous run's refresh would
+/// have cached it (`<data>/lists/<id>.raw`) and returns the config declaring
+/// that list — the setup the startup and memory benches share.
+fn cached_1m_blocklist(data_dir: &std::path::Path) -> RulesConfig {
+    let lists_dir = data_dir.join("lists");
+    std::fs::create_dir_all(&lists_dir).unwrap();
+    std::fs::write(
+        lists_dir.join("blocklist-1m.raw"),
+        hosts_blocklist(BLOCKLIST_SIZE),
+    )
+    .unwrap();
+    RulesConfig {
+        refresh_hours_default: 24,
+        lists: vec![RuleListConfig {
+            id: "blocklist-1m".to_string(),
+            url: "https://example.invalid/blocklist.txt".to_string(),
+            enabled: true,
+            refresh_hours: None,
+        }],
+    }
 }
 
 /// Answers instantly with a fixed A record. Upstream RTT is deliberately
@@ -217,7 +248,8 @@ fn bench_blocked_query(c: &mut Criterion) {
 
 /// PERFORMANCE.md: "Forwarded query overhead added by engine, p99 < 1 ms".
 /// The forwarder answers instantly, so what criterion times is exactly the
-/// engine's share: decode, verdict, cache miss, cache insert, encode.
+/// engine's share: decode, verdict, cache miss, cache insert — with the
+/// eviction every insert into a full cache performs — and encode.
 fn bench_forwarded_overhead(c: &mut Criterion) {
     let rt = tokio::runtime::Runtime::new().unwrap();
     let data_dir = tempfile::tempdir().unwrap();
@@ -229,44 +261,60 @@ fn bench_forwarded_overhead(c: &mut Criterion) {
         build_pipeline(manager, forwarder.clone())
     });
 
-    // More distinct domains than the cache holds, so the timed loop keeps
-    // taking the forward path rather than decaying into cache hits.
+    // FORWARD_DOMAINS distinct names, visited strictly in order: combined
+    // with oldest-first eviction, cycling a set larger than the cache
+    // guarantees every lookup misses (the entry was evicted before the cycle
+    // came back around), so the timed loop cannot decay into cache hits.
     let queries: Vec<Vec<u8>> = (0..FORWARD_DOMAINS)
         .map(|i| encode_query(&format!("host{i}.forwarded.example.net")))
         .collect();
 
     let before = forwarder.calls.load(Ordering::Relaxed);
-    let ran = AtomicBool::new(false);
+    // One cursor, two jobs: workload index and premise accounting. It must
+    // live outside the closure and never rewind — criterion re-invokes the
+    // closure per measurement phase, and a cursor that restarts at zero walks
+    // straight back into the entries the previous phase just cached, turning
+    // a slice of every sample into cache hits.
+    let cursor = AtomicU64::new(0);
     let mut group = c.benchmark_group("full_pipeline");
     group.bench_function("forwarded_query_overhead", |b| {
-        ran.store(true, Ordering::Relaxed);
-        let mut i = 0usize;
         b.iter(|| {
-            let raw = &queries[i % queries.len()];
-            i += 1;
+            // One relaxed add per ~5 µs iteration: cost in the noise.
+            let n = cursor.fetch_add(1, Ordering::Relaxed);
+            let raw = &queries[n as usize % queries.len()];
             rt.block_on(pipeline.handle(black_box(raw), CLIENT, Transport::Udp))
         });
     });
     group.finish();
 
     // Criterion never invokes the routine when a `--bench <filter>` argument
-    // excludes it, so the counter would still read `before` and this check
-    // would fire on a run that simply did not measure this path — making the
-    // whole file unfilterable. Only assert when the loop actually ran.
-    if ran.load(Ordering::Relaxed) {
+    // excludes it, so only assert when the loop ran. And when it ran, demand
+    // more than "the forwarder was reached": warmup alone satisfies that even
+    // if every measured sample was a cache hit. The premise worth asserting
+    // is that essentially every iteration forwarded.
+    let iterations = cursor.load(Ordering::Relaxed);
+    let forwards = forwarder.calls.load(Ordering::Relaxed) - before;
+    if iterations > 0 {
         assert!(
-            forwarder.calls.load(Ordering::Relaxed) > before,
-            "no query reached the forwarder — this measured the cache, not the forward path"
+            forwards >= iterations * 9 / 10,
+            "only {forwards} of {iterations} timed queries reached the forwarder — \
+             the loop decayed into cache hits and measured the wrong path"
         );
     }
 }
 
 /// PERFORMANCE.md: "Sustained throughput >= 10 000 QPS". A realistic mix —
-/// blocked, cache-hit and forwarded queries — driven concurrently, because
-/// the budget is about the assembled system under load, not one query at a
-/// time. Reported as elements/second by criterion's throughput support.
+/// a third blocked, a third repeat (cache-hit) traffic, a third fresh names
+/// that must be forwarded — driven `WAVE` queries at a time, because the
+/// budget is about the assembled system under load, not one query at a time.
+/// Reported as elements/second by criterion's throughput support.
 fn bench_throughput(c: &mut Criterion) {
+    // Four workers to match the four RB5009 cores the budget is stated for.
+    // PERFORMANCE.md §Measuring reliably restricts this bench to four cores
+    // externally; shaping the runtime the same way keeps even an unpinned
+    // run comparable instead of dev-box-shaped.
     let rt = tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(4)
         .enable_all()
         .build()
         .unwrap();
@@ -279,38 +327,60 @@ fn bench_throughput(c: &mut Criterion) {
         Arc::new(build_pipeline(manager, forwarder.clone()))
     });
 
-    // Roughly a real resolver's shape: a third blocked, a third repeat
-    // (cache-hit) traffic, a third fresh names that must be forwarded.
     let mut rng = Lcg(0x2545_f491_4f6c_dd1d);
-    let workload: Vec<Vec<u8>> = (0..CONCURRENCY * 3)
-        .map(|i| match i % 3 {
-            0 => encode_query(&format!("t{}.ads.example.com", rng.next() % 1024)),
-            1 => encode_query("cached.example.org"),
-            _ => encode_query(&format!("fresh{}.example.net", rng.next())),
-        })
-        .collect();
-    let workload = Arc::new(workload);
+    let blocked: Arc<Vec<Vec<u8>>> = Arc::new(
+        (0..WAVE / 3)
+            .map(|_| encode_query(&format!("t{}.ads.example.com", rng.next() % 1024)))
+            .collect(),
+    );
+    let cached: Arc<Vec<u8>> = Arc::new(encode_query("cached.example.org"));
+    // The forwarded third rotates through this pool via a cursor shared
+    // across waves. It must not be a fixed per-wave set: anything fixed is in
+    // the cache from the second wave on and stops forwarding, quietly turning
+    // the mix into two-thirds cache hits.
+    let fresh: Arc<Vec<Vec<u8>>> = Arc::new(
+        (0..FRESH_POOL)
+            .map(|i| encode_query(&format!("fresh{i}.example.net")))
+            .collect(),
+    );
+    let fresh_cursor = Arc::new(AtomicU64::new(0));
 
     // Warm the cache-hit third so the steady-state mix is what gets measured.
-    rt.block_on(pipeline.handle(&encode_query("cached.example.org"), CLIENT, Transport::Udp));
+    rt.block_on(pipeline.handle(&cached, CLIENT, Transport::Udp));
+
+    let before = forwarder.calls.load(Ordering::Relaxed);
+    let total = AtomicU64::new(0);
 
     let mut group = c.benchmark_group("full_pipeline");
-    group.throughput(Throughput::Elements(workload.len() as u64));
+    group.throughput(Throughput::Elements(WAVE as u64));
     group.bench_function("sustained_throughput", |b| {
         b.iter_custom(|iters| {
+            total.fetch_add(iters * WAVE as u64, Ordering::Relaxed);
             let pipeline = Arc::clone(&pipeline);
-            let workload = Arc::clone(&workload);
+            let blocked = Arc::clone(&blocked);
+            let cached = Arc::clone(&cached);
+            let fresh = Arc::clone(&fresh);
+            let fresh_cursor = Arc::clone(&fresh_cursor);
             rt.block_on(async move {
                 let started = Instant::now();
                 for _ in 0..iters {
-                    let mut handles = Vec::with_capacity(workload.len());
-                    for index in 0..workload.len() {
+                    let mut handles = Vec::with_capacity(WAVE);
+                    for index in 0..WAVE {
                         let pipeline = Arc::clone(&pipeline);
-                        let workload = Arc::clone(&workload);
+                        let blocked = Arc::clone(&blocked);
+                        let cached = Arc::clone(&cached);
+                        let fresh = Arc::clone(&fresh);
+                        let fresh_cursor = Arc::clone(&fresh_cursor);
                         handles.push(tokio::spawn(async move {
-                            pipeline
-                                .handle(&workload[index], CLIENT, Transport::Udp)
-                                .await
+                            let raw: &[u8] = match index % 3 {
+                                0 => &blocked[index / 3],
+                                1 => &cached,
+                                _ => {
+                                    let n = fresh_cursor.fetch_add(1, Ordering::Relaxed);
+                                    &fresh[n as usize % FRESH_POOL]
+                                }
+                            };
+                            pipeline.handle(raw, CLIENT, Transport::Udp).await
                         }));
                     }
                     for handle in handles {
@@ -322,6 +392,26 @@ fn bench_throughput(c: &mut Criterion) {
         });
     });
     group.finish();
+
+    // The premise, asserted (a filtered-out run leaves `total` at zero): the
+    // fresh third must actually forward, and not much more than the fresh
+    // third may — blocked queries stop at the verdict and the hot name stays
+    // hot, except for the rare eviction under churn.
+    let total = total.load(Ordering::Relaxed);
+    let forwards = forwarder.calls.load(Ordering::Relaxed) - before;
+    if total > 0 {
+        assert!(
+            forwards >= total / 3 * 9 / 10,
+            "only {forwards} of {total} queries forwarded — the fresh third \
+             decayed into cache hits and the measured mix is not what this \
+             bench claims"
+        );
+        assert!(
+            forwards <= total / 3 + total / 10,
+            "{forwards} of {total} queries forwarded — more than the fresh \
+             third; the cache-hit or blocked thirds are leaking upstream"
+        );
+    }
 }
 
 /// PERFORMANCE.md: "Startup to serving (cached lists, 1M-domain parse) 1-3 s".
@@ -331,26 +421,7 @@ fn bench_throughput(c: &mut Criterion) {
 fn bench_startup(c: &mut Criterion) {
     let rt = tokio::runtime::Runtime::new().unwrap();
     let data_dir = tempfile::tempdir().unwrap();
-
-    // Lay down the `/data` cache copy the way a previous run's refresh would
-    // have: `<data>/lists/<id>.raw`.
-    let lists_dir = data_dir.path().join("lists");
-    std::fs::create_dir_all(&lists_dir).unwrap();
-    std::fs::write(
-        lists_dir.join("blocklist-1m.raw"),
-        hosts_blocklist(BLOCKLIST_SIZE),
-    )
-    .unwrap();
-
-    let config = RulesConfig {
-        refresh_hours_default: 24,
-        lists: vec![RuleListConfig {
-            id: "blocklist-1m".to_string(),
-            url: "https://example.invalid/blocklist.txt".to_string(),
-            enabled: true,
-            refresh_hours: None,
-        }],
-    };
+    let config = cached_1m_blocklist(data_dir.path());
 
     let mut group = c.benchmark_group("startup");
     // A 1M-domain parse takes on the order of a second; criterion's default
@@ -430,24 +501,7 @@ fn bench_startup_phases(c: &mut Criterion) {
 fn report_memory(_c: &mut Criterion) {
     let rt = tokio::runtime::Runtime::new().unwrap();
     let data_dir = tempfile::tempdir().unwrap();
-
-    let lists_dir = data_dir.path().join("lists");
-    std::fs::create_dir_all(&lists_dir).unwrap();
-    std::fs::write(
-        lists_dir.join("blocklist-1m.raw"),
-        hosts_blocklist(BLOCKLIST_SIZE),
-    )
-    .unwrap();
-
-    let config = RulesConfig {
-        refresh_hours_default: 24,
-        lists: vec![RuleListConfig {
-            id: "blocklist-1m".to_string(),
-            url: "https://example.invalid/blocklist.txt".to_string(),
-            enabled: true,
-            refresh_hours: None,
-        }],
-    };
+    let config = cached_1m_blocklist(data_dir.path());
 
     let forwarder = InstantForwarder::new();
     let (manager, pipeline) = rt.block_on(async {

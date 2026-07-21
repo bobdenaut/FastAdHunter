@@ -69,6 +69,18 @@ impl<F: Forwarder> Pipeline<F> {
         self.dropped_events.load(Ordering::Relaxed)
     }
 
+    /// Admin-plane cache introspection (`GET /api/v1/cache`, reached through
+    /// the binary's `CacheSource` adapter — `fah-api` never sees this crate).
+    pub fn cache_stats(&self) -> crate::cache::CacheStats {
+        self.cache.stats()
+    }
+
+    /// Admin-plane cache maintenance (`POST /api/v1/cache/clean`): drops
+    /// expired entries, and stale-window entries too when `purge_stale`.
+    pub fn cache_clean(&self, purge_stale: bool) -> crate::cache::CacheClean {
+        self.cache.clean(purge_stale)
+    }
+
     /// Handles one raw wire-format request received over `transport`.
     /// Returns `None` when there is nothing to send back: a malformed packet
     /// (dropped silently, never a panic — a malformed reply could feed a
@@ -142,14 +154,19 @@ impl<F: Forwarder> Pipeline<F> {
         let (response_message, cache_hit, upstream_used, stale) = match local_response {
             Some(blocked) => (blocked, false, false, false),
             None => {
-                self.resolve(
-                    &request,
-                    &query,
-                    &domain,
-                    query.query_type(),
-                    query.query_class(),
-                )
-                .await
+                let resolved = self
+                    .resolve(
+                        &request,
+                        &query,
+                        &domain,
+                        query.query_type(),
+                        query.query_class(),
+                    )
+                    .await;
+                // Blocked queries never reach the cache, so only resolves
+                // count toward the admin cache stats' hit/miss figures.
+                self.cache.note_lookup(resolved.1);
+                resolved
             }
         };
 
@@ -554,6 +571,35 @@ mod tests {
             1,
             "second query must be answered from the cache, not forwarded again"
         );
+    }
+
+    #[tokio::test]
+    async fn cache_stats_count_resolves_but_not_blocked_queries() {
+        let (rules, _data_dir) = manager_with_user_rules("||ads.example.com^\n").await;
+        let forwarder = AnswerOnceForwarder {
+            calls: Arc::new(AtomicU64::new(0)),
+        };
+        let (tx, _rx) = mpsc::channel(8);
+        let pipeline = Pipeline::new(rules, forwarder, 10, &DnsCacheConfig::default(), tx);
+
+        // Blocked: never touches the cache, counts neither hit nor miss.
+        let blocked = encode_query("ads.example.com.", RecordType::A);
+        pipeline.handle(&blocked, client_ip(), Transport::Tcp).await;
+
+        // Miss (forwarded + stored), then a fresh hit.
+        let raw = encode_query("example.com.", RecordType::A);
+        pipeline.handle(&raw, client_ip(), Transport::Tcp).await;
+        pipeline.handle(&raw, client_ip(), Transport::Tcp).await;
+
+        let stats = pipeline.cache_stats();
+        assert_eq!(stats.misses, 1);
+        assert_eq!(stats.hits, 1);
+        assert_eq!(stats.entries, 1);
+        assert_eq!(stats.fresh, 1);
+
+        let outcome = pipeline.cache_clean(false);
+        assert_eq!(outcome.entries_before, 1);
+        assert_eq!(outcome.entries_after, 1, "a fresh entry survives a clean");
     }
 
     #[derive(Clone)]

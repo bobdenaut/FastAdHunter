@@ -109,11 +109,11 @@ function Wait-ForRefresh {
     throw "list $Id did not finish refreshing within $TimeoutSeconds s"
 }
 
-Write-Host "`n=== Clearing every configured list ===" -ForegroundColor Cyan
-foreach ($list in (Invoke-RestMethod "$base/lists" @script:Common).items) {
-    Invoke-RestMethod -Method Delete "$base/lists/$($list.id)" @script:Common | Out-Null
-    Write-Host "  deleted $($list.id)"
-}
+# Write-Host "`n=== Clearing every configured list ===" -ForegroundColor Cyan
+# foreach ($list in (Invoke-RestMethod "$base/lists" @script:Common).items) {
+#     Invoke-RestMethod -Method Delete "$base/lists/$($list.id)" @script:Common | Out-Null
+#     Write-Host "  deleted $($list.id)"
+# }
 
 $baseline = Wait-ForGauge -ExpectedRules 0
 Write-Host ("`nBaseline: {0} rules, {1:N0} B ruleset heap" -f `

@@ -1,10 +1,12 @@
 //! [`Metrics`]: the one registry instance, held behind an `Arc` and shared
 //! with every producer (ARCHITECTURE.md §Dependency Layering — siblings wire
 //! through the binary, not through each other). Query counters and the
-//! latency histograms update off the same `QueryEvent` channel `fah-stats`
-//! consumes ([`Metrics::spawn_collector`]); upstream/ruleset/channel-drop
-//! numbers are polled snapshots the binary pushes in (those crates' own
-//! counters already exist for exactly this — `fah_dns::Pipeline::dropped_events`,
+//! latency histograms update via [`Metrics::record`], called by the binary's
+//! event fan-out task — the single consumer of the pipeline's `QueryEvent`
+//! channel, which also feeds `fah-stats` and the WS hub; upstream/ruleset/
+//! channel-drop numbers are polled snapshots the binary pushes in (those
+//! crates' own counters already exist for exactly this —
+//! `fah_dns::Pipeline::dropped_events`,
 //! `fah_dns::upstream::UpstreamPool::status`, `fah_rules::Matcher::len`/
 //! `heap_bytes` — this crate just never imports their types).
 
@@ -13,8 +15,6 @@ use std::sync::Arc;
 
 use arc_swap::ArcSwap;
 use fah_model::{QueryEvent, Verdict};
-use tokio::sync::mpsc;
-use tokio::task::JoinHandle;
 
 use crate::histogram::Histogram;
 use crate::ruleset::RulesetSnapshot;
@@ -27,9 +27,13 @@ pub struct Metrics {
     pub(crate) cache_hits: AtomicU64,
     pub(crate) cache_misses: AtomicU64,
     pub(crate) cache_stale: AtomicU64,
-    /// In-engine latency, bucketed by the pipeline stage that answered the
-    /// query — matches PERFORMANCE.md's three latency budget rows exactly
-    /// (verdict+cache hit, blocked query, forwarded-query overhead).
+    /// Total in-pipeline latency, bucketed by the path that answered the
+    /// query. `block` and `cache_hit` compare directly against
+    /// PERFORMANCE.md's <1 ms p99 rows; `forward` measures end-to-end
+    /// including the upstream round trip (and, for serve-stale, the failed
+    /// forward attempt that preceded it), so it is NOT comparable to the
+    /// "overhead added by engine" budget row — that would need a
+    /// pipeline-side timer around the upstream await.
     pub(crate) duration_block: Histogram,
     pub(crate) duration_cache_hit: Histogram,
     pub(crate) duration_forward: Histogram,
@@ -65,8 +69,12 @@ impl Metrics {
     /// Records one completed query. The hot-path entry point — atomic
     /// increments only, no lock, no allocation (PERFORMANCE.md). Blocked
     /// queries never reach the cache or an upstream (ADR-0001), so their
-    /// `cache_hit`/`stale` are always false; the stage split below relies on
-    /// that to stay mutually exclusive with the cache/forward paths.
+    /// `cache_hit`/`stale` are always false. A stale serve has
+    /// `cache_hit == true` but only happens after a forward attempt failed
+    /// (its duration includes that upstream timeout), so it belongs to the
+    /// `forward` stage — routing it to `cache_hit` would blow that
+    /// histogram's <1 ms budget signal during exactly the outages it should
+    /// stay clean through.
     pub fn record(&self, event: &QueryEvent) {
         match event.verdict {
             Verdict::Pass => self.queries_pass.fetch_add(1, Ordering::Relaxed),
@@ -85,7 +93,7 @@ impl Metrics {
 
         let stage = if matches!(event.verdict, Verdict::Block(_)) {
             &self.duration_block
-        } else if event.cache_hit {
+        } else if event.cache_hit && !event.stale {
             &self.duration_cache_hit
         } else {
             &self.duration_forward
@@ -106,22 +114,6 @@ impl Metrics {
 
     pub fn set_ruleset(&self, snapshot: RulesetSnapshot) {
         self.ruleset.store(Arc::new(snapshot));
-    }
-
-    /// Consumes `QueryEvent`s until the sender side closes — mirrors
-    /// `fah_stats::Stats::spawn_collector`; the same channel feeds both, one
-    /// receiver each (`fastadhunter` creates one bounded channel per
-    /// consumer, ARCHITECTURE.md §Dependency Layering).
-    pub fn spawn_collector(
-        self: &Arc<Self>,
-        mut events: mpsc::Receiver<QueryEvent>,
-    ) -> JoinHandle<()> {
-        let metrics = Arc::clone(self);
-        tokio::spawn(async move {
-            while let Some(event) = events.recv().await {
-                metrics.record(&event);
-            }
-        })
     }
 }
 
@@ -201,6 +193,24 @@ mod tests {
         assert_eq!(metrics.duration_forward.count(), 1);
     }
 
+    /// A stale serve is a cache hit whose duration includes the failed
+    /// forward attempt — it must land in `forward`, or an upstream outage
+    /// reads as a cache-latency regression.
+    #[test]
+    fn stale_serve_records_into_the_forward_stage() {
+        let metrics = Metrics::new();
+        metrics.record(&event(Verdict::Pass, true, false, true));
+
+        assert_eq!(metrics.duration_cache_hit.count(), 0);
+        assert_eq!(metrics.duration_forward.count(), 1);
+        assert_eq!(
+            metrics.cache_hits.load(Ordering::Relaxed),
+            1,
+            "hit/stale counters are unaffected by the stage routing"
+        );
+        assert_eq!(metrics.cache_stale.load(Ordering::Relaxed), 1);
+    }
+
     #[test]
     fn snapshots_replace_rather_than_accumulate() {
         let metrics = Metrics::new();
@@ -214,20 +224,5 @@ mod tests {
             compile_duration: Duration::from_millis(50),
         });
         assert_eq!(metrics.ruleset.load().rules, 100);
-    }
-
-    #[tokio::test]
-    async fn collector_consumes_events_from_the_channel() {
-        let metrics = Arc::new(Metrics::new());
-        let (tx, rx) = mpsc::channel(8);
-        let handle = metrics.spawn_collector(rx);
-
-        tx.send(event(Verdict::Pass, false, true, false))
-            .await
-            .unwrap();
-        drop(tx);
-        handle.await.unwrap();
-
-        assert_eq!(metrics.queries_pass.load(Ordering::Relaxed), 1);
     }
 }

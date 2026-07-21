@@ -41,8 +41,11 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/lists/{id}/refresh", post(refresh_list))
         .route("/rules/user", get(get_user_rules).put(put_user_rules))
         .route("/rules/test", post(test_rule))
+        .route("/cache", get(cache_stats))
+        .route("/cache/clean", post(cache_clean))
         .route("/config", get(get_config).post(post_config))
         .route("/config/apikey/rotate", post(rotate_api_key))
+        .route("/debug/memory", get(debug_memory))
         .route("/events", get(events_socket));
 
     Router::new()
@@ -84,6 +87,33 @@ async fn metrics(State(state): State<Arc<AppState>>) -> Response {
         state.telemetry.prometheus_text(),
     )
         .into_response()
+}
+
+// ─── Cache & memory ────────────────────────────────────────────────────
+
+async fn cache_stats(State(state): State<Arc<AppState>>) -> Json<CacheStatsResponse> {
+    Json(state.cache.stats().into())
+}
+
+async fn cache_clean(
+    State(state): State<Arc<AppState>>,
+    Query(params): Query<CacheCleanParams>,
+) -> Json<CacheCleanResponse> {
+    Json(state.cache.clean(params.stale).into())
+}
+
+/// Where the RAM goes, for chasing the PERFORMANCE.md budget on-device:
+/// the compiled ruleset (the largest resident thing), the DNS cache, and the
+/// process RSS the container reports. The gap between RSS and the parts is
+/// runtime + allocator-retained memory.
+async fn debug_memory(State(state): State<Arc<AppState>>) -> Json<MemoryResponse> {
+    let cache = state.cache.stats();
+    Json(MemoryResponse {
+        ruleset_bytes: state.rules.matcher().heap_bytes() as u64,
+        cache_entries: cache.entries,
+        cache_estimated_bytes: cache.estimated_bytes,
+        process_rss: crate::rss::process_rss(),
+    })
 }
 
 // ─── Statistics & query log ────────────────────────────────────────────
@@ -254,6 +284,21 @@ async fn create_list(
         }
     };
 
+    // A mounted file's path joins onto the data dir, where `..` segments
+    // would escape it. The caller is the authenticated admin, so this is
+    // hardening, not an auth boundary — but traversal must die here, before
+    // any `Path::join`.
+    if let Some(path) = body.path.as_deref() {
+        if std::path::Path::new(path)
+            .components()
+            .any(|part| matches!(part, std::path::Component::ParentDir))
+        {
+            return Err(ApiError::ValidationFailed(
+                "path must not contain '..'".to_string(),
+            ));
+        }
+    }
+
     let (id, id_was_derived) = match body.id {
         Some(id) => (id, false),
         None => (derive_id(&source), true),
@@ -263,6 +308,7 @@ async fn create_list(
             "could not derive a list id; provide one explicitly".to_string(),
         ));
     }
+    validate_list_id(&id)?;
 
     let config = RuleListConfig {
         id,
@@ -300,12 +346,22 @@ async fn create_list(
     // so `config` is still ours to hand to the engine below.
     persist_lists(&state, current.iter().chain([&config]))?;
 
-    let entry = state.rules.add_list(&config).map_err(|err| match err {
-        fah_rules::LifecycleError::DuplicateList(id) => {
-            ApiError::Conflict(format!("list {id} already exists"))
+    let entry = match state.rules.add_list(&config) {
+        Ok(entry) => entry,
+        Err(err) => {
+            // The file already promises this list but the engine refused it:
+            // put the file back so the two never disagree (API.md
+            // §Persistence). Best-effort — a failure here means the write
+            // path itself is broken, which the returned 500 already conveys.
+            let _ = persist_lists(&state, &current);
+            return Err(match err {
+                fah_rules::LifecycleError::DuplicateList(id) => {
+                    ApiError::Conflict(format!("list {id} already exists"))
+                }
+                other => ApiError::Internal(other.to_string()),
+            });
         }
-        other => ApiError::Internal(other.to_string()),
-    })?;
+    };
 
     let default_hours = state.config.current().rules.refresh_hours_default;
     Ok((
@@ -316,7 +372,8 @@ async fn create_list(
 
 /// A readable, stable id from a URL or path: the file stem where there is
 /// one, else the host. `https://small.oisd.nl` → `small.oisd.nl`;
-/// `/data/lists/local.txt` → `local`.
+/// `/data/lists/local.txt` → `local`. Lowercased, so a derived id always
+/// satisfies [`validate_list_id`]'s alphabet.
 fn derive_id(source: &str) -> String {
     let trimmed = source.trim_end_matches('/');
     let tail = trimmed.rsplit('/').next().unwrap_or(trimmed);
@@ -329,9 +386,27 @@ fn derive_id(source: &str) -> String {
             .trim_start_matches("https://")
             .trim_start_matches("http://")
             .trim_end_matches('/')
-            .to_string();
+            .to_ascii_lowercase();
     }
-    stem.to_string()
+    stem.to_ascii_lowercase()
+}
+
+/// List ids become file names (`/data/lists/{id}.raw`), TOML keys and API
+/// path segments, so the accepted alphabet is locked down at the boundary:
+/// lowercase alphanumerics plus `.`/`_`/`-`, not starting with a dot. Rules
+/// out traversal (`../`), separators, and ids that would surprise in a file
+/// listing or a metrics label.
+fn validate_list_id(id: &str) -> ApiResult<()> {
+    let alphabet_ok = id
+        .bytes()
+        .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || matches!(b, b'.' | b'_' | b'-'));
+    if alphabet_ok && !id.starts_with('.') {
+        return Ok(());
+    }
+    Err(ApiError::ValidationFailed(format!(
+        "invalid list id {id:?}: use lowercase letters, digits, '.', '_' or '-', \
+         and do not start with '.'"
+    )))
 }
 
 async fn patch_list(
@@ -345,7 +420,8 @@ async fn patch_list(
     };
 
     let _guard = state.list_mutations.lock().await;
-    let mut next = configured_lists(&state);
+    let previous = configured_lists(&state);
+    let mut next = previous.clone();
     let target = next
         .iter_mut()
         .find(|list| list.id == id)
@@ -358,11 +434,15 @@ async fn patch_list(
     }
     persist_lists(&state, &next)?;
 
-    let entry = state
-        .rules
-        .update_list(&id, &patch)
-        .await
-        .map_err(|err| unknown_list(&id, err))?;
+    let entry = match state.rules.update_list(&id, &patch).await {
+        Ok(entry) => entry,
+        Err(err) => {
+            // Persisted but not applied: restore the file so it keeps
+            // describing the running engine (API.md §Persistence).
+            let _ = persist_lists(&state, &previous);
+            return Err(unknown_list(&id, err));
+        }
+    };
 
     let default_hours = state.config.current().rules.refresh_hours_default;
     let status = state.rules.status(&id).unwrap_or_default();
@@ -374,19 +454,20 @@ async fn delete_list(
     Path(id): Path<String>,
 ) -> ApiResult<StatusCode> {
     let _guard = state.list_mutations.lock().await;
-    let mut next = configured_lists(&state);
-    let before = next.len();
+    let previous = configured_lists(&state);
+    let mut next = previous.clone();
     next.retain(|list| list.id != id);
-    if next.len() == before {
+    if next.len() == previous.len() {
         return Err(ApiError::NotFound(format!("no such list: {id}")));
     }
     persist_lists(&state, &next)?;
 
-    state
-        .rules
-        .remove_list(&id)
-        .await
-        .map_err(|err| unknown_list(&id, err))?;
+    if let Err(err) = state.rules.remove_list(&id).await {
+        // Persisted but not applied: restore the file so it keeps describing
+        // the running engine (API.md §Persistence).
+        let _ = persist_lists(&state, &previous);
+        return Err(unknown_list(&id, err));
+    }
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -710,6 +791,23 @@ mod tests {
         );
         assert_eq!(derive_id("/data/lists/local.txt"), "local");
         assert_eq!(derive_id("https://example.org/lists/"), "lists");
+        // Lowercased so every derived id passes `validate_list_id`.
+        assert_eq!(derive_id("https://example.org/Xtra/Hosts.txt"), "hosts");
+    }
+
+    #[test]
+    fn list_ids_are_locked_to_a_filesystem_safe_alphabet() {
+        for ok in ["oisd-basic", "small.oisd.nl", "list_2", "a"] {
+            assert!(validate_list_id(ok).is_ok(), "{ok:?} must be accepted");
+        }
+        // Ids become `/data/lists/{id}.raw` — traversal, separators, case
+        // and leading dots all die at the boundary.
+        for bad in ["../apikey", "a/b", "a\\b", "Hosts", ".hidden", "a b"] {
+            assert!(
+                matches!(validate_list_id(bad), Err(ApiError::ValidationFailed(_))),
+                "{bad:?} must be rejected"
+            );
+        }
     }
 
     #[test]

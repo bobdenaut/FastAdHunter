@@ -39,6 +39,44 @@ pub trait TelemetrySource: Send + Sync + 'static {
     fn degraded(&self) -> bool;
 }
 
+/// The DNS cache's admin plane (API.md §Cache) — implemented by the binary
+/// over the `fah-dns` pipeline, the same crossing as the other ports.
+pub trait CacheSource: Send + Sync + 'static {
+    /// Usage snapshot for `GET /api/v1/cache`.
+    fn stats(&self) -> CacheStats;
+    /// `POST /api/v1/cache/clean`: removes expired entries — and, when
+    /// `purge_stale`, the RFC 8767 stale-window entries too.
+    fn clean(&self, purge_stale: bool) -> CacheClean;
+}
+
+/// Cache usage at one point in time. Counter fields (`hits`, `misses`,
+/// `evictions`) are process-lifetime totals; the rest describe current
+/// entries by lifetime stage (CONTEXT.md §Cache: fresh / stale / expired).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CacheStats {
+    pub entries: u64,
+    pub capacity: u64,
+    pub fresh: u64,
+    pub stale: u64,
+    pub expired: u64,
+    pub hits: u64,
+    pub misses: u64,
+    pub evictions: u64,
+    /// Coarse heap estimate — documented as such wherever it is served.
+    pub estimated_bytes: u64,
+}
+
+/// The outcome of one cache clean.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CacheClean {
+    pub removed_expired: u64,
+    pub removed_stale: u64,
+    pub entries_before: u64,
+    pub entries_after: u64,
+    pub freed_bytes: u64,
+    pub duration: Duration,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct StatsOverview {
     pub window: &'static str,
