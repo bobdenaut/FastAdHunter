@@ -229,6 +229,22 @@ fn dedup_slots(entries: usize) -> usize {
     entries.saturating_mul(2).max(8)
 }
 
+/// Ceiling on the *up-front* dedup index [`MatcherBuilder::with_capacity`] will
+/// pre-allocate, regardless of the `expected_rules` ceiling it is handed.
+///
+/// `expected_rules` comes from [`crate::parser::rule_upper_bound`], a pre-parse
+/// *token* count — a correct ceiling, but adversarially loose: a 64 MiB list
+/// (the `MAX_LIST_BYTES` cap) of single-char space-separated tokens is ~33.5M
+/// "rules" that parse to **nothing**, which would size the transient index at
+/// ~268 MB before parsing discovers there are no real rules. On the 1 GB RB5009
+/// a few such lists abort the process at `handle_alloc_error`. This clamp bounds
+/// the pre-allocation to ~32 MB; [`MatcherBuilder::reserve_dedup`] still grows
+/// the index if a (unreachable-on-device) corpus really exceeds it, and the
+/// output is capacity-inert (determinism test), so clamping changes nothing
+/// observable. 4M rules already implies a compiled matcher well past the 40 MB
+/// budget, so the clamp never binds a legitimate corpus.
+const MAX_PREALLOC_RULES: usize = 4_000_000;
+
 /// Lemire's fastrange: maps a 64-bit hash into `[0, cap)` with one 128-bit
 /// multiply and shift — no modulo, and no power-of-two requirement. That lets
 /// the table be sized to the exact rule count / load factor instead of rounding
@@ -274,9 +290,14 @@ impl MatcherBuilder {
     /// the one rehash this parameter exists to avoid. Capacity is a
     /// performance knob and nothing else: the compiled arena, records and
     /// slots come out byte-identical whatever it is set to.
+    ///
+    /// The pre-allocation is clamped at [`MAX_PREALLOC_RULES`] so an
+    /// adversarially inflated ceiling (a hostile list of tokens that parse to
+    /// nothing) cannot force a multi-hundred-MB allocation before parsing runs;
+    /// [`Self::reserve_dedup`] grows the index for the rare real overflow.
     pub fn with_capacity(expected_rules: usize) -> Self {
         Self {
-            dedup: vec![EMPTY; dedup_slots(expected_rules)],
+            dedup: vec![EMPTY; dedup_slots(expected_rules.min(MAX_PREALLOC_RULES))],
             ..Self::default()
         }
     }
@@ -395,6 +416,17 @@ impl MatcherBuilder {
     /// not compared: attribution is informational, never part of a verdict.
     fn identity_matches(&self, idx: u32, rule: &DomainRule, domain: &[u8], flags: u8) -> bool {
         let rec = &self.records[idx as usize];
+        // The side-map indexing below is guarded by these flag bits; the
+        // invariant is that `add_rule` inserts the map entry for every record
+        // that sets the flag. Enforce it in debug rather than only arguing it.
+        debug_assert!(
+            !rec.has_dnstype() || self.dnstype.contains_key(&idx),
+            "FLAG_DNSTYPE record {idx} is missing its dnstype side-map entry"
+        );
+        debug_assert!(
+            !rec.has_rewrite() || self.rewrite.contains_key(&idx),
+            "FLAG_REWRITE record {idx} is missing its rewrite side-map entry"
+        );
         if rec.flags != flags {
             return false;
         }
@@ -1114,5 +1146,64 @@ mod tests {
         );
         // The only thing the second list does add is its own name in `lists`.
         assert!(m.heap_bytes() - single.heap_bytes() < 64);
+    }
+
+    #[test]
+    fn with_capacity_clamps_the_preallocation_against_an_inflated_ceiling() {
+        // `rule_upper_bound` is a pre-parse token count a hostile list can
+        // inflate to tens of millions of "rules" that parse to nothing. The
+        // transient index must be sized from the clamp, never from that
+        // unbounded ceiling, so the up-front allocation can't OOM the box.
+        let clamped = MatcherBuilder::with_capacity(usize::MAX);
+        assert_eq!(
+            clamped.dedup.len(),
+            dedup_slots(MAX_PREALLOC_RULES),
+            "an inflated ceiling must clamp to MAX_PREALLOC_RULES"
+        );
+        // A ceiling under the clamp is still honored exactly.
+        let exact = MatcherBuilder::with_capacity(1_000);
+        assert_eq!(exact.dedup.len(), dedup_slots(1_000));
+    }
+
+    #[test]
+    fn an_adversarial_list_body_cannot_inflate_the_dedup_allocation() {
+        // The real attack path end-to-end: a list body of single-char,
+        // space-separated tokens is a valid `rule_upper_bound` input that parses
+        // to ~nothing, yet its token ceiling is enormous. `with_capacity` must
+        // size the transient index from the clamp, never from that ceiling —
+        // this is what stops a 64 MiB hostile list from forcing a ~268 MB alloc.
+        let garbage = "a ".repeat(5_000_000); // ~5M tokens, above the 4M clamp
+        let ceiling = crate::parser::rule_upper_bound(&garbage);
+        assert!(
+            ceiling > MAX_PREALLOC_RULES,
+            "test input must exceed the clamp to be meaningful (got {ceiling})"
+        );
+        let builder = MatcherBuilder::with_capacity(ceiling);
+        assert_eq!(
+            builder.dedup.len(),
+            dedup_slots(MAX_PREALLOC_RULES),
+            "a {ceiling}-token ceiling must clamp, not size the index for the whole ceiling"
+        );
+    }
+
+    #[test]
+    fn a_clamped_builder_still_compiles_every_distinct_rule() {
+        // Correctness is independent of the clamp: even were the real rule
+        // count to exceed MAX_PREALLOC_RULES, reserve_dedup grows the index.
+        // Proven here in miniature by pinning a tiny "clamp" via a small hint
+        // and overflowing it — the grown path must lose or invent nothing.
+        let mut b = MatcherBuilder::with_capacity(4); // deliberately far too small
+        let list = b.add_list("l");
+        for i in 0..2_000 {
+            b.add_rule(list, &block(&format!("host{i}.example.com")));
+            b.add_rule(list, &block(&format!("host{i}.example.com")));
+        }
+        let m = b.build();
+        assert_eq!(m.len(), 2_000);
+        assert_eq!(m.duplicates_removed(), 2_000);
+        assert!(matches!(
+            decision(&m, "host1999.example.com"),
+            MatchDecision::Block(_)
+        ));
     }
 }

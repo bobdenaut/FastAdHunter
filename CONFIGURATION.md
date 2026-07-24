@@ -164,6 +164,17 @@ queue slabs sit outside it — they scale with `max_entries`, not with answer
 size, and `/debug/memory`'s `cache_estimated_bytes` is the number that
 includes them.
 
+`max_bytes` is a soft ceiling, not a hard wall: each shard keeps at least one
+answer even when that single answer is larger than the shard's byte share
+(`max_bytes / 16`), so it degrades to "one entry per shard" instead of evicting
+what it just stored. Resident bytes are therefore bounded by
+`16 × max(per-shard share, one largest answer)`. At the default 64 MiB the share
+is ~4 MiB/shard — far above any DNS answer — so `bytes` stays at or under
+`max_bytes`. It only matters near the 1 MiB floor: there the ~64 KiB/shard share
+is below a maximum-size TCP answer, so `bytes` can sit a couple of MB over the
+cap. Bounded and negligible against the 128 MB budget — a reason not to run at
+the floor, not a leak.
+
 The `[history]` defaults suit the RB5009's 1 TB SSD: hourly/daily rollups are
 kilobytes/day and the 60 s perf series is tens of MB over 90 days, so keeping
 `retention_days` at 30 (or raising it to 60/90) costs almost nothing. Both are

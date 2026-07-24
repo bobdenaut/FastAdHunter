@@ -464,8 +464,12 @@ impl DnsCache {
         // A refresh replaces the previous answer, whose bytes go with it —
         // `insert` returning the old value is what keeps the running total
         // exact when the same key comes back with a differently sized answer.
+        // `saturating_sub` matches `remove`/`clean`: the invariant guarantees
+        // `previous`'s bytes are already in the total, but if that ever broke,
+        // failing soft (clamp at 0) beats a release-build wrap to ~u64::MAX,
+        // which would pin `over_bounds()` true and evict the shard forever.
         if let Some(previous) = guard.map.insert(key.clone(), entry) {
-            guard.bytes -= entry_heap_bytes(key, &previous);
+            guard.bytes = guard.bytes.saturating_sub(entry_heap_bytes(key, &previous));
         }
         guard.bytes += added;
 
