@@ -8,7 +8,14 @@ use std::time::Duration;
 
 #[derive(Debug, Clone, Copy, Default, PartialEq)]
 pub struct RulesetSnapshot {
+    /// Distinct compiled rules — `rules` + `duplicates_removed` is what the
+    /// lists parsed to before the merge collapsed identical rules.
     pub rules: usize,
     pub heap_bytes: usize,
     pub compile_duration: Duration,
+    /// Rules the last compile dropped as exact duplicates of one already
+    /// present (`Matcher::duplicates_removed`). Zero is the normal reading
+    /// for a single list; a large number means two lists carry the same
+    /// corpus, which is the memory this figure exists to make visible.
+    pub duplicates_removed: usize,
 }

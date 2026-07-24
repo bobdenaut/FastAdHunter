@@ -3,9 +3,14 @@
 //! against, independent of how the crates behind the ports happen to model
 //! their data.
 
+use std::collections::BTreeMap;
 use std::net::IpAddr;
+use std::time::{Duration, SystemTime};
 
-use fah_model::QueryType;
+use fah_model::{
+    CacheStatsSample, HistorySeries, LatencySummary, PerfSeries, QueryType, TopItems,
+    UpstreamSample,
+};
 use serde::{Deserialize, Serialize};
 
 use crate::ports::{CacheClean, CacheStats, ClientEntry, QueryLogPage, QueryRecord, StatsOverview};
@@ -185,6 +190,272 @@ pub fn parse_qtype(name: &str) -> QueryType {
     }
 }
 
+// ─── History (persisted series) ────────────────────────────────────────
+
+/// Common envelope of the three history endpoints: the range actually served,
+/// echoed back so a chart can label its axis without re-deriving the defaults
+/// this crate applied.
+#[derive(Debug, Serialize)]
+pub struct HistorySummaryResponse {
+    /// `hour` | `day`.
+    pub resolution: &'static str,
+    #[serde(serialize_with = "timestamp::serialize")]
+    pub from: SystemTime,
+    #[serde(serialize_with = "timestamp::serialize")]
+    pub to: SystemTime,
+    /// `1` when every stored point in the range is present, `n` when only every
+    /// `n`-th survived the `max_points` budget. Reported rather than hidden: a
+    /// silently sparse chart is a lying chart.
+    pub stride: u64,
+    pub items: Vec<HistoryPointResponse>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct HistoryPointResponse {
+    /// Start of the bucket (the hour, or the UTC day).
+    #[serde(serialize_with = "timestamp::serialize")]
+    pub ts: SystemTime,
+    pub queries: u64,
+    pub blocked: u64,
+    /// `blocked / queries` in percent, two decimals — derived here, like the
+    /// cache view's `load_percent`, so the stored rows stay pure counters.
+    pub blocked_percent: f64,
+    pub cache_hits: u64,
+    pub per_type: BTreeMap<String, u64>,
+}
+
+impl HistorySummaryResponse {
+    pub fn new(
+        resolution: &'static str,
+        from: SystemTime,
+        to: SystemTime,
+        series: HistorySeries,
+    ) -> Self {
+        Self {
+            resolution,
+            from,
+            to,
+            stride: series.stride,
+            items: series
+                .points
+                .into_iter()
+                .map(|point| HistoryPointResponse {
+                    ts: instant(point.ts),
+                    blocked_percent: percent(point.blocked, point.queries),
+                    queries: point.queries,
+                    blocked: point.blocked,
+                    cache_hits: point.cache_hits,
+                    per_type: point.per_type,
+                })
+                .collect(),
+        }
+    }
+}
+
+#[derive(Debug, Serialize)]
+pub struct HistoryPerfResponse {
+    #[serde(serialize_with = "timestamp::serialize")]
+    pub from: SystemTime,
+    #[serde(serialize_with = "timestamp::serialize")]
+    pub to: SystemTime,
+    /// As in [`HistorySummaryResponse::stride`] — the perf series is the one
+    /// that routinely needs it (a 60 s cadence is 1440 samples per day).
+    pub stride: u64,
+    pub items: Vec<PerfSampleResponse>,
+}
+
+/// One persisted [`fah_model::PerfSample`], with `ts` in the RFC 3339 spelling
+/// the rest of the API uses and every other key droppable via `?fields=`.
+/// A key the caller did not ask for is **absent**, not null — `fields` exists to
+/// shrink the payload, and a null would still cost its name.
+#[derive(Debug, Serialize)]
+pub struct PerfSampleResponse {
+    #[serde(serialize_with = "timestamp::serialize")]
+    pub ts: SystemTime,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub rss_bytes: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub qps: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub queries_delta: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub blocked_delta: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub allowed_delta: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cache: Option<CacheStatsSample>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub latency: Option<LatencySummary>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub upstreams: Option<Vec<UpstreamSample>>,
+}
+
+/// Which [`PerfSampleResponse`] keys `?fields=` kept. Names match the response
+/// keys one-for-one, so there is nothing to look up. It trims the *response*;
+/// the read costs the same either way (each sample is one JSONL line, parsed
+/// whole).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PerfFields {
+    pub rss_bytes: bool,
+    pub qps: bool,
+    pub queries_delta: bool,
+    pub blocked_delta: bool,
+    pub allowed_delta: bool,
+    pub cache: bool,
+    pub latency: bool,
+    pub upstreams: bool,
+}
+
+impl PerfFields {
+    /// The default: `?fields=` omitted serves the whole sample.
+    pub const ALL: Self = Self {
+        rss_bytes: true,
+        qps: true,
+        queries_delta: true,
+        blocked_delta: true,
+        allowed_delta: true,
+        cache: true,
+        latency: true,
+        upstreams: true,
+    };
+
+    pub const NONE: Self = Self {
+        rss_bytes: false,
+        qps: false,
+        queries_delta: false,
+        blocked_delta: false,
+        allowed_delta: false,
+        cache: false,
+        latency: false,
+        upstreams: false,
+    };
+
+    /// The accepted `?fields=` names, in response order — also what a rejection
+    /// message lists back.
+    pub const NAMES: [&'static str; 8] = [
+        "rss_bytes",
+        "qps",
+        "queries_delta",
+        "blocked_delta",
+        "allowed_delta",
+        "cache",
+        "latency",
+        "upstreams",
+    ];
+
+    /// Turns one `?fields=` name on; `false` for a name that is not a key.
+    pub fn enable(&mut self, name: &str) -> bool {
+        match name {
+            "rss_bytes" => self.rss_bytes = true,
+            "qps" => self.qps = true,
+            "queries_delta" => self.queries_delta = true,
+            "blocked_delta" => self.blocked_delta = true,
+            "allowed_delta" => self.allowed_delta = true,
+            "cache" => self.cache = true,
+            "latency" => self.latency = true,
+            "upstreams" => self.upstreams = true,
+            _ => return false,
+        }
+        true
+    }
+}
+
+impl HistoryPerfResponse {
+    pub fn new(from: SystemTime, to: SystemTime, series: PerfSeries, fields: PerfFields) -> Self {
+        Self {
+            from,
+            to,
+            stride: series.stride,
+            items: series
+                .samples
+                .into_iter()
+                .map(|sample| PerfSampleResponse {
+                    ts: instant(sample.ts),
+                    rss_bytes: fields.rss_bytes.then_some(sample.rss_bytes),
+                    qps: fields.qps.then_some(sample.qps),
+                    queries_delta: fields.queries_delta.then_some(sample.queries_delta),
+                    blocked_delta: fields.blocked_delta.then_some(sample.blocked_delta),
+                    allowed_delta: fields.allowed_delta.then_some(sample.allowed_delta),
+                    cache: fields.cache.then_some(sample.cache),
+                    latency: fields.latency.then_some(sample.latency),
+                    upstreams: fields.upstreams.then_some(sample.upstreams),
+                })
+                .collect(),
+        }
+    }
+}
+
+#[derive(Debug, Serialize)]
+pub struct HistoryTopResponse {
+    /// `blocked` | `queried` | `clients`.
+    pub kind: &'static str,
+    #[serde(serialize_with = "timestamp::serialize")]
+    pub from: SystemTime,
+    #[serde(serialize_with = "timestamp::serialize")]
+    pub to: SystemTime,
+    pub items: Vec<HistoryTopItem>,
+}
+
+/// Two shapes, because a client is an IP plus an optional name while a domain
+/// is its name alone — untagged, so the JSON is the plain object a chart wants
+/// rather than a wrapper it has to unpick.
+#[derive(Debug, Serialize)]
+#[serde(untagged)]
+pub enum HistoryTopItem {
+    Domain {
+        domain: String,
+        count: u64,
+    },
+    Client {
+        ip: IpAddr,
+        name: Option<String>,
+        count: u64,
+    },
+}
+
+impl HistoryTopResponse {
+    pub fn new(kind: &'static str, from: SystemTime, to: SystemTime, items: TopItems) -> Self {
+        let items = match items {
+            TopItems::Domains(domains) => domains
+                .into_iter()
+                .map(|hit| HistoryTopItem::Domain {
+                    domain: display_domain(&hit.domain),
+                    count: hit.count,
+                })
+                .collect(),
+            TopItems::Clients(clients) => clients
+                .into_iter()
+                .map(|hit| HistoryTopItem::Client {
+                    ip: hit.ip,
+                    name: hit.name,
+                    count: hit.count,
+                })
+                .collect(),
+        };
+        Self {
+            kind,
+            from,
+            to,
+            items,
+        }
+    }
+}
+
+/// Epoch seconds → `SystemTime`, for the persisted rows' `ts` fields.
+fn instant(seconds: u64) -> SystemTime {
+    SystemTime::UNIX_EPOCH + Duration::from_secs(seconds)
+}
+
+/// `part / whole` in percent, two decimals; `0.0` rather than a division error
+/// for an empty bucket.
+fn percent(part: u64, whole: u64) -> f64 {
+    if whole == 0 {
+        0.0
+    } else {
+        round2(part as f64 * 100.0 / whole as f64)
+    }
+}
+
 #[derive(Debug, Serialize)]
 pub struct ClientsResponse {
     pub items: Vec<ClientResponse>,
@@ -225,6 +496,14 @@ pub struct ClientNameRequest {
 #[derive(Debug, Serialize)]
 pub struct ListsResponse {
     pub items: Vec<ListResponse>,
+    /// Rules in the compiled ruleset — **distinct** rules across every list,
+    /// so it is smaller than the sum of the per-list `rules_active_dns` by
+    /// exactly `duplicates_removed`.
+    pub compiled_rules: usize,
+    /// How many rules the merge dropped as duplicates of one already present
+    /// (RULE_ENGINE.md §Deduplication). Ruleset-wide, not per list: a
+    /// duplicate belongs to a pair of lists, not to one of them.
+    pub duplicates_removed: usize,
 }
 
 #[derive(Debug, Serialize)]
@@ -321,16 +600,26 @@ pub struct CacheStatsResponse {
     pub hits: u64,
     pub misses: u64,
     pub evictions: u64,
+    /// What the resident entries hold, and the ceiling the cache evicts
+    /// against — the second of the two bounds (API.md §Cache). Coarse by
+    /// construction: the per-entry estimate, not an allocator audit.
+    pub bytes: u64,
+    pub max_bytes: u64,
     /// `entries / capacity`, in percent, rounded to two decimals.
     pub load_percent: f64,
+    /// `bytes / max_bytes`, in percent, rounded to two decimals — whichever
+    /// of the two load figures is higher is the one about to evict.
+    pub byte_load_percent: f64,
 }
 
 impl From<CacheStats> for CacheStatsResponse {
     fn from(stats: CacheStats) -> Self {
-        let load_percent = if stats.capacity == 0 {
-            0.0
-        } else {
-            round2(stats.entries as f64 * 100.0 / stats.capacity as f64)
+        let percent_of = |value: u64, bound: u64| {
+            if bound == 0 {
+                0.0
+            } else {
+                round2(value as f64 * 100.0 / bound as f64)
+            }
         };
         Self {
             entries: stats.entries,
@@ -341,7 +630,10 @@ impl From<CacheStats> for CacheStatsResponse {
             hits: stats.hits,
             misses: stats.misses,
             evictions: stats.evictions,
-            load_percent,
+            bytes: stats.bytes,
+            max_bytes: stats.max_bytes,
+            load_percent: percent_of(stats.entries, stats.capacity),
+            byte_load_percent: percent_of(stats.bytes, stats.max_bytes),
         }
     }
 }
@@ -497,6 +789,8 @@ mod tests {
             hits: 18_639_283,
             misses: 1_543_921,
             evictions: 21_483,
+            bytes: 2_000_000,
+            max_bytes: 8_000_000,
             estimated_bytes: 2_846_720,
         });
         let json = serde_json::to_value(&response).unwrap();
@@ -510,9 +804,14 @@ mod tests {
         assert_eq!(json["misses"], 1_543_921);
         assert_eq!(json["evictions"], 21_483);
         assert_eq!(json["load_percent"], 72.61);
+        // The enforced byte bound is part of the cache view (p1.5-05): a
+        // dashboard graphs it next to the entry load to see which one binds.
+        assert_eq!(json["bytes"], 2_000_000);
+        assert_eq!(json["max_bytes"], 8_000_000);
+        assert_eq!(json["byte_load_percent"], 25.0);
         assert!(
             json.get("estimated_bytes").is_none(),
-            "the byte estimate belongs to /debug/memory, not the cache view"
+            "the slab-inclusive estimate stays with /debug/memory"
         );
     }
 
@@ -527,9 +826,12 @@ mod tests {
             hits: 0,
             misses: 0,
             evictions: 0,
+            bytes: 0,
+            max_bytes: 0,
             estimated_bytes: 0,
         });
         assert_eq!(response.load_percent, 0.0);
+        assert_eq!(response.byte_load_percent, 0.0);
     }
 
     #[test]

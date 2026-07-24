@@ -19,7 +19,8 @@ this phase makes the router self-host it).
 
 **Why this order:** the rollup + perf-sample *writers* first (they define the
 on-disk contract), then retention config, then the read API that serves them,
-then the cache cap (independent hardening), then verification last.
+then the cache cap and the multi-socket ingest scaling (independent hardening —
+the ingest task *measures before it changes anything*), then verification last.
 
 ## What to persist (resolved with the user)
 
@@ -39,12 +40,13 @@ is unchanged. Long-term *per-client* time-series is out of scope for the base
 
 | # | Task file | Outcome | MODEL | STATUS |
 |---|-----------|---------|-------|--------|
-| 1 | `p1.5-01-history-rollups.md` | Hourly→daily aggregate rollup store in `fah-stats`; `HourRollup`/`DailyTopN` PODs; boot/load/prune | Sonnet | WAITING |
-| 2 | `p1.5-02-perf-sample-series.md` | `Metrics::snapshot()` + histogram percentiles; binary sampler (RSS + cache port + upstream); `PerfSample` persisted via `fah-stats` | Opus | WAITING |
-| 3 | `p1.5-03-history-retention-config.md` | `[history]` config + REST-live-settable retention (30/60/90); CONFIGURATION.md | Sonnet | WAITING |
-| 4 | `p1.5-04-history-query-api.md` | `GET /api/v1/history/{summary,perf,top}`; API.md | Sonnet | WAITING |
-| 5 | `p1.5-05-cache-byte-cap.md` | Byte-aware cache cap so the ceiling respects the 128 MB budget under adversarial input + sustained-throughput measurement | Opus | WAITING |
-| 6 | `p1.5-06-verification.md` | Unit tests (rollup math, prune, sampler), e2e (populate→query history), on-device soak proving disk- and memory-bounded | Sonnet | WAITING |
+| 1 | `p1.5-01-history-rollups.md` | Hourly→daily aggregate rollup store in `fah-stats`; `HourRollup`/`DailyTopN` PODs; boot/load/prune | Sonnet | DONE |
+| 2 | `p1.5-02-perf-sample-series.md` | `Metrics::snapshot()` + histogram percentiles; binary sampler (RSS + cache port + upstream); `PerfSample` persisted via `fah-stats` | Opus | DONE |
+| 3 | `p1.5-03-history-retention-config.md` | `[history]` config + REST-live-settable retention (30/60/90); CONFIGURATION.md | Sonnet | DONE |
+| 4 | `p1.5-04-history-query-api.md` | `GET /api/v1/history/{summary,perf,top}`; API.md | Sonnet | DONE |
+| 5 | `p1.5-05-cache-byte-cap.md` | Byte-aware cache cap so the ceiling respects the 128 MB budget under adversarial input + sustained-throughput measurement | Opus | DONE |
+| 6 | `p1.5-06-reuseport-multisocket-ingest.md` | MEASURED — ingest ruled out as limiter; reconfirmed under CPU saturation (hot-set hammer: `fastadhunter` 65.8% of box via `/tool profile`, 4 cores even ~85%, ~15-16k QPS, conntrack 1.6% of max); deferred, recipe retained (`docs/code-review/p1.5-06-review.md`) | Opus | DONE |
+| 7 | `p1.5-07-verification.md` | Unit tests (rollup math, prune, sampler), e2e (populate→query history), on-device soak proving disk- and memory-bounded | Sonnet | WAITING |
 
 **Definition of done:** after a day of traffic, `/data/history/` holds hourly
 rollups and per-interval perf samples pruned to `retention_days`;

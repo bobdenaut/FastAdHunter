@@ -661,14 +661,32 @@ impl ListManager {
         }
 
         tokio::task::spawn_blocking(move || {
-            let mut builder = MatcherBuilder::new();
+            // One pass over the raw text bounds how many rules can come out
+            // of it, so the builder's dedup index is allocated once, before
+            // the first list is parsed, instead of rehashing its way up
+            // through a 1M-rule compile.
+            let upper_bound: usize = texts
+                .iter()
+                .map(|(_, text)| crate::parser::rule_upper_bound(text))
+                .sum();
+            let mut builder = MatcherBuilder::with_capacity(upper_bound);
             let mut stats = HashMap::new();
             for (id, text) in &texts {
                 let parsed = crate::parse_rule_list(text);
                 stats.insert(id.clone(), RefreshStats::from(&parsed));
                 builder.add_parsed_list(id.clone(), &parsed);
             }
-            (builder.build(), stats)
+            let lists = texts.len();
+            let matcher = builder.build();
+            if matcher.duplicates_removed() > 0 {
+                tracing::info!(
+                    duplicates = matcher.duplicates_removed(),
+                    lists,
+                    rules = matcher.len(),
+                    "removed duplicate rules across lists"
+                );
+            }
+            (matcher, stats)
         })
         .await
         .expect("ruleset compile task panicked")

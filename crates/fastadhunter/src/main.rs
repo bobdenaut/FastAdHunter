@@ -227,9 +227,13 @@ impl Engine {
         let stats = Arc::new(fah_stats::Stats::new(
             &config.stats,
             &config.query_log,
+            &config.history,
             data_dir.to_path_buf(),
         ));
         stats.boot().await;
+        // Captured before `config` is moved into the ConfigStore below; the
+        // perf sampler's cadence is boot-class (see `spawn_perf_sampler`).
+        let perf_sample_interval_seconds = config.history.sample_interval_seconds;
         let metrics = Arc::new(fah_metrics::Metrics::new());
 
         // ── DNS engine (L3) ──
@@ -270,13 +274,17 @@ impl Engine {
 
         let api_address = config.api.address.clone();
         let api_port = config.api.port;
+        let stats_adapter = Arc::new(adapters::StatsAdapter::new(Arc::clone(&stats)));
         let api = fah_api::ApiServer::bind(
             &api_address,
             api_port,
             tls,
             fah_api::AppStateBuilder {
                 rules: Arc::clone(&rules),
-                stats: Arc::new(adapters::StatsAdapter::new(Arc::clone(&stats))),
+                // One adapter, two ports: the live stats handles and the
+                // `/data/history` reads both sit on the same `Arc<Stats>`.
+                stats: Arc::clone(&stats_adapter) as Arc<dyn fah_api::StatsSource>,
+                history: stats_adapter as Arc<dyn fah_api::HistorySource>,
                 telemetry: Arc::new(adapters::TelemetryAdapter::new(
                     Arc::clone(&metrics),
                     upstreams.clone(),
@@ -297,11 +305,18 @@ impl Engine {
             rules.spawn_scheduler(),
             stats.spawn_snapshot_scheduler(),
             stats.spawn_query_log_scheduler(),
+            stats.spawn_history_scheduler(),
             spawn_event_fanout(
                 events_rx,
                 Arc::clone(&stats),
                 Arc::clone(&metrics),
                 api.events(),
+            ),
+            spawn_perf_sampler(
+                Arc::clone(&stats),
+                Arc::clone(&metrics),
+                Arc::clone(&pipeline),
+                perf_sample_interval_seconds,
             ),
             spawn_telemetry_poll(metrics, rules, pipeline, upstreams),
         ];
@@ -381,6 +396,7 @@ fn spawn_telemetry_poll(
             metrics.set_ruleset(fah_metrics::RulesetSnapshot {
                 rules: matcher.len(),
                 heap_bytes: matcher.heap_bytes(),
+                duplicates_removed: matcher.duplicates_removed(),
                 // Compile timing belongs to the lifecycle, which does not
                 // report it yet — and because this poll overwrites the whole
                 // snapshot every tick, wiring it up later must give compile
@@ -390,6 +406,139 @@ fn spawn_telemetry_poll(
             });
         }
     })
+}
+
+/// Samples the live perf/system/cache figures on [`PERF_SAMPLE_INTERVAL`] and
+/// hands each [`fah_model::PerfSample`] to `fah-stats` to persist. Reads only
+/// snapshots — RSS, [`fah_metrics::Metrics::snapshot`], the cache port — never
+/// the per-query path (hard rule 3). Keeps the previous metrics snapshot so
+/// lifetime-cumulative counters become per-interval rates and percentiles.
+fn spawn_perf_sampler(
+    stats: Arc<fah_stats::Stats>,
+    metrics: Arc<fah_metrics::Metrics>,
+    pipeline: Arc<fah_dns::Pipeline<fah_dns::UpstreamPool>>,
+    sample_interval_seconds: u32,
+) -> tokio::task::JoinHandle<()> {
+    // Boot-class: the ticker is built once here. `history.retention_days` and
+    // `history.enabled` apply live (the latter is re-read each tick below), but
+    // a cadence change needs a restart — documented in CONFIGURATION.md.
+    let interval = std::time::Duration::from_secs(u64::from(sample_interval_seconds.max(1)));
+    tokio::spawn(async move {
+        let mut ticker = tokio::time::interval(interval);
+        ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+        let interval_secs = interval.as_secs_f64();
+        let mut prev: Option<fah_metrics::MetricsSnapshot> = None;
+        loop {
+            ticker.tick().await;
+            // Re-read live: a disabled history skips even building the sample.
+            if !stats.history_enabled() {
+                prev = None; // resume with a fresh baseline when re-enabled
+                continue;
+            }
+            let current = metrics.snapshot();
+            let cache = pipeline.cache_stats();
+            let rss = fah_metrics::resident_memory_bytes();
+            let sample = build_perf_sample(&current, prev.as_ref(), &cache, rss, interval_secs);
+            stats.persist_perf_sample(sample).await;
+            prev = Some(current);
+        }
+    })
+}
+
+/// Assembles one [`fah_model::PerfSample`] from a metrics snapshot (deltaed
+/// against the previous one for rates), the cache port, and RSS. Pure — the
+/// timestamp is the only ambient read — so the delta/QPS math is unit-testable.
+fn build_perf_sample(
+    current: &fah_metrics::MetricsSnapshot,
+    prev: Option<&fah_metrics::MetricsSnapshot>,
+    cache: &fah_dns::CacheStats,
+    rss_bytes: u64,
+    interval_secs: f64,
+) -> fah_model::PerfSample {
+    let ts = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+
+    let total = |m: &fah_metrics::MetricsSnapshot| {
+        m.queries_pass
+            .saturating_add(m.queries_allow)
+            .saturating_add(m.queries_block)
+    };
+    let (queries_delta, blocked_delta, allowed_delta) = match prev {
+        Some(prev) => (
+            total(current).saturating_sub(total(prev)),
+            current.queries_block.saturating_sub(prev.queries_block),
+            current.queries_allow.saturating_sub(prev.queries_allow),
+        ),
+        None => (0, 0, 0),
+    };
+    let qps = if interval_secs > 0.0 {
+        queries_delta as f64 / interval_secs
+    } else {
+        0.0
+    };
+
+    fah_model::PerfSample {
+        ts,
+        rss_bytes,
+        qps,
+        queries_delta,
+        blocked_delta,
+        allowed_delta,
+        cache: fah_model::CacheStatsSample {
+            entries: cache.entries,
+            capacity: cache.capacity,
+            fresh: cache.fresh,
+            stale: cache.stale,
+            expired: cache.expired,
+            hits: cache.hits,
+            misses: cache.misses,
+            evictions: cache.evictions,
+            bytes: cache.bytes,
+            max_bytes: cache.max_bytes,
+        },
+        latency: latency_summary(current, prev),
+        upstreams: current
+            .upstreams
+            .iter()
+            .map(|u| fah_model::UpstreamSample {
+                address: u.address.clone(),
+                protocol: u.protocol.to_string(),
+                attempts: u.attempts,
+                failures: u.failures,
+                consecutive_failures: u.consecutive_failures,
+                tls_handshakes: u.tls_handshakes,
+            })
+            .collect(),
+    }
+}
+
+/// Per-stage p50/p99 over the interval since `prev` (or since boot for the
+/// first sample), by diffing the cumulative histogram buckets so the
+/// percentiles describe the interval rather than the whole process lifetime.
+fn latency_summary(
+    current: &fah_metrics::MetricsSnapshot,
+    prev: Option<&fah_metrics::MetricsSnapshot>,
+) -> fah_model::LatencySummary {
+    let interval = |cur: &fah_metrics::StageHistogram,
+                    prev: Option<&fah_metrics::StageHistogram>| {
+        match prev {
+            Some(prev) => cur.delta(prev),
+            None => cur.clone(),
+        }
+    };
+    let block = interval(&current.block, prev.map(|p| &p.block));
+    let cache_hit = interval(&current.cache_hit, prev.map(|p| &p.cache_hit));
+    let forward = interval(&current.forward, prev.map(|p| &p.forward));
+    fah_model::LatencySummary {
+        block_p50: block.quantile(0.5),
+        block_p99: block.quantile(0.99),
+        cache_hit_p50: cache_hit.quantile(0.5),
+        cache_hit_p99: cache_hit.quantile(0.99),
+        forward_p50: forward.quantile(0.5),
+        forward_p99: forward.quantile(0.99),
+    }
 }
 
 /// Waits for ctrl-c or, on Unix, SIGTERM — whichever arrives first.
@@ -430,6 +579,68 @@ fn log_format(format: ConfigLogFormat) -> LogFormat {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn empty_stage() -> fah_metrics::StageHistogram {
+        fah_metrics::StageHistogram {
+            cumulative: vec![0; 11],
+            count: 0,
+            sum_seconds: 0.0,
+        }
+    }
+
+    fn snapshot(pass: u64, allow: u64, block: u64) -> fah_metrics::MetricsSnapshot {
+        fah_metrics::MetricsSnapshot {
+            queries_pass: pass,
+            queries_allow: allow,
+            queries_block: block,
+            cache_hits: 0,
+            cache_misses: 0,
+            cache_stale: 0,
+            dropped_events: 0,
+            block: empty_stage(),
+            cache_hit: empty_stage(),
+            forward: empty_stage(),
+            upstreams: vec![],
+        }
+    }
+
+    fn empty_cache() -> fah_dns::CacheStats {
+        fah_dns::CacheStats {
+            entries: 0,
+            capacity: 0,
+            fresh: 0,
+            stale: 0,
+            expired: 0,
+            hits: 0,
+            misses: 0,
+            evictions: 0,
+            bytes: 0,
+            max_bytes: 0,
+            estimated_bytes: 0,
+        }
+    }
+
+    #[test]
+    fn perf_sample_deltas_and_qps_across_two_snapshots() {
+        let prev = snapshot(100, 5, 20);
+        let current = snapshot(160, 6, 34); // +60 pass, +1 allow, +14 block = +75
+
+        let sample = build_perf_sample(&current, Some(&prev), &empty_cache(), 1000, 60.0);
+        assert_eq!(sample.queries_delta, 75);
+        assert_eq!(sample.blocked_delta, 14);
+        assert_eq!(sample.allowed_delta, 1);
+        assert!((sample.qps - 75.0 / 60.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn perf_sample_first_reading_has_zero_deltas_and_qps() {
+        let current = snapshot(160, 6, 34);
+        let sample = build_perf_sample(&current, None, &empty_cache(), 1000, 60.0);
+        assert_eq!(sample.queries_delta, 0);
+        assert_eq!(sample.blocked_delta, 0);
+        assert_eq!(sample.allowed_delta, 0);
+        assert_eq!(sample.qps, 0.0);
+    }
 
     #[test]
     fn parses_config_flag_and_healthcheck() {

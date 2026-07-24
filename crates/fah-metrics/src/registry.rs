@@ -18,6 +18,7 @@ use fah_model::{QueryEvent, Verdict};
 
 use crate::histogram::Histogram;
 use crate::ruleset::RulesetSnapshot;
+use crate::snapshot::{MetricsSnapshot, StageHistogram};
 use crate::upstream::UpstreamSnapshot;
 
 pub struct Metrics {
@@ -114,6 +115,36 @@ impl Metrics {
 
     pub fn set_ruleset(&self, snapshot: RulesetSnapshot) {
         self.ruleset.store(Arc::new(snapshot));
+    }
+
+    /// A point-in-time read of the whole registry for the perf sampler
+    /// (p1.5-02) — off the hot path, on the sample cadence. Every field is a
+    /// lifetime-cumulative counter; the sampler deltas consecutive snapshots
+    /// for per-interval rates and percentiles (see [`MetricsSnapshot`]).
+    pub fn snapshot(&self) -> MetricsSnapshot {
+        MetricsSnapshot {
+            queries_pass: self.queries_pass.load(Ordering::Relaxed),
+            queries_allow: self.queries_allow.load(Ordering::Relaxed),
+            queries_block: self.queries_block.load(Ordering::Relaxed),
+            cache_hits: self.cache_hits.load(Ordering::Relaxed),
+            cache_misses: self.cache_misses.load(Ordering::Relaxed),
+            cache_stale: self.cache_stale.load(Ordering::Relaxed),
+            dropped_events: self.dropped_events.load(Ordering::Relaxed),
+            block: stage_histogram(&self.duration_block),
+            cache_hit: stage_histogram(&self.duration_cache_hit),
+            forward: stage_histogram(&self.duration_forward),
+            upstreams: self.upstreams.load().as_ref().clone(),
+        }
+    }
+}
+
+/// Reads one latency [`Histogram`] into the sampler-facing [`StageHistogram`]
+/// (cumulative bucket counts + total + sum).
+fn stage_histogram(hist: &Histogram) -> StageHistogram {
+    StageHistogram {
+        cumulative: hist.cumulative_counts(),
+        count: hist.count(),
+        sum_seconds: hist.sum_seconds(),
     }
 }
 
@@ -212,6 +243,46 @@ mod tests {
     }
 
     #[test]
+    fn snapshot_reflects_recorded_counters_and_histograms() {
+        let metrics = Metrics::new();
+        metrics.record(&event(
+            Verdict::Block(DecisiveRule::new("oisd", "||ads.example.com^")),
+            false,
+            false,
+            false,
+        ));
+        metrics.record(&event(Verdict::Pass, true, false, false)); // cache hit
+        metrics.set_dropped_events(4);
+        metrics.set_upstreams(vec![UpstreamSnapshot {
+            address: "1.1.1.1".to_string(),
+            protocol: "udp",
+            attempts: 10,
+            failures: 1,
+            consecutive_failures: 0,
+            tls_handshakes: 0,
+        }]);
+
+        let snap = metrics.snapshot();
+        assert_eq!(snap.queries_block, 1);
+        assert_eq!(snap.queries_pass, 1);
+        assert_eq!(snap.cache_hits, 1);
+        assert_eq!(snap.dropped_events, 4);
+        assert_eq!(snap.block.count, 1);
+        assert_eq!(snap.cache_hit.count, 1);
+        assert_eq!(snap.forward.count, 0);
+        assert_eq!(
+            snap.block.cumulative.len(),
+            crate::histogram::BUCKETS_SECONDS.len()
+        );
+        assert_eq!(snap.upstreams.len(), 1);
+        // The 100 µs observations land in the 0.0001 s (first) bucket → p99 there.
+        assert_eq!(
+            snap.block.quantile(0.99),
+            crate::histogram::BUCKETS_SECONDS[0]
+        );
+    }
+
+    #[test]
     fn snapshots_replace_rather_than_accumulate() {
         let metrics = Metrics::new();
         metrics.set_dropped_events(5);
@@ -222,6 +293,7 @@ mod tests {
             rules: 100,
             heap_bytes: 4096,
             compile_duration: Duration::from_millis(50),
+            duplicates_removed: 7,
         });
         assert_eq!(metrics.ruleset.load().rules, 100);
     }

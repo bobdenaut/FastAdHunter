@@ -11,9 +11,9 @@ use std::path::Path;
 pub use error::ConfigError;
 pub use schema::{
     ApiConfig, BlockingMode, Config, DnsBlockingConfig, DnsCacheConfig, DnsConfig, DnsListenConfig,
-    DnsUpstreamsConfig, EngineConfig, EngineMode, LogConfig, LogFormat, LogLevel, QueryLogConfig,
-    RuleListConfig, RulesConfig, StatsConfig, UpstreamProtocol, UpstreamServerConfig,
-    UpstreamStrategy,
+    DnsUpstreamsConfig, EngineConfig, EngineMode, HistoryConfig, LogConfig, LogFormat, LogLevel,
+    QueryLogConfig, RuleListConfig, RulesConfig, StatsConfig, UpstreamProtocol,
+    UpstreamServerConfig, UpstreamStrategy,
 };
 
 impl Config {
@@ -107,6 +107,9 @@ fn write_atomic(path: &Path, text: &str) -> Result<(), ConfigError> {
     fs::rename(&tmp, path).map_err(at(path))
 }
 
+/// Floor for `[dns.cache] max_bytes` — see the check in [`validate`].
+const MIN_CACHE_MAX_BYTES: u64 = 1024 * 1024;
+
 fn validate(config: &Config) -> Result<(), ConfigError> {
     validate_ip("dns.listen.address", &config.dns.listen.address)?;
     validate_ip("api.address", &config.api.address)?;
@@ -123,6 +126,32 @@ fn validate(config: &Config) -> Result<(), ConfigError> {
             ),
         });
     }
+
+    // 1 MiB spread over 16 cache shards still leaves ~64 KiB per shard — one
+    // maximum-size DNS answer. Below that a shard could be unable to hold a
+    // single entry, turning every insert into an immediate eviction.
+    if config.dns.cache.max_bytes < MIN_CACHE_MAX_BYTES {
+        return Err(ConfigError::Validation {
+            key: "dns.cache.max_bytes",
+            message: format!(
+                "must be at least {MIN_CACHE_MAX_BYTES} (got {})",
+                config.dns.cache.max_bytes
+            ),
+        });
+    }
+
+    validate_range(
+        "history.retention_days",
+        config.history.retention_days,
+        1,
+        3650,
+    )?;
+    validate_range(
+        "history.sample_interval_seconds",
+        config.history.sample_interval_seconds,
+        1,
+        86_400,
+    )?;
 
     if config.dns.upstreams.servers.is_empty() {
         return Err(ConfigError::Validation {
@@ -181,6 +210,19 @@ fn validate_nonzero_port(key: &'static str, port: u16) -> Result<(), ConfigError
     Ok(())
 }
 
+/// Rejects `0` and absurd values on an inclusive `[min, max]` bound — the
+/// history intervals, where `0` would busy-loop or drop everything on the next
+/// prune, and an absurd value is almost certainly a typo.
+fn validate_range(key: &'static str, value: u32, min: u32, max: u32) -> Result<(), ConfigError> {
+    if value < min || value > max {
+        return Err(ConfigError::Validation {
+            key,
+            message: format!("must be between {min} and {max} (got {value})"),
+        });
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -190,6 +232,7 @@ mod tests {
     fn defaults_match_configuration_md_sample() {
         let config = Config::default();
         assert_eq!(config.dns.cache.max_entries, 10_000);
+        assert_eq!(config.dns.cache.max_bytes, 64 * 1024 * 1024);
         assert_eq!(config.api.port, 8443);
         assert_eq!(config.log.level, LogLevel::Info);
         assert_eq!(config.dns.upstreams.servers.len(), 2);
@@ -220,6 +263,7 @@ ttl_seconds = 10
 
 [dns.cache]
 max_entries = 10000
+max_bytes = 67108864
 min_ttl_seconds = 0
 max_ttl_seconds = 86400
 negative_ttl_max_seconds = 60
@@ -254,6 +298,11 @@ flush_interval_seconds = 5
 
 [stats]
 snapshot_interval_seconds = 300
+
+[history]
+enabled = true
+sample_interval_seconds = 60
+retention_days = 30
 
 [api]
 address = "0.0.0.0"
@@ -308,6 +357,40 @@ format = "text"
         let err =
             Config::from_toml_str("[[dns.upstreams.servers]]\nprotocol = \"udp\"\n").unwrap_err();
         assert!(err.to_string().contains("address"));
+    }
+
+    #[test]
+    fn history_defaults_match_configuration_md_sample() {
+        let history = Config::default().history;
+        assert!(history.enabled);
+        assert_eq!(history.sample_interval_seconds, 60);
+        assert_eq!(history.retention_days, 30);
+    }
+
+    #[test]
+    fn history_retention_days_zero_is_rejected() {
+        let mut config = Config::default();
+        config.history.retention_days = 0;
+        let err = config.validate().unwrap_err();
+        assert!(err.to_string().contains("history.retention_days"));
+    }
+
+    #[test]
+    fn history_absurd_values_are_rejected() {
+        let mut config = Config::default();
+        config.history.retention_days = 1_000_000;
+        assert!(config.validate().is_err());
+
+        let mut config = Config::default();
+        config.history.sample_interval_seconds = 0;
+        assert!(config.validate().is_err());
+    }
+
+    #[test]
+    fn history_env_override_applies() {
+        let pairs = vec![("FAH__HISTORY__RETENTION_DAYS".to_string(), "90".to_string())];
+        let config = apply_env_overrides(Config::default(), &pairs).unwrap();
+        assert_eq!(config.history.retention_days, 90);
     }
 
     #[test]
@@ -400,6 +483,21 @@ format = "text"
             err,
             ConfigError::Validation {
                 key: "dns.cache.min_ttl_seconds",
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn validation_rejects_a_cache_byte_cap_below_one_entry_per_shard() {
+        // 64 KiB over 16 shards is 4 KiB each — under a single large answer,
+        // which would make every insert evict what it just stored.
+        let config = Config::from_toml_str("[dns.cache]\nmax_bytes = 65536\n").unwrap();
+        let err = validate(&config).unwrap_err();
+        assert!(matches!(
+            err,
+            ConfigError::Validation {
+                key: "dns.cache.max_bytes",
                 ..
             }
         ));

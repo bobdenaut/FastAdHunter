@@ -45,7 +45,9 @@ fn synthetic_domain(n: u64) -> String {
 }
 
 fn build_1m() -> fah_rules::Matcher {
-    let mut builder = MatcherBuilder::new();
+    // Sized like the compile path does it, so the 1M-domain memory figure
+    // below is the product's and not a rehashing builder's.
+    let mut builder = MatcherBuilder::with_capacity(N);
     let list = builder.add_list("synthetic-1m");
     for n in 0..N as u64 {
         builder.add_rule(
@@ -119,5 +121,81 @@ fn bench_matcher(c: &mut Criterion) {
     group.finish();
 }
 
-criterion_group!(benches, bench_matcher);
+/// What deduplication actually buys, in bytes — the number that decides
+/// whether its compile-time cost is worth paying (p1.5-05).
+///
+/// Two 1M-rule lists are compiled together at several overlap fractions. The
+/// same pair is also compiled with the overlap *renamed away* (fully distinct),
+/// which is exactly what the compiled matcher would have cost before dedup
+/// existed, so the saving is a measured difference and not an extrapolation.
+///
+/// Not a timed criterion bench: the question is memory, and criterion measures
+/// durations. Build wall time is timed here directly, once per configuration.
+fn report_dedup_savings(_c: &mut Criterion) {
+    fn rule(domain: String) -> DomainRule {
+        DomainRule {
+            domain: domain.into(),
+            action: RuleAction::Block,
+            include_subdomains: true,
+            dns_types: None,
+            dns_rewrite: None,
+        }
+    }
+
+    /// `shared` of list B's rules repeat list A's; the rest are its own.
+    /// `distinct_second` renames even the shared part, modelling the
+    /// pre-dedup world where every duplicate occupied its own record.
+    fn compile(shared: usize, distinct_second: bool) -> (fah_rules::Matcher, std::time::Duration) {
+        let started = std::time::Instant::now();
+        let mut b = MatcherBuilder::with_capacity(2 * N);
+        let a = b.add_list("list-a");
+        for n in 0..N as u64 {
+            b.add_rule(a, &rule(synthetic_domain(n)));
+        }
+        let second = b.add_list("list-b");
+        for i in 0..N as u64 {
+            // The first `shared` rules of B repeat A's; the remainder are new
+            // names drawn from a disjoint numeric range.
+            let domain = if (i as usize) < shared && !distinct_second {
+                synthetic_domain(i)
+            } else if (i as usize) < shared {
+                synthetic_domain(i + 10 * N as u64)
+            } else {
+                synthetic_domain(i + N as u64)
+            };
+            b.add_rule(second, &rule(domain));
+        }
+        let matcher = b.build();
+        let elapsed = started.elapsed();
+        (matcher, elapsed)
+    }
+
+    println!("\n[p1.5-05] deduplication: what it costs and what it saves");
+    println!(
+        "  two {N}-rule lists compiled together, by how much of the second \
+         repeats the first\n"
+    );
+    println!(
+        "  {:>8} {:>12} {:>12} {:>12} {:>12} {:>10}",
+        "overlap", "duplicates", "rules", "compiled", "saved", "build"
+    );
+    for percent in [0usize, 25, 50, 75, 90, 100] {
+        let shared = N / 100 * percent;
+        let (deduped, elapsed) = compile(shared, false);
+        let (undeduped, _) = compile(shared, true);
+        let saved = undeduped.heap_bytes() as f64 - deduped.heap_bytes() as f64;
+        println!(
+            "  {:>7}% {:>12} {:>12} {:>9.1} MiB {:>8.1} MiB {:>7.0} ms",
+            percent,
+            deduped.duplicates_removed(),
+            deduped.len(),
+            deduped.heap_bytes() as f64 / (1024.0 * 1024.0),
+            saved / (1024.0 * 1024.0),
+            elapsed.as_secs_f64() * 1000.0,
+        );
+    }
+    println!();
+}
+
+criterion_group!(benches, bench_matcher, report_dedup_savings);
 criterion_main!(benches);

@@ -8,10 +8,10 @@
 use std::sync::Arc;
 use std::time::SystemTime;
 
-use fah_model::Verdict;
+use fah_model::{QueryType, Verdict};
 use serde::{Deserialize, Serialize};
 
-use crate::bucket::{BucketView, HourlyBuckets};
+use crate::bucket::{qtype_index, BucketView, HourlyBuckets, HourlyTypeCounts};
 use crate::top_n::HourlyTopN;
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -19,10 +19,22 @@ pub(crate) struct Aggregates {
     top_blocked: HourlyTopN,
     top_queried: HourlyTopN,
     buckets: HourlyBuckets,
+    /// Per-DNS-type rolling counts, kept alongside (not inside) `buckets` so
+    /// the per-client buckets stay lean. `#[serde(default)]` so a pre-history
+    /// snapshot still loads — the per-type series just starts empty.
+    #[serde(default)]
+    type_counts: HourlyTypeCounts,
 }
 
 impl Aggregates {
-    pub fn record(&mut self, domain: &str, verdict: &Verdict, cache_hit: bool, at: SystemTime) {
+    pub fn record(
+        &mut self,
+        domain: &str,
+        qtype: &QueryType,
+        verdict: &Verdict,
+        cache_hit: bool,
+        at: SystemTime,
+    ) {
         let blocked = matches!(verdict, Verdict::Block(_));
 
         self.top_queried.record(domain, at);
@@ -30,6 +42,24 @@ impl Aggregates {
             self.top_blocked.record(domain, at);
         }
         self.buckets.record(at, blocked, cache_hit);
+        self.type_counts.record(at, qtype_index(qtype));
+    }
+
+    /// Completed-hour rollups for the history writer: joins each completed
+    /// hour's totals with its per-type breakdown by `hour_epoch`. Off the hot
+    /// path — called on the flush cadence.
+    pub fn completed_hour_rollups(&self, now: SystemTime) -> Vec<fah_model::HourRollup> {
+        self.buckets
+            .completed_hours(now)
+            .into_iter()
+            .map(|hour| fah_model::HourRollup {
+                hour_epoch: hour.hour_epoch,
+                queries: hour.queries,
+                blocked: hour.blocked,
+                cache_hits: hour.cache_hits,
+                per_type: self.type_counts.per_type_for(hour.hour_epoch),
+            })
+            .collect()
     }
 
     pub fn queries_total(&self, now: SystemTime) -> u64 {
@@ -85,8 +115,8 @@ mod tests {
     fn totals_and_percentages_track_recorded_events() {
         let mut aggregates = Aggregates::default();
         let now = SystemTime::now();
-        aggregates.record("ads.example.com", &block(), false, now);
-        aggregates.record("example.com", &Verdict::Pass, true, now);
+        aggregates.record("ads.example.com", &QueryType::A, &block(), false, now);
+        aggregates.record("example.com", &QueryType::A, &Verdict::Pass, true, now);
 
         assert_eq!(aggregates.queries_total(now), 2);
         assert_eq!(aggregates.blocked_total(now), 1);
@@ -106,8 +136,8 @@ mod tests {
     fn top_blocked_only_counts_blocked_queries() {
         let mut aggregates = Aggregates::default();
         let now = SystemTime::now();
-        aggregates.record("ads.example.com", &block(), false, now);
-        aggregates.record("example.com", &Verdict::Pass, false, now);
+        aggregates.record("ads.example.com", &QueryType::A, &block(), false, now);
+        aggregates.record("example.com", &QueryType::A, &Verdict::Pass, false, now);
 
         let top_blocked = aggregates.top_blocked(10, now);
         assert_eq!(top_blocked.len(), 1);
@@ -122,8 +152,20 @@ mod tests {
         let hours = |n: u64| UNIX_EPOCH + Duration::from_secs(n * 3600);
 
         let mut aggregates = Aggregates::default();
-        aggregates.record("old-ads.example.com", &block(), true, hours(10));
-        aggregates.record("fresh.example.com", &Verdict::Pass, false, hours(20));
+        aggregates.record(
+            "old-ads.example.com",
+            &QueryType::A,
+            &block(),
+            true,
+            hours(10),
+        );
+        aggregates.record(
+            "fresh.example.com",
+            &QueryType::A,
+            &Verdict::Pass,
+            false,
+            hours(20),
+        );
 
         let now = hours(10 + 24); // the first record just aged out
         assert_eq!(aggregates.queries_total(now), 1);
@@ -140,6 +182,7 @@ mod tests {
         for i in 0..50_000u64 {
             aggregates.record(
                 &format!("domain{i}.example.com"),
+                &QueryType::A,
                 &Verdict::Pass,
                 false,
                 now,

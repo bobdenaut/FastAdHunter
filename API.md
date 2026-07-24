@@ -106,6 +106,140 @@ Query log, newest first. Pagination + filters via query string:
 
 ---
 
+## History (persisted series)
+
+Long-term observability read back from `/data/history` — where
+`GET /api/v1/stats` is a live rolling-24h view, these serve the 30/60/90 days
+`history.retention_days` keeps (CONFIGURATION.md `[history]`). Auth required,
+like everything under `/api/v1/`.
+
+Shared query parameters:
+
+- `from`, `to` — RFC 3339 bounds of the half-open window `[from, to)`. `to`
+  defaults to now; `from` to `to − 24h` (`− 7d` for `/top`, whose data is
+  stored per completed day).
+- `max_points` — response point budget. `summary`: default 5000, max 10000.
+  `perf`: default 1000, max 5000.
+
+`from ≥ to` is a `400` — a window that *cannot* hold data is a request bug. A
+window that simply *has* no data is a `200` with an empty `items`, never a
+`404`. Ranges are bounded on both ends: only the day-files inside the window
+are opened, each is streamed, and the result is capped at `max_points` as it is
+built — so a 90-day request costs the same memory as a one-hour one.
+
+When a series has more points than the budget, only every `stride`-th is
+returned and `stride` says so. Decimation keeps whole rows — it never averages,
+so every point served is a real reading rather than a smoothed one.
+
+### `GET /api/v1/history/summary`
+
+Aggregate series from the hourly rollups. `resolution` is `hour` (default) or
+`day`; a day point is that UTC day's hourly rows summed.
+
+```json
+{
+  "resolution": "hour",
+  "from": "2026-07-16T00:00:00Z",
+  "to": "2026-07-17T00:00:00Z",
+  "stride": 1,
+  "items": [
+    {
+      "ts": "2026-07-16T10:00:00Z",
+      "queries": 5120,
+      "blocked": 610,
+      "blocked_percent": 11.91,
+      "cache_hits": 3143,
+      "per_type": { "A": 3900, "AAAA": 1100, "HTTPS": 120 }
+    }
+  ]
+}
+```
+
+`ts` is the **start** of the bucket. `per_type` uses the fixed label set the
+rollups record (`A`, `AAAA`, `HTTPS`, `MX`, `TXT`, `PTR`, `NS`, `SOA`, `SRV`,
+`CNAME`, `OTHER`); zero buckets are omitted.
+
+### `GET /api/v1/history/perf`
+
+The persisted `PerfSample` series — RSS, QPS, per-interval verdict deltas,
+cache stats, latency percentiles and upstream health, one row per
+`history.sample_interval_seconds` (default 60 s). At that cadence a single day
+is 1440 samples, so this is the endpoint `stride` usually applies to.
+
+`fields` takes a comma-separated subset of the response keys —
+`rss_bytes`, `qps`, `queries_delta`, `blocked_delta`, `allowed_delta`, `cache`,
+`latency`, `upstreams` — and drops the rest (**absent**, not null). `ts` is
+always present. An unknown name is a `400` rather than being ignored, so a typo
+cannot silently remove the series a chart wanted. `fields` trims the response,
+not the read.
+
+```json
+{
+  "from": "2026-07-17T09:00:00Z",
+  "to": "2026-07-17T10:00:00Z",
+  "stride": 1,
+  "items": [
+    {
+      "ts": "2026-07-17T09:01:00Z",
+      "rss_bytes": 55000000,
+      "qps": 12.5,
+      "queries_delta": 750,
+      "blocked_delta": 210,
+      "allowed_delta": 5,
+      "cache": {
+        "entries": 10000, "capacity": 16384,
+        "fresh": 9000, "stale": 800, "expired": 200,
+        "hits": 500000, "misses": 120000, "evictions": 3400,
+        "bytes": 21000000, "max_bytes": 67108864
+      },
+      "latency": {
+        "block_p50": 0.0001, "block_p99": 0.0005,
+        "cache_hit_p50": 0.0001, "cache_hit_p99": 0.00025,
+        "forward_p50": 0.005, "forward_p99": 0.05
+      },
+      "upstreams": [
+        { "address": "1.1.1.1", "protocol": "dot",
+          "attempts": 12000, "failures": 3,
+          "consecutive_failures": 0, "tls_handshakes": 4 }
+      ]
+    }
+  ]
+}
+```
+
+Latency percentiles are **in seconds** and are bucket-granularity estimates
+over the sampling interval, saturating at the top finite bucket — good for a
+trend line, not exact quantiles. `qps` and the `*_delta` counters are
+per-interval; the `cache` counters `hits`/`misses`/`evictions` are
+process-lifetime totals, the rest of `cache` — `bytes` against `max_bytes`
+included — is point-in-time. Rows written before the byte cap existed carry
+neither field and read back as `0`.
+
+### `GET /api/v1/history/top`
+
+Top-N over the range, merged from the daily top-N files. `kind` is `blocked`
+(default), `queried` or `clients`; `n` defaults to 10, max 100.
+
+```json
+{
+  "kind": "blocked",
+  "from": "2026-07-10T00:00:00Z",
+  "to": "2026-07-17T00:00:00Z",
+  "items": [ { "domain": "ads.example.com", "count": 12890 } ]
+}
+```
+
+`kind=clients` returns `{ "ip": "192.168.10.15", "name": "liviu-phone",
+"count": 30122 }` items instead.
+
+This ranking is an **approximation**. Each day-file already holds only that
+day's top-N (a space-saving estimate), so a domain that missed the daily cut-off
+contributes nothing for that day — a steadily-just-below-the-line domain can end
+up ranked under one that spiked into a single day's top-N. It answers "what
+dominated this week", not "the exact order".
+
+---
+
 ## Clients
 
 ### `GET /api/v1/clients`
@@ -154,12 +288,21 @@ or a clean). `hits`/`misses`/`evictions` are process-lifetime counters.
   "hits": 18639283,
   "misses": 1543921,
   "evictions": 21483,
-  "load_percent": 72.61
+  "bytes": 21000000,
+  "max_bytes": 67108864,
+  "load_percent": 72.61,
+  "byte_load_percent": 31.29
 }
 ```
 
 `capacity` is the cache's real bound (per-shard capacity × shard count),
-which can round slightly below `dns.cache.max_entries`.
+which can round slightly below `dns.cache.max_entries`. `max_bytes` is the
+same story for the byte bound (`dns.cache.max_bytes`), and `bytes` is what the
+resident answers hold against it. The cache is bounded by **both**: eviction
+runs oldest-first until entries and bytes are each back inside their bound, so
+the higher of `load_percent` / `byte_load_percent` is the one about to evict.
+`bytes` is a coarse per-entry estimate, not an allocator audit, and excludes
+the hash-table slabs that `/debug/memory` counts.
 
 ### `POST /api/v1/cache/clean`
 
@@ -209,9 +352,19 @@ to RSS is explainable — not an allocator audit.
       "rules_active_dns": 198500,
       "rules_inactive": 15501
     }
-  ]
+  ],
+  "compiled_rules": 512883,
+  "duplicates_removed": 87422
 }
 ```
+
+`compiled_rules` and `duplicates_removed` describe the **merged** ruleset, not
+any single list, which is why they sit on the envelope. The compiled matcher
+holds distinct rules only (RULE_ENGINE.md §Deduplication): loading two
+near-identical corpora (say AdGuard's `filter_48` and HaGeZi's `pro`) stores
+the overlap once and reports how much was collapsed. The per-list `rules_*`
+counts stay parse-based — each list really does contain those rules — so
+`compiled_rules` is smaller than their sum by exactly `duplicates_removed`.
 
 `last_status` (`ok` | `failed` | `never`) reports the last *refresh attempt*;
 the `rules_*` counts report what the list contributes to the ruleset that is

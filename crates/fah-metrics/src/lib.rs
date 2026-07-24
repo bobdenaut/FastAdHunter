@@ -21,10 +21,12 @@ mod histogram;
 mod process;
 mod registry;
 mod ruleset;
+mod snapshot;
 mod upstream;
 
 pub use encode::encode;
 pub use process::resident_memory_bytes;
 pub use registry::Metrics;
 pub use ruleset::RulesetSnapshot;
+pub use snapshot::{MetricsSnapshot, StageHistogram};
 pub use upstream::UpstreamSnapshot;

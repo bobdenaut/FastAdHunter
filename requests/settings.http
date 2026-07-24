@@ -28,7 +28,7 @@ Content-Type: application/json
 {
   "dns": {
     "cache": {
-      "max_entries": 20000
+      "max_entries": 50000
     }
   }
 }
@@ -52,7 +52,7 @@ Content-Type: application/json
 
 {
   "api": { "port": 8443 },
-  "dns": { "cache": { "max_entries": 10000 } }
+  "dns": { "cache": { "max_entries": 50000 } }
 }
 
 ### Nested keys merge; siblings are untouched. Only min_ttl_seconds changes
@@ -114,7 +114,7 @@ Content-Type: application/json
   "query_log": {
     "enabled": true,
     "retention_days": 7,
-    "retention_max_mb": 500
+    "retention_max_mb": 1024
   }
 }
 
@@ -190,7 +190,7 @@ Content-Type: application/json
 {
   "dns": {
     "cache": {
-      "max_entries": 10000
+      "max_entries": 50000
     }
   }
 }

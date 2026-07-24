@@ -5,7 +5,7 @@
 use std::collections::HashMap;
 use std::net::IpAddr;
 use std::sync::Arc;
-use std::time::SystemTime;
+use std::time::{Duration, SystemTime};
 
 use axum::extract::{Path, Query, State, WebSocketUpgrade};
 use axum::http::StatusCode;
@@ -13,11 +13,12 @@ use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post, put};
 use axum::{Json, Router};
 use fah_config::RuleListConfig;
+use fah_model::{HistoryRange, HistoryResolution, TopKind};
 use fah_rules::{ListPatch, ListStatus, RefreshResult};
 
 use crate::error::{ApiError, ApiResult};
 use crate::events::{self, Event};
-use crate::ports::{QueryLogRequest, VerdictFilter};
+use crate::ports::{HistorySource, QueryLogRequest, VerdictFilter};
 use crate::state::AppState;
 use crate::timestamp;
 use crate::wire::*;
@@ -27,11 +28,31 @@ use crate::wire::*;
 const DEFAULT_QUERY_LIMIT: usize = 100;
 const MAX_QUERY_LIMIT: usize = 1000;
 
+/// `GET /api/v1/history/*` bounds (API.md §History). The summary budget covers
+/// 90 days of hourly points (2160) whole, so the default chart is never
+/// silently thinned; the perf series is far denser (1440 samples/day at the
+/// 60 s cadence) and is decimated by default, with `stride` saying so.
+const DEFAULT_SUMMARY_POINTS: usize = 5_000;
+const MAX_SUMMARY_POINTS: usize = 10_000;
+const DEFAULT_PERF_POINTS: usize = 1_000;
+const MAX_PERF_POINTS: usize = 5_000;
+const DEFAULT_TOP_N: usize = 10;
+const MAX_TOP_N: usize = 100;
+
+/// Default windows when `from`/`to` are omitted. Top-N is stored per completed
+/// day, so a 24h default would routinely serve one file or none — a week is the
+/// smallest window that reliably has something in it.
+const DEFAULT_SERIES_WINDOW: Duration = Duration::from_secs(24 * 3600);
+const DEFAULT_TOP_WINDOW: Duration = Duration::from_secs(7 * 24 * 3600);
+
 pub fn router(state: Arc<AppState>) -> Router {
     let v1 = Router::new()
         .route("/stats", get(stats))
         .route("/queries", get(queries))
         .route("/clients", get(clients))
+        .route("/history/summary", get(history_summary))
+        .route("/history/perf", get(history_perf))
+        .route("/history/top", get(history_top))
         .route("/clients/{ip}", put(set_client_name))
         .route("/lists", get(lists).post(create_list))
         .route(
@@ -159,24 +180,184 @@ fn parse_query_params(params: &HashMap<String, String>) -> ApiResult<QueryLogReq
         None => None,
     };
 
-    let timestamp = |key: &str| -> ApiResult<Option<SystemTime>> {
-        match params.get(key) {
-            Some(raw) => timestamp::from_rfc3339(raw).map(Some).ok_or_else(|| {
-                ApiError::BadRequest(format!("{key} must be an RFC 3339 timestamp, got {raw:?}"))
-            }),
-            None => Ok(None),
-        }
-    };
-
     Ok(QueryLogRequest {
         limit,
         cursor: params.get("cursor").cloned(),
         client,
         domain: params.get("domain").cloned(),
         verdict,
-        from: timestamp("from")?,
-        to: timestamp("to")?,
+        from: timestamp_param(params, "from")?,
+        to: timestamp_param(params, "to")?,
     })
+}
+
+/// An RFC 3339 `from`/`to` query parameter — shared by the query log and the
+/// history endpoints, which document the same spelling.
+fn timestamp_param(params: &HashMap<String, String>, key: &str) -> ApiResult<Option<SystemTime>> {
+    match params.get(key) {
+        Some(raw) => timestamp::from_rfc3339(raw).map(Some).ok_or_else(|| {
+            ApiError::BadRequest(format!("{key} must be an RFC 3339 timestamp, got {raw:?}"))
+        }),
+        None => Ok(None),
+    }
+}
+
+// ─── History (persisted series) ────────────────────────────────────────
+
+async fn history_summary(
+    State(state): State<Arc<AppState>>,
+    Query(params): Query<HashMap<String, String>>,
+) -> ApiResult<Json<HistorySummaryResponse>> {
+    let range = parse_range(&params, DEFAULT_SERIES_WINDOW)?;
+    let (resolution, label) = match params.get("resolution").map(String::as_str) {
+        None | Some("hour") => (HistoryResolution::Hour, "hour"),
+        Some("day") => (HistoryResolution::Day, "day"),
+        Some(other) => {
+            return Err(ApiError::BadRequest(format!(
+                "resolution must be one of hour|day, got {other:?}"
+            )))
+        }
+    };
+    let max_points = parse_bounded(
+        &params,
+        "max_points",
+        DEFAULT_SUMMARY_POINTS,
+        MAX_SUMMARY_POINTS,
+    )?;
+
+    let series = read_history(&state.history, move |history| {
+        history.summary(range, resolution, max_points)
+    })
+    .await?;
+    Ok(Json(HistorySummaryResponse::new(
+        label, range.from, range.to, series,
+    )))
+}
+
+async fn history_perf(
+    State(state): State<Arc<AppState>>,
+    Query(params): Query<HashMap<String, String>>,
+) -> ApiResult<Json<HistoryPerfResponse>> {
+    let range = parse_range(&params, DEFAULT_SERIES_WINDOW)?;
+    let fields = parse_perf_fields(&params)?;
+    let max_points = parse_bounded(&params, "max_points", DEFAULT_PERF_POINTS, MAX_PERF_POINTS)?;
+
+    let series = read_history(&state.history, move |history| {
+        history.perf(range, max_points)
+    })
+    .await?;
+    Ok(Json(HistoryPerfResponse::new(
+        range.from, range.to, series, fields,
+    )))
+}
+
+async fn history_top(
+    State(state): State<Arc<AppState>>,
+    Query(params): Query<HashMap<String, String>>,
+) -> ApiResult<Json<HistoryTopResponse>> {
+    let range = parse_range(&params, DEFAULT_TOP_WINDOW)?;
+    let (kind, label) = match params.get("kind").map(String::as_str) {
+        None | Some("blocked") => (TopKind::Blocked, "blocked"),
+        Some("queried") => (TopKind::Queried, "queried"),
+        Some("clients") => (TopKind::Clients, "clients"),
+        Some(other) => {
+            return Err(ApiError::BadRequest(format!(
+                "kind must be one of blocked|queried|clients, got {other:?}"
+            )))
+        }
+    };
+    let limit = parse_bounded(&params, "n", DEFAULT_TOP_N, MAX_TOP_N)?;
+
+    let items = read_history(&state.history, move |history| {
+        history.top(range, kind, limit)
+    })
+    .await?;
+    Ok(Json(HistoryTopResponse::new(
+        label, range.from, range.to, items,
+    )))
+}
+
+/// Runs a history read on a blocking thread. The port is `std::fs` by design
+/// ([`HistorySource`]): scanning a 90-day range on a runtime worker would park
+/// every other request behind it.
+async fn read_history<T: Send + 'static>(
+    history: &Arc<dyn HistorySource>,
+    read: impl FnOnce(&dyn HistorySource) -> std::io::Result<T> + Send + 'static,
+) -> ApiResult<T> {
+    let history = Arc::clone(history);
+    tokio::task::spawn_blocking(move || read(history.as_ref()))
+        .await
+        .map_err(|err| ApiError::Internal(format!("history read task failed: {err}")))?
+        .map_err(|err| ApiError::Internal(format!("reading /data/history: {err}")))
+}
+
+/// The `from`/`to` window of a history request. `to` defaults to now and `from`
+/// to `to - default_window`, so a parameterless call still charts something.
+///
+/// An empty or inverted window is a `400`, not an empty `200`: a range with no
+/// data in it is a normal answer, but a range that *cannot* contain data is a
+/// mistake in the request, and reporting the two identically would leave a
+/// caller staring at an empty chart looking for the outage.
+fn parse_range(
+    params: &HashMap<String, String>,
+    default_window: Duration,
+) -> ApiResult<HistoryRange> {
+    let to = timestamp_param(params, "to")?.unwrap_or_else(SystemTime::now);
+    let from = match timestamp_param(params, "from")? {
+        Some(from) => from,
+        None => to
+            .checked_sub(default_window)
+            .unwrap_or(SystemTime::UNIX_EPOCH),
+    };
+    if from >= to {
+        return Err(ApiError::BadRequest(
+            "from must be earlier than to".to_string(),
+        ));
+    }
+    Ok(HistoryRange { from, to })
+}
+
+/// A positive integer query parameter, clamped to its documented ceiling
+/// (same contract as `GET /api/v1/queries`' `limit`).
+fn parse_bounded(
+    params: &HashMap<String, String>,
+    key: &str,
+    default: usize,
+    max: usize,
+) -> ApiResult<usize> {
+    match params.get(key) {
+        Some(raw) => Ok(raw
+            .parse::<usize>()
+            .map_err(|_| ApiError::BadRequest(format!("{key} must be a number, got {raw:?}")))?
+            .clamp(1, max)),
+        None => Ok(default),
+    }
+}
+
+/// `?fields=` for the perf series: a comma-separated subset of the response
+/// keys. Omitted — or present but empty — means everything; an unknown name is
+/// rejected rather than ignored, so a typo cannot silently drop the series a
+/// chart was asking for.
+fn parse_perf_fields(params: &HashMap<String, String>) -> ApiResult<PerfFields> {
+    let Some(raw) = params.get("fields") else {
+        return Ok(PerfFields::ALL);
+    };
+    let mut fields = PerfFields::NONE;
+    let mut named_any = false;
+    for name in raw
+        .split(',')
+        .map(str::trim)
+        .filter(|name| !name.is_empty())
+    {
+        if !fields.enable(name) {
+            return Err(ApiError::BadRequest(format!(
+                "unknown field {name:?}; fields must be a comma-separated subset of {}",
+                PerfFields::NAMES.join(", ")
+            )));
+        }
+        named_any = true;
+    }
+    Ok(if named_any { fields } else { PerfFields::ALL })
 }
 
 // ─── Clients ───────────────────────────────────────────────────────────
@@ -226,7 +407,15 @@ async fn lists(State(state): State<Arc<AppState>>) -> Json<ListsResponse> {
             list_response(entry, &status, default_hours)
         })
         .collect();
-    Json(ListsResponse { items })
+    // Ruleset-wide totals live on the envelope, not on an item: after the
+    // merge dedups identical rules, "how many rules are actually compiled"
+    // is a property of the combination of lists, not of any one of them.
+    let matcher = state.rules.matcher();
+    Json(ListsResponse {
+        items,
+        compiled_rules: matcher.len(),
+        duplicates_removed: matcher.duplicates_removed(),
+    })
 }
 
 fn list_response(
@@ -666,6 +855,15 @@ async fn post_config(
         .config
         .apply_patch(&patch)
         .map_err(|err| ApiError::ValidationFailed(err.to_string()))?;
+
+    // Push the runtime-class `[history]` fields into the writers so a retention
+    // or enable change is live on the next prune/flush — no restart (hard rule
+    // 3). Idempotent and cheap (two atomic stores), so it runs after every
+    // successful apply rather than diffing the patch for these keys.
+    let history = &state.config.current().history;
+    state
+        .stats
+        .apply_history_config(history.enabled, history.retention_days);
 
     state.events.publish(Event::ConfigChanged {
         restart_required: outcome.restart_required,

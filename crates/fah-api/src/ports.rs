@@ -12,10 +12,14 @@
 //! The DTOs here carry `SystemTime` and `fah_model` types — L1, legal for
 //! everyone. RFC 3339 formatting is the wire layer's job ([`crate::wire`]).
 
+use std::io;
 use std::net::IpAddr;
 use std::time::{Duration, SystemTime};
 
-use fah_model::{QueryEvent, Verdict};
+use fah_model::{
+    HistoryRange, HistoryResolution, HistorySeries, PerfSeries, QueryEvent, TopItems, TopKind,
+    Verdict,
+};
 
 /// Product data: aggregates, query log and the client registry
 /// (API.md §Statistics & query log, §Clients).
@@ -27,6 +31,35 @@ pub trait StatsSource: Send + Sync + 'static {
     fn set_client_name(&self, ip: IpAddr, name: Option<String>) -> Option<ClientEntry>;
     /// One client's name, for decorating live WS query events.
     fn client_name(&self, ip: IpAddr) -> Option<String>;
+    /// Live-applies the runtime-class `[history]` fields after a
+    /// `POST /api/v1/config`. Retention moves the next prune's cut-off via an
+    /// atomic shared with both history writers; `enabled` toggles the flush —
+    /// neither reconstructs anything (hard rule 3). `sample_interval_seconds` is
+    /// boot-class and so is deliberately absent here.
+    fn apply_history_config(&self, enabled: bool, retention_days: u32);
+}
+
+/// The persisted history on `/data/history` (API.md §History) — the same
+/// crossing as [`StatsSource`], but a separate port because the contract is
+/// different in kind: these are **fallible, blocking** file scans, not the
+/// cheap infallible in-RAM snapshots the rest of the stats surface serves.
+///
+/// Every method blocks on `std::fs`. That is deliberate — a multi-day read is
+/// one `spawn_blocking` hop for the whole scan, where an async-per-file API
+/// would pay a hop per file. Handlers must therefore call these from a blocking
+/// task, never straight off a runtime worker.
+///
+/// Types come from `fah_model` (L1) so the reader and this port describe the
+/// same contract rather than two structurally identical ones that can drift.
+pub trait HistorySource: Send + Sync + 'static {
+    fn summary(
+        &self,
+        range: HistoryRange,
+        resolution: HistoryResolution,
+        max_points: usize,
+    ) -> io::Result<HistorySeries>;
+    fn perf(&self, range: HistoryRange, max_points: usize) -> io::Result<PerfSeries>;
+    fn top(&self, range: HistoryRange, kind: TopKind, limit: usize) -> io::Result<TopItems>;
 }
 
 /// Ops telemetry (API.md §Health & telemetry).
@@ -62,7 +95,15 @@ pub struct CacheStats {
     pub hits: u64,
     pub misses: u64,
     pub evictions: u64,
+    /// What the resident entries hold right now — the figure `max_bytes`
+    /// bounds (p1.5-05's byte-aware cap).
+    pub bytes: u64,
+    /// The enforced byte ceiling, which can round slightly below
+    /// `dns.cache.max_bytes` the way `capacity` does below `max_entries`.
+    pub max_bytes: u64,
     /// Coarse heap estimate — documented as such wherever it is served.
+    /// Larger than `bytes`: it also counts the hash-table and queue slabs,
+    /// which the entry bound governs rather than the byte bound.
     pub estimated_bytes: u64,
 }
 

@@ -53,6 +53,7 @@ fn apply_one(
         ["dns", "cache", "max_entries"] => {
             config.dns.cache.max_entries = coerce_u32(var, path, value)?
         }
+        ["dns", "cache", "max_bytes"] => config.dns.cache.max_bytes = coerce_u64(var, path, value)?,
         ["dns", "cache", "min_ttl_seconds"] => {
             config.dns.cache.min_ttl_seconds = coerce_u32(var, path, value)?
         }
@@ -95,6 +96,14 @@ fn apply_one(
             config.stats.snapshot_interval_seconds = coerce_u32(var, path, value)?
         }
 
+        ["history", "enabled"] => config.history.enabled = coerce_bool(var, path, value)?,
+        ["history", "sample_interval_seconds"] => {
+            config.history.sample_interval_seconds = coerce_u32(var, path, value)?
+        }
+        ["history", "retention_days"] => {
+            config.history.retention_days = coerce_u32(var, path, value)?
+        }
+
         ["api", "address"] => config.api.address = value.to_string(),
         ["api", "port"] => config.api.port = coerce_u16(var, path, value)?,
         ["api", "tls"] => config.api.tls = coerce_bool(var, path, value)?,
@@ -131,6 +140,12 @@ fn coerce_u32(var: &str, path: &str, value: &str) -> Result<u32, ConfigError> {
     value
         .parse::<u32>()
         .map_err(|_| invalid(var, path, value, "a u32 integer"))
+}
+
+fn coerce_u64(var: &str, path: &str, value: &str) -> Result<u64, ConfigError> {
+    value
+        .parse::<u64>()
+        .map_err(|_| invalid(var, path, value, "a u64 integer"))
 }
 
 fn coerce_enum<T>(var: &str, path: &str, value: &str) -> Result<T, ConfigError>

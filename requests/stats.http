@@ -56,7 +56,7 @@ GET {{base}}/queries?client=not-an-ip
 {{auth}}
 
 ###
-GET {{base}}/queries?verdict=maybe
+GET {{base}}/queries?verdict=allow
 {{auth}}
 
 ###

@@ -56,11 +56,76 @@ Notes:
   `compile_duration_seconds` is still hardcoded to zero, so the figure carries
   the RouterOS log's one-second resolution. Fix that metric before trying to
   demonstrate anything finer than ~10%.
+- **Sustained throughput, measured 2026-07-24** (dev box, four cores per
+  §Measuring reliably, realistic mix — a third blocked, a third cache-hit, a
+  third forwarded): **~567 000 elem/s** (median of 3 pinned runs, range
+  560.7–574.8 K; 336 µs per 192-query wave). The budget
+  is 10 000 QPS on the RB5009; this is the assembled pipeline with the cache's
+  byte cap active, so the cap costs nothing at steady state. A dev box is not
+  an RB5009 — the figure that counts against the budget is the device's — but
+  57× headroom on the same code is what makes the device number safe.
+- **DNS cache is bounded twice** (p1.5-05): `dns.cache.max_entries` and
+  `dns.cache.max_bytes` (default 64 MiB), both enforced by the same O(1)
+  amortized FIFO eviction, which runs until *both* hold. Entry count alone did
+  not bound memory — the ~91h soak plateaued at ~230 MiB under an adversarial
+  large-answer mix, 80% over the 128 MB budget. The tracked figure is the sum
+  of the per-entry estimates, maintained incrementally on insert/evict/clean so
+  the resolve path never walks a shard.
 - 10k QPS is ~100× a busy household's peak; the headroom is the proof of
   efficiency, and it's what keeps p99 flat at real loads.
 - Budgets are compared against `main` on every perf-relevant change; a >10%
   regression on a hot-path bench needs an explicit justification
   (see [CONTRIBUTING.md](CONTRIBUTING.md)).
+
+## Rule deduplication — measured trade (p1.5-05)
+
+The compiled matcher holds distinct rules only (RULE_ENGINE.md
+§Deduplication). All figures below: dev box, pinned to one core per
+§Measuring reliably, 2026-07-24, synthetic domains with a real list's length
+distribution.
+
+**What it saves.** Two 1M-rule lists compiled together, by how much of the
+second repeats the first — `cargo bench -p fah-rules --bench matcher` prints
+this table:
+
+| overlap | duplicates removed | compiled | saved | build |
+|---------|-------------------|----------|-------|-------|
+| 0%      | 0                 | 57.7 MiB | —     | 493 ms |
+| 25%     | 250 000           | 50.4 MiB | 7.6 MiB | 469 ms |
+| 50%     | 500 000           | 43.0 MiB | 15.2 MiB | 454 ms |
+| 90%     | 900 000           | 31.3 MiB | 27.3 MiB | 430 ms |
+| 100%    | 1 000 000         | 28.3 MiB | 30.3 MiB | 437 ms |
+
+≈30 bytes per duplicate (arena + 8-byte record + ~1.43 slots). Note the 0% row:
+two non-overlapping 1M lists compile to 57.7 MiB, **past the 40 MB budget** —
+and note build time *falling* as overlap rises, because a duplicate's bytes are
+never appended in the first place.
+
+**What it costs.** Only compile time, and only in the worst case for it — a
+corpus with nothing to collapse. On 1M *unique* rules the build phase goes
+**41.6 ms → 93.3 ms**; parse (175 ms) and disk read (9 ms) are untouched, so
+whole-compile cost rises ~19%. Paid once per compile (boot, and each list
+refresh — default every 24 h), never per query. The remaining ~52 ms is
+essentially one random memory access per rule against the transient dedup
+index, which is the floor for membership-testing 1M rules; a 0.5 load factor
+and a rejected 8-byte tagged-slot variant are documented in `matcher.rs`.
+
+**What it also buys — the part the memory number hides.** Collapsing duplicates
+shrinks the open-addressing slot table, so probe chains shorten. Two 500k-rule
+lists sharing 250k domains (`--bench overlap_lookup`, A/B against a pre-dedup
+checkout):
+
+| lookup | before | after | |
+|--------|--------|-------|---|
+| hit, domain carried by **both** lists | 154.4 ns | ~83 ns | **−46%** |
+| hit, domain in one list | 57.2 ns | 44.5 ns | −22% |
+| miss | 63.1 ns | 57.1 ns | −10% |
+| compiled size | 28.2 MiB | 21.2 MiB | −7.0 MiB |
+
+"After" is the median of 3 pinned runs (shared-hit ranged 79.8–85.5 ns). A
+domain both lists carry used to occupy two slots that hash to the same place,
+and every query for it walked both. Dedup is therefore a **hot-path
+improvement**, not only a memory one — which is what settles the trade.
 
 ## Measuring reliably
 

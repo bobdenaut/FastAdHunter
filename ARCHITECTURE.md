@@ -162,6 +162,15 @@ against this document.
 
 - Every worker runs the complete pipeline; no stage is pinned to a thread and
   there is no central dispatcher.
+- **Ingest socket topology:** today one `recv_from` loop pulls UDP datagrams off
+  a single socket and spawns a task per datagram, so the expensive stages (match,
+  cache, forward, reply) already spread across all workers — only *reception* is
+  serial, and it is the cheapest step. The documented scaling path, *if and when*
+  reception itself becomes the ceiling, is `SO_REUSEPORT`: N sockets, N recv
+  loops, the kernel load-balancing datagrams across cores. Measured on-device it
+  is not the ceiling (all cores share evenly with ~80% idle under a synthetic
+  hammer), so it stays a ready recipe rather than shipped code — see
+  `plan/wip/phase1.5/p1.5-06-reuseport-multisocket-ingest.md`.
 - Shared state (compiled ruleset, config, cache shards) is reached through
   lock-free reads: **atomic swap** for ruleset/config, sharding for the cache.
   No global lock on the hot path.

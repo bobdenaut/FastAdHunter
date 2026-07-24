@@ -57,6 +57,34 @@ implies subdomains, as `||example.com^` and hosts semantics do).
 - **No regex compilation at runtime, no regex on the hot path.**
 - Lookup cost is O(number of labels) hash probes, allocation-free.
 
+## Deduplication
+
+All enabled lists compile into **one** matcher, and that matcher holds
+**distinct rules only**. Popular lists overlap heavily — AdGuard's
+`filter_48` and HaGeZi's `pro` are close to the same corpus — and storing an
+overlap twice costs domain bytes, a record and hash slots against the 40 MB
+budget for nothing.
+
+- **Identity is the whole rule**: domain, action (block/allow), whether it
+  covers subdomains, `$dnstype`, `$dnsrewrite`. Two rules collapse only when
+  all of those match; the domain compares case-insensitively, because lookup
+  does.
+- **Verdicts are unaffected.** A block in list A and an allow in list B for
+  the same domain are *different* identities, so both survive and allow >
+  block still decides. A `$dnstype`-scoped rule and a plain one for the same
+  domain likewise both survive.
+- **First contributor wins attribution.** The surviving rule is credited to
+  the first list that supplied it (compile order: enabled lists in
+  configuration order, then user rules). Attribution is informational — the
+  query log and `rules/test` report it — and is never an input to a verdict.
+  There is no "matched in N lists" reporting.
+- **Per-list counts stay parse-based.** `GET /api/v1/lists`' `rules_total` /
+  `rules_active_dns` / `rules_inactive` describe what each list contains; the
+  envelope's `compiled_rules` and `duplicates_removed` describe the merge.
+  Compiling logs the same at `INFO`.
+- Dedup happens at build time only. The lookup hot path is untouched by it
+  (marginally faster, with fewer slots to probe).
+
 ## List lifecycle
 
 ```text

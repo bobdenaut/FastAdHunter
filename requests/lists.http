@@ -37,7 +37,7 @@ POST {{base}}/lists/1hosts-xtra/refresh
 
 ### Refresh a list now. 202 Accepted — it runs in the background and the
 ### outcome lands in `last_status` and a `list_refreshed` WebSocket event
-POST {{base}}/lists/oisd-basic/refresh
+POST {{base}}/lists/oisd/refresh
 {{auth}}
 
 ### Add a remote list. `id` is optional — derived from the URL's file stem or
@@ -51,7 +51,7 @@ POST {{base}}/lists
 Content-Type: application/json
 
 {
-  "url": "https://small.oisd.nl",
+  "url": "https://raw.githubusercontent.com/crazy-max/WindowsSpyBlocker/master/data/hosts/spy.txt",
   "enabled": true,
   "refresh_hours": 24
 }
@@ -64,8 +64,7 @@ POST {{base}}/lists
 Content-Type: application/json
 
 {
-  "url": "https://raw.githubusercontent.com/StevenBlack/hosts/master/hosts",
-  "id": "hosts"
+  "url": "https://adguardteam.github.io/HostlistsRegistry/assets/filter_71.txt"
 }
 
 ###
@@ -151,7 +150,7 @@ Content-Type: application/json
 }
 
 ###
-POST {{base}}/lists/ghost/refresh
+POST {{base}}/lists/spy/refresh
 {{auth}}
 
 ###
@@ -179,7 +178,7 @@ Content-Type: application/json
 # Undo the side effects of the examples above.
 
 ### Drop the list the "add without an id" example created.
-DELETE {{base}}/lists/small.oisd.nl
+DELETE {{base}}/lists/pro
 {{auth}}
 
 ### Re-enable the list the PATCH example disabled. Skipping this leaves it

@@ -12,6 +12,7 @@ mod aggregates;
 mod bucket;
 mod client_registry;
 mod dto;
+mod history;
 mod query_log;
 mod snapshot;
 mod stats;

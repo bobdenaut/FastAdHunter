@@ -26,6 +26,18 @@
 //! weight now leaves when it ages to the queue head, when its slot's TTL
 //! turnover replaces it, or via an admin clean — a marginal hit-rate trade
 //! for removing the dominant cost on the forward path.
+//!
+//! **Two bounds, one eviction order (p1.5-05).** Entry count alone does not
+//! bound memory: the ~91h soak (docs/code-review/p1-11-soak.md) filled an
+//! entry-bounded cache with large TXT/SOA/NXDOMAIN answers and plateaued at
+//! ~230 MiB — 80% over PERFORMANCE.md's 128 MB budget — while real traffic
+//! sat at ~55 MiB. Each shard therefore also carries a byte budget
+//! (`[dns.cache] max_bytes / SHARD_COUNT`) and an incrementally maintained
+//! [`Shard::bytes`] running total of [`entry_heap_bytes`]; an insert evicts
+//! from the same FIFO head until *both* bounds hold. The total is maintained
+//! on insert/evict/clean rather than recomputed, so the hot path never walks
+//! a shard, and nothing about lookup, TTL clamping or serve-stale changes —
+//! only how much can be resident at once.
 
 use std::collections::hash_map::RandomState;
 use std::collections::{HashMap, VecDeque};
@@ -135,11 +147,20 @@ pub struct CacheStats {
     pub hits: u64,
     pub misses: u64,
     pub evictions: u64,
+    /// What the resident entries themselves hold ([`entry_heap_bytes`]
+    /// summed), maintained incrementally rather than walked. This is the
+    /// figure [`CacheStats::max_bytes`] bounds.
+    pub bytes: u64,
+    /// The enforced byte ceiling — the real bound (per-shard budget × shard
+    /// count), which can round slightly below `dns.cache.max_bytes` exactly
+    /// as `capacity` does below `max_entries`.
+    pub max_bytes: u64,
     /// Coarse heap estimate: the hash-table slabs (every bucket, occupied or
-    /// not — [`table_bytes`]), each entry's own heap ([`entry_heap_bytes`]),
+    /// not — [`table_bytes`]), each entry's own heap ([`CacheStats::bytes`]),
     /// and the eviction queues ([`queue_bytes`]), all rounded to allocator
-    /// granularity. Built to make the gap to RSS explainable, not to audit
-    /// the allocator.
+    /// granularity. Larger than `bytes` by the slabs, which are bounded by
+    /// `capacity` and are not what the byte cap governs. Built to make the
+    /// gap to RSS explainable, not to audit the allocator.
     pub estimated_bytes: u64,
 }
 
@@ -230,6 +251,12 @@ struct Shard {
     /// Seq handed to the next insert. Per shard, monotonic, never reused.
     next_seq: u64,
     capacity: usize,
+    /// This shard's slice of `[dns.cache] max_bytes`.
+    byte_capacity: u64,
+    /// Running sum of [`entry_heap_bytes`] over the live entries. Maintained
+    /// by every insert/remove so the byte bound costs an add and a compare
+    /// instead of a shard walk.
+    bytes: u64,
 }
 
 impl Shard {
@@ -240,7 +267,7 @@ impl Shard {
     fn evict_oldest(&mut self) {
         while let Some((key, seq)) = self.queue.pop_front() {
             if self.map.get(&key).is_some_and(|entry| entry.seq == seq) {
-                self.map.remove(&key);
+                self.remove(&key);
                 return;
             }
         }
@@ -249,8 +276,30 @@ impl Shard {
         // bounded anyway: drop an arbitrary entry rather than grow.
         debug_assert!(self.map.is_empty(), "live entries must have queue nodes");
         if let Some(key) = self.map.keys().next().cloned() {
-            self.map.remove(&key);
+            self.remove(&key);
         }
+    }
+
+    /// Drops one entry and keeps [`Shard::bytes`] in step. The single place
+    /// entries leave the map outside [`DnsCache::clean`]'s bulk `retain`, so
+    /// the running total cannot drift from what is resident.
+    fn remove(&mut self, key: &CacheKey) -> u64 {
+        match self.map.remove_entry(key) {
+            Some((key, entry)) => {
+                let freed = entry_heap_bytes(&key, &entry);
+                self.bytes = self.bytes.saturating_sub(freed);
+                freed
+            }
+            None => 0,
+        }
+    }
+
+    /// True while the shard is over either bound. Checked after the insert
+    /// rather than before it, so the incoming entry is already accounted for
+    /// and the FIFO order decides what leaves — the entry just pushed sits at
+    /// the queue's back and is therefore the last candidate, never the first.
+    fn over_bounds(&self) -> bool {
+        self.map.len() > self.capacity || self.bytes > self.byte_capacity
     }
 
     /// Sweeps ghost nodes once the queue holds more than twice the shard's
@@ -286,6 +335,11 @@ impl DnsCache {
         // `SHARD_COUNT` still yields a working (just very small) cache
         // instead of a shard that can never hold anything.
         let capacity = ((config.max_entries as usize) / SHARD_COUNT).max(1);
+        // Same reasoning for the byte budget, and the same floor: a shard
+        // that cannot hold one answer would evict on every single insert.
+        // fah-config validates `max_bytes` well above that, so the `.max(1)`
+        // is a guard against a hand-built config, not the normal path.
+        let byte_capacity = (config.max_bytes / SHARD_COUNT as u64).max(1);
         let shards = (0..SHARD_COUNT)
             .map(|_| {
                 Mutex::new(Shard {
@@ -293,6 +347,8 @@ impl DnsCache {
                     queue: VecDeque::new(),
                     next_seq: 0,
                     capacity,
+                    byte_capacity,
+                    bytes: 0,
                 })
             })
             .collect();
@@ -395,23 +451,32 @@ impl DnsCache {
         let idx = self.shard_index(key);
         let mut guard = self.shards[idx].lock().unwrap();
         let now = Instant::now();
-        if !guard.map.contains_key(key) && guard.map.len() >= guard.capacity {
-            // A full shard is never empty, so this always removes one.
+
+        let entry = Entry {
+            answer: Arc::new(answer),
+            inserted_at: now,
+            ttl: Duration::from_secs(u64::from(ttl_seconds)),
+            seq: guard.next_seq,
+        };
+        let added = entry_heap_bytes(key, &entry);
+        guard.next_seq += 1;
+        guard.queue.push_back((key.clone(), entry.seq));
+        // A refresh replaces the previous answer, whose bytes go with it —
+        // `insert` returning the old value is what keeps the running total
+        // exact when the same key comes back with a differently sized answer.
+        if let Some(previous) = guard.map.insert(key.clone(), entry) {
+            guard.bytes -= entry_heap_bytes(key, &previous);
+        }
+        guard.bytes += added;
+
+        // Evict until both bounds hold. `map.len() > 1` protects the entry
+        // just stored: an answer larger than a whole shard's byte budget is
+        // kept alone rather than evicting itself, so the cache degrades to
+        // "one entry per shard" instead of thrashing on every insert.
+        while guard.over_bounds() && guard.map.len() > 1 {
             guard.evict_oldest();
             self.evictions.fetch_add(1, Ordering::Relaxed);
         }
-        let seq = guard.next_seq;
-        guard.next_seq += 1;
-        guard.queue.push_back((key.clone(), seq));
-        guard.map.insert(
-            key.clone(),
-            Entry {
-                answer: Arc::new(answer),
-                inserted_at: now,
-                ttl: Duration::from_secs(u64::from(ttl_seconds)),
-                seq,
-            },
-        );
         guard.compact();
     }
 
@@ -456,22 +521,28 @@ impl DnsCache {
             hits: self.hits.load(Ordering::Relaxed),
             misses: self.misses.load(Ordering::Relaxed),
             evictions: self.evictions.load(Ordering::Relaxed),
+            bytes: 0,
+            max_bytes: 0,
             estimated_bytes: 0,
         };
         for shard in &self.shards {
             let guard = shard.lock().unwrap();
             stats.capacity += guard.capacity as u64;
+            stats.max_bytes += guard.byte_capacity;
             stats.entries += guard.map.len() as u64;
+            stats.bytes += guard.bytes;
             stats.estimated_bytes += table_bytes(&guard.map) + queue_bytes(&guard.queue);
-            for (key, entry) in &guard.map {
+            for entry in guard.map.values() {
                 match entry.state(now, self.serve_stale) {
                     EntryState::Fresh => stats.fresh += 1,
                     EntryState::Stale => stats.stale += 1,
                     EntryState::Expired => stats.expired += 1,
                 }
-                stats.estimated_bytes += entry_heap_bytes(key, entry);
             }
         }
+        // The entries' own heap is the tracked running total, not a second
+        // walk — one number, enforced and reported by the same accounting.
+        stats.estimated_bytes += stats.bytes;
         stats
     }
 
@@ -498,13 +569,15 @@ impl DnsCache {
         for shard in &self.shards {
             let mut guard = shard.lock().unwrap();
             outcome.entries_before += guard.map.len() as u64;
+            let serve_stale = self.serve_stale;
+            let mut freed = 0u64;
             guard
                 .map
-                .retain(|key, entry| match entry.state(now, self.serve_stale) {
+                .retain(|key, entry| match entry.state(now, serve_stale) {
                     EntryState::Fresh => true,
                     EntryState::Stale if !purge_stale => true,
                     state => {
-                        outcome.freed_bytes += entry_heap_bytes(key, entry);
+                        freed += entry_heap_bytes(key, entry);
                         if state == EntryState::Stale {
                             outcome.removed_stale += 1;
                         } else {
@@ -513,6 +586,8 @@ impl DnsCache {
                         false
                     }
                 });
+            guard.bytes = guard.bytes.saturating_sub(freed);
+            outcome.freed_bytes += freed;
             outcome.entries_after += guard.map.len() as u64;
         }
         outcome.duration = started.elapsed();
@@ -555,6 +630,10 @@ mod tests {
     fn config(max_entries: u32) -> DnsCacheConfig {
         DnsCacheConfig {
             max_entries,
+            // Deliberately far above anything these tests can store, so the
+            // entry-count behaviour is measured on its own; the byte-cap
+            // tests set their own ceiling.
+            max_bytes: 64 * 1024 * 1024,
             min_ttl_seconds: 0,
             max_ttl_seconds: 86400,
             negative_ttl_max_seconds: 60,
@@ -773,6 +852,146 @@ mod tests {
         assert!(cache.len() <= 32);
     }
 
+    /// A cacheable answer whose size is dominated by its record count — the
+    /// shape `test_aleator.py`'s TXT/SOA mix produces, and what an
+    /// entry-count-only bound fails to contain.
+    fn large_response(records: usize) -> Message {
+        let mut message = Message::query();
+        message.metadata.response_code = ResponseCode::NoError;
+        for i in 0..records {
+            message.add_answer(a_record(
+                "example.com.",
+                3600,
+                Ipv4Addr::new(10, 0, (i / 256) as u8, (i % 256) as u8),
+            ));
+        }
+        message
+    }
+
+    /// Sums what every resident entry holds, the slow way — the cross-check
+    /// for the running total the insert path maintains.
+    fn walked_bytes(cache: &DnsCache) -> u64 {
+        cache
+            .shards
+            .iter()
+            .map(|shard| {
+                let guard = shard.lock().unwrap();
+                guard
+                    .map
+                    .iter()
+                    .map(|(key, entry)| entry_heap_bytes(key, entry))
+                    .sum::<u64>()
+            })
+            .sum()
+    }
+
+    #[tokio::test]
+    async fn a_flood_of_large_answers_plateaus_at_the_byte_cap() {
+        // Entry room for 16 000, byte room for far less: the byte bound is
+        // the one that must bind, and it must bind *before* the entry bound.
+        let mut cfg = config(16_000);
+        cfg.max_bytes = 16 * 64 * 1024; // 64 KiB per shard
+        let cache = DnsCache::new(&cfg);
+
+        for i in 0..2_000 {
+            cache.store(
+                &a_key(&cache, &format!("host{i}.example.com.")),
+                &large_response(20),
+            );
+            let stats = cache.stats();
+            assert!(
+                stats.bytes <= stats.max_bytes,
+                "byte usage {} passed the {} ceiling at i={i}",
+                stats.bytes,
+                stats.max_bytes
+            );
+        }
+
+        let stats = cache.stats();
+        assert!(
+            stats.entries < 16_000,
+            "the byte cap must bind first — entries reached {}",
+            stats.entries
+        );
+        assert!(stats.evictions > 0, "the byte cap must have evicted");
+        assert_eq!(
+            stats.bytes,
+            walked_bytes(&cache),
+            "the running total drifted from what is actually resident"
+        );
+    }
+
+    #[tokio::test]
+    async fn refreshing_a_key_with_a_smaller_answer_releases_its_bytes() {
+        let cache = DnsCache::new(&config(100));
+        let key = a_key(&cache, "example.com.");
+
+        cache.store(&key, &large_response(50));
+        let big = cache.stats().bytes;
+        cache.store(&key, &large_response(1));
+        let small = cache.stats().bytes;
+
+        assert_eq!(cache.len(), 1, "a refresh replaces, never accumulates");
+        assert!(
+            small < big,
+            "the replaced answer's bytes must be released ({small} vs {big})"
+        );
+        assert_eq!(small, walked_bytes(&cache));
+    }
+
+    #[tokio::test]
+    async fn an_answer_bigger_than_a_shard_budget_is_kept_alone_not_thrashed() {
+        // 1 MiB over 16 shards is 64 KiB each; every stored answer is larger.
+        // The cache must degrade to one entry per shard, not to an empty
+        // cache that re-evicts whatever it just stored.
+        let mut cfg = config(1_000);
+        cfg.max_bytes = 1024 * 1024;
+        let cache = DnsCache::new(&cfg);
+
+        for i in 0..50 {
+            cache.store(
+                &a_key(&cache, &format!("huge{i}.example.com.")),
+                &large_response(2_000),
+            );
+        }
+
+        let stats = cache.stats();
+        assert!(stats.entries >= 1, "the cache evicted its own insert");
+        assert!(
+            stats.entries <= SHARD_COUNT as u64,
+            "oversized answers must not accumulate: {} entries",
+            stats.entries
+        );
+        // The last-stored key is still servable — an insert never evicts itself.
+        assert!(matches!(
+            cache.lookup(&a_key(&cache, "huge49.example.com.")),
+            Lookup::Fresh(..)
+        ));
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn the_byte_cap_leaves_lookup_semantics_untouched() {
+        let mut cfg = config(1_000);
+        cfg.max_bytes = 16 * 64 * 1024;
+        let cache = DnsCache::new(&cfg);
+        let key = a_key(&cache, "example.com.");
+
+        cache.store(&key, &positive_response(10));
+        let Lookup::Fresh(answer, remaining) = cache.lookup(&key) else {
+            panic!("expected a fresh hit under an active byte cap");
+        };
+        assert_eq!(answer.records.len(), 1);
+        assert_eq!(remaining, 10);
+
+        // Serve-stale still applies past the TTL, and the byte accounting
+        // follows the entry out on a clean.
+        tokio::time::advance(Duration::from_secs(11)).await;
+        assert!(matches!(cache.lookup(&key), Lookup::Stale(_)));
+        let outcome = cache.clean(true);
+        assert_eq!(outcome.removed_stale, 1);
+        assert_eq!(cache.stats().bytes, 0, "a clean releases the tracked bytes");
+    }
+
     /// A shard built by hand — the public API hashes keys across 16 shards,
     /// so per-shard eviction order is only assertable directly.
     fn shard_with(entries: &[(&CacheKey, u64)], capacity: usize) -> Shard {
@@ -781,22 +1000,23 @@ mod tests {
             queue: VecDeque::new(),
             next_seq: entries.iter().map(|(_, seq)| seq + 1).max().unwrap_or(0),
             capacity,
+            byte_capacity: u64::MAX,
+            bytes: 0,
         };
         for (key, seq) in entries {
             shard.queue.push_back(((*key).clone(), *seq));
-            shard.map.insert(
-                (*key).clone(),
-                Entry {
-                    answer: Arc::new(CachedAnswer {
-                        records: Vec::new(),
-                        authorities: Vec::new(),
-                        response_code: ResponseCode::NoError,
-                    }),
-                    inserted_at: Instant::now(),
-                    ttl: Duration::from_secs(3600),
-                    seq: *seq,
-                },
-            );
+            let entry = Entry {
+                answer: Arc::new(CachedAnswer {
+                    records: Vec::new(),
+                    authorities: Vec::new(),
+                    response_code: ResponseCode::NoError,
+                }),
+                inserted_at: Instant::now(),
+                ttl: Duration::from_secs(3600),
+                seq: *seq,
+            };
+            shard.bytes += entry_heap_bytes(key, &entry);
+            shard.map.insert((*key).clone(), entry);
         }
         shard
     }

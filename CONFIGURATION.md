@@ -47,6 +47,9 @@ ttl_seconds = 10              # runtime — TTL of synthesized blocked answers
 # ─── Cache ─────────────────────────────────────────────────────────────
 [dns.cache]
 max_entries = 10000           # runtime — bounded cache size (raise to 100k+ if RAM allows)
+max_bytes = 67108864          # runtime — 64 MiB ceiling on what cached answers hold;
+                              #           evicts oldest-first like max_entries, whichever
+                              #           bound binds first (min 1 MiB)
 min_ttl_seconds = 0           # runtime — clamp: honor upstream by default
 max_ttl_seconds = 86400       # runtime — clamp: 24h cap
 negative_ttl_max_seconds = 60 # runtime — RFC 2308 negative-cache cap
@@ -95,6 +98,16 @@ flush_interval_seconds = 5    # runtime — batched writes (SSD-friendly)
 [stats]
 snapshot_interval_seconds = 300  # runtime — periodic snapshot to /data
 
+# ─── History (long-term observability on /data/history) ────────────────
+[history]
+enabled = true                # runtime — master switch; false stops both
+                              #           history writers + the perf sampler
+sample_interval_seconds = 60  # boot    — perf/system/cache sampling cadence
+                              #           (ticker built at startup)
+retention_days = 30           # runtime — age cap on /data/history day-files;
+                              #           30/60/90 typical (applied live to the
+                              #           next prune, no restart)
+
 # ─── API ───────────────────────────────────────────────────────────────
 [api]
 address = "0.0.0.0"           # boot    — bind LAN-side only; never expose to WAN
@@ -125,4 +138,33 @@ The container is functional with zero configuration.
 | Mount | Class | Contents |
 |-------|-------|----------|
 | `/config` | small, back this up | TOML, API key, TLS certs |
-| `/data`   | bulky, regenerable  | cached rule lists, query-log segments, stats snapshots |
+| `/data`   | bulky, regenerable  | cached rule lists, query-log segments, stats snapshots, history rollups + perf series |
+
+## The two cache bounds
+
+`[dns.cache]` bounds the DNS cache twice, and both bounds evict through the
+same oldest-first (FIFO) order:
+
+- `max_entries` caps **how many** answers are resident. Divided across 16
+  shards, so the real bound (`GET /api/v1/cache`'s `capacity`) can round
+  slightly below it.
+- `max_bytes` caps **how large** those answers are allowed to be in total.
+  Same per-shard split, same rounding.
+
+Whichever is reached first triggers eviction. Entry count alone cannot bound
+memory: a ~91h soak under an adversarial generator (7 query types × 1M unique
+domains, so every answer a large TXT/SOA/NXDOMAIN) filled an entry-bounded
+cache to a ~230 MiB plateau — 80% past PERFORMANCE.md's 128 MB budget — while
+real household traffic sat at ~55 MiB. Raising `max_entries` "to 100k+ if RAM
+allows" is safe precisely because `max_bytes` still holds the ceiling.
+
+The figure `max_bytes` governs is the one `GET /api/v1/cache` reports as
+`bytes`: what the cached answers themselves hold. The hash-table and eviction
+queue slabs sit outside it — they scale with `max_entries`, not with answer
+size, and `/debug/memory`'s `cache_estimated_bytes` is the number that
+includes them.
+
+The `[history]` defaults suit the RB5009's 1 TB SSD: hourly/daily rollups are
+kilobytes/day and the 60 s perf series is tens of MB over 90 days, so keeping
+`retention_days` at 30 (or raising it to 60/90) costs almost nothing. Both are
+pruned by age like the query log — memory and disk stay bounded (hard rule 4).

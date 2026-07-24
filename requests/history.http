@@ -1,0 +1,71 @@
+# Persisted history — API.md §History (persisted series)
+#
+# Long-term series read back from /data/history, as opposed to /stats which is
+# the live rolling 24h. Empty until the writers have produced something: the
+# hourly rollups need a completed clock-hour, the daily top-N a completed day.
+
+@base = {{host}}/api/v1
+@auth = Authorization: Bearer {{apiKey}}
+
+### Summary, defaults: last 24h at hour resolution.
+GET {{base}}/history/summary
+{{auth}}
+
+### Explicit window, one point per UTC day.
+GET {{base}}/history/summary?from=2026-06-24T00:00:00Z&to=2026-07-24T00:00:00Z&resolution=day
+{{auth}}
+
+### A 90-day hourly chart: 2160 points, under the 5000 default budget, so
+### `stride` comes back as 1 (nothing decimated).
+GET {{base}}/history/summary?from=2026-04-25T00:00:00Z&to=2026-07-24T00:00:00Z&resolution=hour
+{{auth}}
+
+### A tight budget forces decimation — check `stride` in the response.
+GET {{base}}/history/summary?from=2026-04-25T00:00:00Z&to=2026-07-24T00:00:00Z&max_points=50
+{{auth}}
+
+### Perf series, defaults: last 24h, budget 1000 (a day is 1440 samples at the
+### 60 s cadence, so expect stride 2).
+GET {{base}}/history/perf
+{{auth}}
+
+### Only what an RSS chart needs — the other keys are ABSENT, not null.
+GET {{base}}/history/perf?fields=rss_bytes
+{{auth}}
+
+### Latency + cache only.
+GET {{base}}/history/perf?fields=latency,cache
+{{auth}}
+
+### Top blocked domains over the last week (both defaults).
+GET {{base}}/history/top
+{{auth}}
+
+### Top queried domains, 25 of them.
+GET {{base}}/history/top?kind=queried&n=25
+{{auth}}
+
+### Busiest clients over a month.
+GET {{base}}/history/top?kind=clients&from=2026-06-24T00:00:00Z&to=2026-07-24T00:00:00Z
+{{auth}}
+
+### A range with no data is 200 with an empty `items` — NOT a 404.
+GET {{base}}/history/summary?from=1970-01-01T00:00:00Z&to=1970-01-02T00:00:00Z
+{{auth}}
+
+### Bad parameters are REJECTED, not silently ignored — each of these should be
+### 400, naming the offending parameter. Backwards window first:
+GET {{base}}/history/summary?from=2026-07-24T00:00:00Z&to=2026-07-01T00:00:00Z
+{{auth}}
+
+###
+GET {{base}}/history/summary?resolution=minute
+{{auth}}
+
+###
+GET {{base}}/history/top?kind=everything
+{{auth}}
+
+###
+GET {{base}}/history/perf?fields=rss_bytes,nonsense
+{{auth}}

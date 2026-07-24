@@ -69,10 +69,15 @@ x509-parser only; no hand-rolled TLS or crypto anywhere.
 
 - `/config` holds secrets (API key, TLS private key) — back it up accordingly;
   file permissions restricted to the container user.
-- `/data` (query log, cached lists, snapshots) holds the DNS history — treat
-  the SSD as sensitive when disposing of it. Retention is bounded and
-  configurable; disabling the query log (`query_log.enabled = false`) is the
-  privacy-maximal setting.
+- `/data` (query log, cached lists, snapshots, history rollups + perf series)
+  holds the DNS history — treat the SSD as sensitive when disposing of it.
+  Retention is bounded and configurable; disabling the query log
+  (`query_log.enabled = false`) is the privacy-maximal setting.
+- `[history]` widens the retained-data window: it keeps hourly/daily aggregates
+  and per-client top-N for `history.retention_days` (default 30, up to 90),
+  longer than the query log's raw segments. It stores aggregates, not raw
+  per-query rows, but `enabled = false` turns it off entirely — mirroring
+  `query_log.enabled` — for the privacy-maximal posture.
 
 ## Later phases (principles fixed now)
 

@@ -11,11 +11,12 @@ use std::sync::Arc;
 use std::time::SystemTime;
 
 use fah_api::{
-    BucketCount, ClientCount, ClientEntry, DomainCount, QueryLogPage, QueryLogRequest, QueryRecord,
-    StatsOverview, StatsSource, TelemetrySource, VerdictFilter,
+    BucketCount, ClientCount, ClientEntry, DomainCount, HistorySource, QueryLogPage,
+    QueryLogRequest, QueryRecord, StatsOverview, StatsSource, TelemetrySource, VerdictFilter,
 };
 use fah_dns::UpstreamPool;
 use fah_metrics::Metrics;
+use fah_model::{HistoryRange, HistoryResolution, HistorySeries, PerfSeries, TopItems, TopKind};
 use fah_stats::{QueryLogFilter, Stats, VerdictKind};
 
 /// Lets the Rule Engine's list fetcher (L2) resolve download hosts through the
@@ -141,6 +142,33 @@ impl StatsSource for StatsAdapter {
     fn client_name(&self, ip: IpAddr) -> Option<String> {
         self.stats.client_name(ip)
     }
+
+    fn apply_history_config(&self, enabled: bool, retention_days: u32) {
+        self.stats.set_history_enabled(enabled);
+        self.stats.set_history_retention_days(retention_days);
+    }
+}
+
+/// The history reads, on the same `Arc<Stats>` handle. A pass-through rather
+/// than a translation: both sides speak the `fah_model` (L1) history contract,
+/// so there is nothing here that could drift from what the reader returns.
+impl HistorySource for StatsAdapter {
+    fn summary(
+        &self,
+        range: HistoryRange,
+        resolution: HistoryResolution,
+        max_points: usize,
+    ) -> std::io::Result<HistorySeries> {
+        self.stats.history_summary(range, resolution, max_points)
+    }
+
+    fn perf(&self, range: HistoryRange, max_points: usize) -> std::io::Result<PerfSeries> {
+        self.stats.history_perf(range, max_points)
+    }
+
+    fn top(&self, range: HistoryRange, kind: TopKind, limit: usize) -> std::io::Result<TopItems> {
+        self.stats.history_top(range, kind, limit)
+    }
 }
 
 fn client(view: fah_stats::ClientView) -> ClientEntry {
@@ -176,6 +204,8 @@ impl fah_api::CacheSource for CacheAdapter {
             hits: stats.hits,
             misses: stats.misses,
             evictions: stats.evictions,
+            bytes: stats.bytes,
+            max_bytes: stats.max_bytes,
             estimated_bytes: stats.estimated_bytes,
         }
     }

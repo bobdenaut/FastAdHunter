@@ -2,6 +2,14 @@
 
 Guidance for AI agents working in this repository.
 
+## Working language
+
+The user may write in Romanian (or English). Agents **always respond in
+English**, regardless of the language the user wrote in.
+
+Ignore IDE/markdown-lint diagnostics (MD060, MD028, etc.) silently — do not
+narrate or explain them in chat.
+
 ## What this is
 
 FastAdHunter — network-wide ad blocker in Rust. DNS filtering first (Phase 1),
@@ -63,6 +71,9 @@ section is needed.
 5. **No hand-rolled crypto**: rustls, rcgen, x509-parser only.
 6. **Use CONTEXT.md vocabulary** in code, comments, APIs. New/changed terms
    update CONTEXT.md in the same change.
+7. **After every done task**: DO NOT post to user in chat-screen what was implemented, 
+   just create a review file unde docs/code-review/ (e.g. docs/code-review/p1.5-03-review.md) 
+   and announce that the task is DONE and the new filename.
 
 ## Quality gates (local — there is no CI)
 

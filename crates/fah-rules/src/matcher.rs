@@ -17,11 +17,31 @@
 //! - `records` — a fixed 8-byte [`Record`] per rule (offset+len into the arena,
 //!   flags, list id). Contiguous, cache-friendly.
 //! - `slots` — a flat open-addressing hash table of `u32` record indices
-//!   (`EMPTY` sentinel). Domain -> record(s); duplicates simply occupy extra
-//!   slots. No `Box<str>` keys (which would double the domain bytes).
+//!   (`EMPTY` sentinel). Domain -> record(s); several rules for the same
+//!   domain occupy several slots. No `Box<str>` keys (which would double the
+//!   domain bytes).
 //!
 //! `$dnstype` masks and `$dnsrewrite` payloads are rare, so they live in side
 //! maps keyed by record index rather than bloating every [`Record`].
+//!
+//! # Deduplication (build time only)
+//!
+//! Lists overlap heavily — AdGuard's `filter_48` and HaGeZi's `pro` are nearly
+//! the same corpus — and every duplicate used to cost arena bytes, an 8-byte
+//! [`Record`] and ~1.43 slots. [`MatcherBuilder::add_rule`] therefore drops a
+//! rule whose **full identity** (domain, action, subdomain flag, `$dnstype`,
+//! `$dnsrewrite`; the owning list is attribution, not identity) already exists
+//! — before its bytes are appended, so nothing has to be reclaimed later.
+//!
+//! The index doing that is a transient open-addressing table of *record
+//! indices* ([`MatcherBuilder::dedup`]) — ~8 MB at 1M rules, dropped at
+//! [`MatcherBuilder::build`]. The arena stays the single source of truth: the
+//! identity hash only picks the probe start, and every accept/reject is a real
+//! byte-and-field comparison against arena + [`Record::flags`] + the side
+//! maps, so a hash collision can never silently drop a distinct rule. Output
+//! is decided by insertion order (first list to supply a rule wins, compile
+//! order = enabled lists then user rules), never by probe order, so the table's
+//! capacity cannot change the compiled result.
 //!
 //! # Lookup contract
 //!
@@ -29,7 +49,8 @@
 //! [`MatchDecision`] carrying a compact [`RuleRef`] (a record index), never a
 //! `String`/`Arc`. Materializing the human-readable [`DecisiveRule`] (which
 //! allocates the rule text) happens only on the block/allow path via
-//! [`Matcher::decisive_rule`] — never for the common `Pass`.
+//! [`Matcher::decisive_rule`] — never for the common `Pass`. Dedup is a
+//! build-time step and touches none of it.
 
 use std::collections::HashMap;
 
@@ -153,6 +174,61 @@ fn hash_domain(bytes: &[u8]) -> u64 {
     h
 }
 
+/// Continues an FNV-1a chain over `bytes` **verbatim** — no case folding.
+/// Used only to extend [`hash_domain`] with the rest of a rule's identity for
+/// dedup; option payloads (`$dnstype`, `$dnsrewrite`) are compared
+/// byte-exactly, so they must hash byte-exactly too.
+fn hash_extend(mut h: u64, bytes: &[u8]) -> u64 {
+    for &b in bytes {
+        h ^= b as u64;
+        h = h.wrapping_mul(0x0000_0100_0000_01b3);
+    }
+    h
+}
+
+/// Hash of a rule's full identity — domain (case-folded, as the arena stores
+/// it), flags, and any option payloads. Only ever a probe accelerator: the
+/// dedup path confirms every candidate with a real comparison, so two
+/// identities colliding here costs one extra comparison and nothing else.
+fn identity_hash(domain: &[u8], flags: u8, dns_types: Option<&str>, rewrite: Option<&str>) -> u64 {
+    let mut h = hash_extend(hash_domain(domain), &[flags]);
+    if let Some(raw) = dns_types {
+        h = hash_extend(h, raw.as_bytes());
+    }
+    if let Some(raw) = rewrite {
+        h = hash_extend(h, raw.as_bytes());
+    }
+    h
+}
+
+/// Slot count for the compiled `slots` table: a ~0.7 load factor, which keeps
+/// probe chains short without spending memory the 40 MB budget needs. Never
+/// zero, so probing always has somewhere to land.
+fn table_slots(entries: usize) -> usize {
+    (entries.saturating_mul(10) / 7).max(8)
+}
+
+/// Slot count for the *transient* dedup index — a 0.5 load factor, looser than
+/// the compiled table's 0.7 on purpose, and the measured optimum.
+///
+/// Every insert during a compile is an *unsuccessful* search, which for linear
+/// probing is the expensive case (~6 probes at 0.7 against ~2.5 at 0.5), and
+/// each occupied slot walked past may pull a `Record` and its arena bytes in
+/// from DRAM to be compared. Measured on a 1M-unique-rule build, pinned:
+/// **135.7 ms at 0.7, 93.3 ms at 0.5** — against 41.6 ms for a build that does
+/// no dedup at all. Storing a 32-bit hash tag beside each index to reject
+/// collisions without touching the arena was tried and *rejected*: it doubled
+/// the slot to 8 bytes and measured 124 ms at 0.7 load, worse than the plain
+/// 4-byte index at 0.5 for 1.4× the compile-time memory. What remains is
+/// essentially one random memory access per rule, which is the floor for
+/// membership-testing 1M rules against a 1M-entry index.
+///
+/// Cost of the looser factor: 4 bytes per extra slot for the duration of one
+/// compile (~8 MB at 1M rules, freed at `build()`).
+fn dedup_slots(entries: usize) -> usize {
+    entries.saturating_mul(2).max(8)
+}
+
 /// Lemire's fastrange: maps a 64-bit hash into `[0, cap)` with one 128-bit
 /// multiply and shift — no modulo, and no power-of-two requirement. That lets
 /// the table be sized to the exact rule count / load factor instead of rounding
@@ -172,11 +248,37 @@ pub struct MatcherBuilder {
     lists: Vec<std::sync::Arc<str>>,
     dnstype: HashMap<u32, (u32, std::sync::Arc<str>)>,
     rewrite: HashMap<u32, std::sync::Arc<str>>,
+    /// Transient dedup index: an open-addressing table of *record indices*
+    /// keyed by [`identity_hash`], never owned copies of the rules. Dropped
+    /// with the builder at [`Self::build`], so it costs compile-time memory
+    /// only — ~8 MB at 1M distinct rules, against the ~60–70 MB an owned
+    /// `HashSet` of keys would have pinned for the same job, and it pins no
+    /// `Arc` refcounts.
+    dedup: Vec<u32>,
+    duplicates_removed: usize,
 }
 
 impl MatcherBuilder {
+    /// A builder whose dedup index grows on demand. Fine for tests, the API's
+    /// small ad-hoc builds and an empty ruleset; the compile path uses
+    /// [`Self::with_capacity`] so the index is allocated exactly once.
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Pre-sizes the transient dedup index for `expected_rules` — one
+    /// allocation up front, freed at [`Self::build`], with no
+    /// grow-and-rehash churn part-way through a 1M-rule compile. The caller
+    /// passes a *ceiling* on the rule count (`parser::rule_upper_bound`);
+    /// overshooting wastes 4 bytes per unused slot, undershooting only costs
+    /// the one rehash this parameter exists to avoid. Capacity is a
+    /// performance knob and nothing else: the compiled arena, records and
+    /// slots come out byte-identical whatever it is set to.
+    pub fn with_capacity(expected_rules: usize) -> Self {
+        Self {
+            dedup: vec![EMPTY; dedup_slots(expected_rules)],
+            ..Self::default()
+        }
     }
 
     /// Registers a rule list by name, returning its id for [`Self::add_rule`].
@@ -204,7 +306,11 @@ impl MatcherBuilder {
     }
 
     /// Adds one DNS-applicable rule to the given list. Domains longer than 255
-    /// bytes (impossible for a valid DNS name, max 253) are skipped.
+    /// bytes (impossible for a valid DNS name, max 253) are skipped, and so is
+    /// a rule whose full identity was already added — see the module's
+    /// "Deduplication" section. A duplicate returns before anything is
+    /// appended, so its arena bytes, record and slot are never allocated at
+    /// all; the first list to supply the rule keeps the attribution.
     pub fn add_rule(&mut self, list_id: u16, rule: &DomainRule) {
         let domain = rule.domain.as_bytes();
         let Ok(dom_len) = u8::try_from(domain.len()) else {
@@ -213,8 +319,6 @@ impl MatcherBuilder {
         if dom_len == 0 {
             return;
         }
-        let dom_off = u32::try_from(self.arena.len()).expect("arena within 4 GiB");
-        let rec_idx = u32::try_from(self.records.len()).expect("at most u32::MAX rules");
 
         let mut flags = 0u8;
         if rule.action == RuleAction::Allow {
@@ -223,13 +327,25 @@ impl MatcherBuilder {
         if rule.include_subdomains {
             flags |= FLAG_SUBDOMAINS;
         }
-        if let Some(raw) = &rule.dns_types {
+        if rule.dns_types.is_some() {
             flags |= FLAG_DNSTYPE;
+        }
+        if rule.dns_rewrite.is_some() {
+            flags |= FLAG_REWRITE;
+        }
+
+        let Some(slot) = self.dedup_slot_for(rule, domain, flags) else {
+            self.duplicates_removed += 1;
+            return;
+        };
+
+        let dom_off = u32::try_from(self.arena.len()).expect("arena within 4 GiB");
+        let rec_idx = u32::try_from(self.records.len()).expect("at most u32::MAX rules");
+        if let Some(raw) = &rule.dns_types {
             self.dnstype
                 .insert(rec_idx, (parse_dnstype_mask(raw), raw.clone()));
         }
         if let Some(raw) = &rule.dns_rewrite {
-            flags |= FLAG_REWRITE;
             self.rewrite.insert(rec_idx, raw.clone());
         }
 
@@ -240,13 +356,111 @@ impl MatcherBuilder {
             flags,
             list_id,
         });
+        self.dedup[slot] = rec_idx;
+    }
+
+    /// Probes the dedup index for `rule`'s identity: `Some(slot)` is where the
+    /// new record index goes, `None` means an identical rule is already
+    /// compiled. The hash picks where to start looking; acceptance is always
+    /// [`Self::identity_matches`] reading the arena back, never the hash.
+    fn dedup_slot_for(&mut self, rule: &DomainRule, domain: &[u8], flags: u8) -> Option<usize> {
+        self.reserve_dedup();
+        let cap = self.dedup.len();
+        let mut slot = fastrange(
+            identity_hash(
+                domain,
+                flags,
+                rule.dns_types.as_deref(),
+                rule.dns_rewrite.as_deref(),
+            ),
+            cap,
+        );
+        // `reserve_dedup` keeps the table under its load factor, so an empty
+        // slot always exists and this walk always terminates.
+        while self.dedup[slot] != EMPTY {
+            if self.identity_matches(self.dedup[slot], rule, domain, flags) {
+                return None;
+            }
+            slot += 1;
+            if slot == cap {
+                slot = 0;
+            }
+        }
+        Some(slot)
+    }
+
+    /// Full-identity comparison of an already-compiled record against an
+    /// incoming rule, read back from the arena, the record's flags and (only
+    /// when the flags say so) the option side maps. `list_id` is deliberately
+    /// not compared: attribution is informational, never part of a verdict.
+    fn identity_matches(&self, idx: u32, rule: &DomainRule, domain: &[u8], flags: u8) -> bool {
+        let rec = &self.records[idx as usize];
+        if rec.flags != flags {
+            return false;
+        }
+        let stored = &self.arena[rec.dom_off as usize..rec.dom_off as usize + rec.dom_len as usize];
+        if !stored.eq_ignore_ascii_case(domain) {
+            return false;
+        }
+        // Equal flags mean both sides agree on whether each option is
+        // present, so `unwrap_or_default` here is unreachable, not a fallback.
+        if rec.has_dnstype() && &*self.dnstype[&idx].1 != rule.dns_types.as_deref().unwrap_or("") {
+            return false;
+        }
+        if rec.has_rewrite() && &*self.rewrite[&idx] != rule.dns_rewrite.as_deref().unwrap_or("") {
+            return false;
+        }
+        true
+    }
+
+    /// Keeps the dedup index under its load factor. A builder from
+    /// [`Self::with_capacity`] was sized for the whole compile and never
+    /// enters the rehash branch; one from [`Self::new`] grows here instead.
+    /// Rehashing changes where indices sit, never which rules survive — the
+    /// table is membership-only and is never iterated to produce output.
+    fn reserve_dedup(&mut self) {
+        let needed = self.records.len() + 1;
+        if needed * 2 <= self.dedup.len() {
+            return;
+        }
+        // Doubling in *entry* terms, so an un-hinted builder pays an
+        // amortized-constant number of rehashes rather than one per insert.
+        let mut grown = vec![EMPTY; dedup_slots(needed * 2)];
+        let cap = grown.len();
+        for (idx, rec) in self.records.iter().enumerate() {
+            let domain =
+                &self.arena[rec.dom_off as usize..rec.dom_off as usize + rec.dom_len as usize];
+            let idx = idx as u32;
+            let mut slot = fastrange(
+                identity_hash(
+                    domain,
+                    rec.flags,
+                    self.dnstype.get(&idx).map(|(_, raw)| raw.as_ref()),
+                    self.rewrite.get(&idx).map(|raw| raw.as_ref()),
+                ),
+                cap,
+            );
+            while grown[slot] != EMPTY {
+                slot += 1;
+                if slot == cap {
+                    slot = 0;
+                }
+            }
+            grown[slot] = idx;
+        }
+        self.dedup = grown;
+    }
+
+    /// How many rules were dropped as exact duplicates of one already added.
+    pub fn duplicates_removed(&self) -> usize {
+        self.duplicates_removed
     }
 
     pub fn build(self) -> Matcher {
         let count = self.records.len();
         // Load factor ~0.7 keeps probe chains short. Exact (non-power-of-two)
         // capacity via fastrange avoids rounding up ~4 MB of empty slots.
-        let cap = (count.saturating_mul(10) / 7).max(8);
+        let cap = table_slots(count);
         let mut slots = vec![EMPTY; cap];
 
         for (idx, rec) in self.records.iter().enumerate() {
@@ -262,6 +476,8 @@ impl MatcherBuilder {
             slots[slot] = idx as u32;
         }
 
+        // `self.dedup` is dropped here with the builder: the dedup index is
+        // compile-time working memory and never rides along with the matcher.
         Matcher {
             arena: self.arena.into_boxed_slice(),
             records: self.records.into_boxed_slice(),
@@ -270,6 +486,7 @@ impl MatcherBuilder {
             lists: self.lists.into_boxed_slice(),
             dnstype: self.dnstype,
             rewrite: self.rewrite,
+            duplicates_removed: self.duplicates_removed,
         }
     }
 }
@@ -284,12 +501,22 @@ pub struct Matcher {
     lists: Box<[std::sync::Arc<str>]>,
     dnstype: HashMap<u32, (u32, std::sync::Arc<str>)>,
     rewrite: HashMap<u32, std::sync::Arc<str>>,
+    duplicates_removed: usize,
 }
 
 impl Matcher {
-    /// Number of compiled rules.
+    /// Number of compiled rules — **distinct** rules, since p1.5-05: two lists
+    /// carrying the same rule contribute one record, not two.
     pub fn len(&self) -> usize {
         self.records.len()
+    }
+
+    /// How many rules the compile dropped as exact duplicates of one already
+    /// present, across every list in it. Reported through metrics and the
+    /// lists API so an overlapping pair of lists is visible as overlap rather
+    /// than as a mysteriously small rule count.
+    pub fn duplicates_removed(&self) -> usize {
+        self.duplicates_removed
     }
 
     pub fn is_empty(&self) -> bool {
@@ -650,5 +877,242 @@ mod tests {
         let m = matcher_with(&[]);
         assert_eq!(decision(&m, "anything.example.com"), MatchDecision::Pass);
         assert!(m.is_empty());
+    }
+
+    // ─── Deduplication (p1.5-05) ──────────────────────────────────────────
+
+    /// Compiles the given (list name, rule) pairs, each rule attributed to its
+    /// own named list — the cross-list overlap the dedup work exists for.
+    fn build_across_lists(rules: &[(&str, DomainRule)], capacity: Option<usize>) -> Matcher {
+        let mut b = match capacity {
+            Some(cap) => MatcherBuilder::with_capacity(cap),
+            None => MatcherBuilder::new(),
+        };
+        let mut ids: Vec<(&str, u16)> = Vec::new();
+        for (list, rule) in rules {
+            let id = match ids.iter().find(|(name, _)| name == list) {
+                Some((_, id)) => *id,
+                None => {
+                    let id = b.add_list(*list);
+                    ids.push((list, id));
+                    id
+                }
+            };
+            b.add_rule(id, rule);
+        }
+        b.build()
+    }
+
+    /// One compiled record, flattened for comparison.
+    type RecordPrint = (u32, u8, u8, u16);
+
+    /// Everything the compiled output consists of, in order — what a
+    /// determinism assertion has to compare.
+    struct Fingerprint {
+        arena: Vec<u8>,
+        records: Vec<RecordPrint>,
+        slots: usize,
+    }
+
+    impl PartialEq for Fingerprint {
+        fn eq(&self, other: &Self) -> bool {
+            self.arena == other.arena && self.records == other.records && self.slots == other.slots
+        }
+    }
+
+    impl std::fmt::Debug for Fingerprint {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            write!(
+                f,
+                "Fingerprint {{ arena: {} bytes, records: {}, slots: {} }}",
+                self.arena.len(),
+                self.records.len(),
+                self.slots
+            )
+        }
+    }
+
+    fn fingerprint(m: &Matcher) -> Fingerprint {
+        Fingerprint {
+            arena: m.arena.to_vec(),
+            records: m
+                .records
+                .iter()
+                .map(|r| (r.dom_off, r.dom_len, r.flags, r.list_id))
+                .collect(),
+            slots: m.slots.len(),
+        }
+    }
+
+    #[test]
+    fn the_same_rule_in_two_lists_is_compiled_once() {
+        let m = build_across_lists(
+            &[
+                ("adguard", block("ads.example.com")),
+                ("hagezi", block("ads.example.com")),
+            ],
+            None,
+        );
+        assert_eq!(m.len(), 1, "an identical rule must not occupy two records");
+        assert_eq!(m.duplicates_removed(), 1);
+        // Verdict unchanged, attributed to the first list that supplied it.
+        let MatchDecision::Block(r) = decision(&m, "ads.example.com") else {
+            panic!("expected block");
+        };
+        assert_eq!(&*m.decisive_rule(r).list, "adguard");
+    }
+
+    #[test]
+    fn an_exact_duplicate_within_one_list_collapses_too() {
+        let m = matcher_with(&[
+            ("", block("ads.example.com")),
+            ("", block("ads.example.com")),
+            ("", block("other.example.com")),
+        ]);
+        assert_eq!(m.len(), 2);
+        assert_eq!(m.duplicates_removed(), 1);
+    }
+
+    #[test]
+    fn block_in_one_list_and_allow_in_another_both_survive() {
+        // Different actions are different identities: collapsing them would
+        // silently change the verdict, which allow > block then decides.
+        let m = build_across_lists(
+            &[
+                ("blocklist", block("example.com")),
+                ("allowlist", allow("example.com")),
+            ],
+            None,
+        );
+        assert_eq!(m.len(), 2);
+        assert_eq!(m.duplicates_removed(), 0);
+        assert!(matches!(
+            decision(&m, "example.com"),
+            MatchDecision::Allow(_)
+        ));
+    }
+
+    #[test]
+    fn rules_differing_only_in_an_option_are_distinct_identities() {
+        let plain = block("ads.example.com");
+        let typed = DomainRule {
+            dns_types: Some(Arc::from("A")),
+            ..block("ads.example.com")
+        };
+        let rewritten = DomainRule {
+            dns_rewrite: Some(Arc::from("0.0.0.0")),
+            ..block("ads.example.com")
+        };
+        let exact = DomainRule {
+            include_subdomains: false,
+            ..block("ads.example.com")
+        };
+        let m = matcher_with(&[
+            ("", plain),
+            ("", typed),
+            ("", rewritten),
+            ("", exact),
+            // …and one true duplicate of the $dnstype rule, which must go.
+            (
+                "",
+                DomainRule {
+                    dns_types: Some(Arc::from("A")),
+                    ..block("ads.example.com")
+                },
+            ),
+        ]);
+        assert_eq!(m.len(), 4, "only the identical pair may collapse");
+        assert_eq!(m.duplicates_removed(), 1);
+    }
+
+    #[test]
+    fn a_domain_that_differs_only_in_case_is_the_same_rule() {
+        // Lookup is case-insensitive, so these two would always decide
+        // identically — keeping both would be pure waste.
+        let m = matcher_with(&[
+            ("", block("Ads.Example.COM")),
+            ("", block("ads.example.com")),
+        ]);
+        assert_eq!(m.len(), 1);
+        assert_eq!(m.duplicates_removed(), 1);
+        assert!(matches!(
+            decision(&m, "ads.example.com"),
+            MatchDecision::Block(_)
+        ));
+    }
+
+    #[test]
+    fn compiling_the_same_rules_twice_is_byte_identical_whatever_the_capacity() {
+        // Determinism: the dedup index is membership-only and never iterated
+        // to produce output, so its capacity is a performance knob and must
+        // leave the compiled arena/records/slots untouched.
+        let rules: Vec<(&str, DomainRule)> = vec![
+            ("a", block("ads.example.com")),
+            ("a", allow("cdn.example.com")),
+            ("b", block("ads.example.com")),
+            ("b", block("tracker.example.org")),
+            (
+                "b",
+                DomainRule {
+                    dns_types: Some(Arc::from("AAAA")),
+                    ..block("ads.example.com")
+                },
+            ),
+            ("c", block("tracker.example.org")),
+        ];
+
+        let baseline = fingerprint(&build_across_lists(&rules, None));
+        for capacity in [Some(0), Some(1), Some(rules.len()), Some(100_000), None] {
+            let other = build_across_lists(&rules, capacity);
+            assert_eq!(
+                fingerprint(&other),
+                baseline,
+                "capacity {capacity:?} changed the compiled output"
+            );
+            assert_eq!(other.duplicates_removed(), 2);
+        }
+    }
+
+    #[test]
+    fn an_unhinted_builder_grows_its_index_without_losing_or_inventing_rules() {
+        // `MatcherBuilder::new()` starts with a small index and rehashes as it
+        // fills; rehashing moves indices around but must not change which
+        // rules survive.
+        let mut b = MatcherBuilder::new();
+        let list = b.add_list("big");
+        for i in 0..5_000 {
+            b.add_rule(list, &block(&format!("host{i}.example.com")));
+            b.add_rule(list, &block(&format!("host{i}.example.com")));
+        }
+        let m = b.build();
+        assert_eq!(m.len(), 5_000);
+        assert_eq!(m.duplicates_removed(), 5_000);
+        assert!(matches!(
+            decision(&m, "host4999.example.com"),
+            MatchDecision::Block(_)
+        ));
+        assert!(matches!(
+            decision(&m, "deep.sub.host0.example.com"),
+            MatchDecision::Block(_)
+        ));
+    }
+
+    #[test]
+    fn dedup_shrinks_the_compiled_footprint_of_overlapping_lists() {
+        let rules: Vec<(&str, DomainRule)> = (0..1_000)
+            .map(|i| ("a", block(&format!("ads{i}.example.com"))))
+            .chain((0..1_000).map(|i| ("b", block(&format!("ads{i}.example.com")))))
+            .collect();
+        let m = build_across_lists(&rules, Some(rules.len()));
+        assert_eq!(m.len(), 1_000);
+        assert_eq!(m.duplicates_removed(), 1_000);
+        let single = build_across_lists(&rules[..1_000], Some(1_000));
+        assert_eq!(
+            (m.arena.len(), m.records.len(), m.slots.len()),
+            (single.arena.len(), single.records.len(), single.slots.len()),
+            "a fully overlapping second list must add no arena, records or slots"
+        );
+        // The only thing the second list does add is its own name in `lists`.
+        assert!(m.heap_bytes() - single.heap_bytes() < 64);
     }
 }

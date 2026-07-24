@@ -48,7 +48,7 @@ pub(crate) async fn save(data_dir: &Path, data: &SnapshotData) -> std::io::Resul
 mod tests {
     use std::time::SystemTime;
 
-    use fah_model::Verdict;
+    use fah_model::{QueryType, Verdict};
 
     use super::*;
 
@@ -63,7 +63,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let now = SystemTime::now();
         let mut aggregates = Aggregates::default();
-        aggregates.record("ads.example.com", &Verdict::Pass, true, now);
+        aggregates.record("ads.example.com", &QueryType::A, &Verdict::Pass, true, now);
         let data = SnapshotData {
             aggregates,
             clients: ClientRegistry::default(),

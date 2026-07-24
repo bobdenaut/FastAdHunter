@@ -478,13 +478,46 @@ fn bench_startup_phases(c: &mut Criterion) {
         b.iter(|| black_box(fah_rules::parse_rule_list(black_box(&text)).active_count()));
     });
 
+    // `with_capacity` is what the compile path uses (lifecycle sizes the
+    // builder's transient dedup index from a one-pass ceiling on the rule
+    // count), so the bench must use it too or it measures a rehash storm the
+    // product never pays.
     group.bench_function("3_build_matcher", |b| {
         b.iter(|| {
-            let mut builder = fah_rules::MatcherBuilder::new();
+            let mut builder = fah_rules::MatcherBuilder::with_capacity(parsed.rules.len());
             builder.add_parsed_list(std::sync::Arc::from("blocklist-1m"), black_box(&parsed));
             black_box(builder.build().len())
         });
     });
+
+    // The same corpus loaded twice — the AdGuard/HaGeZi overlap in its
+    // extreme form. Dedup must make the second copy cost build *time* and no
+    // resident bytes at all (p1.5-05).
+    group.bench_function("4_build_matcher_two_overlapping_lists", |b| {
+        b.iter(|| {
+            let mut builder = fah_rules::MatcherBuilder::with_capacity(parsed.rules.len() * 2);
+            builder.add_parsed_list(std::sync::Arc::from("list-a"), black_box(&parsed));
+            builder.add_parsed_list(std::sync::Arc::from("list-b"), black_box(&parsed));
+            black_box(builder.build().len())
+        });
+    });
+
+    let mut single = fah_rules::MatcherBuilder::with_capacity(parsed.rules.len());
+    single.add_parsed_list(std::sync::Arc::from("list-a"), &parsed);
+    let single = single.build();
+    let mut doubled = fah_rules::MatcherBuilder::with_capacity(parsed.rules.len() * 2);
+    doubled.add_parsed_list(std::sync::Arc::from("list-a"), &parsed);
+    doubled.add_parsed_list(std::sync::Arc::from("list-b"), &parsed);
+    let doubled = doubled.build();
+    println!(
+        "\n[p1.5-05] dedup on fully overlapping lists: one list {} rules / {:.1} MiB, \
+         the same list twice {} rules / {:.1} MiB, {} duplicates removed\n",
+        single.len(),
+        single.heap_bytes() as f64 / (1024.0 * 1024.0),
+        doubled.len(),
+        doubled.heap_bytes() as f64 / (1024.0 * 1024.0),
+        doubled.duplicates_removed(),
+    );
 
     group.finish();
 }

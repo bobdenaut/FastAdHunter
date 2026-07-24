@@ -6,17 +6,22 @@
 //! ARCHITECTURE.md §Dependency Layering). Everything else is real: real
 //! rustls, real axum routing, the real `ListManager`, the real config store.
 
+use std::collections::BTreeMap;
 use std::net::{IpAddr, Ipv4Addr};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime};
 
 use fah_api::{
     ApiKeyStore, ApiServer, AppStateBuilder, BucketCount, CacheClean, CacheSource, CacheStats,
-    ClientCount, ClientEntry, ConfigStore, DomainCount, QueryLogPage, QueryLogRequest, QueryRecord,
-    StatsOverview, StatsSource, TelemetrySource,
+    ClientCount, ClientEntry, ConfigStore, DomainCount, HistorySource, QueryLogPage,
+    QueryLogRequest, QueryRecord, StatsOverview, StatsSource, TelemetrySource,
 };
 use fah_config::{Config, RulesConfig};
-use fah_model::{DecisiveRule, Query, QueryEvent, QueryType, Verdict};
+use fah_model::{
+    CacheStatsSample, ClientHits, DecisiveRule, DomainHits, HistoryPoint, HistoryRange,
+    HistoryResolution, HistorySeries, LatencySummary, PerfSample, PerfSeries, Query, QueryEvent,
+    QueryType, TopItems, TopKind, Verdict,
+};
 use fah_rules::ListManager;
 use serde_json::{json, Value};
 
@@ -26,6 +31,9 @@ use serde_json::{json, Value};
 struct FakeStats {
     clients: Mutex<Vec<ClientEntry>>,
     queries: Mutex<Vec<QueryRecord>>,
+    /// The `(enabled, retention_days)` last pushed by `apply_history_config` —
+    /// lets a test prove `POST /api/v1/config` reaches the history writers live.
+    applied_history: Mutex<Option<(bool, u32)>>,
 }
 
 impl FakeStats {
@@ -43,6 +51,7 @@ impl FakeStats {
                 event: blocked_event(ip),
                 client_name: Some("liviu-phone".to_string()),
             }]),
+            applied_history: Mutex::new(None),
         }
     }
 }
@@ -126,6 +135,137 @@ impl StatsSource for FakeStats {
             .find(|entry| entry.ip == ip)
             .and_then(|entry| entry.name.clone())
     }
+
+    fn apply_history_config(&self, enabled: bool, retention_days: u32) {
+        *self.applied_history.lock().unwrap() = Some((enabled, retention_days));
+    }
+}
+
+/// Serves fixed fixtures and records what the handler asked for. The real
+/// aggregation is `fah-stats`' (an L3 sibling this crate cannot import, so its
+/// reader is tested there) — what these tests own is the boundary: query-string
+/// parsing, the range that reaches the port, and the JSON shape API.md
+/// documents.
+#[derive(Default)]
+struct FakeHistory {
+    /// Every `(from, to, resolution, max_points)` a summary read was called with.
+    summary_calls: Mutex<Vec<(SystemTime, SystemTime, HistoryResolution, usize)>>,
+    top_calls: Mutex<Vec<(TopKind, usize)>>,
+    /// Makes every read answer with nothing — the "range with no data" case.
+    empty: Mutex<bool>,
+}
+
+impl FakeHistory {
+    fn is_empty(&self) -> bool {
+        *self.empty.lock().unwrap()
+    }
+}
+
+impl HistorySource for FakeHistory {
+    fn summary(
+        &self,
+        range: HistoryRange,
+        resolution: HistoryResolution,
+        max_points: usize,
+    ) -> std::io::Result<HistorySeries> {
+        self.summary_calls
+            .lock()
+            .unwrap()
+            .push((range.from, range.to, resolution, max_points));
+        if self.is_empty() {
+            return Ok(HistorySeries {
+                points: vec![],
+                stride: 1,
+            });
+        }
+        Ok(HistorySeries {
+            points: vec![
+                HistoryPoint {
+                    ts: 0,
+                    queries: 100,
+                    blocked: 10,
+                    cache_hits: 50,
+                    per_type: BTreeMap::from([("A".to_string(), 100)]),
+                },
+                HistoryPoint {
+                    ts: 3_600,
+                    queries: 200,
+                    blocked: 50,
+                    cache_hits: 100,
+                    per_type: BTreeMap::from([("AAAA".to_string(), 200)]),
+                },
+            ],
+            stride: 2,
+        })
+    }
+
+    fn perf(&self, _range: HistoryRange, _max_points: usize) -> std::io::Result<PerfSeries> {
+        if self.is_empty() {
+            return Ok(PerfSeries {
+                samples: vec![],
+                stride: 1,
+            });
+        }
+        Ok(PerfSeries {
+            samples: vec![PerfSample {
+                ts: 3_600,
+                rss_bytes: 55_000_000,
+                qps: 12.5,
+                queries_delta: 750,
+                blocked_delta: 210,
+                allowed_delta: 5,
+                cache: CacheStatsSample {
+                    entries: 10_000,
+                    capacity: 16_384,
+                    fresh: 9_000,
+                    stale: 800,
+                    expired: 200,
+                    hits: 500_000,
+                    misses: 120_000,
+                    evictions: 3_400,
+                    bytes: 21_000_000,
+                    max_bytes: 67_108_864,
+                },
+                latency: LatencySummary {
+                    block_p50: 0.0001,
+                    block_p99: 0.0005,
+                    cache_hit_p50: 0.0001,
+                    cache_hit_p99: 0.00025,
+                    forward_p50: 0.005,
+                    forward_p99: 0.05,
+                },
+                upstreams: vec![],
+            }],
+            stride: 1,
+        })
+    }
+
+    fn top(&self, _range: HistoryRange, kind: TopKind, limit: usize) -> std::io::Result<TopItems> {
+        self.top_calls.lock().unwrap().push((kind, limit));
+        if self.is_empty() {
+            return Ok(match kind {
+                TopKind::Clients => TopItems::Clients(vec![]),
+                _ => TopItems::Domains(vec![]),
+            });
+        }
+        Ok(match kind {
+            TopKind::Clients => TopItems::Clients(vec![ClientHits {
+                ip: IpAddr::V4(Ipv4Addr::new(192, 168, 10, 15)),
+                name: Some("liviu-phone".to_string()),
+                count: 30_122,
+            }]),
+            _ => TopItems::Domains(vec![
+                DomainHits {
+                    domain: "ads.example.com".to_string(),
+                    count: 1_289,
+                },
+                DomainHits {
+                    domain: "tracker.example.org".to_string(),
+                    count: 640,
+                },
+            ]),
+        })
+    }
 }
 
 struct FakeCache;
@@ -141,6 +281,8 @@ impl CacheSource for FakeCache {
             hits: 18_639_283,
             misses: 1_543_921,
             evictions: 21_483,
+            bytes: 21_000_000,
+            max_bytes: 67_108_864,
             estimated_bytes: 2_846_720,
         }
     }
@@ -184,6 +326,8 @@ struct Harness {
     base: String,
     config_path: std::path::PathBuf,
     rules: Arc<ListManager>,
+    stats: Arc<FakeStats>,
+    history: Arc<FakeHistory>,
     _config_dir: tempfile::TempDir,
     _data_dir: tempfile::TempDir,
 }
@@ -240,11 +384,14 @@ async fn start_with(options: HarnessOptions) -> Harness {
         .tls
         .then(|| fah_api::load_or_generate_tls(config_dir.path()).unwrap());
 
+    let stats = Arc::new(FakeStats::with_client(IpAddr::V4(Ipv4Addr::new(
+        192, 168, 10, 15,
+    ))));
+    let history = Arc::new(FakeHistory::default());
     let state = AppStateBuilder {
         rules: Arc::clone(&rules),
-        stats: Arc::new(FakeStats::with_client(IpAddr::V4(Ipv4Addr::new(
-            192, 168, 10, 15,
-        )))),
+        stats: Arc::clone(&stats) as Arc<dyn StatsSource>,
+        history: Arc::clone(&history) as Arc<dyn HistorySource>,
         telemetry: Arc::new(FakeTelemetry {
             degraded: options.degraded,
         }),
@@ -272,6 +419,8 @@ async fn start_with(options: HarnessOptions) -> Harness {
         base,
         config_path,
         rules,
+        stats,
+        history,
         _config_dir: config_dir,
         _data_dir: data_dir,
     }
@@ -333,6 +482,9 @@ async fn every_v1_route_requires_the_key() {
         "/api/v1/stats",
         "/api/v1/queries",
         "/api/v1/clients",
+        "/api/v1/history/summary",
+        "/api/v1/history/perf",
+        "/api/v1/history/top",
         "/api/v1/lists",
         "/api/v1/rules/user",
         "/api/v1/cache",
@@ -512,6 +664,163 @@ async fn query_filters_are_validated() {
     );
 }
 
+// ─── History (persisted series) ────────────────────────────────────────
+
+#[tokio::test]
+async fn history_summary_matches_the_documented_shape_at_both_resolutions() {
+    let harness = start().await;
+
+    let body = harness
+        .get_json(
+            "/api/v1/history/summary\
+             ?from=2026-07-01T00:00:00Z&to=2026-07-08T00:00:00Z&resolution=day",
+        )
+        .await;
+
+    assert_eq!(body["resolution"], "day");
+    assert_eq!(body["from"], "2026-07-01T00:00:00Z");
+    assert_eq!(body["to"], "2026-07-08T00:00:00Z");
+    assert_eq!(body["stride"], 2, "decimation is reported, not hidden");
+
+    let items = body["items"].as_array().unwrap();
+    assert_eq!(items.len(), 2);
+    assert_eq!(items[0]["ts"], "1970-01-01T00:00:00Z");
+    assert_eq!(items[0]["queries"], 100);
+    assert_eq!(items[0]["blocked"], 10);
+    assert_eq!(items[0]["blocked_percent"], 10.0, "derived at the boundary");
+    assert_eq!(items[0]["cache_hits"], 50);
+    assert_eq!(items[0]["per_type"]["A"], 100);
+    assert_eq!(items[1]["blocked_percent"], 25.0);
+
+    // The range and resolution the query string asked for reached the reader.
+    let calls = harness.history.summary_calls.lock().unwrap();
+    let (from, to, resolution, max_points) = calls.last().unwrap();
+    assert_eq!(*resolution, HistoryResolution::Day);
+    assert_eq!(
+        to.duration_since(*from).unwrap(),
+        Duration::from_secs(7 * 24 * 3600)
+    );
+    assert_eq!(*max_points, 5_000, "the documented summary default");
+}
+
+#[tokio::test]
+async fn history_defaults_to_the_last_24h_at_hour_resolution() {
+    let harness = start().await;
+
+    let body = harness.get_json("/api/v1/history/summary").await;
+    assert_eq!(body["resolution"], "hour");
+
+    let calls = harness.history.summary_calls.lock().unwrap();
+    let (from, to, resolution, _) = calls.last().unwrap();
+    assert_eq!(*resolution, HistoryResolution::Hour);
+    let window = to.duration_since(*from).unwrap();
+    assert_eq!(window, Duration::from_secs(24 * 3600));
+    // `to` defaults to now, so the window ends about now.
+    assert!(SystemTime::now().duration_since(*to).unwrap() < Duration::from_secs(10));
+}
+
+#[tokio::test]
+async fn a_history_range_with_no_data_is_an_empty_series_not_a_404() {
+    let harness = start().await;
+    *harness.history.empty.lock().unwrap() = true;
+
+    for path in [
+        "/api/v1/history/summary?from=1970-01-01T00:00:00Z&to=1970-01-02T00:00:00Z",
+        "/api/v1/history/perf?from=1970-01-01T00:00:00Z&to=1970-01-02T00:00:00Z",
+        "/api/v1/history/top?from=1970-01-01T00:00:00Z&to=1970-01-02T00:00:00Z",
+    ] {
+        let response = harness.get(path).await;
+        assert_eq!(response.status(), 200, "{path} must not 404 on empty");
+        let body: Value = response.json().await.unwrap();
+        assert_eq!(body["items"].as_array().unwrap().len(), 0, "{path}");
+    }
+}
+
+#[tokio::test]
+async fn history_range_and_enum_parameters_are_validated() {
+    let harness = start().await;
+
+    for path in [
+        // `to` before `from`: a window that cannot contain anything is a
+        // request bug, not an empty answer.
+        "/api/v1/history/summary?from=2026-07-08T00:00:00Z&to=2026-07-01T00:00:00Z",
+        "/api/v1/history/perf?from=2026-07-08T00:00:00Z&to=2026-07-01T00:00:00Z",
+        "/api/v1/history/top?from=2026-07-08T00:00:00Z&to=2026-07-01T00:00:00Z",
+        "/api/v1/history/summary?from=yesterday",
+        "/api/v1/history/summary?resolution=minute",
+        "/api/v1/history/summary?max_points=lots",
+        "/api/v1/history/top?kind=everything",
+        "/api/v1/history/perf?fields=rss_bytes,nonsense",
+    ] {
+        let response = harness.get(path).await;
+        assert_eq!(response.status(), 400, "{path} must be rejected");
+        let body: Value = response.json().await.unwrap();
+        assert_eq!(body["error"]["code"], "bad_request", "{path}");
+    }
+}
+
+#[tokio::test]
+async fn history_perf_serves_the_sample_series_and_fields_trim_it() {
+    let harness = start().await;
+
+    let body = harness.get_json("/api/v1/history/perf").await;
+    let item = &body["items"][0];
+    assert_eq!(item["ts"], "1970-01-01T01:00:00Z");
+    assert_eq!(item["rss_bytes"], 55_000_000u64);
+    assert_eq!(item["qps"], 12.5);
+    assert_eq!(item["queries_delta"], 750);
+    assert_eq!(item["cache"]["entries"], 10_000);
+    assert_eq!(item["latency"]["forward_p99"], 0.05);
+    assert!(item["upstreams"].is_array());
+
+    // `fields` drops the keys it did not name — absent, not null.
+    let body = harness
+        .get_json("/api/v1/history/perf?fields=rss_bytes,cache")
+        .await;
+    let item = body["items"][0].as_object().unwrap();
+    let mut keys: Vec<&str> = item.keys().map(String::as_str).collect();
+    keys.sort_unstable();
+    assert_eq!(keys, ["cache", "rss_bytes", "ts"]);
+}
+
+#[tokio::test]
+async fn history_top_ranks_domains_by_default_and_clients_on_request() {
+    let harness = start().await;
+
+    let body = harness.get_json("/api/v1/history/top").await;
+    assert_eq!(body["kind"], "blocked");
+    assert_eq!(body["items"][0]["domain"], "ads.example.com");
+    assert_eq!(body["items"][0]["count"], 1_289);
+
+    let body = harness
+        .get_json("/api/v1/history/top?kind=clients&n=1")
+        .await;
+    assert_eq!(body["kind"], "clients");
+    assert_eq!(body["items"][0]["ip"], "192.168.10.15");
+    assert_eq!(body["items"][0]["name"], "liviu-phone");
+
+    let calls = harness.history.top_calls.lock().unwrap();
+    assert_eq!(calls[0], (TopKind::Blocked, 10), "the documented default n");
+    assert_eq!(calls[1], (TopKind::Clients, 1));
+}
+
+#[tokio::test]
+async fn a_wide_history_request_is_clamped_to_the_documented_ceiling() {
+    let harness = start().await;
+
+    harness
+        .get_json("/api/v1/history/summary?max_points=999999")
+        .await;
+    harness.get_json("/api/v1/history/top?n=999999").await;
+
+    assert_eq!(
+        harness.history.summary_calls.lock().unwrap()[0].3,
+        10_000,
+        "max_points is clamped, not honored verbatim"
+    );
+    assert_eq!(harness.history.top_calls.lock().unwrap()[0].1, 100);
+}
+
 // ─── Cache & memory ────────────────────────────────────────────────────
 
 #[tokio::test]
@@ -528,6 +837,11 @@ async fn cache_stats_match_the_documented_shape() {
     assert_eq!(body["misses"], 1_543_921);
     assert_eq!(body["evictions"], 21_483);
     assert_eq!(body["load_percent"], 72.61);
+    // The byte bound rides alongside the entry bound (p1.5-05) so a dashboard
+    // can see which of the two is the one about to evict.
+    assert_eq!(body["bytes"], 21_000_000);
+    assert_eq!(body["max_bytes"], 67_108_864u64);
+    assert_eq!(body["byte_load_percent"], 31.29);
 }
 
 #[tokio::test]
@@ -904,6 +1218,63 @@ async fn a_local_file_list_can_be_added_by_path_and_refreshed() {
 }
 
 #[tokio::test]
+async fn overlapping_lists_report_compiled_rules_net_of_duplicates() {
+    // Two lists sharing two of three domains — the AdGuard/HaGeZi situation
+    // that motivated dedup, in miniature. The per-list counts stay parse-based
+    // (each list still *has* those rules); the envelope reports the merge.
+    let harness = start().await;
+    let data = harness._data_dir.path();
+    tokio::fs::write(data.join("a.txt"), "ads.example.com\ntracker.example.org\n")
+        .await
+        .unwrap();
+    tokio::fs::write(
+        data.join("b.txt"),
+        "ads.example.com\ntracker.example.org\nextra.example.net\n",
+    )
+    .await
+    .unwrap();
+
+    for name in ["a.txt", "b.txt"] {
+        harness
+            .client
+            .post(harness.url("/api/v1/lists"))
+            .bearer_auth(&harness.key)
+            .json(&json!({"path": name}))
+            .send()
+            .await
+            .unwrap();
+        harness
+            .client
+            .post(harness.url(&format!(
+                "/api/v1/lists/{}/refresh",
+                name.trim_end_matches(".txt")
+            )))
+            .bearer_auth(&harness.key)
+            .send()
+            .await
+            .unwrap();
+    }
+
+    let deadline = std::time::Instant::now() + Duration::from_secs(10);
+    loop {
+        let body = harness.get_json("/api/v1/lists").await;
+        if body["compiled_rules"] == 3 {
+            assert_eq!(body["duplicates_removed"], 2);
+            assert_eq!(
+                body["items"][0]["rules_active_dns"], 2,
+                "per-list counts stay parse-based, before the merge"
+            );
+            break;
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "both refreshes never landed: {body}"
+        );
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+}
+
+#[tokio::test]
 async fn operating_on_an_unknown_list_is_a_not_found() {
     let harness = start().await;
     for response in [
@@ -1081,6 +1452,33 @@ async fn a_runtime_config_change_applies_live_and_is_written_back_to_the_toml() 
         .unwrap();
     let reparsed = Config::from_toml_str(&on_disk).unwrap();
     assert_eq!(reparsed.dns.cache.max_entries, 50_000);
+}
+
+#[tokio::test]
+async fn history_retention_change_is_pushed_live_to_the_writers() {
+    let harness = start().await;
+
+    let body: Value = harness
+        .client
+        .post(harness.url("/api/v1/config"))
+        .bearer_auth(&harness.key)
+        .json(&json!({"history": {"retention_days": 90}}))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(body["applied"], true);
+    assert_eq!(body["restart_required"], false);
+
+    // The handler reached the stats port with the merged effective value —
+    // this is the live apply the writers' shared retention atomic consumes on
+    // the next prune (no restart).
+    assert_eq!(
+        *harness.stats.applied_history.lock().unwrap(),
+        Some((true, 90))
+    );
 }
 
 #[tokio::test]

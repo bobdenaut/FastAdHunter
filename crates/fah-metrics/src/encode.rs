@@ -219,6 +219,18 @@ pub fn encode(metrics: &Metrics) -> String {
     );
     write_help_type(
         &mut out,
+        "fastadhunter_ruleset_duplicates_removed",
+        "gauge",
+        "Rules dropped by the last compile as duplicates of one already present.",
+    );
+    writeln_metric(
+        &mut out,
+        "fastadhunter_ruleset_duplicates_removed",
+        &[],
+        ruleset.duplicates_removed as f64,
+    );
+    write_help_type(
+        &mut out,
         "fastadhunter_ruleset_compile_duration_seconds",
         "gauge",
         "Wall time of the most recent ruleset compile.",
@@ -384,6 +396,7 @@ mod tests {
             "fastadhunter_events_dropped_total",
             "fastadhunter_ruleset_rules",
             "fastadhunter_ruleset_heap_bytes",
+            "fastadhunter_ruleset_duplicates_removed",
             "fastadhunter_ruleset_compile_duration_seconds",
             "process_resident_memory_bytes",
         ] {
@@ -446,10 +459,12 @@ mod tests {
             rules: 1_000_000,
             heap_bytes: 40_000_000,
             compile_duration: Duration::from_millis(1500),
+            duplicates_removed: 213_000,
         });
         let text = encode(&metrics);
         assert!(text.contains("fastadhunter_ruleset_rules 1000000"));
         assert!(text.contains("fastadhunter_ruleset_heap_bytes 40000000"));
+        assert!(text.contains("fastadhunter_ruleset_duplicates_removed 213000"));
         assert!(text.contains("fastadhunter_ruleset_compile_duration_seconds 1.5"));
     }
 

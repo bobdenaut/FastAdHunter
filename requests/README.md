@@ -36,7 +36,9 @@ to a public root.
 | `lists.http` | Lists CRUD, refresh, persistence check |
 | `rules.http` | Inline user rules, verdict dry-run |
 | `stats.http` | Aggregates, query log, filters, pagination |
+| `history.http` | Persisted series: summary, perf, top-N |
 | `clients.http` | Client discovery and naming |
+| `cache.http` | Cache usage and `POST /api/v1/cache/clean` |
 | `settings.http` | `GET`/`POST /api/v1/config` |
 
 Each file includes the failure cases, not just the happy path — 401s, 404s,
