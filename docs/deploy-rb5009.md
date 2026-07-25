@@ -487,10 +487,25 @@ explicitly, and v4 clients are still reported canonically rather than as
 `::ffff:…` mapped addresses). So the listener is not the constraint it was
 before; earlier builds bound `0.0.0.0` and could not answer IPv6 at all.
 
-**Steering** is still IPv4-only, though: the DHCP setting and the `dstnat`
-redirect above both cover IPv4, so on a dual-stack LAN nothing points IPv6
-clients at FastAdHunter and some resolution happens somewhere else — even
-though FastAdHunter would now answer if it were asked.
+**Steering is a separate question, and on this deployment IPv6 does reach
+FastAdHunter.** The DHCP setting and the `dstnat` redirect above cover IPv4
+only, so it is tempting to conclude IPv6 resolves elsewhere. Measured on the
+live router, that conclusion is false: `GET /api/v1/clients` shows **19 IPv6
+clients against 13 IPv4**, and excluding synthetic load generators the IPv6
+clients account for 12,953 of 59,177 household queries in 24 h — 22 % of real
+traffic — filtered at a 55 % block rate. IPv6 clients also reach the TCP
+listener (client disconnects in the router log carry `2a02:…` source
+addresses).
+
+Measurements confirm that IPv6 DNS traffic reaches FastAdHunter on this
+deployment. The exact steering mechanism (for example, IPv6 NAT, Router
+Advertisement configuration, or another routing mechanism) should be verified
+explicitly rather than assumed.
+
+So do not assume either answer. The commands below are how you find out which.
+The point of this section is unchanged: **establish where IPv6 resolves before
+trusting any measurement**, because if part of it bypasses FastAdHunter then the
+§6 checks and the §9 soak silently describe only a fraction of the LAN.
 
 That is not a deployment fault and this guide does not prescribe a firewall for
 it. What deployment needs is the answer to one question: **do IPv6 queries

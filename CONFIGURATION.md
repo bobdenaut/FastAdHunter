@@ -187,6 +187,13 @@ is another reason not to hand-edit a set the API is also maintaining.
   yet**; they exist for per-query drill-down in the dashboard phase. Long-term
   aggregates come from `/api/v1/history/*`, which reads `/data/history` instead.
 
+`retention_max_mb` counts **MiB** (`retention_max_mb × 1024 × 1024`), and the
+total may sit slightly *above* the cap: prune never deletes the segment
+currently being written, and segments roll at 1 MiB, so the real bound is
+`cap + (active segment < 1 MiB)`. Measured on the RB5009 at the 500 MiB default:
+524,534,431 B against a 524,288,000 B cap — 240 KB over, the active segment's
+fill. Bounded, and not a defect.
+
 Sizing consequence: the segments cost real disk and real write volume for data
 nothing can currently return. At household rates that is ~25 MB/day and
 irrelevant. Under a synthetic load generator it is not — 85 QPS produces roughly
