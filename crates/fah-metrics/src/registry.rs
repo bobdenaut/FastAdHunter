@@ -83,13 +83,23 @@ impl Metrics {
             Verdict::Block(_) => self.queries_block.fetch_add(1, Ordering::Relaxed),
         };
 
-        if event.cache_hit {
-            self.cache_hits.fetch_add(1, Ordering::Relaxed);
-            if event.stale {
-                self.cache_stale.fetch_add(1, Ordering::Relaxed);
+        // Only resolved queries have a cache outcome to record. A blocked query
+        // never reaches the cache (ADR-0001), so it carries `cache_hit == false`
+        // by construction — counting that as a *miss* inflated
+        // `cache_misses_total` by exactly the block count and understated the
+        // hit rate by more the better the blocker worked. Mirrors what
+        // `DnsCache::note_lookup` already does on the pipeline side, where the
+        // call sits inside the non-blocked branch. The stage selection below has
+        // always tested `Block` first; this branch was the one that did not.
+        if !matches!(event.verdict, Verdict::Block(_)) {
+            if event.cache_hit {
+                self.cache_hits.fetch_add(1, Ordering::Relaxed);
+                if event.stale {
+                    self.cache_stale.fetch_add(1, Ordering::Relaxed);
+                }
+            } else {
+                self.cache_misses.fetch_add(1, Ordering::Relaxed);
             }
-        } else {
-            self.cache_misses.fetch_add(1, Ordering::Relaxed);
         }
 
         let stage = if matches!(event.verdict, Verdict::Block(_)) {
@@ -205,6 +215,47 @@ mod tests {
         assert_eq!(metrics.cache_hits.load(Ordering::Relaxed), 2);
         assert_eq!(metrics.cache_stale.load(Ordering::Relaxed), 1);
         assert_eq!(metrics.cache_misses.load(Ordering::Relaxed), 1);
+    }
+
+    /// A blocked query never reaches the cache (ADR-0001), so it must not land
+    /// in either cache counter. Counting it as a miss inflated
+    /// `cache_misses_total` by exactly the block count — measured on the RB5009
+    /// as `hits + misses == pass + allow + block` when it should equal
+    /// `pass + allow` — which understates the reported hit rate by more the more
+    /// the blocker blocks (~23 points at a 30 % block rate).
+    #[test]
+    fn a_blocked_query_is_not_counted_as_a_cache_miss() {
+        let metrics = Metrics::new();
+        let blocked = || {
+            event(
+                Verdict::Block(DecisiveRule::new("oisd", "||ads.example.com^")),
+                false,
+                false,
+                false,
+            )
+        };
+        for _ in 0..5 {
+            metrics.record(&blocked());
+        }
+        metrics.record(&event(Verdict::Pass, true, false, false)); // resolved, hit
+        metrics.record(&event(Verdict::Pass, false, true, false)); // resolved, miss
+
+        assert_eq!(metrics.queries_block.load(Ordering::Relaxed), 5);
+        assert_eq!(metrics.cache_hits.load(Ordering::Relaxed), 1);
+        assert_eq!(
+            metrics.cache_misses.load(Ordering::Relaxed),
+            1,
+            "only the resolved miss counts; the 5 blocks never touched the cache"
+        );
+
+        // The invariant the RB5009 data violated: the two cache counters must
+        // sum to the queries that actually reached the cache, not to every query.
+        let snap = metrics.snapshot();
+        assert_eq!(
+            snap.cache_hits + snap.cache_misses,
+            snap.queries_pass + snap.queries_allow,
+            "cache outcomes must account for exactly the resolved queries"
+        );
     }
 
     #[test]
