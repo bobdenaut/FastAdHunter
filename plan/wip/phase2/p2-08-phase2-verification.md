@@ -1,6 +1,6 @@
 # P2-07 — Phase 2 Verification
 
-**Phase:** 2 · **Depends on:** p2-06 · **Model:** Sonnet
+**Phase:** 2 · **Depends on:** p2-07 · **Model:** Sonnet
 
 ## Goal
 
@@ -34,11 +34,19 @@ port 80 → container).
   a 1.4 GHz ARM core — on a box where the DNS engine alone reached 65.8 % of it
   under load (`p1.5-06-review.md`) — is exactly the kind of target that should
   come from a measurement rather than produce one.
-- **RAM ceiling ≤128 MB is a claim to verify, not assume.** Phase 1.5 already
-  sits near it (~104 MiB steady at the configured cache size), so state the
+- **RAM ceiling ≤128 MB is a claim to verify, not assume.** State the
   post-Phase-2 figure with EasyList + policies loaded and say plainly whether
   it fits. If p2-03 already flagged the headroom, this row confirms or
   contradicts it — either outcome gets recorded.
+  Note the ~104 MiB figure this row used to cite was **0.2.3**; measured on
+  0.2.4 the steady RSS is **~41.7 MiB** after 10 h of household traffic
+  (`docs/code-review/p1.5-09-soak-baseline.md`), so the headroom is far larger
+  than the task originally assumed. Re-measure rather than inheriting either
+  number.
+- **Report the soak in components, not just RSS** (`p2-07`). A soak that only
+  has RSS can say "it grew"; with `fastadhunter_memory_component_bytes` and the
+  residual it can say *which* structure grew, and a flat residual is what
+  actually retires the leak question.
 - Bench consolidation: HTTP benches map 1:1 to the new budget rows.
 - End-to-end (offline): mock origin + real binary in dns+http mode —
   page with ad script: script blocked (200-empty), page renders; second
@@ -62,7 +70,7 @@ HTTPS (Phase 3), HTML rewriting (Phase 4).
 
 ## Suggested prompt
 
-> Read plan/wip/phase2/p2-07-phase2-verification.md and PERFORMANCE.md.
+> Read plan/wip/phase2/p2-08-phase2-verification.md and PERFORMANCE.md.
 > Set the HTTP budget rows from bench data, consolidate benches, write the
 > offline e2e scenarios, then walk the RB5009 dst-nat setup and soak WITH the
 > user and record results.

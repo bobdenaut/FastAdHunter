@@ -14,7 +14,9 @@ is trustworthy until it lands. Then scaffold + docs (new crate changes the
 architecture — docs update in the same change, per root CLAUDE.md). Proxy core
 before filtering (streaming pass-through must be solid before verdicts touch
 it). URL rules before the filtering pipeline that consumes them. Policies last
-on the rules side, then enforcement wires both pipelines, then proof.
+on the rules side, then enforcement wires both pipelines. Memory accounting
+lands immediately before verification, so the phase's soak can attribute
+growth to a component instead of only reporting RSS. Then proof.
 
 ## Architecture note — widening the Rule Engine interface
 
@@ -103,7 +105,8 @@ Note the matcher's *hot path* is pure, but `fah-rules` as a crate is not I/O-fre
 | 4 | `p2-04-http-filtering-pipeline.md` | Verdicts wired into the proxy: block responses, events, stats | Sonnet | WAITING |
 | 5 | `p2-05-policy-model.md` | Policy = named bundle of lists + settings; schedules; `$client` | Sonnet | WAITING |
 | 6 | `p2-06-per-client-enforcement.md` | DNS + HTTP consult policy per client; policy API endpoints | Sonnet | WAITING |
-| 7 | `p2-07-phase2-verification.md` | HTTP benches + budgets, e2e tests, RB5009 dns+http validation | Sonnet | WAITING |
+| 7 | `p2-07-memory-accounting.md` | Per-component `heap_bytes()` + `RSS − Σ(components)` residual metric — turns "is it growing?" into "growing where?" before the soak | Sonnet | WAITING |
+| 8 | `p2-08-phase2-verification.md` | HTTP benches + budgets, e2e tests, RB5009 dns+http validation | Sonnet | WAITING |
 
 **Definition of done:** router dst-nats port 80 to the container; a plain-HTTP
 page loads through the proxy with ad requests blocked at URL level; a "kids"
