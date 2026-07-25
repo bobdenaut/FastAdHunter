@@ -1,5 +1,7 @@
 //! Shared error types and small utilities used across the workspace (ARCHITECTURE.md L1).
 
+pub mod listen;
+
 use thiserror::Error;
 
 /// Shared error type across the workspace.

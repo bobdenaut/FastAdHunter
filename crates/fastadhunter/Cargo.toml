@@ -20,6 +20,7 @@ path = "src/main.rs"
 fah-api = { path = "../fah-api" }
 fah-config = { path = "../fah-config" }
 fah-dns = { path = "../fah-dns" }
+fah-http = { path = "../fah-http" }
 fah-logging = { path = "../fah-logging" }
 fah-metrics = { path = "../fah-metrics" }
 fah-model = { path = "../fah-model" }

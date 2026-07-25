@@ -192,6 +192,9 @@ fn run(config: Config, config_path: &Path, data_dir: &Path) -> ExitCode {
 /// Everything running, kept together so shutdown can stop it all.
 struct Engine {
     dns: fah_dns::Server,
+    /// `None` in `dns` mode — the HTTP port is then never bound, not bound and
+    /// left idle (CONTEXT.md §Operating Mode).
+    http: Option<fah_http::Server>,
     api: fah_api::ApiServer,
     tasks: Vec<tokio::task::JoinHandle<()>>,
 }
@@ -247,6 +250,24 @@ impl Engine {
         ));
         let mut dns = fah_dns::Server::bind(&config.dns.listen).await?;
         tracing::info!(udp = %dns.udp_addr(), tcp = %dns.tcp_addr(), "DNS listeners bound");
+
+        // ── HTTP engine (L3, p2-01) ──
+        // Bound here, with DNS, so both privileged binds happen before the
+        // drop below — port 8080 does not need privilege, but the ordering is
+        // what lets an operator move it to 80 where a runtime permits it,
+        // without the binary having to care which port it was given.
+        //
+        // `dns` mode must not bind the port at all. Binding and then not
+        // serving would still hold the port against anything else on the host
+        // and would still answer a connect(), which is indistinguishable from
+        // a hung proxy.
+        let mut http = if http_enabled(config.engine.mode) {
+            let server = fah_http::Server::bind(&config.http).await?;
+            tracing::info!(addr = %server.local_addr(), "HTTP listener bound");
+            Some(server)
+        } else {
+            None
+        };
 
         // ── Privilege drop (ADR-0004) ──
         // Port 53 is the only thing here that needs root, and it is now bound.
@@ -310,6 +331,9 @@ impl Engine {
 
         // Unprivileged from here — start answering (ADR-0004).
         dns.serve(Arc::clone(&pipeline));
+        if let Some(http) = http.as_mut() {
+            http.serve();
+        }
 
         // ── The edges between the siblings ──
         let tasks = vec![
@@ -332,15 +356,36 @@ impl Engine {
             spawn_telemetry_poll(metrics, rules, pipeline, upstreams, Arc::clone(&stats)),
         ];
 
-        Ok(Self { dns, api, tasks })
+        Ok(Self {
+            dns,
+            http,
+            api,
+            tasks,
+        })
     }
 
     fn shutdown(&self) {
         self.dns.shutdown();
+        if let Some(http) = &self.http {
+            http.shutdown();
+        }
         self.api.shutdown();
         for task in &self.tasks {
             task.abort();
         }
+    }
+}
+
+/// Whether `engine.mode` includes the HTTP engine.
+///
+/// Matched exhaustively rather than with a `_ => false` catch-all: adding a
+/// fourth mode should fail to compile until someone decides what it means for
+/// HTTP, instead of silently defaulting to "off" and leaving an operator with
+/// a mode that names http and a port nothing listens on.
+fn http_enabled(mode: fah_config::EngineMode) -> bool {
+    match mode {
+        fah_config::EngineMode::Dns => false,
+        fah_config::EngineMode::DnsHttp | fah_config::EngineMode::DnsHttpHttps => true,
     }
 }
 
@@ -642,6 +687,15 @@ fn log_format(format: ConfigLogFormat) -> LogFormat {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// `dns` must not bring up the HTTP engine, and every mode that names http
+    /// must. The acceptance criterion of p2-01 in one assertion pair.
+    #[test]
+    fn http_starts_only_in_modes_that_name_it() {
+        assert!(!http_enabled(fah_config::EngineMode::Dns));
+        assert!(http_enabled(fah_config::EngineMode::DnsHttp));
+        assert!(http_enabled(fah_config::EngineMode::DnsHttpHttps));
+    }
 
     fn empty_stage() -> fah_metrics::StageHistogram {
         fah_metrics::StageHistogram {

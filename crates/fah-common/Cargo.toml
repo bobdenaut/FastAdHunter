@@ -9,4 +9,13 @@ publish.workspace = true
 workspace = true
 
 [dependencies]
+# Socket options tokio doesn't expose: `IPV6_V6ONLY` off, so binding `::`
+# serves both stacks by our decision rather than the host's sysctl. Only the
+# `listen` module needs these; both dependents (fah-rules, fah-api) and every
+# engine that uses it already carry tokio, so this costs nothing in the graph.
+socket2 = { workspace = true }
 thiserror.workspace = true
+tokio = { workspace = true, features = ["net"] }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["net", "macros", "rt-multi-thread"] }

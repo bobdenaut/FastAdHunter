@@ -11,9 +11,9 @@ use std::path::Path;
 pub use error::ConfigError;
 pub use schema::{
     ApiConfig, BlockingMode, Config, DnsBlockingConfig, DnsCacheConfig, DnsConfig, DnsListenConfig,
-    DnsUpstreamsConfig, EngineConfig, EngineMode, HistoryConfig, LogConfig, LogFormat, LogLevel,
-    QueryLogConfig, RuleListConfig, RulesConfig, StatsConfig, UpstreamProtocol,
-    UpstreamServerConfig, UpstreamStrategy,
+    DnsUpstreamsConfig, EngineConfig, EngineMode, HistoryConfig, HttpConfig, HttpListenConfig,
+    LogConfig, LogFormat, LogLevel, QueryLogConfig, RuleListConfig, RulesConfig, StatsConfig,
+    UpstreamProtocol, UpstreamServerConfig, UpstreamStrategy,
 };
 
 impl Config {
@@ -113,9 +113,23 @@ const MIN_CACHE_MAX_BYTES: u64 = 1024 * 1024;
 fn validate(config: &Config) -> Result<(), ConfigError> {
     validate_ip("dns.listen.address", &config.dns.listen.address)?;
     validate_ip("api.address", &config.api.address)?;
+    // Validated unconditionally, not only when `engine.mode` includes http:
+    // the file is written back whole, so a malformed `[http.listen]` should be
+    // rejected while the operator is editing it, not on the restart months
+    // later that first turns the mode on.
+    validate_ip("http.listen.address", &config.http.listen.address)?;
 
     validate_nonzero_port("dns.listen.port", config.dns.listen.port)?;
     validate_nonzero_port("api.port", config.api.port)?;
+    validate_nonzero_port("http.listen.port", config.http.listen.port)?;
+
+    // A ceiling of zero would accept nothing while looking configured.
+    if config.http.max_connections == 0 {
+        return Err(ConfigError::Validation {
+            key: "http.max_connections",
+            message: "must be at least 1".to_string(),
+        });
+    }
 
     if config.dns.cache.min_ttl_seconds > config.dns.cache.max_ttl_seconds {
         return Err(ConfigError::Validation {

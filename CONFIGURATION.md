@@ -33,6 +33,11 @@ stats intervals become timers, the log level becomes a tracing filter — so it 
 happened. Tuning the cache or the upstreams means restarting the container;
 `POST /api/v1/cache/clean` is the way to release cache memory without one.
 
+The whole `[http]` section is **boot** for the same reason, including
+`max_connections`, which looks runtime-shaped but is not: the semaphore is
+sized once when the listener binds. Promoting a key means giving it a live
+consumer first — never relabelling it and hoping.
+
 ## Reference
 
 Values below are the built-in defaults.
@@ -84,6 +89,26 @@ protocol = "udp"
 # DoH example:  address = "https://cloudflare-dns.com/dns-query", protocol = "doh"
 #   (doh cert name comes from the URL host; hostname optionally overrides it,
 #    e.g. for IP-literal URLs)
+
+# ─── HTTP engine (Phase 2) ─────────────────────────────────────────────
+# Inert unless [engine] mode includes "http". There is deliberately no
+# `enabled` key here — mode is the only switch (CONTEXT.md §Operating Mode).
+[http.listen]
+address = "::"                # boot    — as [dns.listen]: "::" is one
+                              #           dual-stack socket, IPV6_V6ONLY off
+port = 8080                   # boot    — NOT 80: the container is unprivileged
+                              #           after the ADR-0004 drop, and the router
+                              #           dst-nats 80 here instead
+
+[http]
+max_connections = 1024        # boot    — ceiling on concurrent connections; the
+                              #           accept loop takes its permit before
+                              #           accepting, so a burst queues in the
+                              #           kernel rather than in process memory
+idle_timeout_ms = 60000       # boot    — reserved for the proxy (p2-02); no
+                              #           consumer yet, the scaffold closes
+                              #           every connection immediately
+header_timeout_ms = 10000     # boot    — slowloris bound; also p2-02
 
 # ─── Rule lists ────────────────────────────────────────────────────────
 [rules]

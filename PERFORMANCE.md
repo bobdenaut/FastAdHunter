@@ -41,6 +41,9 @@ Reference hardware: MikroTik RB5009 — Marvell Armada quad-core ARMv8 @ 1.4 GHz
 | Sustained throughput on RB5009 | ≥ 10 000 QPS |
 | Startup to serving (cached lists, 1M-domain parse) | 1–3 s (< 3 s hard, ~1 s goal) |
 | Container image size | ≤ 30 MB |
+| **HTTP** pass-through added latency, p99 *(Phase 2 — to measure)* | < 5 ms |
+| **HTTP** pass-through throughput, opaque body *(Phase 2 — to measure)* | to establish in p2-02 |
+| **HTTP** concurrent connections | bounded by `[http] max_connections` (default 1024) |
 
 Notes:
 

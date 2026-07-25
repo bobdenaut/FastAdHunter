@@ -560,7 +560,9 @@ dependencies = [
 name = "fah-common"
 version = "0.1.0"
 dependencies = [
+ "socket2",
  "thiserror",
+ "tokio",
 ]
 
 [[package]]
@@ -578,6 +580,7 @@ name = "fah-dns"
 version = "0.1.0"
 dependencies = [
  "criterion",
+ "fah-common",
  "fah-config",
  "fah-model",
  "fah-rules",
@@ -586,12 +589,21 @@ dependencies = [
  "rand 0.9.5",
  "rcgen",
  "rustls",
- "socket2",
  "tempfile",
  "tokio",
  "tokio-rustls",
  "tracing",
  "url",
+]
+
+[[package]]
+name = "fah-http"
+version = "0.1.0"
+dependencies = [
+ "fah-common",
+ "fah-config",
+ "tokio",
+ "tracing",
 ]
 
 [[package]]
@@ -656,6 +668,7 @@ dependencies = [
  "fah-api",
  "fah-config",
  "fah-dns",
+ "fah-http",
  "fah-logging",
  "fah-metrics",
  "fah-model",

@@ -29,6 +29,33 @@ channel pattern (wired in the binary; siblings stay strangers).
 - Tests: blocked script gets 200-empty, blocked page gets 403, allowed
   request streams untouched; events observed end-to-end.
 
+## Decide FIRST: what the event channel carries (p2-01 audit)
+
+"Events flow via the existing channel pattern" above is under-specified, and
+the ambiguity is the expensive part of this task. **`fah_model::QueryEvent` is
+DNS-shaped** — it carries `query: Query` (domain + `QueryType` + client_ip),
+`cache_hit`, `upstream_used` and `stale` (RFC 8767). None of those mean
+anything for an HTTP request, which needs URL, method, status and bytes.
+
+The pipeline today has exactly one bounded mpsc, one `try_send` per query, one
+`dropped_events` counter, and one fan-out task feeding Stats + Metrics +
+EventHub. `RequestEvent` cannot ride that channel as-is. Two exits, and this
+task must pick one **before** writing the block-response code:
+
+1. **Widen the channel item** to `enum Event { Dns(QueryEvent), Http(RequestEvent) }`
+   — keeps one channel, one shed counter, one fan-out. Cost: changes
+   `fah-model` (L1) plus every consumer — `fah-stats`, `fah-metrics`,
+   `fah-api`'s `EventHub`, and `spawn_event_fanout`. Note `Metrics::record`
+   currently takes `&QueryEvent` by reference and buckets on `cache_hit`/
+   `stale`; those branches need an HTTP counterpart or an early return.
+2. **A second channel** for HTTP — smaller blast radius now. Cost: forfeits the
+   single-shed-figure property the observability design is built on; two
+   independent drop counters and no one number for "we shed N".
+
+Recommendation: (1). The property in (2) that gets lost is the one the p1.5
+metrics work existed to establish. Record the choice here and in
+`docs/code-review/p2-04-review.md`.
+
 ## Acceptance criteria
 
 - Blocked request: zero bytes fetched upstream (assert no upstream

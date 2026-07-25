@@ -20,7 +20,7 @@ Full-page version: [docs/diagrams/architecture.html](docs/diagrams/architecture.
                      │
  ┌─────────────────────────────────────┐
  │ DNS Engine        (fah-dns)         │
- │ HTTP Engine       (Phase 2)         │
+ │ HTTP Engine       (fah-http)        │
  │ HTTPS Engine      (Phase 3)         │
  │ Rule Engine       (fah-rules)       │
  │ Statistics        (fah-stats)       │
@@ -66,7 +66,16 @@ Pipeline properties:
   when upstreams are unreachable.
 - **Blocked queries never touch the network.**
 
-## Listeners (Phase 1)
+## Listeners
+
+Every engine binds through `fah_common::listen`, which lives at L1 precisely
+because the engines are L3 siblings that cannot import each other and must not
+disagree: `IPV6_V6ONLY` is cleared explicitly, so `::` serves both stacks by
+decision rather than by inheriting the host's `net.ipv6.bindv6only`. Binding
+and serving are separate calls throughout — bind may need privilege, serving
+must not have it (ADR-0004).
+
+### DNS (Phase 1)
 
 - UDP/53 with EDNS(0); TCP/53 for truncation fallback (mandatory).
 - DoT/DoH **listeners** arrive in a later phase (client cert distribution
@@ -74,11 +83,64 @@ Pipeline properties:
 - DNSSEC: pass-through (DO bit and RRSIGs forwarded untouched). Local
   validation is a roadmap item, off by default when it lands.
 
+### HTTP (Phase 2)
+
+- TCP on `[http.listen]`, default **8080** — not 80. The container runs
+  unprivileged after ADR-0004's drop and the router dst-nats 80 here, so HTTP
+  never needs the privileged port that forced ADR-0004 on DNS.
+- Bound **only** when `engine.mode` includes `http`. In `dns` mode the port is
+  not bound at all: binding and then not serving would hold the port against
+  anything else on the host and still complete a `connect()`, which a client
+  cannot tell from a hung proxy.
+
 ## Upstreams
 
 - Protocols: plain UDP/53 with TCP fallback, DoT, DoH (Hickory + rustls).
 - Strategy: ordered parallel fallback — primary first, next on timeout/failure.
 - Defaults: `1.1.1.1`, `9.9.9.9`, plain DNS; encrypted upstreams are opt-in.
+
+---
+
+## HTTP Pipeline (Phase 2)
+
+DNS filtering decides *whether a name resolves*; it cannot see a path. A rule
+like `||example.com^*/ads/banner.gif` targets one URL on a host the rest of the
+site needs — expressible only where the request line is visible. That is what
+`fah-http` is for.
+
+```text
+Accept (TCP/8080, router dst-nats 80 here)
+      │
+Read request line + headers   ── header timeout bounds a slowloris
+      │
+Rule Engine ── URL verdict (host + path + method + resource type)
+      │
+      ├─ Block → synthesized response, connection closed ──► Client
+      │
+Pass-through: stream upstream ⇄ client, byte for byte
+```
+
+Pipeline properties:
+
+- **Streaming, never buffering.** The body is not parsed and not held: images,
+  archives, PDFs and video pass byte-for-byte. Buffering a response to inspect
+  it would make memory grow with traffic, which hard rule 4 forbids outright,
+  and it is not the job — parsing arbitrary payloads is what an antivirus does.
+  HTML rewriting arrives in Phase 4 and is opt-in per content type.
+- **The fast path is the common path.** Most requests match nothing. That case
+  must cost a verdict lookup and a copy loop, nothing else — it is benched in
+  p2-02 *before* filtering exists, so a later regression has a baseline to fail
+  against.
+- **Bounded concurrency.** `[http] max_connections` caps in-flight connections;
+  the accept loop takes its permit before accepting, so a burst queues in the
+  kernel backlog instead of becoming process memory.
+- **Transparent interception.** Clients are not configured with a proxy; the
+  router dst-nats port 80 to the container, exactly as it already does for
+  DNS. Rollback is removing one rule.
+
+Only unencrypted traffic is in scope for Phase 2. Most of the web is HTTPS, so
+the real coverage arrives with Phase 3's TLS termination — which reuses this
+same request model rather than adding a third one.
 
 ---
 
@@ -94,6 +156,7 @@ FastAdHunter/
 │   ├── fah-model/        # domain model + shared DTOs (Query, Verdict, Client…)
 │   ├── fah-rules/        # Rule Engine: parsers + compiled matchers
 │   ├── fah-dns/          # listeners, pipeline, cache, upstreams
+│   ├── fah-http/         # HTTP engine: proxy, pass-through, URL filtering
 │   ├── fah-api/          # Axum REST + WebSocket
 │   ├── fah-metrics/      # ops telemetry: Prometheus counters/histograms
 │   ├── fah-stats/        # product data: query log, aggregates, snapshots
@@ -111,10 +174,14 @@ types only.
 
 ```text
 L4:  fastadhunter (binary — wires everything)
-L3:  fah-dns   fah-api   fah-stats   fah-metrics
+L3:  fah-dns   fah-http   fah-api   fah-stats   fah-metrics
 L2:  fah-rules
 L1:  fah-model   fah-config   fah-common   fah-logging
 ```
+
+`crates/fastadhunter/tests/layering.rs` enforces this by parsing every
+manifest: an internal dependency that does not point strictly downward fails
+`cargo test`, and a new crate must be assigned a layer before the suite passes.
 
 **Rules:**
 

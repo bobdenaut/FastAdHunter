@@ -31,12 +31,17 @@ use serde_json::Value;
 /// Sections are listed whole rather than field-by-field on purpose: a field
 /// added to `[dns.cache]` tomorrow is boot until someone wires it live, which
 /// is the safe default for this contract.
-const BOOT_KEYS: [&str; 13] = [
+const BOOT_KEYS: [&str; 14] = [
     "engine.mode",
     "dns.listen",
     "dns.blocking",
     "dns.cache",
     "dns.upstreams",
+    // Whole section, per the note above. `max_connections` looks runtime-shaped
+    // and is not: the semaphore is sized once at `fah_http::Server::bind`.
+    // p2-02 may promote it — by giving it a live consumer first, never by
+    // moving it out of this list and hoping.
+    "http",
     "query_log",
     "stats",
     "history.sample_interval_seconds",

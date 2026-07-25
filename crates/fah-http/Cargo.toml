@@ -1,0 +1,29 @@
+[package]
+name = "fah-http"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+# L3 (ARCHITECTURE.md §Dependency Layering): may depend on fah-rules (L2) and
+# L1 only, never on fah-dns / fah-api / fah-stats / fah-metrics — the binary
+# wires the siblings together. fah-rules arrives with p2-04, when verdicts are
+# actually consulted; an unused dependency now would only be decoration.
+[dependencies]
+fah-common = { path = "../fah-common" }
+fah-config = { path = "../fah-config" }
+tokio = { workspace = true, features = ["io-util", "net", "sync", "time"] }
+tracing = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true, features = [
+    "io-util",
+    "net",
+    "sync",
+    "time",
+    "macros",
+    "rt-multi-thread",
+] }

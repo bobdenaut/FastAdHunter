@@ -16,6 +16,28 @@ never default. This crate-level work lives where TLS already lives (extend
 new `fah-certs` L2/L1 crate is acceptable if layering stays clean, with
 ARCHITECTURE.md updated in the same change).
 
+**There is now a precedent for that placement decision — do not re-litigate it
+from scratch (p2-01 audit).** The situation is structurally identical to one
+already solved: `fah-api` (L3) owns `rcgen` and `load_or_generate_tls` for the
+self-signed API certificate, and this task needs CA + leaf minting inside
+`fah-http` (L3). They are siblings and may not import each other, so the
+choices are duplicate `rcgen` usage in both, or push the shared machinery
+down.
+
+p2-01 hit the same shape with socket binding — `fah-dns` and `fah-http` both
+needed the dual-stack bind — and resolved it by moving the behaviour to
+`fah_common::listen` (L1), deleting the original from `fah-dns`. See
+`docs/code-review/p2-01-review.md` §2 for the admission test used: *does
+divergence between the two siblings produce a silent bug?* For certificates it
+plainly does — two crates disagreeing about validity, SAN construction or key
+permissions is a security defect, not a style difference.
+
+Weigh against that: `fah-common` gained `tokio` + `socket2` in p2-01 and
+ARCHITECTURE.md warns it must not become a dumping ground. Adding `rcgen` +
+`x509-parser` there too may be one admission past the line — which is the
+argument **for** a dedicated `fah-certs` at L1/L2 rather than a third
+extension of `fah-common`. Decide explicitly and record it.
+
 ## Scope
 
 - CA generation (rcgen): configurable CN/validity, key stored in `/config`

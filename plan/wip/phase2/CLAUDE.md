@@ -99,7 +99,7 @@ Note the matcher's *hot path* is pure, but `fah-rules` as a crate is not I/O-fre
 | # | Task file | Outcome | MODEL | STATUS |
 |---|-----------|---------|-------|--------|
 | 0 | `p2-00-adblock-parser-correctness.md` | Sample-based format detection; `\|\|d^*/path` → URL pattern, `\|\|d^\|` → exact-host DNS rule; `degraded` list status. Verified against the reference ruleset: 0 exceptions lost, 0 new blocks (`docs/code-review/p2-00-review.md`) | Opus | DONE |
-| 1 | `p2-01-http-scaffold.md` | `fah-http` crate (L3) + ARCHITECTURE/CONTEXT/CONFIGURATION updates | Sonnet | WAITING |
+| 1 | `p2-01-http-scaffold.md` | `fah-http` (L3) binds `[http]` only when `engine.mode` names http; dual-stack bind shared via `fah_common::listen`; ARCHITECTURE/CONTEXT/CONFIGURATION/PERFORMANCE + diagrams (`docs/code-review/p2-01-review.md`) | Sonnet | DONE |
 | 2 | `p2-02-http-proxy-core.md` | Transparent streaming proxy, pass-through fast path (heavy) | Opus | WAITING |
 | 3 | `p2-03-url-rules-activation.md` | URL-path + HTTP `$options` matchers activate in fah-rules (heavy) | Opus | WAITING |
 | 4 | `p2-04-http-filtering-pipeline.md` | Verdicts wired into the proxy: block responses, events, stats | Sonnet | WAITING |

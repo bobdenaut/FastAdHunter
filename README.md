@@ -316,6 +316,7 @@ FastAdHunter/
 │   ├── fah-model/        # domain model + shared DTOs (pure data types)
 │   ├── fah-rules/        # Rule Engine: parsers + compiled matchers
 │   ├── fah-dns/          # listeners, pipeline, cache, upstreams
+│   ├── fah-http/         # HTTP engine: proxy, pass-through, URL filtering
 │   ├── fah-api/          # Axum REST + WebSocket
 │   ├── fah-metrics/      # ops telemetry: Prometheus
 │   ├── fah-stats/        # product data: query log, aggregates

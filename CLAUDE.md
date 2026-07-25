@@ -44,6 +44,7 @@ loaded — beyond it, read only what the task touches:
 | ------------ | ---- |
 | `fah-rules` (parsers, matchers, verdicts) | RULE_ENGINE.md + CONTEXT.md |
 | `fah-dns` (pipeline, cache, upstreams) | ARCHITECTURE.md (+ ADR-0001) |
+| `fah-http` (proxy, pass-through, interception) | ARCHITECTURE.md §HTTP Pipeline + CONTEXT.md |
 | `fah-api` (endpoints, auth) | API.md (+ SECURITY.md if auth/TLS) |
 | `fah-config` / config options | CONFIGURATION.md |
 | `fah-stats` / `fah-metrics` | ARCHITECTURE.md (+ ADR-0002) |
@@ -59,9 +60,10 @@ section is needed.
 ## Hard rules
 
 1. **Dependency layering** (ARCHITECTURE.md): L4 `fastadhunter` → L3 `fah-dns`,
-   `fah-api`, `fah-stats`, `fah-metrics` → L2 `fah-rules` → L1 `fah-model`,
-   `fah-config`, `fah-common`, `fah-logging`. Dependencies point downward only.
-   Siblings never import each other — the binary wires them via channels.
+   `fah-http`, `fah-api`, `fah-stats`, `fah-metrics` → L2 `fah-rules` → L1
+   `fah-model`, `fah-config`, `fah-common`, `fah-logging`. Dependencies point
+   downward only. Siblings never import each other — the binary wires them via
+   channels. `crates/fastadhunter/tests/layering.rs` enforces this.
 2. **`fah-model` purity**: data types and trivial traits only. No business
    logic, no I/O, no parsers, no cache.
 3. **Hot path**: no locks, no allocations, no regex. Ruleset/config changes via
@@ -90,7 +92,7 @@ branches. `unsafe` requires a `// SAFETY:` comment.
 ## Layout
 
 ```text
-crates/        # 10 crates (see ARCHITECTURE.md for responsibilities)
+crates/        # 11 crates (see ARCHITECTURE.md for responsibilities)
 tests/         # workspace integration tests
 benches/       # criterion benches vs PERFORMANCE.md budgets
 docs/          # images/, diagrams/, decisions/ (ADRs)

@@ -13,7 +13,7 @@ fn layer(crate_name: &str) -> Option<u8> {
     Some(match crate_name {
         "fah-model" | "fah-config" | "fah-common" | "fah-logging" => 1,
         "fah-rules" => 2,
-        "fah-dns" | "fah-api" | "fah-stats" | "fah-metrics" => 3,
+        "fah-dns" | "fah-http" | "fah-api" | "fah-stats" | "fah-metrics" => 3,
         "fastadhunter" => 4,
         _ => return None,
     })
@@ -65,7 +65,7 @@ fn internal_dependencies_point_strictly_downward() {
     }
 
     assert_eq!(
-        checked, 10,
-        "expected 10 workspace crates, checked {checked}"
+        checked, 11,
+        "expected 11 workspace crates, checked {checked}"
     );
 }

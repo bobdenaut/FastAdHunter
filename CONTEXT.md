@@ -72,6 +72,29 @@ operation that removes it).
 An external DNS resolver FastAdHunter forwards unblocked, uncached queries to.
 Speaks plain DNS, DoT, or DoH.
 
+### HTTP Engine
+
+The component that filters unencrypted HTTP by **URL**, not just by hostname —
+`fah-http`. It sees the request line, so a rule can target one path on a host
+the rest of the site still needs, which the DNS Engine structurally cannot do.
+Phase 2.
+
+### Pass-through
+
+A request the HTTP Engine relays without inspecting or buffering its body:
+bytes are streamed between client and origin in both directions. The common
+case and the fast path. Distinct from a **Block**, which is answered locally
+and never reaches the origin. Response bodies are always pass-through in
+Phase 2; Phase 4 adds opt-in HTML rewriting for that content type alone.
+
+### Interception
+
+Getting client traffic to FastAdHunter without configuring the clients: the
+router redirects the port (dst-nat) to the container. **Transparent** —
+browsers hold no proxy setting and nothing on the client changes. The same
+mechanism already carries DNS; extending it to HTTP is one more rule, and
+rollback is removing it.
+
 ### Port
 
 A trait a lower layer declares to describe what it needs from a higher one, so
@@ -99,6 +122,12 @@ hit ratio, memory). For operators; distinct from Statistics (for users).
 
 The engine's filtering scope, fixed at container start: `dns`, `dns+http`,
 or `dns+http+https`.
+
+It is the **only** switch for whether an engine runs — there is no second
+`enabled` flag per section. A mode that does not name an engine means that
+engine's listener is never bound, not bound and idle: a held port that
+completes a `connect()` and then does nothing is indistinguishable, from the
+client's side, from a hung proxy.
 
 ### Atomic Swap
 
