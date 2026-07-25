@@ -31,6 +31,22 @@ selectors too, hot path takes no lock.
 - Extended/procedural cosmetics (`#?#`, `:has()`, scriptlets `#%#`, CSS
   injection `#$#`) remain parsed-but-inactive — counted separately so the API
   distinguishes "active cosmetic" from "unsupported cosmetic".
+- **Keep the compiled selector set serializable**, even though nothing serves
+  it yet. ROADMAP.md §"Open question — a FastAdHunter browser extension" leaves
+  open whether cosmetic rules are eventually *sent to a client* rather than
+  only applied in-process by lol_html. If so, this compiled form is what would
+  travel. Designing it as a shape that can be written out costs nothing here
+  and is expensive to retrofit once the rewriter depends on its internals — so
+  prefer a representation the rewriter *reads* over one it reaches into.
+  This is a shape constraint only: **build no endpoint, no protocol, no
+  extension.** Decide the question after Phase 4 ships.
+- **Note that ADR-0003's "stored inactive" claim does not hold** (see its
+  correction note). `RuleKind::Inactive(InactiveReason)` carries no payload, so
+  cosmetic *selector text is not retained* — this task must add retention for
+  `Cosmetic`, exactly as `p2-03` did for `UrlPattern`/`HttpOption`. Cosmetic is
+  the largest inactive bucket by far (24,368 rules in EasyList alone), so
+  measure the startup and memory cost and record it rather than assuming it is
+  free.
 - API: per-list rule counts now report cosmetic rules as active;
   `POST /api/v1/rules/test` extended to dry-run a hostname's cosmetic
   selector set and name the deciding list/rule — API.md + RULE_ENGINE.md
