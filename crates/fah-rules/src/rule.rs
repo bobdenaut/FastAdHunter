@@ -31,8 +31,15 @@ pub struct DomainRule {
 }
 
 /// Why a parsed rule is not active in Phase 1 (RULE_ENGINE.md: Supported
-/// formats). Stored and counted regardless — later phases activate some of
-/// these without reparsing (ADR-0003).
+/// formats).
+///
+/// **Only the classification survives, not the rule.** This enum is the whole
+/// of what an inactive rule leaves behind — see [`ParsedRule`] for why the
+/// text is dropped. ADR-0003 describes inactive rules as "stored inactive,
+/// counted, activated by later phases"; the storage half was never built, so a
+/// phase that activates one of these variants has to reintroduce retention for
+/// it (and pay the memory), not merely flip a flag. `p2-03` is the first to do
+/// so, for [`Self::UrlPattern`] and [`Self::HttpOption`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum InactiveReason {
     /// Cosmetic rule (`##`, `#@#`, …) — activates in the HTML phase.

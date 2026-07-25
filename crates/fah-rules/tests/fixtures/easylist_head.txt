@@ -1,0 +1,38 @@
+! Excerpt from EasyList (https://easylist.to/), used as a detection fixture.
+! EasyList is licensed GPLv3 / CC BY-SA 3.0; this is a short excerpt for
+! interoperability testing only.
+!
+! These are the FIRST content lines of the real list. None of them carries
+! `||`, `@@` or `##` — which is exactly why first-line format detection
+! classified the whole of EasyList as a plain domain list.
+
+&rb=&uuid=$third-party
+&subaffid=%$subdocument,third-party
+-ad-manager/$~stylesheet
+-ad-sidebar.$image
+-ad.jpg.pagespeed.$image
+-ads-manager/$domain=~wordpress.org
+-ads/assets/$script,domain=~web-ads.org
+-assets/ads.$~script
+-banner-ads-$~script
+-contrib-ads.$~stylesheet
+-sponsor-ad.$image
+-web-advert-$image
+.adriver.$~object,domain=~adriver.co
+.ads.controller.js$script
+.advert.$domain=~advert.ae|~advert.ge|~advert.io|~advert.ly|~advert.media|~advert.org.pl
+.ar/ads/$~xmlhttprequest
+.ashx?AdID=
+.aspx?adid=
+.az/adv/$~xmlhttprequest
+.biz/?ce=$third-party
+.biz/?re=$third-party
+.biz/?te=$third-party
+.br/ads/$~xmlhttprequest
+.ca/ads/$~xmlhttprequest
+.cc/process.js?id=$third-party
+.cfm?ad=
+.cgi?ad=
+.click/cuid/?$third-party
+.click/rf/$third-party
+.club/js/popunder.js$script

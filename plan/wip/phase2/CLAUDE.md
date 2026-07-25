@@ -68,15 +68,26 @@ would be a symptom of transport leaking into the matcher, not a new requirement.
 
 This is a widening, not a redesign: the rules themselves are model-specific
 (`$dnstype` is meaningless for HTTP; `$script` / `$third-party` / path anchoring
-are meaningless for DNS), and Phase 1 already parses, counts and stores non-DNS
-rules **inactive**. `p2-03` activates a subset that is already in the index. New
-HTTP request types belong in `fah-model` (pure data), not in `fah-rules`.
+are meaningless for DNS). New HTTP request types belong in `fah-model` (pure
+data), not in `fah-rules`.
 
-That last premise holds only **after `p2-00`**: measured against real EasyList,
-the list is misdetected and its URL rules never reach the index at all, while
-389 path-qualified rules are misfiled as whole-domain DNS rules
-(`docs/code-review/p2-03-headroom-and-parser-findings.md`). The interface
-argument is unaffected — the classification is what is broken, not the shape.
+**`p2-03` is not "activate what is already in the index" — that phrasing was
+wrong twice over, and both halves are now settled.** It appeared here and in
+`p2-03` on the strength of ADR-0003's "stored inactive, counted, activated by
+later phases".
+
+1. *Classification* was broken until `p2-00`: real EasyList was misdetected
+   entirely, and 389 path-qualified rules were misfiled as whole-domain DNS
+   rules. Fixed — see `docs/code-review/p2-00-review.md`.
+2. *Storage* never existed. `RuleKind::Inactive(InactiveReason)` is a bare
+   `Copy` enum with no payload; `ParsedRule` deliberately drops the line text.
+   Nothing of `||paypal.com^*/pixel.gif` survives parsing except one
+   discriminant saying "URL pattern". ADR-0003 carries a correction note.
+
+So `p2-03` must **reintroduce retention** for `UrlPattern`/`HttpOption` rules
+and pay their memory — the measured ~1 MiB is new storage the task
+introduces, not a cost the system already carries. The interface argument above
+is unaffected: what was wrong is what reaches the matcher, not its shape.
 
 Note the matcher's *hot path* is pure, but `fah-rules` as a crate is not I/O-free
 — the list lifecycle pulls `reqwest` and `tokio`.
@@ -85,7 +96,7 @@ Note the matcher's *hot path* is pure, but `fah-rules` as a crate is not I/O-fre
 
 | # | Task file | Outcome | MODEL | STATUS |
 |---|-----------|---------|-------|--------|
-| 0 | `p2-00-adblock-parser-correctness.md` | **Foundation fix, runs first** — real EasyList detects correctly; `\|\|d^*/path` stops compiling to a whole-domain DNS block | Opus | WAITING |
+| 0 | `p2-00-adblock-parser-correctness.md` | Sample-based format detection; `\|\|d^*/path` → URL pattern, `\|\|d^\|` → exact-host DNS rule; `degraded` list status. Verified against the reference ruleset: 0 exceptions lost, 0 new blocks (`docs/code-review/p2-00-review.md`) | Opus | DONE |
 | 1 | `p2-01-http-scaffold.md` | `fah-http` crate (L3) + ARCHITECTURE/CONTEXT/CONFIGURATION updates | Sonnet | WAITING |
 | 2 | `p2-02-http-proxy-core.md` | Transparent streaming proxy, pass-through fast path (heavy) | Opus | WAITING |
 | 3 | `p2-03-url-rules-activation.md` | URL-path + HTTP `$options` matchers activate in fah-rules (heavy) | Opus | WAITING |

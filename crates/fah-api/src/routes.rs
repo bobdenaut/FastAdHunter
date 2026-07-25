@@ -426,7 +426,12 @@ fn list_response(
     status: &ListStatus,
     default_hours: u32,
 ) -> ListResponse {
+    // `degraded` is a *fetch that succeeded* over a list whose lines mostly
+    // failed to parse — the signature of a format misdetection. It reports as
+    // its own status because `ok` hid exactly this: a list yielding 83 rules
+    // and 69,514 errors used to be indistinguishable from a healthy one.
     let last_status = match &status.last_result {
+        RefreshResult::Ok(stats) if stats.looks_misparsed() => "degraded",
         RefreshResult::Ok(_) => "ok",
         RefreshResult::Failed(_) => "failed",
         RefreshResult::NeverAttempted => "never",

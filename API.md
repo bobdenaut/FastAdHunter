@@ -391,7 +391,8 @@ sum(items[].rules_active_dns) + user_rules_active - compiled_rules
 A single user rule that duplicates a list rule is enough to make the
 `items`-only arithmetic look off by one.
 
-`last_status` (`ok` | `failed` | `never`) reports the last *refresh attempt*;
+`last_status` (`ok` | `degraded` | `failed` | `never`) reports the last
+*refresh attempt*;
 the `rules_*` counts report what the list contributes to the ruleset that is
 **currently serving**. They are deliberately independent: a failed refresh
 leaves the previous ruleset in place (RULE_ENGINE.md §Failure policy), so
@@ -399,6 +400,14 @@ leaves the previous ruleset in place (RULE_ENGINE.md §Failure policy), so
 correct report for a list whose download broke but whose rules keep blocking.
 The counts only reach zero when the list genuinely contributes nothing —
 disabled, or never yet fetched on a first-ever boot.
+
+`degraded` means the fetch succeeded but most of the list failed to parse
+(more errors than rules) — the signature of a **format misdetection**, not of a
+few malformed lines. The list is almost certainly contributing far fewer rules
+than it should; check its syntax against RULE_ENGINE.md §Supported formats. It
+is reported separately from `ok` because it used to be indistinguishable from
+it: a misdetected EasyList yielding 83 rules and 69,514 errors still read as
+`"last_status": "ok"`.
 
 `last_refresh` is `null` until the first successful refresh *in this process*;
 a boot-from-cache is a load, not a refresh.

@@ -15,6 +15,33 @@ Format is auto-detected per list.
 | EasyList / uBlock Origin | `||ads.example.com^$third-party`, `##.ad-box` | `||`, `##`, `$options` |
 | AdGuard | same family + `$dnstype`, `$dnsrewrite`, `$client` | AdGuard-specific options |
 
+### Detection is a vote over a sample, not a look at line one
+
+Detection classifies the first 200 content lines (comments and blanks skipped)
+and takes the format most of them look like; scanning stops once the sample is
+full, so it never costs a pass over a multi-MB list.
+
+A single line is not enough evidence. Real EasyList opens with
+`&rb=&uuid=$third-party` and EasyPrivacy with `&&sub19=undefined&sub20=undefined`
+— URL-substring patterns carrying none of the `||`/`@@`/`##` markers a
+first-line check looks for. Both would be read as plain domain lists, which
+hands the entire list to the bare-domain parser.
+
+The adblock markers are ones a hosts entry or a bare domain can never contain —
+`^`, `/`, a `$option` suffix, a leading/trailing `|` address anchor — so a
+domain list is never mistaken for an adblock list. `*` is deliberately **not** a
+marker, because plain domain lists in the wild carry `*.example.com` entries.
+
+**A tie resolves to plain domain list.** Reading a domain list as adblock is the
+worse error: every bare-domain line becomes an inactive URL pattern, so the list
+silently contributes nothing and reports no parse errors at all.
+
+When a parse yields more failures than rules (past a floor of 100 errors), the
+list is reported as **`degraded`** rather than `ok` — see
+[API.md](API.md) `GET /api/v1/lists` — and logged once at `warn`. That is the
+signature of a misdetected format, and it is one fact about one list, not
+thousands of line errors.
+
 All four formats are **fully parsed from day one**
 (see [ADR-0003](docs/decisions/0003-full-format-parsing-day-one.md)).
 Every rule is classified:

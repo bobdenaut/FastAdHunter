@@ -54,10 +54,34 @@ pub(crate) fn parse(text: &str) -> ParsedRuleList {
             continue;
         }
 
-        let options_str = match terminator {
-            Some('^') => after_anchor[end + 1..].strip_prefix('$').unwrap_or(""),
-            Some('$') => &after_anchor[end + 1..],
-            _ => "",
+        // What follows the separator decides whether this is still a *domain*
+        // rule. After `^` only three things keep it one: nothing, `$options`,
+        // or `|` (the end-of-address anchor). Anything else is a path or
+        // wildcard qualifier, and the rule addresses a URL, not a domain —
+        // `InactiveReason::UrlPattern`, which is where the HTTP phase picks it
+        // up. Silently dropping that qualifier and keeping the domain is what
+        // turned `||paypal.com^*/pixel.gif` into a block on all of paypal.com.
+        let (options_str, include_subdomains) = match terminator {
+            Some('$') => (&after_anchor[end + 1..], true),
+            Some('^') => {
+                let rest = &after_anchor[end + 1..];
+                // `|` immediately after the separator anchors the end of the
+                // address: `||d^|` addresses `d` itself, so it must not carry
+                // the subdomain semantics a bare `||d^` does.
+                let (rest, include_subdomains) = match rest.strip_prefix('|') {
+                    Some(tail) => (tail, false),
+                    None => (rest, true),
+                };
+                if rest.is_empty() {
+                    ("", include_subdomains)
+                } else if let Some(options) = rest.strip_prefix('$') {
+                    (options, include_subdomains)
+                } else {
+                    rules.push(inactive(InactiveReason::UrlPattern));
+                    continue;
+                }
+            }
+            _ => ("", true),
         };
 
         match parse_options(options_str) {
@@ -75,7 +99,7 @@ pub(crate) fn parse(text: &str) -> ParsedRuleList {
                             } else {
                                 RuleAction::Block
                             },
-                            include_subdomains: true,
+                            include_subdomains,
                             dns_types: options.dns_types,
                             dns_rewrite: options.dns_rewrite,
                         }),
@@ -203,6 +227,79 @@ mod tests {
             result.rules[0].kind,
             RuleKind::Inactive(InactiveReason::Cosmetic)
         );
+    }
+
+    /// p2-00 / U2: the qualifier after `^` used to be dropped, turning a rule
+    /// about one path into a block on the whole domain.
+    #[test]
+    fn path_qualified_rule_is_a_url_pattern_not_a_domain_rule() {
+        for rule in [
+            "||paypal.com^*/pixel.gif$third-party",
+            "||googleapis.com^*/gen_204?",
+            "||dev.to^*/billboards/post_comments^",
+            "||hltv.org^*=|$popup,domain=hltv.org",
+        ] {
+            let result = parse(&format!("{rule}\n"));
+            assert_eq!(
+                result.rules[0].kind,
+                RuleKind::Inactive(InactiveReason::UrlPattern),
+                "{rule} addresses a path, not a domain"
+            );
+            assert_eq!(result.active_count(), 0, "{rule} must yield no DNS rule");
+        }
+    }
+
+    /// `|` after the separator anchors the end of the address, so the rule is
+    /// still a domain rule — just not a subdomain-inclusive one.
+    #[test]
+    fn end_anchor_stays_active_without_subdomains() {
+        let result = parse("||clarity.ms^|\n");
+        match &result.rules[0].kind {
+            RuleKind::Active(rule) => {
+                assert_eq!(&*rule.domain, "clarity.ms");
+                assert_eq!(rule.action, RuleAction::Block);
+                assert!(!rule.include_subdomains, "`|` anchors the address end");
+            }
+            RuleKind::Inactive(_) => panic!("`||d^|` is a DNS rule"),
+        }
+    }
+
+    #[test]
+    fn end_anchored_exception_stays_an_allow_rule() {
+        let result = parse("@@||data.notify.macys.com^|\n");
+        match &result.rules[0].kind {
+            RuleKind::Active(rule) => {
+                assert_eq!(rule.action, RuleAction::Allow);
+                assert!(!rule.include_subdomains);
+            }
+            RuleKind::Inactive(_) => panic!("an exception must not be dropped"),
+        }
+    }
+
+    /// `||d^|$opts` does not occur in any list measured for p2-00, but it is
+    /// legal syntax and must not be mistaken for a path qualifier.
+    #[test]
+    fn end_anchor_followed_by_options_is_still_parsed() {
+        let result = parse("||a.example.com^|$dnstype=A\n");
+        match &result.rules[0].kind {
+            RuleKind::Active(rule) => {
+                assert!(!rule.include_subdomains);
+                assert_eq!(rule.dns_types.as_deref(), Some("A"));
+            }
+            RuleKind::Inactive(_) => panic!("expected an active rule"),
+        }
+    }
+
+    /// A bare `||d^` is unchanged by the U2 fix — it still carries subdomains.
+    #[test]
+    fn bare_separator_still_includes_subdomains() {
+        let result = parse("||ads.example.com^\n||b.example.com^$dnstype=A\n||c.example.com\n");
+        for rule in &result.rules {
+            match &rule.kind {
+                RuleKind::Active(rule) => assert!(rule.include_subdomains),
+                RuleKind::Inactive(_) => panic!("expected active rules"),
+            }
+        }
     }
 
     #[test]

@@ -14,14 +14,35 @@ into request-level matchers.
 
 ## Context
 
-ADR-0003 pays off here: parsing exists, classification exists — this task
-builds the second matcher tier. RULE_ENGINE.md gains a §HTTP matching section
+ADR-0003 pays off here — but for **classification only, not storage**. Read its
+correction note before scoping this task. `RuleKind::Inactive(InactiveReason)`
+is a bare `Copy` enum with no payload, and `ParsedRule` deliberately drops the
+line text, so nothing of `||paypal.com^*/pixel.gif` survives parsing except one
+discriminant saying "URL pattern". What day-one parsing bought is that the
+classification is correct and complete (as of `p2-00`) — **not** that the rules
+are sitting in the index waiting for a flag.
+
+So this task has three parts, not one: retain the pattern text for
+`UrlPattern`/`HttpOption` rules, compile it into a second matcher tier, and
+answer request verdicts from it. RULE_ENGINE.md gains a §HTTP matching section
 (doc update in the same change). Budgets: request verdict must stay
 sub-millisecond; no regex on the hot path (EasyList wildcards/separators
 compile to automata/masks, not regex).
 
+Retention is a change to a hot startup path — the comment on `ParsedRule`
+records that carrying text cost an allocation, a copy and a free per rule
+across the whole list. Retain it for the two variants this task activates, not
+for every inactive rule: cosmetic rules are 24,368 of EasyList alone and belong
+to Phase 4.
+
 ## Scope
 
+- **Retain first.** Extend `RuleKind::Inactive` to carry the pattern text (and
+  raw options) for `UrlPattern` and `HttpOption` only — the two variants this
+  task activates. Cosmetic stays payload-free until Phase 4. Measure the
+  startup cost of the extra allocations against the pre-change baseline and
+  record it; `ParsedRule`'s comment explains why that path was kept allocation-
+  free, and reversing it deserves a number rather than a shrug.
 - Activate: URL pattern rules (`/ads/*`, `||domain^path`, `^` separator, `*`
   wildcard, anchors), exceptions (`@@`), and HTTP-relevant `$options`:
   `$script/$image/$stylesheet/$xmlhttprequest` (from request context),
@@ -68,7 +89,9 @@ Wiring into the proxy (p2-04), `$client` (p2-05), cosmetic/HTML (Phase 4).
 
 ## Suggested prompt
 
-> Read RULE_ENGINE.md, ADR-0003, PERFORMANCE.md budgets, and
-> plan/wip/phase2/p2-03-url-rules-activation.md. Build the request-level
-> matcher tier without regex, update RULE_ENGINE.md, and prove budgets with
-> benches + fixture tests.
+> Read RULE_ENGINE.md, ADR-0003 **including its correction note**,
+> PERFORMANCE.md budgets, and plan/wip/phase2/p2-03-url-rules-activation.md.
+> Note that inactive rules retain no text today — add retention for
+> UrlPattern/HttpOption first, then build the request-level matcher tier
+> without regex, update RULE_ENGINE.md, and prove budgets (including the
+> startup cost of retention) with benches + fixture tests.

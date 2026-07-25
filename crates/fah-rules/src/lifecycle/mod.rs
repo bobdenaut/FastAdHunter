@@ -108,6 +108,30 @@ impl From<&ParsedRuleList> for RefreshStats {
     }
 }
 
+/// Below this many errors nothing is reported, however bad the ratio: a
+/// handful of malformed lines in a short list is ordinary, and
+/// [`RefreshStats::looks_misparsed`] is meant to catch a *list-wide* misread,
+/// not line noise.
+const MISPARSE_ERROR_FLOOR: u32 = 100;
+
+impl RefreshStats {
+    /// True when the parse looks like the **list** was misread, not like a few
+    /// lines were malformed — more failures than rules, past a floor.
+    ///
+    /// This exists because the failure it detects was invisible. Real EasyList
+    /// used to be detected as a plain domain list and handed to the wrong
+    /// parser, producing 83 rules and 69,514 errors from 83,516 lines — and
+    /// reporting [`RefreshResult::Ok`], indistinguishable from a healthy load.
+    /// One list read as the wrong format is *one* failure, and it should be
+    /// legible as one rather than as tens of thousands of line errors nobody
+    /// reads.
+    pub fn looks_misparsed(&self) -> bool {
+        self.parse_errors >= MISPARSE_ERROR_FLOOR
+            && usize::try_from(self.parse_errors).unwrap_or(usize::MAX)
+                > self.active + self.inactive
+    }
+}
+
 /// The outcome of a list's most recent refresh attempt.
 #[derive(Debug, Clone, PartialEq)]
 pub enum RefreshResult {
@@ -772,7 +796,24 @@ impl ListManager {
             let mut stats = HashMap::new();
             for (id, text) in &texts {
                 let parsed = crate::parse_rule_list(text);
-                stats.insert(id.clone(), RefreshStats::from(&parsed));
+                let list_stats = RefreshStats::from(&parsed);
+                // One line per misread list, not one per bad line: a list whose
+                // errors outnumber its rules was almost certainly detected as
+                // the wrong format, and that is a single fact an operator can
+                // act on. Bounded by the number of lists, so it cannot flood
+                // the router log.
+                if list_stats.looks_misparsed() {
+                    tracing::warn!(
+                        list = %id,
+                        format = ?parsed.format,
+                        rules = list_stats.active + list_stats.inactive,
+                        parse_errors = list_stats.parse_errors,
+                        "list parsed as {:?} but most lines failed — probable format \
+                         misdetection; check the list's syntax",
+                        parsed.format,
+                    );
+                }
+                stats.insert(id.clone(), list_stats);
                 builder.add_parsed_list(id.clone(), &parsed);
             }
             let lists = texts.len();
@@ -851,6 +892,40 @@ mod tests {
             enabled: true,
             refresh_hours: None,
         }
+    }
+
+    /// The numbers are the ones real EasyList produced while it was being
+    /// detected as a plain domain list: 83 rules against 69,514 failures, and
+    /// `RefreshResult::Ok`.
+    #[test]
+    fn a_list_read_as_the_wrong_format_is_not_reported_as_healthy() {
+        let misparsed = RefreshStats {
+            active: 83,
+            inactive: 0,
+            parse_errors: 69_514,
+        };
+        assert!(misparsed.looks_misparsed());
+    }
+
+    #[test]
+    fn ordinary_line_noise_is_not_a_misparse() {
+        // A real hosts list: 93,156 rules, one bad line.
+        assert!(!RefreshStats {
+            active: 93_156,
+            inactive: 0,
+            parse_errors: 1,
+        }
+        .looks_misparsed());
+        // A short list where every line failed still stays quiet — under the
+        // floor there is not enough evidence to call it a format problem.
+        assert!(!RefreshStats {
+            active: 0,
+            inactive: 0,
+            parse_errors: 12,
+        }
+        .looks_misparsed());
+        // A clean parse never reports.
+        assert!(!RefreshStats::default().looks_misparsed());
     }
 
     /// A minimal HTTP/1.1 server for one request at a time: `respond` builds
