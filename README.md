@@ -1,255 +1,282 @@
 # FastAdHunter
 
-> The fastest network-wide ad blocker with the smallest possible memory
-> footprint.
+> Network-wide ad blocking with predictable latency and the smallest memory
+> footprint we can defend with a measurement.
 
-API-first • Multi-core • ARM64-first • Rust • Docker-native
+**Rust** · **Tokio** · **API-first** · **ARM64-first** · **Docker-native** ·
+**Multi-core**
 
-------------------------------------------------------------------------
+---
 
-# Executive Summary
+## What it is
 
-FastAdHunter is a high-performance network filtering engine designed
-around a single objective: deliver network-wide ad blocking with
-predictable latency, minimal CPU usage and a very small memory
-footprint.
+A network filtering engine that sits between every device in a house and the
+internet. One container on the router, no client configuration, no browser
+extension, no per-device agent.
 
-Rather than optimizing for the largest feature set, FastAdHunter
-optimizes for efficient execution. Every architectural decision is
-evaluated through the impact it has on throughput, latency and memory
-allocations.
+It filters DNS today, HTTP next, HTTPS after that.
 
-The project is built around a modular architecture where the filtering
-engine remains independent from the user interface. The core exposes
-APIs only, allowing multiple frontends to coexist without increasing
-runtime complexity.
+**Performance is the primary feature.** Every architectural decision is
+evaluated by its effect on throughput, latency and allocations — and the
+numbers below are measured on the target hardware, not estimated.
 
-------------------------------------------------------------------------
+---
 
-# Why FastAdHunter Exists
+## Status
 
-Current solutions typically focus on one layer of filtering:
+| Phase | Scope | Status | Tag |
+| ----- | ----- | ------ | --- |
+| 0 | Foundations, workspace, layering | ✅ done | `v0.1.0-phase0` |
+| 1 | DNS + REST API + Docker | ✅ done | `v0.2.0-phase1` |
+| 1.5 | Observability persistence | ✅ done | `v0.3.0-phase1.5` |
+| 2 | HTTP engine + Policies | 🚧 in progress | — |
+| 3 | HTTPS interception | ⬜ not started | — |
+| 4 | HTML filtering | ⬜ not started | — |
 
--   DNS
--   Browser extensions
--   Desktop applications
+Running in production on a MikroTik RB5009 as the household's only resolver.
 
-FastAdHunter focuses on the network layer and is designed to evolve
-without changing its architecture.
-FastAdHunter aims to become a lightweight network engine capable of
-protecting every device behind a router while remaining simple to deploy
-and maintain.
+### Measured, on the RB5009
 
-Goals:
+Quad-core ARMv8 @ 1.4 GHz, 1 GB RAM shared with RouterOS.
 
--   Small RAM footprint
--   Low CPU usage
--   Predictable latency
--   Efficient **multicore** execution
--   Clean API-first architecture
+| | Measured | Budget |
+| --- | ---: | ---: |
+| Resident memory, 684 k rules loaded | **42.1 MiB** | ≤ 128 MB |
+| Compiled ruleset | **21.9 MiB** | ≤ 40 MB |
+| Startup to serving, 1.21 M rules | **2 440 ms** | 1–3 s |
+| Blocked verdict, in-engine | **0.013–0.148 ms** | < 1 ms p99 |
+| Sustained throughput, deployed path | **~15–16 k QPS** | ≥ 10 k QPS |
+| Container image | **~12 MB** | ≤ 30 MB |
+| Dropped events under real load | **0** | 0 |
 
-------------------------------------------------------------------------
+Rule lists compile **1 023 132 parsed rules into 684 087** after
+deduplication — a third of the input across 15 public lists is redundant, and
+paying for it once at compile time keeps the matcher smaller for the life of
+the process.
 
-# Project Philosophy
+Memory is **bounded, not merely small**: a 91-hour soak plateaued and held.
+`RSS − Σ(components) = residual` is exported continuously, so a leak shows as
+the residual growing while the named components stay flat — the growth you
+legitimately expect has already been subtracted out.
 
-Performance is the primary feature.
+---
 
-The project intentionally favors deterministic behavior over excessive
-configurability. Memory allocations are minimized, streaming is
-preferred over buffering, and expensive operations are avoided whenever
-possible.
+## Why it exists
 
-Every new capability must justify its runtime cost.
+Existing solutions each cover one layer:
 
-The project intentionally favors:
+- **DNS filters** — blind to paths; blocking `example.com` to kill one tracker
+  takes the whole domain with it.
+- **Browser extensions** — excellent, but per-browser and per-device. Nothing
+  protects the TV, the thermostat or a guest's phone.
+- **Desktop applications** — per-machine, per-OS.
 
--   deterministic execution
--   low memory allocations
--   streaming processing
--   simple architecture
--   maintainability
+FastAdHunter filters at the network layer and is designed to grow from DNS to
+HTTP to HTTPS **without changing its architecture**.
 
-Feature count is always secondary.
+It does not try to replace uBlock Origin. A router cannot see a page's DOM;
+cosmetic filtering belongs where the DOM is. What a router can do is protect
+every device in the house at once, including the ones that will never run an
+extension.
 
-------------------------------------------------------------------------
+---
 
-# Design Principles
+## Philosophy
 
-## API-first
+Deterministic behaviour over configurability. Allocations minimised. Streaming
+preferred over buffering. Expensive operations avoided rather than optimised.
 
-The filtering engine never depends on a graphical interface.
+**Every new capability must justify its runtime cost.** Feature count is always
+secondary.
 
-Every capability is exposed through REST APIs and WebSocket endpoints.
+### Design rules
 
-Benefits:
+- Performance before features
+- API-first — the engine never depends on a UI
+- No locks, no allocations, no regex on the hot path
+- Ruleset and config changes via atomic swap
+- **Bounded everything** — memory must not grow with traffic or uptime
+- Streaming before buffering; zero-copy where practical
+- ARM64 first-class
+- No hand-rolled cryptography
 
--   independent dashboard
--   automated testing
--   third-party integrations
--   future CLI support
+The Rule Engine runs **before** the cache, so rule changes take effect
+instantly and the cache never stores verdicts
+([ADR-0001](docs/decisions/0001-rules-before-cache.md)).
 
-Design rules:
+---
 
--   Performance before features
--   API-first
--   No runtime regex compilation
--   Streaming before buffering
--   Zero-copy where possible
--   ARM64 first-class
--   Simple architecture
--   Deterministic execution
+## Architecture
 
-------------------------------------------------------------------------
+![FastAdHunter architecture](docs/diagrams/architecture.svg)
 
-# Docker-first
-
-Deployment should require only a container.
-
-Persistent data remains outside the container.
-
-------------------------------------------------------------------------
-
-# Multi-core by Design
-
-Work is distributed across Tokio workers.
-
-The architecture avoids centralized processing whenever possible.
-
-------------------------------------------------------------------------
-
-# ARM64 First
-
-The primary deployment target is ARM64 hardware typically used in
-routers, home labs and small servers.
-FastAdHunter will run on docker deployed on MikroTik RB5009UG+S+IN.
-
-The RB5009UG+S+IN is the perfect home router: 
-	Compact, powerful, with multiple powering options and efficient cooling. The RB5009 has it all, and even more!
-	The board features 9 wired ports and a full-sized USB 3.0 port. 
-	Seven ports are Gigabit Ethernet, another is 2.5 Gigabit Ethernet, and the last one is a 10G SFP+ slot. 
-	All ports are connected to a powerful Marvell Amethyst switch chip with a 10 Gbps full-duplex line leading 
-	to the Marvell Armada Quad-core ARMv8 1.4 GHz CPU. Both the CPU and the switch chip are located 
-	on the bottom of the board—so the case acts as a massive heatsink!
-	It is also HW=yes (Hardware Offload), hardware accelerated!
-	See docs/images/RB5009UGS.png.
-
-------------------------------------------------------------------------
-
-# Zero-copy
-
-Buffers are referenced instead of copied whenever practical.
-
-This reduces allocations and improves cache locality.
-
-------------------------------------------------------------------------
-
-# Streaming
-
-Large responses should be processed incrementally instead of loading
-complete documents into memory.
-
-------------------------------------------------------------------------
-
-# High-Level Architecture
-
-``` text
-             Dashboard (optional, implemented later)
+```text
+             Dashboard (optional, later phase)
                      │
-          REST / WebSocket API
+          REST / WebSocket API  (fah-api)
                      │
              FastAdHunter Core
                      │
  ┌─────────────────────────────────────┐
- │ DNS Engine                          │
- │ HTTP Engine        (Phase 2)        │
- │ HTTPS Engine       (Phase 3)        │
- │ Rule Engine                         │
- │ Statistics                          │
- │ Metrics                             │
+ │ DNS Engine        (fah-dns)         │
+ │ HTTP Engine       (fah-http)        │
+ │ HTTPS Engine      (Phase 3)         │
+ │ Rule Engine       (fah-rules)       │
+ │ Statistics        (fah-stats)       │
+ │ Metrics           (fah-metrics)     │
  └─────────────────────────────────────┘
                      │
                  Internet
 ```
 
-The dashboard is intentionally separated from the filtering engine.
+The dashboard is a separate deliverable and talks only to the API. The core
+never depends on any UI.
 
-Full diagram: [docs/diagrams/architecture.svg](docs/diagrams/architecture.svg)
-(HTML version: [docs/diagrams/architecture.html](docs/diagrams/architecture.html))
+Full diagram: [SVG](docs/diagrams/architecture.svg) ·
+[HTML](docs/diagrams/architecture.html) ·
+[detailed](docs/diagrams/architecture-full.svg)
 
-------------------------------------------------------------------------
+### Dependency layering
 
-# Request Processing
+```text
+L4:  fastadhunter (binary — wires everything)
+L3:  fah-dns   fah-http   fah-api   fah-stats   fah-metrics
+L2:  fah-rules
+L1:  fah-model   fah-config   fah-common   fah-logging
+```
 
-## DNS Pipeline
+Dependencies point **downward only**; **siblings never import each other** —
+the binary wires them via channels and ports. `fah-model` stays pure data.
 
-``` text
-Receive Query
+This is enforced, not just documented: `crates/fastadhunter/tests/layering.rs`
+parses every manifest and fails the build on any edge that points sideways or
+up.
+
+---
+
+## One Rule Engine, two pipelines
+
+This is the central idea of the project.
+
+```text
+                        ┌─────────────────────────┐
+                        │      Rule Engine        │
+                        │       (fah-rules)       │
+                        │                         │
+                        │  ONE compiled index     │
+                        │  ONE atomic swap        │
+                        │  contiguous arena       │
+                        └────────────┬────────────┘
+                                     │
+                   one typed entry point per request model
+                                     │
+                 ┌───────────────────┴───────────────────┐
+                 │                                       │
+         lookup_dns(domain, qtype)          lookup_http(host, path,
+                 │                            method, type, client)
+                 │                                       │
+                 ▼                                       ▼
+        ┌─────────────────┐                     ┌─────────────────┐
+        │  DNS pipeline   │                     │  HTTP pipeline  │
+        │    (fah-dns)    │                     │   (fah-http)    │
+        └─────────────────┘                     └────────▲────────┘
+                                                         │
+                                          HTTPS, after TLS termination
+                                          reuses the SAME request model
+                                                    (Phase 3)
+```
+
+**One list of rules protects every protocol.** Add a blocklist once and DNS,
+HTTP and later HTTPS all start enforcing it — there is no second ruleset to
+configure, no second copy in memory, and no way for the two to disagree about
+whether a domain is blocked.
+
+The matcher is **protocol-model aware, not transport aware**. It never sees a
+socket, a datagram, TCP or TLS — only a DNS question or an HTTP request. That
+is what lets one index serve both:
+
+- **A DNS question** is `(domain, qtype)`. It cannot express a path, so a rule
+  like `||example.com^*/ads/banner.gif` is stored and classified but stays
+  inactive on this path — blocking the whole domain to kill one tracker would
+  be wrong.
+- **An HTTP request** carries host **plus** path, method, resource type and
+  third-party flag, so the same rule matches exactly what it was written for.
+- **HTTPS** reuses the HTTP request model after TLS termination. No third
+  matcher, ever — a `lookup_https()` would mean transport had leaked into the
+  engine.
+
+Two typed entry points, not a trait object: virtual dispatch on the hot path
+is forbidden by [PERFORMANCE.md](PERFORMANCE.md). The rules themselves stay
+model-specific — `$dnstype` is meaningless for HTTP, path anchoring is
+meaningless for DNS — while the arena, the deduplication and the atomic swap
+are paid for once.
+
+---
+
+## Request processing
+
+### DNS pipeline
+
+```text
+Receive query (UDP/53, TCP/53)
       │
-Rule Engine ── blocked? → synthesized reply
+Rule Engine ── verdict
       │
-Cache Lookup ── hit? → Reply
+      ├─ Block  → synthesize 0.0.0.0 / ::  (TTL 10s) ──► Reply
+      │           never touches cache or network
+Cache lookup ── hit ────────────────────────────────► Reply
+      │ miss
+Upstream resolver (UDP/TCP → DoT / DoH per config)
       │
-Upstream Resolver
-      │
-Cache Store
+Cache store
       │
 Reply
 ```
 
-Each stage performs one responsibility only.
+Every query gets a fresh verdict, so unblocking a domain needs no cache flush.
+The cache stores upstream answers only — bounded by both entry count and bytes,
+TTL-respecting with clamps, RFC 2308 negative caching and RFC 8767 serve-stale
+when upstreams are unreachable.
 
-The Rule Engine runs **before** the cache, so rule changes take effect
-instantly and the cache never stores verdicts
-(see [docs/decisions/0001](docs/decisions/0001-rules-before-cache.md)).
+### HTTP pipeline *(Phase 2)*
 
-A **Policy** concept (named bundles of rule lists + settings, assignable to
-clients/schedules) arrives in Phase 2 — see [ROADMAP.md](ROADMAP.md).
-
-------------------------------------------------------------------------
-
-# HTTP Pipeline
-
-``` text
-TCP
- │
-HTTP Parser
- │
-Header Processing
- │
-Rule Engine
- │
-HTML Processing
- │
-Compression
- │
-Client
+```text
+Accept (TCP, router dst-nats :80 here)
+      │
+Read request line + headers   ── timeout bounds a slowloris
+      │
+Rule Engine ── URL verdict (host + path + method + resource type)
+      │
+      ├─ Block → synthesized response, origin never contacted ──► Client
+      │
+Egress guard ── default-deny, post-resolution (SSRF / DNS rebinding)
+      │
+Pass-through: stream origin ⇄ client, byte for byte
 ```
 
-HTML processing is intended only when required.
+**The body is never parsed and never buffered.** Images, archives, PDFs and
+video stream through untouched — buffering a response to inspect it would make
+memory grow with traffic, which the bounded-everything rule forbids outright.
+HTML rewriting arrives in Phase 4 and is opt-in, for that content type alone.
 
-Other traffic should pass through with minimal overhead.
+---
 
-------------------------------------------------------------------------
+## Operating modes
 
-# Operating Modes
+Fixed at container start via `engine.mode`:
 
-Configurable at docker start phase:
+| Mode | Filters |
+| ---- | ------- |
+| `dns` | Network-wide DNS filtering |
+| `dns+http` | …plus URL-level filtering of unencrypted HTTP |
+| `dns+http+https` | …plus HTTPS interception, for managed environments |
 
-	- DNS
+A mode that does not name an engine means that engine's listener is **never
+bound** — not bound and idle.
 
-Network-wide DNS filtering.
+---
 
-	- DNS + HTTP
-
-HTTP filtering for unencrypted traffic.
-
-	- DNS + HTTP + HTTPS
-
-HTTPS interception for managed environments.
-
-------------------------------------------------------------------------
-
-# Runtime Architecture
+## Runtime model
 
 ```text
                Tokio Runtime
@@ -260,180 +287,187 @@ HTTPS interception for managed environments.
       │              │              │
       ├── DNS        ├── DNS        ├── DNS
       ├── HTTP       ├── HTTP       ├── HTTP
-      ├── HTTPS      ├── HTTPS      ├── HTTPS
       └── Rules      └── Rules      └── Rules
 ```
-------------------------------------------------------------------------
-# API Layer
 
-``` text
-GET  /health
-GET  /metrics
-GET  /api/v1/stats
-GET  /api/v1/clients
-POST /api/v1/config
-WS   /api/v1/events
-etc
-etc
-```
-Dashboard communicates exclusively through the API.
-------------------------------------------------------------------------
+Work is distributed across Tokio workers; the architecture avoids centralised
+processing. One task per datagram, one shared compiled ruleset behind an atomic
+swap, and no lock on the path that answers a query.
 
-# Certificate Management
+---
+
+## API
+
+Everything the engine can do is reachable over REST + WebSocket. HTTPS by
+default, bearer-key auth.
 
 ```text
-/api/v1/certificates
-etc
+GET   /health
+GET   /metrics                      Prometheus text exposition
+GET   /api/v1/stats                 aggregates, top domains/clients
+GET   /api/v1/queries               query log, filtered + paginated
+GET   /api/v1/clients               per-client view; PUT to name one
+GET   /api/v1/lists                 rule lists; POST /lists/refresh
+POST  /api/v1/rules/test            verdict for a domain, with the rule
+GET   /api/v1/cache                 cache stats; POST /cache/clean
+GET   /api/v1/history/{summary,perf,top}
+GET   /api/v1/config                POST to patch, validated + written back
+GET   /api/v1/debug/memory          per-component heap + residual
+WS    /api/v1/events                live query stream
 ```
 
-Operations:
-- Import PEM
-- Import PFX
-- Generate CA
-- Export CA
-- Status
+Full request/response shapes: [API.md](API.md).
 
-No manual TLS implementation.
+---
 
-Libraries:
-- rustls
-- rcgen
-- x509-parser
+## Deployment
 
-> **Rule:** Do not reinvent cryptography.
+One container. Configuration, blocklists, certificates and history live on
+mounted volumes, outside the image.
 
-------------------------------------------------------------------------
+```text
+/config    small, back this up      TOML, API key, TLS certificates
+/data      bulky, regenerable      cached lists, query log, history
+```
 
-# Repository Layout
+The image is distroless/static with a statically linked musl binary — no shell,
+no package manager, non-root after binding.
 
-``` text
+Step-by-step for the reference deployment, including the RouterOS container
+setup, port redirects and the soak procedure:
+**[docs/deploy-rb5009.md](docs/deploy-rb5009.md)**.
+
+---
+
+## ARM64 first
+
+The primary target is ARM64 hardware in routers, home labs and small servers.
+The reference deployment is a **MikroTik RB5009UG+S+IN** running the container
+natively under RouterOS.
+
+![MikroTik RB5009](docs/images/RB5009UGS.png)
+
+> Compact, powerful, with multiple powering options and efficient cooling. Nine
+> wired ports and a full-sized USB 3.0 port — seven Gigabit Ethernet, one
+> 2.5 Gigabit Ethernet, and a 10G SFP+ slot. All connected to a Marvell
+> Amethyst switch chip with a 10 Gbps full-duplex line to the Marvell Armada
+> quad-core ARMv8 1.4 GHz CPU. Both the CPU and the switch chip sit on the
+> bottom of the board, so the case acts as a massive heatsink. Hardware
+> offload supported.
+
+Budgets assume this box: four cores at 1.4 GHz and **1 GB of RAM shared with
+RouterOS itself**. That constraint is why the memory numbers matter.
+
+---
+
+## Repository layout
+
+```text
 FastAdHunter/
 ├── Cargo.toml            # workspace root
 ├── crates/
-│   ├── fah-common/       # shared errors, small utils
+│   ├── fah-common/       # shared errors, listener binding, small utils
 │   ├── fah-logging/      # tracing init, formats, levels
-│   ├── fah-config/       # TOML, precedence, hot-reload
+│   ├── fah-config/       # TOML, precedence, validation
 │   ├── fah-model/        # domain model + shared DTOs (pure data types)
 │   ├── fah-rules/        # Rule Engine: parsers + compiled matchers
 │   ├── fah-dns/          # listeners, pipeline, cache, upstreams
 │   ├── fah-http/         # HTTP engine: proxy, pass-through, URL filtering
 │   ├── fah-api/          # Axum REST + WebSocket
 │   ├── fah-metrics/      # ops telemetry: Prometheus
-│   ├── fah-stats/        # product data: query log, aggregates
+│   ├── fah-stats/        # product data: query log, aggregates, history
 │   └── fastadhunter/     # thin binary — wires everything
 ├── tests/                # workspace integration tests
 ├── benches/              # criterion benches vs PERFORMANCE.md budgets
-├── docs/                 # images/, diagrams/, decisions/
-└── dashboard/            # independent UI (later phase)
+├── plan/                 # task orchestration: open / wip / closed phases
+├── docs/                 # images/, diagrams/, decisions/, code-review/
+└── dashboard/            # empty until the dashboard phase
 ```
 
-Dependency layering (see [ARCHITECTURE.md](ARCHITECTURE.md)): dependencies
-point downward only, siblings never import each other, `fah-model` stays pure.
+---
 
-------------------------------------------------------------------------
+## Technology
 
-# Technology Stack
+| Area | Choice | Why |
+| ---- | ------ | --- |
+| Language | Rust | no GC pauses, no runtime, predictable memory |
+| Runtime | Tokio | multi-threaded work stealing |
+| HTTP | Hyper / Axum | streaming-first |
+| DNS | Hickory | pure-Rust wire format and upstream clients |
+| TLS | rustls | no OpenSSL, no C dependency |
+| Certificates | rcgen · x509-parser | generation and parsing only |
+| HTML | lol_html *(Phase 4)* | streaming rewriter, never buffers a document |
 
-```text
-  Area       Choice
-  ---------- --------------
-  Language   Rust
-  Runtime    Tokio
-  HTTP       Hyper / Axum
-  DNS        Hickory
-  TLS        rustls
-  HTML       lol_html
-```
-------------------------------------------------------------------------
+> **Rule:** do not reinvent cryptography. rustls, rcgen and x509-parser are the
+> complete crypto surface.
 
-# Performance Goals
+---
 
--   low latency
--   low RAM usage
--   efficient CPU utilization
--   streaming pipelines
--   multicore scalability
+## Scope
 
-------------------------------------------------------------------------
+**FastAdHunter is:** lightweight · modular · predictable · API-first ·
+network-wide.
 
-# Deployment
+**FastAdHunter is not:** a browser · an IDS · an antivirus · a general-purpose
+firewall · a replacement for a good browser extension.
 
-A single container is expected to provide the complete filtering engine.
+---
 
-Configuration, blocklists and certificates are mounted as persistent
-volumes.
+## Roadmap
 
-------------------------------------------------------------------------
+| Phase | Delivers |
+| ----- | -------- |
+| **1** ✅ | DNS filtering, REST API, Docker image, on-device soak |
+| **1.5** ✅ | Persisted history, perf series, byte-bounded cache |
+| **2** 🚧 | HTTP proxy, URL-path rules, **Policies** — named rule bundles assignable to clients and schedules |
+| **3** | HTTPS interception, certificate management, DoT/DoH listeners |
+| **4** | HTML filtering with `lol_html`, cosmetic rules |
 
-# Project Goals
+Detail and per-phase task status: [ROADMAP.md](ROADMAP.md) and `plan/`.
 
-FastAdHunter IS:
+---
 
--   lightweight
--   modular
--   predictable
--   API-first
+## Documentation
 
-FastAdHunter IS NOT:
-
--   a browser
--   an IDS
--   an antivirus
--   a general-purpose firewall
-
-------------------------------------------------------------------------
-
-# Roadmap
-
-Phase 1
-
--   DNS
--   REST API
--   Docker
-
-Phase 2
-
--   HTTP
-
-Phase 3
-
--   HTTPS
-
-Phase 4
-
--   HTML filtering
-
-------------------------------------------------------------------------
-
-# Documents
-
-All design documents are written and approved before any code:
+Design documents are written and approved **before** the code they describe.
+A change that contradicts a doc updates the doc in the same commit — or adds an
+ADR if the decision is being reversed.
 
 ```text
-FastAdHunter/
-│
-├── README.md                 ✅ this file
-├── CONTEXT.md                ✅ glossary — the project's ubiquitous language
-├── ARCHITECTURE.md           ✅ components, crates, layering, runtime model
-├── ROADMAP.md                ✅ phases and their tasks
-├── API.md                    ✅ all endpoints with request/response
-├── CONFIGURATION.md          ✅ all config options, precedence, mutability
-├── RULE_ENGINE.md            ✅ formats, verdicts, matcher, list lifecycle
-├── PERFORMANCE.md            ✅ golden rules + numeric budgets
-├── SECURITY.md               ✅ API key, TLS, certificates, docker hardening
-├── CONTRIBUTING.md           ✅ conventions and local quality gates
-├── LICENSE                   ✅ ❌ None (private repository)
+├── CONTEXT.md            glossary — the project's ubiquitous language
+├── ARCHITECTURE.md       components, crates, layering, runtime model
+├── ROADMAP.md            phases and their tasks
+├── API.md                every endpoint with request/response
+├── CONFIGURATION.md      every option, precedence, boot vs runtime
+├── RULE_ENGINE.md        formats, verdicts, matcher, list lifecycle
+├── PERFORMANCE.md        golden rules + numeric budgets
+├── SECURITY.md           API key, TLS, certificates, container hardening
+├── CONTRIBUTING.md       conventions and local quality gates
 │
 └── docs/
-    ├── images/               ✅ RB5009UGS.png
-    ├── diagrams/
-    └── decisions/            ✅ ADRs 0001–0003
+    ├── decisions/        ADRs 0001–0004
+    ├── diagrams/         architecture SVG + HTML
+    ├── code-review/      per-task review notes with measured results
+    └── deploy-rb5009.md  end-to-end deployment + soak procedure
 ```
 
-No CI service is used (deliberate) — quality gates run locally,
-see [CONTRIBUTING.md](CONTRIBUTING.md).
+### Quality gates
 
-# Repository
+No CI service — deliberately. Gates run locally before every commit:
 
-- Visibility: Private
-- License: None (proprietary until public release, if ever!)
+```sh
+cargo fmt --check
+cargo clippy --workspace --all-targets -- -D warnings
+cargo test --workspace
+cargo bench            # when a hot path is touched
+```
+
+A >10 % regression on a hot-path bench needs an explicit justification.
+See [CONTRIBUTING.md](CONTRIBUTING.md).
+
+---
+
+## Repository
+
+- **Visibility:** private
+- **License:** none — proprietary until a public release, if ever
