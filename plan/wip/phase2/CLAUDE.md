@@ -7,11 +7,14 @@ of rule lists + settings assignable to clients and schedules, activating
 `$client` rules and per-client enforcement in both DNS and HTTP pipelines.
 Operating mode `dns+http` becomes real.
 
-**Why this order:** scaffold + docs first (new crate changes the architecture —
-docs update in the same change, per root CLAUDE.md). Proxy core before
-filtering (streaming pass-through must be solid before verdicts touch it).
-URL rules before the filtering pipeline that consumes them. Policies last on
-the rules side, then enforcement wires both pipelines, then proof.
+**Why this order:** the parser correctness fix (`p2-00`) comes before
+everything — it is not HTTP work at all, but `p2-03` activates rules this
+phase's target lists do not currently classify correctly, so nothing downstream
+is trustworthy until it lands. Then scaffold + docs (new crate changes the
+architecture — docs update in the same change, per root CLAUDE.md). Proxy core
+before filtering (streaming pass-through must be solid before verdicts touch
+it). URL rules before the filtering pipeline that consumes them. Policies last
+on the rules side, then enforcement wires both pipelines, then proof.
 
 ## Architecture note — widening the Rule Engine interface
 
@@ -69,6 +72,12 @@ are meaningless for DNS), and Phase 1 already parses, counts and stores non-DNS
 rules **inactive**. `p2-03` activates a subset that is already in the index. New
 HTTP request types belong in `fah-model` (pure data), not in `fah-rules`.
 
+That last premise holds only **after `p2-00`**: measured against real EasyList,
+the list is misdetected and its URL rules never reach the index at all, while
+389 path-qualified rules are misfiled as whole-domain DNS rules
+(`docs/code-review/p2-03-headroom-and-parser-findings.md`). The interface
+argument is unaffected — the classification is what is broken, not the shape.
+
 Note the matcher's *hot path* is pure, but `fah-rules` as a crate is not I/O-free
 — the list lifecycle pulls `reqwest` and `tokio`.
 
@@ -76,6 +85,7 @@ Note the matcher's *hot path* is pure, but `fah-rules` as a crate is not I/O-fre
 
 | # | Task file | Outcome | MODEL | STATUS |
 |---|-----------|---------|-------|--------|
+| 0 | `p2-00-adblock-parser-correctness.md` | **Foundation fix, runs first** — real EasyList detects correctly; `\|\|d^*/path` stops compiling to a whole-domain DNS block | Opus | WAITING |
 | 1 | `p2-01-http-scaffold.md` | `fah-http` crate (L3) + ARCHITECTURE/CONTEXT/CONFIGURATION updates | Sonnet | WAITING |
 | 2 | `p2-02-http-proxy-core.md` | Transparent streaming proxy, pass-through fast path (heavy) | Opus | WAITING |
 | 3 | `p2-03-url-rules-activation.md` | URL-path + HTTP `$options` matchers activate in fah-rules (heavy) | Opus | WAITING |

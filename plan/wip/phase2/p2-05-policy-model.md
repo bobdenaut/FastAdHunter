@@ -27,6 +27,13 @@ CONFIGURATION.md (`[[policies]]`), RULE_ENGINE.md (`$client` active).
 - fah-rules: per-policy compiled rulesets sharing storage (lists referenced
   by multiple policies compile once — memory budget: N policies must not mean
   N× ruleset RAM; document the sharing design).
+  **This is Phase 2's real memory risk — measure it before building it out.**
+  The ruleset is 21.9 MiB against ~24 MiB of headroom, so *one* unshared copy
+  overruns the 128 MB budget on its own. By contrast the URL matcher p2-03 was
+  warned about costs ~1 MiB (`docs/code-review/p2-03-headroom-and-parser-findings.md`).
+  Take an early measurement of two policies over overlapping lists and report
+  the absolute heap before the model hardens; if sharing cannot hold the line,
+  that is a decision for the user, not a silent overrun.
 - `$client` rules activate: matched against client IP/name, effectively
   per-client inline policy.
 - Schedule evaluation: pure function of (assignment, timestamp) — testable
@@ -36,7 +43,9 @@ CONFIGURATION.md (`[[policies]]`), RULE_ENGINE.md (`$client` active).
 ## Acceptance criteria
 
 - Two policies sharing one list: list compiled once (assert via size/pointer
-  identity).
+  identity), **and the absolute heap recorded** — total for N policies over
+  overlapping lists must stay within a few MiB of the single-ruleset figure,
+  not a multiple of it.
 - Schedule flips at boundaries correctly incl. DST (tests).
 - Docs updated (CONTEXT/CONFIGURATION/RULE_ENGINE) in the same change.
 - Gates green.

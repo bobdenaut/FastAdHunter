@@ -1,9 +1,11 @@
 # P2-03 — URL Rules Activation
 
-**Phase:** 2 · **Depends on:** phase1 · **Model:** Opus
+**Phase:** 2 · **Depends on:** p2-00 · **Model:** Opus
 
 > Pure `fah-rules` work — it needs no `fah-http` scaffold, so it can run in
-> parallel with p2-01/p2-02 rather than behind them.
+> parallel with p2-01/p2-02 rather than behind them. It is **not** independent
+> of `p2-00`: until the parser fix lands, real EasyList is misdetected and its
+> URL rules never enter the index, so there is nothing here to activate.
 
 ## Goal
 
@@ -28,16 +30,19 @@ compile to automata/masks, not regex).
   → Verdict + decisive rule/list (extends fah-model types if needed —
   CONTEXT.md updated).
 - Cosmetic rules (`##`) stay inactive (Phase 4) — counters keep reporting.
-- **Memory headroom is the real constraint — measure it first, before building
-  the matcher out.** Measured on the RB5009: DNS ruleset 21.9 MiB, steady RSS
-  ~104 MiB with the cache at its configured 50 000 / 64 MiB, against a 128 MB
-  budget. That leaves **~24 MiB** for the URL matcher *plus* the HTTP engine
-  and its pools (p2-02) *plus* per-policy rulesets (p2-05). "Full EasyList
-  compiles" is therefore not free, and finding out at p2-07 is too late.
-  Take a measurement of the compiled URL-matcher heap early and report it; if
-  it does not fit, the options (subset the lists, share storage with the domain
-  index, raise the budget with justification) are a decision for the user, not
-  a silent overrun.
+- **Memory headroom: measured, and it is not the constraint.** The question was
+  answered ahead of this task
+  (`docs/code-review/p2-03-headroom-and-parser-findings.md`): the compiled URL
+  tier for EasyList + EasyPrivacy models to **~1.03 MiB**, and enabling both
+  lists costs **≈4.0 MiB** all-in once their DNS-active halves are counted
+  (1.52 + 1.42 MiB, measured with the real `Matcher`). Against the ~24 MiB of
+  headroom (128 MB budget − ~104 MiB steady RSS, DNS ruleset 21.9 MiB), that
+  leaves ~20 MiB. The modelling method over-estimates by 11.3 % when calibrated
+  against the existing domain matcher, so this is an upper bound.
+  Re-measure against the real implementation to **confirm** the figure — but
+  treat it as confirmation, not as a gate. The Phase-2 memory risk lives in
+  p2-02's connection pools and p2-05's per-policy ruleset duplication, not
+  here.
 - Compile-time budget guard: matcher memory measured with full EasyList in
   `benches/`; lookup allocation-free.
 - Fixture tests: real EasyList excerpts with known-blocked/known-passed URL
@@ -49,9 +54,10 @@ compile to automata/masks, not regex).
 - Full EasyList compiles; request verdict p99 < 1ms, allocation-free
   (bench-proven, numbers recorded).
 - **Compiled URL-matcher heap measured and recorded as an absolute number**,
-  with the remaining headroom against 128 MB stated explicitly (see the
-  ~24 MiB figure above). A number that does not fit is a finding to raise, not
-  a gate to quietly relax.
+  with the remaining headroom against 128 MB stated explicitly. The predicted
+  figure is ~1.03 MiB (upper bound); a real measurement materially above it
+  means the compiled layout diverged from the modelled one — a finding to
+  raise and explain, not a gate to quietly relax.
 - `@@` exceptions beat blocks; `$domain=`/party options honored (tests).
 - RULE_ENGINE.md documents HTTP matching in the same change.
 - Gates green.
