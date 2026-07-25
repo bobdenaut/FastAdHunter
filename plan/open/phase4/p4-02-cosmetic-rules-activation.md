@@ -32,14 +32,15 @@ selectors too, hot path takes no lock.
   injection `#$#`) remain parsed-but-inactive — counted separately so the API
   distinguishes "active cosmetic" from "unsupported cosmetic".
 - **Keep the compiled selector set serializable**, even though nothing serves
-  it yet. ROADMAP.md §"Open question — a FastAdHunter browser extension" leaves
-  open whether cosmetic rules are eventually *sent to a client* rather than
-  only applied in-process by lol_html. If so, this compiled form is what would
+  it yet. ROADMAP.md §"Future — Browser Integration (exploratory)" leaves open
+  whether cosmetic rules are eventually *sent to a client* rather than only
+  applied in-process by lol_html. If so, this compiled form is what would
   travel. Designing it as a shape that can be written out costs nothing here
   and is expensive to retrofit once the rewriter depends on its internals — so
   prefer a representation the rewriter *reads* over one it reaches into.
   This is a shape constraint only: **build no endpoint, no protocol, no
-  extension.** Decide the question after Phase 4 ships.
+  extension.** That direction is exploratory and gated on criteria this task
+  does not satisfy.
 - **Note that ADR-0003's "stored inactive" claim does not hold** (see its
   correction note). `RuleKind::Inactive(InactiveReason)` carries no payload, so
   cosmetic *selector text is not retained* — this task must add retention for

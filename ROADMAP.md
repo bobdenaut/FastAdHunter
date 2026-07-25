@@ -129,54 +129,60 @@ in-RAM-only and lost everything on restart. See `plan/closed/phase1.5/`.
   activate; the differentiator AdGuard Home lacks
 - Applied only where required; all other traffic passes through untouched
 
-## Open question — a FastAdHunter browser extension
+## Future — Browser Integration (exploratory)
 
-**Undecided. Revisit before Phase 4 hardens, and again after it ships.**
-Nothing on disk until then.
+**Goal:** let FastAdHunter **policies** influence browser-level cosmetic
+filtering, so a per-client policy shapes what a page looks like and not only
+which domains resolve.
 
-A router cannot see the DOM after JavaScript has run, so a proxy — however
-complete — will never reach first-party ads (YouTube, Facebook), dynamically
-injected elements, or anti-adblock scripts. That limit is architectural, not a
-matter of effort, and it is the honest ceiling on what Phases 1–4 can deliver.
+**Not intended to replace uBlock Origin.** Potentially a thin companion
+extension. Nothing is promised here — this records a direction, not a plan, and
+nothing goes on disk until the criteria below are met.
 
-The obvious workaround is to inject an agent script into rewritten HTML.
-**That option is rejected on security grounds unless someone makes a strong new
-case:** it means the router holds arbitrary code execution in the origin of
-every site every device visits — read any password field, read `localStorage`,
-issue authenticated same-origin requests. Compromising the ad blocker would
-mean compromising every account in the house, and enabling it means weakening
-`Content-Security-Policy` on sites that set one.
+**Decision criteria — all three, or it does not get built:**
 
-The alternative is a real extension, and the split is clean:
+1. Phases 2/3/4 ship and demand is real.
+2. The Policy model provides value nothing else does.
+3. Integration value exceeds the maintenance cost of a second codebase,
+   release channel, store review, and a router↔extension protocol with its
+   own auth.
 
-| Layer | Component | Covers |
-| ----- | --------- | ------ |
-| Network | FastAdHunter | every device — TVs, phones, IoT, guests; no rule ceiling |
-| DOM | extension | browsers only — cosmetic rules and scriptlets |
+### Why it stays exploratory
 
-This sidesteps Manifest V3's central problem. MV3's rule cap applies to
-`declarativeNetRequest` (network blocking); cosmetic filtering runs from a
-content script and is **not** capped — which is why uBlock Origin Lite still
-hides elements well while its network blocking is crippled. Because
-FastAdHunter already blocks at the network layer for every device, the
-extension needs no network rules at all: only cosmetic ones (~24,400 across
-EasyList + EasyPrivacy). That makes it far smaller than uBlock, with minimal
-permissions.
+The product is the network firewall for the whole house. That is the piece with
+no substitute: TVs, phones, apps, IoT, guests. A browser integration would be
+the **last 10 %** that ties the experience together — not the foundation, and
+worth building only once the foundation is proven.
 
-If lists ever drive script execution, copy uBlock's constraint exactly: a
-filter list may **reference** pre-written, audited scriptlets with parameters,
-never supply JavaScript. Retrofitting that boundary once list authors expect
-flexibility is close to impossible.
+It would also not be a capability win. Manifest V3's rule cap applies to
+`declarativeNetRequest` — **network** blocking — while cosmetic filtering runs
+from a content script and is uncapped. That is why uBlock Origin Lite still
+hides elements competently even as its network blocking is crippled. So
+FastAdHunter + uBO Lite already covers both layers today. Any FAH extension
+would add *integration* (central rule management, per-client policy reaching
+into the browser), not a filtering ability users cannot otherwise get — while
+competing with a free, excellent, deeply trusted incumbent.
 
-**One decision this forces early.** If cosmetic rules are eventually *served to
-a client* rather than only applied in-process by `lol_html`, the compiled
-cosmetic representation must be serializable. Cheap to design in during Phase
-4, expensive to retrofit afterwards — see `plan/open/phase4/`.
+### Two constraints worth recording now
 
-Scope, so the size is not underestimated: own codebase, own release channel,
-store review, cross-browser testing, plus a router↔extension protocol and its
-authentication. Phase 5 at the earliest, and only if Phase 4 proves cosmetic
-rules compile and apply well in the first place.
+**HTML script injection is rejected on security grounds.** The tempting
+shortcut — injecting an agent into rewritten HTML instead of shipping an
+extension — would give the router arbitrary code execution in the origin of
+every site every device visits: read any password field, read `localStorage`,
+issue authenticated same-origin requests. It converts a compromise of the ad
+blocker into a compromise of every account in the house, and it requires
+weakening `Content-Security-Policy` on sites that set one. Reopening this needs
+a strong new case and an ADR, not an implementation.
+
+**Serializability is the only thing this costs today.** If cosmetic rules are
+ever served to a client rather than only applied in-process by `lol_html`, the
+compiled cosmetic form is what would travel. Designing it to be writable out is
+free during Phase 4 and expensive afterwards — see `plan/open/phase4/`. Build
+no endpoint and no protocol; keep the shape open, and decide later.
+
+And should filter lists ever drive script execution, copy uBlock's constraint
+exactly: a list may **reference** pre-written, audited scriptlets with
+parameters, never supply JavaScript.
 
 ## Backlog (no phase committed)
 
