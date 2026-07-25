@@ -593,6 +593,12 @@ The same figures are exported as `fastadhunter_memory_component_bytes`
 `/metrics`. Those are sampled together on the 10 s telemetry poll, so they can
 lag this endpoint — which reads live — by up to one interval.
 
+`/metrics` also carries `fastadhunter_memory_collection_seconds`, a
+**temporary** gauge holding the wall time of that whole 10 s pass — every
+component heap plus the `/proc/self/status` read. It exists to measure the
+accounting's own cost on the ARM target rather than extrapolate it from an x86
+dev box, and will be removed once that figure is known to be stable.
+
 ---
 
 ## Certificates *(Phase 3 — reserved)*

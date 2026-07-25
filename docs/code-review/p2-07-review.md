@@ -184,3 +184,43 @@ the e2e test and 3 consecutive full-workspace runs, all green.
   Deploy after the T+24h read; the *next* soak gets full accounting.
 - A leak of a few bytes per query is still not excluded by existing data. The
   instrument is what will exclude it, over a full soak.
+
+---
+
+## 10. Addendum — the accounting now reports its own cost (temporary)
+
+**Gates:** `fmt --check` clean · `clippy --workspace --all-targets -D warnings`
+clean · `test --workspace` **484 passed, 0 failed**
+
+§5's numbers are x86 numbers, and the ARM figure in this document (200–300 µs)
+is an extrapolation. Worse, the x86 measurement **structurally could not include
+the RSS read** — `process_rss()` returns `None` on Windows, so the
+`/proc/self/status` open+read+parse that the RB5009 actually pays every 10 s was
+never in the 43 µs. So the number is now measured on the target:
+
+```text
+fastadhunter_memory_collection_seconds
+```
+
+Wall time of the **whole pass** — `rules.matcher()`, `cache_stats()`,
+`stats.heap()`, `matcher.heap_bytes()` and the RSS read — not of `stats.heap()`
+alone, because the whole pass is what the 10 s tick costs. Captured before the
+`over_accounted()` `warn!`, so a logging call can never inflate it.
+
+**Deliberately kept out of `fah_model::MemoryBreakdown`.** It is metadata about
+the measurement, not a memory figure, and that type is permanent while this
+instrument is not — a `u64` there would also make `PartialEq` time-dependent for
+a struct that otherwise compares two states of memory. It lives as one
+`AtomicU64` in `fah_metrics::Metrics` instead: **two crates touched**
+(`fah-metrics`, `fastadhunter`), against five for the shared-type version, and
+removal is the same four hunks in reverse. §3's dedup lesson does not apply —
+there is one producer and one surface, so there is nothing to duplicate.
+
+Reported in seconds per Prometheus base-unit convention (matching
+`fastadhunter_ruleset_compile_duration_seconds`) from a microsecond capture;
+`memory_collection_cost_is_exported_in_seconds` pins both the conversion and the
+unset-reads-as-zero case.
+
+**Removal condition, stated so it does not become permanent by default:** delete
+it once a soak shows the on-device figure stable. It is a `# TEMPORARY`-marked
+gauge, an atomic + setter, a timer in the poll, and one API.md paragraph.

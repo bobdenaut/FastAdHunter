@@ -42,6 +42,17 @@ pub struct Metrics {
     pub(crate) upstreams: ArcSwap<Vec<UpstreamSnapshot>>,
     pub(crate) ruleset: ArcSwap<RulesetSnapshot>,
     pub(crate) memory: ArcSwap<fah_model::MemoryBreakdown>,
+    /// **Temporary** (post-p2-07): wall time the last memory-accounting pass
+    /// took, in microseconds. Deliberately *not* part of
+    /// [`fah_model::MemoryBreakdown`] — it is metadata about the measurement,
+    /// not a memory figure, and that type is permanent while this is not.
+    ///
+    /// Exists because the accounting is paid every 10 s forever, partly under
+    /// `fah-stats`'s mutexes, and the only figure so far is 43 µs on an x86 dev
+    /// box — where the RSS read never even runs (no procfs), so the `/proc`
+    /// open+parse that the RB5009 actually pays was never in it. Remove once a
+    /// soak shows the on-device number is stable.
+    pub(crate) memory_collection_micros: AtomicU64,
 }
 
 impl Default for Metrics {
@@ -66,6 +77,7 @@ impl Metrics {
             upstreams: ArcSwap::new(Arc::new(Vec::new())),
             ruleset: ArcSwap::new(Arc::new(RulesetSnapshot::default())),
             memory: ArcSwap::new(Arc::new(fah_model::MemoryBreakdown::default())),
+            memory_collection_micros: AtomicU64::new(0),
         }
     }
 
@@ -134,6 +146,15 @@ impl Metrics {
     /// sibling of the crates that own them.
     pub fn set_memory(&self, snapshot: fah_model::MemoryBreakdown) {
         self.memory.store(Arc::new(snapshot));
+    }
+
+    /// **Temporary** — cost of assembling the whole breakdown, not of any one
+    /// component: the caller must time the entire pass it hands to
+    /// [`Self::set_memory`], RSS read included, because that is what is
+    /// actually paid every 10 s. See [`Self::memory_collection_micros`].
+    pub fn set_memory_collection_micros(&self, micros: u64) {
+        self.memory_collection_micros
+            .store(micros, Ordering::Relaxed);
     }
 
     /// A point-in-time read of the whole registry for the perf sampler

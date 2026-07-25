@@ -280,6 +280,24 @@ pub fn encode(metrics: &Metrics) -> String {
         &[],
         memory.residual().unwrap_or(0) as f64,
     );
+    // TEMPORARY (post-p2-07): what the accounting above costs on the target,
+    // measured rather than extrapolated. Whole pass, RSS read included.
+    write_help_type(
+        &mut out,
+        "fastadhunter_memory_collection_seconds",
+        "gauge",
+        "TEMPORARY: wall time of the last memory-accounting pass, taken every 10s. \
+         Remove once the on-device cost is known to be stable.",
+    );
+    writeln_metric(
+        &mut out,
+        "fastadhunter_memory_collection_seconds",
+        &[],
+        metrics
+            .memory_collection_micros
+            .load(std::sync::atomic::Ordering::Relaxed) as f64
+            / 1e6,
+    );
 
     write_help_type(
         &mut out,
@@ -505,6 +523,20 @@ mod tests {
         assert!(text.contains("fastadhunter_ruleset_heap_bytes 40000000"));
         assert!(text.contains("fastadhunter_ruleset_duplicates_removed 213000"));
         assert!(text.contains("fastadhunter_ruleset_compile_duration_seconds 1.5"));
+    }
+
+    /// Temporary instrument (post-p2-07): reported in seconds, per Prometheus
+    /// base-unit convention, from a microsecond capture.
+    #[test]
+    fn memory_collection_cost_is_exported_in_seconds() {
+        let metrics = Metrics::new();
+        assert!(
+            encode(&metrics).contains("fastadhunter_memory_collection_seconds 0\n"),
+            "unset must read as zero, not as a missing series"
+        );
+
+        metrics.set_memory_collection_micros(238);
+        assert!(encode(&metrics).contains("fastadhunter_memory_collection_seconds 0.000238\n"));
     }
 
     #[test]

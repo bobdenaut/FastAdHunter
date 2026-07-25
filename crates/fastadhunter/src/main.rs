@@ -415,6 +415,13 @@ fn spawn_telemetry_poll(
             // fah-rules, fah-dns and fah-stats are L3 siblings that never
             // import each other, and fah-metrics never learns what any of
             // them is — it just receives the finished snapshot.
+            // TEMPORARY (post-p2-07): times the WHOLE pass, not `stats.heap()`
+            // alone — matcher, cache, stats heaps and the `/proc/self/status`
+            // read — because the whole pass is what is paid every 10 s. The
+            // 43 µs from `fah-stats/tests/heap_cost.rs` is an x86 figure that
+            // excludes the RSS read entirely (no procfs there), so the ARM cost
+            // has never actually been measured. Remove once it is known stable.
+            let collection_started = std::time::Instant::now();
             let matcher = rules.matcher();
             let cache = pipeline.cache_stats();
             let stats_heap = stats.heap();
@@ -431,6 +438,9 @@ fn spawn_telemetry_poll(
                     bytes => Some(bytes),
                 },
             };
+            // Captured before the `warn!` below, so a logging call can never
+            // inflate the number this is meant to report.
+            let collection_micros = collection_started.elapsed().as_micros() as u64;
             if memory.over_accounted() {
                 // Impossible in reality: components cannot hold more than the
                 // process resides. Means a `heap_bytes` double-counts, or
@@ -444,6 +454,7 @@ fn spawn_telemetry_poll(
                 );
             }
             metrics.set_memory(memory);
+            metrics.set_memory_collection_micros(collection_micros);
 
             metrics.set_ruleset(fah_metrics::RulesetSnapshot {
                 rules: matcher.len(),
