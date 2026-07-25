@@ -53,7 +53,7 @@ per-client history from the raw log has to build that reader first.
 | 4 | `p1.5-04-history-query-api.md` | `GET /api/v1/history/{summary,perf,top}`; API.md | Sonnet | DONE |
 | 5 | `p1.5-05-cache-byte-cap.md` | Byte-aware cache cap so the ceiling respects the 128 MB budget under adversarial input + sustained-throughput measurement | Opus | DONE |
 | 6 | `p1.5-06-reuseport-multisocket-ingest.md` | MEASURED — ingest ruled out as limiter; reconfirmed under CPU saturation (hot-set hammer: `fastadhunter` 65.8% of box via `/tool profile`, 4 cores even ~85%, ~15-16k QPS, conntrack 1.6% of max); deferred, recipe retained (`docs/code-review/p1.5-06-review.md`) | Opus | DONE |
-| 7 | `p1.5-07-verification.md` | Unit tests (rollup math, prune, sampler), e2e (populate→query history), on-device soak proving disk- and memory-bounded | Sonnet | WAITING |
+| 7 | `p1.5-07-verification.md` | Unit tests (rollup math, prune, sampler), e2e (populate→query history), on-device soak proving disk- and memory-bounded — soak PASSED (RSS plateau 104.5 MiB, 6.5h slope negative); found + fixed a `/metrics` cache-outcome bug (`docs/code-review/p1.5-07-review.md`), then verified the whole phase on-device on 0.2.4 (`docs/code-review/p1.5-08-0.2.4-deploy-verification.md`) | Sonnet | DONE |
 
 **Definition of done:** after a day of traffic, `/data/history/` holds hourly
 rollups and per-interval perf samples pruned to `retention_days`;

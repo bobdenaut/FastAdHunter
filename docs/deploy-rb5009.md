@@ -82,6 +82,19 @@ tar -tf fastadhunter-arm64.tar | head -5
 - Flat `<hash>.tar` entries → legacy layout, ready to upload.
 - `blobs/`, `oci-layout`, `index.json` → OCI layout, **convert first**:
 
+> **A `manifest.json` in the listing does not mean legacy.** buildx writes an
+> OCI archive that *also* carries `manifest.json` for `docker load`
+> compatibility — but its `Layers` are `blobs/sha256/<hash>` paths, which is
+> exactly the indirection RouterOS cannot follow. Judge by where the layers
+> live, not by which files are present:
+>
+> ```sh
+> tar -xOf fastadhunter-arm64.tar manifest.json
+> ```
+>
+> `"Layers":["blobs/sha256/…"]` → still OCI, convert. `"Layers":["<hash>.tar"]`
+> → genuinely legacy.
+
 ```sh
 docker run --rm -v "$PWD:/work" quay.io/skopeo/stable copy --insecure-policy \
   oci-archive:/work/fastadhunter-arm64.tar \
@@ -248,14 +261,26 @@ snapshots) — see [CONFIGURATION.md](../CONFIGURATION.md) §Volumes.
 
 ```routeros
 /container/add \
-  file=kingston/fastadhunter-arm64-0.2.3.tar \
+  file=kingston/fastadhunter-arm64-0.2.4.tar \
   interface=veth2 \
   root-dir=kingston/fastadhunter/root \
   mounts=fah-config,fah-data \
   logging=yes \
   start-on-boot=yes \
-  comment="fastadhunter 0.2.3"
+  comment="fastadhunter"
 ```
+
+**Keep the comment exactly `fastadhunter`, with no version in it.** Every
+`[find comment="fastadhunter"]` below — and in §7 and §8 — uses `=`, which in
+RouterOS is exact equality, not a substring match. A comment of
+`"fastadhunter 0.2.4"` makes all of them match nothing and fail *silently*: the
+start, the watchdog's stop/start pair, and the rollback all become no-ops. The
+version is already recorded where it cannot drift — RouterOS derives `name=`
+from the tarball filename and `repo=` from the image tag, so
+`/container/print detail` shows `name="fastadhunter-arm64-0.2.4.tar"` and
+`repo="docker.io/library/fastadhunter:0.2.4"` on its own. (Use `~` instead of
+`=` only if you have inherited a container whose comment already carries a
+version.)
 
 Importing the tarball takes a while on RB5009 hardware. Wait for the status to
 leave `extracting`:
@@ -425,6 +450,27 @@ Once FastAdHunter serves production, every redeploy becomes:
 Disabling the scheduler is not optional — the watchdog (§7) restarts the
 container on two failed health checks and will fight a deploy in progress.
 
+**Both bracketing steps are conditional, and a redeploy is the wrong moment to
+discover that.** Check first:
+
+```routeros
+/system/scheduler/print      # is fah-liveness actually there?
+/container/print detail      # is the old resolver actually running?
+```
+
+If `/system/scheduler/print` is empty, §7 was never applied — there is no
+watchdog to fight, so drop both scheduler lines (and consider adding §7 *after*
+the redeploy, never before, since a restarter plus a `container/remove` is a
+race).
+
+If the old resolver shows `status=stopped`, `dns-adguard` is worse than
+skipping it: it aims the redirect *and* `/ip/dns` at an address nothing answers,
+so DNS breaks either way and now you must remember to run `dns-fah` to get back.
+Skipping leaves the redirect already on FastAdHunter's address, so the LAN
+recovers by itself the moment the new container starts. The cost is a DNS gap
+for the length of the `extracting` phase — minutes on RB5009, largely absorbed
+by client resolver caches on a household LAN.
+
 > **Do not replace the redirect with `servers=172.17.0.3,172.17.0.2` and let
 > RouterOS fail over on its own.** It works, and it is tempting because the
 > failover is automatic — but then every query reaches FastAdHunter from the
@@ -435,9 +481,16 @@ container on two failed health checks and will fight a deploy in progress.
 
 ### IPv6 — establish where it resolves before trusting any measurement
 
-FastAdHunter binds `[dns.listen] address`, `0.0.0.0` by default — the IPv4
-wildcard, which does **not** accept IPv6. The DHCP setting above steers IPv4
-only, so on a dual-stack LAN some resolution happens somewhere else.
+FastAdHunter binds `[dns.listen] address`, **`::` by default** — one dual-stack
+socket that accepts IPv4 and IPv6 alike (`IPV6_V6ONLY` is turned off
+explicitly, and v4 clients are still reported canonically rather than as
+`::ffff:…` mapped addresses). So the listener is not the constraint it was
+before; earlier builds bound `0.0.0.0` and could not answer IPv6 at all.
+
+**Steering** is still IPv4-only, though: the DHCP setting and the `dstnat`
+redirect above both cover IPv4, so on a dual-stack LAN nothing points IPv6
+clients at FastAdHunter and some resolution happens somewhere else — even
+though FastAdHunter would now answer if it were asked.
 
 That is not a deployment fault and this guide does not prescribe a firewall for
 it. What deployment needs is the answer to one question: **do IPv6 queries
