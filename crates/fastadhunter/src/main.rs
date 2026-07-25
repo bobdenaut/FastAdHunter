@@ -255,7 +255,18 @@ impl Engine {
         // are created as the service user rather than root. The DNS listeners
         // are spawned *after* this point, so no query is ever answered by a
         // privileged process.
-        privilege::drop_to_service_user(&[config_dir, data_dir])?;
+        //
+        // The state subdirectories are named explicitly, not just `/data`: the
+        // writers above (`rules.boot`, `stats.boot`) already ran as root and
+        // may have created `/data/history/*` and `/data/query_log/*` owned by
+        // root. When `/data` itself is already the service user's — the seeded
+        // image, or any later boot — `reown_if_needed` takes its top-level
+        // shortcut and never descends, so those fresh root-owned subtrees would
+        // stay unwritable after the drop. Passing them as their own roots
+        // reowns each on the next boot (a no-op once already adopted).
+        let history_dir = data_dir.join("history");
+        let query_log_dir = data_dir.join("query_log");
+        privilege::drop_to_service_user(&[config_dir, data_dir, &history_dir, &query_log_dir])?;
 
         // ── API (L3) ──
         let (keys, generated) = fah_api::ApiKeyStore::load_or_create(config_dir)?;

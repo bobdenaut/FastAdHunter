@@ -29,7 +29,14 @@ fn default_strategy() -> UpstreamStrategy {
 }
 
 fn default_timeout_ms() -> u32 {
-    2000
+    // Per-upstream attempt timeout. Kept well below a typical client's own
+    // timeout (1–5 s) so that when the primary drops a packet, the fallback
+    // attempt still answers inside the client's budget instead of arriving too
+    // late to help — on-device measurement showed 2000 ms burned the whole
+    // budget before failover even started. Still comfortably above a
+    // legitimately slow recursive lookup (cold cache, distant TLD, DNSSEC), so
+    // a healthy-but-slow answer is not abandoned prematurely.
+    800
 }
 
 fn default_servers() -> Vec<UpstreamServerConfig> {

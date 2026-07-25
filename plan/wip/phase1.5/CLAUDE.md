@@ -33,8 +33,15 @@ the ingest task *measures before it changes anything*), then verification last.
   (ADR-0002: no embedded DB), bounded and pruned by `retention_days`.
 
 Per-query events already persist (`/data/query_log/segments/`); their retention
-is unchanged. Long-term *per-client* time-series is out of scope for the base
-(recent per-client is derivable from the raw log) — revisit with the UI.
+is unchanged. Long-term *per-client* time-series is out of scope for the base —
+revisit with the UI.
+
+**Correction (found during p1.5-07 verification):** the original wording here said
+"recent per-client is derivable from the raw log". It is not — nothing reads those
+segments. `GET /api/v1/queries` serves the in-RAM ring only
+(`ring_entries`, ≈ `ring_entries ÷ QPS` of reach), so the persisted segments are
+write-only until a segment reader exists. Any Phase 2 work that plans to derive
+per-client history from the raw log has to build that reader first.
 
 **Always select the first task whose `STATUS` is `WAITING`.**
 

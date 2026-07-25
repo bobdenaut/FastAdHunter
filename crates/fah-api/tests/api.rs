@@ -1305,6 +1305,75 @@ async fn operating_on_an_unknown_list_is_a_not_found() {
     }
 }
 
+#[tokio::test]
+async fn refresh_all_refreshes_every_list_best_effort_and_reports_each() {
+    let harness = start().await;
+    let data = harness._data_dir.path();
+    // One good local list and one whose file is missing, so its fetch fails —
+    // the failure must not stop the good one from refreshing (best-effort).
+    tokio::fs::write(data.join("good.txt"), "ads.example.com\n")
+        .await
+        .unwrap();
+    for name in ["good.txt", "ghost.txt"] {
+        let created = harness
+            .client
+            .post(harness.url("/api/v1/lists"))
+            .bearer_auth(&harness.key)
+            .json(&json!({"path": name}))
+            .send()
+            .await
+            .unwrap();
+        assert!(created.status().is_success(), "add {name}");
+    }
+
+    let response = harness
+        .client
+        .post(harness.url("/api/v1/lists/refresh"))
+        .bearer_auth(&harness.key)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), 200);
+    let body: serde_json::Value = response.json().await.unwrap();
+
+    assert_eq!(body["refreshed"], 1, "the good list refreshed");
+    assert_eq!(
+        body["failed"], 1,
+        "the missing one failed but did not abort the batch"
+    );
+
+    let result = |id: &str| {
+        body["results"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|r| r["id"].as_str() == Some(id))
+            .unwrap_or_else(|| panic!("no result for {id}"))
+            .clone()
+    };
+    let good = result("good");
+    assert_eq!(good["status"], "ok");
+    assert_eq!(good["rules_active_dns"], 1);
+    assert!(good.get("error").is_none() || good["error"].is_null());
+
+    let ghost = result("ghost");
+    assert_eq!(ghost["status"], "failed");
+    assert!(
+        ghost["error"].is_string(),
+        "a failure carries its error chain"
+    );
+    assert!(ghost.get("rules_active_dns").is_none() || ghost["rules_active_dns"].is_null());
+
+    // Best-effort really applied: the good list's rule serves despite the bad one.
+    assert!(matches!(
+        harness
+            .rules
+            .matcher()
+            .lookup("ads.example.com", &QueryType::A),
+        fah_rules::MatchDecision::Block(_)
+    ));
+}
+
 // ─── Rules ─────────────────────────────────────────────────────────────
 
 #[tokio::test]
@@ -1338,6 +1407,38 @@ async fn user_rules_put_applies_atomically_and_get_reads_them_back() {
             .lookup("tracker.example.com", &QueryType::A),
         fah_rules::MatchDecision::Block(_)
     ));
+}
+
+#[tokio::test]
+async fn user_rules_put_drops_exact_duplicates_preserving_order() {
+    let harness = start().await;
+    let response = harness
+        .client
+        .put(harness.url("/api/v1/rules/user"))
+        .bearer_auth(&harness.key)
+        .json(&json!({"rules": [
+            "||bing.com^",
+            "||applicationinsights.azure.com^",
+            "||applicationinsights.azure.com^",
+            "||bing.com^",
+        ]}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), 200);
+
+    // Exact duplicates collapse to the first occurrence; order is preserved.
+    let expected = json!(["||bing.com^", "||applicationinsights.azure.com^"]);
+    assert_eq!(
+        response.json::<serde_json::Value>().await.unwrap()["rules"],
+        expected,
+        "PUT echoes the deduped set"
+    );
+    assert_eq!(
+        harness.get_json("/api/v1/rules/user").await["rules"],
+        expected,
+        "the persisted set is deduped"
+    );
 }
 
 #[tokio::test]
@@ -1431,7 +1532,7 @@ async fn a_runtime_config_change_applies_live_and_is_written_back_to_the_toml() 
         .client
         .post(harness.url("/api/v1/config"))
         .bearer_auth(&harness.key)
-        .json(&json!({"dns": {"cache": {"max_entries": 50_000}}}))
+        .json(&json!({"rules": {"refresh_hours_default": 6}}))
         .send()
         .await
         .unwrap()
@@ -1443,15 +1544,99 @@ async fn a_runtime_config_change_applies_live_and_is_written_back_to_the_toml() 
 
     // Visible through the API…
     assert_eq!(
-        harness.get_json("/api/v1/config").await["dns"]["cache"]["max_entries"],
-        50_000
+        harness.get_json("/api/v1/config").await["rules"]["refresh_hours_default"],
+        6
     );
     // …and on disk, so the file always reflects the running intent.
     let on_disk = tokio::fs::read_to_string(&harness.config_path)
         .await
         .unwrap();
     let reparsed = Config::from_toml_str(&on_disk).unwrap();
-    assert_eq!(reparsed.dns.cache.max_entries, 50_000);
+    assert_eq!(reparsed.rules.refresh_hours_default, 6);
+}
+
+/// Rule lists have exactly one runtime owner: the `/lists` endpoints, which
+/// apply live and write the TOML back. A `rules.lists` array reaching
+/// `POST /config` would be a second writer that never reloads the engine — and
+/// whose edit the next `/lists` mutation would silently overwrite — so it is
+/// refused outright.
+#[tokio::test]
+async fn a_config_patch_carrying_rules_lists_is_refused() {
+    let harness = start().await;
+    let before = harness.get_json("/api/v1/config").await;
+
+    let response = harness
+        .client
+        .post(harness.url("/api/v1/config"))
+        .bearer_auth(&harness.key)
+        .json(&json!({
+            "rules": {"lists": [{"id": "sneaky", "url": "https://example.org/l.txt"}]}
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), 422);
+
+    let body: Value = response.json().await.unwrap();
+    assert!(
+        body.to_string().contains("/api/v1/lists"),
+        "the refusal must point at the endpoint that does work: {body}"
+    );
+
+    // Nothing persisted, nothing swapped — a refused patch is a no-op.
+    assert_eq!(harness.get_json("/api/v1/config").await, before);
+}
+
+/// A patch touching other `[rules]` keys is unaffected by that refusal.
+#[tokio::test]
+async fn a_config_patch_under_rules_without_lists_still_applies() {
+    let harness = start().await;
+    let body: Value = harness
+        .client
+        .post(harness.url("/api/v1/config"))
+        .bearer_auth(&harness.key)
+        .json(&json!({"rules": {"refresh_hours_default": 12}}))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(body["applied"], true);
+    assert_eq!(
+        harness.get_json("/api/v1/config").await["rules"]["refresh_hours_default"],
+        12
+    );
+}
+
+/// The `[dns.cache]` section is **boot**: `DnsCache::new` reads it once, at
+/// startup, so a patch persists and asks for a restart instead of claiming an
+/// apply that no code performs.
+#[tokio::test]
+async fn a_cache_config_change_persists_and_asks_for_a_restart() {
+    let harness = start().await;
+
+    let body: Value = harness
+        .client
+        .post(harness.url("/api/v1/config"))
+        .bearer_auth(&harness.key)
+        .json(&json!({"dns": {"cache": {"max_bytes": 33_554_432u64}}}))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(body["applied"], false);
+    assert_eq!(body["restart_required"], true);
+
+    let on_disk = tokio::fs::read_to_string(&harness.config_path)
+        .await
+        .unwrap();
+    assert_eq!(
+        Config::from_toml_str(&on_disk).unwrap().dns.cache.max_bytes,
+        33_554_432
+    );
 }
 
 #[tokio::test]

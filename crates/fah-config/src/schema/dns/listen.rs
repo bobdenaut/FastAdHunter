@@ -20,7 +20,7 @@ impl Default for DnsListenConfig {
 }
 
 fn default_address() -> String {
-    "0.0.0.0".to_string()
+    "::".to_string()
 }
 
 fn default_port() -> u16 {

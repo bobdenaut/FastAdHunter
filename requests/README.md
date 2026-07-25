@@ -65,6 +65,14 @@ than allowed to back-pressure the engine.
 the *effective* config, so any value that arrived via `FAH__*` becomes a
 permanent entry in `fastadhunter.toml`. Covered at the top of `settings.http`.
 
-**Arrays replace, they do not merge.** Sending a partial `servers` or
-`rules.lists` array silently drops everything you left out. Always send the
-complete set.
+**Arrays replace, they do not merge.** Sending a partial `servers` array
+silently drops everything you left out. Always send the complete set.
+(`rules.lists` is no longer settable through `POST /config` at all — it returns
+422 and points you at `/lists`, which applies changes live and writes the TOML
+back for you. See `lists.http`.)
+
+**`GET /api/v1/queries` only sees the in-RAM ring.** It reads `ring_entries`
+(default 10 000) most-recent events, not the `/data` segments that
+`retention_days`/`retention_max_mb` govern — so its reach is
+`ring_entries ÷ QPS`, and a `from`/`to` range older than that returns an empty
+list rather than an error. Long-term series live behind `history.http`.

@@ -116,6 +116,15 @@ pub enum RefreshResult {
     Failed(String),
 }
 
+/// One list's result from [`ListManager::refresh_all`]: its stats on success,
+/// or the fetch error chain on failure. Emitted in configuration order so a
+/// caller can report exactly which lists refreshed and which did not.
+#[derive(Debug, Clone)]
+pub struct ListRefreshOutcome {
+    pub id: Arc<str>,
+    pub result: Result<RefreshStats, String>,
+}
+
 /// Per-list status, surfaced to the API (p1-09) via
 /// [`ListManager::status`]/[`ListManager::statuses`].
 #[derive(Debug, Clone, PartialEq)]
@@ -374,40 +383,130 @@ impl ListManager {
             return Err(LifecycleError::ListDisabled(id.to_string()));
         }
 
-        // Per-list guard across fetch+commit: concurrent refreshes of *this*
-        // list serialize (no stale fetch can commit over a newer one), while
-        // other lists' refreshes proceed untouched.
+        // Fetch + commit through the shared helper. On failure the previous
+        // ruleset keeps serving (RULE_ENGINE.md) and the cause is recorded —
+        // the chain, not just `err`: on a distroless image with no shell this
+        // string is the only diagnostic available, and the outermost layer
+        // cannot tell a DNS failure from a refused connection or a rejected
+        // certificate.
+        if let Err(err) = self.fetch_and_commit(&entry).await {
+            self.record_status(
+                id,
+                RefreshResult::Failed(fah_common::error_chain(&err)),
+                false,
+            );
+            return Err(err);
+        }
+
+        let _guard = self.compile_lock.lock().await;
+        let (matcher, mut stats) = self.compile().await;
+        let rules = matcher.len();
+        self.swap_in(matcher, &stats);
+
+        // One line per list, by name — the router-log signal that a list
+        // refreshed and how big the combined ruleset now is. The per-compile
+        // dedup detail is at `debug` (see `compile`).
+        tracing::info!(list = %id, rules, "list refreshed");
+        let list_stats = stats.remove(id).unwrap_or_default();
+        self.record_status(id, RefreshResult::Ok(list_stats.clone()), true);
+        Ok(list_stats)
+    }
+
+    /// Fetches one list and commits its raw text to the `/data` cache — the
+    /// fetch+commit half of a refresh, shared by [`Self::refresh_list`] and
+    /// [`Self::refresh_all`]. Holds the list's `refresh_lock` across the whole
+    /// fetch+commit so a stale fetch can never commit over a newer one (that
+    /// serialization is the lock's only job — the compile is deliberately left
+    /// out of it), and takes `compile_lock` just for the commit. It does **not**
+    /// recompile: the caller chooses when — immediately for a single refresh, or
+    /// once for a whole [`Self::refresh_all`] batch. On failure the previous
+    /// cached copy is untouched (RULE_ENGINE.md failure policy).
+    async fn fetch_and_commit(&self, entry: &ListEntry) -> Result<(), LifecycleError> {
         let _list_guard = entry.refresh_lock.lock().await;
-        let fetched = entry
+        let text = entry
             .source
             .fetch(&self.http, self.fetch_timeout, MAX_LIST_BYTES)
-            .await;
+            .await?;
+        let _guard = self.compile_lock.lock().await;
+        self.commit_raw(&entry.id, text).await;
+        Ok(())
+    }
 
-        match fetched {
-            Ok(text) => {
-                let _guard = self.compile_lock.lock().await;
-                self.commit_raw(id, text).await;
+    /// Refreshes every enabled list in one pass and recompiles the combined
+    /// ruleset **once** (`POST /api/v1/lists/refresh`).
+    ///
+    /// Best-effort, like the scheduler: a list whose fetch fails is recorded
+    /// and skipped — its last-good cached copy keeps serving (RULE_ENGINE.md
+    /// failure policy) and every other list still refreshes; one dead source
+    /// never aborts the batch. The one thing this does that looping
+    /// [`Self::refresh_list`] would not is fetch+commit all lists first and
+    /// compile the 683k-rule matcher a *single* time at the end, not once per
+    /// list. On the RB5009 a full compile is seconds of CPU, so collapsing N of
+    /// them to one is the difference between a snappy call and a multi-second
+    /// stall that also churns the served ruleset N times over.
+    ///
+    /// Fetches run one at a time (never concurrently) so several million-line
+    /// lists are never resident together — the same RAM discipline the
+    /// scheduler keeps on a 1 GB box.
+    pub async fn refresh_all(&self) -> Vec<ListRefreshOutcome> {
+        // Snapshot the enabled entries' handles; the read guard must not span
+        // the awaits below, and a concurrent add/remove is simply reflected (or
+        // not) in this pass's membership captured here.
+        let entries: Vec<Arc<ListEntry>> = self
+            .entries
+            .read()
+            .unwrap()
+            .iter()
+            .filter(|entry| entry.is_enabled())
+            .map(Arc::clone)
+            .collect();
 
-                let (matcher, mut stats) = self.compile().await;
-                self.swap_in(matcher, &stats);
-
-                let list_stats = stats.remove(id).unwrap_or_default();
-                self.record_status(id, RefreshResult::Ok(list_stats.clone()), true);
-                Ok(list_stats)
-            }
-            Err(err) => {
-                // The chain, not just `err`: on a distroless image with no
-                // shell this string is the only diagnostic available, and the
-                // outermost layer cannot tell a DNS failure from a refused
-                // connection or a rejected certificate.
-                self.record_status(
-                    id,
-                    RefreshResult::Failed(fah_common::error_chain(&err)),
-                    false,
-                );
-                Err(err)
-            }
+        // Fetch + persist each list through the shared helper, preserving
+        // order. The slow network fetch stays off the compile path, and the
+        // expensive compile is deferred to one pass after the whole batch is on
+        // disk. `Ok(())` marks a committed list, `Err` a failed fetch whose old
+        // cached copy keeps serving.
+        let mut committed: Vec<(Arc<str>, Result<(), String>)> = Vec::with_capacity(entries.len());
+        for entry in &entries {
+            let outcome = self
+                .fetch_and_commit(entry)
+                .await
+                .map_err(|err| fah_common::error_chain(&err));
+            committed.push((entry.id.clone(), outcome));
         }
+
+        // One compile for the whole batch, then map each list to its share of
+        // the result and record status.
+        let _guard = self.compile_lock.lock().await;
+        let (matcher, mut stats) = self.compile().await;
+        let rules = matcher.len();
+        self.swap_in(matcher, &stats);
+        let refreshed = committed.iter().filter(|(_, r)| r.is_ok()).count();
+        tracing::info!(
+            lists = entries.len(),
+            refreshed,
+            failed = entries.len() - refreshed,
+            rules,
+            "refreshed all lists"
+        );
+
+        committed
+            .into_iter()
+            .map(|(id, outcome)| {
+                let result = match outcome {
+                    Ok(()) => {
+                        let list_stats = stats.remove(&id).unwrap_or_default();
+                        self.record_status(&id, RefreshResult::Ok(list_stats.clone()), true);
+                        Ok(list_stats)
+                    }
+                    Err(error) => {
+                        self.record_status(&id, RefreshResult::Failed(error.clone()), false);
+                        Err(error)
+                    }
+                };
+                ListRefreshOutcome { id, result }
+            })
+            .collect()
     }
 
     /// Clones one entry's handle out from under the lock — callers await
@@ -679,7 +778,11 @@ impl ListManager {
             let lists = texts.len();
             let matcher = builder.build();
             if matcher.duplicates_removed() > 0 {
-                tracing::info!(
+                // `debug`, not `info`: every list refresh recompiles the whole
+                // combined ruleset, so at INFO this repeated once per list —
+                // 16 identical lines on the RB5009's boot refresh. The per-list
+                // outcome is logged once, by name, in `refresh_list`.
+                tracing::debug!(
                     duplicates = matcher.duplicates_removed(),
                     lists,
                     rules = matcher.len(),

@@ -248,13 +248,13 @@ snapshots) — see [CONFIGURATION.md](../CONFIGURATION.md) §Volumes.
 
 ```routeros
 /container/add \
-  file=kingston/fastadhunter-arm64.tar \
+  file=kingston/fastadhunter-arm64-0.2.3.tar \
   interface=veth2 \
   root-dir=kingston/fastadhunter/root \
   mounts=fah-config,fah-data \
   logging=yes \
   start-on-boot=yes \
-  comment="fastadhunter"
+  comment="fastadhunter 0.2.3"
 ```
 
 Importing the tarball takes a while on RB5009 hardware. Wait for the status to

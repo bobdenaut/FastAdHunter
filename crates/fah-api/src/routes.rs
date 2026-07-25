@@ -55,6 +55,9 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/history/top", get(history_top))
         .route("/clients/{ip}", put(set_client_name))
         .route("/lists", get(lists).post(create_list))
+        // Static segment, registered before the `{id}` param so a list can
+        // never be named `refresh` and shadow the refresh-all route.
+        .route("/lists/refresh", post(refresh_all_lists))
         .route(
             "/lists/{id}",
             axum::routing::patch(patch_list).delete(delete_list),
@@ -729,6 +732,61 @@ async fn refresh_list(
     Ok(StatusCode::ACCEPTED)
 }
 
+/// `POST /api/v1/lists/refresh`: refresh every enabled list in one pass and
+/// recompile the ruleset once. **Synchronous**, unlike the per-list `202`: the
+/// caller wants to know the result, so this blocks until the whole batch has
+/// been fetched and the ruleset rebuilt, then returns which lists refreshed and
+/// which failed. Best-effort — one dead source never aborts the batch
+/// (RULE_ENGINE.md failure policy), and each list still emits the same
+/// `list_refreshed` event a dashboard listens for.
+async fn refresh_all_lists(State(state): State<Arc<AppState>>) -> Json<RefreshAllResponse> {
+    let outcomes = state.rules.refresh_all().await;
+
+    let mut refreshed = 0usize;
+    let mut failed = 0usize;
+    let results = outcomes
+        .into_iter()
+        .map(|outcome| {
+            let id = outcome.id.to_string();
+            match outcome.result {
+                Ok(stats) => {
+                    refreshed += 1;
+                    state.events.publish(Event::ListRefreshed {
+                        id: id.clone(),
+                        status: "ok",
+                    });
+                    ListRefreshResult {
+                        id,
+                        status: "ok",
+                        rules_active_dns: Some(stats.active),
+                        error: None,
+                    }
+                }
+                Err(error) => {
+                    failed += 1;
+                    tracing::warn!(list = %id, %error, "list refresh failed in refresh-all");
+                    state.events.publish(Event::ListRefreshed {
+                        id: id.clone(),
+                        status: "failed",
+                    });
+                    ListRefreshResult {
+                        id,
+                        status: "failed",
+                        rules_active_dns: None,
+                        error: Some(error),
+                    }
+                }
+            }
+        })
+        .collect();
+
+    Json(RefreshAllResponse {
+        refreshed,
+        failed,
+        results,
+    })
+}
+
 fn unknown_list(id: &str, err: fah_rules::LifecycleError) -> ApiError {
     match err {
         fah_rules::LifecycleError::UnknownList(_) => {
@@ -751,8 +809,23 @@ async fn put_user_rules(
     State(state): State<Arc<AppState>>,
     Json(body): Json<UserRulesBody>,
 ) -> ApiResult<Json<UserRulesBody>> {
-    let text = body
-        .rules
+    // Drop exact-duplicate rule lines (keep the first, preserve order). Storing
+    // the same rule twice only clutters the list — the matcher already dedups,
+    // so the copy blocks nothing new (a self-duplicate, unlike a user rule that
+    // overlaps a *list*, carries no resilience benefit to justify keeping it).
+    // Blanks and comments have no matcher identity, so they pass through as-is.
+    let mut seen = std::collections::HashSet::new();
+    let mut rules = Vec::with_capacity(body.rules.len());
+    for rule in body.rules {
+        let key = rule.trim();
+        let is_rule = !key.is_empty() && !key.starts_with('#') && !key.starts_with('!');
+        if is_rule && !seen.insert(key.to_string()) {
+            continue;
+        }
+        rules.push(rule);
+    }
+
+    let text = rules
         .iter()
         .map(String::as_str)
         .collect::<Vec<_>>()
@@ -765,7 +838,7 @@ async fn put_user_rules(
     // Trailing newline so appending later never joins two rules onto a line.
     state.rules.set_user_rules(format!("{text}\n")).await;
 
-    Ok(Json(body))
+    Ok(Json(UserRulesBody { rules }))
 }
 
 /// Per-line validation for `PUT /api/v1/rules/user` (API.md: "invalid lines →
@@ -851,6 +924,31 @@ async fn post_config(
     State(state): State<Arc<AppState>>,
     Json(patch): Json<serde_json::Value>,
 ) -> ApiResult<Json<ConfigUpdateResponse>> {
+    // `[[rules.lists]]` is owned by the `/lists` endpoints. They apply a change
+    // live — fetch, recompile, atomic swap — *and* write it back to the TOML
+    // through `persist_lists`. Accepting the array here as well would give one
+    // piece of state two writers with no reconciliation between them: this
+    // handler never reloads the `ListManager`, so the engine would keep serving
+    // the old set, and the next `/lists` mutation reads its set from the engine
+    // and persists *that* over the file — silently reverting the patch. One
+    // owner instead: the TOML is the boot source and the durable record,
+    // `/lists` is the runtime API (CONFIGURATION.md §Rule lists).
+    //
+    // `persist_lists` is unaffected: it calls `ConfigStore::apply_patch`
+    // directly, not this handler.
+    if patch
+        .get("rules")
+        .and_then(|rules| rules.get("lists"))
+        .is_some()
+    {
+        return Err(ApiError::ValidationFailed(
+            "rules.lists is not settable here: rule lists are managed by the \
+             /api/v1/lists endpoints (POST, PATCH, DELETE), which apply live \
+             with no restart and write the TOML back for you"
+                .to_string(),
+        ));
+    }
+
     let outcome = state
         .config
         .apply_patch(&patch)

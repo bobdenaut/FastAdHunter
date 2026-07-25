@@ -524,6 +524,31 @@ pub struct ListResponse {
     pub rules_inactive: usize,
 }
 
+/// `POST /api/v1/lists/refresh` — one pass over every list. Best-effort:
+/// `results` lists each list in configuration order, so a dead source shows as
+/// `status: "failed"` with its `error` while the others still refresh, and the
+/// ruleset recompiles once for the whole batch.
+#[derive(Debug, Serialize)]
+pub struct RefreshAllResponse {
+    pub refreshed: usize,
+    pub failed: usize,
+    pub results: Vec<ListRefreshResult>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ListRefreshResult {
+    pub id: String,
+    /// `ok` | `failed`.
+    pub status: &'static str,
+    /// Present on success: the list's active DNS rules after this refresh.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub rules_active_dns: Option<usize>,
+    /// Present on failure: the fetch error chain (the only failure mode is I/O,
+    /// never parsing — RULE_ENGINE.md).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+}
+
 #[derive(Debug, Deserialize)]
 pub struct CreateListRequest {
     /// A remote list's URL. Mutually exclusive with `path`.

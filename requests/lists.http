@@ -27,7 +27,7 @@ GET {{base}}/lists
 
 ### Force a refresh now. 202 Accepted — it runs in the background and the
 ### outcome lands in `last_status` and a `list_refreshed` WebSocket event.
-POST {{base}}/lists/hosts/refresh
+POST {{base}}/lists/spy/refresh
 {{auth}}
 
 ### Refresh a list now. 202 Accepted — it runs in the background and the
@@ -38,6 +38,14 @@ POST {{base}}/lists/1hosts-xtra/refresh
 ### Refresh a list now. 202 Accepted — it runs in the background and the
 ### outcome lands in `last_status` and a `list_refreshed` WebSocket event
 POST {{base}}/lists/oisd/refresh
+{{auth}}
+
+### Refresh EVERY list in one pass, recompiling the ruleset once (not per list).
+### SYNCHRONOUS — unlike the per-list route, it blocks until the whole batch is
+### done and returns `{ refreshed, failed, results:[{id,status,...}] }`. A dead
+### source is reported as `status:"failed"` with its `error`; the rest still
+### refresh (best-effort), and each list emits a `list_refreshed` event.
+POST {{base}}/lists/refresh
 {{auth}}
 
 ### Add a remote list. `id` is optional — derived from the URL's file stem or

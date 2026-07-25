@@ -41,9 +41,16 @@ where
     let (filter, reload_handle) = reload::Layer::new(level);
     let registry = Registry::default().with(filter);
     let dispatch = match format {
-        LogFormat::Text => {
-            Dispatch::new(registry.with(tracing_subscriber::fmt::layer().with_writer(writer)))
-        }
+        LogFormat::Text => Dispatch::new(
+            registry.with(
+                // No ANSI: the deploy target is a container whose stderr is captured
+                // by the log system (RouterOS), not a TTY. Colour escapes there are
+                // printed literally ("1B[2m…"), making the log unreadable.
+                tracing_subscriber::fmt::layer()
+                    .with_ansi(false)
+                    .with_writer(writer),
+            ),
+        ),
         LogFormat::Json => Dispatch::new(
             registry.with(tracing_subscriber::fmt::layer().json().with_writer(writer)),
         ),

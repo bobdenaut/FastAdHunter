@@ -83,6 +83,18 @@ Query log, newest first. Pagination + filters via query string:
 `limit` (default 100, max 1000), `cursor`, `client`, `domain` (substring),
 `verdict` (`allow|block|pass`), `from`, `to` (RFC 3339).
 
+**Serves the in-RAM ring only.** This endpoint reads `[query_log] ring_entries`
+(default 10 000) most-recent events; it does **not** read the `/data` segments
+that `retention_days` / `retention_max_mb` govern. The window it can answer for
+is therefore `ring_entries ÷ current QPS` — about 2.8 h for a household at
+~1 QPS, but only ~2 minutes at 85 QPS. `from`/`to` filter *within* that window:
+a range older than the ring returns an **empty** `items` array, not an error, so
+"no results" here means "outside the retained ring", not "no queries happened".
+
+The on-disk segments are written for a future reader (per-query drill-down in
+the dashboard phase) and are not reachable through any endpoint today. Long-term
+aggregates come from `/api/v1/history/*` instead, which reads `/data/history`.
+
 ```json
 {
   "items": [
@@ -364,7 +376,20 @@ holds distinct rules only (RULE_ENGINE.md §Deduplication): loading two
 near-identical corpora (say AdGuard's `filter_48` and HaGeZi's `pro`) stores
 the overlap once and reports how much was collapsed. The per-list `rules_*`
 counts stay parse-based — each list really does contain those rules — so
-`compiled_rules` is smaller than their sum by exactly `duplicates_removed`.
+`compiled_rules` is smaller than their sum by roughly `duplicates_removed`.
+
+The identity is not exact, because **inline user rules
+(`PUT /api/v1/rules/user`) take part in the merge but are not one of the
+`items`**: they contribute to `compiled_rules` and can be collapsed into
+`duplicates_removed` like any other rule. The exact relation is
+
+```text
+sum(items[].rules_active_dns) + user_rules_active - compiled_rules
+    = duplicates_removed
+```
+
+A single user rule that duplicates a list rule is enough to make the
+`items`-only arithmetic look off by one.
 
 `last_status` (`ok` | `failed` | `never`) reports the last *refresh attempt*;
 the `rules_*` counts report what the list contributes to the ruleset that is
@@ -413,6 +438,27 @@ file whose entry has been deleted is inert.
 
 Force refresh now. `202 Accepted`; result visible in `last_status`.
 
+### `POST /api/v1/lists/refresh`
+
+Force-refresh **every** enabled list in one pass, then recompile the ruleset a
+single time (not once per list). Unlike the per-list route this is
+**synchronous** — it returns once the whole batch is done, with the per-list
+outcome — and **best-effort**: a list whose fetch fails is reported and skipped
+(its last-good cached copy keeps serving), the rest still refresh. `200 OK`:
+
+```json
+{
+  "refreshed": 14,
+  "failed": 1,
+  "results": [
+    { "id": "oisd-basic", "status": "ok", "rules_active_dns": 51234 },
+    { "id": "hagezi-pro", "status": "failed", "error": "fetch https://… failed: …" }
+  ]
+}
+```
+
+Each list also emits a `list_refreshed` event, the same as a single refresh.
+
 ### `GET /api/v1/rules/user` / `PUT /api/v1/rules/user`
 
 Inline personal rules (one rule per line, any supported syntax).
@@ -449,7 +495,23 @@ back to `/config/fastadhunter.toml`, and applied:
 { "applied": true, "restart_required": false }
 ```
 
-See [CONFIGURATION.md](CONFIGURATION.md) for every option and its mutability class.
+Most options are boot-only: `[dns.cache]`, `[dns.upstreams]`, `[dns.blocking]`,
+`[query_log]`, `[stats]`, `log.level` and `history.sample_interval_seconds` are
+each read once during startup, so they persist and ask for a restart rather
+than reporting an apply that no code performs. The runtime set is
+`history.enabled`, `history.retention_days`, `api.metrics_public` and
+`rules.refresh_hours_default`. See [CONFIGURATION.md](CONFIGURATION.md) for
+every option and its mutability class.
+
+**`rules.lists` is not accepted here — 422.** Rule lists are managed
+exclusively through the [`/lists`](#rule-lists--rules) endpoints, which apply a change
+live (fetch, recompile, atomic swap) *and* write `[[rules.lists]]` back to the
+TOML themselves. Allowing the array through this endpoint too would give one
+piece of state two writers: this handler does not reload the engine, so the
+next `/lists` call would persist the engine's set over the patch and the edit
+would vanish. The TOML is the boot source and the durable record; `/lists` is
+the runtime API. Editing `[[rules.lists]]` in the file by hand and restarting
+also works.
 
 ### `POST /api/v1/config/apikey/rotate`
 

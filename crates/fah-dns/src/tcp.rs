@@ -13,7 +13,7 @@ use std::time::Duration;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::time::timeout;
-use tracing::warn;
+use tracing::{debug, warn};
 
 use crate::pipeline::{Pipeline, Transport};
 use crate::upstream::Forwarder;
@@ -39,7 +39,18 @@ pub async fn run<F: Forwarder>(listener: TcpListener, pipeline: Arc<Pipeline<F>>
         let pipeline = Arc::clone(&pipeline);
         tokio::spawn(async move {
             if let Err(err) = handle_connection(stream, &pipeline, client.ip()).await {
-                warn!(error = %err, client = %client, "TCP DNS connection ended with an error");
+                if is_client_disconnect(&err) {
+                    // A client that closes mid-query/response — broken pipe,
+                    // connection reset, an early EOF — is routine for
+                    // DNS-over-TCP (happy-eyeballs dropping the loser, a UDP
+                    // answer that arrived first, a client timeout). Not
+                    // operator-actionable, so it must not warn on the router log
+                    // like a real fault. (A clean close *between* messages is
+                    // already returned as `Ok` in `handle_connection`.)
+                    debug!(error = %err, client = %client, "TCP DNS client disconnected");
+                } else {
+                    warn!(error = %err, client = %client, "TCP DNS connection ended with an error");
+                }
             }
         });
     }
@@ -83,4 +94,16 @@ async fn handle_connection<F: Forwarder>(
         stream.write_all(&reply_len).await?;
         stream.write_all(&reply).await?;
     }
+}
+
+/// Whether an I/O error is just the client hanging up — the connection kinds a
+/// DNS-over-TCP server sees constantly and can do nothing about, versus a real
+/// fault worth a warning. `UnexpectedEof` here is a client that closed
+/// mid-message (the between-message clean close is already handled as `Ok`).
+fn is_client_disconnect(err: &std::io::Error) -> bool {
+    use std::io::ErrorKind::{BrokenPipe, ConnectionAborted, ConnectionReset, UnexpectedEof};
+    matches!(
+        err.kind(),
+        BrokenPipe | ConnectionReset | ConnectionAborted | UnexpectedEof
+    )
 }

@@ -81,7 +81,14 @@ budget for nothing.
 - **Per-list counts stay parse-based.** `GET /api/v1/lists`' `rules_total` /
   `rules_active_dns` / `rules_inactive` describe what each list contains; the
   envelope's `compiled_rules` and `duplicates_removed` describe the merge.
-  Compiling logs the same at `INFO`.
+  Compiling logs the duplicate count at `DEBUG` — every list refresh recompiles
+  the whole combined ruleset, so at `INFO` a boot refresh would repeat the same
+  line once per list. The per-list outcome is logged at `INFO`, by name, when
+  that list refreshes.
+- **`compiled_rules` + `duplicates_removed` does not equal the sum of the
+  per-list `rules_active_dns`** — user rules are in the merge but not in the
+  list array, so the identity is
+  `sum(rules_active_dns) + user_rules_active − compiled_rules = duplicates_removed`.
 - Dedup happens at build time only. The lookup hot path is untouched by it
   (marginally faster, with fewer slots to probe).
 

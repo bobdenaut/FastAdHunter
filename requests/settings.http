@@ -21,6 +21,24 @@ GET {{base}}/config
 {{auth}}
 
 ### Runtime key — expect { "applied": true, "restart_required": false }.
+### Only four keys are runtime (CONFIGURATION.md §Mutability classes): the two
+### [history] ones, api.metrics_public, and this. Everything else is read once
+### at startup and is therefore boot.
+POST {{base}}/config
+{{auth}}
+Content-Type: application/json
+
+{
+  "rules": {
+    "refresh_hours_default": 6
+  }
+}
+
+### Boot-only key — expect { "applied": false, "restart_required": true }.
+### The value is persisted but the running process keeps the old one. The whole
+### of [dns.cache] is boot: DnsCache::new reads it once, at startup, so resizing
+### the cache needs a restart. To release cache memory *without* one, use
+### POST /cache/clean (cache.http).
 POST {{base}}/config
 {{auth}}
 Content-Type: application/json
@@ -28,13 +46,12 @@ Content-Type: application/json
 {
   "dns": {
     "cache": {
-      "max_entries": 50000
+      "max_bytes": 33554432
     }
   }
 }
 
-### Boot-only key — expect { "applied": false, "restart_required": true }.
-### The value is persisted but the running process keeps the old one.
+### Boot-only key — the listener, same contract.
 POST {{base}}/config
 {{auth}}
 Content-Type: application/json
@@ -45,14 +62,16 @@ Content-Type: application/json
   }
 }
 
-### Mixed patch — expect both flags true.
+### Mixed patch — expect both flags true. Needs one key from each class, so the
+### runtime half has to be a genuinely live key: api.port is boot, and
+### dns.cache would NOT work here because it is boot too.
 POST {{base}}/config
 {{auth}}
 Content-Type: application/json
 
 {
   "api": { "port": 8443 },
-  "dns": { "cache": { "max_entries": 50000 } }
+  "history": { "retention_days": 60 }
 }
 
 ### Nested keys merge; siblings are untouched. Only min_ttl_seconds changes
@@ -94,7 +113,8 @@ Content-Type: application/json
   }
 }
 
-### Log level — runtime-mutable, no restart.
+### Log level — boot: expect { "restart_required": true }. The tracing filter is
+### built once at init, so the new level applies at the next start.
 POST {{base}}/config
 {{auth}}
 Content-Type: application/json
@@ -105,7 +125,9 @@ Content-Type: application/json
   }
 }
 
-### Query log retention.
+### Query log retention — boot: expect { "restart_required": true }. Note these
+### caps govern the /data segments, which NO endpoint reads yet; GET /queries
+### serves the in-RAM ring only (CONFIGURATION.md §What reads the query log).
 POST {{base}}/config
 {{auth}}
 Content-Type: application/json
@@ -118,9 +140,42 @@ Content-Type: application/json
   }
 }
 
+### Long-term history retention (the persisted /data/history series behind
+### history.http). `enabled` and `retention_days` (30 | 60 | 90) are
+### runtime-mutable — expect { "applied": true, "restart_required": false } —
+### and a tightened window takes effect on the NEXT prune, deleting day-files
+### already past it. Disabling stops both the rollup writers and the perf
+### sampler (SECURITY.md: it narrows the retained-data window).
+POST {{base}}/config
+{{auth}}
+Content-Type: application/json
+
+{
+  "history": {
+    "enabled": true,
+    "retention_days": 30
+  }
+}
+
+### The sampling cadence — boot: expect { "restart_required": true }. The running
+### sampler builds its ticker once at startup, so the new cadence takes effect at
+### the next boot; the persisted value is what that boot uses. (This key used to
+### answer `applied: true` while behaving exactly like a boot key — the
+### classification now matches the behaviour.)
+POST {{base}}/config
+{{auth}}
+Content-Type: application/json
+
+{
+  "history": {
+    "sample_interval_seconds": 60
+  }
+}
+
 ### Upstream servers. ARRAYS REPLACE WHOLESALE — they do not merge, so send
-### the complete set. Same for [[rules.lists]]: a partial array would silently
-### drop the entries you left out.
+### the complete set; a partial array silently drops the entries you left out.
+### (rules.lists is NOT settable here at all — expect 422. Rule lists are owned
+### by the /lists endpoints, which apply live and persist for you: lists.http.)
 POST {{base}}/config
 {{auth}}
 Content-Type: application/json
@@ -129,7 +184,7 @@ Content-Type: application/json
   "dns": {
     "upstreams": {
       "strategy": "fallback",
-      "timeout_ms": 2000,
+      "timeout_ms": 800,
       "servers": [
         { "address": "1.1.1.1", "protocol": "udp" },
         { "address": "9.9.9.9", "protocol": "udp" }

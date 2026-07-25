@@ -254,7 +254,7 @@ mod tests {
 mode = "dns"
 
 [dns.listen]
-address = "0.0.0.0"
+address = "::"
 port = 53
 
 [dns.blocking]
@@ -271,7 +271,7 @@ serve_stale = true
 
 [dns.upstreams]
 strategy = "fallback"
-timeout_ms = 2000
+timeout_ms = 800
 
 [[dns.upstreams.servers]]
 address = "1.1.1.1"

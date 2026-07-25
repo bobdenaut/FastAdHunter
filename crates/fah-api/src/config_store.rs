@@ -15,14 +15,35 @@ use serde_json::Value;
 
 /// Keys whose class is **boot** (CONFIGURATION.md's `# boot` comments).
 /// Everything not listed is runtime-mutable. Dotted paths, matched as
-/// prefixes so `dns.listen` covers both its fields.
-const BOOT_KEYS: [&str; 7] = [
+/// prefixes so `dns.cache` covers every field in the section.
+///
+/// The bar for leaving a key out of this list is not "it would be nice to
+/// change it live" — it is that something actually re-reads it after a patch.
+/// Only four keys clear it today, each with a real consumer: `history.enabled`
+/// and `history.retention_days` (pushed through `apply_history_config` into
+/// the writers' shared atomic), `api.metrics_public` (read per request by
+/// `AppState::metrics_public`) and `rules.refresh_hours_default` (read per
+/// request by the lists handlers). Everything else is consumed once during
+/// boot — `DnsCache::new`, `UpstreamPool::from_config`, `Pipeline::new`,
+/// `Stats::new`, the tracing filter — so answering `restart_required: false`
+/// for it would report an apply that never happened.
+///
+/// Sections are listed whole rather than field-by-field on purpose: a field
+/// added to `[dns.cache]` tomorrow is boot until someone wires it live, which
+/// is the safe default for this contract.
+const BOOT_KEYS: [&str; 13] = [
     "engine.mode",
-    "dns.listen.address",
-    "dns.listen.port",
+    "dns.listen",
+    "dns.blocking",
+    "dns.cache",
+    "dns.upstreams",
+    "query_log",
+    "stats",
+    "history.sample_interval_seconds",
     "api.address",
     "api.port",
     "api.tls",
+    "log.level",
     "log.format",
 ];
 
@@ -188,9 +209,11 @@ mod tests {
 
     #[test]
     fn a_runtime_key_applies_live_without_requiring_a_restart() {
+        // `history.retention_days` is a real runtime key: `post_config` pushes
+        // it through `apply_history_config` into the writers' shared atomic.
         let (store, _dir) = store();
         let outcome = store
-            .apply_patch(&serde_json::json!({"dns": {"cache": {"max_entries": 50_000}}}))
+            .apply_patch(&serde_json::json!({"history": {"retention_days": 90}}))
             .unwrap();
 
         assert_eq!(
@@ -200,7 +223,7 @@ mod tests {
                 restart_required: false
             }
         );
-        assert_eq!(store.current().dns.cache.max_entries, 50_000);
+        assert_eq!(store.current().history.retention_days, 90);
     }
 
     #[test]
@@ -284,6 +307,8 @@ mod tests {
 
     #[test]
     fn a_no_op_patch_reports_neither_applied_nor_restart_required() {
+        // Setting a key to the value it already has changes nothing, so
+        // neither flag is raised regardless of the key's class.
         let (store, _dir) = store();
         let outcome = store
             .apply_patch(&serde_json::json!({"dns": {"cache": {"max_entries": 10_000}}}))
@@ -303,7 +328,7 @@ mod tests {
         let outcome = store
             .apply_patch(&serde_json::json!({
                 "api": {"port": 9443},
-                "dns": {"cache": {"max_entries": 777}}
+                "history": {"retention_days": 60}
             }))
             .unwrap();
         assert_eq!(
@@ -315,24 +340,66 @@ mod tests {
         );
     }
 
+    /// The classification must track what the code actually *does* with a key,
+    /// not what would be convenient. An earlier version of this test asserted
+    /// `dns.cache.max_entries` was runtime because CONFIGURATION.md said so —
+    /// it passed while `POST /api/v1/config` answered `restart_required: false`
+    /// for a value only `DnsCache::new` ever reads, at boot. The runtime list
+    /// below is therefore exhaustive, and each entry names its live consumer:
+    /// adding to it requires wiring one first.
     #[test]
-    fn boot_key_classification_matches_configuration_md() {
-        for boot in ["engine.mode", "dns.listen.port", "api.tls", "log.format"] {
-            assert!(is_boot_key(boot), "{boot} is documented as boot-only");
-        }
-        for runtime in [
-            "dns.cache.max_entries",
-            "dns.blocking.ttl_seconds",
-            "api.metrics_public",
-            "log.level",
-            "query_log.enabled",
+    fn boot_key_classification_matches_what_actually_applies_the_key() {
+        for boot in [
+            "engine.mode",
+            "dns.listen.port",
+            "dns.blocking.ttl_seconds",        // Pipeline::new, at boot
+            "dns.cache.max_entries",           // DnsCache::new, at boot
+            "dns.cache.max_bytes",             // DnsCache::new, at boot
+            "dns.upstreams.timeout_ms",        // UpstreamPool::from_config, at boot
+            "query_log.enabled",               // Stats::new, at boot
+            "query_log.retention_days",        // Stats::new, at boot
+            "stats.snapshot_interval_seconds", // Stats::new, at boot
+            "history.sample_interval_seconds", // the sampler's interval, at boot
+            "api.tls",
+            "log.level", // the tracing filter, set once at init
+            "log.format",
         ] {
-            assert!(!is_boot_key(runtime), "{runtime} is documented as runtime");
+            assert!(
+                is_boot_key(boot),
+                "{boot} is consumed once at boot — reporting it as applied live would be a lie"
+            );
+        }
+        for (runtime, consumer) in [
+            ("history.enabled", "apply_history_config -> writers' atomic"),
+            (
+                "history.retention_days",
+                "apply_history_config -> writers' atomic",
+            ),
+            (
+                "api.metrics_public",
+                "AppState::metrics_public, per request",
+            ),
+            (
+                "rules.refresh_hours_default",
+                "the lists handlers, per request",
+            ),
+        ] {
+            assert!(
+                !is_boot_key(runtime),
+                "{runtime} is applied live by {consumer} and must stay runtime"
+            );
         }
     }
 
+    /// The store still accepts a wholesale list-array replacement, because that
+    /// is how `routes::persist_lists` writes the TOML back after a `/lists`
+    /// mutation has already been applied to the engine. What is *not* allowed is
+    /// reaching this from outside: `POST /api/v1/config` rejects a patch
+    /// carrying `rules.lists` with 422, so the engine and the file cannot end up
+    /// describing different list sets. This layer is the write-back path, not a
+    /// second public entry point.
     #[test]
-    fn replacing_a_list_array_wholesale_is_a_runtime_change() {
+    fn the_list_write_back_path_replaces_the_array_wholesale() {
         let (store, _dir) = store();
         let outcome = store
             .apply_patch(&serde_json::json!({
