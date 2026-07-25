@@ -15,10 +15,11 @@
 
   <!-- Title -->
   <text x="470" y="34" text-anchor="middle" font-size="20" font-weight="700" fill="#0f172a">FastAdHunter — Architecture</text>
-  <text x="470" y="54" text-anchor="middle" font-size="12" fill="#64748b">MikroTik RB5009 · RouterOS container · Phase 1 (DNS + API + Docker)</text>
+  <text x="470" y="54" text-anchor="middle" font-size="12" fill="#64748b">MikroTik RB5009 · RouterOS container · Phase 1 + 1.5 (DNS + API + Docker + persisted history)</text>
+  <text x="470" y="68" text-anchor="middle" font-size="10" font-style="italic" fill="#94a3b8">HTTP · HTTPS · DoH/DoT listeners · Policies — see architecture-full.svg</text>
 
   <!-- LAN clients -->
-  <text x="305" y="74" text-anchor="middle" font-size="11" fill="#64748b">LAN clients — 192.168.10.0/24</text>
+  <text x="305" y="74" text-anchor="middle" font-size="11" fill="#64748b">LAN clients — IPv4 192.168.10.0/24 + IPv6</text>
   <rect x="90" y="78" width="130" height="44" rx="8" fill="#e2e8f0" stroke="#475569" stroke-width="1.5"/>
   <text x="155" y="104" text-anchor="middle" font-size="12" fill="#1e293b">Phone</text>
   <rect x="240" y="78" width="130" height="44" rx="8" fill="#e2e8f0" stroke="#475569" stroke-width="1.5"/>
@@ -38,12 +39,12 @@
 
   <!-- Container -->
   <rect x="60" y="190" width="820" height="530" rx="10" fill="#f8fafc" stroke="#334155" stroke-width="2"/>
-  <text x="80" y="216" font-size="12" font-weight="700" fill="#334155">FastAdHunter container — distroless/static · ARM64 · veth 172.17.0.2</text>
+  <text x="80" y="216" font-size="12" font-weight="700" fill="#334155">FastAdHunter container — distroless/static · ARM64 · veth2 172.17.0.3</text>
 
   <!-- Pipeline: listeners -->
   <rect x="210" y="240" width="260" height="48" rx="8" fill="#dbeafe" stroke="#1d4ed8" stroke-width="1.5"/>
   <text x="340" y="260" text-anchor="middle" font-size="13" font-weight="600" fill="#1e3a8a">DNS Listeners (fah-dns)</text>
-  <text x="340" y="277" text-anchor="middle" font-size="11" fill="#1e40af">UDP/53 · TCP/53 · EDNS(0)</text>
+  <text x="340" y="277" text-anchor="middle" font-size="11" fill="#1e40af">UDP/53 · TCP/53 · EDNS(0) · one dual-stack :: socket</text>
   <line x1="340" y1="288" x2="340" y2="318" stroke="#475569" stroke-width="1.5" marker-end="url(#arrow)"/>
 
   <!-- Rule Engine -->
@@ -64,7 +65,7 @@
   <text x="350" y="397" text-anchor="start" font-size="10.5" fill="#475569">allow / pass</text>
   <rect x="210" y="410" width="260" height="56" rx="8" fill="#dcfce7" stroke="#15803d" stroke-width="1.5"/>
   <text x="340" y="429" text-anchor="middle" font-size="13" font-weight="600" fill="#166534">DNS Cache</text>
-  <text x="340" y="444" text-anchor="middle" font-size="10.5" fill="#166534">bounded · negative (RFC 2308) · serve-stale (RFC 8767)</text>
+  <text x="340" y="444" text-anchor="middle" font-size="10.5" fill="#166534">max_entries + max_bytes · RFC 2308 · RFC 8767</text>
   <text x="340" y="458" text-anchor="middle" font-size="10.5" fill="#166534">hit → reply</text>
 
   <!-- Upstream resolver -->
@@ -82,7 +83,7 @@
   <!-- Stats -->
   <rect x="560" y="340" width="270" height="64" rx="8" fill="#ccfbf1" stroke="#0f766e" stroke-width="1.5"/>
   <text x="695" y="364" text-anchor="middle" font-size="13" font-weight="600" fill="#115e59">Statistics &amp; Query Log (fah-stats)</text>
-  <text x="695" y="384" text-anchor="middle" font-size="10.5" fill="#115e59">ring buffer · SSD segments · top-N · 24h buckets</text>
+  <text x="695" y="384" text-anchor="middle" font-size="10.5" fill="#115e59">ring · SSD segments · top-N · 24h · history rollups</text>
 
   <!-- Metrics -->
   <rect x="560" y="430" width="270" height="56" rx="8" fill="#cffafe" stroke="#0e7490" stroke-width="1.5"/>
@@ -101,7 +102,7 @@
   <text x="622" y="658" text-anchor="middle" font-size="10" fill="#475569">toml · key · certs</text>
   <rect x="705" y="620" width="125" height="52" rx="8" fill="#f8fafc" stroke="#64748b" stroke-width="1.5" stroke-dasharray="5 4"/>
   <text x="767" y="641" text-anchor="middle" font-size="12" font-weight="600" fill="#334155">/data</text>
-  <text x="767" y="658" text-anchor="middle" font-size="10" fill="#475569">lists · log · snapshots</text>
+  <text x="767" y="658" text-anchor="middle" font-size="10" fill="#475569">lists · log · history</text>
 
   <!-- wiring: QueryEvent channel -->
   <line x1="470" y1="430" x2="556" y2="374" stroke="#0f766e" stroke-width="1.5" stroke-dasharray="6 4" marker-end="url(#arrowTeal)"/>

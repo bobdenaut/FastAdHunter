@@ -1,0 +1,270 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1240 1210" font-family="Segoe UI, Helvetica, Arial, sans-serif">
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#475569"/>
+    </marker>
+    <marker id="aT" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#0f766e"/>
+    </marker>
+    <marker id="aP" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#c2410c"/>
+    </marker>
+    <marker id="aV" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#6d28d9"/>
+    </marker>
+  </defs>
+
+  <rect x="0" y="0" width="1240" height="1210" fill="#ffffff"/>
+
+  <text x="620" y="32" text-anchor="middle" font-size="21" font-weight="700" fill="#0f172a">FastAdHunter — Full Architecture</text>
+  <text x="620" y="52" text-anchor="middle" font-size="12" fill="#64748b">where DNS, DoT/DoH, HTTP, HTTPS and HTML filtering each attach · MikroTik RB5009 · RouterOS container</text>
+
+  <!-- legend -->
+  <rect x="286" y="66" width="30" height="15" rx="7.5" fill="#1d4ed8"/>
+  <text x="301" y="77.5" text-anchor="middle" font-size="9" font-weight="700" fill="#ffffff">P1</text>
+  <text x="322" y="77.5" font-size="10.5" fill="#334155">shipped</text>
+  <rect x="378" y="66" width="42" height="15" rx="7.5" fill="#15803d"/>
+  <text x="399" y="77.5" text-anchor="middle" font-size="9" font-weight="700" fill="#ffffff">P1.5</text>
+  <text x="426" y="77.5" font-size="10.5" fill="#334155">shipped</text>
+  <rect x="482" y="66" width="30" height="15" rx="7.5" fill="#c2410c"/>
+  <text x="497" y="77.5" text-anchor="middle" font-size="9" font-weight="700" fill="#ffffff">P2</text>
+  <text x="518" y="77.5" font-size="10.5" fill="#334155">HTTP + Policies (in progress)</text>
+  <rect x="686" y="66" width="30" height="15" rx="7.5" fill="#be123c"/>
+  <text x="701" y="77.5" text-anchor="middle" font-size="9" font-weight="700" fill="#ffffff">P3</text>
+  <text x="722" y="77.5" font-size="10.5" fill="#334155">HTTPS + DoT/DoH listeners</text>
+  <rect x="892" y="66" width="30" height="15" rx="7.5" fill="#7e22ce"/>
+  <text x="907" y="77.5" text-anchor="middle" font-size="9" font-weight="700" fill="#ffffff">P4</text>
+  <text x="928" y="77.5" font-size="10.5" fill="#334155">HTML filtering</text>
+  <text x="1040" y="77.5" font-size="10" font-style="italic" fill="#94a3b8">dashed = not built yet</text>
+
+  <!-- clients -->
+  <rect x="80" y="100" width="500" height="46" rx="8" fill="#e2e8f0" stroke="#475569" stroke-width="1.5"/>
+  <text x="330" y="121" text-anchor="middle" font-size="12" font-weight="600" fill="#1e293b">LAN clients — phones · laptops · TV / IoT</text>
+  <text x="330" y="137" text-anchor="middle" font-size="10" fill="#475569">IPv4 192.168.10.0/24 · IPv6 2a02:…/64 — both reach the resolver today</text>
+
+  <rect x="900" y="100" width="260" height="46" rx="8" fill="#e2e8f0" stroke="#475569" stroke-width="1.5"/>
+  <text x="1030" y="121" text-anchor="middle" font-size="12" font-weight="600" fill="#1e293b">Dashboard (later) · Prometheus</text>
+  <text x="1030" y="137" text-anchor="middle" font-size="10" fill="#475569">API clients · scrapers</text>
+
+  <line x1="330" y1="146" x2="330" y2="192" stroke="#475569" stroke-width="1.5" marker-end="url(#a)"/>
+  <line x1="1030" y1="146" x2="1060" y2="192" stroke="#475569" stroke-width="1.5" marker-end="url(#a)"/>
+
+  <!-- container -->
+  <rect x="60" y="195" width="1120" height="560" rx="10" fill="#f8fafc" stroke="#334155" stroke-width="2"/>
+  <text x="78" y="217" font-size="11.5" font-weight="700" fill="#334155">FastAdHunter container — distroless/static · musl · ARM64 · veth2 172.17.0.3 · /config + /data on SSD</text>
+
+  <!-- ============ INGRESS ROW ============ -->
+  <rect x="80" y="225" width="200" height="56" rx="8" fill="#dbeafe" stroke="#1d4ed8" stroke-width="1.5"/>
+  <rect x="248" y="229" width="30" height="15" rx="7.5" fill="#1d4ed8"/>
+  <text x="263" y="240.5" text-anchor="middle" font-size="9" font-weight="700" fill="#ffffff">P1</text>
+  <text x="164" y="252" text-anchor="middle" font-size="12.5" font-weight="600" fill="#1e3a8a">DNS :53</text>
+  <text x="180" y="270" text-anchor="middle" font-size="9.5" fill="#1e40af">UDP + TCP · one dual-stack :: socket</text>
+
+  <rect x="300" y="225" width="200" height="56" rx="8" fill="#ffe4e6" stroke="#be123c" stroke-width="1.5" stroke-dasharray="6 4"/>
+  <rect x="468" y="229" width="30" height="15" rx="7.5" fill="#be123c"/>
+  <text x="483" y="240.5" text-anchor="middle" font-size="9" font-weight="700" fill="#ffffff">P3</text>
+  <text x="384" y="252" text-anchor="middle" font-size="12.5" font-weight="600" fill="#9f1239">DoT :853 · DoH :443</text>
+  <text x="400" y="270" text-anchor="middle" font-size="9.5" fill="#9f1239">listeners — Android Private DNS</text>
+
+  <rect x="520" y="225" width="200" height="56" rx="8" fill="#ffedd5" stroke="#c2410c" stroke-width="1.5" stroke-dasharray="6 4"/>
+  <rect x="688" y="229" width="30" height="15" rx="7.5" fill="#c2410c"/>
+  <text x="703" y="240.5" text-anchor="middle" font-size="9" font-weight="700" fill="#ffffff">P2</text>
+  <text x="600" y="252" text-anchor="middle" font-size="12.5" font-weight="600" fill="#9a3412">HTTP :80</text>
+  <text x="620" y="270" text-anchor="middle" font-size="9.5" fill="#9a3412">transparent proxy via dst-nat</text>
+
+  <rect x="740" y="225" width="200" height="56" rx="8" fill="#ffe4e6" stroke="#be123c" stroke-width="1.5" stroke-dasharray="6 4"/>
+  <rect x="908" y="229" width="30" height="15" rx="7.5" fill="#be123c"/>
+  <text x="923" y="240.5" text-anchor="middle" font-size="9" font-weight="700" fill="#ffffff">P3</text>
+  <text x="820" y="252" text-anchor="middle" font-size="12.5" font-weight="600" fill="#9f1239">HTTPS :443</text>
+  <text x="840" y="270" text-anchor="middle" font-size="9.5" fill="#9f1239">opt-in, per client (SECURITY.md)</text>
+
+  <rect x="960" y="225" width="200" height="56" rx="8" fill="#ede9fe" stroke="#6d28d9" stroke-width="1.5"/>
+  <rect x="1128" y="229" width="30" height="15" rx="7.5" fill="#6d28d9"/>
+  <text x="1143" y="240.5" text-anchor="middle" font-size="9" font-weight="700" fill="#ffffff">P1</text>
+  <text x="1040" y="252" text-anchor="middle" font-size="12.5" font-weight="600" fill="#5b21b6">REST + WS API :8443</text>
+  <text x="1060" y="270" text-anchor="middle" font-size="9.5" fill="#5b21b6">Bearer key · TLS · /metrics</text>
+
+  <!-- ingress -> next -->
+  <line x1="164" y1="281" x2="164" y2="381" stroke="#475569" stroke-width="1.5" marker-end="url(#a)"/>
+  <line x1="384" y1="281" x2="384" y2="381" stroke="#be123c" stroke-width="1.5" stroke-dasharray="6 4" marker-end="url(#a)"/>
+  <text x="392" y="330" font-size="9.5" fill="#9f1239">same DNS pipeline</text>
+  <line x1="600" y1="281" x2="600" y2="381" stroke="#c2410c" stroke-width="1.5" stroke-dasharray="6 4" marker-end="url(#a)"/>
+  <line x1="820" y1="281" x2="820" y2="304" stroke="#be123c" stroke-width="1.5" stroke-dasharray="6 4" marker-end="url(#a)"/>
+
+  <!-- TLS interception -->
+  <rect x="740" y="306" width="200" height="50" rx="8" fill="#ffe4e6" stroke="#be123c" stroke-width="1.5" stroke-dasharray="6 4"/>
+  <text x="840" y="326" text-anchor="middle" font-size="11.5" font-weight="600" fill="#9f1239">TLS interception · own CA</text>
+  <text x="840" y="342" text-anchor="middle" font-size="9.5" fill="#9f1239">rustls + rcgen · /api/v1/certificates</text>
+  <line x1="820" y1="356" x2="820" y2="381" stroke="#be123c" stroke-width="1.5" stroke-dasharray="6 4" marker-end="url(#a)"/>
+  <text x="828" y="372" font-size="9" fill="#9f1239">decrypted HTTP</text>
+
+  <!-- ============ RULE ENGINE ============ -->
+  <rect x="80" y="383" width="860" height="82" rx="8" fill="#fef3c7" stroke="#b45309" stroke-width="1.5"/>
+  <text x="510" y="403" text-anchor="middle" font-size="13" font-weight="700" fill="#92400e">Rule Engine (fah-rules) — one matcher, every plane · allow &gt; block · atomic swap · lock-free hot path</text>
+  <text x="94" y="422" font-size="10" fill="#92400e">DNS subset — hosts · domains · EasyList / uBlock / AdGuard · $dnstype · $dnsrewrite · compile-time dedup (33 % collapsed)</text>
+  <rect x="880" y="411" width="30" height="14" rx="7" fill="#1d4ed8"/>
+  <text x="895" y="422" text-anchor="middle" font-size="8.5" font-weight="700" fill="#ffffff">P1</text>
+  <text x="94" y="440" font-size="10" fill="#92400e">URL-path rules · HTTP $options · $client per-client scoping</text>
+  <rect x="880" y="429" width="30" height="14" rx="7" fill="#c2410c"/>
+  <text x="895" y="440" text-anchor="middle" font-size="8.5" font-weight="700" fill="#ffffff">P2</text>
+  <text x="94" y="458" font-size="10" fill="#92400e">element / cosmetic rules — parsed and counted today, activated by the HTML rewriter</text>
+  <rect x="880" y="447" width="30" height="14" rx="7" fill="#7e22ce"/>
+  <text x="895" y="458" text-anchor="middle" font-size="8.5" font-weight="700" fill="#ffffff">P4</text>
+
+  <!-- Policy -->
+  <rect x="960" y="383" width="200" height="82" rx="8" fill="#ffedd5" stroke="#c2410c" stroke-width="1.5" stroke-dasharray="6 4"/>
+  <rect x="1128" y="387" width="30" height="15" rx="7.5" fill="#c2410c"/>
+  <text x="1143" y="398.5" text-anchor="middle" font-size="9" font-weight="700" fill="#ffffff">P2</text>
+  <text x="1035" y="405" text-anchor="middle" font-size="12" font-weight="600" fill="#9a3412">Policy</text>
+  <text x="1060" y="424" text-anchor="middle" font-size="9.5" fill="#9a3412">named bundle of lists + settings</text>
+  <text x="1060" y="439" text-anchor="middle" font-size="9.5" fill="#9a3412">assignable per client · schedules</text>
+  <text x="1060" y="454" text-anchor="middle" font-size="9.5" fill="#9a3412">consulted by DNS *and* HTTP</text>
+  <line x1="958" y1="424" x2="944" y2="424" stroke="#c2410c" stroke-width="1.5" marker-end="url(#aP)"/>
+
+  <!-- API control arrow -->
+  <line x1="1060" y1="281" x2="1060" y2="379" stroke="#6d28d9" stroke-width="1.5" stroke-dasharray="6 4" marker-end="url(#aV)"/>
+  <text x="1068" y="330" font-size="9" fill="#6d28d9">lists · policies · config</text>
+
+  <!-- verdict arrows -->
+  <line x1="180" y1="465" x2="180" y2="486" stroke="#475569" stroke-width="1.5" marker-end="url(#a)"/>
+  <text x="188" y="480" font-size="9.5" fill="#b91c1c">block</text>
+  <line x1="400" y1="465" x2="400" y2="486" stroke="#475569" stroke-width="1.5" marker-end="url(#a)"/>
+  <text x="408" y="480" font-size="9.5" fill="#166534">allow / pass</text>
+  <line x1="600" y1="465" x2="600" y2="486" stroke="#c2410c" stroke-width="1.5" stroke-dasharray="6 4" marker-end="url(#a)"/>
+  <text x="608" y="480" font-size="9.5" fill="#b91c1c">block</text>
+  <line x1="840" y1="465" x2="840" y2="486" stroke="#c2410c" stroke-width="1.5" stroke-dasharray="6 4" marker-end="url(#a)"/>
+  <text x="848" y="480" font-size="9.5" fill="#9a3412">pass</text>
+
+  <!-- plane labels -->
+  <text x="84" y="482" font-size="10" font-weight="700" fill="#1e3a8a">DNS plane</text>
+  <text x="524" y="482" font-size="10" font-weight="700" fill="#9a3412">HTTP plane</text>
+
+  <!-- ============ DNS PLANE ============ -->
+  <rect x="80" y="488" width="200" height="54" rx="8" fill="#fee2e2" stroke="#b91c1c" stroke-width="1.5"/>
+  <text x="180" y="509" text-anchor="middle" font-size="11.5" font-weight="600" fill="#991b1b">Blocked answer</text>
+  <text x="180" y="526" text-anchor="middle" font-size="9.5" fill="#991b1b">0.0.0.0 · :: · TTL 10 s</text>
+
+  <rect x="300" y="488" width="200" height="54" rx="8" fill="#dcfce7" stroke="#15803d" stroke-width="1.5"/>
+  <rect x="468" y="492" width="42" height="15" rx="7.5" fill="#15803d"/>
+  <text x="489" y="503.5" text-anchor="middle" font-size="9" font-weight="700" fill="#ffffff">P1.5</text>
+  <text x="380" y="509" text-anchor="middle" font-size="11.5" font-weight="600" fill="#166534">DNS Cache</text>
+  <text x="400" y="526" text-anchor="middle" font-size="9" fill="#166534">max_entries + max_bytes · 2308 · 8767</text>
+
+  <line x1="400" y1="542" x2="400" y2="566" stroke="#475569" stroke-width="1.5" marker-end="url(#a)"/>
+  <text x="408" y="559" font-size="9.5" fill="#475569">miss</text>
+
+  <rect x="80" y="568" width="420" height="54" rx="8" fill="#dbeafe" stroke="#1d4ed8" stroke-width="1.5"/>
+  <rect x="468" y="572" width="30" height="15" rx="7.5" fill="#1d4ed8"/>
+  <text x="483" y="583.5" text-anchor="middle" font-size="9" font-weight="700" fill="#ffffff">P1</text>
+  <text x="280" y="589" text-anchor="middle" font-size="11.5" font-weight="600" fill="#1e3a8a">Upstream Resolver</text>
+  <text x="280" y="607" text-anchor="middle" font-size="9.5" fill="#1e40af">UDP · TCP · DoT · <tspan font-weight="700">DoH client</tspan> — ordered parallel fallback, 800 ms per attempt</text>
+
+  <!-- ============ HTTP PLANE ============ -->
+  <rect x="520" y="488" width="200" height="54" rx="8" fill="#ffedd5" stroke="#c2410c" stroke-width="1.5" stroke-dasharray="6 4"/>
+  <text x="620" y="509" text-anchor="middle" font-size="11.5" font-weight="600" fill="#9a3412">Block response</text>
+  <text x="620" y="526" text-anchor="middle" font-size="9.5" fill="#9a3412">block page · reset · 204</text>
+
+  <rect x="740" y="488" width="200" height="54" rx="8" fill="#ffedd5" stroke="#c2410c" stroke-width="1.5" stroke-dasharray="6 4"/>
+  <text x="840" y="509" text-anchor="middle" font-size="11.5" font-weight="600" fill="#9a3412">Streaming proxy</text>
+  <text x="840" y="526" text-anchor="middle" font-size="9.5" fill="#9a3412">pass-through fast path</text>
+
+  <line x1="840" y1="542" x2="840" y2="566" stroke="#7e22ce" stroke-width="1.5" stroke-dasharray="6 4" marker-end="url(#a)"/>
+  <text x="848" y="559" font-size="9.5" fill="#7e22ce">text/html only</text>
+
+  <rect x="520" y="568" width="420" height="54" rx="8" fill="#f3e8ff" stroke="#7e22ce" stroke-width="1.5" stroke-dasharray="6 4"/>
+  <rect x="908" y="572" width="30" height="15" rx="7.5" fill="#7e22ce"/>
+  <text x="923" y="583.5" text-anchor="middle" font-size="9" font-weight="700" fill="#ffffff">P4</text>
+  <text x="720" y="589" text-anchor="middle" font-size="11.5" font-weight="600" fill="#6b21a8">HTML rewriter — lol_html streaming</text>
+  <text x="720" y="607" text-anchor="middle" font-size="9.5" fill="#6b21a8">element + cosmetic rules · everything else passes through untouched</text>
+
+  <!-- ============ SERVICES ============ -->
+  <rect x="960" y="488" width="200" height="54" rx="8" fill="#ccfbf1" stroke="#0f766e" stroke-width="1.5"/>
+  <text x="1060" y="507" text-anchor="middle" font-size="11" font-weight="600" fill="#115e59">Stats · Query Log · History</text>
+  <text x="1060" y="522" text-anchor="middle" font-size="9" fill="#115e59">ring + SSD segments · rollups</text>
+  <text x="1060" y="535" text-anchor="middle" font-size="9" fill="#115e59">perf series · top-N</text>
+
+  <rect x="960" y="548" width="200" height="44" rx="8" fill="#cffafe" stroke="#0e7490" stroke-width="1.5"/>
+  <text x="1060" y="565" text-anchor="middle" font-size="11" font-weight="600" fill="#155e75">Metrics — Prometheus</text>
+  <text x="1060" y="581" text-anchor="middle" font-size="9" fill="#155e75">counters · histograms per stage</text>
+
+  <rect x="960" y="598" width="200" height="44" rx="8" fill="#f1f5f9" stroke="#475569" stroke-width="1.5"/>
+  <text x="1060" y="615" text-anchor="middle" font-size="11" font-weight="600" fill="#334155">Config — fah-config</text>
+  <text x="1060" y="631" text-anchor="middle" font-size="9" fill="#334155">TOML · env · API · boot vs runtime</text>
+
+  <rect x="960" y="650" width="97" height="44" rx="8" fill="#f8fafc" stroke="#64748b" stroke-width="1.5" stroke-dasharray="5 4"/>
+  <text x="1008" y="667" text-anchor="middle" font-size="10.5" font-weight="600" fill="#334155">/config</text>
+  <text x="1008" y="682" text-anchor="middle" font-size="8.5" fill="#475569">toml · key · certs</text>
+  <rect x="1063" y="650" width="97" height="44" rx="8" fill="#f8fafc" stroke="#64748b" stroke-width="1.5" stroke-dasharray="5 4"/>
+  <text x="1111" y="667" text-anchor="middle" font-size="10.5" font-weight="600" fill="#334155">/data</text>
+  <text x="1111" y="682" text-anchor="middle" font-size="8.5" fill="#475569">lists · log · history</text>
+
+  <!-- QueryEvent wiring -->
+  <line x1="502" y1="515" x2="956" y2="505" stroke="#0f766e" stroke-width="1.5" stroke-dasharray="6 4" marker-end="url(#aT)"/>
+  <text x="700" y="470" font-size="9.5" fill="#0f766e">QueryEvent channel — bounded, drop-on-full, never blocks the hot path</text>
+  <line x1="942" y1="595" x2="956" y2="540" stroke="#0f766e" stroke-width="1.5" stroke-dasharray="6 4" marker-end="url(#aT)"/>
+
+  <text x="620" y="726" text-anchor="middle" font-size="10" font-style="italic" fill="#64748b">Rule Engine runs BEFORE the cache and the cache never stores verdicts (ADR-0001) — so a blocked query never reaches the cache, in either plane</text>
+  <text x="620" y="743" text-anchor="middle" font-size="10" font-style="italic" fill="#64748b">Operating mode gates the planes: <tspan font-weight="700">dns</tspan> (today) → <tspan font-weight="700">dns+http</tspan> (P2) → <tspan font-weight="700">dns+http+https</tspan> (P3)</text>
+
+  <!-- ============ EGRESS ============ -->
+  <line x1="280" y1="622" x2="280" y2="788" stroke="#475569" stroke-width="1.5" marker-end="url(#a)"/>
+  <text x="288" y="700" font-size="9.5" fill="#475569">uncached · unblocked</text>
+  <line x1="730" y1="622" x2="730" y2="788" stroke="#c2410c" stroke-width="1.5" stroke-dasharray="6 4" marker-end="url(#a)"/>
+  <text x="738" y="700" font-size="9.5" fill="#9a3412">upstream fetch (P2/P3)</text>
+
+  <rect x="80" y="790" width="125" height="44" rx="8" fill="#e2e8f0" stroke="#475569" stroke-width="1.5"/>
+  <text x="142" y="817" text-anchor="middle" font-size="11" fill="#1e293b">1.1.1.1 · CF</text>
+  <rect x="215" y="790" width="125" height="44" rx="8" fill="#e2e8f0" stroke="#475569" stroke-width="1.5"/>
+  <text x="277" y="817" text-anchor="middle" font-size="11" fill="#1e293b">9.9.9.9 · Quad9</text>
+  <rect x="350" y="790" width="185" height="44" rx="8" fill="#e2e8f0" stroke="#475569" stroke-width="1.5"/>
+  <text x="442" y="811" text-anchor="middle" font-size="10.5" fill="#1e293b">DoT / DoH endpoints</text>
+  <text x="442" y="826" text-anchor="middle" font-size="9" fill="#475569">opt-in per upstream — already built</text>
+
+  <rect x="600" y="790" width="260" height="44" rx="8" fill="#e2e8f0" stroke="#475569" stroke-width="1.5"/>
+  <text x="730" y="811" text-anchor="middle" font-size="10.5" fill="#1e293b">Origin web servers :80 / :443</text>
+  <text x="730" y="826" text-anchor="middle" font-size="9" fill="#475569">reached by the proxy, not the client</text>
+
+  <line x1="277" y1="834" x2="420" y2="874" stroke="#475569" stroke-width="1.5" marker-end="url(#a)"/>
+  <line x1="730" y1="834" x2="560" y2="874" stroke="#475569" stroke-width="1.5" marker-end="url(#a)"/>
+  <rect x="430" y="876" width="180" height="44" rx="22" fill="#e0f2fe" stroke="#0369a1" stroke-width="1.5"/>
+  <text x="520" y="903" text-anchor="middle" font-size="13" font-weight="600" fill="#075985">Internet</text>
+
+  <!-- ============ CRATE LAYERS ============ -->
+  <text x="620" y="960" text-anchor="middle" font-size="14" font-weight="700" fill="#0f172a">Crate layers — dependencies point downward only · siblings never import each other</text>
+
+  <rect x="470" y="978" width="300" height="34" rx="8" fill="#334155" stroke="#0f172a" stroke-width="1.5"/>
+  <text x="620" y="1000" text-anchor="middle" font-size="11" fill="#f8fafc">fastadhunter — binary, wires siblings via channels</text>
+  <text x="452" y="1000" text-anchor="end" font-size="11" fill="#94a3b8">L4</text>
+  <line x1="620" y1="1012" x2="620" y2="1028" stroke="#475569" stroke-width="1.5" marker-end="url(#a)"/>
+
+  <rect x="150" y="1030" width="170" height="34" rx="8" fill="#dbeafe" stroke="#1d4ed8" stroke-width="1.5"/>
+  <text x="235" y="1052" text-anchor="middle" font-size="11" fill="#1e3a8a">fah-dns</text>
+  <rect x="342" y="1030" width="170" height="34" rx="8" fill="#ffedd5" stroke="#c2410c" stroke-width="1.5" stroke-dasharray="6 4"/>
+  <text x="427" y="1047" text-anchor="middle" font-size="11" fill="#9a3412">fah-http</text>
+  <text x="427" y="1059" text-anchor="middle" font-size="8" fill="#c2410c">new in P2 · p2-01</text>
+  <rect x="534" y="1030" width="170" height="34" rx="8" fill="#ede9fe" stroke="#6d28d9" stroke-width="1.5"/>
+  <text x="619" y="1052" text-anchor="middle" font-size="11" fill="#5b21b6">fah-api</text>
+  <rect x="726" y="1030" width="170" height="34" rx="8" fill="#ccfbf1" stroke="#0f766e" stroke-width="1.5"/>
+  <text x="811" y="1052" text-anchor="middle" font-size="11" fill="#115e59">fah-stats</text>
+  <rect x="918" y="1030" width="170" height="34" rx="8" fill="#cffafe" stroke="#0e7490" stroke-width="1.5"/>
+  <text x="1003" y="1052" text-anchor="middle" font-size="11" fill="#155e75">fah-metrics</text>
+  <text x="132" y="1052" text-anchor="end" font-size="11" fill="#94a3b8">L3</text>
+  <line x1="620" y1="1064" x2="620" y2="1080" stroke="#475569" stroke-width="1.5" marker-end="url(#a)"/>
+
+  <rect x="470" y="1082" width="300" height="34" rx="8" fill="#fef3c7" stroke="#b45309" stroke-width="1.5"/>
+  <text x="620" y="1104" text-anchor="middle" font-size="11" fill="#92400e">fah-rules — Rule Engine</text>
+  <text x="452" y="1104" text-anchor="end" font-size="11" fill="#94a3b8">L2</text>
+  <line x1="620" y1="1116" x2="620" y2="1132" stroke="#475569" stroke-width="1.5" marker-end="url(#a)"/>
+
+  <rect x="246" y="1134" width="170" height="34" rx="8" fill="#fef9c3" stroke="#a16207" stroke-width="1.5"/>
+  <text x="331" y="1156" text-anchor="middle" font-size="11" fill="#854d0e">fah-model</text>
+  <rect x="438" y="1134" width="170" height="34" rx="8" fill="#f1f5f9" stroke="#475569" stroke-width="1.5"/>
+  <text x="523" y="1156" text-anchor="middle" font-size="11" fill="#334155">fah-config</text>
+  <rect x="630" y="1134" width="170" height="34" rx="8" fill="#f1f5f9" stroke="#475569" stroke-width="1.5"/>
+  <text x="715" y="1156" text-anchor="middle" font-size="11" fill="#334155">fah-common</text>
+  <rect x="822" y="1134" width="170" height="34" rx="8" fill="#f1f5f9" stroke="#475569" stroke-width="1.5"/>
+  <text x="907" y="1156" text-anchor="middle" font-size="11" fill="#334155">fah-logging</text>
+  <text x="228" y="1156" text-anchor="end" font-size="11" fill="#94a3b8">L1</text>
+
+  <text x="620" y="1192" text-anchor="middle" font-size="10.5" font-style="italic" fill="#64748b">fah-http joins fah-dns as a second L3 consumer of the same L2 matcher — that is the whole point of the layering</text>
+</svg>
