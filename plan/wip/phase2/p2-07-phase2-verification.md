@@ -16,9 +16,29 @@ port 80 → container).
 ## Scope
 
 - PERFORMANCE.md: add HTTP budget rows — pass-through added latency p99,
-  request-verdict latency, proxied throughput (target order: saturate 1 Gbps
-  LAN on large bodies), RAM ceiling unchanged (≤128MB steady with EasyList +
-  policies loaded). Justify numbers from p2-02/03 bench data.
+  request-verdict latency, proxied throughput, RAM ceiling. **Derive every row
+  from measured p2-02/p2-03 data; do not carry a target in from ambition.**
+- **Throughput is two rows, not one, because the body is never parsed.**
+  Images, ZIPs, PDFs, video, fonts, any non-HTML body: the verdict is taken on
+  the *head*, then the bytes are streamed through untouched — no parsing, no
+  buffering, no rewriting, ever. That is the design rule, and it is what makes
+  a high number achievable at all:
+  - **Opaque body pass-through** — pure relay after the head verdict. This is
+    the row that can plausibly approach line rate, and the bench must confirm
+    the body path performs no per-byte work beyond the copy.
+  - **Inspected content** — HTML only, and only from Phase 4. Budget it
+    separately and do not let it set expectations for the row above.
+
+  Measure both on-device before writing either number; the earlier
+  "saturate 1 Gbps" note was an assumption, and 125 MB/s through userspace on
+  a 1.4 GHz ARM core — on a box where the DNS engine alone reached 65.8 % of it
+  under load (`p1.5-06-review.md`) — is exactly the kind of target that should
+  come from a measurement rather than produce one.
+- **RAM ceiling ≤128 MB is a claim to verify, not assume.** Phase 1.5 already
+  sits near it (~104 MiB steady at the configured cache size), so state the
+  post-Phase-2 figure with EasyList + policies loaded and say plainly whether
+  it fits. If p2-03 already flagged the headroom, this row confirms or
+  contradicts it — either outcome gets recorded.
 - Bench consolidation: HTTP benches map 1:1 to the new budget rows.
 - End-to-end (offline): mock origin + real binary in dns+http mode —
   page with ad script: script blocked (200-empty), page renders; second

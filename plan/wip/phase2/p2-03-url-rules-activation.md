@@ -1,6 +1,9 @@
 # P2-03 — URL Rules Activation
 
-**Phase:** 2 · **Depends on:** p2-01 · **Model:** Opus
+**Phase:** 2 · **Depends on:** phase1 · **Model:** Opus
+
+> Pure `fah-rules` work — it needs no `fah-http` scaffold, so it can run in
+> parallel with p2-01/p2-02 rather than behind them.
 
 ## Goal
 
@@ -25,6 +28,16 @@ compile to automata/masks, not regex).
   → Verdict + decisive rule/list (extends fah-model types if needed —
   CONTEXT.md updated).
 - Cosmetic rules (`##`) stay inactive (Phase 4) — counters keep reporting.
+- **Memory headroom is the real constraint — measure it first, before building
+  the matcher out.** Measured on the RB5009: DNS ruleset 21.9 MiB, steady RSS
+  ~104 MiB with the cache at its configured 50 000 / 64 MiB, against a 128 MB
+  budget. That leaves **~24 MiB** for the URL matcher *plus* the HTTP engine
+  and its pools (p2-02) *plus* per-policy rulesets (p2-05). "Full EasyList
+  compiles" is therefore not free, and finding out at p2-07 is too late.
+  Take a measurement of the compiled URL-matcher heap early and report it; if
+  it does not fit, the options (subset the lists, share storage with the domain
+  index, raise the budget with justification) are a decision for the user, not
+  a silent overrun.
 - Compile-time budget guard: matcher memory measured with full EasyList in
   `benches/`; lookup allocation-free.
 - Fixture tests: real EasyList excerpts with known-blocked/known-passed URL
@@ -35,6 +48,10 @@ compile to automata/masks, not regex).
 
 - Full EasyList compiles; request verdict p99 < 1ms, allocation-free
   (bench-proven, numbers recorded).
+- **Compiled URL-matcher heap measured and recorded as an absolute number**,
+  with the remaining headroom against 128 MB stated explicitly (see the
+  ~24 MiB figure above). A number that does not fit is a finding to raise, not
+  a gate to quietly relax.
 - `@@` exceptions beat blocks; `$domain=`/party options honored (tests).
 - RULE_ENGINE.md documents HTTP matching in the same change.
 - Gates green.
