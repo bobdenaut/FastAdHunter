@@ -8,10 +8,3 @@
 
 # Local editor settings — contains the API key in plaintext, never commit.
 .vscode/
-
-# Phase under active work — internal scratch surface. `plan/open` (roadmap) and
-# `plan/closed` (record) stay tracked; the phase-close commit moves files
-# straight from one to the other. Note plan/wip/phase1.5 predates this rule and
-# remains in history.
-plan/wip/
-!plan/wip/.gitkeep
