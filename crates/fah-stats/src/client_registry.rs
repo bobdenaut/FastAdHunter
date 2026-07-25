@@ -63,6 +63,19 @@ impl ClientRegistry {
         }
     }
 
+    /// Heap owned by the registry: the map's buckets plus each record's
+    /// optional name. `ClientRecord::buckets` is a fixed-size array counted
+    /// inside `size_of::<ClientRecord>()` by [`crate::heap::hashmap_bytes`].
+    pub(crate) fn heap_bytes(&self) -> usize {
+        crate::heap::hashmap_bytes::<IpAddr, ClientRecord>(self.clients.len())
+            + self
+                .clients
+                .values()
+                .filter_map(|record| record.name.as_deref())
+                .map(crate::heap::string_bytes)
+                .sum::<usize>()
+    }
+
     pub fn record(&mut self, ip: IpAddr, at: SystemTime, blocked: bool, cache_hit: bool) {
         if !self.clients.contains_key(&ip) {
             // Unnamed clients go first (false < true), least-recently-seen

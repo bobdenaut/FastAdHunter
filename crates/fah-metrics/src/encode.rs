@@ -242,6 +242,45 @@ pub fn encode(metrics: &Metrics) -> String {
         ruleset.compile_duration.as_secs_f64(),
     );
 
+    // Memory breakdown (p2-07). Sampled together by the binary, so
+    // `component + residual` reconciles to the `rss` in the same snapshot —
+    // which would not hold if this re-read RSS here, at a different instant.
+    let memory = metrics.memory.load();
+    write_help_type(
+        &mut out,
+        "fastadhunter_memory_component_bytes",
+        "gauge",
+        "Heap attributed to each bounded component, at the last telemetry poll.",
+    );
+    for (component, bytes) in [
+        ("ruleset", memory.ruleset),
+        ("cache", memory.cache),
+        ("stats_aggregates", memory.stats.aggregates),
+        ("stats_clients", memory.stats.clients),
+        ("query_log_ring", memory.stats.ring),
+        ("query_log_pending", memory.stats.pending_log),
+    ] {
+        writeln_metric(
+            &mut out,
+            "fastadhunter_memory_component_bytes",
+            &[("component", component)],
+            bytes as f64,
+        );
+    }
+    write_help_type(
+        &mut out,
+        "fastadhunter_memory_residual_bytes",
+        "gauge",
+        "RSS minus every accounted component: binary pages, stacks, runtime and \
+         allocator retention. Growth here while components stay flat is the leak signal.",
+    );
+    writeln_metric(
+        &mut out,
+        "fastadhunter_memory_residual_bytes",
+        &[],
+        memory.residual().unwrap_or(0) as f64,
+    );
+
     write_help_type(
         &mut out,
         "process_resident_memory_bytes",

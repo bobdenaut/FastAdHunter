@@ -52,6 +52,14 @@ impl BoundedCounter {
         self.counts.insert(Arc::from(key), 1);
     }
 
+    /// Heap owned by this counter: the map's buckets plus every tracked key's
+    /// string bytes and `Arc` control block. Excludes this struct's own inline
+    /// size, which its owner accounts for (see `heap.rs`).
+    pub(crate) fn heap_bytes(&self) -> usize {
+        crate::heap::hashmap_bytes::<Arc<str>, u64>(self.counts.len())
+            + crate::heap::arc_key_bytes(&self.counts)
+    }
+
     /// Only [`HourlyTopN::top`]'s merged view is read in production; the
     /// per-counter sort survives for its direct tests.
     #[cfg(test)]
@@ -110,6 +118,15 @@ impl Default for HourlyTopN {
 }
 
 impl HourlyTopN {
+    /// Heap across all 24 hour slots. The `slots` array itself is inline in
+    /// this struct and therefore excluded — its owner accounts for it.
+    pub(crate) fn heap_bytes(&self) -> usize {
+        self.slots
+            .iter()
+            .map(|slot| slot.counter.heap_bytes())
+            .sum()
+    }
+
     pub fn record(&mut self, key: &str, at: SystemTime) {
         let hour = epoch_hour(at);
         let slot = &mut self.slots[(hour % BUCKET_COUNT) as usize];

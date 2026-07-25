@@ -702,6 +702,21 @@ pub struct MemoryResponse {
     pub ruleset_bytes: u64,
     pub cache_entries: u64,
     pub cache_estimated_bytes: u64,
+    /// 24 h aggregates plus the bounded top-N domain counters.
+    pub stats_aggregates_bytes: u64,
+    /// Per-client records, capped at 4 096 with LRU eviction.
+    pub stats_clients_bytes: u64,
+    /// In-RAM query ring serving `GET /api/v1/queries`.
+    pub query_log_ring_bytes: u64,
+    /// Query-log entries awaiting the next flush to `/data`.
+    pub query_log_pending_bytes: u64,
+    /// Everything above, summed.
+    pub accounted_bytes: u64,
+    /// `process_rss − accounted_bytes`: binary pages, thread stacks, the tokio
+    /// runtime, and allocator memory musl has not returned to the OS. Growth
+    /// here while the components stay flat is the leak signal (p2-07).
+    /// `null` when RSS is unavailable, since it cannot then be computed.
+    pub residual_bytes: Option<u64>,
     /// `null` off Linux — the deployment target is a Linux container; a dev
     /// box on another OS simply has no `/proc/self/status` to read.
     pub process_rss: Option<u64>,

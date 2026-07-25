@@ -147,6 +147,12 @@ impl StatsSource for StatsAdapter {
         self.stats.set_history_enabled(enabled);
         self.stats.set_history_retention_days(retention_days);
     }
+
+    /// Pass-through: both sides speak `fah_model::StatsHeap`, so there is
+    /// nothing to translate (p2-07).
+    fn heap(&self) -> fah_model::StatsHeap {
+        self.stats.heap()
+    }
 }
 
 /// The history reads, on the same `Arc<Stats>` handle. A pass-through rather

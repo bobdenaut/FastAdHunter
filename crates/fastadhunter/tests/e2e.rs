@@ -409,16 +409,25 @@ async fn await_api_ready(
     }
 }
 
-/// Whether a startup failure was somebody else taking the port we picked,
-/// rather than a defect worth failing the test over.
+/// Whether a startup failure was the port we picked being unusable, rather
+/// than a defect worth failing the test over.
 fn is_port_conflict(log: &str) -> bool {
     let log = log.to_ascii_lowercase();
-    // Windows WSAEADDRINUSE, Linux EADDRINUSE, and both platforms' prose.
     [
+        // Taken: Windows WSAEADDRINUSE, Linux EADDRINUSE, and the prose forms.
         "10048",
         "os error 98",
         "address already in use",
         "socket address",
+        // Reserved: Windows WSAEACCES. Hyper-V/WinNAT reserves whole blocks of
+        // ephemeral ports (`netsh interface ipv4 show excludedportrange
+        // protocol=tcp`), and binding inside one fails with "an attempt was
+        // made to access a socket in a way forbidden by its access
+        // permissions" — not "in use". Without this the harness treats a
+        // reserved port as a real defect and fails the whole gate; it made the
+        // suite flake roughly one run in four on this box.
+        "10013",
+        "forbidden by its access permissions",
     ]
     .iter()
     .any(|needle| log.contains(needle))

@@ -6,6 +6,8 @@
 pub(crate) mod ring;
 pub(crate) mod segment;
 
+pub(crate) use ring::entry_string_bytes;
+
 use std::net::IpAddr;
 use std::time::SystemTime;
 

@@ -27,6 +27,14 @@ pub(crate) struct Aggregates {
 }
 
 impl Aggregates {
+    /// Heap owned by the aggregates. `buckets` and `type_counts` are
+    /// fixed-size arrays living inline in this struct, so they contribute
+    /// their own inline size once here and allocate nothing further; only the
+    /// two bounded domain counters own heap.
+    pub(crate) fn heap_bytes(&self) -> usize {
+        std::mem::size_of::<Self>() + self.top_blocked.heap_bytes() + self.top_queried.heap_bytes()
+    }
+
     pub fn record(
         &mut self,
         domain: &str,

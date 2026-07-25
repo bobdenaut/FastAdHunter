@@ -139,6 +139,15 @@ impl StatsSource for FakeStats {
     fn apply_history_config(&self, enabled: bool, retention_days: u32) {
         *self.applied_history.lock().unwrap() = Some((enabled, retention_days));
     }
+
+    fn heap(&self) -> fah_model::StatsHeap {
+        fah_model::StatsHeap {
+            aggregates: 40_000,
+            clients: 8_000,
+            ring: 300_000,
+            pending_log: 12_000,
+        }
+    }
 }
 
 /// Serves fixed fixtures and records what the handler asked for. The real

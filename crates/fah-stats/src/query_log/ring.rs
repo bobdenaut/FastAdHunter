@@ -13,6 +13,18 @@ pub(crate) struct Ring {
     entries: VecDeque<QueryLogEntry>,
     capacity: usize,
     next_sequence: u64,
+    /// Owned string bytes across all resident entries, maintained on push and
+    /// eviction rather than walked on read (p2-07).
+    ///
+    /// The ring is the largest counted structure — 16,384 entries by default,
+    /// each holding a heap-allocated domain — so walking it cost ~80 µs per
+    /// accounting call on x86 and an estimated 0.4–0.6 ms on the RB5009, with
+    /// the ring mutex held. That is only 0.005 % duty cycle at a 10 s poll, but
+    /// it is paid forever and it is latency a query can land on. Unlike the
+    /// bounded counters, this structure has exactly one mutation point, so a
+    /// running total is cheap to keep correct — the same reasoning that made
+    /// the DNS cache track its own bytes.
+    bytes: usize,
 }
 
 impl Ring {
@@ -21,7 +33,17 @@ impl Ring {
             entries: VecDeque::new(),
             capacity: capacity.max(1),
             next_sequence: 0,
+            bytes: 0,
         }
+    }
+
+    /// Heap owned by the ring: the `VecDeque` buffer at its configured
+    /// capacity — the allocation is what occupies RAM, not the fill — plus the
+    /// running total of every resident entry's owned strings. O(1); see
+    /// [`Self::bytes`]. Excludes the segment files on `/data`, which
+    /// `retention_max_mb` bounds separately.
+    pub(crate) fn heap_bytes(&self) -> usize {
+        crate::heap::vecdeque_bytes::<QueryLogEntry>(self.capacity) + self.bytes
     }
 
     /// Pushes a new entry, evicting the oldest on overflow. Returns the
@@ -36,8 +58,11 @@ impl Ring {
             client_name,
         };
         if self.entries.len() >= self.capacity {
-            self.entries.pop_front();
+            if let Some(evicted) = self.entries.pop_front() {
+                self.bytes -= entry_string_bytes(&evicted);
+            }
         }
+        self.bytes += entry_string_bytes(&entry);
         self.entries.push_back(entry.clone());
         entry
     }
@@ -70,6 +95,26 @@ impl Ring {
     pub fn len(&self) -> usize {
         self.entries.len()
     }
+}
+
+/// Owned string bytes behind one log entry: the queried domain, the optional
+/// client name, and the decisive rule's list/rule text when a verdict carries
+/// one. Shared here and by the pending batch, which holds the same type.
+pub(crate) fn entry_string_bytes(entry: &QueryLogEntry) -> usize {
+    use fah_model::Verdict;
+
+    let verdict = match &entry.event.verdict {
+        Verdict::Block(rule) | Verdict::Allow(rule) => {
+            crate::heap::arc_str_bytes(&rule.list) + crate::heap::arc_str_bytes(&rule.rule)
+        }
+        Verdict::Pass => 0,
+    };
+    crate::heap::string_bytes(&entry.event.query.domain)
+        + entry
+            .client_name
+            .as_deref()
+            .map_or(0, crate::heap::string_bytes)
+        + verdict
 }
 
 #[cfg(test)]
@@ -113,6 +158,37 @@ mod tests {
             .map(|e| e.event.query.domain.clone())
             .collect();
         assert_eq!(domains, vec!["c.example.com", "b.example.com"]);
+    }
+
+    /// The failure mode a running total introduces: drifting from reality
+    /// after evictions. Asserts the tracked figure equals a full walk (p2-07).
+    #[test]
+    fn tracked_bytes_match_a_full_walk_across_eviction() {
+        let mut ring = Ring::new(64);
+        for i in 0..500 {
+            // Varying lengths, plus verdicts that own `Arc<str>` payloads, so
+            // an eviction that subtracted the wrong amount would show up.
+            let verdict = if i % 3 == 0 {
+                Verdict::Block(DecisiveRule::new("oisd", format!("||ads{i}.example.com^")))
+            } else {
+                Verdict::Pass
+            };
+            let name = (i % 4 == 0).then(|| format!("client-name-{i}"));
+            ring.push(
+                event(&format!("d{i}.some-domain-{i}.example.com"), verdict),
+                name,
+            );
+        }
+
+        let walked: usize = ring.entries.iter().map(entry_string_bytes).sum();
+        assert_eq!(
+            ring.bytes, walked,
+            "the running total drifted from the real contents after eviction"
+        );
+        assert_eq!(
+            ring.heap_bytes(),
+            crate::heap::vecdeque_bytes::<QueryLogEntry>(64) + walked
+        );
     }
 
     #[test]

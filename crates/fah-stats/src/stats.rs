@@ -26,6 +26,7 @@ use crate::query_log::ring::Ring;
 use crate::query_log::segment::SegmentWriter;
 use crate::query_log::{QueryLogFilter, QueryPage};
 use crate::snapshot::{self, SnapshotData};
+use fah_model::StatsHeap;
 
 const DEFAULT_TOP_N: usize = 10;
 
@@ -181,6 +182,41 @@ impl Stats {
     /// on the producer (`fah_dns::Pipeline::dropped_events`).
     pub fn query_log_overflow_dropped(&self) -> u64 {
         self.pending_dropped.load(Ordering::Relaxed)
+    }
+
+    /// This crate's contribution to the memory breakdown (p2-07).
+    ///
+    /// Takes the three sync locks in turn — never the async `segment`,
+    /// `history` or `perf` writers, so a poll can never contend with a flush
+    /// doing I/O. Those writers hold only paths and small buffers; their real
+    /// weight is on `/data`, bounded by `retention_max_mb`, and disk is not
+    /// what this accounts for.
+    ///
+    /// Called on the 10 s telemetry poll, never on the query path. See
+    /// [`crate::heap`] for which structures are walked and which track a
+    /// running total, and why.
+    pub fn heap(&self) -> StatsHeap {
+        StatsHeap {
+            aggregates: self
+                .aggregates
+                .lock()
+                .expect("aggregates mutex poisoned")
+                .heap_bytes() as u64,
+            clients: self
+                .clients
+                .lock()
+                .expect("clients mutex poisoned")
+                .heap_bytes() as u64,
+            ring: self.ring.lock().expect("ring mutex poisoned").heap_bytes() as u64,
+            pending_log: {
+                let pending = self.pending_log.lock().expect("pending mutex poisoned");
+                (pending.capacity() * std::mem::size_of::<crate::query_log::QueryLogEntry>()
+                    + pending
+                        .iter()
+                        .map(crate::query_log::entry_string_bytes)
+                        .sum::<usize>()) as u64
+            },
+        }
     }
 
     pub fn spawn_snapshot_scheduler(self: &Arc<Self>) -> JoinHandle<()> {
@@ -611,6 +647,83 @@ mod tests {
         let snapshot = restarted.snapshot(SystemTime::now());
         assert_eq!(snapshot.queries_total, 1);
         assert_eq!(snapshot.blocked_total, 1);
+    }
+
+    /// The instrument has to *move* when memory moves, or a flat reading
+    /// proves nothing (p2-07).
+    #[tokio::test]
+    async fn heap_accounting_tracks_recorded_traffic_and_stays_bounded() {
+        let (stats_config, query_log_config) = config();
+        let dir = tempfile::tempdir().unwrap();
+        let stats = Stats::new(
+            &stats_config,
+            &query_log_config,
+            &HistoryConfig::default(),
+            dir.path().to_path_buf(),
+        );
+        stats.boot().await;
+
+        let empty = stats.heap();
+        assert!(
+            empty.ring > 0,
+            "the ring allocates its buffer up front — capacity is what occupies RAM, not fill"
+        );
+
+        for i in 0..500u32 {
+            let client = IpAddr::V4(Ipv4Addr::new(10, 0, (i / 256) as u8, (i % 256) as u8));
+            stats.record(event(
+                &format!("domain-{i}.example.com"),
+                client,
+                Verdict::Pass,
+            ));
+        }
+        let loaded = stats.heap();
+
+        assert!(
+            loaded.aggregates > empty.aggregates,
+            "tracked domains must show up in the aggregates: {} -> {}",
+            empty.aggregates,
+            loaded.aggregates
+        );
+        assert!(
+            loaded.clients > empty.clients,
+            "distinct clients must show up in the registry: {} -> {}",
+            empty.clients,
+            loaded.clients
+        );
+        assert!(loaded.total() > empty.total());
+
+        // Bounded: compare two *saturated* states, not empty against full.
+        // Growing from 500 clients toward the 4,096 cap is legitimate fill;
+        // what hard rule 4 promises is that once the caps are reached, more
+        // distinct keys cost nothing further.
+        for i in 500..40_000u32 {
+            let client = IpAddr::V4(Ipv4Addr::new(10, 1, (i / 256) as u8, (i % 256) as u8));
+            stats.record(event(
+                &format!("domain-{i}.example.com"),
+                client,
+                Verdict::Pass,
+            ));
+        }
+        let saturated = stats.heap();
+
+        for i in 40_000..80_000u32 {
+            let client = IpAddr::V4(Ipv4Addr::new(11, 1, (i / 256) as u8, (i % 256) as u8));
+            stats.record(event(
+                &format!("other-{i}.example.net"),
+                client,
+                Verdict::Pass,
+            ));
+        }
+        let still_saturated = stats.heap();
+
+        let growth = still_saturated.total() as f64 / saturated.total() as f64;
+        assert!(
+            growth < 1.25,
+            "past the caps, 40,000 more distinct clients and domains must cost              almost nothing (hard rule 4); grew {growth:.2}x ({} -> {} bytes)",
+            saturated.total(),
+            still_saturated.total()
+        );
     }
 
     #[tokio::test]

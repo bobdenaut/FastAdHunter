@@ -105,7 +105,7 @@ Note the matcher's *hot path* is pure, but `fah-rules` as a crate is not I/O-fre
 | 4 | `p2-04-http-filtering-pipeline.md` | Verdicts wired into the proxy: block responses, events, stats | Sonnet | WAITING |
 | 5 | `p2-05-policy-model.md` | Policy = named bundle of lists + settings; schedules; `$client` | Sonnet | WAITING |
 | 6 | `p2-06-per-client-enforcement.md` | DNS + HTTP consult policy per client; policy API endpoints | Sonnet | WAITING |
-| 7 | `p2-07-memory-accounting.md` | Per-component `heap_bytes()` + `RSS − Σ(components)` residual metric — turns "is it growing?" into "growing where?" before the soak | Sonnet | WAITING |
+| 7 | `p2-07-memory-accounting.md` | `fastadhunter_memory_component_bytes` + `_residual_bytes`; shared `fah_model::MemoryBreakdown`; `fah-dns` untouched (`docs/code-review/p2-07-review.md`) | Sonnet | DONE |
 | 8 | `p2-08-phase2-verification.md` | HTTP benches + budgets, e2e tests, RB5009 dns+http validation | Sonnet | WAITING |
 
 **Definition of done:** router dst-nats port 80 to the container; a plain-HTTP
@@ -116,7 +116,7 @@ the updated PERFORMANCE.md hold on-device.
 
 **Key risks:** most web traffic is HTTPS — Phase 2 filters only the unencrypted
 remainder, real value completes in Phase 3 (set user expectations in docs);
-transparent interception needs RouterOS dst-nat rules (mitigation: p2-07
+transparent interception needs RouterOS dst-nat rules (mitigation: p2-08
 documents them, user runs them, rollback is one rule removal); streaming
 pass-through latency regressions (mitigation: fast path benched in p2-02
 before filtering exists).

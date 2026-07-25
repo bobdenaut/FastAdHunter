@@ -553,20 +553,45 @@ Slow consumers are disconnected rather than back-pressuring the engine.
 ### `GET /api/v1/debug/memory`
 
 Where the RAM goes — for checking the PERFORMANCE.md memory budget against a
-live box. The gap between `process_rss` and the parts is runtime + allocator
-retained memory.
+live box. Every **bounded** structure reports its own heap; `residual_bytes` is
+what RSS holds beyond all of them.
 
 ```json
 {
-  "ruleset_bytes": 40470816,
-  "cache_entries": 7261,
-  "cache_estimated_bytes": 2846720,
-  "process_rss": 488000000
+  "ruleset_bytes": 23002595,
+  "cache_entries": 1109,
+  "cache_estimated_bytes": 1053072,
+  "stats_aggregates_bytes": 41984,
+  "stats_clients_bytes": 9216,
+  "query_log_ring_bytes": 1179648,
+  "query_log_pending_bytes": 24576,
+  "accounted_bytes": 25311091,
+  "residual_bytes": 18389133,
+  "process_rss": 43700224
 }
 ```
 
+**The residual is the number to watch.** It legitimately covers binary text and
+data pages, thread stacks, the tokio runtime, and allocator memory musl has not
+returned to the OS — so it is never zero. What matters is its *trend*: growth
+in `residual_bytes` while the components stay flat is the leak signal, because
+the growth you legitimately expect has already been subtracted out. Growth in a
+*component* is not a leak — it is that structure filling toward its cap.
+
+`accounted_bytes` is the sum of the component fields.
+`residual_bytes` = `process_rss − accounted_bytes`, floored at zero: components
+can never really exceed RSS, so a negative value would be an accounting bug
+rather than a real state, and the server logs that case at `warn` instead of
+reporting a wrapped number.
+
 `process_rss` is read from `/proc/self/status` and is `null` on platforms
-without procfs (a non-Linux dev machine).
+without procfs (a non-Linux dev machine); `residual_bytes` is then `null` too,
+since it cannot be computed.
+
+The same figures are exported as `fastadhunter_memory_component_bytes`
+(labelled by `component`) and `fastadhunter_memory_residual_bytes` on
+`/metrics`. Those are sampled together on the 10 s telemetry poll, so they can
+lag this endpoint — which reads live — by up to one interval.
 
 ---
 

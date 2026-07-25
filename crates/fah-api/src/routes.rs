@@ -126,17 +126,38 @@ async fn cache_clean(
     Json(state.cache.clean(params.stale).into())
 }
 
-/// Where the RAM goes, for chasing the PERFORMANCE.md budget on-device:
-/// the compiled ruleset (the largest resident thing), the DNS cache, and the
-/// process RSS the container reports. The gap between RSS and the parts is
-/// runtime + allocator-retained memory.
+/// Where the RAM goes, for chasing the PERFORMANCE.md budget on-device: every
+/// bounded component reports its own heap, and `residual_bytes` is what RSS
+/// holds beyond them — binary pages, thread stacks, the tokio runtime and
+/// allocator retention.
+///
+/// The residual is the number to watch: growth there while the components stay
+/// flat is the leak signal, because the growth you legitimately expect has been
+/// subtracted out (p2-07). Same figures as
+/// `fastadhunter_memory_component_bytes` on `/metrics`, read here at request
+/// time rather than at the last poll, so the two can differ by one interval.
 async fn debug_memory(State(state): State<Arc<AppState>>) -> Json<MemoryResponse> {
     let cache = state.cache.stats();
+    // Same `fah_model::MemoryBreakdown` the metrics path uses, so `accounted`
+    // and `residual` are defined once. Adding a component updates both
+    // surfaces or neither — never one silently (p2-07).
+    let memory = fah_model::MemoryBreakdown {
+        ruleset: state.rules.matcher().heap_bytes() as u64,
+        cache: cache.estimated_bytes,
+        stats: state.stats.heap(),
+        rss: crate::rss::process_rss(),
+    };
     Json(MemoryResponse {
-        ruleset_bytes: state.rules.matcher().heap_bytes() as u64,
+        ruleset_bytes: memory.ruleset,
         cache_entries: cache.entries,
-        cache_estimated_bytes: cache.estimated_bytes,
-        process_rss: crate::rss::process_rss(),
+        cache_estimated_bytes: memory.cache,
+        stats_aggregates_bytes: memory.stats.aggregates,
+        stats_clients_bytes: memory.stats.clients,
+        query_log_ring_bytes: memory.stats.ring,
+        query_log_pending_bytes: memory.stats.pending_log,
+        accounted_bytes: memory.accounted(),
+        residual_bytes: memory.residual(),
+        process_rss: memory.rss,
     })
 }
 

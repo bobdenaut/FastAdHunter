@@ -37,6 +37,10 @@ pub trait StatsSource: Send + Sync + 'static {
     /// neither reconstructs anything (hard rule 3). `sample_interval_seconds` is
     /// boot-class and so is deliberately absent here.
     fn apply_history_config(&self, enabled: bool, retention_days: u32);
+    /// This crate's contribution to the p2-07 memory breakdown, for
+    /// `GET /debug/memory`. Cheap bounded walks on a read path, never the
+    /// query path.
+    fn heap(&self) -> fah_model::StatsHeap;
 }
 
 /// The persisted history on `/data/history` (API.md §History) — the same

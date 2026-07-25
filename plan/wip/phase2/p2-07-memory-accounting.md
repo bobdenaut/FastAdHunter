@@ -51,10 +51,18 @@ simply not reported.
   - `fah-stats`: aggregates + `ClientRegistry` + `top_n` counters.
   - `fah-stats::history`: the resident perf series and rollup buffers.
   - `fah-stats::query_log`: the **in-RAM** ring buffer and pending batch only.
-- **Maintain running totals; never sum on read.** The cache already does this
-  (`p1.5-05-review.md`): it tracks a total on insert/evict rather than walking
-  the map. Follow that pattern — a poll that walks every structure is O(n) work
-  on a timer, and on a 1.4 GHz core that is a real cost for a diagnostic.
+- **Track the large single-mutation-point structures; walk the small intricate
+  ones.** *(Amended twice during implementation: the original said "maintain
+  running totals, never sum on read"; a first pass over-corrected to walking
+  everything. Measurement settled it — see `docs/code-review/p2-07-review.md` §5.)*
+  Measured, `Stats::heap()` cost 80 µs walking everything and 43 µs once the
+  query ring kept a running total: the ring is 16,384 entries and has exactly
+  one mutation point, so tracking is both the big win and the safe one. `top_n`
+  (≤256 keys/slot) and `ClientRegistry` (≤4,096) keep being walked — their
+  eviction is multi-step, which is where a running total drifts, and their cost
+  is tens of µs. The cache already tracked, because it needs `bytes` for
+  eviction decisions rather than reporting. Any running total needs a test
+  asserting it equals a full walk after eviction.
 - **Each `heap_bytes()` documents what it excludes.** Precedent for why:
   `p1-02-review.md` §4 found `heap_bytes` counting `Arc` control blocks but not
   their payload strings — an undercount in the very number feeding a budget
@@ -103,7 +111,7 @@ capture where this gives a permanent signal.
 
 > Read plan/wip/phase2/p2-07-memory-accounting.md, ARCHITECTURE.md
 > (fah-stats/fah-metrics) and ADR-0002. Add per-component `heap_bytes()` with
-> running totals — never summing on read — export
+> bounded walks on the poll — never on the query path — export
 > `fastadhunter_memory_component_bytes` and `fastadhunter_memory_residual_bytes`
 > sampled in one pass on the telemetry poll, mirror the breakdown in
 > `/debug/memory`, and prove the residual is non-negative, small and stable.

@@ -329,7 +329,7 @@ impl Engine {
                 Arc::clone(&pipeline),
                 perf_sample_interval_seconds,
             ),
-            spawn_telemetry_poll(metrics, rules, pipeline, upstreams),
+            spawn_telemetry_poll(metrics, rules, pipeline, upstreams, Arc::clone(&stats)),
         ];
 
         Ok(Self { dns, api, tasks })
@@ -374,12 +374,14 @@ fn spawn_event_fanout(
 }
 
 /// Refreshes the metrics that are read rather than pushed: the pipeline's
-/// channel-drop counter, per-upstream health, and the compiled ruleset's size.
+/// channel-drop counter, per-upstream health, the compiled ruleset's size, and
+/// the p2-07 memory breakdown.
 fn spawn_telemetry_poll(
     metrics: Arc<fah_metrics::Metrics>,
     rules: Arc<fah_rules::ListManager>,
     pipeline: Arc<fah_dns::Pipeline<fah_dns::UpstreamPool>>,
     upstreams: fah_dns::UpstreamPool,
+    stats: Arc<fah_stats::Stats>,
 ) -> tokio::task::JoinHandle<()> {
     tokio::spawn(async move {
         let mut ticker = tokio::time::interval(TELEMETRY_POLL);
@@ -403,7 +405,46 @@ fn spawn_telemetry_poll(
                     .collect(),
             );
 
+            // Memory breakdown (p2-07), gathered in ONE pass so
+            // `Σ(components) + residual == rss` holds within this snapshot.
+            // Reading RSS at a different instant from the components would
+            // push the skew into the residual, which is precisely the signal
+            // this exists to keep clean.
+            //
+            // This is also the only layer allowed to see all three sources:
+            // fah-rules, fah-dns and fah-stats are L3 siblings that never
+            // import each other, and fah-metrics never learns what any of
+            // them is — it just receives the finished snapshot.
             let matcher = rules.matcher();
+            let cache = pipeline.cache_stats();
+            let stats_heap = stats.heap();
+            let memory = fah_model::MemoryBreakdown {
+                ruleset: matcher.heap_bytes() as u64,
+                cache: cache.bytes,
+                stats: stats_heap,
+                // `0` is this accessor's "couldn't determine" — a non-Linux
+                // dev box, or an unreadable /proc/self/status. Mapped to
+                // `None` so the residual reports as absent rather than as a
+                // fabricated RSS of zero.
+                rss: match fah_metrics::resident_memory_bytes() {
+                    0 => None,
+                    bytes => Some(bytes),
+                },
+            };
+            if memory.over_accounted() {
+                // Impossible in reality: components cannot hold more than the
+                // process resides. Means a `heap_bytes` double-counts, or
+                // counts something not resident. Logged rather than silently
+                // floored at zero, because a wrong instrument is worse than
+                // no instrument.
+                tracing::warn!(
+                    accounted = memory.accounted(),
+                    rss = ?memory.rss,
+                    "memory accounting exceeds RSS — a component heap_bytes is over-reporting",
+                );
+            }
+            metrics.set_memory(memory);
+
             metrics.set_ruleset(fah_metrics::RulesetSnapshot {
                 rules: matcher.len(),
                 heap_bytes: matcher.heap_bytes(),
