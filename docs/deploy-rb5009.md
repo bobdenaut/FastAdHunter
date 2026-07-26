@@ -125,17 +125,91 @@ registry and is the recommended path for a first deployment.
 
 ## 2. Upload the tarball to the router
 
-From the build host:
+**The deploy copy:**
 
 ```sh
-scp fastadhunter-arm64.tar admin@192.168.10.1:kingston/
+scp fastadhunter-arm64-<ver>.tar bobdenaut:kingston/
 ```
 
-Or, if the tarball is reachable over HTTP, from RouterOS:
+That is the whole command — no port, no username, no key path. They live in
+the build host's `~/.ssh/config`, which is also what WinSCP reads:
+
+```text
+Host bobdenaut rb5009
+    HostName 192.168.10.1
+    Port 2202              # RouterOS SSH is NOT on 22 here
+    User bobdenaut
+    IdentityFile ~/.ssh/fah_rb5009
+    IdentitiesOnly yes
+```
+
+### One-time key setup
+
+RouterOS accepts ed25519. Generate a **dedicated deploy key** rather than
+reusing a personal one, so revoking it later costs nothing:
+
+```sh
+ssh-keygen -t ed25519 -f ~/.ssh/fah_rb5009 -N "" -C "fah-deploy@$(hostname)"
+```
+
+Upload the **public** half — the only time a password is typed — then import
+it. Note the **trailing colon**: without it `scp` reads
+`user@host` as a local filename and silently makes a local copy instead of
+transferring anything:
+
+```sh
+scp -P 2202 ~/.ssh/fah_rb5009.pub bobdenaut@192.168.10.1:
+```
+
+```routeros
+/user/ssh-keys/import public-key-file=fah_rb5009.pub user=bobdenaut
+/user/ssh-keys/print
+```
+
+Two things that make this look broken when it is not:
+
+- **A password prompt after the import means the key was not offered**, not
+  that it was rejected. `fah_rb5009` is not one of the default names OpenSSH
+  tries, so a raw `scp -P 2202 … bobdenaut@192.168.10.1:` falls back to
+  password. Use the config alias, or pass `-i` explicitly.
+- On Windows, `ssh.exe` checks the private key's **ACLs**, not POSIX bits, and
+  refuses a world-readable key with *UNPROTECTED PRIVATE KEY FILE*:
+
+  ```powershell
+  icacls $env:USERPROFILE\.ssh\fah_rb5009 /inheritance:r /grant:r "$env:USERNAME:(R)"
+  ```
+
+Check the SSH port and that the input chain admits LAN traffic before assuming
+a firewall problem — on a stock chain ending in
+`drop in-interface-list=!LAN`, LAN traffic already falls through to the
+implicit accept and **no rule needs adding**
+([read the chain first](../CLAUDE.md)):
+
+```routeros
+/ip/service/print
+/ip/firewall/filter/print where chain=input
+```
+
+### Alternatives
+
+If the tarball is reachable over HTTP, pull it from RouterOS instead:
 
 ```routeros
 /tool/fetch url="http://<build-host>:8000/fastadhunter-arm64.tar" \
   dst-path=kingston/fastadhunter-arm64.tar
+```
+
+An SMB share of the SSD (`/disk` `smb-sharing=yes`) also works and was the
+original path here, but **it is not recommended**: the share exposes
+`kingston/fastadhunter/config/`, which holds the API key and the API server's
+TLS **private key** — and from Phase 3, the interception CA's private key.
+`scp` needs no such exposure. Turning it off requires the container stopped,
+since RouterOS must unmount the filesystem to change the flag:
+
+```routeros
+/container/stop [find comment="fastadhunter"]
+/disk/set [find slot=kingston] smb-sharing=no media-sharing=no
+/container/start [find comment="fastadhunter"]
 ```
 
 ## 3. Network and storage setup
