@@ -50,7 +50,7 @@ on the current instance — delete, restart, still gone.
 
 **Remaining to close p1-11:**
 
-**Cutover done 2026-07-19.** All six IPv4 rules on `172.17.0.3` (including the
+**Cutover done 2026-07-19.** All six IPv4 rules on `172.17.0.2` (including the
 two WireGuard `srcnat` accepts), `start-on-boot=yes`, `status=running`.
 `GET /api/v1/queries` shows real household traffic from multiple LAN clients
 with their own source addresses, blocked verdicts carrying rule and list
@@ -108,7 +108,7 @@ dead again — and as of 2026-07-21 the dual-stack listener is **implemented**
 (`[dns.listen] address = "::"` serves both stacks on one socket, v4-mapped
 client addresses canonicalized; deploy-rb5009.md §IPv6 has the cutover
 steps). Remaining on-device: set `address = "::"` in the config, deploy the
-new build, move the two v6 dstnat `to-address` values to veth2's
+new build, move the two v6 dstnat `to-address` values to veth1's
 `2a02:2f04:5008:bb00::11`.
 
 Two known metric defects do not gate closure but should be recorded in the

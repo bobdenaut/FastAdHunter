@@ -16,7 +16,7 @@ do not expose SO_ORIGINAL_DST-style metadata.
 
 **That constraint is a security problem, not a footnote.** `Host` is
 attacker-controlled: any LAN device — or malware on one — picks where
-FastAdHunter connects. `Host: 172.17.0.3:8443` reaches our own API,
+FastAdHunter connects. `Host: 172.17.0.2:8443` reaches our own API,
 `Host: 192.168.10.1` reaches the router, and link-local or metadata addresses
 follow the same way. With no SO_ORIGINAL_DST there is nothing to cross-check
 the claim against, so the guard has to be an allow-policy on the resolved

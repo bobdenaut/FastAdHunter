@@ -10,9 +10,9 @@ that validates the [PERFORMANCE.md](../PERFORMANCE.md) budgets on-device.
 | ----- | ----- |
 | LAN bridge / subnet | `bridge` · `192.168.10.0/24`, router at `192.168.10.1` |
 | Container bridge | `containers` · `172.17.0.0/24`, router at `172.17.0.1` |
-| Container address | `172.17.0.3` |
-| DNS service | `172.17.0.3:53` (UDP + TCP) |
-| API | `https://172.17.0.3:8443` |
+| Container address | `172.17.0.2` |
+| DNS service | `172.17.0.2:53` (UDP + TCP) |
+| API | `https://172.17.0.2:8443` |
 | Persistent storage | external USB SSD, mounted by RouterOS as `kingston` |
 
 Substitute your own addresses consistently; nothing below depends on these
@@ -217,12 +217,12 @@ since RouterOS must unmount the filesystem to change the flag:
 ### 3.1 Container network
 
 ```routeros
-/interface/veth/add name=veth2 \
-  address=172.17.0.3/24,<your-v6-prefix>::11/64 \
+/interface/veth/add name=veth1 \
+  address=172.17.0.2/24,<your-v6-prefix>::11/64 \
   gateway=172.17.0.1 gateway6=<your-v6-prefix>::1
 
 /interface/bridge/add name=containers
-/interface/bridge/port/add bridge=containers interface=veth2
+/interface/bridge/port/add bridge=containers interface=veth1
 /ip/address/add address=172.17.0.1/24 interface=containers
 ```
 
@@ -273,7 +273,7 @@ Verify empirically instead, after the container is running:
 | Symptom | Rule to add — only if it actually fails |
 | ------- | --------------------------------------- |
 | Ruleset stays at 0 rules, lists never download | `/ip/firewall/nat/add chain=srcnat action=masquerade src-address=172.17.0.0/24` |
-| LAN clients time out querying `172.17.0.3:53` | `/ip/firewall/filter/add chain=forward action=accept src-address=<LAN>/24 dst-address=172.17.0.3 protocol=udp dst-port=53` (and the same for `tcp`) |
+| LAN clients time out querying `172.17.0.2:53` | `/ip/firewall/filter/add chain=forward action=accept src-address=<LAN>/24 dst-address=172.17.0.2 protocol=udp dst-port=53` (and the same for `tcp`) |
 
 > **Never paste a filter rule in blind.** `/ip/firewall/filter/add` appends to
 > the end of the chain — behind any final drop, where it has no effect. Rules
@@ -335,8 +335,8 @@ snapshots) — see [CONFIGURATION.md](../CONFIGURATION.md) §Volumes.
 
 ```routeros
 /container/add \
-  file=kingston/fastadhunter-arm64-0.2.4.tar \
-  interface=veth2 \
+  file=kingston/fastadhunter-arm64-0.2.5.tar \
+  interface=veth1 \
   root-dir=kingston/fastadhunter/root \
   mounts=fah-config,fah-data \
   logging=yes \
@@ -434,10 +434,10 @@ unprivileged port and redirect instead:
 
    ```routeros
    /ip/firewall/nat/add chain=dstnat action=dst-nat \
-     dst-address=172.17.0.3 protocol=udp dst-port=53 to-ports=5353 \
+     dst-address=172.17.0.2 protocol=udp dst-port=53 to-ports=5353 \
      comment="fastadhunter dns udp"
    /ip/firewall/nat/add chain=dstnat action=dst-nat \
-     dst-address=172.17.0.3 protocol=tcp dst-port=53 to-ports=5353 \
+     dst-address=172.17.0.2 protocol=tcp dst-port=53 to-ports=5353 \
      comment="fastadhunter dns tcp"
    ```
 
@@ -452,14 +452,14 @@ Hand the container's address to clients via DHCP:
 
 ```routeros
 /ip/dhcp-server/network/set [find address=192.168.10.0/24] \
-  dns-server=172.17.0.3
+  dns-server=172.17.0.2
 ```
 
 Clients pick this up on their next lease renewal; force it by reconnecting, or
 shorten the lease time temporarily.
 
 > RouterOS's own DNS service (`/ip/dns`) is unaffected — it lives on the
-> router's LAN address, not on `172.17.0.3`, so the two do not collide. Leave
+> router's LAN address, not on `172.17.0.2`, so the two do not collide. Leave
 > it configured as a fallback you can revert to (see §8).
 
 ### Replacing an existing resolver — keep both, switch with a script
@@ -486,10 +486,10 @@ accepts. Save one script per direction:
 
 ```routeros
 /system/script/add name=dns-fah source={
-  /ip/firewall/filter/set [find comment~"DNS filter redirect"] dst-address=172.17.0.3
-  /ip/firewall/nat/set [find comment="Redirect catre DNS filter(docker)"] to-addresses=172.17.0.3
-  /ip/firewall/nat/set [find comment~"No NAT WG DNS"] dst-address=172.17.0.3
-  /ip/dns/set servers=172.17.0.3
+  /ip/firewall/filter/set [find comment~"DNS filter redirect"] dst-address=172.17.0.2
+  /ip/firewall/nat/set [find comment="Redirect catre DNS filter(docker)"] to-addresses=172.17.0.2
+  /ip/firewall/nat/set [find comment~"No NAT WG DNS"] dst-address=172.17.0.2
+  /ip/dns/set servers=172.17.0.2
   /ip/dns/cache/flush
 }
 
@@ -545,7 +545,7 @@ recovers by itself the moment the new container starts. The cost is a DNS gap
 for the length of the `extracting` phase — minutes on RB5009, largely absorbed
 by client resolver caches on a household LAN.
 
-> **Do not replace the redirect with `servers=172.17.0.3,172.17.0.2` and let
+> **Do not replace the redirect with `servers=172.17.0.2,172.17.0.2` and let
 > RouterOS fail over on its own.** It works, and it is tempting because the
 > failover is automatic — but then every query reaches FastAdHunter from the
 > router's address instead of the client's. Per-client statistics and the
@@ -629,7 +629,7 @@ sysctl; IPv4 clients keep their plain addresses in stats and the query log).
 The cutover is then:
 
 1. `/interface/veth/print detail` — confirm the veth's IPv6 address (the
-   reference deployment: `2a02:2f04:5008:bb00::11/64` on veth2).
+   reference deployment: `2a02:2f04:5008:bb00::11/64` on veth1).
 2. Edit `/config/fastadhunter.toml`: `[dns.listen] address = "::"`, restart
    the container, and verify both binds from a LAN client:
    `nslookup example.com <veth-IPv4>` and `nslookup example.com <veth-IPv6>`.
@@ -652,9 +652,9 @@ Work through these in order; each one is a gate for the next.
 | 2 | First boot wrote to the SSD | `/file/print where name~"fastadhunter/config"` | `fastadhunter.toml`, `apikey`, `api-cert.pem`, `api-key.pem` |
 | 3 | Ruleset compiled | `/log/print where message~"ruleset compiled"` | non-zero rule count |
 | 4 | Listeners bound | `/log/print where message~"DNS listeners bound"` | udp + tcp addresses |
-| 5 | Resolves from the router | `/tool/dns-lookup name=example.com server=172.17.0.3` | an address |
-| 6 | Resolves from a LAN client | `nslookup example.com 172.17.0.3` | an address |
-| 7 | Known ad domain blocked | `nslookup doubleclick.net 172.17.0.3` | `0.0.0.0` (default `null_ip` blocking mode) |
+| 5 | Resolves from the router | `/tool/dns-lookup name=example.com server=172.17.0.2` | an address |
+| 6 | Resolves from a LAN client | `nslookup example.com 172.17.0.2` | an address |
+| 7 | Known ad domain blocked | `nslookup doubleclick.net 172.17.0.2` | `0.0.0.0` (default `null_ip` blocking mode) |
 | 8 | Health endpoint | see below | `200` |
 | 9 | Stats show real counters | see below | non-zero `total`/`blocked` |
 | 10 | Metrics scrape | see below | Prometheus text |
@@ -665,18 +665,18 @@ export the public cert via the API if you want to pin it):
 
 ```sh
 # 8 — health (no key needed; api.metrics_public defaults to true)
-curl --insecure https://172.17.0.3:8443/health
+curl --insecure https://172.17.0.2:8443/health
 
 # 9 — stats
 curl --insecure -H "Authorization: Bearer $FAH_KEY" \
-  https://172.17.0.3:8443/api/v1/stats
+  https://172.17.0.2:8443/api/v1/stats
 
 # 10 — metrics
-curl --insecure https://172.17.0.3:8443/metrics | head -40
+curl --insecure https://172.17.0.2:8443/metrics | head -40
 
 # recent queries, to confirm the block in check 7 was logged
 curl --insecure -H "Authorization: Bearer $FAH_KEY" \
-  "https://172.17.0.3:8443/api/v1/queries?limit=20"
+  "https://172.17.0.2:8443/api/v1/queries?limit=20"
 ```
 
 Endpoint shapes are in [API.md](../API.md).
@@ -695,7 +695,7 @@ twice in a row:
   :global fahFails
   :if ([:typeof $fahFails] = "nothing") do={ :set fahFails 0 }
   :do {
-    /tool/fetch url="https://172.17.0.3:8443/health" check-certificate=no \
+    /tool/fetch url="https://172.17.0.2:8443/health" check-certificate=no \
       output=none as-value
     :set fahFails 0
   } on-error={
@@ -761,14 +761,14 @@ Sample `/metrics` every 5 minutes from any always-on LAN host:
 mkdir -p soak
 while true; do
   ts=$(date -u +%Y%m%dT%H%M%SZ)
-  curl -s --insecure https://172.17.0.3:8443/metrics > "soak/metrics-$ts.txt"
+  curl -s --insecure https://172.17.0.2:8443/metrics > "soak/metrics-$ts.txt"
   curl -s --insecure -H "Authorization: Bearer $FAH_KEY" \
-    https://172.17.0.3:8443/api/v1/stats > "soak/stats-$ts.json"
+    https://172.17.0.2:8443/api/v1/stats > "soak/stats-$ts.json"
   sleep 300
 done
 ```
 
-If a Prometheus instance is available, scrape `172.17.0.3:8443/metrics`
+If a Prometheus instance is available, scrape `172.17.0.2:8443/metrics`
 instead — the retention and querying are worth it for a 24 h window.
 
 Also snapshot the RouterOS view periodically, since it accounts for memory

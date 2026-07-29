@@ -39,7 +39,7 @@
 
   <!-- Container -->
   <rect x="60" y="190" width="820" height="530" rx="10" fill="#f8fafc" stroke="#334155" stroke-width="2"/>
-  <text x="80" y="216" font-size="12" font-weight="700" fill="#334155">FastAdHunter container — distroless/static · ARM64 · veth2 172.17.0.3</text>
+  <text x="80" y="216" font-size="12" font-weight="700" fill="#334155">FastAdHunter container — distroless/static · ARM64 · veth1 172.17.0.2</text>
 
   <!-- Pipeline: listeners -->
   <rect x="210" y="240" width="260" height="48" rx="8" fill="#dbeafe" stroke="#1d4ed8" stroke-width="1.5"/>

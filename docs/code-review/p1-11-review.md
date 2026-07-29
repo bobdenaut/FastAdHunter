@@ -98,10 +98,10 @@ Desktop does **not** always ship this; check `docker buildx inspect` lists
 ### 2.2 Network
 
 ```routeros
-/interface/veth/add name=veth2 \
-  address=172.17.0.3/24,2a02:xxxx:xxxx:xxxx::11/64 \
+/interface/veth/add name=veth1 \
+  address=172.17.0.2/24,2a02:xxxx:xxxx:xxxx::11/64 \
   gateway=172.17.0.1 gateway6=2a02:xxxx:xxxx:xxxx::1
-/interface/bridge/port/add bridge=CONTAINERS interface=veth2
+/interface/bridge/port/add bridge=CONTAINERS interface=veth1
 ```
 
 **IPv6 is not optional if the LAN has IPv6.** See defect 2.
@@ -137,7 +137,7 @@ options timeout:2 attempts:2
 ```routeros
 /container/add \
   file=kingston/fastadhunter-rosready.tar \
-  interface=veth2 \
+  interface=veth1 \
   root-dir=kingston/images/fastadhunter \
   mounts=fah-config,fah-data,fah-resolv \
   envlist=ENV_FAH \
@@ -162,7 +162,7 @@ change on the **existing** rules, not new ones:
 
 ```routeros
 /ip/firewall/nat/set [find comment="Redirect catre DNS filter(docker)"] \
-  to-addresses=172.17.0.3 to-ports=5353
+  to-addresses=172.17.0.2 to-ports=5353
 ```
 
 `to-ports=5353` is what absorbs the privileged-port problem (defect 4) — no new

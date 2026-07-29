@@ -46,7 +46,7 @@ GET {{base}}/history/top?kind=queried&n=25
 {{auth}}
 
 ### Busiest clients over a month.
-GET {{base}}/history/top?kind=clients&from=2026-06-24T00:00:00Z&to=2026-07-24T00:00:00Z
+GET {{base}}/history/top?kind=clients&from=2026-06-24T00:00:00Z&to=2026-07-29T00:00:00Z
 {{auth}}
 
 ### A range with no data is 200 with an empty `items` — NOT a 404.
@@ -59,13 +59,13 @@ GET {{base}}/history/summary?from=2026-07-24T00:00:00Z&to=2026-07-01T00:00:00Z
 {{auth}}
 
 ###
-GET {{base}}/history/summary?resolution=minute
+GET {{base}}/history/summary?resolution=day
 {{auth}}
 
 ###
-GET {{base}}/history/top?kind=everything
+GET {{base}}/history/top?kind=blocked
 {{auth}}
 
 ###
-GET {{base}}/history/perf?fields=rss_bytes,nonsense
+GET {{base}}/history/perf?fields=rss_bytes
 {{auth}}

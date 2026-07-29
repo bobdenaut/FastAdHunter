@@ -7,6 +7,32 @@
 > soak that can only report RSS answers "is it growing?" but never "growing
 > *where*?".
 
+## Reopened 2026-07-26 — the instrument is not recorded
+
+The first pass shipped the breakdown to `/metrics` and `/debug/memory`, both of
+which read **live**. It never reached `PerfSample`, the row persisted to
+`/data/history/perf/` every `sample_interval_seconds`. So the number built to
+answer "is it leaking over 24 h" exists only at instants somebody happens to
+`curl`, and `GET /api/v1/history/perf` can chart RSS over 30 days but not
+residual.
+
+Demonstrated on the 0.2.5 soak: at T+13.9 h the verdict was **inconclusive**,
+not because the measurement was wrong but because two hand-sampled points
+cannot distinguish a decaying warm-up curve from a slow leak. RSS-minus-cache
+was still rising at 0.229 MiB/h in the final third and there was no series to
+say whether that was flattening.
+
+**Root cause is in this file, not in the code.** The acceptance criterion said
+*"record the absolute number before and after a multi-hour run"* — two
+readings. It was met exactly as written, and two readings are not enough. The
+criterion below is replaced with one that requires a series.
+
+Still open from the first pass, deliberately: the temporary
+`fastadhunter_memory_collection_seconds` gauge stays until `p2-08` verification
+closes, then goes. It is marked `TEMPORARY` in its HELP text and is the only
+place the ARM-side cost of the accounting pass is visible (643 → 1 196 µs so
+far, which is itself worth watching).
+
 ## Goal
 
 Every bounded structure reports its own heap, so `RSS − Σ(components)` is a
@@ -81,15 +107,68 @@ simply not reported.
 - CONFIGURATION.md / API.md updated if the debug shape changes; ARCHITECTURE.md
   if a new port is introduced.
 
+### Added on reopen — persist the breakdown
+
+- **Split the components out of `MemoryBreakdown`** so one field list serves
+  both the live path and the persisted row:
+
+  ```rust
+  pub struct MemoryComponents { ruleset, cache, stats: StatsHeap }  // + serde
+  pub struct MemoryBreakdown  { components: MemoryComponents, rss: Option<u64> }
+  ```
+
+  `accounted()` moves to `MemoryComponents`; `residual()` stays on
+  `MemoryBreakdown` and delegates.
+
+- **`PerfSample` gains `memory: MemoryComponents`** — components only. It keeps
+  its existing `rss_bytes`, and the two rules below are what keep the row free
+  of anything meaning the same thing twice:
+  - **No `rss` in the persisted breakdown.** `PerfSample.rss_bytes` is already
+    the RSS, is already in every existing history file, and is already a
+    documented `?fields=` selector. Removing or duplicating it would either
+    orphan the RSS in 30 days of existing rows (serde drops unknown fields) or
+    store the same number twice.
+  - **Do not persist `residual`.** It is `rss_bytes − memory.accounted()`,
+    computed on read by the same function the live path uses. A stored residual
+    is a derived value that can silently disagree with its own inputs after any
+    change to what a component counts.
+
+- **`#[serde(default)]` on the new field.** Existing
+  `/data/history/perf/perf-YYYY-MM-DD.jsonl` rows have no `memory` key and must
+  keep parsing; `MemoryComponents` is `Default`.
+
+- **The sampler already has the value.** `main.rs` builds the breakdown once per
+  telemetry poll for `/metrics`; hand that same instance to the perf sample
+  rather than collecting twice — the single-instant rule above applies here too.
+
+- **`/api/v1/history/perf`**: add `memory` to `PerfSampleResponse` and to
+  `PerfFields` (including the `?fields=` name list and `ALL`), and serve the
+  computed residual per row. API.md updated in the same change.
+
+- Disk cost: ~7 MB per 30 days at `sample_interval_seconds = 60`, pruned by
+  `history.retention_days` like every other row. Note it in CONFIGURATION.md
+  beside the existing history sizing guidance.
+
 ## Acceptance criteria
 
 - **The residual is never negative.** A negative residual means a component
   double-counts or over-reports; assert it in a test with a populated cache,
   ruleset and stats, and log at `warn` if it ever happens in production.
-- Residual is a *small* fraction of RSS and **stable over a soak window** —
-  record the absolute number before and after a multi-hour run. Reducing the
-  current 45 % materially is the point; state where it lands and what remains
-  unaccounted (binary pages and allocator fragmentation legitimately do).
+- Residual is a *small* fraction of RSS and **stable over a soak window**.
+  *(Replaced on reopen. The original said "record the absolute number before and
+  after a multi-hour run" — two points, which is what made the 0.2.5 soak
+  inconclusive.)* The proof is now a **series**: after a multi-hour run,
+  `GET /api/v1/history/perf` returns one residual per sample interval across the
+  whole window, and the verdict is stated as a slope over its final third, not
+  as a difference between two readings. Reducing the current 45 % materially is
+  the point; state where it lands and what remains unaccounted (binary pages and
+  allocator fragmentation legitimately do).
+- A history file written *before* this change still parses, and its rows return
+  `rss_bytes` with an absent/zero `memory` — old data must not become
+  unreadable.
+- Live and persisted residual agree: a row sampled at time *t* and a
+  `/debug/memory` read at the same instant yield the same figure, because both
+  go through `residual()`.
 - Component sum tracks reality: filling the cache to its `max_bytes` moves
   `component_bytes{component="cache"}` by the expected amount and leaves the
   residual flat.

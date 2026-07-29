@@ -2,7 +2,7 @@
 
 **Window:** 2026-07-19 17:12Z → 2026-07-23 12:09Z (~91 h), 1061 `/metrics`
 samples at 5-min cadence, plus paired `/api/v1/stats`. Target: the
-FastAdHunter container on the RB5009 (veth2, `172.17.0.3`, 1.19M rules).
+FastAdHunter container on the RB5009 (veth1, `172.17.0.2`, 1.19M rules).
 
 **Load:** light real household traffic first, then ~40 h under
 `plan/wip/phase1/test_aleator.py` — a deliberate worst-case generator:

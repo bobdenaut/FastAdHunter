@@ -30,7 +30,7 @@ Content-Type: application/json
 
 {
   "rules": {
-    "refresh_hours_default": 6
+    "refresh_hours_default": 24
   }
 }
 

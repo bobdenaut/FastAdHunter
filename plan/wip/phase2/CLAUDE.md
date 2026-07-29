@@ -94,6 +94,17 @@ is unaffected: what was wrong is what reaches the matcher, not its shape.
 Note the matcher's *hot path* is pure, but `fah-rules` as a crate is not I/O-free
 — the list lifecycle pulls `reqwest` and `tokio`.
 
+## Note on `p2-09`'s position
+
+`p2-09` was added after the phase was planned, so it sorts *after* the phase
+verification task. That is deliberate rather than an oversight: `p2-08` is
+HTTP-scoped (proxy benches, dst-nat, `dns+http` on-device) and would not have
+covered a query-log reader anyway, so `p2-09` carries its own on-device check
+instead. The phase is not done until both are.
+
+If the order is ever cleaned up, the fix is renaming `p2-08` → `p2-10`, not
+renumbering `p2-09`.
+
 **Always select the first task whose `STATUS` is `WAITING`.**
 
 | # | Task file | Outcome | MODEL | STATUS |
@@ -105,8 +116,9 @@ Note the matcher's *hot path* is pure, but `fah-rules` as a crate is not I/O-fre
 | 4 | `p2-04-http-filtering-pipeline.md` | Verdicts wired into the proxy: block responses, events, stats | Sonnet | WAITING |
 | 5 | `p2-05-policy-model.md` | Policy = named bundle of lists + settings; schedules; `$client` | Sonnet | WAITING |
 | 6 | `p2-06-per-client-enforcement.md` | DNS + HTTP consult policy per client; policy API endpoints | Sonnet | WAITING |
-| 7 | `p2-07-memory-accounting.md` | `fastadhunter_memory_component_bytes` + `_residual_bytes`; shared `fah_model::MemoryBreakdown`; `fah-dns` untouched (`docs/code-review/p2-07-review.md`) | Sonnet | DONE |
+| 7 | `p2-07-memory-accounting.md` | **REOPENED 2026-07-26** — first pass shipped `fastadhunter_memory_component_bytes` + `_residual_bytes` and `/debug/memory`, all **live-only**; the breakdown never reached the persisted `PerfSample`, so the leak signal cannot be charted over a soak (0.2.5 soak came back inconclusive). Reopen adds `MemoryComponents` to `PerfSample` + `/history/perf` (`docs/code-review/p2-07-review.md`) | Sonnet | WAITING |
 | 8 | `p2-08-phase2-verification.md` | HTTP benches + budgets, e2e tests, RB5009 dns+http validation | Sonnet | WAITING |
+| 9 | `p2-09-query-log-reader.md` | `QueryLogReader` over the persisted segments; unified `GET /queries` (no filter → ring, any filter → segments); `next_sequence` derived at boot; `qtype`; `oldest_retained`; flush on shutdown | Opus | WAITING |
 
 **Definition of done:** router dst-nats port 80 to the container; a plain-HTTP
 page loads through the proxy with ad requests blocked at URL level; a "kids"

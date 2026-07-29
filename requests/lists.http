@@ -59,7 +59,7 @@ POST {{base}}/lists
 Content-Type: application/json
 
 {
-  "url": "https://raw.githubusercontent.com/crazy-max/WindowsSpyBlocker/master/data/hosts/spy.txt",
+  "url": "https://raw.githubusercontent.com/hagezi/dns-blocklists/main/adblock/doh-vpn-proxy-bypass.txt",
   "enabled": true,
   "refresh_hours": 24
 }
@@ -168,7 +168,7 @@ DELETE {{base}}/lists/ghost
 ### Remove a list. 204. The entry leaves the ruleset first, then its /data
 ### cache file is deleted. An orphaned .raw left behind by an interrupted
 ### refresh is inert — compile only reads configured lists.
-DELETE {{base}}/lists/custom
+DELETE {{base}}/lists/oisd-basic
 {{auth}}
 
 ### Same source under a different id — expect 409 naming the list that already
