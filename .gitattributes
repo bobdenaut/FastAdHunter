@@ -1,0 +1,20 @@
+# Line endings are pinned here, not left to each machine's git config.
+#
+# Git for Windows ships `core.autocrlf=true` in its system gitconfig, which
+# rewrites checkouts to CRLF. Every blob in this repo is LF, so that setting
+# made `git add` warn on every file it touched — and, worse, the artefact is a
+# static-musl binary in a distroless Linux container, where a CRLF line in a
+# shell script or a Dockerfile is a runtime failure rather than a cosmetic
+# difference. `eol=lf` overrides `core.autocrlf` for this working tree, so the
+# behaviour no longer depends on who cloned it or on which platform.
+#
+# `text=auto` still lets git detect binaries; the explicit entries below are
+# for the formats present in the tree, so detection is never the thing standing
+# between a PNG and a corrupted checkout.
+* text=auto eol=lf
+
+*.png binary
+
+# PowerShell is the one deliberate exception: `.ps1` files run on Windows,
+# where CRLF is the native convention and some older hosts mis-parse a lone LF.
+*.ps1 text eol=crlf
