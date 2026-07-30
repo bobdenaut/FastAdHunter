@@ -105,6 +105,25 @@ instead. The phase is not done until both are.
 If the order is ever cleaned up, the fix is renaming `p2-08` → `p2-10`, not
 renumbering `p2-09`.
 
+## Follow-ups from the mimalloc review (not yet tasks)
+
+Both surfaced while reviewing `fah-rules` during the allocator work
+(`docs/code-review/mimalloc-and-todos-review.md` §2–§3). Small, independent, and
+neither blocks anything.
+
+1. **Bound `pending_cache` in aggregate.** A persistently unwritable `/data`
+   parks each failing list's raw text in RAM, bounded by `lists ×
+   MAX_LIST_BYTES` — set by configuration rather than uptime, so hard rule 4
+   holds, but loose. Cap the total (8 MB is generous against real list sizes) and
+   mark the list `degraded` instead of parking beyond it. **Do not "fix" it by
+   dropping the text**: `compile()` re-reads `/data`, so the list would silently
+   revert to its stale cached copy on the next unrelated refresh.
+2. **Use `Content-Length` on list fetch.** Reject before transferring when the
+   declared length already exceeds `max_bytes`, instead of streaming up to 64 MB
+   to discover it. Separately, pre-size the body from a ceiling `fah-rules`
+   chooses (not from the server's number) to avoid the doubling peak, where the
+   last growth step holds both buffers at once.
+
 **Always select the first task whose `STATUS` is `WAITING`.**
 
 | # | Task file | Outcome | MODEL | STATUS |

@@ -83,7 +83,7 @@ Content-Type: application/json
 {
   "dns": {
     "cache": {
-      "min_ttl_seconds": 30
+      "min_ttl_seconds": 600
     }
   }
 }
