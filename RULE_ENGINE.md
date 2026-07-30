@@ -137,9 +137,20 @@ ATOMIC SWAP  ── queries in flight finish on the old set; new queries see the
 cache raw copy in /data
 ```
 
-- Refresh: per-list interval, default 24h.
+- Refresh: per-list interval, default 24h, measured from the list's last
+  successful fetch — **including across restarts**. The cached copy's mtime is
+  what carries that time, since the in-memory clock is monotonic and dies with
+  the process. A restart therefore refreshes only the lists actually due, not
+  all of them.
 - Boot: compile from the `/data` cached copies immediately (no network on the
-  startup path); refresh happens asynchronously afterwards.
+  startup path); refresh happens asynchronously afterwards. A list with no
+  cached copy — first-ever boot, or one deleted by hand — is due at once, so a
+  hand-edited `/data` heals itself on the next tick.
+- Boot also deletes cached copies no configured list claims, naming each in the
+  log. Editing `[[rules.lists]]` while stopped would otherwise strand them
+  permanently, since compiling reads the configured lists rather than the
+  directory. Disabled lists keep their copy (re-enabling must not need a
+  download), and so do user rules, which are authored rather than downloaded.
 - Failure policy: a failed download or a list that fails validation **never**
   degrades protection — the previous compiled set keeps serving.
 - The hot path never takes a lock; readers follow the current ruleset pointer.

@@ -59,10 +59,22 @@ Notes:
   so chunked parallel parsing is the next lever if list sizes grow.
   `bench_startup_phases` splits read/parse/build; run it before optimising, as
   the split is not what intuition suggests.
-- Startup is timed from container log timestamps, not from the process:
-  `compile_duration_seconds` is still hardcoded to zero, so the figure carries
-  the RouterOS log's one-second resolution. Fix that metric before trying to
-  demonstrate anything finer than ~10%.
+- **Compile is now measured by the process, not by log timestamps.**
+  `fastadhunter_ruleset_compile_duration_seconds` was hardcoded to zero from the
+  day it shipped until 0.2.8; it now reports the real figure, so anything finer
+  than the RouterOS log's one-second resolution is finally demonstrable.
+  Measured on the RB5009 at 0.2.8: **2.317 s** to read, parse and build, from
+  1 047 409 parsed rules down to 702 178 compiled (345 231 duplicates, 33%).
+  That is ~2.2 µs per **parsed** rule — the parsed count is the denominator, not
+  the compiled one — and it consumes 2.32 s of the 3 s hard budget, leaving
+  roughly 300 k parsed rules of headroom before startup breaches it.
+- **A restart no longer compiles twice.** Until 0.2.8 the scheduler's first tick
+  found every list "never attempted" — its clock is a monotonic `Instant` that
+  resets with the process — so a restart compiled from cache and then refetched
+  and recompiled everything ~7 s later, for a byte-identical ruleset. The clock
+  is now seeded from the cached copies' mtimes. Serving was never blocked either
+  way; what this returns is ~2.3 s of ARM CPU, ~24 MB of downloads and a second
+  ~158 MiB peak-RSS transient per restart.
 - **Sustained throughput, measured 2026-07-24** (dev box, four cores per
   §Measuring reliably, realistic mix — a third blocked, a third cache-hit, a
   third forwarded): **~567 000 elem/s** (median of 3 pinned runs, range
