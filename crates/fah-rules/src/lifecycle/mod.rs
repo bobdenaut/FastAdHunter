@@ -287,6 +287,15 @@ pub struct ListManager {
     /// text ever held in memory. The `/data` cache is the durable source of
     /// truth; recompiles re-read it from disk, so list bytes don't double the
     /// resident footprint next to the compiled matcher (PERFORMANCE.md).
+    ///
+    /// Keyed by list id, and `commit_raw` uses `insert`, so a list that keeps
+    /// failing replaces its own entry rather than stacking copies. The bound is
+    /// therefore `lists × MAX_LIST_BYTES` — set by configuration, not by uptime
+    /// or traffic, so hard rule 4 holds. It is a loose bound all the same: see
+    /// the follow-up in `plan/wip/phase2/CLAUDE.md` for capping the aggregate
+    /// and marking the list `degraded` instead. Note that simply *dropping* the
+    /// text is not the fix — [`Self::compile`] re-reads `/data`, so the list
+    /// would silently revert to its stale cached copy.
     pending_cache: Mutex<HashMap<Arc<str>, String>>,
     status: Mutex<HashMap<Arc<str>, ListStatus>>,
     /// Serializes compile+swap (and the cache write feeding it) so two lists
@@ -296,6 +305,26 @@ pub struct ListManager {
     /// The hot path's only touchpoint: an atomic-swap read, never a lock
     /// (PERFORMANCE.md, ARCHITECTURE.md §Runtime Model).
     matcher: ArcSwap<Matcher>,
+    /// Full ruleset rebuilds since start.
+    ///
+    /// A compile re-reads every enabled list and rebuilds the whole matcher, so
+    /// it is the most expensive thing this crate does — seconds of ARM CPU and a
+    /// transient well over 100 MiB. Counting them is what makes "one compile per
+    /// batch, not one per list" an assertable property rather than an intention;
+    /// see [`Self::refresh_due_lists`].
+    compiles: std::sync::atomic::AtomicU64,
+    /// Wall time of the most recent [`Self::compile`], in microseconds.
+    ///
+    /// Held here rather than pushed to `fah-metrics` on each compile because
+    /// the binary's telemetry poll rewrites the whole ruleset snapshot every
+    /// 10 s: a value written on a compile event would be erased by the next
+    /// tick. Keeping it on the manager makes the poll *pull* a durable figure,
+    /// the same way it already pulls `rules` and `heap_bytes` from the matcher.
+    ///
+    /// Microseconds in a `u64` so the store is a plain relaxed atomic — a
+    /// `Duration` is two fields and could not be read without tearing. u64 µs
+    /// covers ~584,000 years, and compiles are seconds.
+    last_compile_micros: std::sync::atomic::AtomicU64,
 }
 
 impl ListManager {
@@ -362,6 +391,8 @@ impl ListManager {
             status: Mutex::new(status),
             compile_lock: tokio::sync::Mutex::new(()),
             matcher: ArcSwap::new(Arc::new(MatcherBuilder::new().build())),
+            compiles: std::sync::atomic::AtomicU64::new(0),
+            last_compile_micros: std::sync::atomic::AtomicU64::new(0),
         })
     }
 
@@ -506,20 +537,23 @@ impl ListManager {
         let rules = matcher.len();
         self.swap_in(matcher, &stats);
         let refreshed = committed.iter().filter(|(_, r)| r.is_ok()).count();
-        tracing::info!(
-            lists = entries.len(),
-            refreshed,
-            failed = entries.len() - refreshed,
-            rules,
-            "refreshed all lists"
-        );
 
-        committed
+        // Per-list lines before the summary, as in `refresh_due_lists` — this
+        // path batches its compile too, so without them a manual refresh-all
+        // also names none of the 16 lists it just rebuilt.
+        let outcomes: Vec<ListRefreshOutcome> = committed
             .into_iter()
             .map(|(id, outcome)| {
                 let result = match outcome {
                     Ok(()) => {
                         let list_stats = stats.remove(&id).unwrap_or_default();
+                        tracing::info!(
+                            list = %id,
+                            active = list_stats.active,
+                            inactive = list_stats.inactive,
+                            parse_errors = list_stats.parse_errors,
+                            "list refreshed"
+                        );
                         self.record_status(&id, RefreshResult::Ok(list_stats.clone()), true);
                         Ok(list_stats)
                     }
@@ -530,7 +564,35 @@ impl ListManager {
                 };
                 ListRefreshOutcome { id, result }
             })
-            .collect()
+            .collect();
+
+        tracing::info!(
+            lists = entries.len(),
+            refreshed,
+            failed = entries.len() - refreshed,
+            rules,
+            "refreshed all lists"
+        );
+
+        outcomes
+    }
+
+    /// Full ruleset rebuilds since start — see [`Self::compiles`].
+    pub fn compile_count(&self) -> u64 {
+        self.compiles.load(std::sync::atomic::Ordering::Relaxed)
+    }
+
+    /// Wall time of the most recent compile — read + parse + build — or
+    /// [`Duration::ZERO`] before the first one.
+    ///
+    /// Zero is therefore ambiguous only until boot finishes, since startup
+    /// compiles from the `/data` cache before serving. Any later reading is a
+    /// real measurement, which is what makes this safe to chart directly.
+    pub fn last_compile_duration(&self) -> Duration {
+        Duration::from_micros(
+            self.last_compile_micros
+                .load(std::sync::atomic::Ordering::Relaxed),
+        )
     }
 
     /// Clones one entry's handle out from under the lock — callers await
@@ -713,12 +775,31 @@ impl ListManager {
     }
 
     /// One scheduler pass: refreshes every enabled list whose interval has
-    /// elapsed since its last attempt (a list never attempted is due at
-    /// once). Sequential on purpose — parallel downloads of several 1M-domain
-    /// lists would spike RAM on a 1 GB router, and the intervals are hours.
+    /// elapsed since its last attempt (a list never attempted is due at once),
+    /// then recompiles the combined ruleset **once** for the whole batch.
+    ///
+    /// Fetches stay sequential on purpose — parallel downloads of several
+    /// 1M-domain lists would spike RAM on a 1 GB router, and the intervals are
+    /// hours.
+    ///
+    /// **The single compile is the point.** Looping [`Self::refresh_list`] here
+    /// used to recompile per list, and because [`Self::compile`] rebuilds the
+    /// *whole* combined matcher from every enabled list, N due lists meant N
+    /// full rebuilds of the same corpus. Measured on the RB5009 with 16 lists
+    /// coming due together: 16 compiles in 131 s drove RSS from 52 MiB to
+    /// **204 MiB** — past the 128 MB PERFORMANCE.md budget and to 80 % of the
+    /// 256 MB container ceiling — because each rebuild's transients (parsed
+    /// rules, the new 22 MiB matcher beside the live one, the dedup index) piled
+    /// up faster than the allocator could return pages. It also churned the
+    /// served ruleset 16 times and burned ~16× the necessary ARM CPU.
+    ///
+    /// This is the same fetch-all-then-compile-once shape [`Self::refresh_all`]
+    /// already used; the scheduler was the one path that did not.
     async fn refresh_due_lists(&self) {
         let now = Instant::now();
-        let due: Vec<Arc<str>> = self
+        // Snapshot handles rather than ids: the read guard must not span the
+        // awaits below, and `fetch_and_commit` needs the entry itself.
+        let due: Vec<Arc<ListEntry>> = self
             .entries
             .read()
             .unwrap()
@@ -731,16 +812,79 @@ impl ListManager {
                     Some(last) => now >= last + entry.interval(self.default_refresh_hours),
                 }
             })
-            .map(|entry| entry.id.clone())
+            .map(Arc::clone)
             .collect();
 
-        for id in due {
-            self.last_attempted.lock().unwrap().insert(id.clone(), now);
-            if let Err(err) = self.refresh_list(&id).await {
-                let error = fah_common::error_chain(&err);
-                tracing::warn!(list = %id, %error, "scheduled list refresh failed");
+        if due.is_empty() {
+            return;
+        }
+
+        // Fetch + persist every due list first, recording the attempt as we go
+        // so a list that fails is not retried until its next interval. One dead
+        // source never aborts the batch: its last-good cached copy keeps serving
+        // (RULE_ENGINE.md failure policy).
+        //
+        // Failures are recorded here rather than after the compile below,
+        // because the compile is conditional and a skipped one must not swallow
+        // them — an unrecorded failure is invisible in `GET /api/v1/lists`.
+        // Successes cannot be: their `RefreshStats` only exist once the compile
+        // has parsed the new text.
+        let mut committed: Vec<Arc<str>> = Vec::with_capacity(due.len());
+        for entry in &due {
+            self.last_attempted
+                .lock()
+                .unwrap()
+                .insert(entry.id.clone(), now);
+            match self.fetch_and_commit(entry).await {
+                Ok(()) => committed.push(entry.id.clone()),
+                Err(err) => {
+                    let error = fah_common::error_chain(&err);
+                    tracing::warn!(list = %entry.id, %error, "scheduled list refresh failed");
+                    self.record_status(&entry.id, RefreshResult::Failed(error), false);
+                }
             }
         }
+
+        // Nothing reached `/data`, so the ruleset cannot have changed.
+        // Recompiling would rebuild a byte-identical matcher and pay the whole
+        // multi-second, >100 MiB transient for it.
+        if committed.is_empty() {
+            return;
+        }
+
+        let _guard = self.compile_lock.lock().await;
+        let (matcher, mut stats) = self.compile().await;
+        let rules = matcher.len();
+        self.swap_in(matcher, &stats);
+
+        // One line per list, before the summary. Collapsing the per-list
+        // compiles into one (see this method's doc) also collapsed the per-list
+        // `list refreshed` lines the scheduler used to emit, leaving a boot log
+        // that said only "16 lists" and named none of them — a real loss of
+        // signal on a router where these lines are the only view of which
+        // source produced what. They are restored here with each list's *own*
+        // counts rather than the combined ruleset total the old lines repeated
+        // 16 times, so this is now strictly more informative than before.
+        let refreshed = committed.len();
+        for id in committed {
+            let list_stats = stats.remove(&id).unwrap_or_default();
+            tracing::info!(
+                list = %id,
+                active = list_stats.active,
+                inactive = list_stats.inactive,
+                parse_errors = list_stats.parse_errors,
+                "list refreshed"
+            );
+            self.record_status(&id, RefreshResult::Ok(list_stats), true);
+        }
+
+        tracing::info!(
+            lists = due.len(),
+            refreshed,
+            failed = due.len() - refreshed,
+            rules,
+            "scheduled refresh complete"
+        );
     }
 
     /// One list's current raw text: the in-memory pending copy if its last
@@ -761,6 +905,15 @@ impl ListManager {
     /// 1M-domain corpus on the RB5009 must not stall a tokio worker the DNS
     /// pipeline shares. Caller must hold `compile_lock`.
     async fn compile(&self) -> (Matcher, HashMap<Arc<str>, RefreshStats>) {
+        // Timed from here, so the figure covers read + parse + build — the whole
+        // cost of producing a new ruleset, which is what an operator watching
+        // `fastadhunter_ruleset_compile_duration_seconds` is asking about.
+        // PERFORMANCE.md's startup note splits those three phases; this is their
+        // sum, and `bench_startup_phases` is what breaks it down.
+        let started = Instant::now();
+        self.compiles
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+
         // Snapshot the enabled ids before any `.await` — the read guard must
         // not span the file reads below, and a concurrent add/remove is then
         // simply picked up by the next compile.
@@ -833,6 +986,12 @@ impl ListManager {
             (matcher, stats)
         })
         .await
+        .inspect(|_| {
+            self.last_compile_micros.store(
+                started.elapsed().as_micros() as u64,
+                std::sync::atomic::Ordering::Relaxed,
+            );
+        })
         .expect("ruleset compile task panicked")
     }
 
@@ -1066,6 +1225,175 @@ mod tests {
             "the refused connection must be named, not hidden behind reqwest's \
              generic outer message; got: {message}"
         );
+    }
+
+    /// Sets up `count` lists backed by local files, so a scheduler pass needs no
+    /// network. `ListSource::from_url` treats any non-`http` url as a path under
+    /// `/data`; the files live in `srcs/` so they cannot collide with the
+    /// `lists/{id}.raw` cache files a commit writes.
+    fn local_lists(data_dir: &std::path::Path, count: usize) -> Vec<RuleListConfig> {
+        let src = data_dir.join("srcs");
+        std::fs::create_dir_all(&src).unwrap();
+        (0..count)
+            .map(|i| {
+                std::fs::write(
+                    src.join(format!("l{i}.txt")),
+                    format!("||ads{i}.example.com^\n"),
+                )
+                .unwrap();
+                list(&format!("l{i}"), &format!("srcs/l{i}.txt"))
+            })
+            .collect()
+    }
+
+    /// The scheduler's batching is worth a test of its own: `compile` rebuilds
+    /// the *whole* combined matcher from every enabled list, so N lists coming
+    /// due together must produce **one** rebuild, not N.
+    ///
+    /// Red/green, and the numbers are the deployment's: with 16 lists this
+    /// asserted 16 before the batching change. On the RB5009 those 16 compiles
+    /// landed inside 131 s and drove RSS from 52 MiB to 204 MiB — past the
+    /// 128 MB budget, at 80 % of the container ceiling — because each rebuild's
+    /// transients outpaced the allocator's ability to return pages.
+    #[tokio::test]
+    async fn a_scheduler_pass_compiles_once_no_matter_how_many_lists_are_due() {
+        const LISTS: usize = 16;
+
+        let data_dir = tempfile::tempdir().unwrap();
+        let configured = local_lists(data_dir.path(), LISTS);
+        let manager =
+            ListManager::new(&config_with(configured), data_dir.path().to_path_buf()).unwrap();
+
+        // `boot` compiles once from whatever cache exists; count from after it
+        // so the assertion is about the scheduler pass alone.
+        manager.boot().await;
+        let before = manager.compile_count();
+
+        // Every list is due: none has a recorded attempt yet.
+        manager.refresh_due_lists().await;
+
+        assert_eq!(
+            manager.compile_count() - before,
+            1,
+            "{LISTS} due lists must trigger one full rebuild, not one each"
+        );
+
+        // The batch must also have applied — one compile is only correct if it
+        // is a compile of *everything* that was fetched.
+        for i in 0..LISTS {
+            assert!(
+                matches!(
+                    manager
+                        .matcher()
+                        .lookup(&format!("ads{i}.example.com"), &QueryType::A),
+                    MatchDecision::Block(_)
+                ),
+                "list l{i} committed but never reached the served ruleset"
+            );
+        }
+    }
+
+    /// Nothing reached `/data`, so the ruleset cannot have changed. Recompiling
+    /// would rebuild a byte-identical matcher and pay the whole multi-second,
+    /// >100 MiB transient for it — the exact cost the batching exists to avoid.
+    #[tokio::test]
+    async fn a_scheduler_pass_whose_every_fetch_fails_does_not_recompile() {
+        let data_dir = tempfile::tempdir().unwrap();
+        // Local sources that do not exist: every fetch fails on `metadata`.
+        let configured = vec![
+            list("gone-a", "srcs/missing-a.txt"),
+            list("gone-b", "srcs/missing-b.txt"),
+        ];
+        let manager =
+            ListManager::new(&config_with(configured), data_dir.path().to_path_buf()).unwrap();
+        manager.boot().await;
+        let before = manager.compile_count();
+
+        manager.refresh_due_lists().await;
+
+        assert_eq!(
+            manager.compile_count(),
+            before,
+            "an all-failed batch must not recompile an unchanged ruleset"
+        );
+        // Both failures must still be recorded, so the operator sees them.
+        for id in ["gone-a", "gone-b"] {
+            let status = manager.status(id).unwrap();
+            assert!(
+                matches!(status.last_result, RefreshResult::Failed(_)),
+                "{id} should be recorded as failed, got {:?}",
+                status.last_result
+            );
+        }
+    }
+
+    /// A partial batch still compiles once — the surviving list must reach the
+    /// ruleset, and the dead one must not block it (RULE_ENGINE.md: one dead
+    /// source never aborts the batch).
+    #[tokio::test]
+    async fn a_partly_failed_scheduler_pass_still_compiles_once_and_applies() {
+        let data_dir = tempfile::tempdir().unwrap();
+        let mut configured = local_lists(data_dir.path(), 1);
+        configured.push(list("gone", "srcs/missing.txt"));
+        let manager =
+            ListManager::new(&config_with(configured), data_dir.path().to_path_buf()).unwrap();
+        manager.boot().await;
+        let before = manager.compile_count();
+
+        manager.refresh_due_lists().await;
+
+        assert_eq!(manager.compile_count() - before, 1);
+        assert!(matches!(
+            manager.matcher().lookup("ads0.example.com", &QueryType::A),
+            MatchDecision::Block(_)
+        ));
+        assert!(matches!(
+            manager.status("gone").unwrap().last_result,
+            RefreshResult::Failed(_)
+        ));
+    }
+
+    /// `fastadhunter_ruleset_compile_duration_seconds` reported a hardcoded
+    /// zero from the day it shipped until this was wired up, which made every
+    /// statement about compile cost in PERFORMANCE.md unverifiable on the
+    /// device. The gauge reads whatever this accessor returns, so a regression
+    /// to zero here silently restores that blind spot — hence a test rather
+    /// than trust.
+    #[tokio::test]
+    async fn a_compile_records_how_long_it_took() {
+        let data_dir = tempfile::tempdir().unwrap();
+        let configured = local_lists(data_dir.path(), 2);
+        let manager =
+            ListManager::new(&config_with(configured), data_dir.path().to_path_buf()).unwrap();
+
+        assert_eq!(
+            manager.last_compile_duration(),
+            Duration::ZERO,
+            "nothing has been compiled yet"
+        );
+
+        manager.boot().await;
+
+        assert!(
+            manager.last_compile_duration() > Duration::ZERO,
+            "boot compiles, so the duration must be a real measurement"
+        );
+        // Sanity bound rather than a budget: this compiles two tiny lists, so
+        // anything near a second means the clock is being read wrong (µs/ms
+        // confusion is the failure this catches, not slowness).
+        assert!(
+            manager.last_compile_duration() < Duration::from_secs(30),
+            "implausible compile duration {:?} — check the unit conversion",
+            manager.last_compile_duration()
+        );
+
+        let first = manager.last_compile_duration();
+        manager.refresh_due_lists().await;
+        assert!(
+            manager.last_compile_duration() > Duration::ZERO,
+            "the scheduler's compile must overwrite the boot measurement, not clear it"
+        );
+        let _ = first;
     }
 
     #[tokio::test]

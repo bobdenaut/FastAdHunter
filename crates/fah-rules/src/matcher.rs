@@ -664,6 +664,21 @@ impl Matcher {
 
     /// Approximate resident bytes of the compiled structure — the figure the
     /// PERFORMANCE.md `<= 40 MB / 1M domains` budget is measured against.
+    ///
+    /// `len()` rather than `capacity()` throughout is exact, not an oversight:
+    /// `build` converts each of these to `Box<[T]>` via `into_boxed_slice()`,
+    /// which is the shrink — there is no spare capacity left to miss, and
+    /// `Box<[T]>` has no `capacity()` to call. Likewise `Arc<str>` is exactly
+    /// sized.
+    ///
+    /// This is a floor on what the compiled structure *asked for*, and it must
+    /// stay one. The gap to RSS is allocator slack, and it stays in
+    /// `MemoryBreakdown::residual` where it can be watched as a trend — no
+    /// counter names it directly, the allocator's own commit figure being a
+    /// lifetime high-water mark rather than a live one. Folding slack in here
+    /// would make a component that should be flat between recompiles track
+    /// allocator state, and break the leak signal that depends on exactly that
+    /// flatness (p2-07).
     pub fn heap_bytes(&self) -> usize {
         let arc_overhead = 16; // control block, approx
         let lists: usize = self.lists.iter().map(|s| s.len() + arc_overhead).sum();

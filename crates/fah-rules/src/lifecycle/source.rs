@@ -51,6 +51,16 @@ impl ListSource {
                         url: url.clone(),
                         source,
                     })?;
+
+                // Grown by doubling rather than pre-sized from `Content-Length`.
+                // A declared length is server-controlled and unverified, so
+                // trusting it would let one header buy an allocation up to
+                // `max_bytes` for a body that never arrives — replacing a cost
+                // paid in bytes on the wire with a free one. Pre-sizing from a
+                // ceiling this crate picks is worth doing for the transient peak
+                // (the last doubling holds both buffers); tracked as a follow-up
+                // in `plan/wip/phase2/CLAUDE.md`, along with rejecting an
+                // over-`max_bytes` `Content-Length` before transferring at all.
                 let mut body: Vec<u8> = Vec::new();
                 while let Some(chunk) =
                     response
