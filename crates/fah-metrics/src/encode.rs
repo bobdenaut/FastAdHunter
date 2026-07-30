@@ -280,6 +280,85 @@ pub fn encode(metrics: &Metrics) -> String {
         &[],
         memory.residual().unwrap_or(0) as f64,
     );
+    // Allocator's own view (see `crates/fastadhunter/src/allocator.rs`), from the same snapshot as everything
+    // above. Absent rather than zero where it cannot be read, so a scrape never
+    // charts "unavailable" as a real measurement.
+    if let Some(alloc) = memory.allocator {
+        write_help_type(
+            &mut out,
+            "fastadhunter_allocator_committed_bytes",
+            "gauge",
+            "Bytes the allocator has committed, by its own accounting. A \
+             lifetime high-water mark, not a live figure: mimalloc v3 does not \
+             decrement it when a purge returns pages, so it routinely exceeds \
+             process RSS. Do not derive retention from it — RSS is the \
+             authority on footprint.",
+        );
+        writeln_metric(
+            &mut out,
+            "fastadhunter_allocator_committed_bytes",
+            &[],
+            alloc.current_commit as f64,
+        );
+        write_help_type(
+            &mut out,
+            "fastadhunter_allocator_committed_peak_bytes",
+            "gauge",
+            "High-water mark of committed bytes since start. Currently equal to \
+             the committed gauge at every reading; the two diverging would mean \
+             the allocator has started accounting purges, making the committed \
+             gauge a live figure.",
+        );
+        writeln_metric(
+            &mut out,
+            "fastadhunter_allocator_committed_peak_bytes",
+            &[],
+            alloc.peak_commit as f64,
+        );
+        write_help_type(
+            &mut out,
+            "fastadhunter_process_peak_rss_bytes",
+            "gauge",
+            "Peak RSS since start, from getrusage. Process-lifetime monotonic: \
+             a budget check, not a trend — but a spike between two scrapes \
+             cannot be missed.",
+        );
+        writeln_metric(
+            &mut out,
+            "fastadhunter_process_peak_rss_bytes",
+            &[],
+            alloc.peak_rss as f64,
+        );
+        write_help_type(
+            &mut out,
+            "fastadhunter_process_major_page_faults_total",
+            "counter",
+            "Major (disk-backed) page faults since start, from getrusage. \
+             Structurally near-zero here — non-zero means real host memory \
+             pressure.",
+        );
+        writeln_metric(
+            &mut out,
+            "fastadhunter_process_major_page_faults_total",
+            &[],
+            alloc.page_faults as f64,
+        );
+        write_help_type(
+            &mut out,
+            "fastadhunter_process_minor_page_faults_total",
+            "counter",
+            "Minor (no disk I/O) page faults since start, from getrusage. The \
+             purge-thrash detector: rate(...) rising at flat RSS means pages \
+             are being returned with MADV_DONTNEED and immediately faulted back \
+             in — lengthen MIMALLOC_PURGE_DELAY.",
+        );
+        writeln_metric(
+            &mut out,
+            "fastadhunter_process_minor_page_faults_total",
+            &[],
+            alloc.minor_page_faults as f64,
+        );
+    }
     // TEMPORARY (post-p2-07): what the accounting above costs on the target,
     // measured rather than extrapolated. Whole pass, RSS read included.
     write_help_type(

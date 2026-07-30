@@ -29,6 +29,11 @@ fah-stats = { path = "../fah-stats" }
 tokio.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
+# The process allocator and its statistics (see `crates/fastadhunter/src/allocator.rs`). Confined to
+# `src/allocator.rs`: the binary chooses the allocator, so no library crate
+# needs to know which one it is — they see `fah_model::AllocatorStats`.
+mimalloc.workspace = true
+libmimalloc-sys.workspace = true
 
 # Credential syscalls for the post-bind privilege drop (ADR-0004). Unix only:
 # the shipped artefact is a Linux container, and the module compiles to no-ops

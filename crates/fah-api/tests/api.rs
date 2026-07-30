@@ -321,6 +321,13 @@ impl TelemetrySource for FakeTelemetry {
             .to_string()
     }
 
+    /// `None` on purpose: the test binary does not install mimalloc, so the
+    /// figures would be meaningless. This also exercises the absent branch —
+    /// the allocator fields must serialize as `null`, never as a fabricated 0.
+    fn allocator(&self) -> Option<fah_model::AllocatorStats> {
+        None
+    }
+
     fn degraded(&self) -> bool {
         self.degraded
     }
@@ -900,6 +907,26 @@ async fn debug_memory_reports_the_resident_parts() {
         "a number on the Linux target, null elsewhere — got {:?}",
         body["process_rss"]
     );
+
+    // `FakeTelemetry::allocator` returns `None`, so every allocator field must
+    // be present and `null` — never absent (a client cannot tell a renamed
+    // field from an unavailable one) and never `0`, which would chart as a real
+    // measurement of an allocator holding nothing (see `crates/fastadhunter/src/allocator.rs`).
+    for field in [
+        "allocator_committed_bytes",
+        "allocator_committed_peak_bytes",
+        "process_peak_rss",
+        "major_page_faults",
+        "minor_page_faults",
+    ] {
+        let value = body
+            .get(field)
+            .unwrap_or_else(|| panic!("{field} missing from /debug/memory"));
+        assert!(
+            value.is_null(),
+            "{field} must be null when the allocator cannot report, not {value:?}"
+        );
+    }
 }
 
 // ─── Clients ───────────────────────────────────────────────────────────

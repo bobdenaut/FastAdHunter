@@ -23,10 +23,18 @@
 # musl, so `cargo build --release` produces a static musl binary natively for
 # whichever architecture buildx is running this stage under (native on the
 # host arch, QEMU-emulated otherwise) — same Dockerfile, both platforms.
+#
+# A C compiler *is* required, for mimalloc (see `crates/fastadhunter/src/allocator.rs`). Both halves of that are
+# already in this stage — see the `apk add` below.
 
 # Keep this tag's Rust version in sync with rust-toolchain.toml.
 FROM rust:1.96.0-alpine AS builder
 
+# Load-bearing, not vestigial: `libmimalloc-sys` compiles mimalloc's C via the
+# `cc` crate (see `crates/fastadhunter/src/allocator.rs`), and needs libc headers to do it. The compiler itself
+# (`/usr/bin/gcc`) already ships in the rust:*-alpine base image; `musl-dev` is
+# what supplies the headers and `libc.a` alongside it. Remove this and the build
+# fails in the build script, not at link time.
 RUN apk add --no-cache musl-dev
 
 WORKDIR /build

@@ -74,6 +74,15 @@ pub trait TelemetrySource: Send + Sync + 'static {
     /// `"degraded"` health status ("e.g. all upstreams failing — serve-stale
     /// active").
     fn degraded(&self) -> bool;
+    /// Process-allocator figures for `GET /api/v1/debug/memory`, or `None`
+    /// where unavailable.
+    ///
+    /// Routed through this port rather than read directly, so which allocator
+    /// is in use stays a fact about the binary (see `crates/fastadhunter/src/allocator.rs`) and no L3 crate takes
+    /// an FFI dependency to publish its numbers. Read per request, matching how
+    /// that endpoint samples every other field, since the breakdown's residual
+    /// is only meaningful when its inputs share an instant.
+    fn allocator(&self) -> Option<fah_model::AllocatorStats>;
 }
 
 /// The DNS cache's admin plane (API.md §Cache) — implemented by the binary

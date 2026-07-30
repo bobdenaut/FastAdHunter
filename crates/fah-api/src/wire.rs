@@ -713,13 +713,65 @@ pub struct MemoryResponse {
     /// Everything above, summed.
     pub accounted_bytes: u64,
     /// `process_rss − accounted_bytes`: binary pages, thread stacks, the tokio
-    /// runtime, and allocator memory musl has not returned to the OS. Growth
-    /// here while the components stay flat is the leak signal (p2-07).
+    /// runtime, and memory the allocator holds but has not returned to the OS.
+    /// Growth here while the components stay flat is the leak signal (p2-07).
     /// `null` when RSS is unavailable, since it cannot then be computed.
+    ///
+    /// The allocator counters below cannot refine this — see
+    /// `allocator_committed_bytes`. Judge it against its own history.
     pub residual_bytes: Option<u64>,
     /// `null` off Linux — the deployment target is a Linux container; a dev
     /// box on another OS simply has no `/proc/self/status` to read.
     pub process_rss: Option<u64>,
+    /// Bytes the allocator has committed, by its own accounting (see
+    /// `crates/fastadhunter/src/allocator.rs`) — not a kernel reading. `null`
+    /// where unavailable.
+    ///
+    /// **Read this as a high-water mark, and expect it to exceed
+    /// `process_rss`, often several times over.** mimalloc v3 does not
+    /// decrement the counter when a purge returns pages to the OS, so it only
+    /// ever rises; 318 MB here against 70 MB `process_rss` was the measured
+    /// state on the RB5009. The gap is memory committed, touched, and since
+    /// reclaimed by the kernel — not memory being held.
+    ///
+    /// **Do not subtract `accounted_bytes` from this and call it retention.**
+    /// 0.2.7 served exactly that as `allocator_retained_bytes`; it reported
+    /// 260 MiB of "retention" in a process with 70 MiB resident, which is
+    /// impossible for anything resident, and the field has been removed.
+    /// `process_rss` is the authority on footprint.
+    pub allocator_committed_bytes: Option<u64>,
+    /// High-water mark of `allocator_committed_bytes`.
+    ///
+    /// Currently equal to it at every reading, for the reason above. That
+    /// equality is the diagnostic: should the two ever diverge, the allocator
+    /// has started accounting purges and `allocator_committed_bytes` has become
+    /// a live figure worth reading as one.
+    pub allocator_committed_peak_bytes: Option<u64>,
+    /// Peak RSS since start, from `getrusage` — a real kernel high-water mark,
+    /// unlike the commit counters. **Process-lifetime monotonic and never
+    /// decreasing**, so it answers "did this process ever exceed the memory
+    /// budget" rather than describing now.
+    ///
+    /// Its value over `process_rss` is that a spike between two polls cannot be
+    /// missed — the 150.7 MiB startup-compile peak on 0.2.7 fell between two
+    /// 2-minute samples and was visible only here.
+    pub process_peak_rss: Option<u64>,
+    /// Major (disk-backed) page faults since start. Process-lifetime
+    /// cumulative, and structurally near-zero: nothing FAH touches is
+    /// demand-paged from disk, so a non-zero value means real host memory
+    /// pressure.
+    pub major_page_faults: Option<u64>,
+    /// Minor (no disk I/O) page faults since start. Process-lifetime
+    /// cumulative, and the counter that actually moves.
+    ///
+    /// **The purge-thrash detector.** Handing pages back with `MADV_DONTNEED`
+    /// and then reallocating costs one minor fault per page faulted in again,
+    /// which is precisely the trade-off `MIMALLOC_PURGE_DELAY` tunes. Without
+    /// it, an over-aggressive purge setting is invisible — RSS looks healthy
+    /// while the process pays a syscall and a fault for memory it is about to
+    /// reuse. Read as a rate against query volume, not as an absolute. `0` off
+    /// Unix, where `getrusage` does not exist.
+    pub minor_page_faults: Option<u64>,
 }
 
 /// Two-decimal rounding for percentages — `72.61`, not `72.61000000000001`.

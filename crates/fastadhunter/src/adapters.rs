@@ -254,4 +254,12 @@ impl TelemetrySource for TelemetryAdapter {
         let status = self.upstreams.status();
         !status.is_empty() && status.iter().all(|server| server.consecutive_failures > 0)
     }
+
+    /// Straight through to the binary's allocator module — the one place that
+    /// knows which allocator is installed (see `crates/fastadhunter/src/allocator.rs`). Read now rather than taken
+    /// from the last telemetry poll, so `/debug/memory` gets figures from the
+    /// same instant as the component heaps it reads beside them.
+    fn allocator(&self) -> Option<fah_model::AllocatorStats> {
+        crate::allocator::stats()
+    }
 }

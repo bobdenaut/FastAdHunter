@@ -10,29 +10,34 @@
 //! Kept in its own test binary with exactly one test so no other test allocates
 //! on a second thread while the global peak is being measured.
 
-use std::alloc::{GlobalAlloc, Layout, System};
-use std::sync::atomic::{AtomicUsize, Ordering};
-
 use fah_rules::MatcherBuilder;
+use mimalloc::MiMalloc;
+use std::alloc::{GlobalAlloc, Layout};
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 /// Bytes currently allocated through the global allocator, and the high-water
 /// mark reached. Relaxed is fine: a single test thread drives the measurement.
 static CURRENT: AtomicUsize = AtomicUsize::new(0);
 static PEAK: AtomicUsize = AtomicUsize::new(0);
 
-/// Delegates every allocation to the system allocator and records the size, so
-/// the test can read the live total and the peak. Not for production — a test
-/// instrument only.
+/// Delegates every allocation to the production allocator (mimalloc, `crates/fastadhunter/src/allocator.rs`)
+/// and records the size, so the test can read the live total and the peak. Not
+/// for production — a test instrument only.
+///
+/// The delegate choice does not affect what is measured: the counters record
+/// `layout.size()`, the bytes *requested*, so the assertion below is a property
+/// of the `MAX_PREALLOC_RULES` clamp and would report the same figure under any
+/// allocator. Matching production is for realism, not for the number.
 struct Counting;
 
-// SAFETY: every method forwards to `System`, which is a sound `GlobalAlloc`, and
-// the byte counters are pure side effects that never touch the returned memory
-// or change the layout, so the allocator contract is preserved unchanged.
+// SAFETY: every method forwards to `MiMalloc`, which is a sound `GlobalAlloc`,
+// and the byte counters are pure side effects that never touch the returned
+// memory or change the layout, so the allocator contract is preserved unchanged.
 unsafe impl GlobalAlloc for Counting {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
         // SAFETY: `layout` is a valid, non-zero layout per the trait contract;
-        // forwarded verbatim to the system allocator.
-        let ptr = unsafe { System.alloc(layout) };
+        // forwarded verbatim to the delegate.
+        let ptr = unsafe { MiMalloc.alloc(layout) };
         if !ptr.is_null() {
             let now = CURRENT.fetch_add(layout.size(), Ordering::Relaxed) + layout.size();
             PEAK.fetch_max(now, Ordering::Relaxed);
@@ -44,7 +49,7 @@ unsafe impl GlobalAlloc for Counting {
         CURRENT.fetch_sub(layout.size(), Ordering::Relaxed);
         // SAFETY: `ptr`/`layout` come straight from a prior `alloc` call with
         // the same layout, as the trait requires; forwarded verbatim.
-        unsafe { System.dealloc(ptr, layout) }
+        unsafe { MiMalloc.dealloc(ptr, layout) }
     }
 }
 

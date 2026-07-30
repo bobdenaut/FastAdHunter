@@ -24,6 +24,12 @@ tracing = { workspace = true }
 
 [dev-dependencies]
 criterion = { workspace = true }
+# Test-only: `tests/dedup_alloc_bound.rs` wraps the production allocator in a
+# counting `GlobalAlloc` so the transient dedup index's peak is observable.
+# Deliberately not a normal dependency — this crate must not participate in
+# allocator selection (that is the binary's, per `crates/fastadhunter/src/allocator.rs`), and a library has no
+# business carrying a C-toolchain build requirement.
+mimalloc = { workspace = true }
 tempfile = "3"
 tokio = { workspace = true, features = ["io-util", "macros", "net", "rt-multi-thread", "test-util"] }
 

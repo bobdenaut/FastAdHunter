@@ -12,7 +12,11 @@ verifies.
 3. **No runtime regex compilation** — and no regex on the hot path at all.
    Rules compile to hash/trie matchers at load time.
 4. **No GC, no hidden allocations** — the hot path is allocation-free;
-   allocations happen at load/reload time.
+   allocations happen at load/reload time. The ones that do happen are served by
+   **mimalloc**, not by musl's `mallocng` (see `crates/fastadhunter/src/allocator.rs`): the artefact is static-musl,
+   so the allocator is a deliberate choice rather than a consequence of the
+   target libc. RSS figures recorded in this document and in the soak baselines
+   predate that swap and are not comparable to post-swap readings.
 5. **No global locks** — atomic swap for ruleset/config, sharding for the
    cache, bounded channels between components.
 6. **Cache-friendly layouts** — compact contiguous structures; pointer-chasing

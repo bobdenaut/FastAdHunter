@@ -118,6 +118,33 @@ top domains, top clients, rolling time buckets. Never per-query rows.
 Operational telemetry (Prometheus counters/histograms: QPS, latencies, cache
 hit ratio, memory). For operators; distinct from Statistics (for users).
 
+### Accounted / Residual
+
+The two-way split of resident memory, reported by `/api/v1/debug/memory` and
+`/metrics` (p2-07, `crates/fastadhunter/src/allocator.rs`). Use these words for these things and no others.
+
+- **Accounted** — the sum of every *bounded* component that reports its own
+  heap: compiled ruleset, DNS cache, and the Statistics structures. Growth here
+  is not a leak; it is a structure filling toward its cap.
+- **Residual** — `RSS − accounted`. Binary text and data pages, thread stacks,
+  the runtime, and memory the allocator holds without having returned it. Never
+  zero, and it is the *trend* that carries meaning: **residual growing while the
+  components stay flat is the leak signal**, because expected growth has been
+  subtracted out.
+
+**"Allocator retained" is a retired term.** It named `committed − accounted` and
+was served as `allocator_retained_bytes` until 0.2.8. Measured on the RB5009 it
+reported 260 MiB of "retention" in a process with 70 MiB resident — impossible
+for anything resident — because mimalloc v3 never decrements its commit counter
+when a purge returns pages, so the minuend only ever rises. The residual is the
+only split; nothing subdivides it. See
+`docs/code-review/0.2.7-router-memory-and-throughput.md` §5.2, §6.1.
+
+**Committed** is what the allocator has committed by its own accounting — not a
+kernel reading, not the same as resident, and **not a live figure**: it
+accumulates and routinely exceeds RSS. It is reported for correlation, never as
+a footprint.
+
 ### Operating Mode
 
 The engine's filtering scope, fixed at container start: `dns`, `dns+http`,

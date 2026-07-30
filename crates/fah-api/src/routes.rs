@@ -133,9 +133,18 @@ async fn cache_clean(
 ///
 /// The residual is the number to watch: growth there while the components stay
 /// flat is the leak signal, because the growth you legitimately expect has been
-/// subtracted out (p2-07). Same figures as
-/// `fastadhunter_memory_component_bytes` on `/metrics`, read here at request
-/// time rather than at the last poll, so the two can differ by one interval.
+/// subtracted out (p2-07).
+///
+/// The allocator counters do **not** split it further. `allocator_committed_*`
+/// is a lifetime high-water mark that routinely exceeds `process_rss`, so
+/// nothing derived from it describes memory currently held — see
+/// `MemoryResponse::allocator_committed_bytes`. `minor_page_faults` is the one
+/// to pair with the residual: a rising fault rate at flat RSS is purge thrash,
+/// not a leak.
+///
+/// Same figures as `fastadhunter_memory_component_bytes` on `/metrics`, read
+/// here at request time rather than at the last poll, so the two can differ by
+/// one interval.
 async fn debug_memory(State(state): State<Arc<AppState>>) -> Json<MemoryResponse> {
     let cache = state.cache.stats();
     // Same `fah_model::MemoryBreakdown` the metrics path uses, so `accounted`
@@ -146,6 +155,10 @@ async fn debug_memory(State(state): State<Arc<AppState>>) -> Json<MemoryResponse
         cache: cache.estimated_bytes,
         stats: state.stats.heap(),
         rss: crate::rss::process_rss(),
+        // Via the telemetry port, so this crate never learns which allocator is
+        // installed (see `crates/fastadhunter/src/allocator.rs`) — and read here rather than lifted from the last
+        // poll, keeping every field in this breakdown to one instant.
+        allocator: state.telemetry.allocator(),
     };
     Json(MemoryResponse {
         ruleset_bytes: memory.ruleset,
@@ -158,6 +171,11 @@ async fn debug_memory(State(state): State<Arc<AppState>>) -> Json<MemoryResponse
         accounted_bytes: memory.accounted(),
         residual_bytes: memory.residual(),
         process_rss: memory.rss,
+        allocator_committed_bytes: memory.allocator.map(|a| a.current_commit),
+        allocator_committed_peak_bytes: memory.allocator.map(|a| a.peak_commit),
+        process_peak_rss: memory.allocator.map(|a| a.peak_rss),
+        major_page_faults: memory.allocator.map(|a| a.page_faults),
+        minor_page_faults: memory.allocator.map(|a| a.minor_page_faults),
     })
 }
 

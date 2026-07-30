@@ -542,6 +542,10 @@ impl TelemetrySource for NoTelemetry {
     fn degraded(&self) -> bool {
         false
     }
+
+    fn allocator(&self) -> Option<fah_model::AllocatorStats> {
+        None
+    }
 }
 
 struct NoCache;

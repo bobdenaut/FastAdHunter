@@ -9,6 +9,7 @@
 //! ([`adapters`]).
 
 mod adapters;
+mod allocator;
 mod privilege;
 
 use std::path::{Path, PathBuf};
@@ -466,26 +467,55 @@ fn spawn_telemetry_poll(
             // 43 µs from `fah-stats/tests/heap_cost.rs` is an x86 figure that
             // excludes the RSS read entirely (no procfs there), so the ARM cost
             // has never actually been measured. Remove once it is known stable.
-            let collection_started = std::time::Instant::now();
+            //
+            // **On the blocking pool, not a DNS worker.** Every read below is
+            // synchronous, and on the RB5009 the pass has been measured between
+            // 495 µs and 4.86 ms — a 10× spread that tracks cache occupancy.
+            // Inline on a `tokio::spawn`ed task that was up to ~5 ms of one of
+            // four workers not answering queries, every 10 s: an unbounded tail
+            // on the query path, which golden rule 8 (PERFORMANCE.md) exists to
+            // forbid. `spawn_blocking` makes the duration irrelevant to latency
+            // however far it drifts — the same treatment, for the same reason,
+            // that `ListManager::compile` already gets.
+            //
+            // The whole breakdown is built inside the closure so the "every
+            // field sampled at the same instant" invariant above still holds:
+            // moving the pass must not smear it across the two schedulers.
             let matcher = rules.matcher();
-            let cache = pipeline.cache_stats();
-            let stats_heap = stats.heap();
-            let memory = fah_model::MemoryBreakdown {
-                ruleset: matcher.heap_bytes() as u64,
-                cache: cache.bytes,
-                stats: stats_heap,
-                // `0` is this accessor's "couldn't determine" — a non-Linux
-                // dev box, or an unreadable /proc/self/status. Mapped to
-                // `None` so the residual reports as absent rather than as a
-                // fabricated RSS of zero.
-                rss: match fah_metrics::resident_memory_bytes() {
-                    0 => None,
-                    bytes => Some(bytes),
-                },
+            let (memory, collection_micros) = {
+                let pipeline = Arc::clone(&pipeline);
+                let stats = Arc::clone(&stats);
+                let matcher = Arc::clone(&matcher);
+                tokio::task::spawn_blocking(move || {
+                    let collection_started = std::time::Instant::now();
+                    let memory = fah_model::MemoryBreakdown {
+                        ruleset: matcher.heap_bytes() as u64,
+                        cache: pipeline.cache_stats().bytes,
+                        stats: stats.heap(),
+                        // `0` is this accessor's "couldn't determine" — a
+                        // non-Linux dev box, or an unreadable
+                        // /proc/self/status. Mapped to `None` so the residual
+                        // reports as absent rather than as a fabricated RSS of
+                        // zero.
+                        rss: match fah_metrics::resident_memory_bytes() {
+                            0 => None,
+                            bytes => Some(bytes),
+                        },
+                        // Same instant as the components above. Nothing is
+                        // derived from these any more, but `minor_page_faults`
+                        // is read as a rate against the query counters sampled
+                        // in this pass, and skew between them would land in
+                        // that rate.
+                        allocator: allocator::stats(),
+                    };
+                    // Captured before the `warn!` below, so a logging call can
+                    // never inflate the number this is meant to report.
+                    let micros = collection_started.elapsed().as_micros() as u64;
+                    (memory, micros)
+                })
+                .await
+                .expect("memory accounting task panicked")
             };
-            // Captured before the `warn!` below, so a logging call can never
-            // inflate the number this is meant to report.
-            let collection_micros = collection_started.elapsed().as_micros() as u64;
             if memory.over_accounted() {
                 // Impossible in reality: components cannot hold more than the
                 // process resides. Means a `heap_bytes` double-counts, or
@@ -505,12 +535,12 @@ fn spawn_telemetry_poll(
                 rules: matcher.len(),
                 heap_bytes: matcher.heap_bytes(),
                 duplicates_removed: matcher.duplicates_removed(),
-                // Compile timing belongs to the lifecycle, which does not
-                // report it yet — and because this poll overwrites the whole
-                // snapshot every tick, wiring it up later must give compile
-                // duration its own setter written on compile events, not a
-                // field here (anything set here is erased within 10 s).
-                compile_duration: std::time::Duration::ZERO,
+                // Pulled from the lifecycle, not pushed on compile events. This
+                // poll rewrites the whole snapshot every tick, so a pushed value
+                // would be erased within 10 s — which is why this field read
+                // `Duration::ZERO` until now. The manager holds the last
+                // measurement durably, so re-reading it each tick is correct.
+                compile_duration: rules.last_compile_duration(),
             });
         }
     })

@@ -567,16 +567,24 @@ what RSS holds beyond all of them.
   "query_log_pending_bytes": 24576,
   "accounted_bytes": 25311091,
   "residual_bytes": 18389133,
-  "process_rss": 43700224
+  "process_rss": 43700224,
+  "allocator_committed_bytes": 318046208,
+  "allocator_committed_peak_bytes": 318046208,
+  "process_peak_rss": 71303168,
+  "major_page_faults": 0,
+  "minor_page_faults": 4211337
 }
 ```
 
 **The residual is the number to watch.** It legitimately covers binary text and
-data pages, thread stacks, the tokio runtime, and allocator memory musl has not
-returned to the OS — so it is never zero. What matters is its *trend*: growth
-in `residual_bytes` while the components stay flat is the leak signal, because
-the growth you legitimately expect has already been subtracted out. Growth in a
-*component* is not a leak — it is that structure filling toward its cap.
+data pages, thread stacks, the tokio runtime, and memory the allocator holds but
+has not returned to the OS — so it is never zero. What matters is its *trend*:
+growth in `residual_bytes` while the components stay flat is the leak signal,
+because the growth you legitimately expect has already been subtracted out.
+Growth in a *component* is not a leak — it is that structure filling toward its
+cap. The allocator fields below cannot refine it further; pair it with
+`minor_page_faults` instead, since a rising fault rate at flat RSS is purge
+thrash rather than a leak.
 
 `accounted_bytes` is the sum of the component fields.
 `residual_bytes` = `process_rss − accounted_bytes`, floored at zero: components
@@ -588,10 +596,60 @@ reporting a wrapped number.
 without procfs (a non-Linux dev machine); `residual_bytes` is then `null` too,
 since it cannot be computed.
 
-The same figures are exported as `fastadhunter_memory_component_bytes`
-(labelled by `component`) and `fastadhunter_memory_residual_bytes` on
-`/metrics`. Those are sampled together on the 10 s telemetry poll, so they can
-lag this endpoint — which reads live — by up to one interval.
+#### Allocator fields
+
+These come from the process allocator (see `crates/fastadhunter/src/allocator.rs`) and are `null` where it cannot
+report — absent rather than `0`, so "unavailable" never charts as a measurement.
+
+`allocator_committed_bytes` is the bytes the allocator has committed, by its own
+accounting rather than any kernel reading.
+
+**Read it as a high-water mark, and expect it to exceed `process_rss` — often
+several times over.** mimalloc v3 does not decrement the counter when a purge
+returns pages to the OS, so it only ever rises. Measured on an RB5009: 318 MB
+committed against 70 MB `process_rss`. That gap is memory that was committed,
+touched, and has since been reclaimed by the kernel — it is *not* memory being
+held. `process_rss` is the authority on footprint.
+
+`allocator_committed_peak_bytes` is its high-water mark, and is currently equal
+to it at every reading for the reason above. **That equality is the
+diagnostic:** should the two ever diverge, the allocator has begun accounting
+purges and `allocator_committed_bytes` has become a live figure worth reading as
+one.
+
+> **Removed in 0.2.8: `allocator_retained_bytes`.** It served
+> `allocator_committed_bytes − accounted_bytes` as "fragmentation, free lists and
+> size-class rounding". Because the minuend only rises, the difference grows
+> without bound: on the device it reported 260 MiB of retention in a process
+> with 70 MiB resident. Nothing resident can exceed RSS, so the field was not
+> imprecise but impossible. Do not reintroduce this derivation. Judge retention
+> from `residual_bytes` against its own history.
+
+`process_peak_rss`, `major_page_faults` and `minor_page_faults` come from
+`getrusage` and are **process-lifetime monotonic**: they never decrease, so read
+the faults as rates and `process_peak_rss` as a budget check, not a trend line.
+`process_peak_rss` earns its place next to `process_rss` because it cannot be
+missed — a spike between two polls still shows, which a sampled current value
+cannot promise. That has already paid off: a 150.7 MiB startup-compile peak fell
+entirely between two 2-minute samples and was visible only here.
+
+`major_page_faults` is structurally near-zero — nothing FAH touches is
+demand-paged from disk — so a non-zero value means real host memory pressure.
+`minor_page_faults` is the one that moves, and is **the purge-thrash detector**:
+returning pages with `MADV_DONTNEED` and then reallocating costs one minor fault
+per page faulted back in, which is exactly the trade-off `MIMALLOC_PURGE_DELAY`
+tunes. A rising fault rate at flat RSS means the purge delay is too short. It is
+`0` off Unix, where `getrusage` does not exist.
+
+The same figures are exported on `/metrics` as
+`fastadhunter_memory_component_bytes` (labelled by `component`),
+`fastadhunter_memory_residual_bytes`, `fastadhunter_allocator_committed_bytes`,
+`fastadhunter_allocator_committed_peak_bytes`,
+`fastadhunter_process_peak_rss_bytes`,
+`fastadhunter_process_major_page_faults_total` and
+`fastadhunter_process_minor_page_faults_total`. Those are sampled together on
+the 10 s telemetry poll, so they can lag this endpoint — which reads live — by
+up to one interval.
 
 `/metrics` also carries `fastadhunter_memory_collection_seconds`, a
 **temporary** gauge holding the wall time of that whole 10 s pass — every

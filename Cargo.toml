@@ -38,6 +38,25 @@ hickory-proto = "0.26"
 # workspace carries one crypto backend; webpki-roots because the distroless
 # image has no system certificate store.
 hickory-net = { version = "0.26", default-features = false, features = ["tokio", "https-aws-lc-rs", "webpki-roots"] }
+# Process allocator (see `crates/fastadhunter/src/allocator.rs`). The shipped artefact is statically linked
+# against musl, so the allocator it would otherwise use is musl's mallocng —
+# written for size and hardening, with no per-thread cache, which is what a
+# Tokio runtime allocating per query is worst served by.
+#
+# Named ONLY in crates/fastadhunter/src/allocator.rs (plus fah-rules' counting
+# allocator test), so replacing it later means editing one file.
+#
+# Two entries: the `mimalloc` wrapper does not re-export the FFI, so
+# `mi_process_info` — the allocator figures behind /debug/memory and /metrics —
+# is reachable only through the -sys crate with `extended` (which pulls `cty`).
+# Feature unification resolves it to the same instance `mimalloc` already pulls,
+# so mimalloc's C compiles once.
+#
+# Patch-pinned on purpose: "0.1" silently selects a C library *major* version —
+# libmimalloc-sys 0.1.49 defaults to mimalloc v3 (3.3.2) and offers v2 (2.3.2)
+# behind a `v2` feature. See `crates/fastadhunter/src/allocator.rs` for what symptom would justify switching.
+mimalloc = "0.1.52"
+libmimalloc-sys = { version = "0.1.49", features = ["extended"] }
 # Socket options tokio doesn't expose: the dual-stack DNS listener sets
 # IPV6_V6ONLY off explicitly so binding `::` serves both stacks regardless
 # of the host's `net.ipv6.bindv6only`. Already in-tree transitively (tokio,
