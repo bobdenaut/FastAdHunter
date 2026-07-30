@@ -282,6 +282,10 @@ pub struct ListManager {
     /// so `start_paused` tests advance it with virtual time. Separate from
     /// [`ListStatus::last_refreshed`], which records successes only and is
     /// what the API reports.
+    ///
+    /// Monotonic, so it cannot outlive the process. [`Self::boot`] rebuilds it
+    /// from the `/data` cache files' mtimes rather than starting every list due
+    /// on every restart — see [`Self::seed_last_attempted_from_cache`].
     last_attempted: Mutex<HashMap<Arc<str>, Instant>>,
     /// Raw text for lists whose `/data` cache write failed — the *only* raw
     /// text ever held in memory. The `/data` cache is the durable source of
@@ -412,6 +416,9 @@ impl ListManager {
         let (matcher, stats) = self.compile().await;
         self.swap_in(matcher, &stats);
 
+        self.seed_last_attempted_from_cache().await;
+        self.remove_orphaned_copies().await;
+
         let mut status = self.status.lock().unwrap();
         for (id, list_stats) in stats {
             // Fill in cache-derived stats only where nothing newer exists — a
@@ -420,6 +427,124 @@ impl ListManager {
             if entry.last_result == RefreshResult::NeverAttempted {
                 entry.last_result = RefreshResult::Ok(list_stats);
             }
+        }
+    }
+
+    /// Recovers the refresh clock from the `/data` cache files' mtimes, so a
+    /// restart does not refetch and recompile everything it just loaded.
+    ///
+    /// [`Self::last_attempted`] holds `tokio::time::Instant`s — monotonic and
+    /// process-relative, so the map starts empty on every start and every list
+    /// reads as never attempted, i.e. due at the scheduler's first tick.
+    /// Measured on the RB5009 at 0.2.8: a restart compiled from cache at boot,
+    /// then ~7 s later refetched all 16 lists and paid a **second** full
+    /// compile — 2.3 s of ARM CPU, ~24 MB of downloads and the ~158 MiB
+    /// peak-RSS transient — to rebuild a byte-identical ruleset. Serving was
+    /// never blocked (the listeners bind before this), so it was waste rather
+    /// than a fault, but it was waste on every restart.
+    ///
+    /// [`cache::write`] renames a list's file into place on every successful
+    /// fetch, so the mtime is already the persisted form of that clock: no new
+    /// on-disk state, no schema to migrate, and nothing that can fall out of
+    /// sync with the copy it describes.
+    ///
+    /// Only lists whose cached copy is *younger* than their interval are
+    /// seeded. Everything else — no cache file, a copy already older than the
+    /// interval, an unreadable or future mtime (see [`cache::age`]), or an age
+    /// that predates the monotonic clock's own origin — is left unseeded and
+    /// stays due, which is precisely the behaviour this replaces. The fix
+    /// therefore cannot make a list refresh *less* often than before; it can
+    /// only remove a redundant fetch.
+    ///
+    /// One deliberate behaviour change: the mtime records the last *success*,
+    /// while `last_attempted` records attempts. A list whose source is down
+    /// keeps an old file, so it gets one immediate retry after a restart
+    /// instead of waiting out its interval. That is one extra attempt, not a
+    /// loop — the retry writes `last_attempted` and the in-memory clock takes
+    /// over from there.
+    async fn seed_last_attempted_from_cache(&self) {
+        let wall_now = SystemTime::now();
+        let now = Instant::now();
+        // Clone the handles out first: `cache::age` awaits, and a `std` lock
+        // must never be held across an `.await`.
+        let entries: Vec<Arc<ListEntry>> = self
+            .entries
+            .read()
+            .unwrap()
+            .iter()
+            .map(Arc::clone)
+            .collect();
+
+        let mut seeded = 0usize;
+        for entry in entries {
+            let Some(age) = cache::age(&self.data_dir, &entry.id, wall_now).await else {
+                continue;
+            };
+            if age >= entry.interval(self.default_refresh_hours) {
+                continue;
+            }
+            // `checked_sub`, not `-`: the monotonic clock counts from system
+            // boot, so a router that rebooted minutes ago cannot represent an
+            // instant hours in the past. `None` there means "fall back to
+            // treating the list as due", not "panic".
+            let Some(attempted_at) = now.checked_sub(age) else {
+                continue;
+            };
+            self.last_attempted
+                .lock()
+                .unwrap()
+                .insert(Arc::clone(&entry.id), attempted_at);
+            seeded += 1;
+        }
+
+        if seeded > 0 {
+            tracing::info!(
+                lists = seeded,
+                "refresh schedule restored from cached copies"
+            );
+        }
+    }
+
+    /// Deletes `/data` cached copies that no configured list claims any more,
+    /// naming each one in the log as it goes.
+    ///
+    /// `DELETE /api/v1/lists/{id}` already deletes its own copy, so the only
+    /// way to strand one is to edit `[[rules.lists]]` while FAH is stopped —
+    /// or to lose the race [`Self::remove_list`] documents. Nothing reads a
+    /// stranded copy ([`Self::compile`] iterates configured entries and looks
+    /// each id up, never the directory), so it is disk cost only: up to
+    /// `MAX_LIST_BYTES` each, on a volume shared with the query log.
+    ///
+    /// **Boot only, and deliberately.** Here the scheduler has not spawned and
+    /// no API listener is bound, so nothing else can be writing to `lists/`.
+    /// A periodic sweep would race [`Self::commit_raw`] — it would have to
+    /// distinguish a stranded copy from one being written this instant, which
+    /// a directory listing cannot do.
+    ///
+    /// The keep-set is every **configured** entry, enabled or not: a disabled
+    /// list's copy must survive so `PATCH {"enabled": true}` can swap it in
+    /// without a download. `user-rules` is added explicitly — it has a cache
+    /// file but is not a list, and it is the one copy that cannot be
+    /// re-downloaded if deleted.
+    async fn remove_orphaned_copies(&self) {
+        let mut keep: std::collections::HashSet<Arc<str>> = self
+            .entries
+            .read()
+            .unwrap()
+            .iter()
+            .map(|entry| Arc::clone(&entry.id))
+            .collect();
+        keep.insert(Arc::from(USER_RULES_ID));
+
+        for (id, bytes) in cache::remove_orphans(&self.data_dir, &keep).await {
+            // `warn`, not `info`: a file was deleted, and the operator who
+            // edited the config out from under it is the only one who can say
+            // whether that was intended.
+            tracing::warn!(
+                list = %id,
+                bytes,
+                "deleted cached copy of a list that is no longer configured"
+            );
         }
     }
 
@@ -643,7 +768,8 @@ impl ListManager {
     /// The entry drops out of the ruleset first, then its `/data` copy is
     /// deleted — a refresh already in flight holds its own `Arc` and may
     /// still write a cache file afterwards, but `compile` only reads
-    /// configured lists, so the orphan is inert and the next boot ignores it.
+    /// configured lists, so the re-created copy is inert until
+    /// [`Self::remove_orphaned_copies`] sweeps it on the next boot.
     pub async fn remove_list(&self, id: &str) -> Result<(), LifecycleError> {
         {
             let mut entries = self.entries.write().unwrap();
@@ -1351,6 +1477,330 @@ mod tests {
             manager.status("gone").unwrap().last_result,
             RefreshResult::Failed(_)
         ));
+    }
+
+    /// The restart tax this seeding removes, as a test: a list whose cached
+    /// copy is younger than its interval must not be refetched just because
+    /// the process is new. Observed on the RB5009 at 0.2.8 — boot compiled
+    /// from cache, then the scheduler's first tick refetched all 16 lists and
+    /// compiled the same ruleset a second time.
+    ///
+    /// The source here is a local path that does not exist, so any fetch would
+    /// fail: `last_result` staying `Ok` is what proves none was attempted.
+    /// `compile_count` alone could not — a failed batch does not recompile
+    /// either.
+    #[tokio::test]
+    async fn a_restart_does_not_refetch_lists_whose_cached_copy_is_still_fresh() {
+        let data_dir = tempfile::tempdir().unwrap();
+        cache::write(data_dir.path(), "oisd-basic", "||ads.example.com^\n")
+            .await
+            .unwrap();
+        let config = config_with(vec![list("oisd-basic", "srcs/missing.txt")]);
+        let manager = ListManager::new(&config, data_dir.path().to_path_buf()).unwrap();
+
+        manager.boot().await;
+        let before = manager.compile_count();
+
+        manager.refresh_due_lists().await;
+
+        assert_eq!(
+            manager.compile_count(),
+            before,
+            "a cache written minutes ago is not due against a 24h interval"
+        );
+        assert!(
+            matches!(
+                manager.status("oisd-basic").unwrap().last_result,
+                RefreshResult::Ok(_)
+            ),
+            "no fetch may be attempted, so the cache-derived status must stand"
+        );
+        assert!(matches!(
+            manager.matcher().lookup("ads.example.com", &QueryType::A),
+            MatchDecision::Block(_)
+        ));
+    }
+
+    /// The other half: seeding must not stretch an interval. A cached copy
+    /// older than the interval is due at the first tick exactly as before.
+    #[tokio::test]
+    async fn a_restart_still_refreshes_a_cached_copy_older_than_the_interval() {
+        let data_dir = tempfile::tempdir().unwrap();
+        let configured = local_lists(data_dir.path(), 1);
+        cache::write(data_dir.path(), "l0", "||stale.example.com^\n")
+            .await
+            .unwrap();
+        cache::set_modified(
+            data_dir.path(),
+            "l0",
+            SystemTime::now() - Duration::from_secs(48 * 3600),
+        );
+        let manager =
+            ListManager::new(&config_with(configured), data_dir.path().to_path_buf()).unwrap();
+
+        manager.boot().await;
+        let before = manager.compile_count();
+
+        manager.refresh_due_lists().await;
+
+        assert_eq!(
+            manager.compile_count() - before,
+            1,
+            "48h against a 24h interval is due, seeded or not"
+        );
+        assert!(
+            matches!(
+                manager.matcher().lookup("ads0.example.com", &QueryType::A),
+                MatchDecision::Block(_)
+            ),
+            "the refreshed source must have replaced the stale cached copy"
+        );
+    }
+
+    /// Seeding must not turn a hand-edited `/data` into a permanently missing
+    /// list. Deleting one list's cached copy — the obvious thing an operator
+    /// does to force a re-download — leaves that list with no mtime to seed
+    /// from, so it stays due and the first scheduler tick fetches it back.
+    ///
+    /// The two survivors point at source files that do not exist, so any fetch
+    /// of *them* would fail: their `last_result` staying `Ok` is what proves
+    /// the repair was surgical and did not drag the whole set back down the
+    /// network.
+    #[tokio::test]
+    async fn a_hand_deleted_cache_file_is_refetched_without_refetching_the_rest() {
+        let data_dir = tempfile::tempdir().unwrap();
+        tokio::fs::create_dir_all(data_dir.path().join("srcs"))
+            .await
+            .unwrap();
+        tokio::fs::write(
+            data_dir.path().join("srcs").join("gone.txt"),
+            "||gone.example.com^\n",
+        )
+        .await
+        .unwrap();
+
+        for (id, rule) in [
+            ("keep-a", "||keep-a.example.com^\n"),
+            ("keep-b", "||keep-b.example.com^\n"),
+            ("gone", "||gone.example.com^\n"),
+        ] {
+            cache::write(data_dir.path(), id, rule).await.unwrap();
+        }
+        // The hand edit: one list's cached copy is deleted, the rest untouched.
+        cache::remove(data_dir.path(), "gone").await.unwrap();
+
+        let config = config_with(vec![
+            list("keep-a", "srcs/missing-a.txt"),
+            list("keep-b", "srcs/missing-b.txt"),
+            list("gone", "srcs/gone.txt"),
+        ]);
+        let manager = ListManager::new(&config, data_dir.path().to_path_buf()).unwrap();
+
+        manager.boot().await;
+
+        // Boot compiles from what is on disk, so the deleted list contributes
+        // nothing yet — this is the hole the scheduler has to close.
+        assert!(
+            matches!(
+                manager.matcher().lookup("gone.example.com", &QueryType::A),
+                MatchDecision::Pass
+            ),
+            "a deleted cache copy cannot be in the boot ruleset"
+        );
+        let before = manager.compile_count();
+
+        manager.refresh_due_lists().await;
+
+        assert_eq!(
+            manager.compile_count() - before,
+            1,
+            "the missing list must be fetched and the ruleset rebuilt once"
+        );
+        assert!(
+            matches!(
+                manager.matcher().lookup("gone.example.com", &QueryType::A),
+                MatchDecision::Block(_)
+            ),
+            "the deleted list must be back in the serving ruleset"
+        );
+        assert_eq!(
+            cache::read(data_dir.path(), "gone").await.as_deref(),
+            Some("||gone.example.com^\n"),
+            "and its cached copy restored, so the next boot needs no network"
+        );
+
+        for id in ["keep-a", "keep-b"] {
+            assert!(
+                matches!(
+                    manager.status(id).unwrap().last_result,
+                    RefreshResult::Ok(_)
+                ),
+                "{id} still had a fresh cached copy and must not have been refetched"
+            );
+        }
+        // Both survivors must also still be serving: a surgical repair that
+        // dropped the other lists from the matcher would be worse than the
+        // redundant refetch it replaced.
+        for domain in ["keep-a.example.com", "keep-b.example.com"] {
+            assert!(
+                matches!(
+                    manager.matcher().lookup(domain, &QueryType::A),
+                    MatchDecision::Block(_)
+                ),
+                "{domain} dropped out of the ruleset during the repair"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn boot_deletes_a_cached_copy_no_configured_list_claims() {
+        let data_dir = tempfile::tempdir().unwrap();
+        cache::write(data_dir.path(), "keep", "||keep.example.com^\n")
+            .await
+            .unwrap();
+        // Stranded by an edit to `[[rules.lists]]` while FAH was stopped.
+        cache::write(data_dir.path(), "dropped", "||dropped.example.com^\n")
+            .await
+            .unwrap();
+
+        let config = config_with(vec![list("keep", "srcs/missing.txt")]);
+        let manager = ListManager::new(&config, data_dir.path().to_path_buf()).unwrap();
+
+        manager.boot().await;
+
+        assert!(
+            cache::read(data_dir.path(), "dropped").await.is_none(),
+            "a copy no configured list claims must be deleted"
+        );
+        assert_eq!(
+            cache::read(data_dir.path(), "keep").await.as_deref(),
+            Some("||keep.example.com^\n"),
+            "the configured list's copy must survive"
+        );
+    }
+
+    /// The sweep's one irreversible mistake. `user-rules` is written through
+    /// the same cache but never appears in `[[rules.lists]]`, so a keep-set
+    /// built from configured lists alone deletes it — and unlike every other
+    /// copy it is authored, not downloaded, so nothing can bring it back.
+    #[tokio::test]
+    async fn boot_never_sweeps_the_user_rules_copy() {
+        let data_dir = tempfile::tempdir().unwrap();
+        let manager = Arc::new(
+            ListManager::new(&config_with(vec![]), data_dir.path().to_path_buf()).unwrap(),
+        );
+        manager
+            .set_user_rules("||mine.example.com^\n".to_string())
+            .await;
+
+        manager.boot().await;
+
+        assert_eq!(
+            manager.user_rules().await.as_deref(),
+            Some("||mine.example.com^\n"),
+            "user rules are not a configured list and must never be swept"
+        );
+        assert!(matches!(
+            manager.matcher().lookup("mine.example.com", &QueryType::A),
+            MatchDecision::Block(_)
+        ));
+    }
+
+    /// A disabled list is excluded from `compile`, but it is still configured.
+    /// Sweeping its copy would turn `PATCH {"enabled": true}` from an instant
+    /// swap into a download.
+    #[tokio::test]
+    async fn boot_keeps_a_disabled_lists_cached_copy() {
+        let data_dir = tempfile::tempdir().unwrap();
+        cache::write(data_dir.path(), "off", "||off.example.com^\n")
+            .await
+            .unwrap();
+        let config = config_with(vec![RuleListConfig {
+            id: "off".to_string(),
+            url: "srcs/missing.txt".to_string(),
+            enabled: false,
+            refresh_hours: None,
+        }]);
+        let manager = ListManager::new(&config, data_dir.path().to_path_buf()).unwrap();
+
+        manager.boot().await;
+
+        assert_eq!(
+            cache::read(data_dir.path(), "off").await.as_deref(),
+            Some("||off.example.com^\n"),
+            "a disabled list is still configured; its copy must survive"
+        );
+        manager
+            .update_list(
+                "off",
+                &ListPatch {
+                    enabled: Some(true),
+                    refresh_hours: None,
+                },
+            )
+            .await
+            .unwrap();
+        assert!(
+            matches!(
+                manager.matcher().lookup("off.example.com", &QueryType::A),
+                MatchDecision::Block(_)
+            ),
+            "re-enabling must swap the kept copy in without a download"
+        );
+    }
+
+    /// `write` renames from a `.raw.tmp.{pid}` sidecar. Those are left alone: a
+    /// listing cannot tell a leaked one from a write in flight, and the cost of
+    /// guessing wrong is a failed refresh.
+    #[tokio::test]
+    async fn boot_leaves_half_written_temp_files_alone() {
+        let data_dir = tempfile::tempdir().unwrap();
+        cache::write(data_dir.path(), "keep", "||keep.example.com^\n")
+            .await
+            .unwrap();
+        let leftover = data_dir.path().join("lists").join("keep.raw.tmp.4242");
+        tokio::fs::write(&leftover, "partial").await.unwrap();
+
+        let config = config_with(vec![list("keep", "srcs/missing.txt")]);
+        let manager = ListManager::new(&config, data_dir.path().to_path_buf()).unwrap();
+
+        manager.boot().await;
+
+        assert!(
+            leftover.exists(),
+            "a `.raw.tmp.<pid>` sidecar is not a `{{id}}.raw` and must not be swept"
+        );
+    }
+
+    /// The RB5009 has no battery-backed RTC: after a router reboot the
+    /// container can start with a clock behind files written before it. Seeding
+    /// must fall back to "due" there rather than computing a nonsense age —
+    /// refetching once too often is harmless; skipping refreshes is not.
+    #[tokio::test]
+    async fn a_clock_behind_the_cached_copy_leaves_the_list_due() {
+        let data_dir = tempfile::tempdir().unwrap();
+        let configured = local_lists(data_dir.path(), 1);
+        cache::write(data_dir.path(), "l0", "||stale.example.com^\n")
+            .await
+            .unwrap();
+        cache::set_modified(
+            data_dir.path(),
+            "l0",
+            SystemTime::now() + Duration::from_secs(3600),
+        );
+        let manager =
+            ListManager::new(&config_with(configured), data_dir.path().to_path_buf()).unwrap();
+
+        manager.boot().await;
+        let before = manager.compile_count();
+
+        manager.refresh_due_lists().await;
+
+        assert_eq!(
+            manager.compile_count() - before,
+            1,
+            "an unusable mtime must leave the list due, not silently seeded"
+        );
     }
 
     /// `fastadhunter_ruleset_compile_duration_seconds` reported a hardcoded
