@@ -170,6 +170,51 @@ pub fn encode(metrics: &Metrics) -> String {
         writeln_metric(&mut out, name, &[], value as f64);
     }
 
+    // Scheduled cache sweep. Emitted unconditionally for the same reason the
+    // SWR series are: with `cleanup_interval_seconds = 0` every value stays
+    // zero, which is the reading, not an absence.
+    let cleanup = metrics.cleanup.load();
+    for (name, help, value) in [
+        (
+            "fastadhunter_cache_cleanup_runs_total",
+            "Cache sweeps completed — the scheduled ones and any triggered by \
+             POST /api/v1/cache/clean, which share one implementation.",
+            cleanup.runs,
+        ),
+        (
+            "fastadhunter_cache_cleanup_entries_removed_total",
+            "Cache entries removed by those sweeps. Near-zero is expected with \
+             serve_stale on: an entry only becomes sweepable 24h past its TTL, \
+             and under load capacity eviction reaches it first.",
+            cleanup.entries_removed,
+        ),
+        (
+            "fastadhunter_cache_cleanup_bytes_freed_total",
+            "Entry heap returned by those sweeps. The figure to watch rather \
+             than the entry count — a large TXT/SOA answer and an A record \
+             differ by an order of magnitude, and [dns.cache] max_bytes is what \
+             actually bounds the cache.",
+            cleanup.bytes_freed,
+        ),
+    ] {
+        write_help_type(&mut out, name, "counter", help);
+        writeln_metric(&mut out, name, &[], value as f64);
+    }
+    write_help_type(
+        &mut out,
+        "fastadhunter_cache_cleanup_duration_seconds",
+        "gauge",
+        "Wall time of the LAST cache sweep. A gauge, not a total: at the \
+         shipped cadence there is at most one sweep per scrape, so the last \
+         value hides no outlier.",
+    );
+    writeln_metric(
+        &mut out,
+        "fastadhunter_cache_cleanup_duration_seconds",
+        &[],
+        cleanup.last_duration_micros as f64 / 1_000_000.0,
+    );
+
     let upstreams = metrics.upstreams.load();
     if !upstreams.is_empty() {
         write_help_type(
@@ -577,6 +622,10 @@ mod tests {
             "fastadhunter_swr_refreshes_dropped_total",
             "fastadhunter_swr_refreshes_completed_total",
             "fastadhunter_swr_refreshes_failed_total",
+            "fastadhunter_cache_cleanup_runs_total",
+            "fastadhunter_cache_cleanup_entries_removed_total",
+            "fastadhunter_cache_cleanup_bytes_freed_total",
+            "fastadhunter_cache_cleanup_duration_seconds",
             "process_resident_memory_bytes",
         ] {
             assert!(
@@ -618,6 +667,41 @@ mod tests {
             let series = format!("fastadhunter_swr_refreshes_{name}_total {value}");
             assert!(text.contains(&series), "missing or wrong: {series}");
         }
+    }
+
+    /// Same contract for the cleanup series, and the same reason: with
+    /// `cleanup_interval_seconds = 0` every value stays zero forever, and an
+    /// all-zero series is the only thing that distinguishes "the sweep is off"
+    /// from "this build has no sweep".
+    #[test]
+    fn cleanup_counters_are_exported_from_the_first_scrape_and_track_the_snapshot() {
+        let metrics = Metrics::new();
+        let text = encode(&metrics);
+        assert!(text.contains("fastadhunter_cache_cleanup_runs_total 0"));
+        assert!(text.contains("fastadhunter_cache_cleanup_duration_seconds 0"));
+
+        metrics.set_cleanup(crate::CleanupSnapshot {
+            runs: 240,
+            entries_removed: 31,
+            bytes_freed: 4096,
+            last_duration_micros: 1_500,
+        });
+
+        let text = encode(&metrics);
+        for (name, value) in [
+            ("runs", 240),
+            ("entries_removed", 31),
+            ("bytes_freed", 4096),
+        ] {
+            let series = format!("fastadhunter_cache_cleanup_{name}_total {value}");
+            assert!(text.contains(&series), "missing or wrong: {series}");
+        }
+        // Microseconds in, seconds out — Prometheus base units.
+        assert!(
+            text.contains("fastadhunter_cache_cleanup_duration_seconds 0.0015"),
+            "duration not converted to seconds:
+{text}"
+        );
     }
 
     #[test]

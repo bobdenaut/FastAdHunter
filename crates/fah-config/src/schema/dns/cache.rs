@@ -36,6 +36,19 @@ pub struct DnsCacheConfig {
     /// while `serve_stale = false` — there are no stale entries to refresh.
     #[serde(default = "default_swr_workers")]
     pub swr_workers: u32,
+    /// How often a background task sweeps entries past the serve-stale window
+    /// out of the cache. `0` disables the sweep; the cache is still bounded by
+    /// `max_entries` and `max_bytes` either way, so this returns memory rather
+    /// than capping it.
+    ///
+    /// Expect it to reclaim very little at default settings, and do not read
+    /// that as a fault: with `serve_stale = true` an entry is only sweepable
+    /// 24 h after its TTL lapsed, and under any real query rate FIFO eviction
+    /// has taken such entries long before. What it is actually for is the
+    /// cache that goes idle *below* both caps — a household resolver overnight
+    /// — which nothing else ever reclaims.
+    #[serde(default = "default_cleanup_interval_seconds")]
+    pub cleanup_interval_seconds: u32,
 }
 
 impl Default for DnsCacheConfig {
@@ -48,6 +61,7 @@ impl Default for DnsCacheConfig {
             negative_ttl_max_seconds: default_negative_ttl_max_seconds(),
             serve_stale: default_true(),
             swr_workers: default_swr_workers(),
+            cleanup_interval_seconds: default_cleanup_interval_seconds(),
         }
     }
 }
@@ -81,4 +95,16 @@ fn default_negative_ttl_max_seconds() -> u32 {
 /// cache's shard locks out of contention with serving.
 fn default_swr_workers() -> u32 {
     3
+}
+
+/// Six minutes. Long enough that the sweep is invisible — a walk of a
+/// 10 000-entry cache costs microseconds, so at this cadence it is a rounding
+/// error against the query load — and short enough that memory a cache stopped
+/// needing comes back within one idle stretch rather than at the next restart.
+///
+/// Nothing depends on the exact figure: the sweep is idempotent and holds one
+/// shard lock at a time, so halving or doubling it changes only how promptly
+/// dead entries leave.
+fn default_cleanup_interval_seconds() -> u32 {
+    360
 }

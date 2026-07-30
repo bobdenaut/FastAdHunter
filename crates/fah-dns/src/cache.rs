@@ -59,7 +59,7 @@ const SHARD_COUNT: usize = 16;
 /// queries for up to this long past its original TTL when upstreams are
 /// unreachable. Not config-exposed (CONFIGURATION.md's `[dns.cache]` has no
 /// stale-window knob) — the RFC's own suggested ceiling.
-const MAX_STALE: Duration = Duration::from_secs(24 * 60 * 60);
+pub(crate) const MAX_STALE: Duration = Duration::from_secs(24 * 60 * 60);
 
 /// TTL handed back on a stale-served answer. Short on purpose: it tells the
 /// asking resolver (and our own next lookup) to try again soon rather than
@@ -376,10 +376,27 @@ impl Shard {
     /// least `capacity` pushes, each O(1).
     fn compact(&mut self) {
         if self.queue.len() > self.capacity * 2 {
-            let map = &self.map;
-            self.queue
-                .retain(|(key, seq)| map.get(key).is_some_and(|entry| entry.seq == *seq));
+            self.sweep_queue();
         }
+    }
+
+    /// Drops every ghost node, unconditionally — the "is this node live"
+    /// predicate, in one place, so [`Shard::compact`]'s amortized gate and
+    /// [`DnsCache::clean`]'s bulk removal cannot drift apart on what a ghost is.
+    ///
+    /// `clean` needs the ungated form because `compact`'s threshold is only
+    /// ever reached by *inserts*: a cache that goes idle after a sweep never
+    /// pushes again, so its ghosts — each still owning a cloned `key.domain`
+    /// that [`queue_bytes`] counts — would sit there indefinitely. That idle
+    /// cache is exactly what the scheduled clean exists for.
+    ///
+    /// `VecDeque::retain` compacts in place: no reallocation and no copy to a
+    /// new buffer, so this is one hash lookup per node and the ring's capacity
+    /// is left alone.
+    fn sweep_queue(&mut self) {
+        let map = &self.map;
+        self.queue
+            .retain(|(key, seq)| map.get(key).is_some_and(|entry| entry.seq == *seq));
     }
 }
 
@@ -396,6 +413,30 @@ pub(crate) struct DnsCache {
     hits: AtomicU64,
     misses: AtomicU64,
     evictions: AtomicU64,
+    /// Lifetime cleanup totals for `/metrics`, bumped inside
+    /// [`DnsCache::clean`] — so the scheduled sweep and the admin
+    /// `POST /api/v1/cache/clean` both count, through the one code path that
+    /// actually removes entries. Splitting them would mean a second call site
+    /// that could disagree with what happened to the cache.
+    cleanup_runs: AtomicU64,
+    cleanup_entries_removed: AtomicU64,
+    cleanup_bytes_freed: AtomicU64,
+    /// Wall time of the *last* sweep. A last-value gauge rather than a total:
+    /// at the shipped cadence there is at most one sweep per scrape, so it
+    /// hides nothing, and it is the figure the `shrink_to_fit` question gets
+    /// decided on (see [`DnsCache::clean`]).
+    cleanup_last_duration_micros: AtomicU64,
+}
+
+/// Lifetime cleanup counters for `/metrics`, read off
+/// [`DnsCache::cleanup_stats`] on the telemetry poll.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct CacheCleanupStats {
+    pub runs: u64,
+    pub entries_removed: u64,
+    pub bytes_freed: u64,
+    /// Wall time of the last sweep, in microseconds.
+    pub last_duration_micros: u64,
 }
 
 impl DnsCache {
@@ -434,6 +475,10 @@ impl DnsCache {
             hits: AtomicU64::new(0),
             misses: AtomicU64::new(0),
             evictions: AtomicU64::new(0),
+            cleanup_runs: AtomicU64::new(0),
+            cleanup_entries_removed: AtomicU64::new(0),
+            cleanup_bytes_freed: AtomicU64::new(0),
+            cleanup_last_duration_micros: AtomicU64::new(0),
         }
     }
 
@@ -693,13 +738,25 @@ impl DnsCache {
 
     /// Removes expired (dead) entries; with `purge_stale`, stale-window
     /// entries go too. Stale entries are kept by default on purpose — they
-    /// are the RFC 8767 insurance an upstream outage is survived on, so
-    /// dropping them is an explicit admin choice, not the default clean.
+    /// are the serve-stale insurance an upstream outage is survived on
+    /// (ADR-0005), so dropping them is an explicit admin choice, not the
+    /// default clean.
     ///
-    /// `freed_bytes` counts only the removed entries' own heap
-    /// ([`entry_heap_bytes`]): `retain` never shrinks the table, so the slab
-    /// [`table_bytes`] reports stays allocated and keeps showing up in
-    /// [`DnsCache::stats`] afterwards.
+    /// Called both by `POST /api/v1/cache/clean` and by the scheduled sweep
+    /// (`[dns.cache] cleanup_interval_seconds`) — one implementation, so the
+    /// two cannot drift on what "expired" means. Both bump the cleanup
+    /// counters.
+    ///
+    /// **What comes back and what does not.** `freed_bytes` counts the removed
+    /// entries' own heap ([`entry_heap_bytes`]). A shard that removed anything
+    /// also gets [`Shard::sweep_queue`], which returns each ghost node's cloned
+    /// domain. Neither slab is returned: `retain` does not shrink the table, so
+    /// the buckets [`table_bytes`] reports stay allocated, and the queue keeps
+    /// its ring capacity. That is deliberate and pending measurement —
+    /// `map.shrink_to_fit()` is a reallocation plus a full rehash, which at a
+    /// large `max_entries` on a 1.4 GHz core could cost more than it returns.
+    /// `fastadhunter_cache_cleanup_duration_seconds` at real occupancy is the
+    /// baseline that decision needs; do not add a shrink without it.
     pub(crate) fn clean(&self, purge_stale: bool) -> CacheClean {
         let started = std::time::Instant::now();
         let now = Instant::now();
@@ -716,6 +773,7 @@ impl DnsCache {
             outcome.entries_before += guard.map.len() as u64;
             let serve_stale = self.serve_stale;
             let mut freed = 0u64;
+            let mut removed = 0u64;
             guard
                 .map
                 .retain(|key, entry| match entry.state(now, serve_stale) {
@@ -723,6 +781,7 @@ impl DnsCache {
                     EntryState::Stale if !purge_stale => true,
                     state => {
                         freed += entry_heap_bytes(key, entry);
+                        removed += 1;
                         if state == EntryState::Stale {
                             outcome.removed_stale += 1;
                         } else {
@@ -732,11 +791,43 @@ impl DnsCache {
                     }
                 });
             guard.bytes = guard.bytes.saturating_sub(freed);
+            // Only when this shard actually lost entries: a sweep that finds
+            // nothing — the common case at default settings, since an entry is
+            // only `Expired` 24h past its TTL — must stay a walk and nothing
+            // more. `sweep_queue` is a second O(len) pass, so it is paid where
+            // there are ghosts to collect, not on every tick of every shard.
+            if removed > 0 {
+                guard.sweep_queue();
+            }
             outcome.freed_bytes += freed;
             outcome.entries_after += guard.map.len() as u64;
         }
         outcome.duration = started.elapsed();
+
+        self.cleanup_runs.fetch_add(1, Ordering::Relaxed);
+        self.cleanup_entries_removed.fetch_add(
+            outcome.removed_expired + outcome.removed_stale,
+            Ordering::Relaxed,
+        );
+        self.cleanup_bytes_freed
+            .fetch_add(outcome.freed_bytes, Ordering::Relaxed);
+        self.cleanup_last_duration_micros
+            .store(outcome.duration.as_micros() as u64, Ordering::Relaxed);
+
         outcome
+    }
+
+    /// Lifetime cleanup counters for `/metrics`. Zero until the first sweep,
+    /// which with `cleanup_interval_seconds = 0` means forever — the same
+    /// "nothing is happening" reading a scheduled-but-idle cleaner gives, and
+    /// what the counters exist to say.
+    pub(crate) fn cleanup_stats(&self) -> CacheCleanupStats {
+        CacheCleanupStats {
+            runs: self.cleanup_runs.load(Ordering::Relaxed),
+            entries_removed: self.cleanup_entries_removed.load(Ordering::Relaxed),
+            bytes_freed: self.cleanup_bytes_freed.load(Ordering::Relaxed),
+            last_duration_micros: self.cleanup_last_duration_micros.load(Ordering::Relaxed),
+        }
     }
 }
 
@@ -786,6 +877,8 @@ mod tests {
             // The cache is unaware of the pool; only the claim bookkeeping
             // lives here, and these tests drive it directly.
             swr_workers: 3,
+            // Same: `clean` is called directly here, never on a schedule.
+            cleanup_interval_seconds: 360,
         }
     }
 
@@ -1476,6 +1569,182 @@ mod tests {
         assert_eq!(outcome.removed_stale, 0);
     }
 
+    /// The gap `Shard::sweep_queue` closes. `map::retain` leaves one queue node
+    /// per removed entry, each still owning a cloned domain, and
+    /// `Shard::compact`'s `queue.len() > capacity * 2` gate is only ever
+    /// reached by an *insert* — so on a cache that goes quiet after a sweep,
+    /// which is the case the scheduled clean exists for, those nodes would
+    /// never be collected.
+    #[tokio::test(start_paused = true)]
+    async fn clean_leaves_no_ghost_queue_nodes_behind() {
+        let cache = DnsCache::new(&config(1000));
+        for i in 0..50 {
+            cache.store(
+                &a_key(&cache, &format!("dead{i}.example.")),
+                &positive_response(1),
+            );
+        }
+        cache.store(&a_key(&cache, "alive.example."), &positive_response(86_400));
+        assert_eq!(cache.queue_len(), 51);
+
+        tokio::time::advance(Duration::from_secs(2) + MAX_STALE).await;
+        let outcome = cache.clean(false);
+
+        assert_eq!(outcome.removed_expired, 50);
+        assert_eq!(
+            cache.queue_len(),
+            1,
+            "every removed entry's queue node must go with it, not wait for an \
+             insert that may never come"
+        );
+    }
+
+    /// The reported figure has to move, or "the sweep reclaimed memory" is a
+    /// claim nothing can check. A decrease, not an exact number: the table slab
+    /// and the queue's ring capacity are deliberately *not* returned (no
+    /// `shrink_to_fit` — that is a rehash whose cost is unmeasured on ARM), so
+    /// pinning an exact figure would encode today's non-shrinking as a promise.
+    #[tokio::test(start_paused = true)]
+    async fn clean_lowers_the_reported_heap_by_entries_and_their_queue_nodes() {
+        let cache = DnsCache::new(&config(1000));
+        for i in 0..50 {
+            cache.store(
+                &a_key(&cache, &format!("dead{i}.example.")),
+                &positive_response(1),
+            );
+        }
+        let before = cache.stats();
+
+        tokio::time::advance(Duration::from_secs(2) + MAX_STALE).await;
+        let outcome = cache.clean(false);
+        let after = cache.stats();
+
+        assert_eq!(after.bytes, 0, "no entries left to account for");
+        assert!(
+            after.estimated_bytes < before.estimated_bytes,
+            "estimated {} did not fall from {}",
+            after.estimated_bytes,
+            before.estimated_bytes
+        );
+        // The entries' own heap is exact; the rest of the drop is the ghost
+        // domains the queue sweep returned.
+        assert!(
+            before.estimated_bytes - after.estimated_bytes >= outcome.freed_bytes,
+            "the drop must cover at least the entry heap the clean reported"
+        );
+    }
+
+    /// One code path means one set of counters: the scheduled sweep and
+    /// `POST /api/v1/cache/clean` both land in `clean`, so neither can report
+    /// something that did not happen to the cache.
+    #[tokio::test(start_paused = true)]
+    async fn cleanup_counters_track_every_sweep_whatever_triggered_it() {
+        let cache = DnsCache::new(&config(100));
+        assert_eq!(cache.cleanup_stats(), CacheCleanupStats::default());
+
+        // A sweep that finds nothing still counts as a run — that is what
+        // distinguishes "swept, nothing to do" from "never swept".
+        let empty = cache.clean(false);
+        let stats = cache.cleanup_stats();
+        assert_eq!(stats.runs, 1);
+        assert_eq!(stats.entries_removed, 0);
+        assert_eq!(stats.bytes_freed, 0);
+        assert_eq!(empty.freed_bytes, 0);
+
+        cache.store(&a_key(&cache, "dead.example."), &positive_response(1));
+        tokio::time::advance(Duration::from_secs(2) + MAX_STALE).await;
+        let outcome = cache.clean(false);
+
+        let stats = cache.cleanup_stats();
+        assert_eq!(stats.runs, 2);
+        assert_eq!(stats.entries_removed, 1);
+        assert_eq!(
+            stats.bytes_freed, outcome.freed_bytes,
+            "the counter must be the same number the caller was handed"
+        );
+        assert_eq!(
+            stats.last_duration_micros,
+            outcome.duration.as_micros() as u64
+        );
+    }
+
+    /// A sweep takes the same shard locks the resolve path does. It must not
+    /// deadlock against concurrent lookups, must not disturb entries that are
+    /// still fresh, and must leave the byte accounting consistent — `bytes` is
+    /// maintained incrementally, so a removal racing a lookup is exactly where
+    /// it could drift.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn sweeping_while_lookups_run_disturbs_neither() {
+        let cache = Arc::new(DnsCache::new(&config(1000)));
+        for i in 0..200 {
+            cache.store(
+                &a_key(&cache, &format!("live{i}.example.")),
+                &positive_response(3600),
+            );
+        }
+
+        let readers: Vec<_> = (0..4)
+            .map(|worker| {
+                let cache = Arc::clone(&cache);
+                tokio::spawn(async move {
+                    for round in 0..500 {
+                        let i = (worker * 500 + round) % 200;
+                        let hit = matches!(
+                            cache.lookup(&a_key(&cache, &format!("live{i}.example."))),
+                            Lookup::Fresh(..)
+                        );
+                        assert!(hit, "a fresh entry stopped answering during a sweep");
+                    }
+                })
+            })
+            .collect();
+
+        let sweeper = {
+            let cache = Arc::clone(&cache);
+            tokio::task::spawn_blocking(move || {
+                for _ in 0..50 {
+                    cache.clean(false);
+                }
+            })
+        };
+
+        for reader in readers {
+            reader.await.unwrap();
+        }
+        sweeper.await.unwrap();
+
+        let stats = cache.stats();
+        assert_eq!(stats.entries, 200, "nothing fresh may be swept");
+        assert_eq!(cache.cleanup_stats().entries_removed, 0);
+        // The incrementally-maintained total still matches a fresh walk.
+        let walked: u64 = cache
+            .shards
+            .iter()
+            .map(|shard| {
+                let guard = shard.lock().unwrap();
+                guard
+                    .map
+                    .iter()
+                    .map(|(key, entry)| entry_heap_bytes(key, entry))
+                    .sum::<u64>()
+            })
+            .sum();
+        assert_eq!(stats.bytes, walked, "byte accounting drifted under a sweep");
+    }
+
+    /// An admin purge removes stale entries, and those must be counted too —
+    /// `entries_removed` is "what left the cache", not "what expired".
+    #[tokio::test(start_paused = true)]
+    async fn cleanup_counters_include_an_admin_stale_purge() {
+        let cache = DnsCache::new(&config(100));
+        cache.store(&a_key(&cache, "stale.example."), &positive_response(10));
+        tokio::time::advance(Duration::from_secs(11)).await;
+
+        cache.clean(true);
+
+        assert_eq!(cache.cleanup_stats().entries_removed, 1);
+    }
+
     #[tokio::test(start_paused = true)]
     async fn byte_estimate_counts_the_table_slab_not_just_occupied_entries() {
         let cache = DnsCache::new(&config(1000));
@@ -1494,9 +1763,12 @@ mod tests {
              domain + Arc block + record buffer), got {one} vs pair {pair}"
         );
 
-        // The entry dies and is cleaned; the slab stays allocated, so the
-        // estimate must not fall back to zero — that residue is exactly what
-        // explains RSS not dropping after a clean.
+        // The entry dies and is cleaned. Two things come back: its own heap
+        // (what `freed_bytes` reports) and its queue node's cloned domain
+        // (swept by `Shard::sweep_queue`, and never counted in `freed_bytes`,
+        // which is an entry-heap figure). Two things do not: the table slab and
+        // the queue's ring capacity. That residue is exactly what explains RSS
+        // not dropping to zero after a clean.
         tokio::time::advance(Duration::from_secs(11) + MAX_STALE).await;
         let outcome = cache.clean(false);
         assert_eq!(outcome.removed_expired, 1);
@@ -1505,9 +1777,11 @@ mod tests {
 
         let after = cache.stats();
         assert_eq!(after.entries, 0);
+        let ghost_domain = alloc_rounded(a_key(&cache, "one.example.com.").domain.len());
         assert!(
-            after.estimated_bytes > 0 && after.estimated_bytes == one - outcome.freed_bytes,
-            "empty-but-grown table keeps its slab: {} = {one} - {}",
+            after.estimated_bytes > 0
+                && after.estimated_bytes == one - outcome.freed_bytes - ghost_domain,
+            "empty-but-grown table keeps its slab: {} = {one} - {} - {ghost_domain}",
             after.estimated_bytes,
             outcome.freed_bytes
         );

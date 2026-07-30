@@ -14,7 +14,7 @@ mod tcp;
 mod udp;
 mod upstream;
 
-pub use cache::{CacheClean, CacheStats};
+pub use cache::{CacheClean, CacheCleanupStats, CacheStats};
 pub use pipeline::{Pipeline, Transport};
 pub use server::Server;
 pub use swr::SwrStats;

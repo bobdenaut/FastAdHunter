@@ -28,5 +28,5 @@ pub use encode::encode;
 pub use process::resident_memory_bytes;
 pub use registry::Metrics;
 pub use ruleset::RulesetSnapshot;
-pub use snapshot::{MetricsSnapshot, StageHistogram, SwrSnapshot};
+pub use snapshot::{CleanupSnapshot, MetricsSnapshot, StageHistogram, SwrSnapshot};
 pub use upstream::UpstreamSnapshot;

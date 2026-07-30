@@ -27,6 +27,9 @@ pub struct MetricsSnapshot {
     /// Stale-while-refresh counters (ADR-0005), read off
     /// `fah_dns::Pipeline::swr_stats()` on each poll.
     pub swr: SwrSnapshot,
+    /// Scheduled cache-sweep counters, read off
+    /// `fah_dns::Pipeline::cache_cleanup_stats()` on each poll.
+    pub cleanup: CleanupSnapshot,
     /// In-engine blocked-query latency (PERFORMANCE.md <1 ms p99 budget).
     pub block: StageHistogram,
     /// In-engine cache-hit latency (PERFORMANCE.md <1 ms p99 budget).
@@ -47,6 +50,21 @@ pub struct SwrSnapshot {
     pub dropped: u64,
     pub completed: u64,
     pub failed: u64,
+}
+
+/// Cache-cleanup counters at one instant, mirroring
+/// `fah_dns::CacheCleanupStats` across the same L3 sibling boundary
+/// [`SwrSnapshot`] crosses.
+///
+/// `runs`, `entries_removed` and `bytes_freed` are process-lifetime totals;
+/// `last_duration_micros` is a **last-value gauge**, not a total, and must not
+/// be deltaed like the others.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct CleanupSnapshot {
+    pub runs: u64,
+    pub entries_removed: u64,
+    pub bytes_freed: u64,
+    pub last_duration_micros: u64,
 }
 
 /// One latency stage captured at an instant: cumulative bucket counts (bucket

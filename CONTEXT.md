@@ -64,7 +64,20 @@ stores verdicts; the Rule Engine runs before the cache on every query.
 An entry passes through three lifetime stages: **fresh** (within TTL —
 answers queries directly), **stale** (past TTL but within the serve-stale
 window — see below), **expired** (past the stale window — dead weight until
-eviction or a **cache clean**, the admin operation that removes it).
+something removes it).
+
+### Cache clean
+
+The sweep that removes expired entries. It runs on a schedule
+(`[dns.cache] cleanup_interval_seconds`) and on demand from the admin API; both
+are the same operation, so both are counted the same way. It removes **only**
+expired entries — never fresh ones, and never stale ones, which are the
+serve-stale insurance an outage is survived on. Purging the stale window too is
+a separate, explicit admin choice.
+
+A clean is not what *bounds* the cache — `max_entries` and `max_bytes` do that,
+by eviction. A clean returns memory the cache has stopped needing while it sits
+below those bounds, which is otherwise never reclaimed.
 
 ### Stale-while-refresh
 

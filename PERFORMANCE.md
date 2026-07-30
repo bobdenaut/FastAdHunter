@@ -108,6 +108,28 @@ Notes:
     byte accounting charges per *bucket*, so ~262 KB at the default 10 000
     entries and ~2.6 MB at 100 k. Measure it against `max_bytes` rather than
     assuming it is free at large `max_entries`.
+- **Expired entries are swept on a schedule** (`[dns.cache]
+  cleanup_interval_seconds`, default 360 s), on the blocking pool rather than a
+  DNS worker — `clean` is synchronous and O(entries), which at a raised
+  `max_entries` is exactly the unbounded tail golden rule 8 keeps off the query
+  path. It holds one shard lock at a time, so a concurrent resolve waits at most
+  one shard's walk. It is **not** a bound: `max_entries`/`max_bytes` are, and
+  they hold with the sweep disabled.
+  - At default settings it will usually reclaim nothing, because
+    `serve_stale = true` means an entry is only sweepable 24 h past its TTL and
+    capacity eviction reaches such entries first under load. The case it serves
+    is a cache idling *below* both caps. Read
+    `fastadhunter_cache_cleanup_bytes_freed_total` near zero as normal, not as a
+    failure.
+  - A clean now also returns the eviction-queue nodes the removed entries left
+    behind (each held a cloned domain), so `cache_estimated_bytes` falls where
+    it previously stayed flat. The hash-table slab is still **not** returned:
+    `shrink_to_fit` is a reallocation plus a full rehash, and its cost on the
+    RB5009's 1.4 GHz cores has not been measured.
+    `fastadhunter_cache_cleanup_duration_seconds` at real occupancy is the
+    baseline that decision needs — take it before adding a shrink, not after.
+  - Freed memory goes back to **mimalloc**, not necessarily to the kernel, so
+    RSS lags `cache_estimated_bytes` (CONTEXT.md §Accounted/Residual).
 - 10k QPS is ~100× a busy household's peak; the headroom is the proof of
   efficiency, and it's what keeps p99 flat at real loads.
 - Budgets are compared against `main` on every perf-relevant change; a >10%

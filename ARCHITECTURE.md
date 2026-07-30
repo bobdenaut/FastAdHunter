@@ -251,6 +251,13 @@ against this document.
   a full queue costs a skipped refresh and never a delayed client. The pipeline
   is strictly the producer; nothing flows back. They are spawned by the binary
   alongside every other long-lived task, so shutdown aborts them from one place.
+- **The cache cleanup sweep** (`[dns.cache] cleanup_interval_seconds`) is the
+  other one: a single task that removes entries past the serve-stale window.
+  Nothing connects it to the query path — no channel, no shared state beyond the
+  cache shards themselves — and the sweep runs on the **blocking pool**, not a
+  DNS worker, because it is synchronous and O(entries). It takes one shard lock
+  at a time, so a concurrent resolve waits at most one shard's walk. Same
+  lifetime treatment: spawned by the binary, aborted with everything else.
 
 ## Data & Persistence
 

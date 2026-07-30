@@ -283,6 +283,7 @@ max_ttl_seconds = 86400
 negative_ttl_max_seconds = 60
 serve_stale = true
 swr_workers = 3
+cleanup_interval_seconds = 360
 
 [dns.upstreams]
 strategy = "fallback"
@@ -346,6 +347,21 @@ format = "text"
             disabled.dns.cache.serve_stale,
             "disabling the refresh pool must not disable serve-stale itself"
         );
+    }
+
+    /// Same contract for the scheduled sweep: on by default, `0` the
+    /// documented off switch. Disabling it must not touch the caps — those
+    /// are what keep the cache bounded, and the sweep only returns memory
+    /// underneath them.
+    #[test]
+    fn cache_cleanup_is_on_by_default_and_zero_disables_it() {
+        assert_eq!(DnsCacheConfig::default().cleanup_interval_seconds, 360);
+
+        let disabled =
+            Config::from_toml_str("[dns.cache]\ncleanup_interval_seconds = 0\n").unwrap();
+        assert_eq!(disabled.dns.cache.cleanup_interval_seconds, 0);
+        assert_eq!(disabled.dns.cache.max_entries, 10_000);
+        assert_eq!(disabled.dns.cache.max_bytes, 64 * 1024 * 1024);
     }
 
     #[test]

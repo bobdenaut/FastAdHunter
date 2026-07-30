@@ -11,7 +11,7 @@
 use std::net::IpAddr;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use fah_config::DnsCacheConfig;
 use fah_model::{Query as FahQuery, QueryEvent, Verdict};
@@ -45,6 +45,11 @@ pub struct Pipeline<F: Forwarder> {
     /// `[dns.cache] swr_workers = 0`. The query path only ever *offers* to it
     /// and never awaits it, so the two are fully decoupled.
     swr: Option<Arc<SwrPool>>,
+    /// How often the scheduled sweep runs, or `None` when
+    /// `[dns.cache] cleanup_interval_seconds = 0`. Held rather than acted on
+    /// here: the task is spawned by [`Pipeline::spawn_cache_cleanup`], never
+    /// by the constructor.
+    cleanup_interval: Option<Duration>,
     events: mpsc::Sender<QueryEvent>,
     /// Count of `QueryEvent`s dropped because the channel was full
     /// (ARCHITECTURE.md §Runtime Model: "a slow consumer drops events rather
@@ -66,6 +71,10 @@ impl<F: Forwarder> Pipeline<F> {
             blocking_ttl,
             cache: Arc::new(DnsCache::new(cache_config)),
             swr: SwrPool::new(cache_config.swr_workers).map(Arc::new),
+            cleanup_interval: match cache_config.cleanup_interval_seconds {
+                0 => None,
+                seconds => Some(Duration::from_secs(seconds as u64)),
+            },
             events,
             dropped_events: Arc::new(AtomicU64::new(0)),
         }
@@ -92,6 +101,91 @@ impl<F: Forwarder> Pipeline<F> {
     /// what the counters are there to say.
     pub fn swr_stats(&self) -> crate::swr::SwrStats {
         self.swr.as_ref().map(|swr| swr.stats()).unwrap_or_default()
+    }
+
+    /// Starts the scheduled cache sweep, returning its handle for the caller to
+    /// abort on shutdown (`None` when `cleanup_interval_seconds = 0`). Split
+    /// from [`Pipeline::new`] for the same reason
+    /// [`Pipeline::spawn_swr_workers`] is: the binary owns task lifetimes.
+    ///
+    /// The sweep removes only entries past the serve-stale window — it calls
+    /// the same `clean(false)` the admin endpoint does, so stale entries stay
+    /// exactly as servable as ADR-0005 needs them to be. There is no cheaper
+    /// "expired only" variant to write; that is already what `false` means.
+    pub fn spawn_cache_cleanup(&self) -> Option<tokio::task::JoinHandle<()>> {
+        let interval = self.cleanup_interval?;
+        let cache = Arc::clone(&self.cache);
+        Some(tokio::spawn(async move {
+            let mut ticker = tokio::time::interval(interval);
+            // The first tick fires immediately; skipping it means the sweep
+            // does not run against a cache that has been up for milliseconds
+            // and cannot hold anything expired yet.
+            ticker.tick().await;
+            ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+            loop {
+                ticker.tick().await;
+                let cache = Arc::clone(&cache);
+                // On the blocking pool, not a DNS worker: `clean` is
+                // synchronous and O(entries), so at a raised `max_entries` a
+                // full walk is exactly the unbounded tail PERFORMANCE.md's
+                // golden rule 8 keeps off the query path — the same treatment,
+                // for the same reason, as the p2-07 memory pass. Shard lock
+                // hold time is unaffected either way: one shard at a time, so a
+                // concurrent resolve waits at most one shard's walk.
+                let outcome = match tokio::task::spawn_blocking(move || cache.clean(false)).await {
+                    Ok(outcome) => outcome,
+                    // Only reachable if the sweep panicked. The scheduler
+                    // outliving one bad sweep is worth more than the entries it
+                    // would have removed; the next tick retries.
+                    Err(err) => {
+                        tracing::warn!(error = %err, "cache cleanup sweep failed");
+                        continue;
+                    }
+                };
+                // The whole `CacheClean`, every sweep — a line that reports only
+                // what it removed cannot answer "did the sweep run and find
+                // nothing?" versus "did the sweep not run?", which at default
+                // settings is the question actually being asked. `stale_removed`
+                // is in there despite being structurally always 0 for a
+                // scheduled sweep: that zero is the on-device proof that
+                // serve-stale entries (ADR-0005) are being left alone.
+                //
+                // The two arms differ only in level because `tracing` fixes the
+                // level at compile time. Nothing-removed is the common case at
+                // default settings, and a `debug` line every interval is a line
+                // an operator can leave on; an `info` one is 240 a day saying
+                // nothing, which on a RouterOS log buffer costs real history.
+                if outcome.removed_expired + outcome.removed_stale > 0 {
+                    tracing::info!(
+                        expired_removed = outcome.removed_expired,
+                        stale_removed = outcome.removed_stale,
+                        bytes_freed = outcome.freed_bytes,
+                        entries_before = outcome.entries_before,
+                        entries_after = outcome.entries_after,
+                        duration_us = outcome.duration.as_micros() as u64,
+                        "cache cleanup complete"
+                    );
+                } else {
+                    tracing::debug!(
+                        expired_removed = outcome.removed_expired,
+                        stale_removed = outcome.removed_stale,
+                        bytes_freed = outcome.freed_bytes,
+                        entries_before = outcome.entries_before,
+                        entries_after = outcome.entries_after,
+                        duration_us = outcome.duration.as_micros() as u64,
+                        "cache cleanup complete"
+                    );
+                }
+            }
+        }))
+    }
+
+    /// Cleanup counters for `/metrics`. Counts the admin
+    /// `POST /api/v1/cache/clean` too — both go through one `clean`, which is
+    /// what keeps the counters from disagreeing with what happened to the
+    /// cache.
+    pub fn cache_cleanup_stats(&self) -> crate::cache::CacheCleanupStats {
+        self.cache.cleanup_stats()
     }
 
     pub fn dropped_events(&self) -> u64 {
@@ -1111,5 +1205,206 @@ mod tests {
         for worker in workers {
             worker.abort();
         }
+    }
+
+    // ── scheduled cache cleanup ───────────────────────────────────────────
+
+    /// `swr_workers` off by default here: these tests are about the cleaner,
+    /// and a live pool would refresh the very entries a sweep is meant to find.
+    fn cleanup_cache_config(cleanup_interval_seconds: u32) -> DnsCacheConfig {
+        DnsCacheConfig {
+            swr_workers: 0,
+            cleanup_interval_seconds,
+            ..DnsCacheConfig::default()
+        }
+    }
+
+    /// Spins until `predicate` holds, driving the paused clock forward by
+    /// `advance` each turn so the sweep's `interval` actually fires — tokio's
+    /// auto-advance only kicks in when the runtime is *idle*, and a spin loop
+    /// never is. `Duration::ZERO` means "just yield", for waits whose progress
+    /// comes from another task rather than from time.
+    ///
+    /// Bounded by real wall time, not by the test clock, so a scheduler that
+    /// never fires fails instead of hanging.
+    async fn wait_for(advance: Duration, label: &str, mut predicate: impl FnMut() -> bool) {
+        let deadline = std::time::Instant::now() + Duration::from_secs(10);
+        while !predicate() {
+            assert!(std::time::Instant::now() < deadline, "{label}");
+            if advance > Duration::ZERO {
+                tokio::time::advance(advance).await;
+            }
+            tokio::task::yield_now().await;
+        }
+    }
+
+    /// The sweep interval every cleanup test below runs at.
+    const CLEANUP_INTERVAL: Duration = Duration::from_secs(60);
+
+    /// Nothing asks for this: no query, no API call, no eviction pressure. An
+    /// entry past its stale window simply stops being resident.
+    #[tokio::test(start_paused = true)]
+    async fn the_scheduled_sweep_removes_dead_entries_unprompted() {
+        let (rules, _data_dir) = manager_with_user_rules("").await;
+        let forwarder = SpyForwarder {
+            calls: Arc::new(AtomicU64::new(0)),
+            outcome: ForwarderOutcome::Answer(SWR_TTL),
+        };
+        let (tx, _rx) = mpsc::channel(256);
+        let pipeline = Pipeline::new(rules, forwarder, 10, &cleanup_cache_config(60), tx);
+
+        warm_then_age(&pipeline).await;
+        assert_eq!(pipeline.cache_stats().entries, 1);
+
+        // Past the stale window: now genuinely dead, and nothing but the
+        // sweep is going to notice.
+        tokio::time::advance(crate::cache::MAX_STALE).await;
+        let cleanup = pipeline
+            .spawn_cache_cleanup()
+            .expect("interval is non-zero");
+
+        wait_for(
+            CLEANUP_INTERVAL,
+            "the sweep never removed the dead entry",
+            || pipeline.cache_cleanup_stats().entries_removed == 1,
+        )
+        .await;
+
+        assert_eq!(pipeline.cache_stats().entries, 0);
+        let stats = pipeline.cache_cleanup_stats();
+        assert!(stats.runs >= 1);
+        assert!(stats.bytes_freed > 0, "a removed entry freed no heap");
+        cleanup.abort();
+    }
+
+    /// The requirement the whole feature is gated on. With SWR, the cache has
+    /// three states, and the cleaner owns only the last one: sweeping a stale
+    /// entry would delete precisely the copy ADR-0005 exists to serve, turning
+    /// a cache-hit into an upstream round trip.
+    #[tokio::test(start_paused = true)]
+    async fn the_scheduled_sweep_never_touches_a_serve_stale_entry() {
+        let (rules, _data_dir) = manager_with_user_rules("").await;
+        let calls = Arc::new(AtomicU64::new(0));
+        let forwarder = SpyForwarder {
+            calls: calls.clone(),
+            outcome: ForwarderOutcome::Answer(SWR_TTL),
+        };
+        let (tx, mut rx) = mpsc::channel(256);
+        let mut pipeline = Pipeline::new(rules, forwarder, 10, &cleanup_cache_config(60), tx);
+
+        // Expired but inside the stale window, and left there.
+        warm_then_age(&pipeline).await;
+        let _warm_event = rx.try_recv().unwrap();
+        let cleanup = pipeline
+            .spawn_cache_cleanup()
+            .expect("interval is non-zero");
+
+        // Several sweeps, so this cannot pass by the cleaner simply not having
+        // run yet.
+        wait_for(CLEANUP_INTERVAL, "the sweep never ran", || {
+            pipeline.cache_cleanup_stats().runs >= 3
+        })
+        .await;
+
+        let stats = pipeline.cache_cleanup_stats();
+        assert_eq!(stats.entries_removed, 0);
+        assert_eq!(stats.bytes_freed, 0);
+        assert_eq!(pipeline.cache_stats().stale, 1);
+
+        // And it is still *usable*, not merely present. With the pool off, the
+        // way to reach the stale copy is the pre-ADR-0005 fallback: kill the
+        // upstream and the entry has to answer. That is the outage this
+        // insurance exists for, and it is exactly what a sweep would have
+        // destroyed.
+        pipeline.forwarder.outcome = ForwarderOutcome::Err;
+        let reply = pipeline
+            .handle(
+                &encode_query("example.com.", RecordType::A),
+                client_ip(),
+                Transport::Tcp,
+            )
+            .await
+            .unwrap();
+        let response = Message::from_vec(&reply).unwrap();
+        assert_eq!(response.metadata.response_code, ResponseCode::NoError);
+        assert_eq!(response.answers.len(), 1);
+        let event = rx.try_recv().unwrap();
+        assert!(event.cache_hit && event.stale);
+
+        cleanup.abort();
+    }
+
+    /// The two background systems run against the same shards. A sweep must not
+    /// strand an entry a worker has claimed, and the refresh must still land.
+    #[tokio::test(start_paused = true)]
+    async fn a_sweep_and_a_pending_swr_refresh_do_not_fight() {
+        let (rules, _data_dir) = manager_with_user_rules("").await;
+        let calls = Arc::new(AtomicU64::new(0));
+        let forwarder = SpyForwarder {
+            calls: calls.clone(),
+            outcome: ForwarderOutcome::Answer(SWR_TTL),
+        };
+        let (tx, _rx) = mpsc::channel(256);
+        let config = DnsCacheConfig {
+            swr_workers: 1,
+            cleanup_interval_seconds: 60,
+            ..DnsCacheConfig::default()
+        };
+        let pipeline = Pipeline::new(rules, forwarder, 10, &config, tx);
+        let workers = pipeline.spawn_swr_workers();
+        let cleanup = pipeline
+            .spawn_cache_cleanup()
+            .expect("interval is non-zero");
+
+        warm_then_age(&pipeline).await;
+        // A stale hit: served from cache, refresh claimed and queued.
+        pipeline
+            .handle(
+                &encode_query("example.com.", RecordType::A),
+                client_ip(),
+                Transport::Tcp,
+            )
+            .await
+            .unwrap();
+
+        // No clock advance: the refresh is driven by the worker task, and
+        // pushing time forward here could age the entry out from under the
+        // very interaction being tested.
+        wait_for(Duration::ZERO, "the refresh never completed", || {
+            pipeline.swr_stats().completed == 1
+        })
+        .await;
+
+        assert_eq!(
+            pipeline.cache_cleanup_stats().entries_removed,
+            0,
+            "the cleaner removed an entry SWR was refreshing"
+        );
+        assert_eq!(pipeline.cache_stats().entries, 1);
+
+        cleanup.abort();
+        for worker in workers {
+            worker.abort();
+        }
+    }
+
+    /// `0` is the documented off switch, and off has to mean no task at all —
+    /// not a task that ticks and does nothing.
+    #[tokio::test]
+    async fn cleanup_interval_of_zero_spawns_no_task() {
+        let (rules, _data_dir) = manager_with_user_rules("").await;
+        let forwarder = SpyForwarder {
+            calls: Arc::new(AtomicU64::new(0)),
+            outcome: ForwarderOutcome::Answer(SWR_TTL),
+        };
+        let (tx, _rx) = mpsc::channel(8);
+        let pipeline = Pipeline::new(rules, forwarder, 10, &cleanup_cache_config(0), tx);
+
+        assert!(pipeline.spawn_cache_cleanup().is_none());
+        assert_eq!(
+            pipeline.cache_cleanup_stats(),
+            crate::cache::CacheCleanupStats::default(),
+            "no scheduler means no sweeps to count"
+        );
     }
 }

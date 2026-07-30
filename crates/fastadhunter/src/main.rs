@@ -375,6 +375,14 @@ impl Engine {
         }
         tasks.extend(swr_workers);
 
+        // Scheduled cache sweep, spawned here for the same reason: the binary
+        // owns every long-lived task's lifetime. `None` when
+        // `[dns.cache] cleanup_interval_seconds = 0`.
+        if let Some(cleanup) = pipeline.spawn_cache_cleanup() {
+            tracing::info!("cache cleanup scheduler started");
+            tasks.push(cleanup);
+        }
+
         Ok(Self {
             dns,
             http,
@@ -465,6 +473,13 @@ fn spawn_telemetry_poll(
                 dropped: swr.dropped,
                 completed: swr.completed,
                 failed: swr.failed,
+            });
+            let cleanup = pipeline.cache_cleanup_stats();
+            metrics.set_cleanup(fah_metrics::CleanupSnapshot {
+                runs: cleanup.runs,
+                entries_removed: cleanup.entries_removed,
+                bytes_freed: cleanup.bytes_freed,
+                last_duration_micros: cleanup.last_duration_micros,
             });
             metrics.set_upstreams(
                 upstreams
@@ -775,6 +790,7 @@ mod tests {
             cache_stale: 0,
             dropped_events: 0,
             swr: fah_metrics::SwrSnapshot::default(),
+            cleanup: fah_metrics::CleanupSnapshot::default(),
             block: empty_stage(),
             cache_hit: empty_stage(),
             forward: empty_stage(),

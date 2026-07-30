@@ -74,6 +74,11 @@ swr_workers = 3               # boot    — background refreshers for stale entr
                               #           a stale hit answers from cache at once and the
                               #           refresh happens off the query path. 0 disables,
                               #           reverting to "stale only after a failed forward"
+cleanup_interval_seconds = 360 # boot   — background sweep of entries past the stale
+                              #           window. 0 disables. Does NOT bound the cache —
+                              #           max_entries/max_bytes do; this returns memory
+                              #           underneath them. Expect it to reclaim little
+                              #           while serve_stale is on (see below)
 
 # ─── Upstreams ─────────────────────────────────────────────────────────
 [dns.upstreams]
@@ -280,6 +285,32 @@ Two related things the cap does **not** cover, both measured on the RB5009
 - The eviction queue's own ceiling scales with `max_entries`, not with
   `max_bytes` — worth knowing before raising `max_entries` by an order of
   magnitude.
+
+## The cleanup sweep is not a third bound
+
+`cleanup_interval_seconds` (default 360) runs a background sweep that removes
+entries past the serve-stale window. Read it as a **memory-return** knob, not
+as a bound — the two bounds above are what keep the cache from growing, and
+they hold whether the sweep runs or not.
+
+**Expect it to find nothing most of the time, and do not read that as a fault.**
+With `serve_stale = true` (the default) an entry is only sweepable 24 h after
+its TTL lapsed, and under any real query rate FIFO eviction has reached such
+entries long before. The case the sweep actually serves is the cache that goes
+*idle below both caps* — a household resolver overnight — where nothing else
+would ever reclaim those entries.
+
+What it returns is the entries' own heap plus their eviction-queue nodes. The
+hash-table slab is **not** returned: shrinking it is a reallocation and a full
+rehash whose cost on a 1.4 GHz ARM core has not been measured, so it is left
+allocated deliberately rather than paid for on spec.
+`fastadhunter_cache_cleanup_duration_seconds` at real occupancy is the figure
+that decision is waiting on.
+
+Setting it to `0` disables the sweep and touches nothing else. The admin
+`POST /api/v1/cache/clean` remains available either way, and both count into
+the same `fastadhunter_cache_cleanup_*` metrics because they are the same
+operation.
 
 The `[history]` defaults suit the RB5009's 1 TB SSD: hourly/daily rollups are
 kilobytes/day and the 60 s perf series is tens of MB over 90 days, so keeping

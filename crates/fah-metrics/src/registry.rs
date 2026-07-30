@@ -18,7 +18,7 @@ use fah_model::{QueryEvent, Verdict};
 
 use crate::histogram::Histogram;
 use crate::ruleset::RulesetSnapshot;
-use crate::snapshot::{MetricsSnapshot, StageHistogram, SwrSnapshot};
+use crate::snapshot::{CleanupSnapshot, MetricsSnapshot, StageHistogram, SwrSnapshot};
 use crate::upstream::UpstreamSnapshot;
 
 pub struct Metrics {
@@ -45,6 +45,12 @@ pub struct Metrics {
     /// — five independently-updated atomics could be scraped mid-update and
     /// show `enqueued` behind `completed`.
     pub(crate) swr: ArcSwap<SwrSnapshot>,
+    /// Scheduled cache-sweep counters, stored as one value for the same reason
+    /// [`Metrics::swr`] is: they are read together, replaced together off
+    /// `fah_dns::Pipeline::cache_cleanup_stats()`, and a scrape landing
+    /// mid-update could otherwise show bytes freed by a run that has not been
+    /// counted yet.
+    pub(crate) cleanup: ArcSwap<CleanupSnapshot>,
     pub(crate) upstreams: ArcSwap<Vec<UpstreamSnapshot>>,
     pub(crate) ruleset: ArcSwap<RulesetSnapshot>,
     pub(crate) memory: ArcSwap<fah_model::MemoryBreakdown>,
@@ -81,6 +87,7 @@ impl Metrics {
             duration_forward: Histogram::new(),
             dropped_events: AtomicU64::new(0),
             swr: ArcSwap::new(Arc::new(SwrSnapshot::default())),
+            cleanup: ArcSwap::new(Arc::new(CleanupSnapshot::default())),
             upstreams: ArcSwap::new(Arc::new(Vec::new())),
             ruleset: ArcSwap::new(Arc::new(RulesetSnapshot::default())),
             memory: ArcSwap::new(Arc::new(fah_model::MemoryBreakdown::default())),
@@ -148,6 +155,12 @@ impl Metrics {
         self.swr.store(Arc::new(snapshot));
     }
 
+    /// Cache-cleanup counters off `fah_dns::Pipeline::cache_cleanup_stats()`,
+    /// on the same read-fresh-and-replace contract as [`Self::set_swr`].
+    pub fn set_cleanup(&self, snapshot: CleanupSnapshot) {
+        self.cleanup.store(Arc::new(snapshot));
+    }
+
     pub fn set_upstreams(&self, snapshot: Vec<UpstreamSnapshot>) {
         self.upstreams.store(Arc::new(snapshot));
     }
@@ -186,6 +199,7 @@ impl Metrics {
             cache_stale: self.cache_stale.load(Ordering::Relaxed),
             dropped_events: self.dropped_events.load(Ordering::Relaxed),
             swr: **self.swr.load(),
+            cleanup: **self.cleanup.load(),
             block: stage_histogram(&self.duration_block),
             cache_hit: stage_histogram(&self.duration_cache_hit),
             forward: stage_histogram(&self.duration_forward),

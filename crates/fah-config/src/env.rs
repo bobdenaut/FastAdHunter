@@ -69,6 +69,9 @@ fn apply_one(
         ["dns", "cache", "swr_workers"] => {
             config.dns.cache.swr_workers = coerce_u32(var, path, value)?
         }
+        ["dns", "cache", "cleanup_interval_seconds"] => {
+            config.dns.cache.cleanup_interval_seconds = coerce_u32(var, path, value)?
+        }
 
         ["dns", "upstreams", "strategy"] => {
             config.dns.upstreams.strategy = coerce_enum(var, path, value)?
