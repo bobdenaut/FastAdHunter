@@ -24,6 +24,9 @@ pub struct MetricsSnapshot {
     pub cache_misses: u64,
     pub cache_stale: u64,
     pub dropped_events: u64,
+    /// Stale-while-refresh counters (ADR-0005), read off
+    /// `fah_dns::Pipeline::swr_stats()` on each poll.
+    pub swr: SwrSnapshot,
     /// In-engine blocked-query latency (PERFORMANCE.md <1 ms p99 budget).
     pub block: StageHistogram,
     /// In-engine cache-hit latency (PERFORMANCE.md <1 ms p99 budget).
@@ -31,6 +34,19 @@ pub struct MetricsSnapshot {
     /// End-to-end forwarded-query latency, including the upstream round trip.
     pub forward: StageHistogram,
     pub upstreams: Vec<UpstreamSnapshot>,
+}
+
+/// Stale-while-refresh counters at one instant, mirroring
+/// `fah_dns::SwrStats` — this crate is an L3 sibling of `fah-dns` and cannot
+/// import it, so the binary copies the fields across on each poll.
+/// Process-lifetime totals, like every other counter here.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct SwrSnapshot {
+    pub enqueued: u64,
+    pub deduplicated: u64,
+    pub dropped: u64,
+    pub completed: u64,
+    pub failed: u64,
 }
 
 /// One latency stage captured at an instant: cumulative bucket counts (bucket

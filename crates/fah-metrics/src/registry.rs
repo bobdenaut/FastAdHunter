@@ -18,7 +18,7 @@ use fah_model::{QueryEvent, Verdict};
 
 use crate::histogram::Histogram;
 use crate::ruleset::RulesetSnapshot;
-use crate::snapshot::{MetricsSnapshot, StageHistogram};
+use crate::snapshot::{MetricsSnapshot, StageHistogram, SwrSnapshot};
 use crate::upstream::UpstreamSnapshot;
 
 pub struct Metrics {
@@ -39,6 +39,12 @@ pub struct Metrics {
     pub(crate) duration_cache_hit: Histogram,
     pub(crate) duration_forward: Histogram,
     pub(crate) dropped_events: AtomicU64,
+    /// Stale-while-refresh counters (ADR-0005). Stored as one value rather than
+    /// five atomics because they are read together, replaced together off
+    /// `fah_dns::Pipeline::swr_stats()`, and only ever compared with each other
+    /// — five independently-updated atomics could be scraped mid-update and
+    /// show `enqueued` behind `completed`.
+    pub(crate) swr: ArcSwap<SwrSnapshot>,
     pub(crate) upstreams: ArcSwap<Vec<UpstreamSnapshot>>,
     pub(crate) ruleset: ArcSwap<RulesetSnapshot>,
     pub(crate) memory: ArcSwap<fah_model::MemoryBreakdown>,
@@ -74,6 +80,7 @@ impl Metrics {
             duration_cache_hit: Histogram::new(),
             duration_forward: Histogram::new(),
             dropped_events: AtomicU64::new(0),
+            swr: ArcSwap::new(Arc::new(SwrSnapshot::default())),
             upstreams: ArcSwap::new(Arc::new(Vec::new())),
             ruleset: ArcSwap::new(Arc::new(RulesetSnapshot::default())),
             memory: ArcSwap::new(Arc::new(fah_model::MemoryBreakdown::default())),
@@ -133,6 +140,14 @@ impl Metrics {
         self.dropped_events.store(count, Ordering::Relaxed);
     }
 
+    /// Stale-while-refresh counters off `fah_dns::Pipeline::swr_stats()`
+    /// (ADR-0005) — like `set_dropped_events`, these are monotonic counters
+    /// read fresh each poll, so this replaces the last-known value rather than
+    /// adding to it.
+    pub fn set_swr(&self, snapshot: SwrSnapshot) {
+        self.swr.store(Arc::new(snapshot));
+    }
+
     pub fn set_upstreams(&self, snapshot: Vec<UpstreamSnapshot>) {
         self.upstreams.store(Arc::new(snapshot));
     }
@@ -170,6 +185,7 @@ impl Metrics {
             cache_misses: self.cache_misses.load(Ordering::Relaxed),
             cache_stale: self.cache_stale.load(Ordering::Relaxed),
             dropped_events: self.dropped_events.load(Ordering::Relaxed),
+            swr: **self.swr.load(),
             block: stage_histogram(&self.duration_block),
             cache_hit: stage_histogram(&self.duration_cache_hit),
             forward: stage_histogram(&self.duration_forward),

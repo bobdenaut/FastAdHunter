@@ -69,7 +69,11 @@ max_bytes = 67108864          # boot    — 64 MiB ceiling on what cached answer
 min_ttl_seconds = 0           # boot    — clamp: honor upstream by default
 max_ttl_seconds = 86400       # boot    — clamp: 24h cap
 negative_ttl_max_seconds = 60 # boot    — RFC 2308 negative-cache cap
-serve_stale = true            # boot    — RFC 8767: serve expired (≤24h) when upstreams down
+serve_stale = true            # boot    — serve expired entries (≤24h) rather than failing
+swr_workers = 3               # boot    — background refreshers for stale entries (ADR-0005);
+                              #           a stale hit answers from cache at once and the
+                              #           refresh happens off the query path. 0 disables,
+                              #           reverting to "stale only after a failed forward"
 
 # ─── Upstreams ─────────────────────────────────────────────────────────
 [dns.upstreams]

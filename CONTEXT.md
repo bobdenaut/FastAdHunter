@@ -63,9 +63,29 @@ The bounded in-memory store of **upstream answers only**. The cache never
 stores verdicts; the Rule Engine runs before the cache on every query.
 An entry passes through three lifetime stages: **fresh** (within TTL —
 answers queries directly), **stale** (past TTL but within the serve-stale
-window — answers only after a failed forward), **expired** (past the stale
-window — dead weight until eviction or a **cache clean**, the admin
-operation that removes it).
+window — see below), **expired** (past the stale window — dead weight until
+eviction or a **cache clean**, the admin operation that removes it).
+
+### Stale-while-refresh
+
+What a **stale** entry does. It answers the query **immediately**, at cache-hit
+latency, and a refresh job goes to a small pool of detached background workers
+(`[dns.cache] swr_workers`) that the query path never waits on — ADR-0005. The
+reply carries a deliberately short TTL so the asking resolver comes back soon.
+
+Two terms belong to that pool and mean nothing outside it:
+
+- **Claim** — the right to refresh one stale entry, held for a short lease and
+  taken under the cache shard lock the lookup already holds. Exactly one query
+  per lease gets it, which is what makes many simultaneous hits on one expiring
+  name produce **one** refresh rather than one each.
+- **Cooldown** — the longer suppression a *failed* refresh leaves behind, so a
+  dead upstream cannot turn every stale hit into a forward.
+
+`swr_workers = 0` disables the pool, and a stale entry then answers only after a
+forward has actually failed — the pre-ADR-0005 behaviour, and the one RFC 8767
+§4 describes. With the pool on, the behaviour is closer to HTTP's
+`stale-while-revalidate` (RFC 5861): do not call it "RFC 8767 serve-stale".
 
 ### Upstream
 

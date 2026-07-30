@@ -132,6 +132,44 @@ pub fn encode(metrics: &Metrics) -> String {
             .load(std::sync::atomic::Ordering::Relaxed) as f64,
     );
 
+    // Stale-while-refresh (ADR-0005). Always emitted, even with the pool
+    // disabled: a missing series and an all-zero one look the same on a graph,
+    // but only the all-zero one proves the build has the feature at all.
+    let swr = metrics.swr.load();
+    for (name, help, value) in [
+        (
+            "fastadhunter_swr_refreshes_enqueued_total",
+            "Background refreshes queued after a stale cache hit.",
+            swr.enqueued,
+        ),
+        (
+            "fastadhunter_swr_refreshes_deduplicated_total",
+            "Stale hits that found a refresh already claimed, so queued nothing.",
+            swr.deduplicated,
+        ),
+        (
+            "fastadhunter_swr_refreshes_dropped_total",
+            "Refreshes skipped because the queue was full. The client was still \
+             answered from the stale entry; sustained growth means \
+             [dns.cache] swr_workers is undersized.",
+            swr.dropped,
+        ),
+        (
+            "fastadhunter_swr_refreshes_completed_total",
+            "Background refreshes that replaced their cache entry.",
+            swr.completed,
+        ),
+        (
+            "fastadhunter_swr_refreshes_failed_total",
+            "Background refreshes that failed or returned an uncacheable answer, \
+             putting the entry into its failure cooldown.",
+            swr.failed,
+        ),
+    ] {
+        write_help_type(&mut out, name, "counter", help);
+        writeln_metric(&mut out, name, &[], value as f64);
+    }
+
     let upstreams = metrics.upstreams.load();
     if !upstreams.is_empty() {
         write_help_type(
@@ -534,6 +572,11 @@ mod tests {
             "fastadhunter_ruleset_heap_bytes",
             "fastadhunter_ruleset_duplicates_removed",
             "fastadhunter_ruleset_compile_duration_seconds",
+            "fastadhunter_swr_refreshes_enqueued_total",
+            "fastadhunter_swr_refreshes_deduplicated_total",
+            "fastadhunter_swr_refreshes_dropped_total",
+            "fastadhunter_swr_refreshes_completed_total",
+            "fastadhunter_swr_refreshes_failed_total",
             "process_resident_memory_bytes",
         ] {
             assert!(
@@ -544,6 +587,36 @@ mod tests {
                 text.contains(&format!("# TYPE {name} ")),
                 "missing TYPE line for {name}"
             );
+        }
+    }
+
+    /// The SWR series must be emitted even at zero. `upstream_*` is omitted
+    /// until a snapshot exists because its labels are unknown before then;
+    /// these have no labels, and an absent series is indistinguishable from a
+    /// zero one on a graph — only the zero one proves the build has the pool.
+    #[test]
+    fn swr_counters_are_exported_from_the_first_scrape_and_track_the_snapshot() {
+        let metrics = Metrics::new();
+        assert!(encode(&metrics).contains("fastadhunter_swr_refreshes_enqueued_total 0"));
+
+        metrics.set_swr(crate::SwrSnapshot {
+            enqueued: 7,
+            deduplicated: 132,
+            dropped: 2,
+            completed: 5,
+            failed: 1,
+        });
+
+        let text = encode(&metrics);
+        for (name, value) in [
+            ("enqueued", 7),
+            ("deduplicated", 132),
+            ("dropped", 2),
+            ("completed", 5),
+            ("failed", 1),
+        ] {
+            let series = format!("fastadhunter_swr_refreshes_{name}_total {value}");
+            assert!(text.contains(&series), "missing or wrong: {series}");
         }
     }
 

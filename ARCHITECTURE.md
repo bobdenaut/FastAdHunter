@@ -244,6 +244,13 @@ against this document.
 - Cross-component communication (e.g. query events to `fah-stats`) uses bounded
   channels; a slow consumer drops events rather than back-pressuring the
   pipeline.
+- **Stale-while-refresh workers** (ADR-0005) are the one other long-lived task
+  set inside the DNS engine: a fixed pool of `[dns.cache] swr_workers` that
+  refresh stale cache entries. The edge to them follows the same contract as the
+  query-event channel — bounded, and it **drops rather than back-pressures**, so
+  a full queue costs a skipped refresh and never a delayed client. The pipeline
+  is strictly the producer; nothing flows back. They are spawned by the binary
+  alongside every other long-lived task, so shutdown aborts them from one place.
 
 ## Data & Persistence
 

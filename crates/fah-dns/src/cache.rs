@@ -48,7 +48,7 @@ use std::time::Duration;
 
 use fah_config::DnsCacheConfig;
 use hickory_proto::op::{Message, ResponseCode};
-use hickory_proto::rr::{DNSClass, RData, Record, RecordType};
+use hickory_proto::rr::{DNSClass, Name, RData, Record, RecordType};
 use tokio::time::Instant;
 
 /// Independently-locked shard count (power of two — shard selection masks
@@ -66,6 +66,25 @@ const MAX_STALE: Duration = Duration::from_secs(24 * 60 * 60);
 /// pin the stale data client-side for a normal TTL's worth of time.
 pub(crate) const STALE_SERVE_TTL: u32 = 30;
 
+/// How long a claimed stale entry stays claimed before the claim is treated as
+/// abandoned (ADR-0005). The lease must outlast a worst-case forward, which is
+/// `[dns.upstreams] timeout_ms` × the number of servers: at the shipped
+/// defaults (800 ms, two servers) that is 1.6 s, so this is ~3× headroom.
+///
+/// It goes tight only for a config with six or more upstreams at the default
+/// timeout, and the failure mode there is benign — an expired lease lets a
+/// second query claim while the first refresh is still in flight, costing one
+/// duplicate forward, never a wrong answer or an entry that can never refresh
+/// again. Deliberately *not* derived from `[dns.upstreams]`: the cache does not
+/// know about upstream configuration and should not start to.
+const REFRESH_CLAIM_LEASE: Duration = Duration::from_secs(5);
+
+/// How long a *failed* refresh suppresses further attempts for that entry.
+/// Matches [`STALE_SERVE_TTL`], so a client retrying on the TTL we just handed
+/// it triggers at most one refresh attempt per round — which is what stops a
+/// dead upstream turning every stale hit into a forward.
+pub(crate) const REFRESH_FAILURE_COOLDOWN: Duration = Duration::from_secs(30);
+
 /// Built once per query via [`DnsCache::key`] and reused across the
 /// lookup → store → stale-lookup sequence, so the resolve path pays for the
 /// key exactly once.
@@ -76,6 +95,30 @@ pub(crate) struct CacheKey {
     domain: Box<str>,
     qtype: RecordType,
     qclass: DNSClass,
+}
+
+impl CacheKey {
+    /// The question this key stands for, rebuilt for a background refresh
+    /// (`crate::swr`). `domain` is already the wire-format name the pipeline
+    /// decoded, so this parses rather than constructs — and cannot fail in
+    /// practice, since the name reached here by being decoded from the wire.
+    /// A key that somehow holds an unparseable name yields the root, which
+    /// refreshes nothing and is caught by the refresh counting as failed;
+    /// panicking on a background task would be far worse.
+    pub(crate) fn name(&self) -> Name {
+        Name::from_ascii(&*self.domain).unwrap_or_else(|_| {
+            debug_assert!(false, "cache keys hold wire-decoded names: {}", self.domain);
+            Name::root()
+        })
+    }
+
+    pub(crate) fn qtype(&self) -> RecordType {
+        self.qtype
+    }
+
+    pub(crate) fn qclass(&self) -> DNSClass {
+        self.qclass
+    }
 }
 
 /// A cached reply, independent of how much of its TTL remains — the answer
@@ -99,6 +142,22 @@ struct Entry {
     /// counter rather than `inserted_at` because paused-clock tests (and, in
     /// principle, a coarse clock) can hand two inserts the same `Instant`.
     seq: u64,
+    /// Suppresses further stale-while-refresh jobs for this key until the
+    /// deadline (ADR-0005). One field serves two purposes:
+    ///
+    /// - **Claim.** [`DnsCache::lookup_and_claim_refresh`] sets it to
+    ///   `now + REFRESH_CLAIM_LEASE` while a worker refreshes the entry, so
+    ///   simultaneous queries for the same stale key enqueue exactly one job.
+    /// - **Cooldown.** A failed refresh sets it to
+    ///   `now + REFRESH_FAILURE_COOLDOWN`, so a dead upstream cannot turn every
+    ///   stale hit into a forward.
+    ///
+    /// Making the claim a *deadline* rather than a flag is what stops a worker
+    /// that panicked or was aborted at shutdown from stranding the entry: a
+    /// claim that outlives its lease reads as unclaimed. `None` on every fresh
+    /// [`DnsCache::insert`], so a successful refresh clears it by replacing the
+    /// whole entry — there is no separate "unclaim on success" step to forget.
+    refresh_suppressed_until: Option<Instant>,
 }
 
 impl Entry {
@@ -235,9 +294,19 @@ pub(crate) enum Lookup {
     /// Not yet expired. Carries the TTL still remaining (original TTL minus
     /// elapsed time) so the reply doesn't overstate freshness.
     Fresh(Arc<CachedAnswer>, u32),
-    /// Expired but within the RFC 8767 stale window — only meant to be used
-    /// after a forward attempt has actually failed.
-    Stale(Arc<CachedAnswer>),
+    /// Expired but within the stale window: servable now, with a background
+    /// refresh (ADR-0005).
+    Stale {
+        answer: Arc<CachedAnswer>,
+        /// Whether *this* caller just took the refresh claim for the entry.
+        ///
+        /// True for exactly one caller per lease, which is the whole
+        /// deduplication mechanism — a thousand simultaneous queries for one
+        /// stale key produce one refresh job. Always `false` from
+        /// [`DnsCache::lookup`], which never claims; only
+        /// [`DnsCache::lookup_and_claim_refresh`] can hand back `true`.
+        claimed_refresh: bool,
+    },
     Miss,
 }
 
@@ -387,10 +456,32 @@ impl DnsCache {
         (self.hash_builder.hash_one(key) as usize) & (SHARD_COUNT - 1)
     }
 
+    /// Reads an entry without side effects. Used where a stale answer is about
+    /// to be returned anyway and no refresh should be scheduled — the
+    /// failed-forward fallback in `Pipeline::resolve`, which has already
+    /// exhausted the upstreams this instant.
     pub(crate) fn lookup(&self, key: &CacheKey) -> Lookup {
+        self.lookup_inner(key, false)
+    }
+
+    /// Reads an entry and, on a stale hit, atomically claims the right to
+    /// refresh it (ADR-0005) — under the shard lock the read already holds, so
+    /// deduplication costs no extra lock and no global state.
+    ///
+    /// The returned `claimed_refresh` is a *claim*, not a question: the caller
+    /// that receives `true` owns the refresh and must either enqueue it or
+    /// release the claim via [`DnsCache::release_refresh_claim`]. Dropping it
+    /// silently would leave the entry unrefreshed for a whole lease.
+    pub(crate) fn lookup_and_claim_refresh(&self, key: &CacheKey) -> Lookup {
+        self.lookup_inner(key, true)
+    }
+
+    /// The one implementation behind both lookup entry points, so the freshness
+    /// rules cannot drift between a claiming and a non-claiming read.
+    fn lookup_inner(&self, key: &CacheKey, claim_refresh: bool) -> Lookup {
         let shard = &self.shards[self.shard_index(key)];
-        let guard = shard.lock().unwrap();
-        let Some(entry) = guard.map.get(key) else {
+        let mut guard = shard.lock().unwrap();
+        let Some(entry) = guard.map.get_mut(key) else {
             return Lookup::Miss;
         };
         let now = Instant::now();
@@ -398,9 +489,47 @@ impl DnsCache {
             let remaining = (entry.expires_at() - now).as_secs() as u32;
             Lookup::Fresh(Arc::clone(&entry.answer), remaining)
         } else if self.serve_stale && now < entry.stale_deadline() {
-            Lookup::Stale(Arc::clone(&entry.answer))
+            // A suppression still in the future — an in-flight refresh's lease,
+            // or a failed refresh's cooldown — means someone else already owns
+            // this key's refresh, so this caller only serves.
+            let suppressed = entry
+                .refresh_suppressed_until
+                .is_some_and(|until| now < until);
+            let claimed_refresh = claim_refresh && !suppressed;
+            if claimed_refresh {
+                entry.refresh_suppressed_until = Some(now + REFRESH_CLAIM_LEASE);
+            }
+            Lookup::Stale {
+                answer: Arc::clone(&entry.answer),
+                claimed_refresh,
+            }
         } else {
             Lookup::Miss
+        }
+    }
+
+    /// Suppresses refresh jobs for this key for `cooldown` — what a worker
+    /// calls when a refresh fails, so the next stale hit serves without putting
+    /// another doomed query on the wire.
+    ///
+    /// A missing entry is not an error: it may have been evicted or cleaned
+    /// while the refresh was in flight, and there is then nothing to suppress.
+    pub(crate) fn suppress_refresh(&self, key: &CacheKey, cooldown: Duration) {
+        let shard = &self.shards[self.shard_index(key)];
+        let mut guard = shard.lock().unwrap();
+        if let Some(entry) = guard.map.get_mut(key) {
+            entry.refresh_suppressed_until = Some(Instant::now() + cooldown);
+        }
+    }
+
+    /// Hands a claim back unused, so the next stale hit can take it instead of
+    /// waiting out a lease nobody is working under. Called when a claimed job
+    /// never reaches a worker — the bounded queue was full.
+    pub(crate) fn release_refresh_claim(&self, key: &CacheKey) {
+        let shard = &self.shards[self.shard_index(key)];
+        let mut guard = shard.lock().unwrap();
+        if let Some(entry) = guard.map.get_mut(key) {
+            entry.refresh_suppressed_until = None;
         }
     }
 
@@ -413,25 +542,32 @@ impl DnsCache {
     /// its usual shape (NOERROR, zero answers) would otherwise be cached as
     /// a negative entry — turning "answer too big for UDP, retry over TCP"
     /// into a confidently-served NODATA for the negative TTL's duration.
-    pub(crate) fn store(&self, key: &CacheKey, response: &Message) {
+    ///
+    /// Returns whether the response was actually cached. The resolve path
+    /// ignores it — it is answering the client either way — but a background
+    /// refresh (ADR-0005) needs it: an uncacheable answer means the entry is
+    /// still stale, so that refresh must count as a failure and take the
+    /// cooldown rather than silently leaving its claim to expire.
+    pub(crate) fn store(&self, key: &CacheKey, response: &Message) -> bool {
         if response.metadata.truncation {
-            return;
+            return false;
         }
         let code = response.metadata.response_code;
         if !response.answers.is_empty() {
-            if code == ResponseCode::NoError {
-                let ttl = positive_ttl(&response.answers, self.min_ttl, self.max_ttl);
-                self.insert(
-                    key,
-                    CachedAnswer {
-                        records: response.answers.clone(),
-                        authorities: Vec::new(),
-                        response_code: ResponseCode::NoError,
-                    },
-                    ttl,
-                );
+            if code != ResponseCode::NoError {
+                return false;
             }
-            return;
+            let ttl = positive_ttl(&response.answers, self.min_ttl, self.max_ttl);
+            self.insert(
+                key,
+                CachedAnswer {
+                    records: response.answers.clone(),
+                    authorities: Vec::new(),
+                    response_code: ResponseCode::NoError,
+                },
+                ttl,
+            );
+            return true;
         }
         if code == ResponseCode::NoError || code == ResponseCode::NXDomain {
             let ttl = negative_ttl(response, self.negative_ttl_max);
@@ -444,7 +580,9 @@ impl DnsCache {
                 },
                 ttl,
             );
+            return true;
         }
+        false
     }
 
     fn insert(&self, key: &CacheKey, answer: CachedAnswer, ttl_seconds: u32) {
@@ -457,6 +595,9 @@ impl DnsCache {
             inserted_at: now,
             ttl: Duration::from_secs(u64::from(ttl_seconds)),
             seq: guard.next_seq,
+            // Fresh entries carry no suppression, so a successful refresh
+            // clears the claim it was made under by replacing the whole entry.
+            refresh_suppressed_until: None,
         };
         let added = entry_heap_bytes(key, &entry);
         guard.next_seq += 1;
@@ -642,6 +783,9 @@ mod tests {
             max_ttl_seconds: 86400,
             negative_ttl_max_seconds: 60,
             serve_stale: true,
+            // The cache is unaware of the pool; only the claim bookkeeping
+            // lives here, and these tests drive it directly.
+            swr_workers: 3,
         }
     }
 
@@ -705,8 +849,168 @@ mod tests {
 
         assert!(matches!(
             cache.lookup(&a_key(&cache, "example.com.")),
-            Lookup::Stale(_)
+            Lookup::Stale { .. }
         ));
+    }
+
+    /// Seeds one entry and ages it into the stale window — the only state the
+    /// refresh claim applies to.
+    async fn cache_with_stale_entry() -> (DnsCache, CacheKey) {
+        let cache = DnsCache::new(&config(100));
+        let key = a_key(&cache, "example.com.");
+        cache.store(&key, &positive_response(10));
+        tokio::time::advance(Duration::from_secs(11)).await;
+        (cache, key)
+    }
+
+    fn claimed(lookup: Lookup) -> bool {
+        match lookup {
+            Lookup::Stale {
+                claimed_refresh, ..
+            } => claimed_refresh,
+            other => panic!(
+                "expected a stale hit, got {}",
+                match other {
+                    Lookup::Fresh(..) => "Fresh",
+                    Lookup::Miss => "Miss",
+                    Lookup::Stale { .. } => unreachable!(),
+                }
+            ),
+        }
+    }
+
+    /// The deduplication guarantee, stated as a test: however many queries hit
+    /// one stale key at once, exactly one of them is told to refresh it. Without
+    /// this the pool would receive a job per query and hammer the upstream for
+    /// a popular expiring name.
+    #[tokio::test(start_paused = true)]
+    async fn only_the_first_of_many_stale_hits_claims_the_refresh() {
+        let (cache, key) = cache_with_stale_entry().await;
+
+        assert!(claimed(cache.lookup_and_claim_refresh(&key)));
+        for _ in 0..64 {
+            assert!(
+                !claimed(cache.lookup_and_claim_refresh(&key)),
+                "a claim already held must not be handed out twice"
+            );
+        }
+    }
+
+    /// A non-claiming read must be exactly that. The failed-forward fallback
+    /// uses it while already returning an answer, and a claim taken there would
+    /// suppress the *next* real refresh for a whole lease.
+    #[tokio::test(start_paused = true)]
+    async fn a_plain_lookup_never_takes_the_claim() {
+        let (cache, key) = cache_with_stale_entry().await;
+
+        for _ in 0..8 {
+            assert!(!claimed(cache.lookup(&key)));
+        }
+        assert!(
+            claimed(cache.lookup_and_claim_refresh(&key)),
+            "the claim must still be available after any number of plain reads"
+        );
+    }
+
+    /// A worker that panics or is aborted mid-refresh must not strand its
+    /// entry: the claim is a lease, so it expires and the key becomes
+    /// refreshable again.
+    #[tokio::test(start_paused = true)]
+    async fn a_claim_that_outlives_its_lease_can_be_taken_again() {
+        let (cache, key) = cache_with_stale_entry().await;
+        assert!(claimed(cache.lookup_and_claim_refresh(&key)));
+
+        tokio::time::advance(REFRESH_CLAIM_LEASE - Duration::from_secs(1)).await;
+        assert!(
+            !claimed(cache.lookup_and_claim_refresh(&key)),
+            "still inside the lease"
+        );
+
+        tokio::time::advance(Duration::from_secs(2)).await;
+        assert!(
+            claimed(cache.lookup_and_claim_refresh(&key)),
+            "an abandoned claim must not disable refreshes for this key forever"
+        );
+    }
+
+    /// The dead-upstream guard: without the cooldown, every stale hit after a
+    /// failed refresh would put another doomed query on the wire.
+    #[tokio::test(start_paused = true)]
+    async fn a_failed_refresh_suppresses_the_next_one_for_the_cooldown() {
+        let (cache, key) = cache_with_stale_entry().await;
+        assert!(claimed(cache.lookup_and_claim_refresh(&key)));
+
+        cache.suppress_refresh(&key, REFRESH_FAILURE_COOLDOWN);
+
+        // The cooldown outlasts the lease it replaces, so an expiring lease
+        // cannot be what lets the next attempt through.
+        tokio::time::advance(REFRESH_CLAIM_LEASE + Duration::from_secs(1)).await;
+        assert!(
+            !claimed(cache.lookup_and_claim_refresh(&key)),
+            "a cooled-down entry must not be re-claimed once the lease lapses"
+        );
+
+        tokio::time::advance(REFRESH_FAILURE_COOLDOWN).await;
+        assert!(
+            claimed(cache.lookup_and_claim_refresh(&key)),
+            "the cooldown must expire, or the entry never refreshes again"
+        );
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_released_claim_is_immediately_available_again() {
+        let (cache, key) = cache_with_stale_entry().await;
+        assert!(claimed(cache.lookup_and_claim_refresh(&key)));
+        assert!(!claimed(cache.lookup_and_claim_refresh(&key)));
+
+        cache.release_refresh_claim(&key);
+
+        assert!(
+            claimed(cache.lookup_and_claim_refresh(&key)),
+            "a job that never reached a worker must not cost a whole lease"
+        );
+    }
+
+    /// A successful refresh replaces the whole entry, which is what clears the
+    /// claim — there is no separate unclaim step that could be forgotten.
+    #[tokio::test(start_paused = true)]
+    async fn a_successful_refresh_clears_the_claim_by_replacing_the_entry() {
+        let (cache, key) = cache_with_stale_entry().await;
+        assert!(claimed(cache.lookup_and_claim_refresh(&key)));
+
+        assert!(cache.store(&key, &positive_response(10)));
+        assert!(matches!(
+            cache.lookup_and_claim_refresh(&key),
+            Lookup::Fresh(..)
+        ));
+
+        tokio::time::advance(Duration::from_secs(11)).await;
+        assert!(
+            claimed(cache.lookup_and_claim_refresh(&key)),
+            "the replacement entry must start unclaimed"
+        );
+    }
+
+    /// `store` reports whether it kept the answer, and only a background
+    /// refresh cares — a `false` there means the entry is still stale, so the
+    /// refresh has to take the cooldown instead of quietly declaring success.
+    #[tokio::test(start_paused = true)]
+    async fn store_reports_whether_the_answer_was_cacheable() {
+        let cache = DnsCache::new(&config(100));
+        let key = a_key(&cache, "example.com.");
+
+        assert!(cache.store(&key, &positive_response(10)));
+
+        let mut servfail = Message::response(0, hickory_proto::op::OpCode::Query);
+        servfail.metadata.response_code = ResponseCode::ServFail;
+        assert!(
+            !cache.store(&key, &servfail),
+            "SERVFAIL is a transient upstream state, never a cached answer"
+        );
+
+        let mut truncated = positive_response(10);
+        truncated.metadata.truncation = true;
+        assert!(!cache.store(&key, &truncated));
     }
 
     #[tokio::test(start_paused = true)]
@@ -990,7 +1294,7 @@ mod tests {
         // Serve-stale still applies past the TTL, and the byte accounting
         // follows the entry out on a clean.
         tokio::time::advance(Duration::from_secs(11)).await;
-        assert!(matches!(cache.lookup(&key), Lookup::Stale(_)));
+        assert!(matches!(cache.lookup(&key), Lookup::Stale { .. }));
         let outcome = cache.clean(true);
         assert_eq!(outcome.removed_stale, 1);
         assert_eq!(cache.stats().bytes, 0, "a clean releases the tracked bytes");
@@ -1018,6 +1322,7 @@ mod tests {
                 inserted_at: Instant::now(),
                 ttl: Duration::from_secs(3600),
                 seq: *seq,
+                refresh_suppressed_until: None,
             };
             shard.bytes += entry_heap_bytes(key, &entry);
             shard.map.insert((*key).clone(), entry);

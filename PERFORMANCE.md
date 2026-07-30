@@ -90,6 +90,24 @@ Notes:
   large-answer mix, 80% over the 128 MB budget. The tracked figure is the sum
   of the per-entry estimates, maintained incrementally on insert/evict/clean so
   the resolve path never walks a shard.
+- **A stale cache hit no longer costs an upstream round trip** (ADR-0005). It
+  used to fall through to the forwarder and only serve from cache if that
+  forward failed, so every client asking in the window between expiry and the
+  next refresh paid 20–50 ms — and they all paid it in parallel. A stale hit is
+  now answered from cache and the refresh runs on a fixed pool of
+  `[dns.cache] swr_workers` detached tasks. This is golden rule 8 applied to the
+  one cache state that still had an unbounded tail on the query path.
+  - Expect the `cache_hit` ratio to **rise** and the forwarded-query rate to
+    fall. That is this change moving queries between buckets, not the cache
+    becoming more efficient — do not read it as one.
+  - The pool never back-pressures: enqueue is `try_send`, and a full queue drops
+    the refresh rather than delaying a client. Watch
+    `fastadhunter_swr_refreshes_dropped_total` — sustained growth means the pool
+    is undersized, not that anything is failing.
+  - Cost on the cache side: one `Option<Instant>` per `Entry` (~16 B), which the
+    byte accounting charges per *bucket*, so ~262 KB at the default 10 000
+    entries and ~2.6 MB at 100 k. Measure it against `max_bytes` rather than
+    assuming it is free at large `max_entries`.
 - 10k QPS is ~100× a busy household's peak; the headroom is the proof of
   efficiency, and it's what keeps p99 flat at real loads.
 - Budgets are compared against `main` on every perf-relevant change; a >10%

@@ -23,6 +23,7 @@ use tracing::trace;
 use crate::cache::{DnsCache, Lookup, STALE_SERVE_TTL};
 use crate::qtype::{domain_of, to_fah_query_type};
 use crate::response;
+use crate::swr::SwrPool;
 use crate::upstream::Forwarder;
 
 /// Which listener received the request — decides the reply's size ceiling:
@@ -40,6 +41,10 @@ pub struct Pipeline<F: Forwarder> {
     forwarder: F,
     blocking_ttl: u32,
     cache: Arc<DnsCache>,
+    /// The stale-while-refresh pool (ADR-0005), or `None` when
+    /// `[dns.cache] swr_workers = 0`. The query path only ever *offers* to it
+    /// and never awaits it, so the two are fully decoupled.
+    swr: Option<Arc<SwrPool>>,
     events: mpsc::Sender<QueryEvent>,
     /// Count of `QueryEvent`s dropped because the channel was full
     /// (ARCHITECTURE.md §Runtime Model: "a slow consumer drops events rather
@@ -60,9 +65,33 @@ impl<F: Forwarder> Pipeline<F> {
             forwarder,
             blocking_ttl,
             cache: Arc::new(DnsCache::new(cache_config)),
+            swr: SwrPool::new(cache_config.swr_workers).map(Arc::new),
             events,
             dropped_events: Arc::new(AtomicU64::new(0)),
         }
+    }
+
+    /// Starts the stale-while-refresh pool, returning one handle per worker for
+    /// the caller to abort on shutdown (empty when `swr_workers = 0`, or if the
+    /// pool has already been started).
+    ///
+    /// Separate from [`Pipeline::new`] because a constructor must not spawn:
+    /// the binary owns task lifetimes, and these belong in the same list as
+    /// every other long-lived task — see `ListManager::spawn_scheduler` for the
+    /// same split.
+    pub fn spawn_swr_workers(&self) -> Vec<tokio::task::JoinHandle<()>> {
+        match &self.swr {
+            Some(swr) => swr.spawn_workers(Arc::clone(&self.cache), self.forwarder.clone()),
+            None => Vec::new(),
+        }
+    }
+
+    /// Stale-while-refresh counters for `/metrics`. All-zero when the pool is
+    /// disabled, which is indistinguishable from an enabled pool that has had
+    /// no stale hits yet — both mean "no refreshes are happening", which is
+    /// what the counters are there to say.
+    pub fn swr_stats(&self) -> crate::swr::SwrStats {
+        self.swr.as_ref().map(|swr| swr.stats()).unwrap_or_default()
     }
 
     pub fn dropped_events(&self) -> u64 {
@@ -190,11 +219,18 @@ impl<F: Forwarder> Pipeline<F> {
 
     /// The Allow/Pass path: cache first (ADR-0001 — the verdict already ran
     /// in `handle`, this only ever sees queries the Rule Engine let through),
-    /// then the forwarder on a miss/stale entry, then RFC 8767 serve-stale
-    /// when resolution fails — a transport error *or* the upstream answering
-    /// `SERVFAIL` (the RFC's "failure" covers both; a reachable-but-broken
-    /// recursive is the common outage shape). Returns `(reply, cache_hit,
-    /// upstream_used, stale)` for the caller's `QueryEvent`.
+    /// then the forwarder on a miss, then serve-stale when resolution fails —
+    /// a transport error *or* the upstream answering `SERVFAIL` (RFC 8767's
+    /// "failure" covers both; a reachable-but-broken recursive is the common
+    /// outage shape). Returns `(reply, cache_hit, upstream_used, stale)` for
+    /// the caller's `QueryEvent`.
+    ///
+    /// **A stale hit does not reach the forwarder at all** when
+    /// stale-while-refresh is on (ADR-0005): it is answered from cache at
+    /// cache-hit latency and a refresh job goes to the detached pool, which the
+    /// client never waits on. With `[dns.cache] swr_workers = 0` the pool is
+    /// absent and a stale entry falls through to the forward below, answering
+    /// only if that fails — the pre-ADR-0005 behaviour, kept intact.
     async fn resolve(
         &self,
         request: &Message,
@@ -204,15 +240,42 @@ impl<F: Forwarder> Pipeline<F> {
         qclass: hickory_proto::rr::DNSClass,
     ) -> (Message, bool, bool, bool) {
         let key = self.cache.key(domain, qtype, qclass);
-        if let Lookup::Fresh(answer, remaining_ttl) = self.cache.lookup(&key) {
-            let response = response::from_cache(request, query, &answer, remaining_ttl);
-            return (response, true, false, false);
+        // One lookup serves both paths. It claims the refresh only when there
+        // is a pool to consume it, so a disabled pool takes no claim and leaves
+        // the entry exactly as it found it.
+        let cached = match &self.swr {
+            Some(_) => self.cache.lookup_and_claim_refresh(&key),
+            None => self.cache.lookup(&key),
+        };
+        match cached {
+            Lookup::Fresh(answer, remaining_ttl) => {
+                let response = response::from_cache(request, query, &answer, remaining_ttl);
+                return (response, true, false, false);
+            }
+            Lookup::Stale {
+                answer,
+                claimed_refresh,
+            } => {
+                if let Some(swr) = &self.swr {
+                    if claimed_refresh {
+                        swr.offer(&self.cache, key.clone());
+                    } else {
+                        swr.note_deduplicated();
+                    }
+                    let response = response::from_cache(request, query, &answer, STALE_SERVE_TTL);
+                    return (response, true, false, true);
+                }
+            }
+            Lookup::Miss => {}
         }
 
         match self.forwarder.forward(request).await {
             Ok(mut upstream_response) => {
                 if upstream_response.metadata.response_code == ResponseCode::ServFail {
-                    if let Lookup::Stale(answer) = self.cache.lookup(&key) {
+                    // Non-claiming: this is already returning, so scheduling a
+                    // refresh here would enqueue work nobody is waiting for
+                    // against an upstream that just failed.
+                    if let Lookup::Stale { answer, .. } = self.cache.lookup(&key) {
                         let response =
                             response::from_cache(request, query, &answer, STALE_SERVE_TTL);
                         return (response, true, false, true);
@@ -220,14 +283,17 @@ impl<F: Forwarder> Pipeline<F> {
                     // `REFUSED` and friends are deliberate upstream policy,
                     // not an outage — they relay below without stale fallback.
                 }
-                self.cache.store(&key, &upstream_response);
+                // The client is answered either way; whether the answer was
+                // cacheable only matters to the refresh path (ADR-0005).
+                let _ = self.cache.store(&key, &upstream_response);
                 // Wire ID is per-hop; always answer with the client's own.
                 upstream_response.metadata.id = request.metadata.id;
                 (upstream_response, false, true, false)
             }
             Err(err) => {
                 trace!(error = %err, "upstream forward failed");
-                if let Lookup::Stale(answer) = self.cache.lookup(&key) {
+                // Non-claiming, as above.
+                if let Lookup::Stale { answer, .. } = self.cache.lookup(&key) {
                     let response = response::from_cache(request, query, &answer, STALE_SERVE_TTL);
                     return (response, true, false, true);
                 }
@@ -261,6 +327,7 @@ impl<F: Forwarder> Pipeline<F> {
 mod tests {
     use std::net::Ipv4Addr;
     use std::str::FromStr;
+    use std::time::Duration;
 
     use fah_config::RulesConfig;
     use hickory_proto::op::Query as WireQuery;
@@ -278,6 +345,9 @@ mod tests {
     #[derive(Clone)]
     enum ForwarderOutcome {
         Ok,
+        /// A positive answer with the given TTL, so the reply is cacheable and
+        /// the entry can be aged into the stale window.
+        Answer(u32),
         Err,
     }
 
@@ -289,6 +359,18 @@ mod tests {
                     let mut response =
                         Message::response(request.metadata.id, request.metadata.op_code);
                     response.metadata.response_code = ResponseCode::NoError;
+                    Ok(response)
+                }
+                ForwarderOutcome::Answer(ttl) => {
+                    let mut response =
+                        Message::response(request.metadata.id, request.metadata.op_code);
+                    response.metadata.response_code = ResponseCode::NoError;
+                    response.queries = request.queries.clone();
+                    response.add_answer(Record::from_rdata(
+                        request.queries[0].name().clone(),
+                        ttl,
+                        RData::A(A(Ipv4Addr::new(203, 0, 113, 1))),
+                    ));
                     Ok(response)
                 }
                 ForwarderOutcome::Err => Err(std::io::Error::other("boom")),
@@ -779,5 +861,255 @@ mod tests {
         let event = rx.try_recv().unwrap();
         assert!(event.cache_hit, "DNS names are case-insensitive (RFC 1035)");
         assert_eq!(calls.load(Ordering::Relaxed), 1);
+    }
+
+    // ── stale-while-refresh (ADR-0005) ────────────────────────────────────
+
+    const SWR_TTL: u32 = 10;
+
+    fn swr_cache_config(swr_workers: u32) -> DnsCacheConfig {
+        DnsCacheConfig {
+            swr_workers,
+            ..DnsCacheConfig::default()
+        }
+    }
+
+    /// Warms one cacheable entry, then ages it past its TTL and into the stale
+    /// window. Returns the forwarder's call count so far, which is the number a
+    /// test compares against — a stale hit must not add to it.
+    async fn warm_then_age<F: Forwarder>(pipeline: &Pipeline<F>) {
+        pipeline
+            .handle(
+                &encode_query("example.com.", RecordType::A),
+                client_ip(),
+                Transport::Tcp,
+            )
+            .await
+            .unwrap();
+        tokio::time::advance(Duration::from_secs(u64::from(SWR_TTL) + 1)).await;
+    }
+
+    /// The whole point of ADR-0005: a stale entry is answered from cache, and
+    /// the client's request never reaches an upstream. Before it, this second
+    /// query cost a full forward.
+    #[tokio::test(start_paused = true)]
+    async fn a_stale_hit_answers_from_cache_without_forwarding() {
+        let (rules, _data_dir) = manager_with_user_rules("").await;
+        let calls = Arc::new(AtomicU64::new(0));
+        let forwarder = SpyForwarder {
+            calls: calls.clone(),
+            outcome: ForwarderOutcome::Answer(SWR_TTL),
+        };
+        let (tx, mut rx) = mpsc::channel(8);
+        let pipeline = Pipeline::new(rules, forwarder, 10, &swr_cache_config(3), tx);
+
+        warm_then_age(&pipeline).await;
+        let _warm_event = rx.try_recv().unwrap();
+        assert_eq!(calls.load(Ordering::Relaxed), 1);
+
+        let reply = pipeline
+            .handle(
+                &encode_query("example.com.", RecordType::A),
+                client_ip(),
+                Transport::Tcp,
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(
+            calls.load(Ordering::Relaxed),
+            1,
+            "the request path must not forward on a stale hit"
+        );
+        let response = Message::from_vec(&reply).unwrap();
+        assert_eq!(response.answers.len(), 1);
+        assert_eq!(
+            response.answers[0].ttl,
+            crate::cache::STALE_SERVE_TTL,
+            "a stale answer carries the short retry-soon TTL"
+        );
+
+        let event = rx.try_recv().unwrap();
+        assert!(event.cache_hit);
+        assert!(event.stale);
+        assert!(!event.upstream_used);
+
+        // The refresh was queued, exactly once, and nothing consumed it — no
+        // workers were started, which is what proves the query path does not
+        // depend on them.
+        let stats = pipeline.swr_stats();
+        assert_eq!(stats.enqueued, 1);
+        assert_eq!(stats.deduplicated, 0);
+        assert_eq!(stats.dropped, 0);
+    }
+
+    /// The deduplication requirement end to end: many simultaneous requests for
+    /// one stale name must schedule one refresh between them, not one each.
+    #[tokio::test(start_paused = true)]
+    async fn many_stale_hits_for_one_name_schedule_a_single_refresh() {
+        let (rules, _data_dir) = manager_with_user_rules("").await;
+        let calls = Arc::new(AtomicU64::new(0));
+        let forwarder = SpyForwarder {
+            calls: calls.clone(),
+            outcome: ForwarderOutcome::Answer(SWR_TTL),
+        };
+        let (tx, _rx) = mpsc::channel(256);
+        let pipeline = Pipeline::new(rules, forwarder, 10, &swr_cache_config(3), tx);
+
+        warm_then_age(&pipeline).await;
+
+        const HITS: u64 = 50;
+        for _ in 0..HITS {
+            pipeline
+                .handle(
+                    &encode_query("example.com.", RecordType::A),
+                    client_ip(),
+                    Transport::Tcp,
+                )
+                .await
+                .unwrap();
+        }
+
+        let stats = pipeline.swr_stats();
+        assert_eq!(stats.enqueued, 1, "{HITS} stale hits must enqueue one job");
+        assert_eq!(stats.deduplicated, HITS - 1);
+        assert_eq!(
+            calls.load(Ordering::Relaxed),
+            1,
+            "and none of them may forward"
+        );
+    }
+
+    /// `swr_workers = 0` must reproduce the pre-ADR-0005 behaviour exactly: the
+    /// stale entry does not answer until a forward has actually failed.
+    #[tokio::test(start_paused = true)]
+    async fn with_the_pool_disabled_a_stale_hit_forwards_as_before() {
+        let (rules, _data_dir) = manager_with_user_rules("").await;
+        let calls = Arc::new(AtomicU64::new(0));
+        let forwarder = SpyForwarder {
+            calls: calls.clone(),
+            outcome: ForwarderOutcome::Answer(SWR_TTL),
+        };
+        let (tx, mut rx) = mpsc::channel(8);
+        let pipeline = Pipeline::new(rules, forwarder, 10, &swr_cache_config(0), tx);
+
+        warm_then_age(&pipeline).await;
+        let _warm_event = rx.try_recv().unwrap();
+
+        pipeline
+            .handle(
+                &encode_query("example.com.", RecordType::A),
+                client_ip(),
+                Transport::Tcp,
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(
+            calls.load(Ordering::Relaxed),
+            2,
+            "with no pool, a stale entry still goes to the upstream first"
+        );
+        let event = rx.try_recv().unwrap();
+        assert!(event.upstream_used);
+        assert!(!event.stale);
+        assert_eq!(
+            pipeline.swr_stats(),
+            crate::swr::SwrStats::default(),
+            "a disabled pool reports nothing"
+        );
+    }
+
+    /// With the pool off, the failed-forward fallback must still serve stale —
+    /// the RFC 8767 behaviour that predates this change and is what
+    /// `swr_workers = 0` exists to preserve.
+    #[tokio::test(start_paused = true)]
+    async fn with_the_pool_disabled_a_failed_forward_still_serves_stale() {
+        let (rules, _data_dir) = manager_with_user_rules("").await;
+        let calls = Arc::new(AtomicU64::new(0));
+        let forwarder = SpyForwarder {
+            calls: calls.clone(),
+            outcome: ForwarderOutcome::Answer(SWR_TTL),
+        };
+        let (tx, mut rx) = mpsc::channel(8);
+        let mut pipeline = Pipeline::new(rules, forwarder, 10, &swr_cache_config(0), tx);
+
+        warm_then_age(&pipeline).await;
+        let _warm_event = rx.try_recv().unwrap();
+
+        // The upstream dies after the entry was cached.
+        pipeline.forwarder.outcome = ForwarderOutcome::Err;
+
+        let reply = pipeline
+            .handle(
+                &encode_query("example.com.", RecordType::A),
+                client_ip(),
+                Transport::Tcp,
+            )
+            .await
+            .unwrap();
+
+        let response = Message::from_vec(&reply).unwrap();
+        assert_eq!(response.metadata.response_code, ResponseCode::NoError);
+        assert_eq!(response.answers.len(), 1);
+        let event = rx.try_recv().unwrap();
+        assert!(event.stale);
+        assert!(event.cache_hit);
+    }
+
+    /// A refresh that reaches a worker replaces the entry, and the next query is
+    /// a plain fresh hit — the loop closing without the client ever waiting.
+    #[tokio::test(start_paused = true)]
+    async fn a_queued_refresh_is_consumed_and_makes_the_entry_fresh_again() {
+        let (rules, _data_dir) = manager_with_user_rules("").await;
+        let calls = Arc::new(AtomicU64::new(0));
+        let forwarder = SpyForwarder {
+            calls: calls.clone(),
+            outcome: ForwarderOutcome::Answer(SWR_TTL),
+        };
+        let (tx, _rx) = mpsc::channel(8);
+        let pipeline = Pipeline::new(rules, forwarder, 10, &swr_cache_config(1), tx);
+        let workers = pipeline.spawn_swr_workers();
+        assert_eq!(workers.len(), 1);
+
+        warm_then_age(&pipeline).await;
+        pipeline
+            .handle(
+                &encode_query("example.com.", RecordType::A),
+                client_ip(),
+                Transport::Tcp,
+            )
+            .await
+            .unwrap();
+
+        let deadline = std::time::Instant::now() + Duration::from_secs(10);
+        while pipeline.swr_stats().completed == 0 {
+            assert!(
+                std::time::Instant::now() < deadline,
+                "the queued refresh never ran"
+            );
+            tokio::task::yield_now().await;
+        }
+        assert_eq!(
+            calls.load(Ordering::Relaxed),
+            2,
+            "one warm-up forward plus one background refresh"
+        );
+
+        // Same query again: fresh now, so no forward and no new job.
+        pipeline
+            .handle(
+                &encode_query("example.com.", RecordType::A),
+                client_ip(),
+                Transport::Tcp,
+            )
+            .await
+            .unwrap();
+        assert_eq!(calls.load(Ordering::Relaxed), 2);
+        assert_eq!(pipeline.swr_stats().enqueued, 1);
+
+        for worker in workers {
+            worker.abort();
+        }
     }
 }

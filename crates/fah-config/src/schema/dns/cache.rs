@@ -24,6 +24,18 @@ pub struct DnsCacheConfig {
     pub negative_ttl_max_seconds: u32,
     #[serde(default = "default_true")]
     pub serve_stale: bool,
+    /// Size of the detached pool that refreshes stale entries in the
+    /// background (ADR-0005). A stale hit is answered from cache immediately
+    /// and a refresh job is enqueued; these workers consume it. `0` disables
+    /// stale-while-refresh entirely, restoring the pre-ADR-0005 behaviour
+    /// where a stale entry answers only after a forward has failed.
+    ///
+    /// The pool size is the whole priority mechanism: at most this many
+    /// refreshes are ever in flight, whatever the query rate. Refreshes are
+    /// I/O-bound, so they cost upstream bandwidth rather than CPU. Meaningless
+    /// while `serve_stale = false` — there are no stale entries to refresh.
+    #[serde(default = "default_swr_workers")]
+    pub swr_workers: u32,
 }
 
 impl Default for DnsCacheConfig {
@@ -35,6 +47,7 @@ impl Default for DnsCacheConfig {
             max_ttl_seconds: default_max_ttl_seconds(),
             negative_ttl_max_seconds: default_negative_ttl_max_seconds(),
             serve_stale: default_true(),
+            swr_workers: default_swr_workers(),
         }
     }
 }
@@ -59,4 +72,13 @@ fn default_max_ttl_seconds() -> u32 {
 
 fn default_negative_ttl_max_seconds() -> u32 {
     60
+}
+
+/// Three background refreshers. Enough that a household's stale entries are
+/// refreshed promptly without a queue building, few enough that a burst of
+/// simultaneously-expiring entries cannot put more than three extra queries on
+/// the wire at once — which is what keeps the RB5009's upstream link and the
+/// cache's shard locks out of contention with serving.
+fn default_swr_workers() -> u32 {
+    3
 }

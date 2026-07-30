@@ -282,6 +282,7 @@ min_ttl_seconds = 0
 max_ttl_seconds = 86400
 negative_ttl_max_seconds = 60
 serve_stale = true
+swr_workers = 3
 
 [dns.upstreams]
 strategy = "fallback"
@@ -330,6 +331,21 @@ format = "text"
 "#;
         let config = Config::from_toml_str(toml_str).unwrap();
         assert_eq!(config, Config::default());
+    }
+
+    /// Stale-while-refresh must be on out of the box: a feature that needs a
+    /// hand-edited TOML to work ships off for almost everyone. `0` is the
+    /// documented way to turn it off and has to keep parsing.
+    #[test]
+    fn stale_while_refresh_is_on_by_default_and_zero_disables_it() {
+        assert_eq!(DnsCacheConfig::default().swr_workers, 3);
+
+        let disabled = Config::from_toml_str("[dns.cache]\nswr_workers = 0\n").unwrap();
+        assert_eq!(disabled.dns.cache.swr_workers, 0);
+        assert!(
+            disabled.dns.cache.serve_stale,
+            "disabling the refresh pool must not disable serve-stale itself"
+        );
     }
 
     #[test]

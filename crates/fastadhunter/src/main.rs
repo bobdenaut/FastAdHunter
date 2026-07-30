@@ -337,7 +337,7 @@ impl Engine {
         }
 
         // ── The edges between the siblings ──
-        let tasks = vec![
+        let mut tasks = vec![
             rules.spawn_scheduler(),
             stats.spawn_snapshot_scheduler(),
             stats.spawn_query_log_scheduler(),
@@ -354,8 +354,26 @@ impl Engine {
                 Arc::clone(&pipeline),
                 perf_sample_interval_seconds,
             ),
-            spawn_telemetry_poll(metrics, rules, pipeline, upstreams, Arc::clone(&stats)),
+            spawn_telemetry_poll(
+                metrics,
+                rules,
+                Arc::clone(&pipeline),
+                upstreams,
+                Arc::clone(&stats),
+            ),
         ];
+
+        // Stale-while-refresh (ADR-0005). Started here rather than in
+        // `Pipeline::new` so every long-lived task is aborted from one place on
+        // shutdown; empty when `[dns.cache] swr_workers = 0`.
+        let swr_workers = pipeline.spawn_swr_workers();
+        if !swr_workers.is_empty() {
+            tracing::info!(
+                workers = swr_workers.len(),
+                "stale-while-refresh pool started"
+            );
+        }
+        tasks.extend(swr_workers);
 
         Ok(Self {
             dns,
@@ -436,6 +454,18 @@ fn spawn_telemetry_poll(
             ticker.tick().await;
 
             metrics.set_dropped_events(pipeline.dropped_events());
+            // Field-by-field rather than a shared type: `fah-dns` and
+            // `fah-metrics` are L3 siblings and must not import each other
+            // (ARCHITECTURE.md §Dependency Layering), so the binary is the one
+            // place allowed to know both shapes.
+            let swr = pipeline.swr_stats();
+            metrics.set_swr(fah_metrics::SwrSnapshot {
+                enqueued: swr.enqueued,
+                deduplicated: swr.deduplicated,
+                dropped: swr.dropped,
+                completed: swr.completed,
+                failed: swr.failed,
+            });
             metrics.set_upstreams(
                 upstreams
                     .status()
@@ -744,6 +774,7 @@ mod tests {
             cache_misses: 0,
             cache_stale: 0,
             dropped_events: 0,
+            swr: fah_metrics::SwrSnapshot::default(),
             block: empty_stage(),
             cache_hit: empty_stage(),
             forward: empty_stage(),
