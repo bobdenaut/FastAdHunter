@@ -108,6 +108,19 @@ Notes:
     byte accounting charges per *bucket*, so ~262 KB at the default 10 000
     entries and ~2.6 MB at 100 k. Measure it against `max_bytes` rather than
     assuming it is free at large `max_entries`.
+- **Deployed throughput moved with the allocator.** The `/tool profile` ceiling
+  on the RB5009 was ~15–16 k QPS before mimalloc replaced musl's `mallocng`
+  (`docs/code-review/0.2.7-router-memory-and-throughput.md`); the bench put that
+  swap at +27% throughput and −17% CPU per query, and the deployed box now
+  sustains **20 k+ QPS** — the two agree to within the precision either method
+  offers. Still FAH-handling-bound rather than ingest-bound: all four cores
+  share evenly, so `SO_REUSEPORT` stays a recipe rather than shipped code.
+- **The cleanup sweep is free at real occupancy.** Measured on the RB5009 at
+  0.2.9: **79 µs** for a full 16-shard walk at 409 resident entries. At the
+  default 360 s cadence that is ~19 ms of CPU per day. The figure is what the
+  deferred `map.shrink_to_fit()` question gets judged against — re-read it at a
+  cache holding tens of thousands of entries before concluding anything, since
+  the walk is O(entries) and this sample is not.
 - **Expired entries are swept on a schedule** (`[dns.cache]
   cleanup_interval_seconds`, default 360 s), on the blocking pool rather than a
   DNS worker — `clean` is synchronous and O(entries), which at a raised

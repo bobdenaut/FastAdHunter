@@ -37,27 +37,42 @@ Running in production on a MikroTik RB5009 as the household's only resolver.
 
 ### Measured, on the RB5009
 
-Quad-core ARMv8 @ 1.4 GHz, 1 GB RAM shared with RouterOS.
+Quad-core ARMv8 @ 1.4 GHz, 1 GB RAM shared with RouterOS. Every figure below
+comes off the deployed container, not a dev box.
 
 | | Measured | Budget |
 | --- | ---: | ---: |
-| Resident memory, 684 k rules loaded | **42.1 MiB** | ≤ 128 MB |
-| Compiled ruleset | **21.9 MiB** | ≤ 40 MB |
-| Startup to serving, 1.21 M rules | **2 440 ms** | 1–3 s |
+| Resident memory, 702 k rules + 50 k-entry cache | **62.4 MiB** | ≤ 128 MB |
+| Ruleset compile, 1.05 M parsed rules | **2.32 s** | < 3 s |
 | Blocked verdict, in-engine | **0.013–0.148 ms** | < 1 ms p99 |
-| Sustained throughput, deployed path | **~15–16 k QPS** | ≥ 10 k QPS |
-| Container image | **~12 MB** | ≤ 30 MB |
+| Sustained throughput, deployed path | **20 k+ QPS** | ≥ 10 k QPS |
+| Container image | **12.3 MiB** | ≤ 30 MB |
+| Cache sweep, full 16-shard walk | **79 µs** | — |
 | Dropped events under real load | **0** | 0 |
 
-Rule lists compile **1 023 132 parsed rules into 684 087** after
-deduplication — a third of the input across 15 public lists is redundant, and
-paying for it once at compile time keeps the matcher smaller for the life of
-the process.
+Rule lists compile **1 047 409 parsed rules into 702 178** after
+deduplication — 345 231 duplicates, a third of the input across 16 public
+lists. Paying for that once at compile time keeps the matcher smaller for the
+life of the process, and it shortens probe chains: a domain carried by two
+lists used to occupy two slots that hash to the same place, so **lookups for
+shared domains got 46 % faster** as a side effect of the memory win.
+
+Throughput was ~15–16 k QPS before **mimalloc** replaced musl's `mallocng` as
+the process allocator; that swap measured **+27 % throughput and −17 % CPU per
+query**, and the deployed ceiling moved accordingly. The 20 k+ figure is
+`/tool profile` on the live box under a synthetic hammer, with all four cores
+sharing evenly — reception is not the bottleneck, so `SO_REUSEPORT` stays a
+documented recipe rather than shipped code.
 
 Memory is **bounded, not merely small**: a 91-hour soak plateaued and held.
 `RSS − Σ(components) = residual` is exported continuously, so a leak shows as
 the residual growing while the named components stay flat — the growth you
 legitimately expect has already been subtracted out.
+
+> RouterOS will report several hundred MB "used" while FastAdHunter sits at
+> 62 MiB. That gap is cgroup **page cache** — reclaimable file-backed pages
+> from the image layers and the cached rule lists — not consumption. The
+> figure that matters is the container's own resident set.
 
 ---
 
@@ -234,9 +249,44 @@ Reply
 ```
 
 Every query gets a fresh verdict, so unblocking a domain needs no cache flush.
-The cache stores upstream answers only — bounded by both entry count and bytes,
-TTL-respecting with clamps, RFC 2308 negative caching and RFC 8767 serve-stale
-when upstreams are unreachable.
+The cache stores upstream answers only — bounded by both entry count **and**
+bytes, TTL-respecting with clamps, and RFC 2308 negative caching.
+
+#### An expiring entry never costs a client a round trip
+
+A cache entry passes through three states: **fresh** → **stale** → **expired**.
+The interesting one is stale.
+
+```text
+past TTL, still within the stale window
+      │
+      ├─► answer the client NOW from cache        (microseconds, not 20–50 ms)
+      │   with a short retry-soon TTL
+      │
+      └─► hand the refresh to a detached worker pool
+          the query path never awaits it
+```
+
+Naively, every client asking during the gap between expiry and the next
+refresh pays a full upstream round trip — **and they all pay it in parallel**.
+FastAdHunter answers from cache immediately and refreshes in the background on
+a fixed pool of `swr_workers` (default 3), so the tail disappears without the
+client ever knowing there was one.
+
+Many simultaneous requests for the same expiring name produce **exactly one**
+refresh. The deduplication claim lives inside the cache entry and is taken
+under the shard lock the lookup already holds — no global lock, no second data
+structure ([ADR-0005](docs/decisions/0005-serve-stale-while-refresh.md)).
+
+The pool **never back-pressures**: enqueue is a `try_send`, and a full queue
+drops the refresh rather than delaying anybody. Live on the reference
+deployment: 61 refreshes queued, 61 completed, 0 failed, 0 dropped.
+
+A background sweep removes entries past the stale window every
+`cleanup_interval_seconds` (default 360), on the blocking pool and one shard at
+a time. It is **not** a bound — `max_entries`/`max_bytes` are, and they hold
+with the sweep disabled — it returns memory a cache stops needing while idling
+*below* both caps, which nothing else reclaims.
 
 ### HTTP pipeline *(Phase 2)*
 
@@ -303,7 +353,8 @@ default, bearer-key auth.
 
 ```text
 GET   /health
-GET   /metrics                      Prometheus text exposition
+GET   /metrics                      Prometheus: QPS, latencies, cache,
+                                    SWR refreshes, memory breakdown
 GET   /api/v1/stats                 aggregates, top domains/clients
 GET   /api/v1/queries               query log, filtered + paginated
 GET   /api/v1/clients               per-client view; PUT to name one
@@ -445,7 +496,7 @@ ADR if the decision is being reversed.
 ├── CONTRIBUTING.md       conventions and local quality gates
 │
 └── docs/
-    ├── decisions/        ADRs 0001–0004
+    ├── decisions/        ADRs 0001–0005
     ├── diagrams/         architecture SVG + HTML
     ├── code-review/      per-task review notes with measured results
     └── deploy-rb5009.md  end-to-end deployment + soak procedure
