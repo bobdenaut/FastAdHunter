@@ -190,15 +190,38 @@ A job whose entry is evicted before the worker runs will **resurrect** that key:
 cache's own limits and harmless, so it is left alone rather than guarded with a
 second lookup on the worker side.
 
-## 11. Not verified on-device
+## 11. Verified on-device — 0.2.9, 2026-07-31
 
-Local only. On deploy, read from `/metrics`:
+Deployed 08:30, `stale-while-refresh pool started workers=3` in the boot log.
+After ~40 minutes of household traffic:
 
-- `fastadhunter_swr_refreshes_completed_total` climbing — the pool is working.
-- `_dropped_total` at or near zero. Sustained growth means `swr_workers` is
-  undersized, **not** that anything is failing.
-- `_failed_total` tracking `_enqueued_total` would be the real alarm: it would
-  mean refreshes fail where client-driven forwards succeed, and the synthetic
-  refresh query is the first suspect (it carries no EDNS from the client that
-  triggered it).
-- `GET /api/v1/cache` — the `stale` count should stop growing without bound.
+| Counter | Value |
+| ------- | ----: |
+| `enqueued_total` | 61 |
+| `completed_total` | 61 |
+| `failed_total` | **0** |
+| `dropped_total` | **0** |
+| `deduplicated_total` | 0 |
+
+`enqueued == completed` with nothing failed or dropped means every refresh that
+was claimed also landed — no leaked claims, no jobs lost to a full queue, and
+the accounting closes exactly. The `failed_total` alarm from §11's original
+prediction (refreshes failing where client forwards succeed, EDNS the first
+suspect) **did not materialise**.
+
+`deduplicated_total 0` is the expected reading on a household, not a defect: it
+only ticks when two clients hit the *same* expired name in the same instant,
+which needs a burst. The mechanism is pinned by the 50-concurrent-hits test
+either way.
+
+Visible in `GET /api/v1/cache` as well — refreshing a browser page moved 13
+entries **stale → fresh** in one go, which is the feature working in the one
+place a user would notice it.
+
+The live query log makes the payoff concrete: cache-served answers at
+**0.019–0.061 ms** against forwarded ones at 3.5–37.5 ms. Without SWR every one
+of those names pays the upper figure the moment its TTL lapses.
+
+Not yet observed: sustained `dropped_total` growth, which would be the signal
+that `swr_workers = 3` is undersized. At this traffic level the pool is not
+close to saturated.

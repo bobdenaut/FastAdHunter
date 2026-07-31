@@ -167,21 +167,33 @@ write their sources to `srcs/` rather than to the `lists/*.raw` cache.
 and `cargo test --workspace` (32 suites) all clean, 0 failures. No bench run —
 neither change touches the hot path; both run once, at boot.
 
-## 6. Not verified on-device
+## 6. Verified on-device — 0.2.9, 2026-07-31
 
-**Both changes have only ever run in tempdirs.** Before merging to `main`, build
-0.2.9, deploy, and read two things out of the boot log:
+Deployed 08:30. The boot log settles both halves, and liviu had unknowingly set
+up the better test by **hand-deleting one list's cached copy from `/data`**
+before starting:
 
-- `refresh schedule restored from cached copies lists=16`, and the absence of a
-  second compile ~7 s after boot.
-- Any `deleted cached copy of a list that is no longer configured` lines — check
-  the names against what you expect. This is the only change on the branch that
-  **deletes files**, and it has never seen a real `/data`, which carries history
-  from earlier configs.
+```text
+INFO fah_rules::lifecycle: refresh schedule restored from cached copies lists=15
+INFO fastadhunter: ruleset compiled from cache rules=701907
+INFO fah_rules::lifecycle: list refreshed list=spy active=347 ...
+INFO fah_rules::lifecycle: scheduled refresh complete lists=1 refreshed=1 failed=0
+```
 
-The seeding also assumes RouterOS preserves mtimes on the `/data` volume across
-container restarts. The `/file print` output showing sane `last-modified` values
-says it does; that is not the same as having observed it survive a restart.
+`lists=15`, not 16 — the deleted copy could not be seeded, so that list stayed
+due and **exactly one** list was refetched. Before this change the line would
+have read `lists=16`. The `701907 → 702178` recompile is a genuine one (`spy`
+really did change), not the byte-identical redo the fix removes.
+
+**mtimes do survive a container restart on the RouterOS `/data` volume** —
+previously assumed from `/file print` output, now observed. The seeding worked
+across a stop/remove/repull/start cycle.
+
+**No `deleted cached copy…` lines**, which is the correct outcome and worth
+stating: the list was removed from `/data`, not from the TOML, so it is still
+configured. It gets refetched, not swept. The orphan sweep only fires on a copy
+whose `[[rules.lists]]` entry is gone — the distinction the two near-miss guards
+(user-rules, disabled lists) exist to protect.
 
 ## 7. Doc changes in the same commit range
 

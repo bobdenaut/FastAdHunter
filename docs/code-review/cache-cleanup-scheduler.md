@@ -223,18 +223,37 @@ bench (one core, high priority, per PERFORMANCE.md §Measuring reliably):
 The intervals are wide enough to be noise wearing a number's clothes — but the
 mechanism agrees: there is no hot-path change to regress.
 
-## 11. Not verified on-device
+## 11. On-device — 0.2.9, 2026-07-31 (partially verified; soak running)
 
-Local only, like the boot fixes and SWR before it. On deploy, read:
+Deployed 08:30, `cache cleanup scheduler started` in the boot log. After ~40
+minutes:
 
-- `fastadhunter_cache_cleanup_runs_total` rising at
-  `3600 / cleanup_interval_seconds` per hour — 10/h at the default. Anything
-  else means the task is not running or is wedged.
-- `fastadhunter_cache_cleanup_duration_seconds` — **record this at real
-  occupancy.** It is the baseline §4's `shrink_to_fit` decision is waiting on,
-  and it is only obtainable from the device.
-- `..._entries_removed_total` / `..._bytes_freed_total` near zero is **expected**
-  (§2), not a failure.
-- The log's `stale_removed=0` on every sweep — the SWR-coexistence proof.
-- `GET /api/v1/cache` after an admin `POST /cache/clean` on a loaded cache:
-  `estimated_bytes` should now visibly drop, where previously only `bytes` did.
+| | |
+| --- | ---: |
+| `cleanup_runs_total` | 3 |
+| `cleanup_entries_removed_total` | 0 |
+| `cleanup_bytes_freed_total` | 0 |
+| `cleanup_duration_seconds` | **0.000079** |
+
+`runs` climbing at one per 360 s with `entries_removed` flat is exactly the
+reading §2 predicted, and it is what the run counter exists to express: *the
+sweep is alive and there is nothing dead yet*. Nothing in a 40-minute-old cache
+can be 24 h past its TTL.
+
+**The sweep costs 79 µs** for a full 16-shard walk at 409 resident entries —
+about 19 ms of CPU per day at the default cadence. Free, at this occupancy.
+
+**What this does NOT yet settle.** The walk is O(entries) and 409 is not a
+scale sample, so 79 µs cannot be extrapolated to the `shrink_to_fit` question
+in §4. A 24 h soak is running (31/07 08:30 → 01/08 08:30) to get the figure at
+a full day's occupancy, and that is the number the decision needs.
+
+**Still unobserved, by construction:** `bytes_freed_total` going non-zero. The
+earliest that can happen is ~01/08 07:55 — 24 h after the first entries cached
+at boot expire. Until then the feature has been proven to *run*, not to *do
+anything*, and the review should not claim otherwise.
+
+One measurement trap recorded because it cost a wrong call already:
+`/system/resource/print` reports the **router's** uptime, not the container's.
+Reading `1d19h` there as container age led to looking for reclaimed bytes about
+23 hours too early.
