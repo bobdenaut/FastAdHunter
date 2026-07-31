@@ -7,6 +7,7 @@
 //! DO bit and the upstream's RRSIGs travel unmodified (ARCHITECTURE.md
 //! §Listeners).
 
+mod alarm;
 mod encrypted;
 mod plain;
 
@@ -21,8 +22,9 @@ use hickory_proto::op::{Message, Query as WireQuery};
 use hickory_proto::rr::{Name, RData, RecordType};
 use rustls::pki_types::ServerName;
 use rustls::ClientConfig;
-use tracing::debug;
+use tracing::{debug, info, warn};
 
+use alarm::FailureAlarm;
 use encrypted::{ConnectTarget, ExchangeConn};
 
 /// Resolves an Allow/Pass query. Implementors run off the block path
@@ -43,6 +45,10 @@ pub trait Forwarder: Clone + Send + Sync + 'static {
 pub struct UpstreamPool {
     servers: Arc<[UpstreamServer]>,
     timeout: Duration,
+    /// Shared, not cloned: the pool is handed out by cheap `Arc` clone (see
+    /// `fastadhunter`'s adapters), and a per-clone alarm would let every holder
+    /// warn once for the same outage.
+    alarm: Arc<FailureAlarm>,
 }
 
 /// One upstream's counters — feeds p1-08's metrics and p1-09's `/health`
@@ -87,6 +93,7 @@ impl UpstreamPool {
         Ok(Self {
             servers: servers.into(),
             timeout: Duration::from_millis(u64::from(config.timeout_ms)),
+            alarm: Arc::new(FailureAlarm::new()),
         })
     }
 
@@ -178,6 +185,12 @@ impl Forwarder for UpstreamPool {
             match server.query(query, self.timeout).await {
                 Ok(response) => {
                     server.consecutive_failures.store(0, Ordering::Relaxed);
+                    if self.alarm.clear() {
+                        info!(
+                            upstreams = self.servers.len(),
+                            "upstreams recovered — answering from the network again"
+                        );
+                    }
                     return Ok(response);
                 }
                 Err(err) => {
@@ -188,8 +201,27 @@ impl Forwarder for UpstreamPool {
                 }
             }
         }
-        Err(last_err
-            .unwrap_or_else(|| io::Error::new(io::ErrorKind::NotFound, "no upstreams configured")))
+        // Every configured upstream failed this query. With encrypted-only
+        // upstreams nothing plaintext waits behind them, so clients are now
+        // living on whatever the cache can still serve — the operator has to
+        // hear about it, at most once per alarm interval.
+        let Some(err) = last_err else {
+            // Degenerate rather than an outage: `fah_config` validation rejects
+            // an empty server list, so there is nothing here to have failed.
+            return Err(io::Error::new(
+                io::ErrorKind::NotFound,
+                "no upstreams configured",
+            ));
+        };
+        if let Some(suppressed) = self.alarm.claim() {
+            warn!(
+                upstreams = self.servers.len(),
+                suppressed,
+                error = %err,
+                "all upstreams failed — answers now depend on cached entries"
+            );
+        }
+        Err(err)
     }
 }
 
