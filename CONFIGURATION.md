@@ -334,10 +334,13 @@ would ever reclaim those entries.
 
 What it returns is the entries' own heap plus their eviction-queue nodes. The
 hash-table slab is **not** returned: shrinking it is a reallocation and a full
-rehash whose cost on a 1.4 GHz ARM core has not been measured, so it is left
-allocated deliberately rather than paid for on spec.
-`fastadhunter_cache_cleanup_duration_seconds` at real occupancy is the figure
-that decision is waiting on.
+rehash, so it is left allocated deliberately rather than paid for on spec.
+
+The sweep's own cost is now measured on-device — `330 + 64.4 × entries_removed`
+microseconds at ~1,000 entries (0.2.9 soak). That does **not** settle the
+shrink: the tables never grew past 2.2 % of `max_entries`, so nothing could have
+been reclaimed by shrinking them. Deciding it needs a cache filled and then
+drained, not a soak.
 
 Setting it to `0` disables the sweep and touches nothing else. The admin
 `POST /api/v1/cache/clean` remains available either way, and both count into

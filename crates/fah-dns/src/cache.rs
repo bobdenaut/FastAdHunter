@@ -752,11 +752,17 @@ impl DnsCache {
     /// also gets [`Shard::sweep_queue`], which returns each ghost node's cloned
     /// domain. Neither slab is returned: `retain` does not shrink the table, so
     /// the buckets [`table_bytes`] reports stay allocated, and the queue keeps
-    /// its ring capacity. That is deliberate and pending measurement —
+    /// its ring capacity. That is deliberate and still pending —
     /// `map.shrink_to_fit()` is a reallocation plus a full rehash, which at a
-    /// large `max_entries` on a 1.4 GHz core could cost more than it returns.
-    /// `fastadhunter_cache_cleanup_duration_seconds` at real occupancy is the
-    /// baseline that decision needs; do not add a shrink without it.
+    /// large `max_entries` could cost more than it returns on a core the dev
+    /// box outruns ~9× (PERFORMANCE.md §Budgets).
+    ///
+    /// The sweep's own cost is now measured on-device: `330 + 64.4 × removed`
+    /// microseconds at ~1,000 entries (0.2.9 soak), the per-removal term being
+    /// the second O(len) pass [`Shard::sweep_queue`] makes on every shard that
+    /// lost an entry. That is **not** enough to decide the shrink: the tables
+    /// follow `map.capacity()` and never grew past 2.2 % of `max_entries`, so
+    /// nothing could have been reclaimed. Fill then drain before deciding.
     pub(crate) fn clean(&self, purge_stale: bool) -> CacheClean {
         let started = std::time::Instant::now();
         let now = Instant::now();

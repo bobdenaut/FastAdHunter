@@ -31,9 +31,12 @@ port 80 → container).
 
   Measure both on-device before writing either number; the earlier
   "saturate 1 Gbps" note was an assumption, and 125 MB/s through userspace on
-  a 1.4 GHz ARM core — on a box where the DNS engine alone reached 65.8 % of it
-  under load (`p1.5-06-review.md`) — is exactly the kind of target that should
-  come from a measurement rather than produce one.
+  this CPU — nominally 1.4 GHz but measured running single-threaded work at
+  350–700 MHz, on a box where the DNS engine alone reached 65.8 % of it under
+  load (`p1.5-06-review.md`) — is exactly the kind of target that should come
+  from a measurement rather than produce one. **That target is now less
+  plausible, not more:** at the measured ~9× x86 factor, a throughput figure
+  taken on the dev box needs dividing by nine before it means anything here.
 - **RAM ceiling ≤128 MB is a claim to verify, not assume.** State the
   post-Phase-2 figure with EasyList + policies loaded and say plainly whether
   it fits. If p2-03 already flagged the headroom, this row confirms or

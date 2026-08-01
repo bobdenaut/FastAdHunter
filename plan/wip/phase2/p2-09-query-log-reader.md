@@ -91,8 +91,10 @@ Scan strategy, in this order:
    line is older than `from`, close it without reading the rest.
 3. **Reject on raw bytes before parsing.** For a `domain` filter, search the
    line bytes for the needle before handing it to `serde_json`. Parsing is the
-   bottleneck, not the disk — a 1.4 GHz ARMv8 core parses far slower than the
-   SSD reads. Only parse lines that survive the prefilter.
+   bottleneck, not the disk — this ARMv8 core parses far slower than the SSD
+   reads, and by more than the nominal 1.4 GHz suggests: single-threaded work
+   was measured at 350–700 MHz, ~9× slower than the dev box. Only parse lines
+   that survive the prefilter.
 4. **Stop at `limit`.** With reverse order this is what keeps the common case
    cheap: `?verdict=block&limit=20` at a 55 % block rate reads ~36 rows and
    returns. A full scan only happens for a filter with few or no matches.

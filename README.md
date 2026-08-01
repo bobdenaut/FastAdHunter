@@ -406,8 +406,11 @@ natively under RouterOS.
 > bottom of the board, so the case acts as a massive heatsink. Hardware
 > offload supported.
 
-Budgets assume this box: four cores at 1.4 GHz and **1 GB of RAM shared with
-RouterOS itself**. That constraint is why the memory numbers matter.
+Budgets assume this box: four cores at a nominal 1.4 GHz and **1 GB of RAM
+shared with RouterOS itself**. That constraint is why the memory numbers matter.
+The clock is a specification rather than an operating point — during measurement
+a single busy core stayed at 350–700 MHz, so every figure here was produced on a
+CPU running well below its rated speed.
 
 ---
 

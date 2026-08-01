@@ -5,7 +5,8 @@
 //! # Layout (why this shape)
 //!
 //! PERFORMANCE.md forbids per-string control-block overhead and pointer
-//! chasing on a 1.4 GHz ARM core. So domains are **not** stored as one
+//! chasing on the RB5009, whose measured single-threaded throughput is roughly
+//! 9× slower than the dev box. So domains are **not** stored as one
 //! `Arc<str>` each (1M of those is ~36 MB of control blocks alone, before any
 //! index). Instead:
 //!

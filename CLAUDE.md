@@ -108,7 +108,11 @@ phase's `CLAUDE.md` table. When asked to "work on the plan", start there.
 
 ## Environment notes
 
-- Target hardware: RB5009 (4×ARMv8 1.4 GHz, 1 GB RAM shared with RouterOS) —
-  budgets in PERFORMANCE.md assume it.
+- Target hardware: RB5009 (4×ARMv8, nominally 1.4 GHz, 1 GB RAM shared with
+  RouterOS) — budgets in PERFORMANCE.md assume it. **Treat the nominal clock as
+  an architectural specification, not the observed operating frequency:** during
+  measurement a single busy core stayed at 350–700 MHz with no boost to nominal
+  observed. Convert dev-box figures with the measured **~9× x86 → RB5009
+  factor** instead (PERFORMANCE.md §Budgets).
 - Container: distroless/static, musl static binary, volumes `/config` + `/data`.
 - Tech stack is fixed: Tokio, Hyper/Axum, Hickory, rustls, lol_html (Phase 4).
