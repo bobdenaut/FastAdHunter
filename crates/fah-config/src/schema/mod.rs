@@ -1,5 +1,6 @@
 mod api;
 mod dns;
+mod egress;
 mod engine;
 mod history;
 mod http;
@@ -13,6 +14,7 @@ pub use dns::{
     BlockingMode, DnsBlockingConfig, DnsCacheConfig, DnsConfig, DnsListenConfig,
     DnsUpstreamsConfig, UpstreamProtocol, UpstreamServerConfig, UpstreamStrategy,
 };
+pub use egress::EgressConfig;
 pub use engine::{EngineConfig, EngineMode};
 pub use history::HistoryConfig;
 pub use http::{HttpConfig, HttpListenConfig};
@@ -37,6 +39,9 @@ pub struct Config {
     pub dns: DnsConfig,
     /// Inert unless `engine.mode` includes `http` (Phase 2).
     pub http: HttpConfig,
+    /// Where the proxies may connect. Shared by HTTP and (Phase 3) HTTPS, so
+    /// it is a section of its own rather than a key under `[http]`.
+    pub egress: EgressConfig,
     pub rules: RulesConfig,
     pub query_log: QueryLogConfig,
     pub stats: StatsConfig,

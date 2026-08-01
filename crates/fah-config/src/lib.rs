@@ -201,7 +201,43 @@ fn validate(config: &Config) -> Result<(), ConfigError> {
         }
     }
 
+    // Structural only — `fah_common::egress::AllowedNet` is the authority and
+    // re-parses these at startup. `fah-config` is L1 and cannot import
+    // `fah-common` (both L1, and layering.rs demands a strictly lower layer),
+    // so the shape is checked here to keep `--healthcheck` honest: a typo that
+    // only surfaced on the next real boot is the p1.5-07 defect all over again.
+    for entry in &config.egress.allow_destinations {
+        validate_allowed_destination(entry)?;
+    }
+
     Ok(())
+}
+
+/// One `[egress] allow_destinations` entry: an IP address, optionally with a
+/// CIDR prefix.
+fn validate_allowed_destination(entry: &str) -> Result<(), ConfigError> {
+    const KEY: &str = "egress.allow_destinations";
+    let (address, prefix) = match entry.split_once('/') {
+        Some((address, prefix)) => (address, Some(prefix)),
+        None => (entry, None),
+    };
+    let Ok(address) = address.parse::<std::net::IpAddr>() else {
+        return Err(ConfigError::Validation {
+            key: KEY,
+            message: format!("{entry:?} is not an IP address or CIDR block"),
+        });
+    };
+    let Some(prefix) = prefix else {
+        return Ok(());
+    };
+    let max = if address.is_ipv4() { 32 } else { 128 };
+    match prefix.parse::<u8>() {
+        Ok(len) if len <= max => Ok(()),
+        _ => Err(ConfigError::Validation {
+            key: KEY,
+            message: format!("{entry:?} has an invalid prefix length (max /{max})"),
+        }),
+    }
 }
 
 fn validate_ip(key: &'static str, address: &str) -> Result<(), ConfigError> {
@@ -574,6 +610,44 @@ format = "text"
                 ..
             }
         ));
+    }
+
+    /// Default-deny is the security property; assert the parsed default keeps
+    /// it, not just the struct's `Default`.
+    #[test]
+    fn egress_allow_list_is_empty_unless_configured() {
+        let config = Config::from_toml_str("").unwrap();
+        assert!(config.egress.allow_destinations.is_empty());
+    }
+
+    #[test]
+    fn egress_allow_list_accepts_addresses_and_cidr_blocks() {
+        let toml_str = "[egress]\nallow_destinations = [\"192.168.10.50\", \
+             \"192.168.10.0/24\", \"fd00::/8\", \"::1\"]\n";
+        let config = Config::from_toml_str(toml_str).unwrap();
+        assert_eq!(config.egress.allow_destinations.len(), 4);
+        assert!(validate(&config).is_ok());
+    }
+
+    /// A typo here silently widens or voids an egress exception, so it must
+    /// fail at `--healthcheck` rather than on the next real boot.
+    #[test]
+    fn egress_allow_list_rejects_malformed_entries() {
+        for bad in [
+            "not-an-ip",
+            "192.168.10.0/33",
+            "fd00::/129",
+            "192.168.10.0/x",
+            "",
+        ] {
+            let mut config = Config::default();
+            config.egress.allow_destinations = vec![bad.to_string()];
+            let err = validate(&config).unwrap_err();
+            assert!(
+                matches!(err, ConfigError::Validation { key, .. } if key == "egress.allow_destinations"),
+                "{bad:?} must be rejected by key, got {err:?}"
+            );
+        }
     }
 
     #[test]

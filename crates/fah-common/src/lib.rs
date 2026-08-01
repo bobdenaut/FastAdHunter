@@ -1,6 +1,8 @@
 //! Shared error types and small utilities used across the workspace (ARCHITECTURE.md L1).
 
+pub mod egress;
 pub mod listen;
+pub mod resolve;
 
 use thiserror::Error;
 
