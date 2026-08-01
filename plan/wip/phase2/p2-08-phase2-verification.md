@@ -31,12 +31,11 @@ port 80 → container).
 
   Measure both on-device before writing either number; the earlier
   "saturate 1 Gbps" note was an assumption, and 125 MB/s through userspace on
-  this CPU — nominally 1.4 GHz but measured running single-threaded work at
-  350–700 MHz, on a box where the DNS engine alone reached 65.8 % of it under
-  load (`p1.5-06-review.md`) — is exactly the kind of target that should come
-  from a measurement rather than produce one. **That target is now less
-  plausible, not more:** at the measured ~9× x86 factor, a throughput figure
-  taken on the dev box needs dividing by nine before it means anything here.
+  this CPU — a box where the DNS engine alone reached 65.8 % of it under load
+  (`p1.5-06-review.md`) — is exactly the kind of target that should come from a
+  measurement rather than produce one. **That target is now less plausible, not
+  more:** at the measured ~9× x86 factor, a throughput figure taken on the dev
+  box needs dividing by nine before it means anything here.
 - **RAM ceiling ≤128 MB is a claim to verify, not assume.** State the
   post-Phase-2 figure with EasyList + policies loaded and say plainly whether
   it fits. If p2-03 already flagged the headroom, this row confirms or
@@ -65,11 +64,12 @@ port 80 → container).
   Run ahead of the rest of this task, because the answer decides whether a
   substring index belongs in the phase at all.
 
-  **Outcome: a substring index is required to meet the 1 ms budget for the
-  EasyList + EasyPrivacy target corpus on the RB5009 (8 KiB = 5,336 µs, 5.3×
-  over), and is not required for the corpus this router currently runs
-  (377 µs).** The boundary is the unindexed-rule count — 77 against 3 — not the
-  URL-rule count. Even 4 KiB against EasyList is 2,092 µs.
+  **Outcome: a substring index was required, and has since been built and
+  verified on-device — see `p2-10`.** The measurement found 8 KiB against
+  EasyList + EasyPrivacy at 5,336 µs, 5.3× over budget, while the corpus this
+  router runs cost 377 µs. `p2-10` closed that: every URL rule is now indexed
+  and 8 KiB is **553.8 µs** (p99 569.5), inside budget at every measured length
+  (`docs/code-review/p2-10-url-substring-index.md`).
 
   The rest of this task's on-device work (dst-nat, `dns+http` browsing, soak)
   is **not** done and remains as written below.
@@ -86,9 +86,10 @@ port 80 → container).
   [`docs/code-review/p2-08-url-lookup-arm.md`](../../../docs/code-review/p2-08-url-lookup-arm.md)
   + `docs/code-review/p2-08-arm/`.
 
-  8 KiB does **not** leave comfortable headroom at target-corpus scale, so the
-  deferred substring-index work is **re-opened** — see
-  `plan/wip/phase2/CLAUDE.md` §"Follow-up from the p2-03 review".
+  8 KiB did **not** leave comfortable headroom at target-corpus scale, which
+  re-opened the deferred substring-index work. That is now `p2-10`, DONE and
+  verified on-device — 8 KiB fell 5,335.7 → 553.8 µs and `unindexed` is 0 on
+  both corpora.
 
   **The x86 → ARM ratio came out FLAT: 8.25–10.0× across twelve arms spanning
   three orders of magnitude and two corpora (median ~9.05×).** Per this
@@ -99,16 +100,18 @@ port 80 → container).
 
   Two findings the criterion did not anticipate, both recorded in the report:
 
-  - **During the measurements a single busy core remained at 350–700 MHz and no
-    boost to the nominal 1.4 GHz was observed.** 45 s of a pinned core at 100 %
-    (38/40 router samples at 350; the container's own `scaling_cur_freq`
-    agrees), against the 1.4 GHz PERFORMANCE.md assumes. Every ARM figure here
-    is therefore an upper bound — and the verdict survives correcting all the
-    way to nominal (5,336 ÷ 4 = 1.33 ms, still over budget).
-  - **97 % of an 8 KiB lookup is the unindexed scan.** Cost ≈ 176 µs fixed +
-    67 µs per unindexed rule, so an index would take 5,336 µs → ~176 µs (~30×).
-    That ~176 µs is also the floor with a *perfect* index, since tokenization
-    scales with URL length too.
+  - **The reported CPU frequency is not a calibration input.** This run sampled
+    350–700 MHz throughout; the `p2-10` run of the same probe reported
+    1400 MHz. A control arm across the two — the deployed corpus at 8 KiB —
+    moved −4.6 %, where a genuine 4× clock change had to show ~4×. Both runs
+    therefore executed at the same effective speed. What survives is the ~9×
+    x86 → RB5009 factor, corroborated by both sessions.
+  - ~~**97 % of an 8 KiB lookup is the unindexed scan**, ≈ 176 µs fixed +
+    67 µs per unindexed rule.~~ **Wrong — retracted by `p2-10`.** That model
+    was a two-point fit across corpora differing 26× in rule count, so it
+    charged the whole gap to the unindexed term. Removing that term alone moved
+    **32 %**, not 97 %; the rest was candidate rules scanning the URL for their
+    first byte one byte at a time.
 
   x86 reference for the record (EasyList + EasyPrivacy, pinned, mimalloc,
   2026-08-01, minimum of ~5,000 batches): **4.00 µs** at 64 B, **54.9 µs** at

@@ -1,0 +1,38 @@
+[probe] fah urlbench — p2-08 worst-case URL lookup
+[probe] cpu0 scaling_cur_freq: unavailable
+
+[probe] ================ corpus: .probe-corpus\easylist ================
+[probe] lists   : 2
+[probe]   easylist.raw                 dns=51362   url=5947   inactive=27644
+[probe]   easyprivacy.raw              dns=42752   url=12834  inactive=75
+[probe] parsed  : 94114 dns, 18781 url, 27719 inactive
+[probe] compiled: 18781 url rules (0 duplicates removed), 0 UNINDEXED
+[probe] heap    : url tier 1116985 bytes (1.07 MiB), whole matcher 4.05 MiB, retained rule text 435015 bytes
+[probe] startup : read 0.001 s, parse 0.018 s, compile 0.015 s
+[probe] --- measuring, ~8 s per arm ---
+[bench] mixed_requests         min      4.083 us  p50      4.378  mean      4.584  p99      6.107  max     17.552   (5000 batches x 227)
+[bench] single_pass_request    min      0.480 us  p50      0.508  mean      0.536  p99      0.703  max      2.082   (5000 batches x 1751)
+[bench] long_url_64b           min      1.038 us  p50      1.127  mean      1.174  p99      1.514  max      4.052   (5000 batches x 832)
+[bench] long_url_1024b         min      6.058 us  p50      6.384  mean      6.709  p99      8.805  max     15.579   (5000 batches x 147)
+[bench] long_url_4096b         min     24.911 us  p50     27.091  mean     28.035  p99     35.526  max     95.717   (5000 batches x 35)
+[bench] long_url_8192b         min     55.807 us  p50     60.840  mean     63.235  p99     81.653  max    144.460   (5000 batches x 15)
+[probe] budget exhaustions during this corpus: 0
+
+[probe] ================ corpus: .probe-corpus\production ================
+[probe] lists   : 2
+[probe]   filter_1.raw                 dns=161217  url=525    inactive=32
+[probe]   filter_50.raw                dns=2857    url=189    inactive=6
+[probe] parsed  : 164074 dns, 714 url, 38 inactive
+[probe] compiled: 714 url rules (0 duplicates removed), 0 UNINDEXED
+[probe] heap    : url tier 42369 bytes (0.04 MiB), whole matcher 5.25 MiB, retained rule text 15169 bytes
+[probe] startup : read 0.001 s, parse 0.023 s, compile 0.016 s
+[probe] --- measuring, ~8 s per arm ---
+[bench] mixed_requests         min      1.225 us  p50      1.312  mean      1.362  p99      1.728  max      2.207   (5000 batches x 725)
+[bench] single_pass_request    min      0.330 us  p50      0.349  mean      0.365  p99      0.470  max      1.538   (5000 batches x 2583)
+[bench] long_url_64b           min      0.240 us  p50      0.259  mean      0.269  p99      0.347  max      0.618   (5000 batches x 3508)
+[bench] long_url_1024b         min      5.665 us  p50      6.061  mean      6.263  p99      8.052  max     15.813   (5000 batches x 159)
+[bench] long_url_4096b         min     19.507 us  p50     20.913  mean     21.573  p99     27.822  max     81.174   (5000 batches x 46)
+[bench] long_url_8192b         min     37.504 us  p50     40.075  mean     41.502  p99     53.683  max     81.508   (5000 batches x 24)
+[probe] budget exhaustions during this corpus: 0
+[probe] cpu0 scaling_cur_freq: unavailable
+[probe] done

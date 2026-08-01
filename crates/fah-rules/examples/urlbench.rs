@@ -41,11 +41,11 @@ use fah_rules::{parse_rule_list, MatcherBuilder, RuleKind};
 static ALLOC: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
 /// Wall time each arm aims to spend. Two jobs, and the second is why it is not
-/// smaller: it has to hold the core busy long enough for RouterOS's frequency
-/// scaling to settle, because the 0.2.9 soak caught the RB5009 idling at
-/// 350 MHz against a 1.4 GHz nominal. A probe that finishes before the core
-/// clocks up reports a 4x-pessimistic figure and would "justify" an index
-/// nothing needs.
+/// smaller: it has to hold the core busy for long enough that the run describes
+/// a steady state rather than whatever the governor happened to be doing at
+/// startup. Dynamic frequency scaling is enabled on the RB5009, and the
+/// frequency it reports is not a usable calibration input — see
+/// PERFORMANCE.md §Measuring on the RB5009.
 const ARM_TARGET: Duration = Duration::from_secs(8);
 
 /// Batch size is chosen so one batch takes about this long, amortising the
@@ -298,9 +298,14 @@ fn measure(name: &str, mut op: impl FnMut()) {
     );
 }
 
-/// Whatever the kernel will admit about the core this is running on. Printed
-/// before and after the run: if the two differ, the governor moved mid-probe
-/// and the numbers need reading with that in mind.
+/// Whatever the kernel will admit about the core this is running on.
+///
+/// **Informational only.** Dynamic frequency scaling is enabled, and the value
+/// `scaling_cur_freq` reports must not be interpreted as the frequency used
+/// during the benchmark: two on-device runs reporting 350 MHz and 1400 MHz were
+/// shown by a control arm to have executed at the same effective speed. It is
+/// printed to document conditions, never to scale a result — for that, use the
+/// measured ~9× x86 → RB5009 factor (PERFORMANCE.md §Budgets).
 fn report_cpu() {
     let freq = std::fs::read_to_string("/sys/devices/system/cpu/cpu0/cpufreq/scaling_cur_freq")
         .ok()
@@ -313,5 +318,5 @@ fn report_cpu() {
                 )
             },
         );
-    println!("[probe] cpu0 scaling_cur_freq: {freq}");
+    println!("[probe] cpu0 scaling_cur_freq: {freq} (informational — not a calibration input)");
 }

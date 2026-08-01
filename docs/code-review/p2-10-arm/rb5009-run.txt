@@ -1,0 +1,44 @@
+ 2026-08-01 18:06:07 container,info,debug [CONTAINER]: fah-urlbench-rosready-v2: *** repull
+ 2026-08-01 18:06:07 container,info,debug [CONTAINER]: fah-urlbench-rosready-v2: *** extracting tar archived image: fah-urlbench-rosready-v2.tar
+ 2026-08-01 18:06:07 container,info,debug [CONTAINER]: fah-urlbench-rosready-v2: *** download/extract done
+ 2026-08-01 18:06:30 container,info,debug [CONTAINER]: fah-urlbench-rosready-v2: *** start
+ 2026-08-01 18:06:30 container,info,debug [CONTAINER]: fah-urlbench-rosready-v2: *** started PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt TZ=Europe/Bucharest /urlbench
+ 2026-08-01 18:06:30 container,info,debug [CONTAINER]: fah-urlbench-rosready-v2: [probe] fah urlbench E28094 p2-08 worst-case URL lookup
+ 2026-08-01 18:06:30 container,info,debug [CONTAINER]: fah-urlbench-rosready-v2: [probe] cpu0 scaling_cur_freq: 1400 MHz
+ 2026-08-01 18:06:30 container,info,debug [CONTAINER]: fah-urlbench-rosready-v2:
+ 2026-08-01 18:06:30 container,info,debug [CONTAINER]: fah-urlbench-rosready-v2: [probe] ================ corpus: /corpus/easylist ================
+ 2026-08-01 18:06:31 container,info,debug [CONTAINER]: fah-urlbench-rosready-v2: [probe] lists   : 2
+ 2026-08-01 18:06:31 container,info,debug [CONTAINER]: fah-urlbench-rosready-v2: [probe]   easylist.raw                 dns=51362   url=5947   inactive=27644
+ 2026-08-01 18:06:31 container,info,debug [CONTAINER]: fah-urlbench-rosready-v2: [probe]   easyprivacy.raw              dns=42752   url=12834  inactive=75
+ 2026-08-01 18:06:31 container,info,debug [CONTAINER]: fah-urlbench-rosready-v2: [probe] parsed  : 94114 dns, 18781 url, 27719 inactive
+ 2026-08-01 18:06:31 container,info,debug [CONTAINER]: fah-urlbench-rosready-v2: [probe] compiled: 18781 url rules (0 duplicates removed), 0 UNINDEXED
+ 2026-08-01 18:06:31 container,info,debug [CONTAINER]: fah-urlbench-rosready-v2: [probe] heap    : url tier 1116985 bytes (1.07 MiB), whole matcher 4.05 MiB, retained rule text 435015 bytes
+ 2026-08-01 18:06:31 container,info,debug [CONTAINER]: fah-urlbench-rosready-v2: [probe] startup : read 0.006 s, parse 0.126 s, compile 0.117 s
+ 2026-08-01 18:06:31 container,info,debug [CONTAINER]: fah-urlbench-rosready-v2: [probe] --- measuring, ~8 s per arm ---
+ 2026-08-01 18:06:36 container,info,debug [CONTAINER]: fah-urlbench-rosready-v2: [bench] mixed_requests         min     38.029 us  p50     38.274  mean     38.318  p99     39.066  max     57.878   (5000 batches x 25)
+ 2026-08-01 18:06:41 container,info,debug [CONTAINER]: fah-urlbench-rosready-v2: [bench] single_pass_request    min      4.435 us  p50      4.519  mean      4.519  p99      4.633  max      6.006   (5000 batches x 215)
+ 2026-08-01 18:06:47 container,info,debug [CONTAINER]: fah-urlbench-rosready-v2: [bench] long_url_64b           min      9.457 us  p50      9.556  mean      9.567  p99      9.753  max     11.810   (5000 batches x 103)
+ 2026-08-01 18:06:52 container,info,debug [CONTAINER]: fah-urlbench-rosready-v2: [bench] long_url_1024b         min     64.149 us  p50     64.280  mean     64.417  p99     65.960  max     86.715   (5000 batches x 15)
+ 2026-08-01 18:06:56 container,info,debug [CONTAINER]: fah-urlbench-rosready-v2: [bench] long_url_4096b         min    249.693 us  p50    251.000  mean    251.118  p99    257.373  max    329.133   (5000 batches x 3)
+ 2026-08-01 18:07:00 container,info,debug [CONTAINER]: fah-urlbench-rosready-v2: [bench] long_url_8192b         min    553.760 us  p50    554.520  mean    555.308  p99    569.520  max    760.960   (5000 batches x 1)
+ 2026-08-01 18:07:00 container,info,debug [CONTAINER]: fah-urlbench-rosready-v2: [probe] budget exhaustions during this corpus: 0
+ 2026-08-01 18:07:00 container,info,debug [CONTAINER]: fah-urlbench-rosready-v2:
+ 2026-08-01 18:07:00 container,info,debug [CONTAINER]: fah-urlbench-rosready-v2: [probe] ================ corpus: /corpus/production ================
+ 2026-08-01 18:07:00 container,info,debug [CONTAINER]: fah-urlbench-rosready-v2: [probe] lists   : 2
+ 2026-08-01 18:07:00 container,info,debug [CONTAINER]: fah-urlbench-rosready-v2: [probe]   filter_1.raw                 dns=161217  url=525    inactive=32
+ 2026-08-01 18:07:00 container,info,debug [CONTAINER]: fah-urlbench-rosready-v2: [probe]   filter_50.raw                dns=2857    url=189    inactive=6
+ 2026-08-01 18:07:00 container,info,debug [CONTAINER]: fah-urlbench-rosready-v2: [probe] parsed  : 164074 dns, 714 url, 38 inactive
+ 2026-08-01 18:07:00 container,info,debug [CONTAINER]: fah-urlbench-rosready-v2: [probe] compiled: 714 url rules (0 duplicates removed), 0 UNINDEXED
+ 2026-08-01 18:07:00 container,info,debug [CONTAINER]: fah-urlbench-rosready-v2: [probe] heap    : url tier 42369 bytes (0.04 MiB), whole matcher 5.25 MiB, retained rule text 15169 bytes
+ 2026-08-01 18:07:00 container,info,debug [CONTAINER]: fah-urlbench-rosready-v2: [probe] startup : read 0.004 s, parse 0.153 s, compile 0.132 s
+ 2026-08-01 18:07:00 container,info,debug [CONTAINER]: fah-urlbench-rosready-v2: [probe] --- measuring, ~8 s per arm ---
+ 2026-08-01 18:07:05 container,info,debug [CONTAINER]: fah-urlbench-rosready-v2: [bench] mixed_requests         min     12.341 us  p50     12.420  mean     12.433  p99     12.671  max     15.297   (5000 batches x 79)
+ 2026-08-01 18:07:11 container,info,debug [CONTAINER]: fah-urlbench-rosready-v2: [bench] single_pass_request    min      3.055 us  p50      3.108  mean      3.122  p99      3.204  max      4.154   (5000 batches x 305)
+ 2026-08-01 18:07:16 container,info,debug [CONTAINER]: fah-urlbench-rosready-v2: [bench] long_url_64b           min      2.205 us  p50      2.206  mean      2.212  p99      2.253  max      2.986   (5000 batches x 428)
+ 2026-08-01 18:07:21 container,info,debug [CONTAINER]: fah-urlbench-rosready-v2: [bench] long_url_1024b         min     52.409 us  p50     53.916  mean     53.811  p99     55.798  max     97.864   (5000 batches x 18)
+ 2026-08-01 18:07:27 container,info,debug [CONTAINER]: fah-urlbench-rosready-v2: [bench] long_url_4096b         min    187.120 us  p50    188.816  mean    189.112  p99    192.400  max    252.536   (5000 batches x 5)
+ 2026-08-01 18:07:31 container,info,debug [CONTAINER]: fah-urlbench-rosready-v2: [bench] long_url_8192b         min    359.600 us  p50    362.700  mean    363.053  p99    371.280  max    529.560   (5000 batches x 2)
+ 2026-08-01 18:07:31 container,info,debug [CONTAINER]: fah-urlbench-rosready-v2: [probe] budget exhaustions during this corpus: 0
+ 2026-08-01 18:07:31 container,info,debug [CONTAINER]: fah-urlbench-rosready-v2: [probe] cpu0 scaling_cur_freq: 1400 MHz
+ 2026-08-01 18:07:31 container,info,debug [CONTAINER]: fah-urlbench-rosready-v2: [probe] done
+ 2026-08-01 18:07:31 container,info,debug [CONTAINER]: fah-urlbench-rosready-v2: *** exited with status 0

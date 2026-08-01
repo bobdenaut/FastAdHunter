@@ -30,10 +30,9 @@
 //!
 //! `Stats::heap()` over a saturated system: **~43 µs** on x86, so ~390 µs on
 //! the RB5009 at the measured ~9× factor (PERFORMANCE.md §Budgets). The earlier
-//! 200–300 µs estimate here was derived from the nominal 1.4 GHz, which is not
-//! the frequency single-threaded work was observed to get. Even at the revised
-//! figure the 10 s telemetry poll is ~0.004 % duty cycle, and it never touches
-//! the query path.
+//! 200–300 µs estimate here came from dividing by a nominal clock, which is not
+//! how figures convert to this device. Even at the revised figure the 10 s
+//! telemetry poll is ~0.004 % duty cycle, and it never touches the query path.
 //!
 //! The split is deliberate, not uniform:
 //!

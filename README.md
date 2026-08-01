@@ -406,11 +406,14 @@ natively under RouterOS.
 > bottom of the board, so the case acts as a massive heatsink. Hardware
 > offload supported.
 
-Budgets assume this box: four cores at a nominal 1.4 GHz and **1 GB of RAM
-shared with RouterOS itself**. That constraint is why the memory numbers matter.
-The clock is a specification rather than an operating point — during measurement
-a single busy core stayed at 350–700 MHz, so every figure here was produced on a
-CPU running well below its rated speed.
+Budgets assume this box: four ARMv8 cores and **1 GB of RAM shared with
+RouterOS itself**. That constraint is why the memory numbers matter.
+
+Dynamic frequency scaling is enabled, and during CPU-bound benchmarks the
+governor was observed boosting between idle (350 MHz) and 1400 MHz. Control
+measurements showed benchmark throughput unchanged between runs reporting those
+frequencies, so the figures here are calibrated against the measured ~9×
+x86 → RB5009 factor rather than any clock reading.
 
 ---
 

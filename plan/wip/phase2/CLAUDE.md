@@ -144,11 +144,15 @@ neither blocks anything.
    chooses (not from the server's number) to avoid the doubling peak, where the
    last growth step holds both buffers at once.
 
-## Follow-up from the p2-03 review — DECIDED 2026-08-01, no longer deferred
+## Follow-up from the p2-03 review — DONE 2026-08-01 as `p2-10`
 
-**A substring index is required to meet the 1 ms lookup budget for the
-EasyList + EasyPrivacy target corpus on the RB5009. It is not required for the
-corpus this router currently runs.**
+**A substring index was required to meet the 1 ms lookup budget for the
+EasyList + EasyPrivacy target corpus on the RB5009. It has been built and
+verified on-device: `unindexed` is 0 on both corpora and 8 KiB fell
+5,335.7 → 553.8 µs (p99 569.5), inside budget at every measured length.**
+Report: `docs/code-review/p2-10-url-substring-index.md`. The measurement that
+motivated it is below, kept because the two corpora are still the argument for
+scoping any claim about this tier.
 
 Measured on-device by a throwaway probe container; production served DNS
 throughout. Report and raw evidence:
@@ -169,21 +173,30 @@ URL rules), which is why this router is comfortable and the target corpus is
 not.
 
 The deferral rested on "3.09 µs sits 300× inside the budget", which was the
-short-URL figure. At 8 KiB the same corpus costs 5.3× the *whole* budget, and
-even 4 KiB costs 2,092 µs. The conclusion survives the frequency caveat: during
-the run a single busy core remained at **350–700 MHz** with no boost to the
-nominal 1.4 GHz observed, but correcting all the way to nominal still gives
-1.33 ms.
+short-URL figure. At 8 KiB the same corpus cost 5.3× the *whole* budget, and
+even 4 KiB cost 2,092 µs.
 
-**What an index buys, and what it does not.** At 8 KiB the cost is ≈ 176 µs
-fixed + **67 µs per unindexed rule**, so at 77 rules **97 % of the lookup is the
-unindexed scan** — an index removes that term, 5,336 µs → ~176 µs (~30×). It
-does not make long URLs free: ~176 µs is the floor even with a perfect index,
-because tokenization and indexed-candidate checks scale with URL length too.
+**Two claims from that measurement did not survive `p2-10`, and both are worth
+remembering as mistakes rather than deleting.**
 
-**Not yet a task.** The decision is recorded; sequencing it against `p2-05`
-through `p2-09` is open. It is Phase 2 work by origin but nothing in the phase's
-definition of done depends on it — the deployed corpus meets budget today.
+1. ~~"97 % of the lookup is the unindexed scan; ≈ 176 µs fixed + 67 µs per
+   unindexed rule."~~ A two-point fit across corpora differing **26× in rule
+   count** cannot attribute the gap to one variable. Indexing every rule moved
+   645.9 → 441.2 µs on x86 — **32 %**, not 97 %. The rest was candidate rules
+   scanning the URL for their first byte a byte at a time, ~3 µs apiece at
+   8 KiB; SIMD removed it.
+2. ~~"A single busy core remained at 350–700 MHz and no boost to the nominal
+   1.4 GHz was observed, so every ARM figure is an upper bound."~~ The `p2-10`
+   run of the same probe reported **1400 MHz**. A control arm across the two
+   sessions — the deployed corpus at 8 KiB, barely touched by the change —
+   moved **−4.6 %**, where a real 4× clock change had to show ~4×. Both runs
+   executed at the same effective speed; RouterOS's frequency fields do not
+   predict throughput. The ~9× x86 → RB5009 factor is what both sessions agree
+   on and is the calibration input.
+
+**Both fixes shipped as `p2-10`.** `unindexed` is 0 on both corpora, 8 KiB is
+553.8 µs on-device (p99 569.5) against the 1 ms budget, for +2,372 bytes of
+heap.
 
 **Always select the first task whose `STATUS` is `WAITING`.**
 
@@ -197,8 +210,9 @@ definition of done depends on it — the deployed corpus meets budget today.
 | 5 | `p2-05-policy-model.md` | Policy = named bundle of lists + settings; schedules; `$client` | Opus | WAITING |
 | 6 | `p2-06-per-client-enforcement.md` | DNS + HTTP consult policy per client; policy API endpoints | Sonnet | WAITING |
 | 7 | `p2-07-memory-accounting.md` | **REOPENED 2026-07-26, NARROWED 2026-07-30** — instrumentation all shipped (component `heap_bytes()`, both metric families, `/debug/memory`, `AllocatorStats` in 0.2.8); the one thing left is persisting `MemoryComponents` + `minor_page_faults` into `PerfSample` and `/history/perf`, so a soak can chart residual rather than only RSS. The reopen's motivating question is **answered** — the RouterOS climb was page cache (`docs/code-review/0.2.7-router-memory-and-throughput.md`) — so this is now a safety net, not an investigation, and its priority drops accordingly | Sonnet | WAITING |
-| 8 | `p2-08-phase2-verification.md` | HTTP benches + budgets, e2e tests, RB5009 dns+http validation. **One acceptance criterion already MET out of order (2026-08-01): the on-device long-URL sweep.** A substring index is required for the EasyList+EasyPrivacy target corpus (8 KiB = 5,336 µs, 5.3× over budget) and not for this router's own lists (377 µs); x86→ARM factor is a flat ~9×; a single busy core was observed at 350–700 MHz with no boost to the nominal 1.4 GHz. Do not re-run it — `docs/code-review/p2-08-url-lookup-arm.md`. Everything else in the task is untouched | Sonnet | WAITING |
+| 8 | `p2-08-phase2-verification.md` | HTTP benches + budgets, e2e tests, RB5009 dns+http validation. **One acceptance criterion already MET out of order (2026-08-01): the on-device long-URL sweep.** It found the EasyList+EasyPrivacy corpus 5.3× over budget at 8 KiB, which `p2-10` then fixed — re-measured at 553.8 µs, inside budget at every length. x86→ARM factor is a flat ~9×; the reported CPU frequency is **not** a calibration input. Do not re-run the sweep — `docs/code-review/p2-10-url-substring-index.md`. Everything else in the task is untouched | Sonnet | WAITING |
 | 9 | `p2-09-query-log-reader.md` | `QueryLogReader` over the persisted segments; unified `GET /queries` (no filter → ring, any filter → segments); `next_sequence` derived at boot; `qtype`; `oldest_retained`; flush on shutdown | Opus | WAITING |
+| 10 | *(no task file — done directly)* | URL substring index: literal-run n-gram tier so every rule is indexed (`unindexed` 77 → 0), plus SIMD (`memchr`) for the unanchored first-byte scan and the `*`-widening retry. On-device 8 KiB **5,335.7 → 553.8 µs**, 11.6× on x86, +2,372 bytes heap; retracts two claims from the p2-08 measurement (`docs/code-review/p2-10-url-substring-index.md`) | Opus | DONE |
 
 **Definition of done:** router dst-nats port 80 to the container; a plain-HTTP
 page loads through the proxy with ad requests blocked at URL level; a "kids"

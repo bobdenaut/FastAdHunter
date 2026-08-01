@@ -1,0 +1,38 @@
+[probe] fah urlbench — p2-08 worst-case URL lookup
+[probe] cpu0 scaling_cur_freq: unavailable
+
+[probe] ================ corpus: C:\Users\liviu\AppData\Local\Temp\claude\e--FastAdHunter\658e4a47-7431-4c63-8f55-5ef885d1dd3e\scratchpad\corpus-easylist ================
+[probe] lists   : 2
+[probe]   easylist.raw                 dns=51362   url=5947   inactive=27644
+[probe]   easyprivacy.raw              dns=42752   url=12834  inactive=75
+[probe] parsed  : 94114 dns, 18781 url, 27719 inactive
+[probe] compiled: 18781 url rules (0 duplicates removed), 77 UNINDEXED
+[probe] heap    : url tier 1114613 bytes (1.06 MiB), whole matcher 4.05 MiB, retained rule text 435015 bytes
+[probe] startup : read 0.001 s, parse 0.017 s, compile 0.015 s
+[probe] --- measuring, ~8 s per arm ---
+[bench] mixed_requests         min     13.170 us  p50     15.010  mean     15.541  p99     19.542  max     47.258   (5000 batches x 67)
+[bench] single_pass_request    min      2.746 us  p50      3.104  mean      3.196  p99      4.019  max      6.108   (5000 batches x 306)
+[bench] long_url_64b           min      4.004 us  p50      4.361  mean      4.539  p99      5.585  max     14.881   (5000 batches x 220)
+[bench] long_url_1024b         min     54.875 us  p50     57.275  mean     60.444  p99     76.831  max    119.494   (5000 batches x 16)
+[bench] long_url_4096b         min    251.167 us  p50    265.900  mean    281.541  p99    370.967  max    978.467   (5000 batches x 3)
+[bench] long_url_8192b         min    645.900 us  p50    689.100  mean    733.500  p99    992.200  max   2258.900   (5000 batches x 1)
+[probe] budget exhaustions during this corpus: 0
+
+[probe] ================ corpus: C:\Users\liviu\AppData\Local\Temp\claude\e--FastAdHunter\658e4a47-7431-4c63-8f55-5ef885d1dd3e\scratchpad\corpus-prod-url ================
+[probe] lists   : 2
+[probe]   filter_1.raw                 dns=161217  url=525    inactive=32
+[probe]   filter_50.raw                dns=2857    url=189    inactive=6
+[probe] parsed  : 164074 dns, 714 url, 38 inactive
+[probe] compiled: 714 url rules (0 duplicates removed), 3 UNINDEXED
+[probe] heap    : url tier 42253 bytes (0.04 MiB), whole matcher 5.25 MiB, retained rule text 15169 bytes
+[probe] startup : read 0.001 s, parse 0.024 s, compile 0.016 s
+[probe] --- measuring, ~8 s per arm ---
+[bench] mixed_requests         min      1.378 us  p50      1.483  mean      1.558  p99      2.020  max      3.031   (5000 batches x 634)
+[bench] single_pass_request    min      0.360 us  p50      0.384  mean      0.402  p99      0.505  max      0.768   (5000 batches x 2375)
+[bench] long_url_64b           min      0.297 us  p50      0.321  mean      0.336  p99      0.428  max      0.877   (5000 batches x 2873)
+[bench] long_url_1024b         min      6.207 us  p50      6.595  mean      6.901  p99      8.723  max     17.517   (5000 batches x 145)
+[bench] long_url_4096b         min     21.231 us  p50     22.264  mean     23.406  p99     29.671  max     48.990   (5000 batches x 42)
+[bench] long_url_8192b         min     41.259 us  p50     43.559  mean     45.538  p99     57.455  max     71.014   (5000 batches x 22)
+[probe] budget exhaustions during this corpus: 0
+[probe] cpu0 scaling_cur_freq: unavailable
+[probe] done

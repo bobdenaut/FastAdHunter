@@ -35,17 +35,25 @@ Reference hardware: MikroTik RB5009 — Marvell Armada quad-core ARMv8, nominall
 1.4 GHz, 1 GB RAM shared with RouterOS. Verified with criterion benches in
 `benches/` (`cargo bench`) and soak tests on the device.
 
-> **The nominal clock is not what single-threaded work was observed to get.**
-> Measured 2026-08-01 (`docs/code-review/p2-08-url-lookup-arm.md`): during the
-> measurements, a single busy core remained at **350–700 MHz** — 38 of 40
-> samples at 350, two at 700, one at 466 — and **no boost to the nominal
-> 1.4 GHz was observed**. The router's own counter and the container's
-> `/sys/.../cpufreq/scaling_cur_freq` agree.
+> **Do not budget from the reported clock — budget from the factor.** During
+> CPU-bound benchmarks, the RB5009 governor was observed boosting from 350 MHz
+> (idle) to 1400 MHz. CPU frequency was sampled repeatedly during the run
+> (`/system/resource/print`) and returned to 350 MHz after the benchmark
+> completed.
 >
-> For FastAdHunter measurements, treat the nominal 1.4 GHz as an architectural
-> specification rather than the observed operating frequency. Budget
-> calculations should use the measured x86 → RB5009 factor (~9×) unless new
-> measurements supersede it.
+> **The reported frequency does not predict throughput, and that is measured,
+> not assumed.** Two on-device runs of the same probe reported 350 MHz and
+> 1400 MHz respectively — a 4× difference. A control arm barely touched by the
+> code change between them (the deployed corpus at 8 KiB) moved **376.8 → 359.6
+> µs, −4.6 %**, and moved −5.3 % on the x86 box where the clock was fixed. A
+> genuine 4× clock change had to show up as ~4× there. It did not, so both runs
+> executed at the same effective speed and the frequency field is not reporting
+> what the workload got.
+>
+> Use the measured x86 → RB5009 factor (~9×) for budget calculations, and treat
+> the nominal 1.4 GHz as an architectural specification. Both on-device sessions
+> agree on the factor while disagreeing on the reported clock, which is why the
+> factor is the durable input.
 >
 > Whether all-cores load behaves differently is **untested**; the measured
 > 20k+ QPS ceiling hints it might, and that is an open question rather than a
@@ -72,7 +80,7 @@ Reference hardware: MikroTik RB5009 — Marvell Armada quad-core ARMv8, nominall
 | **HTTP** pass-through added latency, p99 *(Phase 2 — to measure)* | < 5 ms |
 | **HTTP** pass-through throughput, opaque body *(Phase 2 — to measure)* | to establish in p2-02 |
 | **HTTP** concurrent connections | bounded by `[http] max_connections` (default 1024) |
-| **HTTP** request verdict (URL tier), in-engine p99 | < 1 ms — **breached at ≥ 4 KiB URLs with the EasyList target corpus**, see below |
+| **HTTP** request verdict (URL tier), in-engine p99 | < 1 ms — met at every measured length; 8 KiB against EasyList + EasyPrivacy is 569.5 µs p99, see below |
 
 Notes:
 
@@ -180,34 +188,32 @@ Notes:
     needs a fill-then-drain, not a soak.
   - Freed memory goes back to **mimalloc**, not necessarily to the kernel, so
     RSS lags `cache_estimated_bytes` (CONTEXT.md §Accounted/Residual).
-- **The URL-tier verdict budget is met for ordinary URLs and breached for long
-  ones at target-corpus scale.** Measured on the RB5009 2026-08-01
-  (`docs/code-review/p2-08-url-lookup-arm.md`), minimum of ~5,000 batches:
+- **The URL-tier verdict budget is met at every measured URL length.** Measured
+  on the RB5009 2026-08-01 (`docs/code-review/p2-10-url-substring-index.md`),
+  minimum of ~5,000 batches. The 2026-08-01 figures before the substring index
+  are kept alongside, because the shape of the fix is the point:
 
-  | URL length | EasyList + EasyPrivacy (77 unindexed) | Deployed lists (3 unindexed) |
-  |---|---|---|
-  | 64 B | 35.0 µs | 2.7 µs |
-  | 1 KiB | 452.7 µs | 55.5 µs |
-  | 4 KiB | **2,091.9 µs** ❌ | 195.4 µs |
-  | 8 KiB | **5,335.7 µs** ❌ | 376.8 µs |
-
-  Two things this table must not be read as saying. It is **not** "the URL tier
-  is too slow" — at the corpus this router runs, 8 KiB costs 377 µs and the
-  budget holds with 2.7× to spare. It is **not** "the deployment is at risk"
-  either. The discriminator is the **unindexed-rule count**, not the URL-rule
-  count: 714 rules with 3 unindexed are cheap, 18,781 with 77 unindexed are not,
-  and a corpus with 15,000 well-tokenised URL rules would also be cheap.
+  | URL length | EasyList + EasyPrivacy | before | Deployed lists |
+  |---|---|---|---|
+  | 64 B | 9.5 µs | 35.0 µs | 2.2 µs |
+  | 1 KiB | 64.1 µs | 452.7 µs | 52.4 µs |
+  | 4 KiB | 249.7 µs | 2,091.9 µs ❌ | 187.1 µs |
+  | 8 KiB | **553.8 µs** (p99 569.5) | 5,335.7 µs ❌ | 359.6 µs |
 
   Long URLs are ordinary traffic, not an attack — OAuth redirects, ad-tech
   beacons and analytics payloads routinely carry multi-KB query strings. The
   adversarial case is separately capped by the p2-03 work allowance, which was
-  never reached in this run.
+  never reached in any of these runs.
 
-  ~97 % of an 8 KiB lookup is the unindexed scan (≈176 µs fixed + ~67 µs per
-  unindexed rule), so a substring index would return it to ~176 µs. That work
-  is decided and recorded in `plan/wip/phase2/CLAUDE.md`; ~176 µs is also the
-  floor a *perfect* index would leave, since tokenization scales with URL
-  length too.
+  **What the old breach actually was.** Every URL rule is now indexed
+  (`unindexed` is 0 on both corpora), which cost 645.9 → 441.2 µs on x86 — so
+  the earlier "~97 % of an 8 KiB lookup is the unindexed scan, ≈176 µs fixed +
+  67 µs per unindexed rule" model was wrong. It came from a two-point fit across
+  corpora differing 26× in rule count, which charged the entire gap to the
+  unindexed term; removing that term alone moved **32 %**. The remaining cost
+  was candidate rules each scanning the URL for their first byte a byte at a
+  time — ~3 µs apiece at 8 KiB, against 124 candidates — and SIMD (`memchr`)
+  is what removed it.
 - 10k QPS is ~100× a busy household's peak; the headroom is the proof of
   efficiency, and it's what keeps p99 flat at real loads.
 - Budgets are compared against `main` on every perf-relevant change; a >10%
@@ -330,14 +336,23 @@ read-write.
 
 Two rules that a wrong number has already been traced to:
 
-- **Sample `/system/resource/print` *during* the run, not before or after.** The
-  clock is not a constant: a single busy core has been measured at 350 MHz
-  against a 1.4 GHz nominal (§Budgets). A µs figure quoted without the
-  concurrent frequency reading cannot be checked by anyone, including its
-  author, and the difference is up to 4×.
+- **Report the CPU frequency as a methodology note, never as a calibration
+  input.** Dynamic frequency scaling is enabled. The startup frequency reported
+  by `scaling_cur_freq` is informational only and must not be interpreted as
+  the frequency used during the benchmark. Frequency sampled during execution
+  showed boosts up to 1400 MHz and a return to 350 MHz after the workload
+  completed.
+- **Sample `/system/resource/print` *during* the run, not before or after** —
+  and record the samples, because a single reading proves nothing either way.
+  What the samples are *for* is documenting conditions, not scaling results:
+  §Budgets shows two runs reporting 350 MHz and 1400 MHz that a control arm
+  proves ran at the same effective speed.
+- **Carry a control arm through every on-device comparison.** One measurement
+  the change under test barely touches, run in the same session. It is the only
+  thing that separates "the code got faster" from "the device was in a
+  different state", and it is what caught the frequency field misleading us.
 - **Size the probe to hold a core busy long enough to sample** — tens of
-  seconds, not a burst. A probe that finishes before the governor could react
-  reports the idle clock and nobody can tell.
+  seconds, not a burst.
 
 Convert rather than re-measure where you can: the **~9× x86 → RB5009 factor**
 in §Budgets was flat across three orders of magnitude, so a pinned dev-box
