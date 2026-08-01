@@ -8,7 +8,7 @@
 use std::sync::Arc;
 use std::time::SystemTime;
 
-use fah_model::{QueryType, Verdict};
+use fah_model::{PolicyId, QueryType, Verdict};
 use serde::{Deserialize, Serialize};
 
 use crate::bucket::{qtype_index, BucketView, HourlyBuckets, HourlyTypeCounts};
@@ -24,6 +24,83 @@ pub(crate) struct Aggregates {
     /// snapshot still loads — the per-type series just starts empty.
     #[serde(default)]
     type_counts: HourlyTypeCounts,
+    /// Per-policy rolling counts (p2-06). `#[serde(default)]` so a pre-p2-06
+    /// snapshot still loads.
+    #[serde(default)]
+    per_policy: PolicyCounters,
+}
+
+/// One rolling 24h counter per policy, keyed by the policy's configured id.
+///
+/// Capped at [`PolicyId::MAX`], which is the ceiling on policies anyway — so
+/// an id arriving beyond it (a policy deleted and re-created under load) is
+/// dropped rather than growing the map without bound (hard rule 4).
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub(crate) struct PolicyCounters {
+    entries: Vec<(Arc<str>, HourlyBuckets)>,
+}
+
+/// What `/stats` reports per policy.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct PolicyCount {
+    pub policy: Arc<str>,
+    pub queries: u64,
+    pub blocked: u64,
+}
+
+/// The id the default policy is counted under, since an event that names no
+/// policy is one the default decided.
+pub(crate) const DEFAULT_POLICY_LABEL: &str = "default";
+
+impl PolicyCounters {
+    fn record(&mut self, policy: Option<&str>, at: SystemTime, blocked: bool) {
+        let policy = policy.unwrap_or(DEFAULT_POLICY_LABEL);
+        if let Some((_, buckets)) = self
+            .entries
+            .iter_mut()
+            .find(|(id, _)| id.as_ref() == policy)
+        {
+            buckets.record(at, blocked, false);
+            return;
+        }
+        if self.entries.len() >= PolicyId::MAX {
+            return;
+        }
+        let mut buckets = HourlyBuckets::new();
+        buckets.record(at, blocked, false);
+        self.entries.push((Arc::from(policy), buckets));
+    }
+
+    fn snapshot(&self, now: SystemTime) -> Vec<PolicyCount> {
+        let mut counts: Vec<PolicyCount> = self
+            .entries
+            .iter()
+            .map(|(policy, buckets)| {
+                let totals = buckets.totals(now);
+                PolicyCount {
+                    policy: Arc::clone(policy),
+                    queries: totals.queries,
+                    blocked: totals.blocked,
+                }
+            })
+            .filter(|count| count.queries > 0)
+            .collect();
+        counts.sort_by(|a, b| {
+            b.queries
+                .cmp(&a.queries)
+                .then_with(|| a.policy.cmp(&b.policy))
+        });
+        counts
+    }
+
+    fn heap_bytes(&self) -> usize {
+        self.entries.capacity() * std::mem::size_of::<(Arc<str>, HourlyBuckets)>()
+            + self
+                .entries
+                .iter()
+                .map(|(policy, _)| policy.len())
+                .sum::<usize>()
+    }
 }
 
 impl Aggregates {
@@ -32,7 +109,10 @@ impl Aggregates {
     /// their own inline size once here and allocate nothing further; only the
     /// two bounded domain counters own heap.
     pub(crate) fn heap_bytes(&self) -> usize {
-        std::mem::size_of::<Self>() + self.top_blocked.heap_bytes() + self.top_queried.heap_bytes()
+        std::mem::size_of::<Self>()
+            + self.top_blocked.heap_bytes()
+            + self.top_queried.heap_bytes()
+            + self.per_policy.heap_bytes()
     }
 
     pub fn record(
@@ -51,6 +131,17 @@ impl Aggregates {
         }
         self.buckets.record(at, blocked, cache_hit);
         self.type_counts.record(at, qtype_index(qtype));
+    }
+
+    /// Counts one decision against the policy that made it. Separate from
+    /// [`Self::record`] because HTTP requests feed this but deliberately not the
+    /// domain tables (see `Stats::record_http`).
+    pub fn record_policy(&mut self, policy: Option<&str>, blocked: bool, at: SystemTime) {
+        self.per_policy.record(policy, at, blocked);
+    }
+
+    pub fn policies(&self, now: SystemTime) -> Vec<PolicyCount> {
+        self.per_policy.snapshot(now)
     }
 
     /// Completed-hour rollups for the history writer: joins each completed

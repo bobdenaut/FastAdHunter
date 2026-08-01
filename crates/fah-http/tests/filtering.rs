@@ -14,7 +14,7 @@ use bytes::Bytes;
 use fah_common::egress::{AllowedNet, DestinationPolicy};
 use fah_common::resolve::{HostResolver, Resolving};
 use fah_model::{Event, EventKind, ResourceType, Verdict};
-use fah_rules::{Matcher, MatcherBuilder};
+use fah_rules::{Matcher, MatcherBuilder, PolicySet, PolicyState};
 use http_body_util::{BodyExt, Full};
 use hyper::header::{ACCEPT, CACHE_CONTROL, CONTENT_TYPE, HOST, REFERER};
 use hyper::service::service_fn;
@@ -425,6 +425,157 @@ async fn a_full_event_channel_sheds_rather_than_stalling_the_request() {
         stats.dropped_events > 0,
         "a full channel must shed and count, not block"
     );
+}
+
+// ─── Per-client policy (p2-06) ────────────────────────────────────────────
+
+/// Compiles `lines` under `policies`, exactly as the list lifecycle does.
+fn rules_under(lines: &str, policies: &PolicySet) -> Arc<dyn fah_http::Ruleset> {
+    let parsed = fah_rules::parse_rule_list(lines);
+    let mut builder = MatcherBuilder::new();
+    builder.set_policy_universe(policies.universe());
+    builder.add_parsed_list_masked("test-list", &parsed, policies.mask_for_list("test-list"));
+    Arc::new(FixedRules(Arc::new(builder.build())))
+}
+
+fn policy_config(id: &str, lists: &[&str], client: &str) -> fah_config::PolicyConfig {
+    fah_config::PolicyConfig {
+        id: id.to_string(),
+        name: None,
+        lists: Some(lists.iter().map(|l| l.to_string()).collect()),
+        blocking_mode: None,
+        assignments: vec![fah_config::AssignmentConfig {
+            client: client.to_string(),
+            days: None,
+            start: None,
+            end: None,
+        }],
+    }
+}
+
+/// Binds the proxy on the dual-stack wildcard so two *different* loopback
+/// clients can reach it — `127.0.0.1` and `::1` are the only two distinct
+/// source addresses available in a test.
+async fn spawn_dual_stack_proxy(proxy: Arc<Proxy>) -> u16 {
+    // `fah_common::bind_tcp`, not `TcpListener::bind`: Windows defaults
+    // `IPV6_V6ONLY` on, so a raw `[::]` bind would refuse the v4 client.
+    let listener = fah_common::listen::bind_tcp("[::]:0".parse().unwrap())
+        .await
+        .unwrap();
+    let port = listener.local_addr().unwrap().port();
+    tokio::spawn(async move {
+        loop {
+            let Ok((stream, peer)) = listener.accept().await else {
+                return;
+            };
+            let proxy = Arc::clone(&proxy);
+            tokio::spawn(async move { proxy.serve_connection(stream, peer).await });
+        }
+    });
+    port
+}
+
+/// The DoD scenario on the HTTP side: one client's policy carries the
+/// blocklist, the other's does not — same URL, two outcomes.
+#[tokio::test]
+async fn two_clients_on_two_policies_get_different_verdicts_for_one_url() {
+    let (origin, accepts) = origin().await;
+    let policies = PolicySet::from_config(
+        "UTC",
+        &[
+            // The IPv4 loopback client sees the list; the IPv6 one does not.
+            policy_config("kids", &["test-list"], "127.0.0.1"),
+            policy_config("open", &["nothing"], "::1"),
+        ],
+    )
+    .unwrap();
+    let state = Arc::new(PolicyState::default());
+    state.publish(policies.active_at(0, &[]));
+
+    let proxy = proxy_with(
+        origin.port(),
+        origin.ip(),
+        Some(rules_under("||ads.example.com^\n", &policies)),
+        None,
+    );
+    // `proxy_with` returns an `Arc`; rebuild it with the policy state attached.
+    let proxy = Arc::new(
+        Arc::try_unwrap(proxy)
+            .unwrap_or_else(|_| unreachable!("sole owner"))
+            .with_policies(Arc::clone(&state)),
+    );
+    let port = spawn_dual_stack_proxy(proxy).await;
+
+    let blocked = send(
+        SocketAddr::new("127.0.0.1".parse().unwrap(), port),
+        request("/pixel.gif", "ads.example.com")
+            .header(ACCEPT, "image/webp,*/*")
+            .body(Full::new(Bytes::new()))
+            .unwrap(),
+    )
+    .await;
+    assert!(blocked.2.is_empty(), "the kids client is blocked");
+    assert_eq!(accepts.load(Ordering::Relaxed), 0);
+
+    let allowed = send(
+        SocketAddr::new("::1".parse().unwrap(), port),
+        request("/pixel.gif", "ads.example.com")
+            .body(Full::new(Bytes::new()))
+            .unwrap(),
+    )
+    .await;
+    assert_eq!(
+        &allowed.2[..],
+        b"ORIGIN PAYLOAD",
+        "the open client's policy enables no list, so the fetch goes through"
+    );
+    assert_eq!(accepts.load(Ordering::Relaxed), 1);
+}
+
+/// A v4 client arriving through the dual-stack listener is reported as
+/// `::ffff:127.0.0.1`. It must be canonicalized before anything looks at it,
+/// or a policy assigned to the v4 address never matches — and the same device
+/// appears twice in the query log, once per pipeline.
+#[tokio::test]
+async fn a_v4_mapped_peer_matches_its_v4_policy_assignment() {
+    let (origin, accepts) = origin().await;
+    let policies =
+        PolicySet::from_config("UTC", &[policy_config("kids", &["test-list"], "127.0.0.1")])
+            .unwrap();
+    let state = Arc::new(PolicyState::default());
+    state.publish(policies.active_at(0, &[]));
+
+    // The list is visible only to `kids`, so a block proves the assignment
+    // matched — the default policy would not see this rule.
+    let mut only_kids = policies.mask_for_list("test-list");
+    only_kids &= !fah_model::PolicyId::DEFAULT.bit();
+    let parsed = fah_rules::parse_rule_list("||ads.example.com^\n");
+    let mut builder = MatcherBuilder::new();
+    builder.set_policy_universe(policies.universe());
+    builder.add_parsed_list_masked("test-list", &parsed, only_kids);
+    let rules: Arc<dyn fah_http::Ruleset> = Arc::new(FixedRules(Arc::new(builder.build())));
+
+    let proxy = proxy_with(origin.port(), origin.ip(), Some(rules), None);
+    let proxy = Arc::new(
+        Arc::try_unwrap(proxy)
+            .unwrap_or_else(|_| unreachable!("sole owner"))
+            .with_policies(state),
+    );
+    let port = spawn_dual_stack_proxy(proxy).await;
+
+    let (_, _, body) = send(
+        SocketAddr::new("127.0.0.1".parse().unwrap(), port),
+        request("/pixel.gif", "ads.example.com")
+            .header(ACCEPT, "image/webp,*/*")
+            .body(Full::new(Bytes::new()))
+            .unwrap(),
+    )
+    .await;
+    assert!(
+        body.is_empty(),
+        "the v4-mapped peer must resolve to the 127.0.0.1 assignment"
+    );
+    assert_eq!(accepts.load(Ordering::Relaxed), 0);
 }
 
 // ─── No ruleset attached: p2-02 behaviour is preserved ────────────────────

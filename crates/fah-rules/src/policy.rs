@@ -22,6 +22,7 @@
 //! other list, so [`crate::MatcherBuilder`] unions the masks of every list a
 //! duplicate arrives from.
 
+use std::collections::HashMap;
 use std::net::IpAddr;
 use std::sync::Arc;
 
@@ -185,6 +186,17 @@ impl PolicySet {
             .map(|compiled| &compiled.policy)
     }
 
+    /// Every policy bit that exists, for
+    /// [`crate::MatcherBuilder::set_policy_universe`]. A policy enabling none
+    /// of the compiled lists still has a bit here, which is what stops the
+    /// builder from mistaking "sees nothing" for "sees everything".
+    pub fn universe(&self) -> u16 {
+        if self.is_default_only() {
+            return ALL_POLICIES;
+        }
+        (0..self.policies.len()).fold(0u16, |acc, index| acc | PolicyId(index as u8).bit())
+    }
+
     /// The mask of policies that can see rules from `list` — what
     /// [`crate::MatcherBuilder::add_parsed_list_masked`] stamps on each record.
     ///
@@ -242,6 +254,157 @@ impl PolicySet {
             }
         }
         PolicyId::DEFAULT
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct ActiveAssignment {
+    /// Never [`ClientSelector::Name`]: names are resolved to addresses when the
+    /// snapshot is built, so the query path compares no strings.
+    selector: ClientSelector,
+    policy: PolicyId,
+}
+
+/// The client → policy mapping in force at one instant — schedules evaluated,
+/// names resolved, most-specific first. This is what makes per-query
+/// resolution a read rather than a computation (p2-06). [`Default`] is the
+/// zero-config shape: every client gets [`PolicyId::DEFAULT`].
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct ActivePolicies {
+    assignments: Vec<ActiveAssignment>,
+    /// Each policy's configured id, indexed by [`PolicyId`]. The default's slot
+    /// is `None` — there is no decision to report when nothing was assigned.
+    ids: Vec<Option<Arc<str>>>,
+    /// For `$client=<name>` rules. Bounded by the client registry's capacity
+    /// and only read when some rule names a client
+    /// ([`crate::Matcher::has_named_client_scopes`]).
+    names: HashMap<IpAddr, Arc<str>>,
+}
+
+impl ActivePolicies {
+    /// Which policy judges this client. The hot-path entry point: integer
+    /// comparisons over a short array, no allocation.
+    #[inline]
+    pub fn policy_for(&self, ip: IpAddr) -> PolicyId {
+        for active in &self.assignments {
+            if active.selector.matches(ip, None) {
+                return active.policy;
+            }
+        }
+        PolicyId::DEFAULT
+    }
+
+    #[inline]
+    pub fn name_of(&self, ip: IpAddr) -> Option<&str> {
+        if self.names.is_empty() {
+            return None;
+        }
+        self.names.get(&ip).map(|name| &**name)
+    }
+
+    /// Reporting id, `None` for the default — what an event carries.
+    #[inline]
+    pub fn id_of(&self, policy: PolicyId) -> Option<Arc<str>> {
+        self.ids.get(policy.index()).cloned().flatten()
+    }
+
+    /// Nothing assigned to anybody: the pipelines skip resolution entirely.
+    pub fn is_empty(&self) -> bool {
+        self.assignments.is_empty()
+    }
+
+    pub fn len(&self) -> usize {
+        self.assignments.len()
+    }
+}
+
+/// The published [`ActivePolicies`], swapped atomically.
+///
+/// Owned by the binary, read by both pipelines: this crate compiles policies
+/// and answers verdicts, it does not decide when a schedule is re-evaluated or
+/// where client names come from.
+#[derive(Debug, Default)]
+pub struct PolicyState {
+    active: arc_swap::ArcSwap<ActivePolicies>,
+}
+
+impl PolicyState {
+    /// What is in force right now — an atomic-swap read, like
+    /// [`crate::ListManager::matcher`].
+    pub fn current(&self) -> Arc<ActivePolicies> {
+        self.active.load_full()
+    }
+
+    /// Publishes a snapshot, if it differs from the one already live. Every
+    /// tick outside a schedule boundary finds no difference, so readers keep
+    /// one `Arc` for hours and the transient dies at once (hard rule 4).
+    /// Returns whether it published.
+    pub fn publish(&self, next: ActivePolicies) -> bool {
+        if *self.current() == next {
+            return false;
+        }
+        self.active.store(Arc::new(next));
+        true
+    }
+
+    /// Rebuilds against the wall clock and publishes — the one place the
+    /// snapshot is built, so the binary's tick and the API's write-through
+    /// cannot drift.
+    pub fn refresh(&self, policies: &PolicySet, named: &[(IpAddr, Arc<str>)]) -> bool {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::SystemTime::UNIX_EPOCH)
+            .map_or(0, |since| since.as_secs() as i64);
+        self.publish(policies.active_at(now, named))
+    }
+}
+
+impl PolicySet {
+    /// Evaluates every schedule and resolves every name selector against
+    /// `named`.
+    pub fn active_at(&self, now_unix_seconds: i64, named: &[(IpAddr, Arc<str>)]) -> ActivePolicies {
+        let local = self.timezone.local(now_unix_seconds);
+        let mut assignments = Vec::new();
+
+        // `self.assignments` is already most-specific first; filtering and name
+        // expansion both preserve that order.
+        for compiled in &self.assignments {
+            let active = match compiled.assignment.schedule {
+                None => true,
+                Some(schedule) => schedule.contains(local.weekday, local.minute_of_day),
+            };
+            if !active {
+                continue;
+            }
+            match &compiled.assignment.client {
+                ClientSelector::Name(wanted) => {
+                    for (ip, name) in named {
+                        if name.eq_ignore_ascii_case(wanted) {
+                            assignments.push(ActiveAssignment {
+                                selector: ClientSelector::Ip(*ip),
+                                policy: compiled.policy,
+                            });
+                        }
+                    }
+                }
+                selector => assignments.push(ActiveAssignment {
+                    selector: selector.clone(),
+                    policy: compiled.policy,
+                }),
+            }
+        }
+
+        ActivePolicies {
+            assignments,
+            ids: self
+                .policies
+                .iter()
+                .enumerate()
+                .map(|(index, compiled)| {
+                    (index > 0).then(|| Arc::from(compiled.policy.id.as_str()))
+                })
+                .collect(),
+            names: named.iter().cloned().collect(),
+        }
     }
 }
 
@@ -366,6 +529,14 @@ impl ClientScope {
             terms,
             has_positive,
         })
+    }
+
+    /// Whether any term names a client rather than addressing one — see
+    /// [`crate::Matcher::has_named_client_scopes`].
+    pub(crate) fn names_a_client(&self) -> bool {
+        self.terms
+            .iter()
+            .any(|term| matches!(term.selector, ClientSelector::Name(_)))
     }
 
     /// Bytes this scope holds, for `Matcher::heap_bytes`.
@@ -679,6 +850,105 @@ mod tests {
         // One malformed prefix poisons the whole payload: applying the rest
         // would apply the rule more widely than it was written.
         assert!(ClientScope::parse("192.168.1.0/99").is_none());
+    }
+
+    // ── the precomputed snapshot (p2-06) ──────────────────────────────────
+
+    fn kids_on_school_nights() -> PolicyConfig {
+        let mut kids = policy("kids", None);
+        kids.assignments.push(AssignmentConfig {
+            client: "192.168.1.50".to_string(),
+            days: Some("mon-fri".to_string()),
+            start: Some("21:00".to_string()),
+            end: Some("07:00".to_string()),
+        });
+        kids
+    }
+
+    /// The snapshot must answer what `resolve` answers — it is the same
+    /// decision with the clock taken out, not a second implementation.
+    #[test]
+    fn the_snapshot_agrees_with_resolve_at_the_instant_it_was_taken() {
+        let mut guest = policy("guest", None);
+        guest.assignments.push(assign("192.168.1.0/24"));
+        let set = PolicySet::from_config("UTC", &[kids_on_school_nights(), guest]).unwrap();
+
+        for instant in [MONDAY_EVENING, SATURDAY_NOON] {
+            let active = set.active_at(instant, &[]);
+            for host in ["192.168.1.50", "192.168.1.51", "10.9.9.9"] {
+                assert_eq!(
+                    active.policy_for(ip(host)),
+                    set.resolve(ip(host), None, instant),
+                    "{host} at {instant}"
+                );
+            }
+        }
+    }
+
+    /// The whole point: a window closing changes the verdict without anything
+    /// being reconfigured, and without a query doing time arithmetic.
+    #[test]
+    fn a_schedule_boundary_changes_the_snapshot_and_nothing_else() {
+        let set = PolicySet::from_config("UTC", &[kids_on_school_nights()]).unwrap();
+        let client = ip("192.168.1.50");
+
+        let inside = set.active_at(MONDAY_EVENING, &[]);
+        assert_eq!(inside.policy_for(client), set.id_of("kids").unwrap());
+        assert_eq!(inside.len(), 1);
+
+        let outside = set.active_at(SATURDAY_NOON, &[]);
+        assert_eq!(outside.policy_for(client), PolicyId::DEFAULT);
+        assert!(outside.is_empty());
+    }
+
+    /// A name selector is resolved to addresses at snapshot time, so the query
+    /// path never needs the client registry.
+    #[test]
+    fn a_name_assignment_resolves_to_the_addresses_carrying_that_name() {
+        let mut kids = policy("kids", None);
+        kids.assignments.push(assign("Laptop"));
+        let set = PolicySet::from_config("UTC", &[kids]).unwrap();
+        let named = [(ip("10.0.0.9"), Arc::<str>::from("laptop"))];
+
+        let active = set.active_at(SATURDAY_NOON, &named);
+        assert_eq!(
+            active.policy_for(ip("10.0.0.9")),
+            set.id_of("kids").unwrap()
+        );
+        assert_eq!(active.policy_for(ip("10.0.0.8")), PolicyId::DEFAULT);
+        // And the name itself is available, for `$client=laptop` rules.
+        assert_eq!(active.name_of(ip("10.0.0.9")), Some("laptop"));
+
+        // Nobody named: the assignment matches nothing, as it does in `resolve`.
+        assert!(set.active_at(SATURDAY_NOON, &[]).is_empty());
+    }
+
+    /// A name outranks an address even after being resolved into one.
+    #[test]
+    fn a_resolved_name_keeps_its_specificity_over_a_host_assignment() {
+        let mut by_name = policy("kids", None);
+        by_name.assignments.push(assign("Laptop"));
+        let mut by_address = policy("guest", None);
+        by_address.assignments.push(assign("10.0.0.9"));
+
+        let set = PolicySet::from_config("UTC", &[by_address, by_name]).unwrap();
+        let named = [(ip("10.0.0.9"), Arc::<str>::from("laptop"))];
+        assert_eq!(
+            set.active_at(SATURDAY_NOON, &named)
+                .policy_for(ip("10.0.0.9")),
+            set.id_of("kids").unwrap()
+        );
+    }
+
+    #[test]
+    fn only_a_configured_policy_reports_an_id() {
+        let set = PolicySet::from_config("UTC", &[policy("kids", None)]).unwrap();
+        let active = set.active_at(SATURDAY_NOON, &[]);
+        assert_eq!(active.id_of(PolicyId::DEFAULT), None);
+        assert_eq!(
+            active.id_of(set.id_of("kids").unwrap()).as_deref(),
+            Some("kids")
+        );
     }
 
     /// A rule scoped by name still applies to a client identified only by name.

@@ -12,7 +12,7 @@ use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post, put};
 use axum::{Json, Router};
-use fah_config::RuleListConfig;
+use fah_config::{AssignmentConfig, PolicyConfig, RuleListConfig};
 use fah_model::{HistoryRange, HistoryResolution, TopKind};
 use fah_rules::{ListPatch, ListStatus, RefreshResult};
 
@@ -45,6 +45,10 @@ const MAX_TOP_N: usize = 100;
 const DEFAULT_SERIES_WINDOW: Duration = Duration::from_secs(24 * 3600);
 const DEFAULT_TOP_WINDOW: Duration = Duration::from_secs(7 * 24 * 3600);
 
+/// What an unassigned client is reported as (CONTEXT.md §Policy). Spelled once
+/// so the stats row, the `?policy=` filter and `rules/test` agree.
+const DEFAULT_POLICY: &str = "default";
+
 pub fn router(state: Arc<AppState>) -> Router {
     let v1 = Router::new()
         .route("/stats", get(stats))
@@ -63,6 +67,17 @@ pub fn router(state: Arc<AppState>) -> Router {
             axum::routing::patch(patch_list).delete(delete_list),
         )
         .route("/lists/{id}/refresh", post(refresh_list))
+        .route("/policies", get(policies).post(create_policy))
+        .route(
+            "/policies/{id}",
+            axum::routing::patch(patch_policy).delete(delete_policy),
+        )
+        .route(
+            "/clients/{ip}/policy",
+            get(get_client_policy)
+                .put(set_client_policy)
+                .delete(clear_client_policy),
+        )
         .route("/rules/user", get(get_user_rules).put(put_user_rules))
         .route("/rules/test", post(test_rule))
         .route("/cache", get(cache_stats))
@@ -242,6 +257,7 @@ fn parse_query_params(params: &HashMap<String, String>) -> ApiResult<QueryLogReq
         from: timestamp_param(params, "from")?,
         to: timestamp_param(params, "to")?,
         kind,
+        policy: params.get("policy").cloned(),
     })
 }
 
@@ -439,11 +455,14 @@ async fn set_client_name(
     // An empty name is a clear, not a client literally named "".
     let name = body.name.filter(|name| !name.trim().is_empty());
 
-    state
+    let entry = state
         .stats
         .set_client_name(ip, name)
-        .map(|entry| Json(entry.into()))
-        .ok_or_else(|| ApiError::NotFound(format!("no client seen at {ip}")))
+        .ok_or_else(|| ApiError::NotFound(format!("no client seen at {ip}")))?;
+    // A rename can move the client into or out of a name assignment, and the
+    // snapshot resolved names when it was built.
+    republish_policies(&state);
+    Ok(Json(entry.into()))
 }
 
 // ─── Rule lists ────────────────────────────────────────────────────────
@@ -853,6 +872,298 @@ fn unknown_list(id: &str, err: fah_rules::LifecycleError) -> ApiError {
     }
 }
 
+// ─── Policies ──────────────────────────────────────────────────────────
+
+async fn policies(State(state): State<Arc<AppState>>) -> Json<PoliciesResponse> {
+    let config = state.config.current();
+    Json(PoliciesResponse {
+        timezone: config.schedule.timezone.clone(),
+        items: config.policies.iter().map(policy_response).collect(),
+        active_assignments: state.policies.current().len(),
+    })
+}
+
+fn policy_response(config: &PolicyConfig) -> PolicyResponse {
+    PolicyResponse {
+        id: config.id.clone(),
+        name: config.name.clone().unwrap_or_else(|| config.id.clone()),
+        lists: config.lists.clone(),
+        blocking_mode: config.blocking_mode.clone(),
+        assignments: config.assignments.iter().map(assignment_response).collect(),
+    }
+}
+
+fn assignment_response(config: &AssignmentConfig) -> AssignmentResponse {
+    AssignmentResponse {
+        client: config.client.clone(),
+        days: config.days.clone(),
+        start: config.start.clone(),
+        end: config.end.clone(),
+    }
+}
+
+fn assignment_config(body: &AssignmentResponse) -> AssignmentConfig {
+    AssignmentConfig {
+        client: body.client.clone(),
+        days: body.days.clone(),
+        start: body.start.clone(),
+        end: body.end.clone(),
+    }
+}
+
+async fn create_policy(
+    State(state): State<Arc<AppState>>,
+    Json(body): Json<CreatePolicyRequest>,
+) -> ApiResult<(StatusCode, Json<PolicyResponse>)> {
+    validate_policy_id(&body.id)?;
+
+    let _guard = state.policy_mutations.lock().await;
+    let mut next = state.config.current().policies.clone();
+    if next.iter().any(|policy| policy.id == body.id) {
+        return Err(ApiError::Conflict(format!(
+            "policy {} already exists",
+            body.id
+        )));
+    }
+    next.push(PolicyConfig {
+        id: body.id,
+        name: body.name,
+        lists: body.lists,
+        blocking_mode: body.blocking_mode,
+        assignments: body.assignments.iter().map(assignment_config).collect(),
+    });
+
+    // A new policy adds a bit to every rule's mask, so the ruleset has to be
+    // rebuilt before it can decide anything.
+    apply_policies(&state, next, Recompile::Yes).await?;
+    let config = state.config.current();
+    let created = config
+        .policies
+        .last()
+        .expect("the policy just persisted is present");
+    Ok((StatusCode::CREATED, Json(policy_response(created))))
+}
+
+async fn patch_policy(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+    Json(body): Json<PatchPolicyRequest>,
+) -> ApiResult<Json<PolicyResponse>> {
+    let _guard = state.policy_mutations.lock().await;
+    let mut next = state.config.current().policies.clone();
+    let target = next
+        .iter_mut()
+        .find(|policy| policy.id == id)
+        .ok_or_else(|| ApiError::NotFound(format!("no such policy: {id}")))?;
+
+    if let Some(name) = body.name {
+        target.name = Some(name);
+    }
+    // Only a `lists` change moves the masks; everything else here is a
+    // read of the policy set, not of the compiled ruleset.
+    let mut recompile = Recompile::No;
+    if let Some(lists) = body.lists {
+        if target.lists != lists {
+            recompile = Recompile::Yes;
+        }
+        target.lists = lists;
+    }
+    if let Some(mode) = body.blocking_mode {
+        target.blocking_mode = mode;
+    }
+    if let Some(assignments) = body.assignments {
+        target.assignments = assignments.iter().map(assignment_config).collect();
+    }
+
+    apply_policies(&state, next, recompile).await?;
+    let config = state.config.current();
+    let updated = config
+        .policies
+        .iter()
+        .find(|policy| policy.id == id)
+        .expect("the policy just persisted is present");
+    Ok(Json(policy_response(updated)))
+}
+
+async fn delete_policy(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+) -> ApiResult<StatusCode> {
+    let _guard = state.policy_mutations.lock().await;
+    let mut next = state.config.current().policies.clone();
+    let before = next.len();
+    next.retain(|policy| policy.id != id);
+    if next.len() == before {
+        return Err(ApiError::NotFound(format!("no such policy: {id}")));
+    }
+
+    apply_policies(&state, next, Recompile::Yes).await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+async fn get_client_policy(
+    State(state): State<Arc<AppState>>,
+    Path(ip): Path<String>,
+) -> ApiResult<Json<ClientPolicyResponse>> {
+    let ip = parse_ip(&ip)?;
+    Ok(Json(client_policy_response(&state, ip)))
+}
+
+async fn set_client_policy(
+    State(state): State<Arc<AppState>>,
+    Path(ip): Path<String>,
+    Json(body): Json<ClientPolicyRequest>,
+) -> ApiResult<Json<ClientPolicyResponse>> {
+    let ip = parse_ip(&ip)?;
+    let assignment = AssignmentResponse {
+        client: ip.to_string(),
+        days: body.days,
+        start: body.start,
+        end: body.end,
+    };
+
+    let _guard = state.policy_mutations.lock().await;
+    let mut next = state.config.current().policies.clone();
+    // One assignment per address: the same client listed under two policies
+    // would resolve by config order, which is not something an operator
+    // asking "put this device on kids" is choosing.
+    for policy in &mut next {
+        policy
+            .assignments
+            .retain(|existing| existing.client != assignment.client);
+    }
+    let target = next
+        .iter_mut()
+        .find(|policy| policy.id == body.policy)
+        .ok_or_else(|| ApiError::NotFound(format!("no such policy: {}", body.policy)))?;
+    target.assignments.push(assignment_config(&assignment));
+
+    // An assignment changes no mask — no recompile, so this is live in
+    // milliseconds rather than seconds.
+    apply_policies(&state, next, Recompile::No).await?;
+    Ok(Json(client_policy_response(&state, ip)))
+}
+
+async fn clear_client_policy(
+    State(state): State<Arc<AppState>>,
+    Path(ip): Path<String>,
+) -> ApiResult<StatusCode> {
+    let ip = parse_ip(&ip)?;
+    let client = ip.to_string();
+
+    let _guard = state.policy_mutations.lock().await;
+    let mut next = state.config.current().policies.clone();
+    let before: usize = next.iter().map(|policy| policy.assignments.len()).sum();
+    for policy in &mut next {
+        policy
+            .assignments
+            .retain(|existing| existing.client != client);
+    }
+    let after: usize = next.iter().map(|policy| policy.assignments.len()).sum();
+    if before == after {
+        return Err(ApiError::NotFound(format!("no assignment for {ip}")));
+    }
+
+    apply_policies(&state, next, Recompile::No).await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+/// What the client is judged under *now* — read from the live snapshot, not
+/// re-derived, so it reflects an open or closed schedule window.
+fn client_policy_response(state: &AppState, ip: IpAddr) -> ClientPolicyResponse {
+    let active = state.policies.current();
+    let policy = active
+        .id_of(active.policy_for(ip))
+        .map_or_else(|| DEFAULT_POLICY.to_string(), |id| id.to_string());
+    let client = ip.to_string();
+    let assignment = state
+        .config
+        .current()
+        .policies
+        .iter()
+        .flat_map(|policy| &policy.assignments)
+        .find(|existing| existing.client == client)
+        .map(assignment_response);
+    ClientPolicyResponse {
+        ip,
+        policy,
+        assignment,
+    }
+}
+
+/// Whether a policy edit moved the per-rule masks and so needs the ruleset
+/// rebuilt. Seconds of ARM CPU, so it is stated at every call site.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Recompile {
+    Yes,
+    No,
+}
+
+/// Persists a policy set and applies it — the single write path behind every
+/// handler above.
+///
+/// Compiles before persisting, so a set the engine would reject never reaches
+/// the file. Publishing the snapshot is last and unconditional: an assignment
+/// is live when this returns.
+async fn apply_policies(
+    state: &AppState,
+    policies: Vec<PolicyConfig>,
+    recompile: Recompile,
+) -> ApiResult<()> {
+    let timezone = state.config.current().schedule.timezone.clone();
+    let compiled = fah_rules::PolicySet::from_config(&timezone, &policies)
+        .map_err(|err| ApiError::ValidationFailed(err.to_string()))?;
+
+    let patch = serde_json::json!({ "policies": policies });
+    state
+        .config
+        .apply_patch(&patch)
+        .map_err(|err| ApiError::ValidationFailed(err.to_string()))?;
+
+    state.rules.set_policies(compiled);
+    if recompile == Recompile::Yes {
+        state.rules.recompile().await;
+    }
+    republish_policies(state);
+    Ok(())
+}
+
+/// Rebuilds the live client → policy snapshot. Also called after a timezone
+/// change and after a client is renamed, both of which move assignments
+/// without touching the policy set.
+pub(crate) fn republish_policies(state: &AppState) {
+    state
+        .policies
+        .refresh(&state.rules.policies(), &state.stats.named_clients());
+}
+
+/// Policy ids appear in TOML keys, API paths and metric labels, so the
+/// alphabet is locked down at the boundary like a list id's.
+fn validate_policy_id(id: &str) -> ApiResult<()> {
+    if id == DEFAULT_POLICY {
+        return Err(ApiError::ValidationFailed(format!(
+            "{DEFAULT_POLICY:?} names the implicit policy every unassigned client \
+             already gets and cannot be redefined"
+        )));
+    }
+    let alphabet_ok = !id.is_empty()
+        && id.bytes().all(|b| {
+            b.is_ascii_lowercase() || b.is_ascii_digit() || matches!(b, b'.' | b'_' | b'-')
+        });
+    if alphabet_ok && !id.starts_with('.') {
+        return Ok(());
+    }
+    Err(ApiError::ValidationFailed(format!(
+        "invalid policy id {id:?}: use lowercase letters, digits, '.', '_' or '-', \
+         and do not start with '.'"
+    )))
+}
+
+fn parse_ip(raw: &str) -> ApiResult<IpAddr> {
+    raw.parse()
+        .map_err(|_| ApiError::BadRequest(format!("{raw:?} is not an IP address")))
+}
+
 // ─── Rules ─────────────────────────────────────────────────────────────
 
 async fn get_user_rules(State(state): State<Arc<AppState>>) -> Json<UserRulesBody> {
@@ -946,24 +1257,60 @@ async fn test_rule(
         .as_deref()
         .map_or(fah_model::QueryType::A, parse_qtype);
 
-    let verdict = state.rules.matcher().verdict(&domain, &qtype);
-    let (verdict, rule, list) = match verdict {
-        fah_model::Verdict::Block(decisive) => (
-            "block",
-            Some(decisive.rule.to_string()),
-            Some(decisive.list.to_string()),
-        ),
-        fah_model::Verdict::Allow(decisive) => (
-            "allow",
-            Some(decisive.rule.to_string()),
-            Some(decisive.list.to_string()),
-        ),
-        fah_model::Verdict::Pass => ("pass", None, None),
+    // Whose view to answer from. An explicit `policy` wins over the client's
+    // assignment, so "what would kids see?" is answerable without a device.
+    let matcher = state.rules.matcher();
+    let active = state.policies.current();
+    let mut ctx = match body.client.as_deref().map(str::trim) {
+        Some(client) if !client.is_empty() => match client.parse::<IpAddr>() {
+            Ok(ip) => matcher.context_for(ip, &active),
+            // Not an address, so it is a client name — which selects nothing by
+            // itself, but does satisfy a `$client=<name>` rule.
+            Err(_) => fah_rules::ClientContext {
+                name: Some(client),
+                ..fah_rules::ClientContext::default()
+            },
+        },
+        _ => fah_rules::ClientContext::default(),
+    };
+    if let Some(wanted) = body.policy.as_deref() {
+        ctx.policy = match wanted {
+            DEFAULT_POLICY => fah_model::PolicyId::DEFAULT,
+            id => state
+                .rules
+                .policies()
+                .id_of(id)
+                .ok_or_else(|| ApiError::ValidationFailed(format!("no such policy: {id}")))?,
+        };
+    }
+
+    let decided_by = active
+        .id_of(ctx.policy)
+        .map_or_else(|| DEFAULT_POLICY.to_string(), |id| id.to_string());
+    let (verdict, rule, list) = match matcher.lookup_in(&domain, &qtype, &ctx) {
+        fah_rules::MatchDecision::Block(rule) => {
+            let decisive = matcher.decisive_rule(rule);
+            (
+                "block",
+                Some(decisive.rule.to_string()),
+                Some(decisive.list.to_string()),
+            )
+        }
+        fah_rules::MatchDecision::Allow(rule) => {
+            let decisive = matcher.decisive_rule(rule);
+            (
+                "allow",
+                Some(decisive.rule.to_string()),
+                Some(decisive.list.to_string()),
+            )
+        }
+        fah_rules::MatchDecision::Pass => ("pass", None, None),
     };
     Ok(Json(RuleTestResponse {
         verdict,
         rule,
         list,
+        policy: decided_by,
     }))
 }
 
@@ -1005,6 +1352,18 @@ async fn post_config(
                 .to_string(),
         ));
     }
+    // `[[policies]]` has the same two-writer problem, and the same one owner:
+    // `/policies` recompiles the masks when it has to, which this handler
+    // cannot do.
+    if patch.get("policies").is_some() {
+        return Err(ApiError::ValidationFailed(
+            "policies is not settable here: policies are managed by the \
+             /api/v1/policies endpoints (POST, PATCH, DELETE) and \
+             /api/v1/clients/{ip}/policy, which apply live and write the TOML \
+             back for you"
+                .to_string(),
+        ));
+    }
 
     let outcome = state
         .config
@@ -1019,6 +1378,22 @@ async fn post_config(
     state
         .stats
         .apply_history_config(history.enabled, history.retention_days);
+
+    // `[schedule] timezone` decides when a window is open, so a change has to
+    // recompile the policy set and republish. No ruleset rebuild: the masks
+    // do not depend on the clock. Idempotent, so it runs after every apply.
+    let config = state.config.current();
+    match fah_rules::PolicySet::from_config(&config.schedule.timezone, &config.policies) {
+        Ok(policies) => {
+            state.rules.set_policies(policies);
+            republish_policies(&state);
+        }
+        Err(err) => {
+            // `Config::validate` already passed, so this is a bug rather than
+            // operator error — and the running policies are left untouched.
+            tracing::error!(error = %err, "policies failed to recompile after a config patch");
+        }
+    }
 
     state.events.publish(Event::ConfigChanged {
         restart_required: outcome.restart_required,

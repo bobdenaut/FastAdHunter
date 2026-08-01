@@ -31,6 +31,9 @@ pub trait StatsSource: Send + Sync + 'static {
     fn set_client_name(&self, ip: IpAddr, name: Option<String>) -> Option<ClientEntry>;
     /// One client's name, for decorating live WS query events.
     fn client_name(&self, ip: IpAddr) -> Option<String>;
+    /// Every named client, for resolving name assignments after a policy edit
+    /// (p2-06). Bounded by the registry's capacity; never on a query path.
+    fn named_clients(&self) -> Vec<(IpAddr, std::sync::Arc<str>)>;
     /// Live-applies the runtime-class `[history]` fields after a
     /// `POST /api/v1/config`. Retention moves the next prune's cut-off via an
     /// atomic shared with both history writers; `enabled` toggles the flush —
@@ -142,6 +145,15 @@ pub struct StatsOverview {
     pub top_queried_domains: Vec<DomainCount>,
     pub top_clients: Vec<ClientCount>,
     pub buckets: Vec<BucketCount>,
+    /// Per-policy activity (p2-06).
+    pub policies: Vec<PolicyCount>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PolicyCount {
+    pub policy: String,
+    pub queries: u64,
+    pub blocked: u64,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -186,6 +198,8 @@ pub struct QueryLogRequest {
     pub to: Option<SystemTime>,
     /// `kind=dns|http` (p2-04). `None` returns both.
     pub kind: Option<fah_model::EventKind>,
+    /// `policy=<id>` (p2-06). `"default"` selects unassigned clients.
+    pub policy: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

@@ -15,7 +15,7 @@ use std::time::{Duration, Instant};
 
 use fah_config::DnsCacheConfig;
 use fah_model::{Event, Query as FahQuery, QueryEvent, Verdict};
-use fah_rules::{ListManager, MatchDecision};
+use fah_rules::{ListManager, MatchDecision, PolicyState};
 use hickory_proto::op::{Message, MessageType, OpCode, Query as WireQuery, ResponseCode};
 use tokio::sync::mpsc;
 use tracing::trace;
@@ -38,6 +38,9 @@ pub enum Transport {
 #[derive(Clone)]
 pub struct Pipeline<F: Forwarder> {
     rules: Arc<ListManager>,
+    /// The client → policy map the binary keeps current (p2-06). Read per
+    /// query, never computed here: an atomic-swap read, no clock, no lock.
+    policies: Arc<PolicyState>,
     forwarder: F,
     blocking_ttl: u32,
     cache: Arc<DnsCache>,
@@ -67,6 +70,7 @@ impl<F: Forwarder> Pipeline<F> {
     ) -> Self {
         Self {
             rules,
+            policies: Arc::new(PolicyState::default()),
             forwarder,
             blocking_ttl,
             cache: Arc::new(DnsCache::new(cache_config)),
@@ -78,6 +82,13 @@ impl<F: Forwarder> Pipeline<F> {
             events,
             dropped_events: Arc::new(AtomicU64::new(0)),
         }
+    }
+
+    /// Attaches the shared policy state. Without it every client is judged
+    /// under the default policy, which is the pre-p2-06 behaviour.
+    pub fn with_policies(mut self, policies: Arc<PolicyState>) -> Self {
+        self.policies = policies;
+        self
     }
 
     /// Starts the stale-while-refresh pool, returning one handle per worker for
@@ -258,7 +269,10 @@ impl<F: Forwarder> Pipeline<F> {
         domain.make_ascii_lowercase();
         let fah_qtype = to_fah_query_type(query.query_type());
         let matcher = self.rules.matcher();
-        let decision = matcher.lookup(&domain, &fah_qtype);
+        let active = self.policies.current();
+        let ctx = matcher.context_for(client_ip, &active);
+        let policy = active.id_of(ctx.policy);
+        let decision = matcher.lookup_in(&domain, &fah_qtype, &ctx);
 
         let (verdict, local_response) = match decision {
             MatchDecision::Block(rule_ref) => {
@@ -277,7 +291,9 @@ impl<F: Forwarder> Pipeline<F> {
         // Release the ruleset handle before the upstream await: a slow
         // forward must not pin a swapped-out ruleset's memory for its
         // duration (the handle is an `Arc`, so holding it is safe — just
-        // needlessly retentive).
+        // needlessly retentive). `active` goes with it — `ctx` is `Copy` and
+        // borrows it, so it has to be dead by here.
+        drop(active);
         drop(matcher);
 
         let (response_message, cache_hit, upstream_used, stale) = match local_response {
@@ -306,6 +322,7 @@ impl<F: Forwarder> Pipeline<F> {
             cache_hit,
             upstream_used,
             stale,
+            policy,
         );
 
         Some(response::encode_for_transport(&response_message, budget))
@@ -401,6 +418,7 @@ impl<F: Forwarder> Pipeline<F> {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn emit_event(
         &self,
         query: FahQuery,
@@ -409,8 +427,10 @@ impl<F: Forwarder> Pipeline<F> {
         cache_hit: bool,
         upstream_used: bool,
         stale: bool,
+        policy: Option<Arc<str>>,
     ) {
-        let event = QueryEvent::new(query, verdict, duration, cache_hit, upstream_used, stale);
+        let event = QueryEvent::new(query, verdict, duration, cache_hit, upstream_used, stale)
+            .under_policy(policy);
         // One channel for both pipelines (`fah_model::Event`), so the shed
         // figure stays a single number rather than two that cannot be added.
         if self.events.try_send(Event::dns(event)).is_err() {

@@ -1,3 +1,4 @@
+use std::sync::Arc;
 use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
@@ -21,6 +22,11 @@ pub struct QueryEvent {
     /// from cache" apart from "answered from cache because the network was
     /// down" without inferring it from `upstream_used`.
     pub stale: bool,
+    /// Policy that judged the query, `None` for the default (p2-06). Absent
+    /// from the JSON rather than null, so a deployment with no policies logs
+    /// exactly what it logged before.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub policy: Option<Arc<str>>,
 }
 
 impl QueryEvent {
@@ -39,7 +45,15 @@ impl QueryEvent {
             cache_hit,
             upstream_used,
             stale,
+            policy: None,
         }
+    }
+
+    /// Records which policy decided this — a refcount bump, never an
+    /// allocation, since it runs on the query path.
+    pub fn under_policy(mut self, policy: Option<Arc<str>>) -> Self {
+        self.policy = policy;
+        self
     }
 }
 

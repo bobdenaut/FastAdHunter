@@ -30,6 +30,7 @@ RouterOS container). Performance is the primary feature.
 | Auth / TLS / hardening? | [SECURITY.md](SECURITY.md) |
 | Conventions? | [CONTRIBUTING.md](CONTRIBUTING.md) |
 | Why is X this way? | [docs/decisions/](docs/decisions/) (ADRs) |
+| Creating a code-review file? | [docs/code-review/CLAUDE.md](docs/code-review/CLAUDE.md) |
 
 Docs are the source of truth and were approved before any code. A change that
 contradicts them needs the doc updated in the same change — or an ADR if the
@@ -73,9 +74,10 @@ section is needed.
 5. **No hand-rolled crypto**: rustls, rcgen, x509-parser only.
 6. **Use CONTEXT.md vocabulary** in code, comments, APIs. New/changed terms
    update CONTEXT.md in the same change.
-7. **After every done task**: DO NOT post to user in chat-screen what was implemented, 
-   just create a review file unde docs/code-review/ (e.g. docs/code-review/p1.5-03-review.md) 
+7. **After every done task**: DO NOT post to user in chat-screen what was implemented,
+   just create a review file unde docs/code-review/ (e.g. docs/code-review/p1.5-03-review.md)
    and announce that the task is DONE and the new filename.
+8. **Don't use python to edit files!** Use the Edit tool!!!
 
 ## Quality gates (local — there is no CI)
 
@@ -120,3 +122,27 @@ phase's `CLAUDE.md` table. When asked to "work on the plan", start there.
   reference (PERFORMANCE.md §Budgets).
 - Container: distroless/static, musl static binary, volumes `/config` + `/data`.
 - Tech stack is fixed: Tokio, Hyper/Axum, Hickory, rustls, lol_html (Phase 4).
+
+## Responses
+
+Be concise!!!
+Do not explain obvious Rust code!!!
+Prefer bullet points over long prose!!!
+Do not restate the prompt!!!
+Answer the question first, then explain only if necessary!!!
+
+## Communication
+
+Assume every generated token has a cost.
+Prefer the shortest explanation that preserves technical accuracy.
+Do not justify every decision.
+Do not explain alternatives unless explicitly asked.
+Do not narrate your reasoning.
+Report:
+
+- what changed;
+- why it changed (1-2 sentences);
+- measurable impact.
+
+Default to patch-review style, not essay style
+Stop there.

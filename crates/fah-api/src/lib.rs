@@ -34,8 +34,8 @@ pub use events::{Event, EventHub};
 pub use keys::ApiKeyStore;
 pub use ports::{
     BucketCount, CacheClean, CacheSource, CacheStats, ClientCount, ClientEntry, DomainCount,
-    HistorySource, QueryLogPage, QueryLogRequest, QueryRecord, StatsOverview, StatsSource,
-    TelemetrySource, VerdictFilter,
+    HistorySource, PolicyCount, QueryLogPage, QueryLogRequest, QueryRecord, StatsOverview,
+    StatsSource, TelemetrySource, VerdictFilter,
 };
 pub use server::ApiServer;
 pub use state::AppStateBuilder;

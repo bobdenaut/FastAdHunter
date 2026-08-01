@@ -45,6 +45,10 @@ pub struct RequestEvent {
     /// number that makes "blocked requests die cheaply" measurable rather than
     /// merely asserted.
     pub bytes: u64,
+    /// Policy that judged the request, `None` for the default (p2-06). Same
+    /// spelling and same absent-when-default rule as [`QueryEvent::policy`].
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub policy: Option<std::sync::Arc<str>>,
 }
 
 impl RequestEvent {
@@ -61,7 +65,14 @@ impl RequestEvent {
             duration,
             status,
             bytes,
+            policy: None,
         }
+    }
+
+    /// Records which policy decided this; see [`QueryEvent::under_policy`].
+    pub fn under_policy(mut self, policy: Option<std::sync::Arc<str>>) -> Self {
+        self.policy = policy;
+        self
     }
 }
 
@@ -122,6 +133,14 @@ impl Event {
         match self {
             Event::Dns(event) => &event.verdict,
             Event::Http(event) => &event.verdict,
+        }
+    }
+
+    /// The deciding policy, `None` for the default (p2-06).
+    pub fn policy(&self) -> Option<&str> {
+        match self {
+            Event::Dns(event) => event.policy.as_deref(),
+            Event::Http(event) => event.policy.as_deref(),
         }
     }
 }

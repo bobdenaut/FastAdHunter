@@ -758,6 +758,11 @@ pub(crate) struct UrlIndexBuilder {
     /// collision costs a comparison and never a dropped rule.
     dedup: HashMap<u64, Vec<u32>>,
     duplicates_removed: usize,
+    /// Set once any `$client=` payload names a client rather than addressing
+    /// one — see [`crate::Matcher::has_named_client_scopes`]. Tracked while
+    /// adding rather than walked at build: it is one `bool` either way, and a
+    /// walk over the map would be the only reason to keep it ordered.
+    named_client_scopes: bool,
 }
 
 impl UrlIndexBuilder {
@@ -808,6 +813,7 @@ impl UrlIndexBuilder {
             self.methods.insert(index, raw.clone());
         }
         if let Some(scope) = scope {
+            self.named_client_scopes |= scope.names_a_client();
             self.clients.insert(index, scope);
         }
         self.records.push(Record {
@@ -1052,6 +1058,7 @@ impl UrlIndexBuilder {
             policy_mask,
             methods: self.methods,
             clients: self.clients,
+            named_client_scopes: self.named_client_scopes,
             slots: slots.into_boxed_slice(),
             slot_cap,
             bucket_hash: bucket_hash.into_boxed_slice(),
@@ -1123,6 +1130,9 @@ pub(crate) struct UrlIndex {
     policy_mask: Box<[u16]>,
     methods: HashMap<u32, Arc<str>>,
     clients: HashMap<u32, ClientScope>,
+    /// See [`crate::Matcher::has_named_client_scopes`]. False across every
+    /// deployed list, which is what makes the name lookup skippable.
+    named_client_scopes: bool,
     slots: Box<[u32]>,
     slot_cap: usize,
     bucket_hash: Box<[u64]>,
@@ -1154,6 +1164,10 @@ impl UrlIndex {
 
     pub(crate) fn duplicates_removed(&self) -> usize {
         self.duplicates_removed
+    }
+
+    pub(crate) fn named_client_scopes(&self) -> bool {
+        self.named_client_scopes
     }
 
     /// How many rules no token could file. Small by construction; a test pins

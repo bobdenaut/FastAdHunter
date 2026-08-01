@@ -54,10 +54,11 @@
 //! build-time step and touches none of it.
 
 use std::collections::HashMap;
+use std::net::IpAddr;
 
 use fah_model::{DecisiveRule, HttpRequest, PolicyId, QueryType, Verdict};
 
-use crate::policy::{ClientScope, ALL_POLICIES};
+use crate::policy::{ActivePolicies, ClientScope, ALL_POLICIES};
 use crate::rule::{DomainRule, RuleAction, UrlRule};
 use crate::url_matcher::{UrlDecision, UrlIndex, UrlIndexBuilder};
 
@@ -318,7 +319,6 @@ pub(crate) fn fastrange(hash: u64, cap: usize) -> usize {
 
 /// Builds a [`Matcher`] from DNS-applicable rules. Rules are added per list;
 /// the open-addressing table is sized and filled once at [`MatcherBuilder::build`].
-#[derive(Default)]
 pub struct MatcherBuilder {
     arena: Vec<u8>,
     records: Vec<Record>,
@@ -332,6 +332,14 @@ pub struct MatcherBuilder {
     clients: HashMap<u32, ClientScope>,
     /// Which policies can see each list's rules, parallel to `lists`.
     list_policy: Vec<u16>,
+    /// Every policy bit that exists ([`crate::PolicySet::universe`]).
+    ///
+    /// What [`Self::build`] compares record masks against to decide the array
+    /// can be dropped. **Not** the union of `list_policy`: a policy enabling
+    /// none of the compiled lists contributes no bit there, so that union would
+    /// equal every record's mask and drop the array — turning "sees nothing"
+    /// into "sees everything".
+    policy_universe: u16,
     /// Which policies can see each *record*, parallel to `records`. Not derived
     /// from `list_policy` at lookup time because deduplication collapses a rule
     /// arriving from several lists into one record attributed to the first —
@@ -349,6 +357,28 @@ pub struct MatcherBuilder {
     /// parsed lists, so one `add_parsed_list` fills both and the two can never
     /// disagree about which lists are loaded.
     url: UrlIndexBuilder,
+}
+
+impl Default for MatcherBuilder {
+    /// Hand-written for one field: `policy_universe` starts at
+    /// [`ALL_POLICIES`], not `0`. Zero would mean "no policy exists", and the
+    /// mask array would then never be dropped.
+    fn default() -> Self {
+        Self {
+            arena: Vec::new(),
+            records: Vec::new(),
+            lists: Vec::new(),
+            dnstype: HashMap::new(),
+            rewrite: HashMap::new(),
+            clients: HashMap::new(),
+            list_policy: Vec::new(),
+            policy_universe: ALL_POLICIES,
+            record_policy: Vec::new(),
+            dedup: Vec::new(),
+            duplicates_removed: 0,
+            url: UrlIndexBuilder::default(),
+        }
+    }
 }
 
 impl MatcherBuilder {
@@ -384,6 +414,13 @@ impl MatcherBuilder {
     /// it.
     pub fn add_list(&mut self, name: impl Into<std::sync::Arc<str>>) -> u16 {
         self.add_list_masked(name, ALL_POLICIES)
+    }
+
+    /// Declares which policies exist, so [`Self::build`] can tell "every rule
+    /// is visible to everyone" from "one policy sees no compiled list at all".
+    /// Defaults to [`ALL_POLICIES`], which is the zero-config case.
+    pub fn set_policy_universe(&mut self, universe: u16) {
+        self.policy_universe = universe;
     }
 
     /// Registers a rule list visible only to the policies in `policy_mask`
@@ -664,17 +701,23 @@ impl MatcherBuilder {
 
         // A mask array is only worth its bytes once some rule is invisible to
         // some policy, and an empty array is the flag that skips the test on
-        // the hot path. The comparison is against the union of every list's
-        // mask rather than against `ALL_POLICIES`: with three policies all
-        // enabling every list the masks are `0b111`, which filters nothing but
-        // is not the sentinel. Both the zero-config case and that one drop the
-        // array, so neither pays the ~1 MB nor the per-candidate check.
-        let full = self.list_policy.iter().fold(0u16, |acc, &mask| acc | mask);
+        // the hot path. Dropping it is safe only when every record is visible
+        // to every *existing* policy — see `policy_universe` for why the union
+        // of the list masks is not that test.
+        let full = self.policy_universe;
         let policy_mask = if self.record_policy.iter().all(|&mask| mask == full) {
             Box::default()
         } else {
             self.record_policy.into_boxed_slice()
         };
+
+        let url = self.url.build(full);
+        // Either tier can hold one, and the pipelines ask the matcher as a
+        // whole rather than per tier — a name-scoped URL rule has to make the
+        // DNS-side lookup carry the name too, or the same client would be
+        // identified differently depending on which pipeline asked.
+        let named_client_scopes =
+            url.named_client_scopes() || self.clients.values().any(ClientScope::names_a_client);
 
         // `self.dedup` is dropped here with the builder: the dedup index is
         // compile-time working memory and never rides along with the matcher.
@@ -688,8 +731,9 @@ impl MatcherBuilder {
             rewrite: self.rewrite,
             clients: self.clients,
             policy_mask,
+            named_client_scopes,
             duplicates_removed: self.duplicates_removed,
-            url: self.url.build(full),
+            url,
         }
     }
 }
@@ -709,6 +753,9 @@ pub struct Matcher {
     /// to every policy**, which is both the zero-config case and the signal to
     /// skip the check entirely.
     policy_mask: Box<[u16]>,
+    /// True when some `$client=` payload in either tier names a client instead
+    /// of addressing one — see [`Self::has_named_client_scopes`].
+    named_client_scopes: bool,
     duplicates_removed: usize,
     url: UrlIndex,
 }
@@ -730,6 +777,29 @@ impl Matcher {
 
     pub fn is_empty(&self) -> bool {
         self.records.is_empty()
+    }
+
+    /// Whether any rule is scoped to a client *name* rather than an address
+    /// (`$client=laptop`, not `$client=192.168.1.50`).
+    ///
+    /// False across every deployed list, which is what lets
+    /// [`Self::context_for`] skip the name lookup outright.
+    pub fn has_named_client_scopes(&self) -> bool {
+        self.named_client_scopes
+    }
+
+    /// The lookup context for one client. The single place a client is
+    /// identified, so DNS and HTTP cannot judge the same device differently.
+    #[inline]
+    pub fn context_for<'a>(&self, ip: IpAddr, active: &'a ActivePolicies) -> ClientContext<'a> {
+        ClientContext {
+            policy: active.policy_for(ip),
+            ip: Some(ip),
+            name: self
+                .named_client_scopes
+                .then(|| active.name_of(ip))
+                .flatten(),
+        }
     }
 
     fn domain_of(&self, idx: u32) -> &[u8] {

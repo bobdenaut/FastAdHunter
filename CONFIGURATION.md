@@ -38,11 +38,17 @@ The whole `[http]` section is **boot** for the same reason, including
 sized once when the listener binds. Promoting a key means giving it a live
 consumer first — never relabelling it and hoping.
 
-`[schedule]` and `[[policies]]` are **boot** as well. A schedule *evaluates*
-live — a window opening at 21:00 needs no restart — but which policies exist
-decides the per-rule masks baked into the compiled ruleset, so editing the
-policy set means recompiling it. The engine sets the policies and then compiles,
-in that order, at startup.
+`[schedule]` and `[[policies]]` became **runtime** in p2-06, through their own
+endpoints (API.md §Policies) rather than `POST /api/v1/config`, which rejects
+`policies` with 422 for the same one-owner reason `[[rules.lists]]` is rejected.
+Editing the file by hand and restarting still works.
+
+Which policies exist, and which lists each enables, decide the per-rule masks
+baked into the compiled ruleset — so those two edits recompile it (seconds of
+CPU on the RB5009). Assignments, schedules and labels change no mask and apply
+in milliseconds. A schedule *window* opening at 21:00 never needed a restart and
+still does not: the effective client → policy map is re-evaluated on a 20 s
+tick, which is the precision of a boundary.
 
 ## Reference
 
@@ -175,21 +181,26 @@ enabled = true
 # default policy — every enabled list, no overrides — which is exactly what
 # filtering did before Policies existed (CONTEXT.md §Policy).
 [schedule]
-timezone = "UTC"              # boot    — POSIX TZ string, not an IANA name:
+timezone = "UTC"              # runtime — POSIX TZ string, not an IANA name:
                               #           the distroless image ships no
                               #           timezone database. Bucharest is
                               #           "EET-2EEST,M3.5.0/3,M10.5.0/4".
                               #           Note POSIX signs offsets WEST-positive
                               #           — "EET-2" is UTC+2.
 
-# [[policies]]                # boot    — at most 15, plus the default
+# [[policies]]                # runtime — at most 15, plus the default;
+#                             #           /api/v1/policies, not /config
 # id = "kids"                 #           referenced by nothing else; stable
 # name = "Kids"               #           optional label, defaults to id
 # lists = ["oisd-basic"]      #           subset of [[rules.lists]] ids; omit
 #                             #           to inherit every enabled list
 # blocking_mode = "null_ip"   #           per-policy override of
-#                             #           [dns.blocking] mode — DECLARED, no
-#                             #           consumer until p2-06
+#                             #           [dns.blocking] mode — INERT, and so
+#                             #           is the global it overrides: null_ip
+#                             #           is the only implemented mode, and
+#                             #           `blocked()` synthesizes exactly it.
+#                             #           Becomes observable when a second mode
+#                             #           (nxdomain/refused) lands, not before.
 #
 #   [[policies.assignments]]  #           which clients this policy applies to
 #   client = "192.168.1.50"   #           an address, a CIDR block, or a

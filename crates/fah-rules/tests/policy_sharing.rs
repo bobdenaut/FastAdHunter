@@ -56,6 +56,7 @@ fn rules_config(lists: &[&str]) -> RulesConfig {
 /// lifecycle does.
 fn compile(texts: &[(&str, &str)], policies: &PolicySet) -> Matcher {
     let mut builder = MatcherBuilder::new();
+    builder.set_policy_universe(policies.universe());
     for (id, text) in texts {
         let parsed = parse_rule_list(text);
         builder.add_parsed_list_masked(*id, &parsed, policies.mask_for_list(id));
@@ -373,5 +374,37 @@ fn client_scope_is_part_of_a_rules_identity() {
     assert_eq!(
         &*matcher.decisive_rule(rule).rule,
         "||ads.example.com^$client=192.168.1.51"
+    );
+}
+
+/// A policy that enables **none** of the compiled lists must see nothing.
+///
+/// Found by p2-06, the first task to actually enforce a policy. The mask array
+/// used to be dropped when every record's mask equalled the union of the *list*
+/// masks — and such a policy contributes no bit to that union, so the condition
+/// held, the array went, the check was skipped, and the policy that should have
+/// seen nothing saw **everything**. Over-blocking, silently, for exactly the
+/// policy an operator wrote to be permissive.
+#[test]
+fn a_policy_enabling_no_compiled_list_blocks_nothing() {
+    let policies = PolicySet::from_config(
+        "UTC",
+        &[
+            policy_config("kids", &["shared"]),
+            policy_config("open", &["not-compiled"]),
+        ],
+    )
+    .unwrap();
+    // One list only, so the union of list masks is `default | kids` — which is
+    // every record's mask, and used to be enough to drop the array.
+    let matcher = compile(&[("shared", SHARED)], &policies);
+
+    let kids = policies.id_of("kids").unwrap();
+    let open = policies.id_of("open").unwrap();
+    assert!(blocks(&matcher, "ads.example.com", PolicyId::DEFAULT));
+    assert!(blocks(&matcher, "ads.example.com", kids));
+    assert!(
+        !blocks(&matcher, "ads.example.com", open),
+        "a policy enabling no compiled list must see no rule"
     );
 }

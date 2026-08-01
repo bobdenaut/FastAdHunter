@@ -122,6 +122,74 @@ fn bench_matcher(c: &mut Criterion) {
     group.finish();
 }
 
+/// What p2-06 costs the query path: the whole per-query policy sequence a
+/// pipeline now runs before the lookup — snapshot read, client → policy
+/// resolution, context build, reporting id — plus the lookup itself.
+///
+/// `zero_config` is the arm that matters for existing deployments: no policies
+/// configured, which must be indistinguishable from `matcher_lookup/hit_exact`.
+/// The others price the feature when it is actually used.
+fn bench_policy_resolution(c: &mut Criterion) {
+    use std::net::IpAddr;
+
+    use fah_config::{AssignmentConfig, PolicyConfig};
+    use fah_rules::{PolicySet, PolicyState};
+
+    let matcher = build_1m();
+    let mut rng = Lcg(0x9e37_79b9_7f4a_7c15);
+    let hits: Vec<String> = (0..1024)
+        .map(|_| synthetic_domain(rng.next() % N as u64))
+        .collect();
+    let client: IpAddr = "192.168.1.50".parse().unwrap();
+
+    /// One policy per assignment, so `assignments` also sets the policy count.
+    fn policies_with(assignments: usize) -> PolicySet {
+        let configs: Vec<PolicyConfig> = (0..assignments)
+            .map(|index| PolicyConfig {
+                id: format!("p{index}"),
+                name: None,
+                lists: None,
+                blocking_mode: None,
+                assignments: vec![AssignmentConfig {
+                    // Distinct addresses, none of them the benched client, so
+                    // the walk runs to the end — the worst case, not the first
+                    // hit.
+                    client: format!("10.0.{}.{}", index / 256, index % 256),
+                    days: None,
+                    start: None,
+                    end: None,
+                }],
+            })
+            .collect();
+        PolicySet::from_config("UTC", &configs).expect("policy set compiles")
+    }
+
+    let mut group = c.benchmark_group("policy_resolution");
+
+    for (label, set) in [
+        ("zero_config", PolicySet::single_default()),
+        ("assignments_1", policies_with(1)),
+        ("assignments_15", policies_with(15)),
+    ] {
+        let state = PolicyState::default();
+        state.refresh(&set, &[]);
+        group.bench_function(label, |b| {
+            let mut i = 0usize;
+            b.iter(|| {
+                let d = &hits[i % hits.len()];
+                i += 1;
+                // Exactly what `Pipeline::handle` does per query.
+                let active = state.current();
+                let ctx = matcher.context_for(black_box(client), &active);
+                black_box(active.id_of(ctx.policy));
+                black_box(matcher.lookup_in(black_box(d), &QueryType::A, &ctx))
+            });
+        });
+    }
+
+    group.finish();
+}
+
 /// What deduplication actually buys, in bytes — the number that decides
 /// whether its compile-time cost is worth paying (p1.5-05).
 ///
@@ -199,5 +267,10 @@ fn report_dedup_savings(_c: &mut Criterion) {
     println!();
 }
 
-criterion_group!(benches, bench_matcher, report_dedup_savings);
+criterion_group!(
+    benches,
+    bench_matcher,
+    bench_policy_resolution,
+    report_dedup_savings
+);
 criterion_main!(benches);

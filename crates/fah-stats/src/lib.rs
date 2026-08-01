@@ -19,6 +19,7 @@ mod snapshot;
 mod stats;
 mod top_n;
 
+pub use aggregates::PolicyCount;
 pub use bucket::BucketView;
 pub use client_registry::ClientView;
 pub use dto::{ClientCount, DomainCount, StatsSnapshot};

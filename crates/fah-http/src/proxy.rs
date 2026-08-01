@@ -28,7 +28,7 @@ use fah_common::resolve::HostResolver;
 use fah_model::{
     DecisiveRule, Event, HttpRequest, Request as ModelRequest, RequestEvent, ResourceType, Verdict,
 };
-use fah_rules::{ListManager, MatchDecision, Matcher};
+use fah_rules::{ListManager, MatchDecision, Matcher, PolicyState};
 use http_body_util::{Either, Full};
 use hyper::body::{Body as _, Incoming};
 use hyper::header::{
@@ -192,6 +192,9 @@ pub struct Proxy {
     /// `fah_dns::Pipeline` uses, so the two engines cannot drift on which
     /// ruleset they are answering from.
     rules: Option<Arc<dyn Ruleset>>,
+    /// The client → policy map the binary keeps current (p2-06), shared with
+    /// the DNS pipeline so one device is judged the same way by both.
+    policies: Arc<PolicyState>,
     /// The one bounded channel both pipelines write to. `None` when nothing is
     /// consuming events, which is what the p2-02 tests and the benches want.
     events: Option<mpsc::Sender<Event>>,
@@ -225,6 +228,7 @@ impl Proxy {
             client,
             counters: Arc::new(ProxyCounters::default()),
             rules: None,
+            policies: Arc::new(PolicyState::default()),
             events: None,
             origin_port,
             header_timeout,
@@ -236,6 +240,13 @@ impl Proxy {
     /// the p2-02 behaviour and remains what the pass-through bench measures.
     pub fn with_rules(mut self, rules: Arc<dyn Ruleset>) -> Self {
         self.rules = Some(rules);
+        self
+    }
+
+    /// Attaches the shared policy state. Without it every client is judged
+    /// under the default policy, which is the pre-p2-06 behaviour.
+    pub fn with_policies(mut self, policies: Arc<PolicyState>) -> Self {
+        self.policies = policies;
         self
     }
 
@@ -259,6 +270,11 @@ impl Proxy {
     where
         S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
     {
+        // The dual-stack listener reports IPv4 peers as v4-mapped IPv6, so
+        // canonicalize once here — the same thing `fah_dns::Pipeline::handle`
+        // does, and for the same reason: a policy assigned to `192.168.1.50`
+        // must match, and the client must not appear twice in the log.
+        let peer = SocketAddr::new(peer.ip().to_canonical(), peer.port());
         let proxy = Arc::clone(&self);
         let service = service_fn(move |request| {
             let proxy = Arc::clone(&proxy);
@@ -385,10 +401,14 @@ impl Proxy {
             .map_or("/", |pq| pq.as_str())
             .to_string();
 
-        let verdict = match &self.rules {
-            None => Verdict::Pass,
+        let (verdict, policy) = match &self.rules {
+            None => (Verdict::Pass, None),
             Some(rules) => {
                 let matcher = rules.matcher();
+                let active = self.policies.current();
+                // Same helper the DNS pipeline calls, so a client cannot land
+                // in one policy for a name and another for a fetch.
+                let ctx = matcher.context_for(peer.ip(), &active);
                 let document_host = crate::request::document_host(request.headers());
                 let model = HttpRequest {
                     url: &url,
@@ -397,11 +417,12 @@ impl Proxy {
                     resource_type,
                     document_host,
                 };
-                match matcher.lookup_http(&model) {
+                let verdict = match matcher.lookup_http_in(&model, &ctx) {
                     MatchDecision::Block(rule) => Verdict::Block(matcher.decisive_rule(rule)),
                     MatchDecision::Allow(rule) => Verdict::Allow(matcher.decisive_rule(rule)),
                     MatchDecision::Pass => Verdict::Pass,
-                }
+                };
+                (verdict, active.id_of(ctx.policy))
             }
         };
 
@@ -416,6 +437,7 @@ impl Proxy {
             },
             resource_type,
             verdict,
+            policy,
         }
     }
 
@@ -432,7 +454,8 @@ impl Proxy {
             started.elapsed(),
             status,
             bytes,
-        );
+        )
+        .under_policy(judged.policy.clone());
         if events.try_send(Event::http(event)).is_err() {
             self.counters.dropped_events.fetch_add(1, Ordering::Relaxed);
         }
@@ -527,6 +550,7 @@ struct Judged {
     request: ModelRequest,
     resource_type: ResourceType,
     verdict: Verdict,
+    policy: Option<Arc<str>>,
 }
 
 impl Judged {

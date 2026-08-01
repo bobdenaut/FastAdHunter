@@ -1093,6 +1093,7 @@ impl ListManager {
                 .map(|(_, text)| crate::parser::rule_upper_bound(text))
                 .sum();
             let mut builder = MatcherBuilder::with_capacity(upper_bound);
+            builder.set_policy_universe(policies.universe());
             let mut stats = HashMap::new();
             for (id, text) in &texts {
                 let policy_mask = policies.mask_for_list(id);
@@ -1148,10 +1149,23 @@ impl ListManager {
         self.policies.load_full()
     }
 
+    /// Rebuilds and swaps the ruleset without fetching. Only a policy-set or
+    /// per-policy `lists` change needs it — those decide the masks. Assignments
+    /// and schedules change no mask and go live through `PolicyState::refresh`,
+    /// which matters: this costs seconds of ARM CPU.
+    pub async fn recompile(&self) {
+        let _guard = self.compile_lock.lock().await;
+        let (matcher, stats) = self.compile().await;
+        self.swap_in(matcher, &stats);
+    }
+
     /// Replaces the policy set. **Takes effect on the next compile**, because
     /// which policies exist decides the per-rule masks the ruleset carries —
     /// the caller recompiles after this, and until it does the running matcher
     /// keeps answering under the policies it was built with.
+    ///
+    /// Publishing to the query path is the caller's separate step
+    /// (`PolicyState::refresh`).
     pub fn set_policies(&self, policies: PolicySet) {
         self.policies.store(Arc::new(policies));
     }

@@ -22,8 +22,10 @@ use serde_json::Value;
 /// Only four keys clear it today, each with a real consumer: `history.enabled`
 /// and `history.retention_days` (pushed through `apply_history_config` into
 /// the writers' shared atomic), `api.metrics_public` (read per request by
-/// `AppState::metrics_public`) and `rules.refresh_hours_default` (read per
-/// request by the lists handlers). Everything else is consumed once during
+/// `AppState::metrics_public`), `rules.refresh_hours_default` (read per
+/// request by the lists handlers), and since p2-06 `schedule.timezone` and
+/// `policies` (recompiled and republished into the live client → policy
+/// snapshot). Everything else is consumed once during
 /// boot — `DnsCache::new`, `UpstreamPool::from_config`, `Pipeline::new`,
 /// `Stats::new`, the tracing filter — so answering `restart_required: false`
 /// for it would report an apply that never happened.
@@ -392,6 +394,14 @@ mod tests {
             (
                 "rules.refresh_hours_default",
                 "the lists handlers, per request",
+            ),
+            (
+                "schedule.timezone",
+                "post_config -> PolicySet::from_config + republish (p2-06)",
+            ),
+            (
+                "policies",
+                "the /policies handlers -> set_policies + republish (p2-06)",
             ),
         ] {
             assert!(

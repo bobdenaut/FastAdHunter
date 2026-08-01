@@ -30,6 +30,10 @@ const DEFAULT_DATA_PATH: &str = "/data";
 /// exported as `fastadhunter_events_dropped_total`.
 const EVENT_CHANNEL_CAPACITY: usize = 4096;
 
+/// How often the effective client → policy map is re-evaluated. Not
+/// configurable: it is the precision of a schedule boundary, not a preference.
+const POLICY_TICK: Duration = Duration::from_secs(20);
+
 /// How often the observers' pull-based figures are refreshed: channel drops,
 /// per-upstream counters, compiled-ruleset size. Cheap reads, but no reason
 /// to do them per query.
@@ -248,6 +252,11 @@ impl Engine {
             "ruleset compiled from cache"
         );
 
+        // The client → policy map both pipelines read. The binary owns it —
+        // `fah-rules` compiles policies but does not hold the clock or the
+        // client registry (p2-06); the tick below is what re-evaluates it.
+        let policy_state = Arc::new(fah_rules::PolicyState::default());
+
         // ── Observers (L3) ──
         let stats = Arc::new(fah_stats::Stats::new(
             &config.stats,
@@ -263,13 +272,16 @@ impl Engine {
 
         // ── DNS engine (L3) ──
         let (events_tx, events_rx) = tokio::sync::mpsc::channel(EVENT_CHANNEL_CAPACITY);
-        let pipeline = Arc::new(fah_dns::Pipeline::new(
-            Arc::clone(&rules),
-            upstreams.clone(),
-            config.dns.blocking.ttl_seconds,
-            &config.dns.cache,
-            events_tx.clone(),
-        ));
+        let pipeline = Arc::new(
+            fah_dns::Pipeline::new(
+                Arc::clone(&rules),
+                upstreams.clone(),
+                config.dns.blocking.ttl_seconds,
+                &config.dns.cache,
+                events_tx.clone(),
+            )
+            .with_policies(Arc::clone(&policy_state)),
+        );
         let mut dns = fah_dns::Server::bind(&config.dns.listen).await?;
         tracing::info!(udp = %dns.udp_addr(), tcp = %dns.tcp_addr(), "DNS listeners bound");
 
@@ -300,6 +312,9 @@ impl Engine {
                     // p2-04: the same compiled ruleset the DNS pipeline
                     // answers from, and the same event channel it writes to.
                     .with_rules(Arc::clone(&rules) as Arc<dyn fah_http::Ruleset>)
+                    // The same snapshot the DNS pipeline reads, so a client is
+                    // judged under one policy by both.
+                    .with_policies(Arc::clone(&policy_state))
                     .with_events(events_tx.clone()),
             ))
         } else {
@@ -350,6 +365,7 @@ impl Engine {
             tls,
             fah_api::AppStateBuilder {
                 rules: Arc::clone(&rules),
+                policies: Arc::clone(&policy_state),
                 // One adapter, two ports: the live stats handles and the
                 // `/data/history` reads both sit on the same `Arc<Stats>`.
                 stats: Arc::clone(&stats_adapter) as Arc<dyn fah_api::StatsSource>,
@@ -392,11 +408,12 @@ impl Engine {
             ),
             spawn_telemetry_poll(
                 metrics,
-                rules,
+                Arc::clone(&rules),
                 Arc::clone(&pipeline),
                 upstreams,
                 Arc::clone(&stats),
             ),
+            spawn_policy_ticker(policy_state, rules, Arc::clone(&stats)),
         ];
 
         // Stale-while-refresh (ADR-0005). Started here rather than in
@@ -689,6 +706,35 @@ fn spawn_telemetry_poll(
                 // measurement durably, so re-reading it each tick is correct.
                 compile_duration: rules.last_compile_duration(),
             });
+        }
+    })
+}
+
+/// Keeps the client → policy map current, so a schedule window opens and
+/// closes without a query ever doing time arithmetic (p2-06).
+///
+/// [`POLICY_TICK`] is shorter than the minute a schedule is written in: a 60 s
+/// tick can be a full minute late at a boundary. The work is a walk over the
+/// configured assignments, so paying it three times a minute costs nothing.
+fn spawn_policy_ticker(
+    policies: Arc<fah_rules::PolicyState>,
+    rules: Arc<fah_rules::ListManager>,
+    stats: Arc<fah_stats::Stats>,
+) -> tokio::task::JoinHandle<()> {
+    tokio::spawn(async move {
+        let mut ticker = tokio::time::interval(POLICY_TICK);
+        ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+        loop {
+            // The first tick fires immediately, which is what publishes the
+            // boot snapshot.
+            ticker.tick().await;
+            let published = policies.refresh(&rules.policies(), &stats.named_clients());
+            if published {
+                tracing::debug!(
+                    active_assignments = policies.current().len(),
+                    "policy assignments changed"
+                );
+            }
         }
     })
 }

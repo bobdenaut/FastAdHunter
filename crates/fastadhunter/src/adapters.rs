@@ -11,7 +11,7 @@ use std::sync::Arc;
 use std::time::SystemTime;
 
 use fah_api::{
-    BucketCount, ClientCount, ClientEntry, DomainCount, HistorySource, QueryLogPage,
+    BucketCount, ClientCount, ClientEntry, DomainCount, HistorySource, PolicyCount, QueryLogPage,
     QueryLogRequest, QueryRecord, StatsOverview, StatsSource, TelemetrySource, VerdictFilter,
 };
 use fah_dns::UpstreamPool;
@@ -100,6 +100,15 @@ impl StatsSource for StatsAdapter {
                     blocked: b.blocked,
                 })
                 .collect(),
+            policies: snapshot
+                .policies
+                .into_iter()
+                .map(|p| PolicyCount {
+                    policy: p.policy.to_string(),
+                    queries: p.queries,
+                    blocked: p.blocked,
+                })
+                .collect(),
         }
     }
 
@@ -115,6 +124,7 @@ impl StatsSource for StatsAdapter {
             from: request.from,
             to: request.to,
             kind: request.kind,
+            policy: request.policy.clone(),
         };
         let page = self
             .stats
@@ -142,6 +152,10 @@ impl StatsSource for StatsAdapter {
 
     fn client_name(&self, ip: IpAddr) -> Option<String> {
         self.stats.client_name(ip)
+    }
+
+    fn named_clients(&self) -> Vec<(IpAddr, Arc<str>)> {
+        self.stats.named_clients()
     }
 
     fn apply_history_config(&self, enabled: bool, retention_days: u32) {

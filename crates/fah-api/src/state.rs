@@ -5,7 +5,7 @@
 use std::sync::Arc;
 use std::time::Instant;
 
-use fah_rules::ListManager;
+use fah_rules::{ListManager, PolicyState};
 
 use crate::config_store::ConfigStore;
 use crate::events::EventHub;
@@ -14,6 +14,9 @@ use crate::ports::{CacheSource, HistorySource, StatsSource, TelemetrySource};
 
 pub struct AppState {
     pub rules: Arc<ListManager>,
+    /// The client → policy map the pipelines read (p2-06). The API republishes
+    /// it after an edit so a reassignment is live before the response returns.
+    pub policies: Arc<PolicyState>,
     pub stats: Arc<dyn StatsSource>,
     pub history: Arc<dyn HistorySource>,
     pub telemetry: Arc<dyn TelemetrySource>,
@@ -29,6 +32,8 @@ pub struct AppState {
     /// each omit the other's change. Admin-plane only; nothing on the DNS hot
     /// path ever takes it.
     pub list_mutations: tokio::sync::Mutex<()>,
+    /// Same read-modify-write reason, for `/policies` and client assignments.
+    pub policy_mutations: tokio::sync::Mutex<()>,
 }
 
 impl AppState {
@@ -48,6 +53,7 @@ impl AppState {
 /// server's own.
 pub struct AppStateBuilder {
     pub rules: Arc<ListManager>,
+    pub policies: Arc<PolicyState>,
     pub stats: Arc<dyn StatsSource>,
     pub history: Arc<dyn HistorySource>,
     pub telemetry: Arc<dyn TelemetrySource>,
@@ -60,6 +66,7 @@ impl AppStateBuilder {
     pub fn build(self, events: EventHub) -> Arc<AppState> {
         Arc::new(AppState {
             rules: self.rules,
+            policies: self.policies,
             stats: self.stats,
             history: self.history,
             telemetry: self.telemetry,
@@ -69,6 +76,7 @@ impl AppStateBuilder {
             events,
             started_at: Instant::now(),
             list_mutations: tokio::sync::Mutex::new(()),
+            policy_mutations: tokio::sync::Mutex::new(()),
         })
     }
 }

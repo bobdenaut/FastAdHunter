@@ -86,15 +86,21 @@ Aggregated statistics (product data, for users/dashboard).
   "top_blocked_domains": [ { "domain": "ads.example.com", "count": 1289 } ],
   "top_queried_domains": [ { "domain": "api.example.org", "count": 4021 } ],
   "top_clients":         [ { "ip": "192.168.10.15", "name": "liviu-phone", "count": 30122 } ],
-  "buckets": [ { "start": "2026-07-17T10:00:00Z", "queries": 5120, "blocked": 610 } ]
+  "buckets": [ { "start": "2026-07-17T10:00:00Z", "queries": 5120, "blocked": 610 } ],
+  "policies": [ { "policy": "kids", "queries": 812, "blocked": 244 } ]
 }
 ```
+
+`policies` counts both pipelines, unlike the domain tables which stay DNS-only.
+Clients under no assignment are counted under `default`. Rows with no traffic in
+the window are omitted.
 
 ### `GET /api/v1/queries`
 
 Query log, newest first. Pagination + filters via query string:
 `limit` (default 100, max 1000), `cursor`, `client`, `domain` (substring),
-`verdict` (`allow|block|pass`), `kind` (`dns|http`), `from`, `to` (RFC 3339).
+`verdict` (`allow|block|pass`), `kind` (`dns|http`), `policy`, `from`, `to`
+(RFC 3339). `policy=default` selects the events no assignment covered.
 
 **Both pipelines share this log since p2-04.** Every item carries `kind`, and
 `domain` filters on the DNS question's name *or* the HTTP request's host —
@@ -557,7 +563,83 @@ with per-line messages.
 ### `POST /api/v1/rules/test`
 
 Dry-run a verdict: `{ "domain": "ads.example.com", "qtype": "A", "client": "192.168.10.15" }`
-→ `{ "verdict": "block", "rule": "||ads.example.com^", "list": "oisd-basic" }`.
+→ `{ "verdict": "block", "rule": "||ads.example.com^", "list": "oisd-basic", "policy": "kids" }`.
+
+| field | meaning |
+| --- | --- |
+| `client` | address *or* client name. Selects the policy in force for it and satisfies `$client` rules. Live since p2-06. |
+| `policy` (request) | test under a named policy directly, ignoring assignments — "what would kids see?". Unknown id → `422`. |
+| `policy` (response) | which policy decided; `default` when nothing was assigned. |
+
+---
+
+## Policies
+
+Named bundles of rule lists assignable to clients, optionally on a schedule
+(CONTEXT.md §Policy). All policies share one compiled ruleset; see
+[CONFIGURATION.md](CONFIGURATION.md#policies) for the TOML shape and the
+16-policy ceiling.
+
+### `GET /api/v1/policies`
+
+```json
+{
+  "timezone": "EET-2EEST,M3.5.0/3,M10.5.0/4",
+  "items": [
+    {
+      "id": "kids",
+      "name": "Kids",
+      "lists": ["oisd-basic"],
+      "blocking_mode": null,
+      "assignments": [
+        { "client": "192.168.1.50", "days": "mon-fri", "start": "21:00", "end": "07:00" }
+      ]
+    }
+  ],
+  "active_assignments": 1
+}
+```
+
+`lists: null` means every enabled list. `active_assignments` is how many
+assignments are in force *right now* — a closed schedule window is excluded, so
+this reports a boundary having passed without waiting for a query.
+
+### `POST /api/v1/policies`
+
+Body: the item shape above minus `active_assignments`. `id` is required and
+locked to lowercase alphanumerics plus `.`/`_`/`-`; `default` is reserved.
+`409` on a duplicate id. **Recompiles the ruleset** — seconds of CPU on the
+RB5009, because per-rule policy masks are built at compile time.
+
+### `PATCH /api/v1/policies/{id}` / `DELETE /api/v1/policies/{id}`
+
+`PATCH` leaves absent fields alone; `"lists": null` clears the subset back to
+every enabled list. Only a `lists` change recompiles — renaming or reassigning
+does not. `DELETE` → `204`, and recompiles.
+
+### `GET|PUT|DELETE /api/v1/clients/{ip}/policy`
+
+Assigns one address to a policy. `PUT` body:
+`{ "policy": "kids", "days": "mon-fri", "start": "21:00", "end": "07:00" }` —
+schedule fields optional, `start`/`end` set together or not at all.
+
+- **No recompile**: assignments change no mask, so this is live in
+  milliseconds.
+- One assignment per address: `PUT` replaces any existing one, in any policy.
+- `404` if the policy does not exist, or on `DELETE` with nothing assigned.
+- `GET` returns the policy in force **now**, so a client whose window is shut
+  reports whatever else covers it — the subnet assignment, else `default`.
+
+```json
+{
+  "ip": "192.168.1.50",
+  "policy": "kids",
+  "assignment": { "client": "192.168.1.50", "days": "mon-fri", "start": "21:00", "end": "07:00" }
+}
+```
+
+`assignment` is absent when the client is covered by a subnet or name
+assignment rather than one naming its address.
 
 ---
 
@@ -583,9 +665,9 @@ Most options are boot-only: `[dns.cache]`, `[dns.upstreams]`, `[dns.blocking]`,
 `[query_log]`, `[stats]`, `log.level` and `history.sample_interval_seconds` are
 each read once during startup, so they persist and ask for a restart rather
 than reporting an apply that no code performs. The runtime set is
-`history.enabled`, `history.retention_days`, `api.metrics_public` and
-`rules.refresh_hours_default`. See [CONFIGURATION.md](CONFIGURATION.md) for
-every option and its mutability class.
+`history.enabled`, `history.retention_days`, `api.metrics_public`,
+`rules.refresh_hours_default` and `schedule.timezone`. See
+[CONFIGURATION.md](CONFIGURATION.md) for every option and its mutability class.
 
 **`rules.lists` is not accepted here — 422.** Rule lists are managed
 exclusively through the [`/lists`](#rule-lists--rules) endpoints, which apply a change
@@ -596,6 +678,10 @@ next `/lists` call would persist the engine's set over the patch and the edit
 would vanish. The TOML is the boot source and the durable record; `/lists` is
 the runtime API. Editing `[[rules.lists]]` in the file by hand and restarting
 also works.
+
+**`policies` is not accepted here either — 422**, for the same reason plus one
+more: only the [`/policies`](#policies) endpoints know when an edit needs the
+ruleset recompiled. `schedule.timezone` *is* accepted here and applies live.
 
 ### `POST /api/v1/config/apikey/rotate`
 

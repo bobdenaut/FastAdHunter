@@ -152,13 +152,17 @@ impl Stats {
         let at = event.query.timestamp;
         let blocked = matches!(event.verdict, fah_model::Verdict::Block(_));
 
-        self.aggregates.lock().unwrap().record(
-            &event.query.domain,
-            &event.query.qtype,
-            &event.verdict,
-            event.cache_hit,
-            at,
-        );
+        {
+            let mut aggregates = self.aggregates.lock().unwrap();
+            aggregates.record(
+                &event.query.domain,
+                &event.query.qtype,
+                &event.verdict,
+                event.cache_hit,
+                at,
+            );
+            aggregates.record_policy(event.policy.as_deref(), blocked, at);
+        }
         let client_name = {
             let mut clients = self.clients.lock().unwrap();
             clients.record(event.query.client_ip, at, blocked, event.cache_hit);
@@ -183,6 +187,13 @@ impl Stats {
         let at = event.request.timestamp;
         let blocked = matches!(event.verdict, fah_model::Verdict::Block(_));
         let client_ip = event.request.client_ip;
+
+        // Per-policy counts do take requests: "this policy blocked N" reads the
+        // same whichever pipeline refused them.
+        self.aggregates
+            .lock()
+            .unwrap()
+            .record_policy(event.policy.as_deref(), blocked, at);
 
         let client_name = {
             let mut clients = self.clients.lock().unwrap();
@@ -493,7 +504,14 @@ impl Stats {
                 })
                 .collect(),
             buckets: aggregates.buckets(now),
+            policies: aggregates.policies(now),
         }
+    }
+
+    /// Every client that currently carries a name — what the binary feeds
+    /// `PolicyState::refresh` so name assignments resolve to addresses.
+    pub fn named_clients(&self) -> Vec<(IpAddr, std::sync::Arc<str>)> {
+        self.clients.lock().unwrap().named()
     }
 
     pub fn query_log(
@@ -624,6 +642,108 @@ mod tests {
 
         let page = stats.query_log(&QueryLogFilter::default(), 10, None);
         assert_eq!(page.items.len(), 2);
+    }
+
+    /// Per-policy counters, and the `default` row that covers events no policy
+    /// was assigned for (p2-06).
+    #[tokio::test]
+    async fn per_policy_counters_split_by_policy_and_filter_the_log() {
+        let (stats_config, query_log_config) = config();
+        let dir = tempfile::tempdir().unwrap();
+        let stats = Stats::new(
+            &stats_config,
+            &query_log_config,
+            &HistoryConfig::default(),
+            dir.path().to_path_buf(),
+        );
+        stats.boot().await;
+
+        let kid = IpAddr::V4(Ipv4Addr::new(192, 168, 1, 50));
+        let other = IpAddr::V4(Ipv4Addr::new(192, 168, 1, 51));
+        stats.record(
+            event("games.example.com", kid, block("games.example.com"))
+                .under_policy(Some(std::sync::Arc::from("kids"))),
+        );
+        stats.record(
+            event("example.com", kid, Verdict::Pass)
+                .under_policy(Some(std::sync::Arc::from("kids"))),
+        );
+        // No policy: the default decided it.
+        stats.record(event("example.org", other, Verdict::Pass));
+
+        let snapshot = stats.snapshot(SystemTime::now());
+        let counts: Vec<(&str, u64, u64)> = snapshot
+            .policies
+            .iter()
+            .map(|p| (&*p.policy, p.queries, p.blocked))
+            .collect();
+        assert_eq!(counts, vec![("kids", 2, 1), ("default", 1, 0)]);
+
+        let kids_only = stats.query_log(
+            &QueryLogFilter {
+                policy: Some("kids".to_string()),
+                ..QueryLogFilter::default()
+            },
+            10,
+            None,
+        );
+        assert_eq!(kids_only.items.len(), 2);
+
+        // `default` selects exactly the events that name no policy.
+        let default_only = stats.query_log(
+            &QueryLogFilter {
+                policy: Some("default".to_string()),
+                ..QueryLogFilter::default()
+            },
+            10,
+            None,
+        );
+        assert_eq!(default_only.items.len(), 1);
+        assert_eq!(default_only.items[0].name(), "example.org");
+    }
+
+    /// An HTTP request counts toward its policy but never toward the domain
+    /// tables — the p2-04 split, kept.
+    #[tokio::test]
+    async fn http_requests_count_toward_a_policy_but_not_the_domain_tables() {
+        let (stats_config, query_log_config) = config();
+        let dir = tempfile::tempdir().unwrap();
+        let stats = Stats::new(
+            &stats_config,
+            &query_log_config,
+            &HistoryConfig::default(),
+            dir.path().to_path_buf(),
+        );
+        stats.boot().await;
+
+        stats.record_http(
+            fah_model::RequestEvent::new(
+                fah_model::Request {
+                    host: "ads.example.com".to_string(),
+                    path: "/pixel.gif".to_string(),
+                    method: "GET".to_string(),
+                    resource_type: fah_model::ResourceType::Image,
+                    client_ip: IpAddr::V4(Ipv4Addr::new(192, 168, 1, 50)),
+                    timestamp: SystemTime::now(),
+                },
+                block("ads.example.com"),
+                std::time::Duration::from_micros(100),
+                200,
+                0,
+            )
+            .under_policy(Some(std::sync::Arc::from("kids"))),
+        );
+
+        let snapshot = stats.snapshot(SystemTime::now());
+        assert_eq!(snapshot.queries_total, 0, "domain tables stay DNS-only");
+        assert_eq!(
+            snapshot.policies,
+            vec![crate::PolicyCount {
+                policy: std::sync::Arc::from("kids"),
+                queries: 1,
+                blocked: 1,
+            }]
+        );
     }
 
     #[tokio::test]

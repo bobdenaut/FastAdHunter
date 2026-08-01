@@ -93,7 +93,8 @@ is also what a Policy is assigned to, and what a `$client` rule names.
 ### Policy
 
 A named bundle of rule lists and settings assignable to clients or schedules
-(parental-control style). Landed in Phase 2 (`p2-05`).
+(parental-control style). Modelled in `p2-05`; **enforced in both pipelines
+since `p2-06`**, which is also when the API gained `/api/v1/policies`.
 
 Every deployment has a **default policy** — every enabled list, no overrides —
 and a client with no Assignment is judged under it. That is what filtering was
@@ -104,6 +105,14 @@ A policy is a *subset* of the configured rule lists, never a source of new
 ones: which lists exist stays a property of `[[rules.lists]]`. All policies
 share one compiled ruleset, each rule carrying the set of policies that can see
 it — a second policy costs a mask, not a second copy of the corpus.
+
+### Active Policies
+
+The client → policy mapping in force at one instant: every Schedule already
+evaluated, every Assignment naming a Client by name already resolved to
+addresses. Rebuilt on a coarse tick by the binary and swapped atomically, so a
+query resolves its policy by walking a short array — no clock, no timezone, no
+name lookup on the hot path (`p2-06`).
 
 ### Schedule
 

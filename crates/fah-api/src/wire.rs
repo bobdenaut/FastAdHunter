@@ -35,6 +35,16 @@ pub struct StatsResponse {
     pub top_queried_domains: Vec<DomainCountResponse>,
     pub top_clients: Vec<ClientCountResponse>,
     pub buckets: Vec<BucketResponse>,
+    /// Per-policy activity over the same 24h window (p2-06). Clients under no
+    /// assignment are counted under `default`.
+    pub policies: Vec<PolicyCountResponse>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct PolicyCountResponse {
+    pub policy: String,
+    pub queries: u64,
+    pub blocked: u64,
 }
 
 #[derive(Debug, Serialize)]
@@ -98,6 +108,15 @@ impl From<StatsOverview> for StatsResponse {
                     start: b.start,
                     queries: b.queries,
                     blocked: b.blocked,
+                })
+                .collect(),
+            policies: overview
+                .policies
+                .into_iter()
+                .map(|p| PolicyCountResponse {
+                    policy: p.policy,
+                    queries: p.queries,
+                    blocked: p.blocked,
                 })
                 .collect(),
         }
@@ -674,16 +693,15 @@ pub struct RuleTestRequest {
     pub domain: String,
     #[serde(default)]
     pub qtype: Option<String>,
-    /// Accepted for forward compatibility and ignored: client-scoped rules
-    /// (`$client`) are parsed but inactive in Phase 1 (ADR-0003). Named
-    /// explicitly rather than left to serde's ignore-unknown so the field is
-    /// part of the documented request shape the day it starts mattering.
+    /// Whose view to test from: an address or a client name. Live since p2-06
+    /// — it selects the policy and satisfies `$client` rules. Omitted means the
+    /// default policy, which is what an unassigned client gets.
     #[serde(default)]
-    #[allow(
-        dead_code,
-        reason = "reserved: $client rules activate in a later phase"
-    )]
     pub client: Option<String>,
+    /// Test against a named policy directly, ignoring assignments. Useful for
+    /// "what would kids see?" without owning a device on that policy.
+    #[serde(default)]
+    pub policy: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -692,6 +710,109 @@ pub struct RuleTestResponse {
     pub verdict: &'static str,
     pub rule: Option<String>,
     pub list: Option<String>,
+    /// Which policy decided, `"default"` when none was assigned (p2-06).
+    pub policy: String,
+}
+
+// ─── Policies (p2-06) ──────────────────────────────────────────────────
+
+#[derive(Debug, Serialize)]
+pub struct PoliciesResponse {
+    /// The POSIX TZ every schedule below is read in.
+    pub timezone: String,
+    pub items: Vec<PolicyResponse>,
+    /// Assignments in force at this instant — what a schedule edit changes
+    /// without a restart, visible without waiting for a query.
+    pub active_assignments: usize,
+}
+
+#[derive(Debug, Serialize)]
+pub struct PolicyResponse {
+    pub id: String,
+    pub name: String,
+    /// `null` means every enabled list, which is what an omitted `lists` means
+    /// in the TOML too.
+    pub lists: Option<Vec<String>>,
+    pub blocking_mode: Option<String>,
+    pub assignments: Vec<AssignmentResponse>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct AssignmentResponse {
+    pub client: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub days: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub start: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub end: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct CreatePolicyRequest {
+    pub id: String,
+    #[serde(default)]
+    pub name: Option<String>,
+    #[serde(default)]
+    pub lists: Option<Vec<String>>,
+    #[serde(default)]
+    pub blocking_mode: Option<String>,
+    #[serde(default)]
+    pub assignments: Vec<AssignmentResponse>,
+}
+
+/// Absent fields are left alone; `lists: null` clears the subset back to "every
+/// enabled list", which is why it needs [`double_option`].
+#[derive(Debug, Default, Deserialize)]
+pub struct PatchPolicyRequest {
+    #[serde(default)]
+    pub name: Option<String>,
+    #[serde(default, deserialize_with = "double_option_lists")]
+    pub lists: Option<Option<Vec<String>>>,
+    #[serde(default, deserialize_with = "double_option_string")]
+    pub blocking_mode: Option<Option<String>>,
+    #[serde(default)]
+    pub assignments: Option<Vec<AssignmentResponse>>,
+}
+
+fn double_option_lists<'de, D>(deserializer: D) -> Result<Option<Option<Vec<String>>>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    Deserialize::deserialize(deserializer).map(Some)
+}
+
+fn double_option_string<'de, D>(deserializer: D) -> Result<Option<Option<String>>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    Deserialize::deserialize(deserializer).map(Some)
+}
+
+/// `PUT /api/v1/clients/{ip}/policy` — assigns one address to a policy,
+/// optionally only inside a schedule.
+#[derive(Debug, Deserialize)]
+pub struct ClientPolicyRequest {
+    pub policy: String,
+    #[serde(default)]
+    pub days: Option<String>,
+    #[serde(default)]
+    pub start: Option<String>,
+    #[serde(default)]
+    pub end: Option<String>,
+}
+
+/// What a client is judged under right now, and why.
+#[derive(Debug, Serialize)]
+pub struct ClientPolicyResponse {
+    pub ip: IpAddr,
+    /// The policy in force at this instant — a scheduled assignment that is
+    /// not currently open reports the policy that actually applies instead.
+    pub policy: String,
+    /// The assignment configured for this exact address, if any. Absent when
+    /// the client is covered by a subnet or name assignment instead.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub assignment: Option<AssignmentResponse>,
 }
 
 #[derive(Debug, Serialize)]

@@ -396,6 +396,7 @@ impl Harness {
         let port = Arc::new(StatsPort(Arc::clone(&stats)));
         let state = AppStateBuilder {
             rules,
+            policies: Arc::new(fah_rules::PolicyState::default()),
             stats: Arc::clone(&port) as Arc<dyn StatsSource>,
             history: port as Arc<dyn HistorySource>,
             telemetry: Arc::new(NoTelemetry),
@@ -481,7 +482,12 @@ impl StatsSource for StatsPort {
             top_queried_domains: vec![],
             top_clients: vec![],
             buckets: vec![],
+            policies: vec![],
         }
+    }
+
+    fn named_clients(&self) -> Vec<(IpAddr, Arc<str>)> {
+        vec![]
     }
 
     fn queries(&self, _request: &QueryLogRequest) -> QueryLogPage {

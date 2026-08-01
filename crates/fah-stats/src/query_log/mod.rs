@@ -14,6 +14,8 @@ use std::time::SystemTime;
 use fah_model::{Event, EventKind, Verdict};
 use serde::{Deserialize, Serialize};
 
+use crate::aggregates::DEFAULT_POLICY_LABEL;
+
 /// One entry in the query log: a completed [`Event`] from either pipeline,
 /// plus the client name resolved from the registry at record time (so a later
 /// rename doesn't retroactively change history) and a monotonic sequence
@@ -76,6 +78,9 @@ pub struct QueryLogFilter {
     /// `dns` / `http` (p2-04). `None` returns both, which is what an operator
     /// looking at "what did this client just do" wants by default.
     pub kind: Option<EventKind>,
+    /// Policy id (p2-06). `"default"` selects the events no policy was
+    /// assigned for, which is what those events report.
+    pub policy: Option<String>,
 }
 
 impl QueryLogFilter {
@@ -112,6 +117,12 @@ impl QueryLogFilter {
         }
         if let Some(kind) = self.verdict {
             if !kind.matches(entry.event.verdict()) {
+                return false;
+            }
+        }
+        if let Some(policy) = &self.policy {
+            let decided_by = entry.event.policy().unwrap_or(DEFAULT_POLICY_LABEL);
+            if decided_by != policy {
                 return false;
             }
         }

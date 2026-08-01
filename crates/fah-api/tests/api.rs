@@ -13,7 +13,7 @@ use std::time::{Duration, SystemTime};
 
 use fah_api::{
     ApiKeyStore, ApiServer, AppStateBuilder, BucketCount, CacheClean, CacheSource, CacheStats,
-    ClientCount, ClientEntry, ConfigStore, DomainCount, HistorySource, QueryLogPage,
+    ClientCount, ClientEntry, ConfigStore, DomainCount, HistorySource, PolicyCount, QueryLogPage,
     QueryLogRequest, QueryRecord, StatsOverview, StatsSource, TelemetrySource,
 };
 use fah_config::{Config, RulesConfig};
@@ -98,6 +98,11 @@ impl StatsSource for FakeStats {
                 queries: 5_120,
                 blocked: 610,
             }],
+            policies: vec![PolicyCount {
+                policy: "kids".to_string(),
+                queries: 812,
+                blocked: 244,
+            }],
         }
     }
 
@@ -134,6 +139,15 @@ impl StatsSource for FakeStats {
             .iter()
             .find(|entry| entry.ip == ip)
             .and_then(|entry| entry.name.clone())
+    }
+
+    fn named_clients(&self) -> Vec<(IpAddr, Arc<str>)> {
+        self.clients
+            .lock()
+            .unwrap()
+            .iter()
+            .filter_map(|entry| entry.name.as_deref().map(|n| (entry.ip, Arc::from(n))))
+            .collect()
     }
 
     fn apply_history_config(&self, enabled: bool, retention_days: u32) {
@@ -406,6 +420,7 @@ async fn start_with(options: HarnessOptions) -> Harness {
     let history = Arc::new(FakeHistory::default());
     let state = AppStateBuilder {
         rules: Arc::clone(&rules),
+        policies: Arc::new(fah_rules::PolicyState::default()),
         stats: Arc::clone(&stats) as Arc<dyn StatsSource>,
         history: Arc::clone(&history) as Arc<dyn HistorySource>,
         telemetry: Arc::new(FakeTelemetry {
@@ -631,6 +646,9 @@ async fn stats_matches_the_documented_shape() {
     // RFC 3339, not serde's SystemTime struct.
     assert_eq!(body["buckets"][0]["start"], "1970-01-01T00:00:00Z");
     assert_eq!(body["buckets"][0]["queries"], 5_120);
+    assert_eq!(body["policies"][0]["policy"], "kids");
+    assert_eq!(body["policies"][0]["queries"], 812);
+    assert_eq!(body["policies"][0]["blocked"], 244);
 }
 
 #[tokio::test]
@@ -1543,6 +1561,337 @@ async fn rules_test_dry_runs_a_verdict() {
     assert_eq!(passed["verdict"], "pass");
     assert!(passed["rule"].is_null());
     assert!(passed["list"].is_null());
+    assert_eq!(
+        passed["policy"], "default",
+        "an unassigned client reports the default policy"
+    );
+}
+
+// ─── Policies (p2-06) ──────────────────────────────────────────────────
+
+/// The acceptance criterion: create a policy, assign a client, and the verdict
+/// changes live — no restart, and the TOML records it.
+#[tokio::test]
+async fn a_policy_and_an_assignment_change_a_verdict_live() {
+    let harness = start().await;
+    harness
+        .client
+        .put(harness.url("/api/v1/rules/user"))
+        .bearer_auth(&harness.key)
+        .json(&json!({"rules": ["||games.example.com^"]}))
+        .send()
+        .await
+        .unwrap();
+
+    let empty = harness.get_json("/api/v1/policies").await;
+    assert_eq!(empty["items"], json!([]));
+    assert_eq!(empty["timezone"], "UTC");
+    assert_eq!(empty["active_assignments"], 0);
+
+    // A policy that enables no list — so a client on it sees no rule at all.
+    let created: Value = harness
+        .client
+        .post(harness.url("/api/v1/policies"))
+        .bearer_auth(&harness.key)
+        .json(&json!({"id": "open", "name": "Open", "lists": []}))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(created["id"], "open");
+    assert_eq!(created["name"], "Open");
+    assert_eq!(created["assignments"], json!([]));
+
+    // Before the assignment, the client is judged under the default policy.
+    let before = test_rule(
+        &harness,
+        json!({"domain": "games.example.com", "client": "192.168.10.15"}),
+    )
+    .await;
+    assert_eq!(before["verdict"], "block");
+    assert_eq!(before["policy"], "default");
+
+    let assigned: Value = harness
+        .client
+        .put(harness.url("/api/v1/clients/192.168.10.15/policy"))
+        .bearer_auth(&harness.key)
+        .json(&json!({"policy": "open"}))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(assigned["policy"], "open");
+    assert_eq!(assigned["assignment"]["client"], "192.168.10.15");
+
+    // Live: same request, different answer, no restart.
+    let after = test_rule(
+        &harness,
+        json!({"domain": "games.example.com", "client": "192.168.10.15"}),
+    )
+    .await;
+    assert_eq!(after["verdict"], "pass");
+    assert_eq!(after["policy"], "open");
+
+    // Everyone else still gets the default policy's verdict.
+    let other = test_rule(
+        &harness,
+        json!({"domain": "games.example.com", "client": "192.168.10.99"}),
+    )
+    .await;
+    assert_eq!(other["verdict"], "block");
+    assert_eq!(other["policy"], "default");
+
+    // Persisted, so the next boot serves the same thing.
+    let on_disk = std::fs::read_to_string(&harness.config_path).unwrap();
+    let reparsed = Config::from_toml_str(&on_disk).unwrap();
+    assert_eq!(reparsed.policies.len(), 1);
+    assert_eq!(reparsed.policies[0].assignments[0].client, "192.168.10.15");
+
+    assert_eq!(
+        harness.get_json("/api/v1/policies").await["active_assignments"],
+        1
+    );
+
+    // Clearing it returns the client to the default policy, live.
+    let cleared = harness
+        .client
+        .delete(harness.url("/api/v1/clients/192.168.10.15/policy"))
+        .bearer_auth(&harness.key)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(cleared.status(), 204);
+    let reverted = test_rule(
+        &harness,
+        json!({"domain": "games.example.com", "client": "192.168.10.15"}),
+    )
+    .await;
+    assert_eq!(reverted["verdict"], "block");
+    assert_eq!(reverted["policy"], "default");
+}
+
+async fn test_rule(harness: &Harness, body: Value) -> Value {
+    harness
+        .client
+        .post(harness.url("/api/v1/rules/test"))
+        .bearer_auth(&harness.key)
+        .json(&body)
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap()
+}
+
+/// `rules/test` can answer for a policy directly, so "what would kids see?" is
+/// answerable without owning a device on that policy.
+#[tokio::test]
+async fn rules_test_can_answer_under_a_named_policy() {
+    let harness = start().await;
+    harness
+        .client
+        .put(harness.url("/api/v1/rules/user"))
+        .bearer_auth(&harness.key)
+        .json(&json!({"rules": ["||games.example.com^"]}))
+        .send()
+        .await
+        .unwrap();
+    harness
+        .client
+        .post(harness.url("/api/v1/policies"))
+        .bearer_auth(&harness.key)
+        .json(&json!({"id": "open", "lists": []}))
+        .send()
+        .await
+        .unwrap();
+
+    let under_open = test_rule(
+        &harness,
+        json!({"domain": "games.example.com", "policy": "open"}),
+    )
+    .await;
+    assert_eq!(under_open["verdict"], "pass");
+    assert_eq!(under_open["policy"], "open");
+
+    let under_default = test_rule(&harness, json!({"domain": "games.example.com"})).await;
+    assert_eq!(under_default["verdict"], "block");
+
+    let unknown = harness
+        .client
+        .post(harness.url("/api/v1/rules/test"))
+        .bearer_auth(&harness.key)
+        .json(&json!({"domain": "games.example.com", "policy": "nope"}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(unknown.status(), 422);
+}
+
+#[tokio::test]
+async fn policy_crud_rejects_the_shapes_it_should() {
+    let harness = start().await;
+
+    // `default` is the implicit policy; redefining it is a mistake, not a
+    // second policy that happens to share a name.
+    let reserved = harness
+        .client
+        .post(harness.url("/api/v1/policies"))
+        .bearer_auth(&harness.key)
+        .json(&json!({"id": "default"}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(reserved.status(), 422);
+
+    for bad in ["../escape", "Kids", "a b"] {
+        let response = harness
+            .client
+            .post(harness.url("/api/v1/policies"))
+            .bearer_auth(&harness.key)
+            .json(&json!({"id": bad}))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), 422, "{bad:?} must be rejected");
+    }
+
+    harness
+        .client
+        .post(harness.url("/api/v1/policies"))
+        .bearer_auth(&harness.key)
+        .json(&json!({"id": "kids"}))
+        .send()
+        .await
+        .unwrap();
+    let duplicate = harness
+        .client
+        .post(harness.url("/api/v1/policies"))
+        .bearer_auth(&harness.key)
+        .json(&json!({"id": "kids"}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(duplicate.status(), 409);
+
+    // Assigning to a policy that does not exist is a 404, not a silent no-op.
+    let unknown = harness
+        .client
+        .put(harness.url("/api/v1/clients/192.168.10.15/policy"))
+        .bearer_auth(&harness.key)
+        .json(&json!({"policy": "ghost"}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(unknown.status(), 404);
+
+    let missing = harness
+        .client
+        .patch(harness.url("/api/v1/policies/ghost"))
+        .bearer_auth(&harness.key)
+        .json(&json!({"name": "Ghost"}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(missing.status(), 404);
+
+    let deleted = harness
+        .client
+        .delete(harness.url("/api/v1/policies/kids"))
+        .bearer_auth(&harness.key)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(deleted.status(), 204);
+}
+
+/// A schedule survives the round trip in the spelling it was written in — the
+/// API is not allowed to normalize `21:00` into something the TOML cannot show
+/// back to the operator.
+#[tokio::test]
+async fn a_scheduled_assignment_round_trips_and_persists() {
+    let harness = start().await;
+    harness
+        .client
+        .post(harness.url("/api/v1/policies"))
+        .bearer_auth(&harness.key)
+        .json(&json!({"id": "kids"}))
+        .send()
+        .await
+        .unwrap();
+    harness
+        .client
+        .put(harness.url("/api/v1/clients/192.168.10.15/policy"))
+        .bearer_auth(&harness.key)
+        .json(&json!({
+            "policy": "kids",
+            "days": "mon-fri",
+            "start": "21:00",
+            "end": "07:00"
+        }))
+        .send()
+        .await
+        .unwrap();
+
+    let items = harness.get_json("/api/v1/policies").await;
+    let assignment = &items["items"][0]["assignments"][0];
+    assert_eq!(assignment["client"], "192.168.10.15");
+    assert_eq!(assignment["days"], "mon-fri");
+    assert_eq!(assignment["start"], "21:00");
+    assert_eq!(assignment["end"], "07:00");
+
+    let reparsed =
+        Config::from_toml_str(&std::fs::read_to_string(&harness.config_path).unwrap()).unwrap();
+    assert_eq!(
+        reparsed.policies[0].assignments[0].start.as_deref(),
+        Some("21:00")
+    );
+
+    // A malformed schedule is rejected before anything is written.
+    let bad = harness
+        .client
+        .put(harness.url("/api/v1/clients/192.168.10.16/policy"))
+        .bearer_auth(&harness.key)
+        .json(&json!({"policy": "kids", "start": "9pm", "end": "07:00"}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(bad.status(), 422);
+    let unchanged =
+        Config::from_toml_str(&std::fs::read_to_string(&harness.config_path).unwrap()).unwrap();
+    assert_eq!(
+        unchanged.policies[0].assignments.len(),
+        1,
+        "a rejected schedule must not be persisted"
+    );
+}
+
+/// `[[policies]]` has one owner, like `[[rules.lists]]`: the endpoints that
+/// can recompile the masks.
+#[tokio::test]
+async fn config_post_refuses_to_write_policies() {
+    let harness = start().await;
+    let response = harness
+        .client
+        .post(harness.url("/api/v1/config"))
+        .bearer_auth(&harness.key)
+        .json(&json!({"policies": [{"id": "kids"}]}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), 422);
+    let body: Value = response.json().await.unwrap();
+    assert!(
+        body["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("/api/v1/policies"),
+        "the error must name the endpoint that does own it: {body}"
+    );
 }
 
 // ─── Configuration ─────────────────────────────────────────────────────

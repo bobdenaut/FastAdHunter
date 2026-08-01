@@ -116,6 +116,27 @@ Notes:
   byte cap active, so the cap costs nothing at steady state. A dev box is not
   an RB5009 — the figure that counts against the budget is the device's — but
   57× headroom on the same code is what makes the device number safe.
+- **Per-client policy resolution costs +8.5 ns per query, and a deployment with
+  no policies pays that too** (p2-06, dev box, pinned per §Measuring reliably).
+  Schedules are evaluated on a 20 s tick and swapped atomically, so the query
+  path does no time arithmetic, no timezone conversion and no name lookup — it
+  walks a short array of address selectors. What remains is one `ArcSwap`
+  refcount bump plus that walk:
+
+  | arm | time | vs bare lookup |
+  | --- | --- | --- |
+  | `matcher_lookup/hit_exact` (no policy work) | 111.58 ns | — |
+  | `policy_resolution/zero_config` | 120.04 ns | +8.5 ns |
+  | `policy_resolution/assignments_1` | 119.55 ns | +8.0 ns |
+  | `policy_resolution/assignments_15` | 130.73 ns | +19.2 ns |
+
+  The zero-config arm is **not free**, and is documented as +8.5 ns rather than
+  claimed as zero. At pipeline scale it is 0.19–0.34% of one query
+  (`full_pipeline/blocked_query` 2.54 µs, `forwarded_query_overhead` 4.57 µs),
+  which is below what those benches resolve — their intervals are ±12–15%, so
+  they can only establish that no regression exceeding ~15% exists, and none
+  does. 15 assignments walked to the end (worst case, no early hit) add a
+  further 10.7 ns.
 - **DNS cache is bounded twice** (p1.5-05): `dns.cache.max_entries` and
   `dns.cache.max_bytes` (default 64 MiB), both enforced by the same O(1)
   amortized FIFO eviction, which runs until *both* hold. Entry count alone did

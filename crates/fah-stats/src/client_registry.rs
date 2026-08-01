@@ -110,6 +110,20 @@ impl ClientRegistry {
         self.clients.get(&ip).and_then(|record| record.name.clone())
     }
 
+    /// Every named client. Bounded by [`DEFAULT_CAPACITY`], and read on the
+    /// policy tick rather than per query.
+    pub fn named(&self) -> Vec<(IpAddr, std::sync::Arc<str>)> {
+        self.clients
+            .iter()
+            .filter_map(|(ip, record)| {
+                record
+                    .name
+                    .as_deref()
+                    .map(|name| (*ip, std::sync::Arc::from(name)))
+            })
+            .collect()
+    }
+
     pub fn set_name(&mut self, ip: IpAddr, name: Option<String>) -> Option<ClientView> {
         let record = self.clients.get_mut(&ip)?;
         record.name = name;

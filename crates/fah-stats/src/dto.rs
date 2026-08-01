@@ -32,4 +32,7 @@ pub struct StatsSnapshot {
     pub top_queried_domains: Vec<DomainCount>,
     pub top_clients: Vec<ClientCount>,
     pub buckets: Vec<BucketView>,
+    /// Per-policy activity (p2-06). Always carries the `default` row once
+    /// anything has been decided, so the array is never mysteriously empty.
+    pub policies: Vec<crate::aggregates::PolicyCount>,
 }
