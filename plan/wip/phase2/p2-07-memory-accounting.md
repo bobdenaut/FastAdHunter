@@ -1,6 +1,6 @@
 # P2-07 — Memory Accounting
 
-**Phase:** 2 · **Depends on:** — · **Model:** Sonnet
+**Phase:** 2 · **Depends on:** — · **Model:** Opus
 
 > Not HTTP work, like `p2-00`: the `p2-` prefix is a scheduling position. Placed
 > immediately before `p2-08` because Phase 2's soak is the first consumer — a

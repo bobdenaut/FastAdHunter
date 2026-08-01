@@ -1,0 +1,67 @@
+# captured capture at 2026-08-01T09:17:21Z
+
+### /system/resource/print
+                   uptime: 2d23h47m27s        
+                  version: 7.21.5 (long-term) 
+               build-time: 2026-07-03 10:23:40
+         factory-software: 7.8                
+              free-memory: 497.1MiB           
+             total-memory: 1024.0MiB          
+                      cpu: ARM64              
+                cpu-count: 4                  
+            cpu-frequency: 350MHz             
+                 cpu-load: 0%                 
+           free-hdd-space: 943.9MiB           
+          total-hdd-space: 1024.0MiB          
+  write-sect-since-reboot: 81211              
+         write-sect-total: 370048             
+               bad-blocks: 0%                 
+        architecture-name: arm64              
+               board-name: RB5009UG+S+        
+                 platform: MikroTik           
+
+
+### /container/print detail
+Flags: 
+S - stopped, N - starting, R - running, T - stopping, E - downloading/extracting, D - deleting, F - download/extract failed
+ 0 R ;;; postgres
+     file="" remote-image="postgres:17-alpine" check-certificate=yes 
+     name="postgres" tag="registry-1.docker.io/library/postgres:17-alpine" 
+     os="linux" arch="arm64" interface=veth2 env="" envlists=ENV_POSTGRES 
+     cmd="" entrypoint="" stop-signal=15-SIGTERM stop-time=10s 
+     root-dir=/kingston/images/postgres layer-dir="" mount="" tmpfs="" 
+     mountlists=MOUNT_POSTGRES shm-size=64.0MiB dns=192.168.10.1 hostname="" 
+     domain-name="" workdir="/" logging=yes start-on-boot=yes 
+     auto-restart-interval=none cpu-list=cpu0,cpu1,cpu2,cpu3 
+     memory-high=unlimited memory-current=25.6MiB cpu-usage=0 devices="" 
+     passed-devs="" image-id="8ee7c900f4de054e8f0a3b42b8f5da38b8fba57c3ccd7c1a0
+         2be28cb0b06494f" 
+     layers=postgres hosts="" 
+
+ 1 R ;;; fastadhunter
+     file=kingston/fastadhunter-arm64-0.2.9.tar remote-image="" 
+     check-certificate=yes name="fastadhunter" 
+     tag="docker.io/library/fastadhunter:0.2.9" os="linux" arch="arm64" 
+     interface=veth1 env="" envlists=fah-env cmd="" entrypoint="" 
+     stop-signal=15-SIGTERM stop-time=10s root-dir=fastadhunter layer-dir="" 
+     mount="" tmpfs="" mountlists=fah-config,fah-data shm-size=64.0MiB dns="" 
+     hostname="" domain-name="" workdir="/home/nonroot" logging=yes 
+     start-on-boot=yes auto-restart-interval=none 
+     cpu-list=cpu0,cpu1,cpu2,cpu3 memory-high=unlimited 
+     memory-current=104.3MiB cpu-usage=0 devices="" passed-devs="" 
+     image-id="08a8f0b56a18e461884e13b7713945d02833bddd2db35aa91c10984936a3a088
+         " 
+     layers=fastadhunter hosts="" 
+
+
+### /interface/print stats where name=veth1
+Flags: R - RUNNING; S - SLAVE
+Columns: NAME, RX-BYTE, TX-BYTE, RX-PACKET, TX-PACKET, RX-DROP, TX-DROP, 
+         TX-QUEUE-DROP, RX-ERROR
+#    NAME          RX-BYTE        TX-BYTE   RX-PACKET   TX-PACKET  R  T  T  R
+;;; fastadhunter
+0 RS veth1  10 352 623 326  7 615 864 186  72 171 704  72 505 786  0  0  0  0
+
+
+### /ip/firewall/connection/print count-only
+26

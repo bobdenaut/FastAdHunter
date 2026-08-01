@@ -1,6 +1,6 @@
 # P2-05 — Policy Model
 
-**Phase:** 2 · **Depends on:** p2-03 · **Model:** Sonnet
+**Phase:** 2 · **Depends on:** p2-03 · **Model:** Opus
 
 ## Goal
 

@@ -1,6 +1,6 @@
 # P2-04 — HTTP Filtering Pipeline
 
-**Phase:** 2 · **Depends on:** p2-02, p2-03 · **Model:** Sonnet
+**Phase:** 2 · **Depends on:** p2-02, p2-03 · **Model:** Opus
 
 ## Goal
 
@@ -56,10 +56,43 @@ Recommendation: (1). The property in (2) that gets lost is the one the p1.5
 metrics work existed to establish. Record the choice here and in
 `docs/code-review/p2-04-review.md`.
 
+## Inherited from the p2-03 review — build `HttpRequest` correctly
+
+Two requirements land on this task because it is the first code to construct a
+`fah_model::HttpRequest`. Both were found by review, not by a failing test, and
+both fail *silently* — see `docs/code-review/p2-03-review.md` §"Raised, not
+fixed".
+
+1. **Strip the port from `host` and `document_host`.** The field docs say
+   "without port" and nothing enforces it. A `Referer` of
+   `http://news.org:8080/` yields `document_host = "news.org:8080"`, and then
+   `$domain=news.org` **stops applying** — confirmed by probe. A port on `host`
+   is worse: `registrable()` reduces it to `com:8080`, inverting the
+   third-party test, and the domain-tier walk matches no rule at all. The URL
+   itself must keep its port (`||example.com^` relies on `:` being a
+   separator) — it is only these two fields that must be bare. Test both.
+
+2. **Resource-type inference is load-bearing, not a nice-to-have.** p2-03
+   shipped every request as `ResourceType::Unknown`, and the review then changed
+   what `Unknown` means: a type-restricted **block** still declines it (guessing
+   wrong would over-block), but a type-restricted **exception** now applies
+   (declining it left the block it exists to override standing). Until this task
+   infers the type, that asymmetry runs one-sided — `@@…$script` fires while
+   `…$script` does not. Derive from `Sec-Fetch-Dest` first (explicit and
+   trustworthy), then `Accept`, then the path extension; leave `Unknown` when
+   none of them speak, and assert a request with no hints stays `Unknown` rather
+   than being guessed.
+
 ## Acceptance criteria
 
 - Blocked request: zero bytes fetched upstream (assert no upstream
   connection).
+- `host` / `document_host` carry no port, asserted for a `Host: h:8080` request
+  and a `Referer` with an explicit port; a `$domain=` rule and a
+  `$third-party` rule both still decide correctly through the proxy.
+- Resource type inferred from `Sec-Fetch-Dest` / `Accept` / extension, with a
+  test that a type-restricted rule fires end-to-end through the proxy and one
+  that an unhinted request stays `Unknown`.
 - Pass-through latency unchanged vs p2-02 baseline (re-run bench, compare).
 - API.md + CONTEXT.md updated for RequestEvent/kind filter.
 - Gates green.
@@ -71,5 +104,6 @@ Policies/per-client (p2-06), HTML content rewriting (Phase 4).
 ## Suggested prompt
 
 > Read plan/wip/phase2/p2-04-http-filtering-pipeline.md, RULE_ENGINE.md §HTTP
-> matching, ARCHITECTURE.md wiring rules. Wire verdicts into the proxy with
-> type-aware block responses, RequestEvent flow, doc updates, and tests.
+> matching, ARCHITECTURE.md wiring rules, and the "Raised, not fixed" section of
+> docs/code-review/p2-03-review.md. Wire verdicts into the proxy with type-aware
+> block responses, RequestEvent flow, doc updates, and tests.

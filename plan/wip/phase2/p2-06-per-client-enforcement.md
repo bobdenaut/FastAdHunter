@@ -1,6 +1,6 @@
 # P2-06 — Per-Client Enforcement and Policy API
 
-**Phase:** 2 · **Depends on:** p2-04, p2-05 · **Model:** Sonnet
+**Phase:** 2 · **Depends on:** p2-04, p2-05 · **Model:** Opus
 
 ## Goal
 

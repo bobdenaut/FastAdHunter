@@ -1,0 +1,45 @@
+ 2026-08-01 13:21:44 container,info,debug [CONTAINER]: fah-urlbench-arm64: *** repull
+ 2026-08-01 13:21:44 container,info,debug [CONTAINER]: fah-urlbench-arm64: *** extracting tar archived image: fah-urlbench-arm64.tar
+ 2026-08-01 13:21:44 container,info,debug [CONTAINER]: fah-urlbench-arm64: *** download/extract done
+ 2026-08-01 13:23:09 container,info,debug [CONTAINER]: fah-urlbench-arm64: *** start
+ 2026-08-01 13:23:09 container,info,debug [CONTAINER]: fah-urlbench-arm64: *** started PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt TZ=Europe/Bucharest /urlbench
+ 2026-08-01 13:23:09 container,info,debug [CONTAINER]: fah-urlbench-arm64: [probe] fah urlbench E28094 p2-08 worst-case URL lookup
+ 2026-08-01 13:23:09 container,info,debug [CONTAINER]: fah-urlbench-arm64: [probe] cpu0 scaling_cur_freq: 700 MHz
+ 2026-08-01 13:23:09 container,info,debug [CONTAINER]: fah-urlbench-arm64: 
+ 2026-08-01 13:23:09 container,info,debug [CONTAINER]: fah-urlbench-arm64: [probe] ================ corpus: /corpus/easylist ================
+ 2026-08-01 13:23:09 container,info,debug [CONTAINER]: fah-urlbench-arm64: [probe] lists   : 2
+ 2026-08-01 13:23:09 container,info,debug [CONTAINER]: fah-urlbench-arm64: [probe]   easylist.raw                 dns=51362   url=5947   inactive=27644
+ 2026-08-01 13:23:09 container,info,debug [CONTAINER]: fah-urlbench-arm64: [probe]   easyprivacy.raw              dns=42752   url=12834  inactive=75
+ 2026-08-01 13:23:09 container,info,debug [CONTAINER]: fah-urlbench-arm64: [probe] parsed  : 94114 dns, 18781 url, 27719 inactive
+ 2026-08-01 13:23:09 container,info,debug [CONTAINER]: fah-urlbench-arm64: [probe] compiled: 18781 url rules (0 duplicates removed), 77 UNINDEXED
+ 2026-08-01 13:23:09 container,info,debug [CONTAINER]: fah-urlbench-arm64: [probe] heap    : url tier 1114613 bytes (1.06 MiB), whole matcher 4.05 MiB, retained rule text 435015 bytes
+ 2026-08-01 13:23:09 container,info,debug [CONTAINER]: fah-urlbench-arm64: [probe] startup : read 0.006 s, parse 0.143 s, compile 0.132 s
+ 2026-08-01 13:23:09 container,info,debug [CONTAINER]: fah-urlbench-arm64: [probe] --- measuring, ~8 s per arm ---
+ 2026-08-01 13:23:14 container,info,debug [CONTAINER]: fah-urlbench-arm64: [bench] mixed_requests         min    127.269 us  p50    127.531  mean    128.414  p99    139.429  max    474.731   (5000 batches x 7)
+ 2026-08-01 13:23:20 container,info,debug [CONTAINER]: fah-urlbench-arm64: [bench] single_pass_request    min     26.586 us  p50     26.736  mean     26.996  p99     29.371  max     96.623   (5000 batches x 37)
+ 2026-08-01 13:23:25 container,info,debug [CONTAINER]: fah-urlbench-arm64: [bench] long_url_64b           min     34.984 us  p50     35.144  mean     35.473  p99     39.353  max    113.773   (5000 batches x 28)
+ 2026-08-01 13:23:30 container,info,debug [CONTAINER]: fah-urlbench-arm64: [bench] long_url_1024b         min    452.700 us  p50    452.980  mean    455.645  p99    492.300  max   1596.020   (5000 batches x 2)
+ 2026-08-01 13:23:39 container,info,debug [CONTAINER]: fah-urlbench-arm64: [bench] long_url_4096b         min   2091.920 us  p50   2092.840  mean   2107.220  p99   2237.040  max   4957.000   (3802 batches x 1)
+ 2026-08-01 13:23:47 container,info,debug [CONTAINER]: fah-urlbench-arm64: [bench] long_url_8192b         min   5335.680 us  p50   5342.200  mean   5367.797  p99   5801.600  max   8080.640   (1493 batches x 1)
+ 2026-08-01 13:23:47 container,info,debug [CONTAINER]: fah-urlbench-arm64: [probe] budget exhaustions during this corpus: 0
+ 2026-08-01 13:23:47 container,info,debug [CONTAINER]: fah-urlbench-arm64: 
+ 2026-08-01 13:23:47 container,info,debug [CONTAINER]: fah-urlbench-arm64: [probe] ================ corpus: /corpus/production ================
+ 2026-08-01 13:23:48 container,info,debug [CONTAINER]: fah-urlbench-arm64: [probe] lists   : 2
+ 2026-08-01 13:23:48 container,info,debug [CONTAINER]: fah-urlbench-arm64: [probe]   filter_1.raw                 dns=161217  url=525    inactive=32
+ 2026-08-01 13:23:48 container,info,debug [CONTAINER]: fah-urlbench-arm64: [probe]   filter_50.raw                dns=2857    url=189    inactive=6
+ 2026-08-01 13:23:48 container,info,debug [CONTAINER]: fah-urlbench-arm64: [probe] parsed  : 164074 dns, 714 url, 38 inactive
+ 2026-08-01 13:23:48 container,info,debug [CONTAINER]: fah-urlbench-arm64: [probe] compiled: 714 url rules (0 duplicates removed), 3 UNINDEXED
+ 2026-08-01 13:23:48 container,info,debug [CONTAINER]: fah-urlbench-arm64: [probe] heap    : url tier 42253 bytes (0.04 MiB), whole matcher 5.25 MiB, retained rule text 15169 bytes
+ 2026-08-01 13:23:48 container,info,debug [CONTAINER]: fah-urlbench-arm64: [probe] startup : read 0.006 s, parse 0.170 s, compile 0.164 s
+ 2026-08-01 13:23:48 container,info,debug [CONTAINER]: fah-urlbench-arm64: [probe] --- measuring, ~8 s per arm ---
+ 2026-08-01 13:23:53 container,info,debug [CONTAINER]: fah-urlbench-arm64: [bench] mixed_requests         min     13.779 us  p50     13.890  mean     14.035  p99     16.199  max     50.634   (5000 batches x 70)
+ 2026-08-01 13:23:58 container,info,debug [CONTAINER]: fah-urlbench-arm64: [bench] single_pass_request    min      3.350 us  p50      3.374  mean      3.393  p99      3.612  max     13.503   (5000 batches x 283)
+ 2026-08-01 13:24:04 container,info,debug [CONTAINER]: fah-urlbench-arm64: [bench] long_url_64b           min      2.667 us  p50      2.693  mean      2.709  p99      2.898  max      9.811   (5000 batches x 355)
+ 2026-08-01 13:24:09 container,info,debug [CONTAINER]: fah-urlbench-arm64: [bench] long_url_1024b         min     55.541 us  p50     55.581  mean     55.975  p99     60.184  max    155.967   (5000 batches x 17)
+ 2026-08-01 13:24:14 container,info,debug [CONTAINER]: fah-urlbench-arm64: [bench] long_url_4096b         min    195.408 us  p50    195.984  mean    197.591  p99    212.416  max    653.824   (5000 batches x 5)
+ 2026-08-01 13:24:19 container,info,debug [CONTAINER]: fah-urlbench-arm64: [bench] long_url_8192b         min    376.820 us  p50    378.080  mean    381.631  p99    415.420  max   1453.460   (5000 batches x 2)
+ 2026-08-01 13:24:19 container,info,debug [CONTAINER]: fah-urlbench-arm64: [probe] budget exhaustions during this corpus: 0
+ 2026-08-01 13:24:19 container,info,debug [CONTAINER]: fah-urlbench-arm64: [probe] cpu0 scaling_cur_freq: 350 MHz
+ 2026-08-01 13:24:19 container,info,debug [CONTAINER]: fah-urlbench-arm64: [probe] done
+ 2026-08-01 13:24:19 container,info,debug [CONTAINER]: fah-urlbench-arm64: *** exited with status 0
+

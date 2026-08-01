@@ -1,0 +1,362 @@
+ 2026-07-29 12:39:14 container,info,debug [CONTAINER]: postgres: *** start
+ 2026-07-29 12:39:15 container,info,debug [CONTAINER]: postgres: *** started PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin GOSU_VERSION=1.19 LANG=en_US.utf8 PG_MAJOR=17 PG_VERSION=17.10 PG_SHA256=078a03516dcdbdb705fecaf415ea3d13a956c589e46f09fed68a06fb00598c90 DOCKER_PG_LLVM_DEPS=llvm21-dev ttclang21 PGDATA=/var/lib/postgresql/data/pgdata POSTGRES_DB=fastadhunter POSTGRES_PASSWORD=0penGate5%! POSTGRES_USER=fah POSTGRES_INITDB_ARGS=--encoding='UTF8' --lc-collate='C' --lc-ctype='C' TZ=Europe/Bucharest docker-entrypoint.sh postgres
+ 2026-07-29 12:39:15 container,info,debug [CONTAINER]: postgres: 
+ 2026-07-29 12:39:15 container,info,debug [CONTAINER]: postgres: PostgreSQL Database directory appears to contain a database; Skipping initialization
+ 2026-07-29 12:39:15 container,info,debug [CONTAINER]: postgres: 
+ 2026-07-29 12:39:15 container,info,debug [CONTAINER]: postgres: 2026-07-29 12:39:15.777 EEST [1] LOG:  starting PostgreSQL 17.10 on aarch64-unknown-linux-musl, compiled by gcc (Alpine 15.2.0) 15.2.0, 64-bit
+ 2026-07-29 12:39:15 container,info,debug [CONTAINER]: postgres: 2026-07-29 12:39:15.777 EEST [1] LOG:  listening on IPv4 address "0.0.0.0", port 5432
+ 2026-07-29 12:39:15 container,info,debug [CONTAINER]: postgres: 2026-07-29 12:39:15.777 EEST [1] LOG:  listening on IPv6 address "::", port 5432
+ 2026-07-29 12:39:15 container,info,debug [CONTAINER]: postgres: 2026-07-29 12:39:15.781 EEST [1] LOG:  listening on Unix socket "/var/run/postgresql/.s.PGSQL.5432"
+ 2026-07-29 12:39:15 container,info,debug [CONTAINER]: postgres: 2026-07-29 12:39:15.789 EEST [24] LOG:  database system was shut down at 2026-07-29 12:38:56 EEST
+ 2026-07-29 12:39:15 container,info,debug [CONTAINER]: postgres: 2026-07-29 12:39:15.818 EEST [1] LOG:  database system is ready to accept connections
+ 2026-07-29 12:39:16 container,info,debug [CONTAINER]: fastadhunter: *** start
+ 2026-07-29 12:39:16 container,info,debug [CONTAINER]: fastadhunter: *** started PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt TZ=Europe/Bucharest /fastadhunter
+ 2026-07-29 12:39:16 container,info,debug [CONTAINER]: fastadhunter: 2026-07-29T09:39:16.476555Z  INFO fastadhunter: fastadhunter starting config_path=/config/fastadhunter.toml data_dir=/data mode=Dns
+ 2026-07-29 12:39:18 container,info,debug [CONTAINER]: fastadhunter: 2026-07-29T09:39:18.739476Z  INFO fastadhunter: ruleset compiled from cache rules=702333
+ 2026-07-29 12:39:18 container,info,debug [CONTAINER]: fastadhunter: 2026-07-29T09:39:18.754220Z  INFO fastadhunter: DNS listeners bound udp=[::]:53 tcp=[::]:53
+ 2026-07-29 12:39:18 container,info,debug [CONTAINER]: fastadhunter: 2026-07-29T09:39:18.755622Z  INFO fastadhunter::privilege::imp: dropped privileges after binding uid=65532 gid=65532
+ 2026-07-29 12:39:18 container,info,debug [CONTAINER]: fastadhunter: 2026-07-29T09:39:18.758753Z  INFO fastadhunter: API listening url=https://0.0.0.0:8443
+ 2026-07-29 12:40:03 container,info,debug [CONTAINER]: fastadhunter: 2026-07-29T09:40:03.052354Z  INFO fah_rules::lifecycle: list refreshed list=big.oisd.nl rules=702333
+ 2026-07-29 12:40:05 container,info,debug [CONTAINER]: fastadhunter: 2026-07-29T09:40:05.592041Z  INFO fah_rules::lifecycle: list refreshed list=filter_1 rules=702333
+ 2026-07-29 12:40:07 container,info,debug [CONTAINER]: fastadhunter: 2026-07-29T09:40:07.808103Z  INFO fah_rules::lifecycle: list refreshed list=filter_2 rules=702333
+ 2026-07-29 12:40:10 container,info,debug [CONTAINER]: fastadhunter: 2026-07-29T09:40:10.163990Z  INFO fah_rules::lifecycle: list refreshed list=filter_3 rules=702333
+ 2026-07-29 12:40:12 container,info,debug [CONTAINER]: fastadhunter: 2026-07-29T09:40:12.479912Z  INFO fah_rules::lifecycle: list refreshed list=filter_11 rules=702333
+ 2026-07-29 12:40:15 container,info,debug [CONTAINER]: fastadhunter: 2026-07-29T09:40:15.007346Z  INFO fah_rules::lifecycle: list refreshed list=filter_18 rules=702333
+ 2026-07-29 12:40:17 container,info,debug [CONTAINER]: fastadhunter: 2026-07-29T09:40:17.349987Z  INFO fah_rules::lifecycle: list refreshed list=filter_30 rules=702333
+ 2026-07-29 12:40:19 container,info,debug [CONTAINER]: fastadhunter: 2026-07-29T09:40:19.706721Z  INFO fah_rules::lifecycle: list refreshed list=filter_43 rules=702333
+ 2026-07-29 12:40:22 container,info,debug [CONTAINER]: fastadhunter: 2026-07-29T09:40:22.267519Z  INFO fah_rules::lifecycle: list refreshed list=filter_48 rules=702333
+ 2026-07-29 12:40:24 container,info,debug [CONTAINER]: fastadhunter: 2026-07-29T09:40:24.599289Z  INFO fah_rules::lifecycle: list refreshed list=filter_50 rules=702333
+ 2026-07-29 12:40:26 container,info,debug [CONTAINER]: fastadhunter: 2026-07-29T09:40:26.970112Z  INFO fah_rules::lifecycle: list refreshed list=filter_59 rules=702333
+ 2026-07-29 12:40:29 container,info,debug [CONTAINER]: fastadhunter: 2026-07-29T09:40:29.349625Z  INFO fah_rules::lifecycle: list refreshed list=filter_63 rules=702333
+ 2026-07-29 12:40:31 container,info,debug [CONTAINER]: fastadhunter: 2026-07-29T09:40:31.793148Z  INFO fah_rules::lifecycle: list refreshed list=dyndns rules=702333
+ 2026-07-29 12:40:34 container,info,debug [CONTAINER]: fastadhunter: 2026-07-29T09:40:34.212924Z  INFO fah_rules::lifecycle: list refreshed list=hosts rules=702333
+ 2026-07-29 12:40:36 container,info,debug [CONTAINER]: fastadhunter: 2026-07-29T09:40:36.417787Z  INFO fah_rules::lifecycle: list refreshed list=spy rules=702333
+ 2026-07-29 12:40:38 container,info,debug [CONTAINER]: fastadhunter: 2026-07-29T09:40:38.661455Z  INFO fah_rules::lifecycle: list refreshed list=doh-vpn-proxy-bypass rules=702333
+ 2026-07-29 12:44:56 container,info,debug [CONTAINER]: postgres: 2026-07-29 12:44:56.981 EEST [22] LOG:  checkpoint starting: time
+ 2026-07-29 12:44:57 container,info,debug [CONTAINER]: postgres: 2026-07-29 12:44:57.003 EEST [22] LOG:  checkpoint complete: wrote 3 buffers (0.0%); 0 WAL file(s) added, 0 removed, 0 recycled; write=0.007 s, sync=0.002 s, total=0.022 s; sync files=2, longest=0.001 s, average=0.001 s; distance=0 kB, estimate=0 kB; lsn=0/195E668, redo lsn=0/195E610
+ 2026-07-29 12:54:01 container,info,debug [CONTAINER]: postgres: *** stop
+ 2026-07-29 12:54:01 container,info,debug [CONTAINER]: postgres: 2026-07-29 12:54:01.202 EEST [1] LOG:  received smart shutdown request
+ 2026-07-29 12:54:01 container,info,debug [CONTAINER]: postgres: 2026-07-29 12:54:01.218 EEST [1] LOG:  background worker "logical replication launcher" (PID 27) exited with exit code 1
+ 2026-07-29 12:54:01 container,info,debug [CONTAINER]: postgres: 2026-07-29 12:54:01.221 EEST [22] LOG:  shutting down
+ 2026-07-29 12:54:01 container,info,debug [CONTAINER]: postgres: 2026-07-29 12:54:01.222 EEST [22] LOG:  checkpoint starting: shutdown immediate
+ 2026-07-29 12:54:01 container,info,debug [CONTAINER]: postgres: 2026-07-29 12:54:01.227 EEST [22] LOG:  checkpoint complete: wrote 0 buffers (0.0%); 0 WAL file(s) added, 0 removed, 0 recycled; write=0.001 s, sync=0.001 s, total=0.007 s; sync files=0, longest=0.000 s, average=0.000 s; distance=0 kB, estimate=0 kB; lsn=0/195E718, redo lsn=0/195E718
+ 2026-07-29 12:54:01 container,info,debug [CONTAINER]: postgres: 2026-07-29 12:54:01.239 EEST [1] LOG:  database system is shut down
+ 2026-07-29 12:54:01 container,info,debug [CONTAINER]: postgres: *** exited with status 0
+ 2026-07-29 12:54:10 container,info,debug [CONTAINER]: postgres: *** start
+ 2026-07-29 12:54:11 container,info,debug [CONTAINER]: postgres: *** started PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin GOSU_VERSION=1.19 LANG=en_US.utf8 PG_MAJOR=17 PG_VERSION=17.10 PG_SHA256=078a03516dcdbdb705fecaf415ea3d13a956c589e46f09fed68a06fb00598c90 DOCKER_PG_LLVM_DEPS=llvm21-dev ttclang21 PGDATA=/var/lib/postgresql/data/pgdata POSTGRES_DB=fastadhunter POSTGRES_PASSWORD=0penGate5%! POSTGRES_USER=fah POSTGRES_INITDB_ARGS=--encoding='UTF8' --lc-collate='C' --lc-ctype='C' TZ=Europe/Bucharest docker-entrypoint.sh postgres
+ 2026-07-29 12:54:11 container,info,debug [CONTAINER]: postgres: 
+ 2026-07-29 12:54:11 container,info,debug [CONTAINER]: postgres: PostgreSQL Database directory appears to contain a database; Skipping initialization
+ 2026-07-29 12:54:11 container,info,debug [CONTAINER]: postgres: 
+ 2026-07-29 12:54:11 container,info,debug [CONTAINER]: postgres: 2026-07-29 12:54:11.268 EEST [1] LOG:  starting PostgreSQL 17.10 on aarch64-unknown-linux-musl, compiled by gcc (Alpine 15.2.0) 15.2.0, 64-bit
+ 2026-07-29 12:54:11 container,info,debug [CONTAINER]: postgres: 2026-07-29 12:54:11.268 EEST [1] LOG:  listening on IPv4 address "0.0.0.0", port 5432
+ 2026-07-29 12:54:11 container,info,debug [CONTAINER]: postgres: 2026-07-29 12:54:11.268 EEST [1] LOG:  listening on IPv6 address "::", port 5432
+ 2026-07-29 12:54:11 container,info,debug [CONTAINER]: postgres: 2026-07-29 12:54:11.272 EEST [1] LOG:  listening on Unix socket "/var/run/postgresql/.s.PGSQL.5432"
+ 2026-07-29 12:54:11 container,info,debug [CONTAINER]: postgres: 2026-07-29 12:54:11.283 EEST [24] LOG:  database system was shut down at 2026-07-29 12:54:01 EEST
+ 2026-07-29 12:54:11 container,info,debug [CONTAINER]: postgres: 2026-07-29 12:54:11.300 EEST [1] LOG:  database system is ready to accept connections
+ 2026-07-29 12:55:03 container,info,debug [CONTAINER]: postgres: 2026-07-29 12:55:03.512 EEST [29] ERROR:  relation "pgagent.pga_job" does not exist at character 15
+ 2026-07-29 12:55:03 container,info,debug [CONTAINER]: postgres: 2026-07-29 12:55:03.512 EEST [29] STATEMENT:  SELECT * FROM pgagent.pga_job
+ 2026-07-29 12:59:11 container,info,debug [CONTAINER]: postgres: 2026-07-29 12:59:11.381 EEST [22] LOG:  checkpoint starting: time
+ 2026-07-29 12:59:11 container,info,debug [CONTAINER]: postgres: 2026-07-29 12:59:11.400 EEST [22] LOG:  checkpoint complete: wrote 3 buffers (0.0%); 0 WAL file(s) added, 0 removed, 0 recycled; write=0.007 s, sync=0.002 s, total=0.020 s; sync files=2, longest=0.001 s, average=0.001 s; distance=0 kB, estimate=0 kB; lsn=0/195E820, redo lsn=0/195E7C8
+ 2026-07-29 20:48:44 container,info,debug [CONTAINER]: fastadhunter: *** stop
+ 2026-07-29 20:48:44 container,info,debug [CONTAINER]: fastadhunter: 2026-07-29T17:48:44.545279Z  INFO fastadhunter: fastadhunter shutting down
+ 2026-07-29 20:48:44 container,info,debug [CONTAINER]: fastadhunter: *** exited with status 0
+ 2026-07-29 20:49:38 container,info,debug [CONTAINER]: fastadhunter: *** start
+ 2026-07-29 20:49:38 container,info,debug [CONTAINER]: fastadhunter: *** started PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt TZ=Europe/Bucharest /fastadhunter
+ 2026-07-29 20:49:39 container,info,debug [CONTAINER]: fastadhunter: 2026-07-29T17:49:39.096210Z  INFO fastadhunter: fastadhunter starting config_path=/config/fastadhunter.toml data_dir=/data mode=Dns
+ 2026-07-29 20:49:41 container,info,debug [CONTAINER]: fastadhunter: 2026-07-29T17:49:41.307283Z  INFO fastadhunter: ruleset compiled from cache rules=702333
+ 2026-07-29 20:49:41 container,info,debug [CONTAINER]: fastadhunter: 2026-07-29T17:49:41.331985Z  INFO fastadhunter: DNS listeners bound udp=[::]:53 tcp=[::]:53
+ 2026-07-29 20:49:41 container,info,debug [CONTAINER]: fastadhunter: 2026-07-29T17:49:41.334927Z  INFO fastadhunter::privilege::imp: dropped privileges after binding uid=65532 gid=65532
+ 2026-07-29 20:49:41 container,info,debug [CONTAINER]: fastadhunter: 2026-07-29T17:49:41.336686Z  INFO fastadhunter: API listening url=https://0.0.0.0:8443
+ 2026-07-29 20:50:03 container,info,debug [CONTAINER]: fastadhunter: 2026-07-29T17:50:03.081492Z  INFO fah_rules::lifecycle: list refreshed list=big.oisd.nl rules=701949
+ 2026-07-29 20:50:11 container,info,debug [CONTAINER]: fastadhunter: 2026-07-29T17:50:11.947486Z  INFO fah_rules::lifecycle: list refreshed list=filter_1 rules=701984
+ 2026-07-29 20:51:14 container,info,debug [CONTAINER]: fastadhunter: 2026-07-29T17:51:14.303317Z  INFO fah_rules::lifecycle: list refreshed list=filter_2 rules=701984
+ 2026-07-29 20:51:45 container,info,debug [CONTAINER]: fastadhunter: 2026-07-29T17:51:45.661896Z  INFO fah_rules::lifecycle: list refreshed list=filter_3 rules=701984
+ 2026-07-29 20:51:48 container,info,debug [CONTAINER]: fastadhunter: 2026-07-29T17:51:48.048296Z  INFO fah_rules::lifecycle: list refreshed list=filter_11 rules=701877
+ 2026-07-29 20:51:50 container,info,debug [CONTAINER]: fastadhunter: 2026-07-29T17:51:50.495638Z  INFO fah_rules::lifecycle: list refreshed list=filter_18 rules=701733
+ 2026-07-29 20:51:52 container,info,debug [CONTAINER]: fastadhunter: 2026-07-29T17:51:52.920146Z  INFO fah_rules::lifecycle: list refreshed list=filter_30 rules=701583
+ 2026-07-29 20:51:55 container,info,debug [CONTAINER]: fastadhunter: 2026-07-29T17:51:55.246155Z  INFO fah_rules::lifecycle: list refreshed list=filter_43 rules=701583
+ 2026-07-29 20:51:57 container,info,debug [CONTAINER]: fastadhunter: 2026-07-29T17:51:57.905222Z  INFO fah_rules::lifecycle: list refreshed list=filter_48 rules=701604
+ 2026-07-29 20:52:00 container,info,debug [CONTAINER]: fastadhunter: 2026-07-29T17:52:00.216188Z  INFO fah_rules::lifecycle: list refreshed list=filter_50 rules=701604
+ 2026-07-29 20:52:02 container,info,debug [CONTAINER]: fastadhunter: 2026-07-29T17:52:02.551631Z  INFO fah_rules::lifecycle: list refreshed list=filter_59 rules=701604
+ 2026-07-29 20:52:04 container,info,debug [CONTAINER]: fastadhunter: 2026-07-29T17:52:04.870288Z  INFO fah_rules::lifecycle: list refreshed list=filter_63 rules=701604
+ 2026-07-29 20:52:07 container,info,debug [CONTAINER]: fastadhunter: 2026-07-29T17:52:07.290422Z  INFO fah_rules::lifecycle: list refreshed list=dyndns rules=701604
+ 2026-07-29 20:52:09 container,info,debug [CONTAINER]: fastadhunter: 2026-07-29T17:52:09.758805Z  INFO fah_rules::lifecycle: list refreshed list=hosts rules=701604
+ 2026-07-29 20:52:12 container,info,debug [CONTAINER]: fastadhunter: 2026-07-29T17:52:12.099290Z  INFO fah_rules::lifecycle: list refreshed list=spy rules=701604
+ 2026-07-29 20:52:14 container,info,debug [CONTAINER]: fastadhunter: 2026-07-29T17:52:14.307999Z  INFO fah_rules::lifecycle: list refreshed list=doh-vpn-proxy-bypass rules=701604
+ 2026-07-29 22:34:22 container,info,debug [CONTAINER]: postgres: 2026-07-29 22:34:22.893 EEST [22] LOG:  checkpoint starting: time
+ 2026-07-29 22:34:28 container,info,debug [CONTAINER]: postgres: 2026-07-29 22:34:28.158 EEST [22] LOG:  checkpoint complete: wrote 53 buffers (0.6%); 0 WAL file(s) added, 0 removed, 2 recycled; write=5.238 s, sync=0.014 s, total=5.266 s; sync files=43, longest=0.002 s, average=0.001 s; distance=23360 kB, estimate=23360 kB; lsn=0/302EAC0, redo lsn=0/302EA68
+ 2026-07-30 17:54:07 container,info,debug [CONTAINER]: fastadhunter: *** stop
+ 2026-07-30 17:54:07 container,info,debug [CONTAINER]: fastadhunter: 2026-07-30T14:54:07.124629Z  INFO fastadhunter: fastadhunter shutting down
+ 2026-07-30 17:54:07 container,info,debug [CONTAINER]: fastadhunter: *** exited with status 0
+ 2026-07-30 17:55:04 container,info,debug [CONTAINER]: fastadhunter: *** removing files
+ 2026-07-30 17:55:04 container,info,debug [CONTAINER]: fastadhunter: *** remove done
+ 2026-07-30 17:56:36 container,info,debug [CONTAINER]: fastadhunter: *** repull
+ 2026-07-30 17:56:36 container,info,debug [CONTAINER]: fastadhunter: *** extracting tar archived image: fastadhunter-arm64-0.2.7.tar
+ 2026-07-30 17:56:48 container,info,debug [CONTAINER]: fastadhunter: *** download/extract done
+ 2026-07-30 17:57:04 container,info,debug [CONTAINER]: fastadhunter: *** start
+ 2026-07-30 17:57:04 container,info,debug [CONTAINER]: fastadhunter: *** started PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt TZ=Europe/Bucharest /fastadhunter
+ 2026-07-30 17:57:04 container,info,debug [CONTAINER]: fastadhunter: 2026-07-30T14:57:04.581469Z  INFO fastadhunter: fastadhunter starting config_path=/config/fastadhunter.toml data_dir=/data mode=Dns
+ 2026-07-30 17:57:06 container,info,debug [CONTAINER]: fastadhunter: 2026-07-30T14:57:06.792325Z  INFO fastadhunter: ruleset compiled from cache rules=701604
+ 2026-07-30 17:57:06 container,info,debug [CONTAINER]: fastadhunter: 2026-07-30T14:57:06.804500Z  INFO fastadhunter: DNS listeners bound udp=[::]:53 tcp=[::]:53
+ 2026-07-30 17:57:06 container,info,debug [CONTAINER]: fastadhunter: 2026-07-30T14:57:06.807522Z  INFO fastadhunter::privilege::imp: dropped privileges after binding uid=65532 gid=65532
+ 2026-07-30 17:57:06 container,info,debug [CONTAINER]: fastadhunter: 2026-07-30T14:57:06.809498Z  INFO fastadhunter: API listening url=https://0.0.0.0:8443
+ 2026-07-30 17:57:14 container,info,debug [CONTAINER]: fastadhunter: 2026-07-30T14:57:14.256420Z  INFO fah_rules::lifecycle: scheduled refresh complete lists=16 refreshed=16 failed=0 rules=702366
+ 2026-07-30 17:58:53 container,info,debug [CONTAINER]: fastadhunter: 2026-07-30T14:58:53.587468Z  INFO fah_rules::lifecycle: list refreshed list=spy rules=702366
+ 2026-07-30 17:59:29 container,info,debug [CONTAINER]: fastadhunter: 2026-07-30T14:59:29.481703Z  INFO fah_rules::lifecycle: refreshed all lists lists=16 refreshed=16 failed=0 rules=702366
+ 2026-07-30 19:07:51 container,info,debug [CONTAINER]: fastadhunter: *** stop
+ 2026-07-30 19:07:51 container,info,debug [CONTAINER]: fastadhunter: 2026-07-30T16:07:51.027926Z  INFO fastadhunter: fastadhunter shutting down
+ 2026-07-30 19:07:51 container,info,debug [CONTAINER]: fastadhunter: *** exited with status 0
+ 2026-07-30 19:10:03 container,info,debug [CONTAINER]: fastadhunter: *** start
+ 2026-07-30 19:10:03 container,info,debug [CONTAINER]: fastadhunter: *** started PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt TZ=Europe/Bucharest /fastadhunter
+ 2026-07-30 19:10:03 container,info,debug [CONTAINER]: fastadhunter: 2026-07-30T16:10:03.236776Z  INFO fastadhunter: fastadhunter starting config_path=/config/fastadhunter.toml data_dir=/data mode=Dns
+ 2026-07-30 19:10:05 container,info,debug [CONTAINER]: fastadhunter: 2026-07-30T16:10:05.569767Z  INFO fastadhunter: ruleset compiled from cache rules=702366
+ 2026-07-30 19:10:05 container,info,debug [CONTAINER]: fastadhunter: 2026-07-30T16:10:05.575886Z  INFO fastadhunter: DNS listeners bound udp=[::]:53 tcp=[::]:53
+ 2026-07-30 19:10:05 container,info,debug [CONTAINER]: fastadhunter: 2026-07-30T16:10:05.578420Z  INFO fastadhunter::privilege::imp: dropped privileges after binding uid=65532 gid=65532
+ 2026-07-30 19:10:05 container,info,debug [CONTAINER]: fastadhunter: 2026-07-30T16:10:05.580885Z  INFO fastadhunter: API listening url=https://0.0.0.0:8443
+ 2026-07-30 19:10:11 container,info,debug [CONTAINER]: fastadhunter: 2026-07-30T16:10:11.730723Z  INFO fah_rules::lifecycle: scheduled refresh complete lists=16 refreshed=16 failed=0 rules=702415
+ 2026-07-30 19:12:27 container,info,debug [CONTAINER]: fastadhunter: *** stop
+ 2026-07-30 19:12:27 container,info,debug [CONTAINER]: fastadhunter: 2026-07-30T16:12:27.381749Z  INFO fastadhunter: fastadhunter shutting down
+ 2026-07-30 19:12:27 container,info,debug [CONTAINER]: fastadhunter: *** exited with status 0
+ 2026-07-30 19:15:31 container,info,debug [CONTAINER]: fastadhunter: *** removing files
+ 2026-07-30 19:15:34 container,info,debug [CONTAINER]: fastadhunter: *** remove done
+ 2026-07-30 19:16:42 container,info,debug [CONTAINER]: fastadhunter: *** repull
+ 2026-07-30 19:16:42 container,info,debug [CONTAINER]: fastadhunter: *** extracting tar archived image: fastadhunter-arm64-0.2.7.tar
+ 2026-07-30 19:16:54 container,info,debug [CONTAINER]: fastadhunter: *** download/extract done
+ 2026-07-30 19:18:34 container,info,debug [CONTAINER]: fastadhunter: *** start
+ 2026-07-30 19:18:34 container,info,debug [CONTAINER]: fastadhunter: *** started PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt MIMALLOC_PURGE_DELAY=0 MIMALLOC_PURGE_DECOMMITS=1 MIMALLOC_ARENA_EAGER_COMMIT=0 TZ=Europe/Bucharest /fastadhunter
+ 2026-07-30 19:19:32 container,info,debug [CONTAINER]: fastadhunter: *** stop
+ 2026-07-30 19:19:32 container,info,debug [CONTAINER]: fastadhunter: *** exited with status 0
+ 2026-07-30 19:19:47 container,info,debug [CONTAINER]: fastadhunter: *** removing files
+ 2026-07-30 19:19:50 container,info,debug [CONTAINER]: fastadhunter: *** remove done
+ 2026-07-30 19:20:59 container,info,debug [CONTAINER]: fastadhunter: *** repull
+ 2026-07-30 19:20:59 container,info,debug [CONTAINER]: fastadhunter: *** extracting tar archived image: fastadhunter-arm64-0.2.7.tar
+ 2026-07-30 19:21:11 container,info,debug [CONTAINER]: fastadhunter: *** download/extract done
+ 2026-07-30 19:21:22 container,info,debug [CONTAINER]: fastadhunter: *** start
+ 2026-07-30 19:21:22 container,info,debug [CONTAINER]: fastadhunter: *** started PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt MIMALLOC_PURGE_DELAY=0 MIMALLOC_PURGE_DECOMMITS=1 MIMALLOC_ARENA_EAGER_COMMIT=0 TZ=Europe/Bucharest /fastadhunter
+ 2026-07-30 19:21:22 container,info,debug [CONTAINER]: fastadhunter: 2026-07-30T16:21:22.743686Z  INFO fastadhunter: fastadhunter starting config_path=/config/fastadhunter.toml data_dir=/data mode=Dns
+ 2026-07-30 19:21:25 container,info,debug [CONTAINER]: fastadhunter: 2026-07-30T16:21:25.038203Z  INFO fastadhunter: ruleset compiled from cache rules=702415
+ 2026-07-30 19:21:25 container,info,debug [CONTAINER]: fastadhunter: 2026-07-30T16:21:25.060304Z  INFO fastadhunter: DNS listeners bound udp=[::]:53 tcp=[::]:53
+ 2026-07-30 19:21:25 container,info,debug [CONTAINER]: fastadhunter: 2026-07-30T16:21:25.062046Z  INFO fastadhunter::privilege::imp: dropped privileges after binding uid=65532 gid=65532
+ 2026-07-30 19:21:25 container,info,debug [CONTAINER]: fastadhunter: 2026-07-30T16:21:25.063669Z  INFO fastadhunter: API listening url=https://0.0.0.0:8443
+ 2026-07-30 19:21:32 container,info,debug [CONTAINER]: fastadhunter: 2026-07-30T16:21:32.049455Z  INFO fah_rules::lifecycle: scheduled refresh complete lists=16 refreshed=16 failed=0 rules=702415
+ 2026-07-30 20:29:50 container,info,debug [CONTAINER]: fastadhunter: *** stop
+ 2026-07-30 20:29:50 container,info,debug [CONTAINER]: fastadhunter: 2026-07-30T17:29:50.420091Z  INFO fastadhunter: fastadhunter shutting down
+ 2026-07-30 20:29:50 container,info,debug [CONTAINER]: fastadhunter: *** exited with status 0
+ 2026-07-30 20:30:05 container,info,debug [CONTAINER]: fastadhunter: *** start
+ 2026-07-30 20:30:05 container,info,debug [CONTAINER]: fastadhunter: *** started PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt MIMALLOC_PURGE_DELAY=100 MIMALLOC_PURGE_DECOMMITS=1 MIMALLOC_ARENA_EAGER_COMMIT=0 MIMALLOC_VERBOSE=1 TZ=Europe/Bucharest /fastadhunter
+ 2026-07-30 20:30:06 container,info,debug [CONTAINER]: fastadhunter: mimalloc: process init: 0xFFFFF7FFD0C8
+ 2026-07-30 20:30:06 container,info,debug [CONTAINER]: fastadhunter: v3.3.2 (built on Jul 30 2026, 13:49:40)
+ 2026-07-30 20:30:06 container,info,debug [CONTAINER]: fastadhunter: option 'show_errors': 0
+ 2026-07-30 20:30:06 container,info,debug [CONTAINER]: fastadhunter: option 'show_stats': 0
+ 2026-07-30 20:30:06 container,info,debug [CONTAINER]: fastadhunter: option 'verbose': 1
+ 2026-07-30 20:30:06 container,info,debug [CONTAINER]: fastadhunter: option 'deprecated_eager_commit': 1
+ 2026-07-30 20:30:06 container,info,debug [CONTAINER]: fastadhunter: option 'arena_eager_commit': 0
+ 2026-07-30 20:30:06 container,info,debug [CONTAINER]: fastadhunter: option 'purge_decommits': 1
+ 2026-07-30 20:30:06 container,info,debug [CONTAINER]: fastadhunter: option 'allow_large_os_pages': 0
+ 2026-07-30 20:30:06 container,info,debug [CONTAINER]: fastadhunter: option 'reserve_huge_os_pages': 0
+ 2026-07-30 20:30:06 container,info,debug [CONTAINER]: fastadhunter: option 'reserve_huge_os_pages_at': -1
+ 2026-07-30 20:30:06 container,info,debug [CONTAINER]: fastadhunter: option 'reserve_os_memory': 0 KiB
+ 2026-07-30 20:30:06 container,info,debug [CONTAINER]: fastadhunter: option 'deprecated_segment_cache': 0
+ 2026-07-30 20:30:06 container,info,debug [CONTAINER]: fastadhunter: option 'deprecated_page_reset': 0
+ 2026-07-30 20:30:06 container,info,debug [CONTAINER]: fastadhunter: option 'deprecated_abandoned_page_purge': 0
+ 2026-07-30 20:30:06 container,info,debug [CONTAINER]: fastadhunter: option 'deprecated_segment_reset': 0
+ 2026-07-30 20:30:06 container,info,debug [CONTAINER]: fastadhunter: option 'deprecated_eager_commit_delay': 1
+ 2026-07-30 20:30:06 container,info,debug [CONTAINER]: fastadhunter: option 'purge_delay': 100
+ 2026-07-30 20:30:06 container,info,debug [CONTAINER]: fastadhunter: option 'use_numa_nodes': 0
+ 2026-07-30 20:30:06 container,info,debug [CONTAINER]: fastadhunter: option 'disallow_os_alloc': 0
+ 2026-07-30 20:30:06 container,info,debug [CONTAINER]: fastadhunter: option 'os_tag': 100
+ 2026-07-30 20:30:06 container,info,debug [CONTAINER]: fastadhunter: option 'max_errors': 32
+ 2026-07-30 20:30:06 container,info,debug [CONTAINER]: fastadhunter: option 'max_warnings': 32
+ 2026-07-30 20:30:06 container,info,debug [CONTAINER]: fastadhunter: option 'deprecated_max_segment_reclaim': 10
+ 2026-07-30 20:30:06 container,info,debug [CONTAINER]: fastadhunter: option 'destroy_on_exit': 0
+ 2026-07-30 20:30:06 container,info,debug [CONTAINER]: fastadhunter: option 'arena_reserve': 1048576 KiB
+ 2026-07-30 20:30:06 container,info,debug [CONTAINER]: fastadhunter: option 'arena_purge_mult': 1
+ 2026-07-30 20:30:06 container,info,debug [CONTAINER]: fastadhunter: option 'deprecated_purge_extend_delay': 1
+ 2026-07-30 20:30:06 container,info,debug [CONTAINER]: fastadhunter: option 'disallow_arena_alloc': 0
+ 2026-07-30 20:30:06 container,info,debug [CONTAINER]: fastadhunter: option 'retry_on_oom': 400
+ 2026-07-30 20:30:06 container,info,debug [CONTAINER]: fastadhunter: option 'visit_abandoned': 0
+ 2026-07-30 20:30:06 container,info,debug [CONTAINER]: fastadhunter: option 'guarded_min': 0
+ 2026-07-30 20:30:06 container,info,debug [CONTAINER]: fastadhunter: option 'guarded_max': 1073741824
+ 2026-07-30 20:30:06 container,info,debug [CONTAINER]: fastadhunter: option 'guarded_precise': 0
+ 2026-07-30 20:30:06 container,info,debug [CONTAINER]: fastadhunter: option 'guarded_sample_rate': 0
+ 2026-07-30 20:30:06 container,info,debug [CONTAINER]: fastadhunter: option 'guarded_sample_seed': 0
+ 2026-07-30 20:30:06 container,info,debug [CONTAINER]: fastadhunter: option 'generic_collect': 10000
+ 2026-07-30 20:30:06 container,info,debug [CONTAINER]: fastadhunter: option 'page_reclaim_on_free': 0
+ 2026-07-30 20:30:06 container,info,debug [CONTAINER]: fastadhunter: option 'page_full_retain': 2
+ 2026-07-30 20:30:06 container,info,debug [CONTAINER]: fastadhunter: option 'page_max_candidates': 4
+ 2026-07-30 20:30:06 container,info,debug [CONTAINER]: fastadhunter: option 'max_vabits': 0
+ 2026-07-30 20:30:06 container,info,debug [CONTAINER]: fastadhunter: option 'pagemap_commit': 0
+ 2026-07-30 20:30:06 container,info,debug [CONTAINER]: fastadhunter: option 'page_commit_on_demand': 0
+ 2026-07-30 20:30:06 container,info,debug [CONTAINER]: fastadhunter: option 'page_max_reclaim': -1
+ 2026-07-30 20:30:06 container,info,debug [CONTAINER]: fastadhunter: option 'page_cross_thread_max_reclaim': 32
+ 2026-07-30 20:30:06 container,info,debug [CONTAINER]: fastadhunter: option 'allow_thp': 1
+ 2026-07-30 20:30:06 container,info,debug [CONTAINER]: fastadhunter: option 'minimal_purge_size': 0 KiB
+ 2026-07-30 20:30:06 container,info,debug [CONTAINER]: fastadhunter: option 'arena_max_object_size': 2097152 KiB
+ 2026-07-30 20:30:06 container,info,debug [CONTAINER]: fastadhunter: option 'arena_is_numa_local': 0
+ 2026-07-30 20:30:06 container,info,debug [CONTAINER]: fastadhunter: debug level : 0
+ 2026-07-30 20:30:06 container,info,debug [CONTAINER]: fastadhunter: secure level: 0
+ 2026-07-30 20:30:06 container,info,debug [CONTAINER]: fastadhunter: mem tracking: none
+ 2026-07-30 20:30:06 container,info,debug [CONTAINER]: fastadhunter: mimalloc: reserved 1048576 KiB memory
+ 2026-07-30 20:30:06 container,info,debug [CONTAINER]: fastadhunter: 2026-07-30T17:30:06.041385Z  INFO fastadhunter: fastadhunter starting config_path=/config/fastadhunter.toml data_dir=/data mode=Dns
+ 2026-07-30 20:30:08 container,info,debug [CONTAINER]: fastadhunter: 2026-07-30T17:30:08.335976Z  INFO fastadhunter: ruleset compiled from cache rules=702415
+ 2026-07-30 20:30:08 container,info,debug [CONTAINER]: fastadhunter: 2026-07-30T17:30:08.347187Z  INFO fastadhunter: DNS listeners bound udp=[::]:53 tcp=[::]:53
+ 2026-07-30 20:30:08 container,info,debug [CONTAINER]: fastadhunter: 2026-07-30T17:30:08.350067Z  INFO fastadhunter::privilege::imp: dropped privileges after binding uid=65532 gid=65532
+ 2026-07-30 20:30:08 container,info,debug [CONTAINER]: fastadhunter: 2026-07-30T17:30:08.351424Z  INFO fastadhunter: API listening url=https://0.0.0.0:8443
+ 2026-07-30 20:30:15 container,info,debug [CONTAINER]: fastadhunter: 2026-07-30T17:30:15.410811Z  INFO fah_rules::lifecycle: scheduled refresh complete lists=16 refreshed=16 failed=0 rules=702166
+ 2026-07-30 22:55:52 container,info,debug [CONTAINER]: fastadhunter: *** stop
+ 2026-07-30 22:55:52 container,info,debug [CONTAINER]: fastadhunter: 2026-07-30T19:55:52.216322Z  INFO fastadhunter: fastadhunter shutting down
+ 2026-07-30 22:55:52 container,info,debug [CONTAINER]: fastadhunter: subproc 0
+ 2026-07-30 22:55:52 container,info,debug [CONTAINER]: fastadhunter:  pages           peak       total     current       block      total#
+ 2026-07-30 22:55:52 container,info,debug [CONTAINER]: fastadhunter:   touched   :     0           0           0                                ok
+ 2026-07-30 22:55:52 container,info,debug [CONTAINER]: fastadhunter:   pages     :   340           3.4 K      20
+ 2026-07-30 22:55:52 container,info,debug [CONTAINER]: fastadhunter:   abandoned :   283           1.4 K       5
+ 2026-07-30 22:55:52 container,info,debug [CONTAINER]: fastadhunter:   reclaima  :     5
+ 2026-07-30 22:55:52 container,info,debug [CONTAINER]: fastadhunter:   reclaimf  :     1.2 K
+ 2026-07-30 22:55:52 container,info,debug [CONTAINER]: fastadhunter:   reabandon :     0
+ 2026-07-30 22:55:52 container,info,debug [CONTAINER]: fastadhunter:   waits     :     0
+ 2026-07-30 22:55:52 container,info,debug [CONTAINER]: fastadhunter:   extended  :     0
+ 2026-07-30 22:55:52 container,info,debug [CONTAINER]: fastadhunter:   retire    :     0
+ 2026-07-30 22:55:52 container,info,debug [CONTAINER]: fastadhunter:   searches  :     2.1 avg
+ 2026-07-30 22:55:52 container,info,debug [CONTAINER]: fastadhunter: 
+ 2026-07-30 22:55:52 container,info,debug [CONTAINER]: fastadhunter:  arenas          peak       total     current       block      total#
+ 2026-07-30 22:55:52 container,info,debug [CONTAINER]: fastadhunter:   reserved  :     1.0 GiB     1.0 GiB     1.0 GiB
+ 2026-07-30 22:55:52 container,info,debug [CONTAINER]: fastadhunter:   committed :   297.8 MiB   297.8 MiB   297.8 MiB
+ 2026-07-30 22:55:52 container,info,debug [CONTAINER]: fastadhunter:   reset     :     0
+ 2026-07-30 22:55:52 container,info,debug [CONTAINER]: fastadhunter:   purged    :     1.3 GiB
+ 2026-07-30 22:55:52 container,info,debug [CONTAINER]: fastadhunter:   arenas    :     1
+ 2026-07-30 22:55:52 container,info,debug [CONTAINER]: fastadhunter:   rollback  :     0
+ 2026-07-30 22:55:52 container,info,debug [CONTAINER]: fastadhunter:   mmaps     :     4
+ 2026-07-30 22:55:52 container,info,debug [CONTAINER]: fastadhunter:   commits   :   300
+ 2026-07-30 22:55:52 container,info,debug [CONTAINER]: fastadhunter:   resets    :     0
+ 2026-07-30 22:55:52 container,info,debug [CONTAINER]: fastadhunter:   purges    :     1.9 K
+ 2026-07-30 22:55:52 container,info,debug [CONTAINER]: fastadhunter:   guarded   :     0
+ 2026-07-30 22:55:52 container,info,debug [CONTAINER]: fastadhunter:   theaps    :    10         101           0
+ 2026-07-30 22:55:52 container,info,debug [CONTAINER]: fastadhunter:   heaps     :     1           1           1
+ 2026-07-30 22:55:52 container,info,debug [CONTAINER]: fastadhunter:   heap waits:     0
+ 2026-07-30 22:55:52 container,info,debug [CONTAINER]: fastadhunter: 
+ 2026-07-30 22:55:52 container,info,debug [CONTAINER]: fastadhunter:  process         peak       total     current       block      total#
+ 2026-07-30 22:55:52 container,info,debug [CONTAINER]: fastadhunter:   threads   :    11         102           1
+ 2026-07-30 22:55:52 container,info,debug [CONTAINER]: fastadhunter:   numa nodes:     1
+ 2026-07-30 22:55:52 container,info,debug [CONTAINER]: fastadhunter:   elapsed   :  8746.205 s
+ 2026-07-30 22:55:52 container,info,debug [CONTAINER]: fastadhunter:   process   : user: 47.950 s, system: 20.405 s, faults: 0, peak rss: 167.6 MiB, peak commit: 297.8 MiB
+ 2026-07-30 22:55:52 container,info,debug [CONTAINER]: fastadhunter: 
+ 2026-07-30 22:55:52 container,info,debug [CONTAINER]: fastadhunter: mimalloc: process done: 0xFFFFF7FFD0C8
+ 2026-07-30 22:55:52 container,info,debug [CONTAINER]: fastadhunter: *** exited with status 0
+ 2026-07-30 22:56:07 container,info,debug [CONTAINER]: fastadhunter: *** removing files
+ 2026-07-30 22:56:10 container,info,debug [CONTAINER]: fastadhunter: *** remove done
+ 2026-07-30 22:58:24 container,info,debug [CONTAINER]: fastadhunter: *** repull
+ 2026-07-30 22:58:24 container,info,debug [CONTAINER]: fastadhunter: *** extracting tar archived image: fastadhunter-arm64-0.2.8.tar
+ 2026-07-30 22:58:36 container,info,debug [CONTAINER]: fastadhunter: *** download/extract done
+ 2026-07-30 22:58:59 container,info,debug [CONTAINER]: fastadhunter: *** start
+ 2026-07-30 22:58:59 container,info,debug [CONTAINER]: fastadhunter: *** started PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt MIMALLOC_PURGE_DELAY=100 MIMALLOC_PURGE_DECOMMITS=1 MIMALLOC_ARENA_EAGER_COMMIT=0 TZ=Europe/Bucharest /fastadhunter
+ 2026-07-30 22:59:00 container,info,debug [CONTAINER]: fastadhunter: 2026-07-30T19:59:00.072173Z  INFO fastadhunter: fastadhunter starting config_path=/config/fastadhunter.toml data_dir=/data mode=Dns
+ 2026-07-30 22:59:02 container,info,debug [CONTAINER]: fastadhunter: 2026-07-30T19:59:02.312597Z  INFO fastadhunter: ruleset compiled from cache rules=702166
+ 2026-07-30 22:59:02 container,info,debug [CONTAINER]: fastadhunter: 2026-07-30T19:59:02.334904Z  INFO fastadhunter: DNS listeners bound udp=[::]:53 tcp=[::]:53
+ 2026-07-30 22:59:02 container,info,debug [CONTAINER]: fastadhunter: 2026-07-30T19:59:02.336969Z  INFO fastadhunter::privilege::imp: dropped privileges after binding uid=65532 gid=65532
+ 2026-07-30 22:59:02 container,info,debug [CONTAINER]: fastadhunter: 2026-07-30T19:59:02.338676Z  INFO fastadhunter: API listening url=https://0.0.0.0:8443
+ 2026-07-30 22:59:09 container,info,debug [CONTAINER]: fastadhunter: 2026-07-30T19:59:09.322159Z  INFO fah_rules::lifecycle: list refreshed list=big.oisd.nl active=336898 inactive=0 parse_errors=0
+ 2026-07-30 22:59:09 container,info,debug [CONTAINER]: fastadhunter: 2026-07-30T19:59:09.322224Z  INFO fah_rules::lifecycle: list refreshed list=filter_1 active=160954 inactive=557 parse_errors=0
+ 2026-07-30 22:59:09 container,info,debug [CONTAINER]: fastadhunter: 2026-07-30T19:59:09.322242Z  INFO fah_rules::lifecycle: list refreshed list=filter_2 active=6540 inactive=0 parse_errors=12
+ 2026-07-30 22:59:09 container,info,debug [CONTAINER]: fastadhunter: 2026-07-30T19:59:09.322257Z  INFO fah_rules::lifecycle: list refreshed list=filter_3 active=3509 inactive=0 parse_errors=0
+ 2026-07-30 22:59:09 container,info,debug [CONTAINER]: fastadhunter: 2026-07-30T19:59:09.322274Z  INFO fah_rules::lifecycle: list refreshed list=filter_11 active=9240 inactive=0 parse_errors=0
+ 2026-07-30 22:59:09 container,info,debug [CONTAINER]: fastadhunter: 2026-07-30T19:59:09.322288Z  INFO fah_rules::lifecycle: list refreshed list=filter_18 active=155654 inactive=0 parse_errors=0
+ 2026-07-30 22:59:09 container,info,debug [CONTAINER]: fastadhunter: 2026-07-30T19:59:09.322302Z  INFO fah_rules::lifecycle: list refreshed list=filter_30 active=33154 inactive=0 parse_errors=0
+ 2026-07-30 22:59:09 container,info,debug [CONTAINER]: fastadhunter: 2026-07-30T19:59:09.322315Z  INFO fah_rules::lifecycle: list refreshed list=filter_43 active=175 inactive=0 parse_errors=0
+ 2026-07-30 22:59:09 container,info,debug [CONTAINER]: fastadhunter: 2026-07-30T19:59:09.322329Z  INFO fah_rules::lifecycle: list refreshed list=filter_48 active=220780 inactive=0 parse_errors=0
+ 2026-07-30 22:59:09 container,info,debug [CONTAINER]: fastadhunter: 2026-07-30T19:59:09.322342Z  INFO fah_rules::lifecycle: list refreshed list=filter_50 active=2857 inactive=195 parse_errors=0
+ 2026-07-30 22:59:09 container,info,debug [CONTAINER]: fastadhunter: 2026-07-30T19:59:09.322355Z  INFO fah_rules::lifecycle: list refreshed list=filter_59 active=1083 inactive=0 parse_errors=0
+ 2026-07-30 22:59:09 container,info,debug [CONTAINER]: fastadhunter: 2026-07-30T19:59:09.322368Z  INFO fah_rules::lifecycle: list refreshed list=filter_63 active=386 inactive=0 parse_errors=0
+ 2026-07-30 22:59:09 container,info,debug [CONTAINER]: fastadhunter: 2026-07-30T19:59:09.322381Z  INFO fah_rules::lifecycle: list refreshed list=dyndns active=1523 inactive=0 parse_errors=0
+ 2026-07-30 22:59:09 container,info,debug [CONTAINER]: fastadhunter: 2026-07-30T19:59:09.322394Z  INFO fah_rules::lifecycle: list refreshed list=hosts active=96767 inactive=0 parse_errors=1
+ 2026-07-30 22:59:09 container,info,debug [CONTAINER]: fastadhunter: 2026-07-30T19:59:09.322407Z  INFO fah_rules::lifecycle: list refreshed list=spy active=347 inactive=0 parse_errors=0
+ 2026-07-30 22:59:09 container,info,debug [CONTAINER]: fastadhunter: 2026-07-30T19:59:09.322420Z  INFO fah_rules::lifecycle: list refreshed list=doh-vpn-proxy-bypass active=17542 inactive=0 parse_errors=0
+ 2026-07-30 22:59:09 container,info,debug [CONTAINER]: fastadhunter: 2026-07-30T19:59:09.322437Z  INFO fah_rules::lifecycle: scheduled refresh complete lists=16 refreshed=16 failed=0 rules=702178
+ 2026-07-31 00:52:17 container,info,debug [CONTAINER]: postgres: *** stop
+ 2026-07-31 00:52:17 container,info,debug [CONTAINER]: postgres: 2026-07-31 00:52:17.970 EEST [1] LOG:  received smart shutdown request
+ 2026-07-31 00:52:17 container,info,debug [CONTAINER]: postgres: 2026-07-31 00:52:17.991 EEST [1] LOG:  background worker "logical replication launcher" (PID 27) exited with exit code 1
+ 2026-07-31 00:52:17 container,info,debug [CONTAINER]: postgres: 2026-07-31 00:52:17.994 EEST [22] LOG:  shutting down
+ 2026-07-31 00:52:17 container,info,debug [CONTAINER]: postgres: 2026-07-31 00:52:17.996 EEST [22] LOG:  checkpoint starting: shutdown immediate
+ 2026-07-31 00:52:18 container,info,debug [CONTAINER]: postgres: 2026-07-31 00:52:18.000 EEST [22] LOG:  checkpoint complete: wrote 0 buffers (0.0%); 0 WAL file(s) added, 0 removed, 0 recycled; write=0.001 s, sync=0.001 s, total=0.006 s; sync files=0, longest=0.000 s, average=0.000 s; distance=0 kB, estimate=21024 kB; lsn=0/302EB70, redo lsn=0/302EB70
+ 2026-07-31 00:52:18 container,info,debug [CONTAINER]: postgres: 2026-07-31 00:52:18.034 EEST [1] LOG:  database system is shut down
+ 2026-07-31 00:52:18 container,info,debug [CONTAINER]: postgres: *** exited with status 0
+ 2026-07-31 00:53:07 container,info,debug [CONTAINER]: postgres: *** start
+ 2026-07-31 00:53:07 container,info,debug [CONTAINER]: postgres: *** started PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin GOSU_VERSION=1.19 LANG=en_US.utf8 PG_MAJOR=17 PG_VERSION=17.10 PG_SHA256=078a03516dcdbdb705fecaf415ea3d13a956c589e46f09fed68a06fb00598c90 DOCKER_PG_LLVM_DEPS=llvm21-dev ttclang21 PGDATA=/var/lib/postgresql/data/pgdata POSTGRES_DB=fastadhunter POSTGRES_PASSWORD=0penGate5%! POSTGRES_USER=fah POSTGRES_INITDB_ARGS=--encoding='UTF8' --lc-collate='C' --lc-ctype='C' TZ=Europe/Bucharest docker-entrypoint.sh postgres
+ 2026-07-31 00:53:07 container,info,debug [CONTAINER]: postgres: 
+ 2026-07-31 00:53:07 container,info,debug [CONTAINER]: postgres: PostgreSQL Database directory appears to contain a database; Skipping initialization
+ 2026-07-31 00:53:07 container,info,debug [CONTAINER]: postgres: 
+ 2026-07-31 00:53:07 container,info,debug [CONTAINER]: postgres: 2026-07-31 00:53:07.689 EEST [1] LOG:  starting PostgreSQL 17.10 on aarch64-unknown-linux-musl, compiled by gcc (Alpine 15.2.0) 15.2.0, 64-bit
+ 2026-07-31 00:53:07 container,info,debug [CONTAINER]: postgres: 2026-07-31 00:53:07.689 EEST [1] LOG:  listening on IPv4 address "0.0.0.0", port 5432
+ 2026-07-31 00:53:07 container,info,debug [CONTAINER]: postgres: 2026-07-31 00:53:07.689 EEST [1] LOG:  listening on IPv6 address "::", port 5432
+ 2026-07-31 00:53:07 container,info,debug [CONTAINER]: postgres: 2026-07-31 00:53:07.694 EEST [1] LOG:  listening on Unix socket "/var/run/postgresql/.s.PGSQL.5432"
+ 2026-07-31 00:53:07 container,info,debug [CONTAINER]: postgres: 2026-07-31 00:53:07.707 EEST [24] LOG:  database system was shut down at 2026-07-31 00:52:18 EEST
+ 2026-07-31 00:53:07 container,info,debug [CONTAINER]: postgres: 2026-07-31 00:53:07.725 EEST [1] LOG:  database system is ready to accept connections
+ 2026-07-31 00:58:07 container,info,debug [CONTAINER]: postgres: 2026-07-31 00:58:07.801 EEST [22] LOG:  checkpoint starting: time
+ 2026-07-31 00:58:07 container,info,debug [CONTAINER]: postgres: 2026-07-31 00:58:07.823 EEST [22] LOG:  checkpoint complete: wrote 3 buffers (0.0%); 0 WAL file(s) added, 0 removed, 0 recycled; write=0.007 s, sync=0.002 s, total=0.022 s; sync files=2, longest=0.001 s, average=0.001 s; distance=0 kB, estimate=0 kB; lsn=0/302EC78, redo lsn=0/302EC20
+ 2026-07-31 07:43:41 container,info,debug [CONTAINER]: fastadhunter: *** stop
+ 2026-07-31 07:43:41 container,info,debug [CONTAINER]: fastadhunter: 2026-07-31T04:43:41.197208Z  INFO fastadhunter: fastadhunter shutting down
+ 2026-07-31 07:43:41 container,info,debug [CONTAINER]: fastadhunter: *** exited with status 0
+ 2026-07-31 07:43:51 container,info,debug [CONTAINER]: fastadhunter: *** removing files
+ 2026-07-31 07:43:54 container,info,debug [CONTAINER]: fastadhunter: *** remove done
+ 2026-07-31 07:46:12 container,info,debug [CONTAINER]: fastadhunter: *** repull
+ 2026-07-31 07:46:12 container,info,debug [CONTAINER]: fastadhunter: *** extracting tar archived image: fastadhunter-arm64-0.2.9.tar
+ 2026-07-31 07:46:24 container,info,debug [CONTAINER]: fastadhunter: *** download/extract done
+ 2026-07-31 07:50:50 container,info,debug [CONTAINER]: fastadhunter: *** start
+ 2026-07-31 07:50:50 container,info,debug [CONTAINER]: fastadhunter: *** started PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt MIMALLOC_PURGE_DELAY=100 MIMALLOC_PURGE_DECOMMITS=1 MIMALLOC_ARENA_EAGER_COMMIT=0 TZ=Europe/Bucharest /fastadhunter
+ 2026-07-31 07:50:50 container,info,debug [CONTAINER]: fastadhunter: 2026-07-31T04:50:50.492198Z  INFO fastadhunter: fastadhunter starting config_path=/config/fastadhunter.toml data_dir=/data mode=Dns
+ 2026-07-31 07:50:52 container,info,debug [CONTAINER]: fastadhunter: 2026-07-31T04:50:52.731798Z  INFO fah_rules::lifecycle: refresh schedule restored from cached copies lists=15
+ 2026-07-31 07:50:52 container,info,debug [CONTAINER]: fastadhunter: 2026-07-31T04:50:52.732389Z  INFO fastadhunter: ruleset compiled from cache rules=701907
+ 2026-07-31 07:50:52 container,info,debug [CONTAINER]: fastadhunter: 2026-07-31T04:50:52.744938Z  INFO fastadhunter: DNS listeners bound udp=[::]:53 tcp=[::]:53
+ 2026-07-31 07:50:52 container,info,debug [CONTAINER]: fastadhunter: 2026-07-31T04:50:52.749126Z  INFO fastadhunter::privilege::imp: dropped privileges after binding uid=65532 gid=65532
+ 2026-07-31 07:50:52 container,info,debug [CONTAINER]: fastadhunter: 2026-07-31T04:50:52.751338Z  INFO fastadhunter: API listening url=https://0.0.0.0:8443
+ 2026-07-31 07:50:52 container,info,debug [CONTAINER]: fastadhunter: 2026-07-31T04:50:52.751557Z  INFO fastadhunter: stale-while-refresh pool started workers=3
+ 2026-07-31 07:50:52 container,info,debug [CONTAINER]: fastadhunter: 2026-07-31T04:50:52.751673Z  INFO fastadhunter: cache cleanup scheduler started
+ 2026-07-31 07:50:55 container,info,debug [CONTAINER]: fastadhunter: 2026-07-31T04:50:55.449780Z  INFO fah_rules::lifecycle: list refreshed list=spy active=347 inactive=0 parse_errors=0
+ 2026-07-31 07:50:55 container,info,debug [CONTAINER]: fastadhunter: 2026-07-31T04:50:55.449842Z  INFO fah_rules::lifecycle: scheduled refresh complete lists=1 refreshed=1 failed=0 rules=702178
+ 2026-07-31 22:59:58 container,info,debug [CONTAINER]: fastadhunter: 2026-07-31T19:59:58.633755Z  INFO fah_rules::lifecycle: list refreshed list=big.oisd.nl active=337417 inactive=0 parse_errors=0
+ 2026-07-31 22:59:58 container,info,debug [CONTAINER]: fastadhunter: 2026-07-31T19:59:58.634137Z  INFO fah_rules::lifecycle: list refreshed list=filter_1 active=161217 inactive=557 parse_errors=0
+ 2026-07-31 22:59:58 container,info,debug [CONTAINER]: fastadhunter: 2026-07-31T19:59:58.634340Z  INFO fah_rules::lifecycle: list refreshed list=filter_2 active=6540 inactive=0 parse_errors=12
+ 2026-07-31 22:59:58 container,info,debug [CONTAINER]: fastadhunter: 2026-07-31T19:59:58.634531Z  INFO fah_rules::lifecycle: list refreshed list=filter_3 active=3509 inactive=0 parse_errors=0
+ 2026-07-31 22:59:58 container,info,debug [CONTAINER]: fastadhunter: 2026-07-31T19:59:58.634718Z  INFO fah_rules::lifecycle: list refreshed list=filter_11 active=9115 inactive=0 parse_errors=0
+ 2026-07-31 22:59:58 container,info,debug [CONTAINER]: fastadhunter: 2026-07-31T19:59:58.634904Z  INFO fah_rules::lifecycle: list refreshed list=filter_18 active=156022 inactive=0 parse_errors=0
+ 2026-07-31 22:59:58 container,info,debug [CONTAINER]: fastadhunter: 2026-07-31T19:59:58.635092Z  INFO fah_rules::lifecycle: list refreshed list=filter_30 active=33373 inactive=0 parse_errors=0
+ 2026-07-31 22:59:58 container,info,debug [CONTAINER]: fastadhunter: 2026-07-31T19:59:58.635276Z  INFO fah_rules::lifecycle: list refreshed list=filter_43 active=175 inactive=0 parse_errors=0
+ 2026-07-31 22:59:58 container,info,debug [CONTAINER]: fastadhunter: 2026-07-31T19:59:58.635459Z  INFO fah_rules::lifecycle: list refreshed list=filter_48 active=216004 inactive=0 parse_errors=0
+ 2026-07-31 22:59:58 container,info,debug [CONTAINER]: fastadhunter: 2026-07-31T19:59:58.635642Z  INFO fah_rules::lifecycle: list refreshed list=filter_50 active=2857 inactive=195 parse_errors=0
+ 2026-07-31 22:59:58 container,info,debug [CONTAINER]: fastadhunter: 2026-07-31T19:59:58.635824Z  INFO fah_rules::lifecycle: list refreshed list=filter_59 active=1083 inactive=0 parse_errors=0
+ 2026-07-31 22:59:58 container,info,debug [CONTAINER]: fastadhunter: 2026-07-31T19:59:58.636007Z  INFO fah_rules::lifecycle: list refreshed list=filter_63 active=387 inactive=0 parse_errors=0
+ 2026-07-31 22:59:58 container,info,debug [CONTAINER]: fastadhunter: 2026-07-31T19:59:58.636366Z  INFO fah_rules::lifecycle: list refreshed list=dyndns active=1523 inactive=0 parse_errors=0
+ 2026-07-31 22:59:58 container,info,debug [CONTAINER]: fastadhunter: 2026-07-31T19:59:58.636693Z  INFO fah_rules::lifecycle: list refreshed list=hosts active=96767 inactive=0 parse_errors=1
+ 2026-07-31 22:59:58 container,info,debug [CONTAINER]: fastadhunter: 2026-07-31T19:59:58.637012Z  INFO fah_rules::lifecycle: list refreshed list=doh-vpn-proxy-bypass active=17549 inactive=0 parse_errors=0
+ 2026-07-31 22:59:58 container,info,debug [CONTAINER]: fastadhunter: 2026-07-31T19:59:58.637335Z  INFO fah_rules::lifecycle: scheduled refresh complete lists=15 refreshed=15 failed=0 rules=697396
+ 2026-08-01 07:50:55 container,info,debug [CONTAINER]: fastadhunter: 2026-08-01T04:50:55.216440Z  INFO fah_rules::lifecycle: list refreshed list=spy active=347 inactive=0 parse_errors=0
+ 2026-08-01 07:50:55 container,info,debug [CONTAINER]: fastadhunter: 2026-08-01T04:50:55.216481Z  INFO fah_rules::lifecycle: scheduled refresh complete lists=1 refreshed=1 failed=0 rules=697396
+ 2026-08-01 07:56:52 container,info,debug [CONTAINER]: fastadhunter: 2026-08-01T04:56:52.754385Z  INFO fah_dns::pipeline: cache cleanup complete expired_removed=1 stale_removed=0 bytes_freed=432 entries_before=1100 entries_after=1099 duration_us=621
+ 2026-08-01 08:02:52 container,info,debug [CONTAINER]: fastadhunter: 2026-08-01T05:02:52.755508Z  INFO fah_dns::pipeline: cache cleanup complete expired_removed=4 stale_removed=0 bytes_freed=1680 entries_before=1099 entries_after=1095 duration_us=1600
+ 2026-08-01 08:08:52 container,info,debug [CONTAINER]: fastadhunter: 2026-08-01T05:08:52.759149Z  INFO fah_dns::pipeline: cache cleanup complete expired_removed=78 stale_removed=0 bytes_freed=56480 entries_before=1095 entries_after=1017 duration_us=5580
+ 2026-08-01 08:14:52 container,info,debug [CONTAINER]: fastadhunter: 2026-08-01T05:14:52.755367Z  INFO fah_dns::pipeline: cache cleanup complete expired_removed=7 stale_removed=0 bytes_freed=3024 entries_before=1029 entries_after=1022 duration_us=733
+ 2026-08-01 08:20:52 container,info,debug [CONTAINER]: fastadhunter: 2026-08-01T05:20:52.756623Z  INFO fah_dns::pipeline: cache cleanup complete expired_removed=18 stale_removed=0 bytes_freed=24816 entries_before=1022 entries_after=1004 duration_us=1507
+ 2026-08-01 08:26:52 container,info,debug [CONTAINER]: fastadhunter: 2026-08-01T05:26:52.756036Z  INFO fah_dns::pipeline: cache cleanup complete expired_removed=25 stale_removed=0 bytes_freed=15104 entries_before=1004 entries_after=979 duration_us=1576
+ 2026-08-01 08:32:52 container,info,debug [CONTAINER]: fastadhunter: 2026-08-01T05:32:52.754636Z  INFO fah_dns::pipeline: cache cleanup complete expired_removed=5 stale_removed=0 bytes_freed=3440 entries_before=979 entries_after=974 duration_us=611
+ 2026-08-01 08:38:52 container,info,debug [CONTAINER]: fastadhunter: 2026-08-01T05:38:52.754527Z  INFO fah_dns::pipeline: cache cleanup complete expired_removed=6 stale_removed=0 bytes_freed=4512 entries_before=974 entries_after=968 duration_us=766
+ 2026-08-01 08:44:52 container,info,debug [CONTAINER]: fastadhunter: 2026-08-01T05:44:52.754859Z  INFO fah_dns::pipeline: cache cleanup complete expired_removed=8 stale_removed=0 bytes_freed=5376 entries_before=983 entries_after=975 duration_us=849
+ 2026-08-01 08:50:52 container,info,debug [CONTAINER]: fastadhunter: 2026-08-01T05:50:52.753273Z  INFO fah_dns::pipeline: cache cleanup complete expired_removed=1 stale_removed=0 bytes_freed=432 entries_before=975 entries_after=974 duration_us=289
+ 2026-08-01 08:56:52 container,info,debug [CONTAINER]: fastadhunter: 2026-08-01T05:56:52.755341Z  INFO fah_dns::pipeline: cache cleanup complete expired_removed=8 stale_removed=0 bytes_freed=9856 entries_before=974 entries_after=966 duration_us=805
+ 2026-08-01 09:02:52 container,info,debug [CONTAINER]: fastadhunter: 2026-08-01T06:02:52.753930Z  INFO fah_dns::pipeline: cache cleanup complete expired_removed=2 stale_removed=0 bytes_freed=864 entries_before=966 entries_after=964 duration_us=449
+ 2026-08-01 09:08:52 container,info,debug [CONTAINER]: fastadhunter: 2026-08-01T06:08:52.753331Z  INFO fah_dns::pipeline: cache cleanup complete expired_removed=1 stale_removed=0 bytes_freed=432 entries_before=964 entries_after=963 duration_us=276
+ 2026-08-01 09:20:52 container,info,debug [CONTAINER]: fastadhunter: 2026-08-01T06:20:52.753504Z  INFO fah_dns::pipeline: cache cleanup complete expired_removed=1 stale_removed=0 bytes_freed=432 entries_before=963 entries_after=962 duration_us=256
+ 2026-08-01 09:26:52 container,info,debug [CONTAINER]: fastadhunter: 2026-08-01T06:26:52.754670Z  INFO fah_dns::pipeline: cache cleanup complete expired_removed=3 stale_removed=0 bytes_freed=1296 entries_before=962 entries_after=959 duration_us=562
+ 2026-08-01 09:32:52 container,info,debug [CONTAINER]: fastadhunter: 2026-08-01T06:32:52.753666Z  INFO fah_dns::pipeline: cache cleanup complete expired_removed=1 stale_removed=0 bytes_freed=432 entries_before=959 entries_after=958 duration_us=348
+ 2026-08-01 09:38:52 container,info,debug [CONTAINER]: fastadhunter: 2026-08-01T06:38:52.754475Z  INFO fah_dns::pipeline: cache cleanup complete expired_removed=2 stale_removed=0 bytes_freed=864 entries_before=958 entries_after=956 duration_us=378
+ 2026-08-01 09:44:52 container,info,debug [CONTAINER]: fastadhunter: 2026-08-01T06:44:52.755126Z  INFO fah_dns::pipeline: cache cleanup complete expired_removed=7 stale_removed=0 bytes_freed=3984 entries_before=958 entries_after=951 duration_us=808
+ 2026-08-01 09:50:52 container,info,debug [CONTAINER]: fastadhunter: 2026-08-01T06:50:52.754745Z  INFO fah_dns::pipeline: cache cleanup complete expired_removed=3 stale_removed=0 bytes_freed=1296 entries_before=951 entries_after=948 duration_us=564
+ 2026-08-01 09:56:52 container,info,debug [CONTAINER]: fastadhunter: 2026-08-01T06:56:52.754215Z  INFO fah_dns::pipeline: cache cleanup complete expired_removed=1 stale_removed=0 bytes_freed=416 entries_before=949 entries_after=948 duration_us=149
+ 2026-08-01 10:02:52 container,info,debug [CONTAINER]: fastadhunter: 2026-08-01T07:02:52.754252Z  INFO fah_dns::pipeline: cache cleanup complete expired_removed=25 stale_removed=0 bytes_freed=11056 entries_before=948 entries_after=923 duration_us=1454
+ 2026-08-01 10:14:52 container,info,debug [CONTAINER]: fastadhunter: 2026-08-01T07:14:52.755383Z  INFO fah_dns::pipeline: cache cleanup complete expired_removed=22 stale_removed=0 bytes_freed=22048 entries_before=923 entries_after=901 duration_us=1615
+ 2026-08-01 10:38:52 container,info,debug [CONTAINER]: fastadhunter: 2026-08-01T07:38:52.753084Z  INFO fah_dns::pipeline: cache cleanup complete expired_removed=1 stale_removed=0 bytes_freed=2672 entries_before=902 entries_after=901 duration_us=247
+ 2026-08-01 10:44:52 container,info,debug [CONTAINER]: fastadhunter: 2026-08-01T07:44:52.753769Z  INFO fah_dns::pipeline: cache cleanup complete expired_removed=1 stale_removed=0 bytes_freed=432 entries_before=901 entries_after=900 duration_us=270
+ 2026-08-01 10:56:52 container,info,debug [CONTAINER]: fastadhunter: 2026-08-01T07:56:52.753336Z  INFO fah_dns::pipeline: cache cleanup complete expired_removed=1 stale_removed=0 bytes_freed=784 entries_before=900 entries_after=899 duration_us=267
+ 2026-08-01 11:38:52 container,info,debug [CONTAINER]: fastadhunter: 2026-08-01T08:38:52.753505Z  INFO fah_dns::pipeline: cache cleanup complete expired_removed=1 stale_removed=0 bytes_freed=752 entries_before=959 entries_after=958 duration_us=307
+ 2026-08-01 12:08:52 container,info,debug [CONTAINER]: fastadhunter: 2026-08-01T09:08:52.755294Z  INFO fah_dns::pipeline: cache cleanup complete expired_removed=5 stale_removed=0 bytes_freed=5344 entries_before=966 entries_after=961 duration_us=1267
+ 2026-08-01 12:14:52 container,info,debug [CONTAINER]: fastadhunter: 2026-08-01T09:14:52.753252Z  INFO fah_dns::pipeline: cache cleanup complete expired_removed=2 stale_removed=0 bytes_freed=3120 entries_before=961 entries_after=959 duration_us=505
+ 2026-08-01 12:20:52 container,info,debug [CONTAINER]: fastadhunter: 2026-08-01T09:20:52.753347Z  INFO fah_dns::pipeline: cache cleanup complete expired_removed=2 stale_removed=0 bytes_freed=1184 entries_before=965 entries_after=963 duration_us=498
+

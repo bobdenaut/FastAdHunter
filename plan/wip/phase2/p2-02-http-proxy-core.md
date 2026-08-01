@@ -63,6 +63,39 @@ where possible, bounded everything.
   chunked, keep-alive reuse), latency bench (added overhead vs direct)
   in `benches/`.
 
+## Architecture constraint — Phase 3 reuse
+
+Decided before implementation starts, because both halves are cheap to build in
+and expensive to retrofit.
+
+**The proxy core must be transport-agnostic.** Connection handling operates on a
+generic type parameter `S: AsyncRead + AsyncWrite + Unpin + Send + 'static`,
+never on a concrete `TcpStream`, so Phase 3 can hand it a rustls-terminated
+stream and reuse this pipeline unchanged after TLS termination. It must be a
+**monomorphized type parameter, not a trait object** — `Box<dyn …>` is also "not
+a `TcpStream`" but puts a virtual call on the per-read body path, which
+PERFORMANCE.md forbids.
+
+**The destination policy is shared; the claim validation is not.** The egress
+guard above mixes two concerns, and only one of them generalises:
+
+1. **Destination policy** — the address/port rules (loopback, link-local, ULA,
+   RFC 1918, CGNAT, container subnet, router, non-intercepted port). Pure logic
+   over an already-resolved `SocketAddr`, no I/O. HTTP and HTTPS share it
+   verbatim: both derive their destination from an attacker-controlled claim
+   (`Host`, then SNI) with no `SO_ORIGINAL_DST` to check it against, so this is
+   **one implementation with one test suite**. Being pure and L1-shaped, it
+   belongs in `fah-common` next to the resolver port — reachable from Phase 3
+   whether HTTPS lands in `fah-http` or its own crate, with no layering
+   violation. Not `fah-model`: it is business logic, not a data type (hard
+   rule 2). Its allow-list config key must therefore **not** be scoped under
+   `[http]` alone.
+2. **Claim validation** — rejecting a missing or duplicated `Host`, and IP-literal
+   hosts where policy expects names. This reads the HTTP message, not an address,
+   and stays in `fah-http`. Phase 3 writes the SNI-shaped analogue (absent SNI,
+   IP-literal SNI) against the same destination policy. Do **not** force these
+   into one function to make them look shared.
+
 ## Acceptance criteria
 
 - Multi-MB body proxied with bounded memory (RSS flat during transfer, test
@@ -76,6 +109,21 @@ where possible, bounded everything.
   counted.
 - `fah-http` compiles with no dependency on `fah-dns` (assert in the crate's
   Cargo.toml review — the resolver arrives as an injected port).
+- **Phase 3 reuse is proven, not asserted.** A test drives the proxy over a
+  stream type that is *not* `TcpStream` (a `tokio::io::DuplexStream` is enough)
+  — if the connection handler compiles against it, the rustls case will fit too.
+  No `Box<dyn ...>` on the **per-byte path**: neither the connection I/O types
+  nor the response body may be trait objects, since either would put a virtual
+  call on every read. (Amended during implementation: the upstream connector's
+  `Future` *is* boxed, because `tower_service::Service` needs a named future
+  type and `TcpStream::connect`'s is opaque. That is one allocation per upstream
+  connection, not per read, so it does not engage the rule's stated rationale —
+  but the original wording forbade it outright and would have been quietly
+  violated.)
+- **The destination policy is exercised without HTTP.** Its tests call it with
+  `SocketAddr`s directly, with no request and no proxy in sight; if that is
+  awkward to write, the split in the architecture constraint above did not
+  actually happen.
 - Gates green.
 
 ## Out of scope

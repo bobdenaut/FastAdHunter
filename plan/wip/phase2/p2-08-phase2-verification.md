@@ -1,6 +1,6 @@
 # P2-07 — Phase 2 Verification
 
-**Phase:** 2 · **Depends on:** p2-07 · **Model:** Sonnet
+**Phase:** 2 · **Depends on:** p2-07 · **Model:** Opus
 
 ## Goal
 
@@ -56,12 +56,61 @@ port 80 → container).
   site through it, verify filtering + pass-through speed, extend
   docs/deploy-rb5009.md with the HTTP section + rollback (drop the nat rule).
 - Soak: 24h dns+http; RAM/latency/QPS recorded vs updated budgets.
+- ~~**Long-URL verdict latency on-device — this task owns the p2-03
+  deferral.**~~ **MEASURED 2026-08-01 —
+  [`docs/code-review/p2-08-url-lookup-arm.md`](../../../docs/code-review/p2-08-url-lookup-arm.md).**
+  Run ahead of the rest of this task, because the answer decides whether a
+  substring index belongs in the phase at all.
+
+  **Outcome: a substring index is required to meet the 1 ms budget for the
+  EasyList + EasyPrivacy target corpus on the RB5009 (8 KiB = 5,336 µs, 5.3×
+  over), and is not required for the corpus this router currently runs
+  (377 µs).** The boundary is the unindexed-rule count — 77 against 3 — not the
+  URL-rule count. Even 4 KiB against EasyList is 2,092 µs.
+
+  The rest of this task's on-device work (dst-nat, `dns+http` browsing, soak)
+  is **not** done and remains as written below.
 
 ## Acceptance criteria
 
 - Updated PERFORMANCE.md budget table fully bench-backed; dev numbers meet it.
 - On-device: no regression on DNS soak numbers; HTTP pass-through
   imperceptible in normal browsing (user confirms); numbers recorded.
+- ✅ **MET — worst-case URL-tier lookup latency measured on the RB5009.** The
+  `long_url_*` sweep (64 B / 1 KiB / 4 KiB / 8 KiB) ran on-device against both
+  corpora via a throwaway probe container; production was never stopped. Numbers
+  and raw evidence in
+  [`docs/code-review/p2-08-url-lookup-arm.md`](../../../docs/code-review/p2-08-url-lookup-arm.md)
+  + `docs/code-review/p2-08-arm/`.
+
+  8 KiB does **not** leave comfortable headroom at target-corpus scale, so the
+  deferred substring-index work is **re-opened** — see
+  `plan/wip/phase2/CLAUDE.md` §"Follow-up from the p2-03 review".
+
+  **The x86 → ARM ratio came out FLAT: 8.25–10.0× across twelve arms spanning
+  three orders of magnitude and two corpora (median ~9.05×).** Per this
+  criterion's own rubric that is the first branch — the gap is plain CPU
+  throughput, so the x86 profile in `docs/code-review/p2-04-review.md` transfers
+  directly, and the ~9× is usable as a planning constant rather than only a
+  diagnostic. Memory bandwidth is *not* the binding constraint on device.
+
+  Two findings the criterion did not anticipate, both recorded in the report:
+
+  - **The RB5009 does not boost a single busy core.** 45 s of a pinned core at
+    100 % held **350 MHz**, not the 1.4 GHz PERFORMANCE.md assumes (38/40 router
+    samples; the container's own `scaling_cur_freq` agrees). Every ARM figure
+    here is therefore an upper bound — and the verdict survives correcting all
+    the way to nominal (5,336 ÷ 4 = 1.33 ms, still over budget).
+  - **97 % of an 8 KiB lookup is the unindexed scan.** Cost ≈ 176 µs fixed +
+    67 µs per unindexed rule, so an index would take 5,336 µs → ~176 µs (~30×).
+    That ~176 µs is also the floor with a *perfect* index, since tokenization
+    scales with URL length too.
+
+  x86 reference for the record (EasyList + EasyPrivacy, pinned, mimalloc,
+  2026-08-01, minimum of ~5,000 batches): **4.00 µs** at 64 B, **54.9 µs** at
+  1 KiB, **251 µs** at 4 KiB, **646 µs** at 8 KiB (p99 992 µs) — already at
+  budget on the fast box, scaling slightly super-linearly (8× length → 11.8×
+  time).
 - Gates green.
 
 ## Out of scope

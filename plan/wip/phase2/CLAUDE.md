@@ -20,8 +20,21 @@ growth to a component instead of only reporting RSS. Then proof.
 
 ## Architecture note — widening the Rule Engine interface
 
-**Provisional, to be validated during `p2-03`.** Not an ADR yet; promote it to one
-afterwards if the interface holds.
+**Validated by `p2-03` — the interface held as written.** `lookup_http` was
+added as a second typed entry point over the same compiled ruleset, with no
+trait object and no second matcher. Two things the note left open were decided
+in implementation and are recorded in `docs/code-review/p2-03-review.md`:
+
+1. **A request consults both tiers**, under one precedence order. The note only
+   said the domain index would be *reused* by the non-intercepted HTTPS path;
+   it turns out the intercepted path needs it too, or a host blocked for DNS is
+   still fetched over HTTP.
+2. **The request type is `fah_model::HttpRequest`**, not `HttpMatchCtx`. It is
+   a request model living in a crate that must not know the matcher exists.
+
+Still not an ADR. Promote it after `p2-04` proves the interface survives having
+an actual consumer — one entry point with no caller is a weaker claim than the
+note deserves.
 
 The matcher is **protocol-model aware rather than transport aware**. It exposes
 typed interfaces for each request model while remaining independent of
@@ -86,10 +99,17 @@ later phases".
    Nothing of `||paypal.com^*/pixel.gif` survives parsing except one
    discriminant saying "URL pattern". ADR-0003 carries a correction note.
 
-So `p2-03` must **reintroduce retention** for `UrlPattern`/`HttpOption` rules
-and pay their memory — the measured ~1 MiB is new storage the task
-introduces, not a cost the system already carries. The interface argument above
-is unaffected: what was wrong is what reaches the matcher, not its shape.
+So `p2-03` had to **reintroduce retention** for those rules and pay their
+memory — the ~1 MiB is new storage the task introduced, not a cost the system
+already carried. The interface argument above is unaffected: what was wrong is
+what reaches the matcher, not its shape.
+
+**Settled by `p2-03`:** retention costs **+3.32 ms** of parse across EasyList +
+EasyPrivacy (+16.7 %, measured against the real pre-change parser in a detached
+worktree, both arms core-pinned) and the compiled tier is **1.06 MiB** for
+18,778 rules. `InactiveReason` now carries only what genuinely stays inactive —
+`Cosmetic`, `ClientScoped`, `UnsupportedUrlPattern` — and `UrlPattern` /
+`HttpOption` are gone, because those rules compile.
 
 Note the matcher's *hot path* is pure, but `fah-rules` as a crate is not I/O-free
 — the list lifecycle pulls `reqwest` and `tokio`.
@@ -124,19 +144,59 @@ neither blocks anything.
    chooses (not from the server's number) to avoid the doubling peak, where the
    last growth step holds both buffers at once.
 
+## Follow-up from the p2-03 review — DECIDED 2026-08-01, no longer deferred
+
+**A substring index is required to meet the 1 ms lookup budget for the
+EasyList + EasyPrivacy target corpus on the RB5009. It is not required for the
+corpus this router currently runs.**
+
+Measured on-device by a throwaway probe container; production served DNS
+throughout. Report and raw evidence:
+[`docs/code-review/p2-08-url-lookup-arm.md`](../../../docs/code-review/p2-08-url-lookup-arm.md)
++ `docs/code-review/p2-08-arm/`.
+
+| Corpus | URL rules | Unindexed | 8 KiB URL, RB5009 | vs 1 ms |
+| --- | --- | --- | --- | --- |
+| EasyList + EasyPrivacy — the target | 18,781 | 77 | **5,336 µs** (p99 5,802) | ❌ 5.3× over |
+| The deployed lists — this router today | 714 | 3 | 377 µs (p99 415) | ✔ 2.7× under |
+
+**Scope the claim in both directions.** "The URL tier is fine" is true only of a
+deployment carrying three unindexed rules; "the URL tier misses its budget" is
+true only at target-corpus scale. **The boundary is the unindexed-rule count,
+not the URL-rule count** — the deployed lists are overwhelmingly DNS-shaped
+(1,043,886 DNS rules against 714 URL rules; 15 of 17 lists contribute *zero*
+URL rules), which is why this router is comfortable and the target corpus is
+not.
+
+The deferral rested on "3.09 µs sits 300× inside the budget", which was the
+short-URL figure. At 8 KiB the same corpus costs 5.3× the *whole* budget, and
+even 4 KiB costs 2,092 µs. The conclusion survives the frequency caveat: the
+RB5009 held **350 MHz** through the run and does not boost a single busy core,
+but correcting all the way to its 1.4 GHz nominal still gives 1.33 ms.
+
+**What an index buys, and what it does not.** At 8 KiB the cost is ≈ 176 µs
+fixed + **67 µs per unindexed rule**, so at 77 rules **97 % of the lookup is the
+unindexed scan** — an index removes that term, 5,336 µs → ~176 µs (~30×). It
+does not make long URLs free: ~176 µs is the floor even with a perfect index,
+because tokenization and indexed-candidate checks scale with URL length too.
+
+**Not yet a task.** The decision is recorded; sequencing it against `p2-05`
+through `p2-09` is open. It is Phase 2 work by origin but nothing in the phase's
+definition of done depends on it — the deployed corpus meets budget today.
+
 **Always select the first task whose `STATUS` is `WAITING`.**
 
 | # | Task file | Outcome | MODEL | STATUS |
 |---|-----------|---------|-------|--------|
 | 0 | `p2-00-adblock-parser-correctness.md` | Sample-based format detection; `\|\|d^*/path` → URL pattern, `\|\|d^\|` → exact-host DNS rule; `degraded` list status. Verified against the reference ruleset: 0 exceptions lost, 0 new blocks (`docs/code-review/p2-00-review.md`) | Opus | DONE |
 | 1 | `p2-01-http-scaffold.md` | `fah-http` (L3) binds `[http]` only when `engine.mode` names http; dual-stack bind shared via `fah_common::listen`; ARCHITECTURE/CONTEXT/CONFIGURATION/PERFORMANCE + diagrams (`docs/code-review/p2-01-review.md`) | Sonnet | DONE |
-| 2 | `p2-02-http-proxy-core.md` | Transparent streaming proxy, pass-through fast path (heavy) | Opus | WAITING |
-| 3 | `p2-03-url-rules-activation.md` | URL-path + HTTP `$options` matchers activate in fah-rules (heavy) | Opus | WAITING |
-| 4 | `p2-04-http-filtering-pipeline.md` | Verdicts wired into the proxy: block responses, events, stats | Sonnet | WAITING |
+| 2 | `p2-02-http-proxy-core.md` | Transparent streaming proxy; `HostResolver` port moved to L1 and shared; default-deny egress guard at L1 judging the **resolved** address (shared with Phase 3); connection handler generic over the stream, proven over `DuplexStream`; pass-through +35 µs in-process vs a 1 ms budget (`docs/code-review/p2-02-review.md`) | Opus | DONE |
+| 3 | `p2-03-url-rules-activation.md` | URL tier live: retention (+3.3 ms parse, measured against the real pre-change parser), 16 B records + exact/prefix/suffix token index, `lookup_http` over both tiers, no regex; 18,778 EasyList+EasyPrivacy rules in **1.06 MiB**, verdict **3.09 µs** (real corpus, pinned, post-review), allocation-free. **Reviewed 2026-08-01: 6 defects fixed** — an unbounded matcher (one request measured at 313 ms), `$dnsrewrite` deciding HTTP requests, type-restricted exceptions over-blocking on `Unknown`, `$domain=example.*` never firing, a fail-open `$domain=` payload, and over-long payloads dropped while counted active (`docs/code-review/p2-03-review.md`) | Opus | DONE |
+| 4 | `p2-04-http-filtering-pipeline.md` | Verdicts wired into the proxy on the **head**, before resolve — a block costs no DNS lookup and no upstream connection (asserted against a connection-counting origin). Type-aware block responses; one widened event channel (`fah_model::Event`) so the shed figure stays one number; `kind=dns\|http` through the query log and API. Port stripping + resource-type inference landed as p2-03's review required. Added latency **32.4 µs** vs p2-02's 33.6 µs, of which FastAdHunter's own work is **≈5 µs — 80 % of it the verdict** (`docs/code-review/p2-04-review.md`) | Opus | DONE |
 | 5 | `p2-05-policy-model.md` | Policy = named bundle of lists + settings; schedules; `$client` | Sonnet | WAITING |
 | 6 | `p2-06-per-client-enforcement.md` | DNS + HTTP consult policy per client; policy API endpoints | Sonnet | WAITING |
 | 7 | `p2-07-memory-accounting.md` | **REOPENED 2026-07-26, NARROWED 2026-07-30** — instrumentation all shipped (component `heap_bytes()`, both metric families, `/debug/memory`, `AllocatorStats` in 0.2.8); the one thing left is persisting `MemoryComponents` + `minor_page_faults` into `PerfSample` and `/history/perf`, so a soak can chart residual rather than only RSS. The reopen's motivating question is **answered** — the RouterOS climb was page cache (`docs/code-review/0.2.7-router-memory-and-throughput.md`) — so this is now a safety net, not an investigation, and its priority drops accordingly | Sonnet | WAITING |
-| 8 | `p2-08-phase2-verification.md` | HTTP benches + budgets, e2e tests, RB5009 dns+http validation | Sonnet | WAITING |
+| 8 | `p2-08-phase2-verification.md` | HTTP benches + budgets, e2e tests, RB5009 dns+http validation. **One acceptance criterion already MET out of order (2026-08-01): the on-device long-URL sweep.** A substring index is required for the EasyList+EasyPrivacy target corpus (8 KiB = 5,336 µs, 5.3× over budget) and not for this router's own lists (377 µs); x86→ARM factor is a flat ~9×; the RB5009 does not boost a single busy core (350 MHz under load). Do not re-run it — `docs/code-review/p2-08-url-lookup-arm.md`. Everything else in the task is untouched | Sonnet | WAITING |
 | 9 | `p2-09-query-log-reader.md` | `QueryLogReader` over the persisted segments; unified `GET /queries` (no filter → ring, any filter → segments); `next_sequence` derived at boot; `qtype`; `oldest_retained`; flush on shutdown | Opus | WAITING |
 
 **Definition of done:** router dst-nats port 80 to the container; a plain-HTTP
