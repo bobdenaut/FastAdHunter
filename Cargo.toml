@@ -15,6 +15,12 @@ criterion = { version = "0.5", default-features = false, features = ["cargo_benc
 # arc-swap: lock-free atomic swap of the compiled ruleset (RULE_ENGINE.md
 # §List lifecycle, ARCHITECTURE.md §Runtime Model) — readers never lock.
 arc-swap = "1.9"
+# SIMD byte search for the URL matcher's unanchored scan (SSE2/AVX2 on x86_64,
+# NEON on aarch64). Not regex — a single-byte `memchr`, which is the one
+# primitive PERFORMANCE.md's "no regex on the hot path" rule leaves open and
+# which the scalar loop it replaces was costing ~3 us per candidate rule on an
+# 8 KiB URL. Zero dependencies, and already in the tree transitively.
+memchr = { version = "2.8", default-features = false, features = ["std"] }
 # default-features off drops native-tls/openssl; "rustls" is this project's
 # only TLS backend (SECURITY.md: rustls/rcgen/x509-parser, no other crypto).
 #

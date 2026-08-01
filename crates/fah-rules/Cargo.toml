@@ -17,6 +17,7 @@ arc-swap = { workspace = true }
 fah-common = { path = "../fah-common" }
 fah-config = { path = "../fah-config" }
 fah-model = { path = "../fah-model" }
+memchr = { workspace = true }
 reqwest = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true, features = ["fs", "sync", "time"] }

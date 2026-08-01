@@ -41,10 +41,41 @@
 //! - **A lookup probes each URL token three ways** — as itself, by its first
 //!   [`MIN_TOKEN_LEN`] bytes, and by its last — matching the three key kinds.
 //!
-//! Rules whose every token is unbounded on both sides go to
-//! [`UrlIndex::unindexed`] and are checked on every lookup. On EasyList +
-//! EasyPrivacy that is 77 of 18,778; a test pins the share, because a large
-//! one would quietly turn every lookup into a linear scan.
+//! # The n-gram tier, and the 8 KiB URL that forced it
+//!
+//! A pattern token unbounded on *both* sides (`*banneroid*`) is **contained
+//! by** a URL token rather than equal to, starting or ending one, so none of
+//! the three probes above can reach it. Those rules used to be checked against
+//! every single request — 77 of EasyList + EasyPrivacy's 18,778.
+//!
+//! Measured on the RB5009 that scan *was* the cost: an 8 KiB URL took
+//! **5,336 µs against a 1 ms budget**, of which 97 % was those 77 rules —
+//! ≈ 176 µs fixed plus **67 µs per unindexed rule**, since an unanchored
+//! pattern is retried at every URL offset whose first byte could match. The
+//! router's own lists carry three such rules and stayed inside budget at
+//! 377 µs, which is why the boundary is the *unindexed-rule* count and not the
+//! URL-rule count (`docs/code-review/p2-08-url-lookup-arm.md`).
+//!
+//! So they are filed under a fourth key kind — [`KeyKind::Ngram`], the first
+//! [`MIN_TOKEN_LEN`] bytes of their token — and a lookup slides a window of
+//! that width along each URL token. The per-rule term disappears: cost becomes
+//! one probe per URL byte instead of one full pattern match per rule.
+//!
+//! Two things pay for those extra probes:
+//!
+//! - **A Bloom prefilter** ([`UrlIndex::ngram_bits`]). Nearly every window
+//!   matches nothing, and one bit test is far cheaper than walking the
+//!   open-addressing table. It is sized from the key count, so a corpus with no
+//!   n-gram rules allocates nothing and skips the sweep entirely.
+//! - **A per-lookup visited set.** A rule is now reachable once per *byte*
+//!   rather than once per token, so a URL repeating its n-gram would otherwise
+//!   re-check it hundreds of times — each check being O(url). N-gram buckets
+//!   are laid out contiguously at the end of the CSR precisely so this can be a
+//!   fixed [`NGRAM_BUCKET_CAP`]-bit stack array and not an allocation.
+//!
+//! Rules with no token of at least [`MIN_TOKEN_LEN`] bytes still offer nothing
+//! to file and stay in [`UrlIndex::unindexed`], checked on every lookup; a test
+//! pins the share, because a large one would quietly restore the linear scan.
 //!
 //! # Matching
 //!
@@ -84,6 +115,25 @@ const PARTY_FIRST: u16 = 2;
 /// that the bucket approaches the whole corpus and the index stops paying for
 /// itself.
 const MIN_TOKEN_LEN: usize = 3;
+
+/// A window has to pack into the `u32` [`ngram_word`] rolls.
+const _: () = assert!(MIN_TOKEN_LEN >= 2 && MIN_TOKEN_LEN <= 4);
+
+/// Keeps the low `MIN_TOKEN_LEN` bytes when a window is rolled along the URL.
+const NGRAM_WORD_MASK: u32 = u32::MAX >> (32 - 8 * MIN_TOKEN_LEN as u32);
+
+/// Ceiling on how many buckets the n-gram tier may occupy.
+///
+/// It exists to keep the per-lookup visited set a fixed stack array rather than
+/// an allocation on the hot path. EasyList + EasyPrivacy needs 77 rules' worth,
+/// so this is ~13× the corpus the budget was measured against; a corpus that
+/// exceeds it has the overflow **demoted to [`UrlIndex::unindexed`]**, which is
+/// where all of them lived before this tier existed. Degrading to the previous
+/// behaviour is the point — nothing is ever dropped.
+const NGRAM_BUCKET_CAP: usize = 1024;
+
+/// Words of visited-set bitmap, one bit per n-gram bucket.
+const NGRAM_SEEN_WORDS: usize = NGRAM_BUCKET_CAP / 64;
 
 /// Backstop allowance for a whole lookup, in [`Budget`] units. Purely a safety
 /// net behind [`rule_step_cap`], which is what actually bounds the shape of the
@@ -244,21 +294,33 @@ fn is_separator(b: u8) -> bool {
 /// 254 of EasyList + EasyPrivacy's 18,778 rules to be scanned on every single
 /// request — measured at 87 % of the lookup's cost. Indexing them under their
 /// first / last [`MIN_TOKEN_LEN`] bytes reaches them in one probe instead.
+///
+/// A token unbounded on *both* sides (`*banneroid*`) is only ever *contained*
+/// by a URL token, so it needs the fourth kind and the sliding-window probe
+/// that goes with it — see the module docs.
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum KeyKind {
     Exact,
     Prefix,
     Suffix,
+    Ngram,
 }
 
 impl KeyKind {
     /// Distinct FNV seeds, so `Exact("ads")` and `Prefix("ads")` are different
     /// keys and a rule filed as one is never reached by a probe for the other.
+    ///
+    /// [`KeyKind::Ngram`] needs its own for the same reason and one more: its
+    /// key bytes are *identical* to a [`KeyKind::Prefix`] key's (both are the
+    /// token's first [`MIN_TOKEN_LEN`] bytes), but a prefix rule is only valid
+    /// where a URL token starts, while the n-gram sweep probes every offset.
+    /// Sharing a seed would fire prefix rules mid-token.
     fn seed(self) -> u64 {
         match self {
             KeyKind::Exact => 0xcbf2_9ce4_8422_2325,
             KeyKind::Prefix => 0x9e37_79b9_7f4a_7c15,
             KeyKind::Suffix => 0x517c_c1b7_2722_0a95,
+            KeyKind::Ngram => 0xff51_afd7_ed55_8ccd,
         }
     }
 }
@@ -300,8 +362,10 @@ fn for_each_token(bytes: &[u8], mut visit: impl FnMut(usize, usize) -> bool) {
 /// token each came from — longer tokens are more selective, which is how ties
 /// in frequency are broken.
 ///
-/// A token unbounded on *both* sides yields no key: the URL token merely
-/// contains it, and neither a prefix nor a suffix probe would find it.
+/// A token unbounded on *both* sides yields no key here; those rules fall
+/// through to [`for_each_ngram_key`], which the caller only consults when this
+/// produced nothing — a bounded key costs one probe per URL *token*, an n-gram
+/// key one per URL *byte*.
 fn for_each_index_key(
     pattern: &[u8],
     anchor: u16,
@@ -340,6 +404,60 @@ fn for_each_index_key(
     });
 }
 
+/// Calls `visit` with every window of `pattern`'s literal runs, packed by
+/// [`ngram_word`], and the length of the run each came from.
+///
+/// A **literal run** is a maximal stretch containing neither `*` nor `^` — the
+/// only two metacharacters — so every one of its bytes must appear, in order
+/// and contiguously, in any URL the pattern matches. That is what makes the
+/// window safe to look for directly.
+///
+/// It is deliberately *not* a token. `/fp/es.js` is one nine-byte run but four
+/// tokens of at most two bytes each, and that shape is precisely what left 41
+/// EasyList rules unreachable while only tokens could be keys — patterns rich
+/// in literal text that the separator split shreds into fragments too short to
+/// file. Runs span `/`, `.` and `?` for exactly that reason.
+fn for_each_ngram_key(pattern: &[u8], mut visit: impl FnMut(u32, usize)) {
+    for run in pattern.split(|&byte| byte == b'*' || byte == b'^') {
+        if run.len() < MIN_TOKEN_LEN {
+            continue;
+        }
+        for window in run.windows(MIN_TOKEN_LEN) {
+            visit(ngram_word(window), run.len());
+        }
+    }
+}
+
+/// `MIN_TOKEN_LEN` ASCII-lowercased bytes packed into a `u32` — the window's
+/// exact content rather than a digest of it, so the lookup can roll it along
+/// the URL with a shift instead of re-hashing at every offset.
+#[inline]
+fn ngram_word(window: &[u8]) -> u32 {
+    let mut word = 0u32;
+    for &byte in window {
+        word = (word << 8) | byte.to_ascii_lowercase() as u32;
+    }
+    word
+}
+
+/// Folds a packed window down to a Bloom bit index. No multiply: this runs once
+/// per URL byte and answers "no" nearly every time, so it has to be the
+/// cheapest thing in the loop.
+#[inline]
+fn ngram_fold(word: u32) -> usize {
+    (word ^ (word >> 13)) as usize
+}
+
+/// Spreads a window over the whole 64-bit key space. `MIN_TOKEN_LEN` bytes
+/// carry far too little entropy to reach [`fastrange`], which reads the high
+/// bits and would otherwise see almost none of them vary.
+#[inline]
+fn ngram_hash(word: u32) -> u64 {
+    let mut hash = (word as u64 ^ KeyKind::Ngram.seed()).wrapping_mul(0xff51_afd7_ed55_8ccd);
+    hash ^= hash >> 33;
+    hash.wrapping_mul(0xc4ce_b9fe_1a85_ec53)
+}
+
 // ─── Pattern matching ─────────────────────────────────────────────────────
 
 #[inline]
@@ -349,6 +467,34 @@ fn byte_matches(pattern_byte: u8, text_byte: u8, match_case: bool) -> bool {
     } else {
         pattern_byte == text_byte.to_ascii_lowercase()
     }
+}
+
+/// First position at or after `from` where a literal `pattern_byte` could
+/// match — SIMD, via `memchr`.
+///
+/// This replaces a scalar `for at in from..text.len()` and is the single
+/// largest term in a long-URL lookup: with the index now filing every rule,
+/// what remains is candidate rules each scanning the URL for their first byte,
+/// measured at **~3 µs per candidate on an 8 KiB URL** when done a byte at a
+/// time.
+///
+/// Only a **lowercase letter** needs the two-needle scan. [`byte_matches`] folds
+/// the *text* byte, so `tb.to_ascii_lowercase() == pb` can only hold for two
+/// bytes when `pb` is lowercase; a separator or digit is matched by itself
+/// alone, and an uppercase `pb` under a case-insensitive rule is matched by
+/// nothing at all — that comparison can never be true. Reaching for
+/// `memchr2(pb, pb.to_ascii_uppercase())` unconditionally would hand the
+/// two-needle scan every `/` and `.`, which is most of the first bytes in a
+/// real ruleset.
+#[inline]
+fn find_byte(text: &[u8], from: usize, pattern_byte: u8, match_case: bool) -> Option<usize> {
+    let rest = text.get(from..)?;
+    let at = if !match_case && pattern_byte.is_ascii_lowercase() {
+        memchr::memchr2(pattern_byte, pattern_byte.to_ascii_uppercase(), rest)
+    } else {
+        memchr::memchr(pattern_byte, rest)
+    }?;
+    Some(from + at)
 }
 
 /// Matches `pattern` against `text` beginning at `start`.
@@ -411,9 +557,23 @@ fn match_from(
         // is the second place the allowance is charged.
         match star {
             Some((after, tried)) if tried < text.len() && budget.spend() => {
-                star = Some((after, tried + 1));
+                // A `*` followed by a literal can only resume where that
+                // literal occurs, so jump there instead of retrying every byte
+                // in between — each of which is a guaranteed mismatch. `^` and
+                // `*` are excluded because both match more than one byte.
+                let mut next = tried + 1;
+                match pattern.get(after) {
+                    Some(&literal) if literal != b'*' && literal != b'^' => {
+                        match find_byte(text, next, literal, match_case) {
+                            Some(at) => next = at,
+                            None => return false,
+                        }
+                    }
+                    _ => {}
+                }
+                star = Some((after, next));
                 p = after;
-                t = tried + 1;
+                t = next;
             }
             _ => return false,
         }
@@ -690,7 +850,11 @@ impl UrlIndexBuilder {
 
         // Pass 2 — file each rule under its rarest key; the longest source
         // token breaks ties, being the more selective of two equally rare ones.
-        let mut filed: Vec<(u64, u32)> = Vec::with_capacity(self.records.len());
+        // Whatever no token can file falls through to the n-gram tier, which is
+        // consulted second because it costs one probe per URL *byte* where a
+        // bounded key costs one per URL *token*.
+        let mut filed: Vec<(bool, u64, u32)> = Vec::with_capacity(self.records.len());
+        let mut needs_ngram: Vec<u32> = Vec::new();
         let mut unindexed: Vec<u32> = Vec::new();
         for (index, record) in self.records.iter().enumerate() {
             let mut best: Option<(u32, usize, u64)> = None;
@@ -713,24 +877,115 @@ impl UrlIndexBuilder {
                 },
             );
             match best {
-                Some((_, _, hash)) => filed.push((hash, index as u32)),
-                None => unindexed.push(index as u32),
+                Some((_, _, hash)) => filed.push((false, hash, index as u32)),
+                None => needs_ngram.push(index as u32),
             }
         }
 
-        // CSR: sort by key, then one contiguous run of rule ids per key.
+        // Pass 3 — the same rarest-key treatment over literal-run windows,
+        // counted across only the rules that got this far so the frequencies
+        // describe this tier rather than the corpus at large.
+        let mut ngram_word_of: HashMap<u64, u32> = HashMap::new();
+        let mut ngram_frequency: HashMap<u32, u32> = HashMap::new();
+        for &index in &needs_ngram {
+            for_each_ngram_key(self.pattern_of(&self.records[index as usize]), |word, _| {
+                *ngram_frequency.entry(word).or_insert(0) += 1;
+            });
+        }
+        for &index in &needs_ngram {
+            let mut best: Option<(u32, usize, u32)> = None;
+            for_each_ngram_key(
+                self.pattern_of(&self.records[index as usize]),
+                |word, run| {
+                    let count = ngram_frequency.get(&word).copied().unwrap_or(u32::MAX);
+                    let better = match best {
+                        None => true,
+                        Some((best_count, best_run, _)) => {
+                            count < best_count || (count == best_count && run > best_run)
+                        }
+                    };
+                    if better {
+                        best = Some((count, run, word));
+                    }
+                },
+            );
+            match best {
+                Some((_, _, word)) => {
+                    let hash = ngram_hash(word);
+                    // The Bloom filter is indexed by the packed window, so it
+                    // needs the word back once the buckets are known.
+                    ngram_word_of.insert(hash, word);
+                    filed.push((true, hash, index));
+                }
+                // No literal run reaches MIN_TOKEN_LEN: nothing to file at all.
+                None => unindexed.push(index),
+            }
+        }
+
+        // CSR: sort by key, then one contiguous run of rule ids per key. The
+        // n-gram flag sorts first so those buckets land in one range at the end
+        // — the lookup's visited set indexes off that range.
         filed.sort_unstable();
+        let first_ngram = filed.partition_point(|(ngram, _, _)| !ngram);
+
+        // Overflow past the visited set's fixed width goes back to the scan.
+        // Cutting on a bucket boundary keeps every rule sharing a key together,
+        // so a key is either wholly indexed or wholly not.
+        let mut kept = filed.len();
+        let mut distinct = 0usize;
+        let mut previous: Option<u64> = None;
+        for (offset, &(_, hash, _)) in filed[first_ngram..].iter().enumerate() {
+            if previous == Some(hash) {
+                continue;
+            }
+            if distinct == NGRAM_BUCKET_CAP {
+                kept = first_ngram + offset;
+                break;
+            }
+            distinct += 1;
+            previous = Some(hash);
+        }
+        unindexed.extend(filed.drain(kept..).map(|(_, _, rule)| rule));
+        // Record order, so the rule a scan reports first does not depend on
+        // which tier demoted it.
+        unindexed.sort_unstable();
+
         let mut bucket_hash: Vec<u64> = Vec::new();
         let mut bucket_start: Vec<u32> = Vec::new();
         let mut bucket_rules: Vec<u32> = Vec::with_capacity(filed.len());
-        for (hash, rule) in filed {
+        let mut ngram_bucket_start = usize::MAX;
+        for (ngram, hash, rule) in filed {
             if bucket_hash.last() != Some(&hash) {
+                if ngram && ngram_bucket_start == usize::MAX {
+                    ngram_bucket_start = bucket_hash.len();
+                }
                 bucket_hash.push(hash);
                 bucket_start.push(bucket_rules.len() as u32);
             }
             bucket_rules.push(rule);
         }
         bucket_start.push(bucket_rules.len() as u32);
+        let ngram_bucket_start = ngram_bucket_start.min(bucket_hash.len());
+
+        // Bloom prefilter over the n-gram keys, indexed by the packed window
+        // rather than its hash: the sweep tests one window per URL byte and
+        // nearly all of them match nothing, so the cheapest possible "no" is
+        // what makes the tier affordable — and folding 24 bits costs no
+        // multiply where `ngram_hash` costs two.
+        //
+        // One word per key puts false positives near 1 %, and a false positive
+        // costs one table probe that finds nothing. Noise, not correctness.
+        let ngram_keys = bucket_hash.len() - ngram_bucket_start;
+        let mut ngram_bits: Vec<u64> = Vec::new();
+        if ngram_keys > 0 {
+            ngram_bits = vec![0u64; ngram_keys.next_power_of_two().max(8)];
+            let span = ngram_bits.len() * 64;
+            for hash in &bucket_hash[ngram_bucket_start..] {
+                let word = ngram_word_of[hash];
+                let bit = ngram_fold(word) & (span - 1);
+                ngram_bits[bit >> 6] |= 1u64 << (bit & 63);
+            }
+        }
 
         // Open-addressing table over the buckets, ~0.7 load factor, sized
         // exactly via fastrange rather than rounded to a power of two.
@@ -758,6 +1013,8 @@ impl UrlIndexBuilder {
             bucket_hash: bucket_hash.into_boxed_slice(),
             bucket_start: bucket_start.into_boxed_slice(),
             bucket_rules: bucket_rules.into_boxed_slice(),
+            ngram_bucket_start,
+            ngram_bits: ngram_bits.into_boxed_slice(),
             unindexed: unindexed.into_boxed_slice(),
             duplicates_removed: self.duplicates_removed,
             budget_exhausted: AtomicU64::new(0),
@@ -818,7 +1075,17 @@ pub(crate) struct UrlIndex {
     bucket_hash: Box<[u64]>,
     bucket_start: Box<[u32]>,
     bucket_rules: Box<[u32]>,
-    /// Rules whose pattern offers no token a URL tokenizer would reproduce.
+    /// First bucket belonging to the n-gram tier. Everything from here to the
+    /// end is one, which is what lets the lookup's visited set be a bitmap
+    /// indexed by `bucket - ngram_bucket_start`.
+    ngram_bucket_start: usize,
+    /// Bloom prefilter over the n-gram keys — empty when there are none, which
+    /// is also the flag that skips the sweep. Never authoritative: a set bit
+    /// only means the table is worth probing.
+    ngram_bits: Box<[u64]>,
+    /// Rules whose pattern offers no token at all — nothing to file, so they
+    /// are checked on every lookup. Also where n-gram overflow past
+    /// [`NGRAM_BUCKET_CAP`] lands.
     unindexed: Box<[u32]>,
     duplicates_removed: usize,
     /// Lookups that hit [`LOOKUP_STEP_CAP`] or a rule's [`rule_step_cap`] and
@@ -841,6 +1108,13 @@ impl UrlIndex {
     /// every lookup into a linear scan.
     pub(crate) fn unindexed_len(&self) -> usize {
         self.unindexed.len()
+    }
+
+    /// How many keys the n-gram tier holds — zero means the sliding-window
+    /// sweep is skipped outright and a lookup costs exactly what it did before
+    /// the tier existed.
+    pub(crate) fn ngram_keys(&self) -> usize {
+        self.bucket_hash.len() - self.ngram_bucket_start
     }
 
     /// Lookups cut short by the work allowance. Non-zero means some rule stopped
@@ -913,6 +1187,41 @@ impl UrlIndex {
             });
         }
 
+        // The n-gram sweep, for rules no token could file. It rolls a window
+        // along the **whole URL** rather than within tokens, because a literal
+        // run spans separators — `/fp/es.js` is one run and four tokens.
+        //
+        // Skipped outright when the tier is empty, which is the common case and
+        // is what keeps a corpus like this router's costing exactly what it did
+        // before the tier existed.
+        if found.is_none() && !self.ngram_bits.is_empty() && probe.url.len() >= MIN_TOKEN_LEN {
+            let url = probe.url;
+            let mut seen = [0u64; NGRAM_SEEN_WORDS];
+            let mut word = 0u32;
+            for &byte in &url[..MIN_TOKEN_LEN - 1] {
+                word = (word << 8) | byte.to_ascii_lowercase() as u32;
+            }
+            for &byte in &url[MIN_TOKEN_LEN - 1..] {
+                word = ((word << 8) | byte.to_ascii_lowercase() as u32) & NGRAM_WORD_MASK;
+                if !self.ngram_may_hold(word) {
+                    continue;
+                }
+                let Some(bucket) = self.bucket_of(ngram_hash(word)) else {
+                    continue;
+                };
+                // Unlike the three probes above, a window can land on the same
+                // key many times in one URL, and every hit would cost a full
+                // O(url) match per rule in the bucket.
+                if !visit_once(&mut seen, bucket, self.ngram_bucket_start) {
+                    continue;
+                }
+                self.check_bucket(bucket, &mut probe, &mut found, &mut blocked);
+                if found.is_some() {
+                    break;
+                }
+            }
+        }
+
         if probe.budget.exhausted {
             // Rare enough to be an operator signal rather than a hot-path cost:
             // it takes a pattern engineered for backtracking plus a URL chosen
@@ -970,6 +1279,15 @@ impl UrlIndex {
             Some(index) => UrlDecision::Block(index),
             None => UrlDecision::Pass,
         }
+    }
+
+    /// Bloom test for the n-gram sweep. Only meaningful when the filter is
+    /// non-empty; `false` is conclusive, `true` means "probe the table".
+    #[inline]
+    fn ngram_may_hold(&self, word: u32) -> bool {
+        let span = self.ngram_bits.len() * 64;
+        let bit = ngram_fold(word) & (span - 1);
+        self.ngram_bits[bit >> 6] & (1u64 << (bit & 63)) != 0
     }
 
     fn bucket_of(&self, hash: u64) -> Option<usize> {
@@ -1072,11 +1390,20 @@ impl UrlIndex {
                         && match_from(pattern, url, at, end_anchored, match_case, budget)
                 }),
                 // A literal first byte cannot match at the end of the URL, so
-                // the range stops one short of it.
-                Some(&first) => (0..url.len()).any(|at| {
-                    byte_matches(first, url[at], match_case)
-                        && match_from(pattern, url, at, end_anchored, match_case, budget)
-                }),
+                // only the positions it actually occupies are tried — found by
+                // SIMD rather than by walking the URL a byte at a time.
+                Some(&first) => {
+                    let mut at = 0;
+                    loop {
+                        let Some(found) = find_byte(url, at, first, match_case) else {
+                            break false;
+                        };
+                        if match_from(pattern, url, found, end_anchored, match_case, budget) {
+                            break true;
+                        }
+                        at = found + 1;
+                    }
+                }
                 None => true,
             },
         };
@@ -1148,9 +1475,35 @@ impl UrlIndex {
             + self.bucket_hash.len() * std::mem::size_of::<u64>()
             + self.bucket_start.len() * std::mem::size_of::<u32>()
             + self.bucket_rules.len() * std::mem::size_of::<u32>()
+            + self.ngram_bits.len() * std::mem::size_of::<u64>()
             + self.unindexed.len() * std::mem::size_of::<u32>()
             + methods
     }
+}
+
+/// Claims an n-gram bucket for this lookup — `false` means it was already
+/// checked and the caller must skip it.
+///
+/// Two ways a bucket legitimately falls outside the bitmap, both answered
+/// "check it": a 64-bit collision between an n-gram key and a bounded one
+/// merges the two into a single bucket below the n-gram range, and a
+/// build-time cut could in principle leave the range wider than the map.
+/// Neither can drop a rule — the worst case is the repeated work the map exists
+/// to avoid.
+#[inline]
+fn visit_once(seen: &mut [u64; NGRAM_SEEN_WORDS], bucket: usize, ngram_start: usize) -> bool {
+    let Some(slot) = bucket.checked_sub(ngram_start) else {
+        return true;
+    };
+    if slot >= NGRAM_SEEN_WORDS * 64 {
+        return true;
+    }
+    let bit = 1u64 << (slot & 63);
+    if seen[slot >> 6] & bit != 0 {
+        return false;
+    }
+    seen[slot >> 6] |= bit;
+    true
 }
 
 /// Writes a resource-type mask back as options, preferring the negated form
@@ -1616,17 +1969,34 @@ mod tests {
         }
     }
 
-    /// A token unbounded on **one** side is still usable — as a prefix or a
-    /// suffix key. Only one unbounded on both sides falls back to the scan.
+    /// Every pattern with `MIN_TOKEN_LEN` literal bytes in a row is reachable
+    /// by *some* key: a token bounded on both sides exactly, on one side as a
+    /// prefix or suffix, on neither as an n-gram over its literal runs. Only a
+    /// pattern with no run that long at all falls back to the scan.
     #[test]
-    fn one_sided_tokens_are_indexed_and_only_two_sided_ones_fall_back() {
-        assert_eq!(index_of(vec![rule("/adserver")]).unindexed_len(), 0);
-        assert_eq!(index_of(vec![rule("*trackpixel/")]).unindexed_len(), 0);
-        assert_eq!(
-            index_of(vec![rule("*trackpixel")]).unindexed_len(),
-            1,
-            "open on both sides: no key can reach it"
-        );
+    fn every_long_enough_literal_run_is_indexed_and_only_short_ones_fall_back() {
+        for pattern in [
+            "/adserver",
+            "*trackpixel/",
+            "*trackpixel",
+            "*banneroid*",
+            // Four tokens of two bytes, but one nine-byte literal run — the
+            // shape that used to fall through to the scan.
+            "/fp/es.js",
+            "t.co^",
+            "0.0.0.0^",
+        ] {
+            let index = index_of(vec![rule(pattern)]);
+            assert_eq!(
+                index.unindexed_len(),
+                0,
+                "{pattern} offers a literal run the index can reach"
+            );
+        }
+        // Every run is shorter than a window, so there is nothing to file.
+        let index = index_of(vec![rule("*a*b*")]);
+        assert_eq!(index.unindexed_len(), 1);
+        assert_eq!(index.ngram_keys(), 0);
 
         // …and being indexed must not change the verdict.
         let index = index_of(vec![rule("/adserver")]);
@@ -1639,6 +2009,101 @@ mod tests {
             &index,
             &request("http://e.com/mytrackpixel/1", "e.com")
         ));
+    }
+
+    /// The tier's whole reason to exist: a token the URL only *contains* is
+    /// found by the sliding window, at any offset, without a linear scan.
+    #[test]
+    fn a_two_sided_unbounded_token_is_reached_through_the_ngram_index() {
+        let index = index_of(vec![rule("*banneroid*")]);
+        assert_eq!(index.unindexed_len(), 0, "must not fall back to the scan");
+        assert_eq!(index.ngram_keys(), 1);
+
+        for url in [
+            "http://e.com/banneroid/1",     // at a token start
+            "http://e.com/xxbanneroid/1",   // mid-token
+            "http://e.com/xxbanneroidyy/1", // mid-token, open on the right too
+        ] {
+            assert!(blocks(&index, &request(url, "e.com")), "{url}");
+        }
+        assert!(
+            !blocks(&index, &request("http://e.com/banner/oid/1", "e.com")),
+            "a separator breaks the token, so the n-gram cannot span it"
+        );
+    }
+
+    /// A bounded key is probed once per URL token, an n-gram key once per URL
+    /// byte — so a rule that offers both must take the bounded one however rare
+    /// its n-gram happens to be.
+    #[test]
+    fn a_bounded_key_is_preferred_over_an_ngram_key() {
+        // `/adserver` is left-bounded (prefix key); `*zqxjv*` is not.
+        let index = index_of(vec![rule("/adserver*zqxjv*")]);
+        assert_eq!(index.ngram_keys(), 0, "the prefix key must win");
+        assert_eq!(index.unindexed_len(), 0);
+        assert!(blocks(
+            &index,
+            &request("http://e.com/adserverX/zqxjv/1", "e.com")
+        ));
+    }
+
+    /// A URL repeating a rule's n-gram must not re-check that rule per byte.
+    /// Without the visited set this is O(url²) per rule and is exactly the cost
+    /// the tier was introduced to remove.
+    #[test]
+    fn a_repeated_ngram_does_not_recheck_the_same_rule() {
+        let index = index_of(vec![rule("*banneroid*")]);
+        // 8 KB of the rule's own n-gram, and no match: every window probes the
+        // same bucket, which must be entered once.
+        let url = format!("http://h.example.com/{}", "ban".repeat(2600));
+        let req = request(&url, "h.example.com");
+
+        let start = std::time::Instant::now();
+        assert!(matches!(index.lookup(&req), UrlDecision::Pass));
+        let elapsed = start.elapsed();
+
+        assert_eq!(
+            index.budget_exhausted(),
+            0,
+            "the allowance must not be what saves this"
+        );
+        // Loose on purpose — a debug build on unknown hardware. Re-checking per
+        // window is three orders worse and would blow this by a wide margin.
+        assert!(elapsed.as_millis() < 200, "took {elapsed:?}");
+    }
+
+    /// Overflow past the visited set's width degrades to the pre-existing scan
+    /// rather than dropping rules, and the two tiers still agree with it.
+    #[test]
+    fn ngram_overflow_demotes_to_the_scan_without_losing_rules() {
+        // Each pattern is unbounded on both sides with a distinct token, so
+        // each wants its own n-gram bucket.
+        const ALPHABET: &[u8] = b"abcdefghijklmnopqrstuvwxyz";
+        let patterns: Vec<String> = (0..NGRAM_BUCKET_CAP + 64)
+            .map(|n| {
+                let (a, b, c) = (n / 676 % 26, n / 26 % 26, n % 26);
+                format!(
+                    "*{}{}{}*",
+                    ALPHABET[a] as char, ALPHABET[b] as char, ALPHABET[c] as char
+                )
+            })
+            .collect();
+        let index = index_of(patterns.iter().map(|p| rule(p)).collect());
+
+        assert_eq!(index.len(), patterns.len(), "no rule may be dropped");
+        assert_eq!(index.ngram_keys(), NGRAM_BUCKET_CAP);
+        assert_eq!(index.unindexed_len(), patterns.len() - NGRAM_BUCKET_CAP);
+
+        // Every rule still fires, whichever tier it landed in. Which 64 were
+        // demoted depends on hash order, so this has to cover all of them.
+        for pattern in &patterns {
+            let token = pattern.trim_matches('*');
+            let url = format!("http://e.com/xx{token}yy");
+            assert!(
+                blocks(&index, &request(&url, "e.com")),
+                "{pattern} stopped firing on {url}"
+            );
+        }
     }
 
     /// The fixture list above covers the shapes we thought of. This covers the
@@ -1711,7 +2176,13 @@ mod tests {
     fn a_pathological_pattern_cannot_spend_an_unbounded_lookup() {
         let pattern = format!("{}*{}b", "a".repeat(40), "a".repeat(40));
         let index = index_of(vec![rule(&pattern)]);
-        let url = format!("http://h.example.com/{}", "a".repeat(4000));
+        // The URL has to contain the rule's key or the index legitimately never
+        // reaches it, and the allowance would go untested. `aab` and `aaa` are
+        // the only windows the pattern's two literal runs offer, so holding
+        // both makes this independent of which one the builder picks. No `b`
+        // follows the trailing run, so the pattern still cannot match — which
+        // is what makes the matcher grind through every offset.
+        let url = format!("http://h.example.com/aab{}", "a".repeat(4000));
         let req = request(&url, "h.example.com");
 
         let start = std::time::Instant::now();
@@ -1744,18 +2215,27 @@ mod tests {
         );
     }
 
-    /// The three key kinds share one table, so `Exact("ads")` must not be
+    /// All four key kinds share one table, so `Exact("ads")` must not be
     /// reachable by a prefix probe for `ads` — that would file a rule in a
     /// bucket it can never legitimately be found through, and mask real bugs.
+    /// `Prefix` and `Ngram` matter most: their key bytes are identical by
+    /// construction, and only the seed keeps a prefix rule from firing
+    /// mid-token.
     #[test]
     fn the_key_kinds_do_not_collide_with_each_other() {
-        let bytes = b"ads";
-        let exact = hash_key(KeyKind::Exact, bytes);
-        let prefix = hash_key(KeyKind::Prefix, bytes);
-        let suffix = hash_key(KeyKind::Suffix, bytes);
-        assert_ne!(exact, prefix);
-        assert_ne!(exact, suffix);
-        assert_ne!(prefix, suffix);
+        let mut hashes: Vec<u64> = [KeyKind::Exact, KeyKind::Prefix, KeyKind::Suffix]
+            .iter()
+            .map(|&kind| hash_key(kind, b"ads"))
+            .collect();
+        // The n-gram tier hashes a packed window rather than bytes, but shares
+        // the one table, so it has to stay clear of the other three too.
+        hashes.push(ngram_hash(ngram_word(b"ads")));
+        for (at, hash) in hashes.iter().enumerate() {
+            assert!(
+                !hashes[at + 1..].contains(hash),
+                "two key kinds hash `ads` alike"
+            );
+        }
     }
 
     #[test]

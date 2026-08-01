@@ -728,6 +728,14 @@ impl Matcher {
         self.url.unindexed_len()
     }
 
+    /// Keys in the URL tier's n-gram index — the rules reachable only by
+    /// sliding a window along each URL token. Exposed alongside
+    /// [`Self::url_unindexed`] because the two trade against each other: this
+    /// is where the rules that used to inflate that count now live.
+    pub fn url_ngram_keys(&self) -> usize {
+        self.url.ngram_keys()
+    }
+
     /// URL-tier lookups that hit the matcher's work allowance and stopped
     /// early, leaving some rule unenforced for that request. Zero under any
     /// traffic that is not deliberately shaped to feed a backtracking pattern;
