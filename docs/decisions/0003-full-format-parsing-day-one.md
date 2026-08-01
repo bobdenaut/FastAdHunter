@@ -30,3 +30,15 @@ memory — measured at ~1 MiB for EasyList + EasyPrivacy URL patterns
 Read "Phases 2–4 activate already-parsed rules" as *already-classified* rules.
 The distinction is worth keeping straight: it went unnoticed until `p2-00`, by
 which point the optimistic reading had been copied into two task files.
+
+**Settled by `p2-03` (2026-08-01).** The URL tier reintroduced retention and
+paid the bill: **+3.32 ms** of parse across EasyList + EasyPrivacy (+16.7 %,
+≈177 ns per retained rule) and **1.06 MiB** compiled for 18,778 rules — close
+to the ~1 MiB predicted above. Both figures are measured, the parse delta
+against the real pre-change parser (`docs/code-review/p2-03-review.md`).
+
+The correction's practical consequence is now visible in the type itself:
+`InactiveReason` carries only variants that genuinely stay inactive, and a
+rule a tier *can* answer carries its payload. Phase 4 will pay the same bill
+again for cosmetic rules, which remain payload-free deliberately — 24,368 in
+EasyList alone.

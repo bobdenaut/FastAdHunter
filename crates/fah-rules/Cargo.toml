@@ -44,3 +44,10 @@ harness = false
 [[bench]]
 name = "overlap_lookup"
 harness = false
+
+# URL tier: request-verdict latency, compiled heap as an absolute number, and
+# the parse cost retention added (p2-03). Reads real lists when FAH_URL_CORPUS
+# names them, otherwise a synthetic EasyList-shaped corpus.
+[[bench]]
+name = "url_matcher"
+harness = false

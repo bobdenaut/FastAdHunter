@@ -196,7 +196,7 @@ mod tests {
     fn entry(sequence: u64) -> QueryLogEntry {
         QueryLogEntry {
             sequence,
-            event: QueryEvent::new(
+            event: fah_model::Event::dns(QueryEvent::new(
                 Query::new(
                     "example.com",
                     QueryType::A,
@@ -208,7 +208,7 @@ mod tests {
                 false,
                 true,
                 false,
-            ),
+            )),
             client_name: None,
         }
     }

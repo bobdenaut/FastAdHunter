@@ -119,9 +119,62 @@ pub fn encode(metrics: &Metrics) -> String {
 
     write_help_type(
         &mut out,
+        "fastadhunter_http_requests_total",
+        "counter",
+        "Total HTTP requests processed by the proxy, by verdict.",
+    );
+    for (label, counter) in [
+        ("pass", &metrics.requests_pass),
+        ("allow", &metrics.requests_allow),
+        ("block", &metrics.requests_block),
+    ] {
+        writeln_metric(
+            &mut out,
+            "fastadhunter_http_requests_total",
+            &[("verdict", label)],
+            counter.load(std::sync::atomic::Ordering::Relaxed) as f64,
+        );
+    }
+
+    write_help_type(
+        &mut out,
+        "fastadhunter_http_response_bytes_total",
+        "counter",
+        "Response body bytes relayed downstream. A blocked request adds nothing, so this and the block counter together show what filtering actually saved.",
+    );
+    writeln_metric(
+        &mut out,
+        "fastadhunter_http_response_bytes_total",
+        &[],
+        metrics
+            .response_bytes
+            .load(std::sync::atomic::Ordering::Relaxed) as f64,
+    );
+
+    write_help_type(
+        &mut out,
+        "fastadhunter_http_request_duration_seconds",
+        "histogram",
+        "HTTP request latency by answering path: block is fully in-engine (no upstream contacted); forward is end-to-end including the origin round trip.",
+    );
+    write_histogram(
+        &mut out,
+        "fastadhunter_http_request_duration_seconds",
+        "block",
+        &metrics.request_duration_block,
+    );
+    write_histogram(
+        &mut out,
+        "fastadhunter_http_request_duration_seconds",
+        "forward",
+        &metrics.request_duration_forward,
+    );
+
+    write_help_type(
+        &mut out,
         "fastadhunter_events_dropped_total",
         "counter",
-        "QueryEvents dropped because the observers' event channel was full.",
+        "Events dropped because the observers' one event channel was full — DNS and HTTP share it, so this stays a single shed figure.",
     );
     writeln_metric(
         &mut out,

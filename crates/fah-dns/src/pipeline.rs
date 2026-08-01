@@ -14,7 +14,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use fah_config::DnsCacheConfig;
-use fah_model::{Query as FahQuery, QueryEvent, Verdict};
+use fah_model::{Event, Query as FahQuery, QueryEvent, Verdict};
 use fah_rules::{ListManager, MatchDecision};
 use hickory_proto::op::{Message, MessageType, OpCode, Query as WireQuery, ResponseCode};
 use tokio::sync::mpsc;
@@ -50,7 +50,7 @@ pub struct Pipeline<F: Forwarder> {
     /// here: the task is spawned by [`Pipeline::spawn_cache_cleanup`], never
     /// by the constructor.
     cleanup_interval: Option<Duration>,
-    events: mpsc::Sender<QueryEvent>,
+    events: mpsc::Sender<Event>,
     /// Count of `QueryEvent`s dropped because the channel was full
     /// (ARCHITECTURE.md §Runtime Model: "a slow consumer drops events rather
     /// than back-pressuring the pipeline"). Exposed for p1-08's metrics.
@@ -63,7 +63,7 @@ impl<F: Forwarder> Pipeline<F> {
         forwarder: F,
         blocking_ttl: u32,
         cache_config: &DnsCacheConfig,
-        events: mpsc::Sender<QueryEvent>,
+        events: mpsc::Sender<Event>,
     ) -> Self {
         Self {
             rules,
@@ -411,7 +411,9 @@ impl<F: Forwarder> Pipeline<F> {
         stale: bool,
     ) {
         let event = QueryEvent::new(query, verdict, duration, cache_hit, upstream_used, stale);
-        if self.events.try_send(event).is_err() {
+        // One channel for both pipelines (`fah_model::Event`), so the shed
+        // figure stays a single number rather than two that cannot be added.
+        if self.events.try_send(Event::dns(event)).is_err() {
             self.dropped_events.fetch_add(1, Ordering::Relaxed);
         }
     }
@@ -419,6 +421,16 @@ impl<F: Forwarder> Pipeline<F> {
 
 #[cfg(test)]
 mod tests {
+    /// Unwraps the DNS half of the shared event channel. Every event this
+    /// pipeline emits is `Event::Dns`; anything else is a wiring bug and
+    /// should fail loudly rather than be skipped.
+    fn dns_event(event: fah_model::Event) -> QueryEvent {
+        match event {
+            fah_model::Event::Dns(event) => *event,
+            fah_model::Event::Http(_) => panic!("the DNS pipeline emitted an HTTP event"),
+        }
+    }
+
     use std::net::Ipv4Addr;
     use std::str::FromStr;
     use std::time::Duration;
@@ -549,7 +561,7 @@ mod tests {
         assert_eq!(response.metadata.response_code, ResponseCode::NoError);
         assert_eq!(calls.load(Ordering::Relaxed), 1);
 
-        let event = rx.try_recv().unwrap();
+        let event = dns_event(rx.try_recv().unwrap());
         assert_eq!(event.verdict, Verdict::Pass);
         assert!(event.upstream_used);
         assert!(!event.cache_hit);
@@ -572,7 +584,7 @@ mod tests {
         let raw = encode_query("example.com.", RecordType::A);
         pipeline.handle(&raw, mapped, Transport::Udp).await.unwrap();
 
-        let event = rx.try_recv().unwrap();
+        let event = dns_event(rx.try_recv().unwrap());
         assert_eq!(
             event.query.client_ip,
             "192.168.10.15".parse::<IpAddr>().unwrap()
@@ -761,14 +773,14 @@ mod tests {
             .handle(&raw, client_ip(), Transport::Tcp)
             .await
             .unwrap();
-        let first_event = rx.try_recv().unwrap();
+        let first_event = dns_event(rx.try_recv().unwrap());
         assert!(!first_event.cache_hit);
 
         pipeline
             .handle(&raw, client_ip(), Transport::Tcp)
             .await
             .unwrap();
-        let second_event = rx.try_recv().unwrap();
+        let second_event = dns_event(rx.try_recv().unwrap());
         assert!(second_event.cache_hit);
         assert!(!second_event.stale);
 
@@ -844,7 +856,7 @@ mod tests {
             .handle(&raw, client_ip(), Transport::Tcp)
             .await
             .unwrap();
-        let _ = rx.try_recv().unwrap();
+        let _ = dns_event(rx.try_recv().unwrap());
 
         // 1s TTL now expired, still inside the 24h stale window.
         tokio::time::advance(std::time::Duration::from_secs(2)).await;
@@ -857,7 +869,7 @@ mod tests {
         assert_eq!(decoded.metadata.response_code, ResponseCode::NoError);
         assert_eq!(decoded.answers.len(), 1);
 
-        let event = rx.try_recv().unwrap();
+        let event = dns_event(rx.try_recv().unwrap());
         assert!(event.cache_hit);
         assert!(event.stale);
         assert!(!event.upstream_used);
@@ -902,7 +914,7 @@ mod tests {
             .handle(&raw, client_ip(), Transport::Tcp)
             .await
             .unwrap();
-        let _ = rx.try_recv().unwrap();
+        let _ = dns_event(rx.try_recv().unwrap());
 
         // 1s TTL now expired; the upstream answers SERVFAIL from here on.
         tokio::time::advance(std::time::Duration::from_secs(2)).await;
@@ -919,7 +931,7 @@ mod tests {
         );
         assert_eq!(decoded.answers.len(), 1);
 
-        let event = rx.try_recv().unwrap();
+        let event = dns_event(rx.try_recv().unwrap());
         assert!(event.cache_hit);
         assert!(event.stale);
     }
@@ -942,7 +954,7 @@ mod tests {
             )
             .await
             .unwrap();
-        let _ = rx.try_recv().unwrap();
+        let _ = dns_event(rx.try_recv().unwrap());
 
         pipeline
             .handle(
@@ -952,7 +964,7 @@ mod tests {
             )
             .await
             .unwrap();
-        let event = rx.try_recv().unwrap();
+        let event = dns_event(rx.try_recv().unwrap());
         assert!(event.cache_hit, "DNS names are case-insensitive (RFC 1035)");
         assert_eq!(calls.load(Ordering::Relaxed), 1);
     }
@@ -998,7 +1010,7 @@ mod tests {
         let pipeline = Pipeline::new(rules, forwarder, 10, &swr_cache_config(3), tx);
 
         warm_then_age(&pipeline).await;
-        let _warm_event = rx.try_recv().unwrap();
+        let _warm_event = dns_event(rx.try_recv().unwrap());
         assert_eq!(calls.load(Ordering::Relaxed), 1);
 
         let reply = pipeline
@@ -1023,7 +1035,7 @@ mod tests {
             "a stale answer carries the short retry-soon TTL"
         );
 
-        let event = rx.try_recv().unwrap();
+        let event = dns_event(rx.try_recv().unwrap());
         assert!(event.cache_hit);
         assert!(event.stale);
         assert!(!event.upstream_used);
@@ -1088,7 +1100,7 @@ mod tests {
         let pipeline = Pipeline::new(rules, forwarder, 10, &swr_cache_config(0), tx);
 
         warm_then_age(&pipeline).await;
-        let _warm_event = rx.try_recv().unwrap();
+        let _warm_event = dns_event(rx.try_recv().unwrap());
 
         pipeline
             .handle(
@@ -1104,7 +1116,7 @@ mod tests {
             2,
             "with no pool, a stale entry still goes to the upstream first"
         );
-        let event = rx.try_recv().unwrap();
+        let event = dns_event(rx.try_recv().unwrap());
         assert!(event.upstream_used);
         assert!(!event.stale);
         assert_eq!(
@@ -1129,7 +1141,7 @@ mod tests {
         let mut pipeline = Pipeline::new(rules, forwarder, 10, &swr_cache_config(0), tx);
 
         warm_then_age(&pipeline).await;
-        let _warm_event = rx.try_recv().unwrap();
+        let _warm_event = dns_event(rx.try_recv().unwrap());
 
         // The upstream dies after the entry was cached.
         pipeline.forwarder.outcome = ForwarderOutcome::Err;
@@ -1146,7 +1158,7 @@ mod tests {
         let response = Message::from_vec(&reply).unwrap();
         assert_eq!(response.metadata.response_code, ResponseCode::NoError);
         assert_eq!(response.answers.len(), 1);
-        let event = rx.try_recv().unwrap();
+        let event = dns_event(rx.try_recv().unwrap());
         assert!(event.stale);
         assert!(event.cache_hit);
     }
@@ -1294,7 +1306,7 @@ mod tests {
 
         // Expired but inside the stale window, and left there.
         warm_then_age(&pipeline).await;
-        let _warm_event = rx.try_recv().unwrap();
+        let _warm_event = dns_event(rx.try_recv().unwrap());
         let cleanup = pipeline
             .spawn_cache_cleanup()
             .expect("interval is non-zero");
@@ -1328,7 +1340,7 @@ mod tests {
         let response = Message::from_vec(&reply).unwrap();
         assert_eq!(response.metadata.response_code, ResponseCode::NoError);
         assert_eq!(response.answers.len(), 1);
-        let event = rx.try_recv().unwrap();
+        let event = dns_event(rx.try_recv().unwrap());
         assert!(event.cache_hit && event.stale);
 
         cleanup.abort();

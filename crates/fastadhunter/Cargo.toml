@@ -18,6 +18,7 @@ path = "src/main.rs"
 # fah-api's port traits over fah-stats and fah-metrics.
 [dependencies]
 fah-api = { path = "../fah-api" }
+fah-common = { path = "../fah-common" }
 fah-config = { path = "../fah-config" }
 fah-dns = { path = "../fah-dns" }
 fah-http = { path = "../fah-http" }

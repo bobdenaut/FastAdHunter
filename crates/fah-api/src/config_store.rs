@@ -31,7 +31,7 @@ use serde_json::Value;
 /// Sections are listed whole rather than field-by-field on purpose: a field
 /// added to `[dns.cache]` tomorrow is boot until someone wires it live, which
 /// is the safe default for this contract.
-const BOOT_KEYS: [&str; 14] = [
+const BOOT_KEYS: [&str; 15] = [
     "engine.mode",
     "dns.listen",
     "dns.blocking",
@@ -42,6 +42,11 @@ const BOOT_KEYS: [&str; 14] = [
     // p2-02 may promote it — by giving it a live consumer first, never by
     // moving it out of this list and hoping.
     "http",
+    // Whole section: the allow-list is parsed into a `DestinationPolicy` once,
+    // when the binary builds the proxy. Applying it live would mean swapping a
+    // security policy under in-flight connections — if that is ever wanted it
+    // needs an atomic swap and a test, not a reclassification here.
+    "egress",
     "query_log",
     "stats",
     "history.sample_interval_seconds",

@@ -112,12 +112,19 @@ pub struct QueryPageResponse {
 
 #[derive(Debug, Serialize)]
 pub struct QueryItemResponse {
+    /// `dns` | `http` (p2-04). Present on every item so a client never has to
+    /// infer which pipeline answered from which fields happen to be null.
+    pub kind: &'static str,
     #[serde(serialize_with = "timestamp::serialize")]
     pub ts: std::time::SystemTime,
     pub client: IpAddr,
     pub client_name: Option<String>,
+    /// The name the entry is about: the question for DNS, the request host for
+    /// HTTP. One field rather than two, because "what was this client
+    /// reaching for" is one question.
     pub domain: String,
-    pub qtype: String,
+    /// DNS only — `null` for an HTTP request, which asks no record type.
+    pub qtype: Option<String>,
     /// `allow` | `block` | `pass`.
     pub verdict: &'static str,
     pub rule: Option<String>,
@@ -127,7 +134,19 @@ pub struct QueryItemResponse {
     /// used, not which one (`QueryEvent::upstream_used`), and per-query
     /// upstream attribution would cost an allocation on the hot path.
     pub upstream: Option<String>,
+    /// DNS only. An HTTP request has no cache to hit, so this is `false` for
+    /// one rather than pretending it missed.
     pub cached: bool,
+    // ── HTTP only; `null` on a DNS item ──
+    pub method: Option<String>,
+    pub path: Option<String>,
+    /// `script` | `image` | … | `unknown` (`fah_model::ResourceType`).
+    pub resource_type: Option<String>,
+    /// Status returned to the client, a synthesized block's included.
+    pub status: Option<u16>,
+    /// Response body bytes relayed. `0` on a block — the number that shows
+    /// what filtering saved.
+    pub bytes: Option<u64>,
 }
 
 impl From<QueryRecord> for QueryItemResponse {
@@ -136,20 +155,72 @@ impl From<QueryRecord> for QueryItemResponse {
         let (rule, list) = (rule.map(str::to_string), list.map(str::to_string));
         let verdict = record.verdict_str();
         let duration_ms = record.duration().as_secs_f64() * 1000.0;
+        let kind = record.event.kind().as_str();
+        let ts = record.event.timestamp();
+        let client = record.event.client_ip();
+
+        let (domain, qtype, cached) = match record.as_dns() {
+            Some(event) => (
+                display_domain(&event.query.domain),
+                Some(qtype_name(&event.query.qtype)),
+                event.cache_hit,
+            ),
+            None => (String::new(), None, false),
+        };
+        let (domain, method, path, resource_type, status, bytes) = match record.as_http() {
+            Some(event) => (
+                event.request.host.clone(),
+                Some(event.request.method.clone()),
+                Some(event.request.path.clone()),
+                Some(resource_type_name(event.request.resource_type)),
+                Some(event.status),
+                Some(event.bytes),
+            ),
+            None => (domain, None, None, None, None, None),
+        };
+
         Self {
-            ts: record.event.query.timestamp,
-            client: record.event.query.client_ip,
+            kind,
+            ts,
+            client,
             client_name: record.client_name,
-            domain: display_domain(&record.event.query.domain),
-            qtype: qtype_name(&record.event.query.qtype),
+            domain,
+            qtype,
             verdict,
             rule,
             list,
             duration_ms,
             upstream: None,
-            cached: record.event.cache_hit,
+            cached,
+            method,
+            path,
+            resource_type,
+            status,
+            bytes,
         }
     }
+}
+
+/// The wire spelling of a resource type, matching the `$option` vocabulary
+/// RULE_ENGINE.md documents rather than the Rust variant name.
+fn resource_type_name(kind: fah_model::ResourceType) -> String {
+    use fah_model::ResourceType as R;
+    match kind {
+        R::Document => "document",
+        R::Subdocument => "subdocument",
+        R::Script => "script",
+        R::Stylesheet => "stylesheet",
+        R::Image => "image",
+        R::Font => "font",
+        R::Media => "media",
+        R::XmlHttpRequest => "xmlhttprequest",
+        R::WebSocket => "websocket",
+        R::Ping => "ping",
+        R::Object => "object",
+        R::Other => "other",
+        R::Unknown => "unknown",
+    }
+    .to_string()
 }
 
 impl From<QueryLogPage> for QueryPageResponse {
@@ -521,6 +592,14 @@ pub struct ListResponse {
     pub last_status: &'static str,
     pub rules_total: usize,
     pub rules_active_dns: usize,
+    /// Rules active in the URL tier — request-level rules the HTTP pipeline
+    /// answers from (RULE_ENGINE.md §HTTP matching, p2-03). Split out of
+    /// `rules_inactive`, where they used to be counted: they filter, so
+    /// reporting them as inactive understated what a list like EasyList does
+    /// by ~22k rules.
+    pub rules_active_url: usize,
+    /// Rules no tier answers yet: cosmetic (Phase 4), `$client` (p2-05), and
+    /// patterns no supported syntax expresses.
     pub rules_inactive: usize,
 }
 
@@ -803,7 +882,7 @@ mod tests {
     #[test]
     fn query_item_matches_the_documented_field_set() {
         let record = QueryRecord {
-            event: QueryEvent::new(
+            event: fah_model::Event::dns(QueryEvent::new(
                 Query::new(
                     "ads.example.com",
                     QueryType::A,
@@ -815,7 +894,7 @@ mod tests {
                 false,
                 false,
                 false,
-            ),
+            )),
             client_name: Some("liviu-phone".to_string()),
         };
 
@@ -826,18 +905,30 @@ mod tests {
         assert_eq!(
             keys,
             [
+                "bytes",
                 "cached",
                 "client",
                 "client_name",
                 "domain",
                 "duration_ms",
+                "kind",
                 "list",
+                "method",
+                "path",
                 "qtype",
+                "resource_type",
                 "rule",
+                "status",
                 "ts",
                 "upstream",
                 "verdict",
             ]
+        );
+        assert_eq!(object["kind"], "dns");
+        assert_eq!(
+            object["method"],
+            serde_json::Value::Null,
+            "HTTP-only fields must be null on a DNS item, not absent — a client              should not have to distinguish 'missing' from 'not applicable'"
         );
         assert_eq!(object["ts"], "1970-01-01T00:00:00Z");
         assert_eq!(object["verdict"], "block");

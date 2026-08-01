@@ -184,6 +184,8 @@ pub struct QueryLogRequest {
     pub verdict: Option<VerdictFilter>,
     pub from: Option<SystemTime>,
     pub to: Option<SystemTime>,
+    /// `kind=dns|http` (p2-04). `None` returns both.
+    pub kind: Option<fah_model::EventKind>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -203,7 +205,7 @@ pub struct QueryLogPage {
 /// fields, plus the client name resolved when the row was recorded.
 #[derive(Debug, Clone, PartialEq)]
 pub struct QueryRecord {
-    pub event: QueryEvent,
+    pub event: fah_model::Event,
     pub client_name: Option<String>,
 }
 
@@ -211,7 +213,7 @@ impl QueryRecord {
     /// The decisive rule and its list, or `(None, None)` for a `Pass` —
     /// API.md's `rule`/`list` fields are null when nothing matched.
     pub fn decisive(&self) -> (Option<&str>, Option<&str>) {
-        match &self.event.verdict {
+        match self.event.verdict() {
             Verdict::Allow(rule) | Verdict::Block(rule) => {
                 (Some(rule.rule.as_ref()), Some(rule.list.as_ref()))
             }
@@ -220,7 +222,7 @@ impl QueryRecord {
     }
 
     pub fn verdict_str(&self) -> &'static str {
-        match self.event.verdict {
+        match self.event.verdict() {
             Verdict::Allow(_) => "allow",
             Verdict::Block(_) => "block",
             Verdict::Pass => "pass",
@@ -228,7 +230,27 @@ impl QueryRecord {
     }
 
     pub fn duration(&self) -> Duration {
-        self.event.duration
+        match &self.event {
+            fah_model::Event::Dns(event) => event.duration,
+            fah_model::Event::Http(event) => event.duration,
+        }
+    }
+
+    /// The DNS half, when this record is one. `None` for an HTTP request —
+    /// which is what makes the qtype/cached fields honestly absent rather than
+    /// defaulted to something that looks like a DNS answer.
+    pub fn as_dns(&self) -> Option<&QueryEvent> {
+        match &self.event {
+            fah_model::Event::Dns(event) => Some(event),
+            fah_model::Event::Http(_) => None,
+        }
+    }
+
+    pub fn as_http(&self) -> Option<&fah_model::RequestEvent> {
+        match &self.event {
+            fah_model::Event::Http(event) => Some(event),
+            fah_model::Event::Dns(_) => None,
+        }
     }
 }
 
@@ -242,7 +264,7 @@ mod tests {
 
     fn record(verdict: Verdict) -> QueryRecord {
         QueryRecord {
-            event: QueryEvent::new(
+            event: fah_model::Event::dns(QueryEvent::new(
                 Query::new(
                     "ads.example.com",
                     QueryType::A,
@@ -254,7 +276,7 @@ mod tests {
                 false,
                 false,
                 false,
-            ),
+            )),
             client_name: None,
         }
     }

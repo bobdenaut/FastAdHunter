@@ -5,7 +5,7 @@
 
 use std::collections::VecDeque;
 
-use fah_model::QueryEvent;
+use fah_model::Event;
 
 use super::{QueryLogEntry, QueryLogFilter, QueryPage};
 
@@ -49,7 +49,7 @@ impl Ring {
     /// Pushes a new entry, evicting the oldest on overflow. Returns the
     /// stored entry (cloned) so the caller can also hand it to the segment
     /// writer's pending batch.
-    pub fn push(&mut self, event: QueryEvent, client_name: Option<String>) -> QueryLogEntry {
+    pub fn push(&mut self, event: Event, client_name: Option<String>) -> QueryLogEntry {
         let sequence = self.next_sequence;
         self.next_sequence += 1;
         let entry = QueryLogEntry {
@@ -103,13 +103,24 @@ impl Ring {
 pub(crate) fn entry_string_bytes(entry: &QueryLogEntry) -> usize {
     use fah_model::Verdict;
 
-    let verdict = match &entry.event.verdict {
+    let verdict = match entry.event.verdict() {
         Verdict::Block(rule) | Verdict::Allow(rule) => {
             crate::heap::arc_str_bytes(&rule.list) + crate::heap::arc_str_bytes(&rule.rule)
         }
         Verdict::Pass => 0,
     };
-    crate::heap::string_bytes(&entry.event.query.domain)
+    // An HTTP entry owns more strings than a DNS one — host, path and method
+    // — and undercounting them would understate the ring's own memory, which
+    // is the number the byte cap is enforced against.
+    let request = match &entry.event {
+        Event::Dns(_) => 0,
+        Event::Http(event) => {
+            crate::heap::string_bytes(&event.request.path)
+                + crate::heap::string_bytes(&event.request.method)
+        }
+    };
+    request
+        + crate::heap::string_bytes(entry.name())
         + entry
             .client_name
             .as_deref()
@@ -127,8 +138,12 @@ mod tests {
     use super::*;
     use crate::query_log::VerdictKind;
 
-    fn event(domain: &str, verdict: Verdict) -> QueryEvent {
-        QueryEvent::new(
+    fn event(domain: &str, verdict: Verdict) -> Event {
+        Event::dns(dns_event(domain, verdict))
+    }
+
+    fn dns_event(domain: &str, verdict: Verdict) -> fah_model::QueryEvent {
+        fah_model::QueryEvent::new(
             Query::new(
                 domain,
                 QueryType::A,
@@ -152,11 +167,7 @@ mod tests {
 
         assert_eq!(ring.len(), 2);
         let page = ring.query(&QueryLogFilter::default(), 10, None);
-        let domains: Vec<_> = page
-            .items
-            .iter()
-            .map(|e| e.event.query.domain.clone())
-            .collect();
+        let domains: Vec<_> = page.items.iter().map(|e| e.name().to_string()).collect();
         assert_eq!(domains, vec!["c.example.com", "b.example.com"]);
     }
 
@@ -198,8 +209,8 @@ mod tests {
         ring.push(event("b.example.com", Verdict::Pass), None);
 
         let page = ring.query(&QueryLogFilter::default(), 10, None);
-        assert_eq!(page.items[0].event.query.domain, "b.example.com");
-        assert_eq!(page.items[1].event.query.domain, "a.example.com");
+        assert_eq!(page.items[0].name(), "b.example.com");
+        assert_eq!(page.items[1].name(), "a.example.com");
         assert!(page.next_cursor.is_none());
     }
 
@@ -212,11 +223,11 @@ mod tests {
 
         let first = ring.query(&QueryLogFilter::default(), 2, None);
         assert_eq!(first.items.len(), 2);
-        assert_eq!(first.items[0].event.query.domain, "d4.example.com");
+        assert_eq!(first.items[0].name(), "d4.example.com");
         let cursor = first.next_cursor.clone().unwrap();
 
         let second = ring.query(&QueryLogFilter::default(), 2, Some(cursor.parse().unwrap()));
-        assert_eq!(second.items[0].event.query.domain, "d2.example.com");
+        assert_eq!(second.items[0].name(), "d2.example.com");
         assert!(second.next_cursor.is_some());
 
         let third = ring.query(
@@ -240,7 +251,7 @@ mod tests {
         };
         let page = ring.query(&filter, 10, None);
         assert_eq!(page.items.len(), 1);
-        assert_eq!(page.items[0].event.query.domain, "ads.example.com");
+        assert_eq!(page.items[0].name(), "ads.example.com");
     }
 
     #[test]
@@ -261,7 +272,7 @@ mod tests {
         };
         let page = ring.query(&filter, 10, None);
         assert_eq!(page.items.len(), 1);
-        assert_eq!(page.items[0].event.query.domain, "ads.example.com");
+        assert_eq!(page.items[0].name(), "ads.example.com");
     }
 
     #[test]
@@ -270,8 +281,9 @@ mod tests {
 
         let mut ring = Ring::new(10);
         for minute in [10u64, 20, 30] {
-            let mut ev = event(&format!("m{minute}.example.com"), Verdict::Pass);
+            let mut ev = dns_event(&format!("m{minute}.example.com"), Verdict::Pass);
             ev.query.timestamp = UNIX_EPOCH + Duration::from_secs(minute * 60);
+            let ev = Event::dns(ev);
             ring.push(ev, None);
         }
 
@@ -282,14 +294,15 @@ mod tests {
         };
         let page = ring.query(&filter, 10, None);
         assert_eq!(page.items.len(), 1);
-        assert_eq!(page.items[0].event.query.domain, "m20.example.com");
+        assert_eq!(page.items[0].name(), "m20.example.com");
     }
 
     #[test]
     fn filter_by_client_ip() {
         let mut ring = Ring::new(10);
-        let mut ev = event("example.com", Verdict::Pass);
+        let mut ev = dns_event("example.com", Verdict::Pass);
         ev.query.client_ip = IpAddr::V4(Ipv4Addr::new(10, 0, 0, 5));
+        let ev = Event::dns(ev);
         ring.push(ev, None);
         ring.push(event("other.example.com", Verdict::Pass), None);
 
@@ -299,6 +312,6 @@ mod tests {
         };
         let page = ring.query(&filter, 10, None);
         assert_eq!(page.items.len(), 1);
-        assert_eq!(page.items[0].event.query.domain, "example.com");
+        assert_eq!(page.items[0].name(), "example.com");
     }
 }

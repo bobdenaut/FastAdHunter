@@ -15,6 +15,7 @@ mod privilege;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use std::sync::Arc;
+use std::time::Duration;
 
 use fah_config::{Config, LogFormat as ConfigLogFormat, LogLevel};
 use fah_logging::LogFormat;
@@ -247,7 +248,7 @@ impl Engine {
             upstreams.clone(),
             config.dns.blocking.ttl_seconds,
             &config.dns.cache,
-            events_tx,
+            events_tx.clone(),
         ));
         let mut dns = fah_dns::Server::bind(&config.dns.listen).await?;
         tracing::info!(udp = %dns.udp_addr(), tcp = %dns.tcp_addr(), "DNS listeners bound");
@@ -266,6 +267,21 @@ impl Engine {
             let server = fah_http::Server::bind(&config.http).await?;
             tracing::info!(addr = %server.local_addr(), "HTTP listener bound");
             Some(server)
+        } else {
+            None
+        };
+
+        // The proxy itself (p2-02). Built here, before `config` is moved into
+        // the ConfigStore below, and only in a mode that serves HTTP — the
+        // upstream connection pool should not exist in `dns` mode.
+        let http_proxy = if http.is_some() {
+            Some(Arc::new(
+                build_http_proxy(&config, upstreams.clone())?
+                    // p2-04: the same compiled ruleset the DNS pipeline
+                    // answers from, and the same event channel it writes to.
+                    .with_rules(Arc::clone(&rules) as Arc<dyn fah_http::Ruleset>)
+                    .with_events(events_tx.clone()),
+            ))
         } else {
             None
         };
@@ -332,8 +348,8 @@ impl Engine {
 
         // Unprivileged from here — start answering (ADR-0004).
         dns.serve(Arc::clone(&pipeline));
-        if let Some(http) = http.as_mut() {
-            http.serve();
+        if let (Some(http), Some(proxy)) = (http.as_mut(), http_proxy.as_ref()) {
+            http.serve(Arc::clone(proxy));
         }
 
         // ── The edges between the siblings ──
@@ -416,30 +432,96 @@ fn http_enabled(mode: fah_config::EngineMode) -> bool {
     }
 }
 
-/// The one consumer of the pipeline's `QueryEvent` channel, feeding all three
-/// observers. A single channel plus this fan-out keeps the producer side at
-/// one `try_send` per query — the hot path pays for one channel, not three.
+/// The port a transparent HTTP proxy is the intercepting party for.
+///
+/// Structural, not configurable: the router dst-nats the LAN's port 80 to the
+/// container, so 80 is what clients believe they reached and what a `Host`
+/// without an explicit port means (RFC 9110 §4.2.1). The container's own listen
+/// port — `[http.listen] port`, 8080 — is a different number and irrelevant
+/// here. Phase 3's HTTPS path uses 443 the same way.
+const HTTP_ORIGIN_PORT: u16 = 80;
+
+/// Idle upstream connections kept per origin. Bounded so the pool is a function
+/// of configuration rather than of how many sites the LAN visits (hard rule 4);
+/// a household reuses a handful of connections per site, and anything beyond
+/// that is memory held against the 128 MB budget for no gain.
+const MAX_IDLE_UPSTREAMS_PER_HOST: usize = 8;
+
+/// Assembles the HTTP proxy from config: the injected resolver port, and the
+/// egress policy that decides where it may connect.
+///
+/// The allow-list is re-parsed here rather than trusted from `fah-config` —
+/// that crate is L1 and cannot import `fah_common::egress`, so it can only
+/// check the shape. This is the authoritative parse, and it fails startup
+/// rather than degrading to a policy the operator did not write.
+fn build_http_proxy(
+    config: &fah_config::Config,
+    upstreams: fah_dns::UpstreamPool,
+) -> Result<fah_http::Proxy, Box<dyn std::error::Error>> {
+    let exceptions = config
+        .egress
+        .allow_destinations
+        .iter()
+        .map(|entry| {
+            entry
+                .parse::<fah_common::egress::AllowedNet>()
+                .map_err(|err| format!("[egress] allow_destinations: {err}"))
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    if !exceptions.is_empty() {
+        // Worth a line at startup: these are deliberate holes in the guard that
+        // stops the proxy being an open relay into the LAN.
+        tracing::info!(
+            count = exceptions.len(),
+            "egress allow-list active — private destinations permitted"
+        );
+    }
+
+    Ok(fah_http::Proxy::new(
+        Arc::new(adapters::UpstreamResolver::new(upstreams)),
+        fah_common::egress::DestinationPolicy::new(HTTP_ORIGIN_PORT, exceptions),
+        HTTP_ORIGIN_PORT,
+        Duration::from_millis(config.http.header_timeout_ms),
+        Duration::from_millis(config.http.idle_timeout_ms),
+        MAX_IDLE_UPSTREAMS_PER_HOST,
+        config.egress.allow_ip_literal_hosts,
+    ))
+}
+
+/// The one consumer of the shared event channel, feeding all three observers.
+/// A single channel plus this fan-out keeps each producer at one `try_send` per
+/// event — the hot paths pay for one channel, not three, and since p2-04 both
+/// pipelines share it so "we shed N events" stays one number.
 fn spawn_event_fanout(
-    mut events: tokio::sync::mpsc::Receiver<fah_model::QueryEvent>,
+    mut events: tokio::sync::mpsc::Receiver<fah_model::Event>,
     stats: Arc<fah_stats::Stats>,
     metrics: Arc<fah_metrics::Metrics>,
     hub: fah_api::EventHub,
 ) -> tokio::task::JoinHandle<()> {
     tokio::spawn(async move {
         while let Some(event) = events.recv().await {
-            metrics.record(&event);
+            // One channel carries both pipelines since p2-04, so this is the
+            // single consumer for both — one shed counter, one fan-out, one
+            // place where "a completed thing happened" turns into stats,
+            // metrics and a dashboard message.
+            let client_ip = event.client_ip();
+            match &event {
+                fah_model::Event::Dns(query) => metrics.record(query),
+                fah_model::Event::Http(request) => metrics.record_http(request),
+            }
             // The WS publish work (a clone, a boxed record, a client-name
             // lookup) is only bought when a dashboard is actually connected —
             // no-subscribers is the appliance's idle state ~24h/day.
-            if hub.has_subscribers() {
-                let client_ip = event.query.client_ip;
-                stats.record(event.clone());
-                // Resolved after `record` so a first-ever query already
+            let publish = hub.has_subscribers();
+            let for_hub = publish.then(|| event.clone());
+            match event {
+                fah_model::Event::Dns(query) => stats.record(*query),
+                fah_model::Event::Http(request) => stats.record_http(*request),
+            }
+            if let Some(event) = for_hub {
+                // Resolved after `record` so a first-ever client already
                 // carries whatever name the registry has.
-                let client_name = stats.client_name(client_ip);
-                hub.publish_query(event, client_name);
-            } else {
-                stats.record(event);
+                hub.publish_query(event, stats.client_name(client_ip));
             }
         }
     })
@@ -789,11 +871,17 @@ mod tests {
             cache_misses: 0,
             cache_stale: 0,
             dropped_events: 0,
+            requests_pass: 0,
+            requests_allow: 0,
+            requests_block: 0,
+            response_bytes: 0,
             swr: fah_metrics::SwrSnapshot::default(),
             cleanup: fah_metrics::CleanupSnapshot::default(),
             block: empty_stage(),
             cache_hit: empty_stage(),
             forward: empty_stage(),
+            request_block: empty_stage(),
+            request_forward: empty_stage(),
             upstreams: vec![],
         }
     }

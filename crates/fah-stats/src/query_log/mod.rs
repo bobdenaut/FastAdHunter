@@ -11,18 +11,38 @@ pub(crate) use ring::entry_string_bytes;
 use std::net::IpAddr;
 use std::time::SystemTime;
 
-use fah_model::{QueryEvent, Verdict};
+use fah_model::{Event, EventKind, Verdict};
 use serde::{Deserialize, Serialize};
 
-/// One entry in the query log: the DNS pipeline's [`QueryEvent`] plus the
-/// client name resolved from the registry at record time (so a later rename
-/// doesn't retroactively change history) and a monotonic sequence number
-/// (the query API's pagination cursor).
+/// One entry in the query log: a completed [`Event`] from either pipeline,
+/// plus the client name resolved from the registry at record time (so a later
+/// rename doesn't retroactively change history) and a monotonic sequence
+/// number (the query API's pagination cursor).
+///
+/// **Format change at p2-04.** `event` used to be a bare `QueryEvent`; it is
+/// now a tagged [`Event`], so a persisted record carries `"kind":"dns"` or
+/// `"kind":"http"`. Records written before the upgrade have no tag and will
+/// not parse. That is acceptable *here specifically* and nowhere else: the
+/// query log is bounded and pruned by age, nothing reads the segments yet
+/// (`p2-09` builds that reader), and the log self-heals within one retention
+/// window. API.md says so rather than leaving it to be discovered.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct QueryLogEntry {
     pub sequence: u64,
-    pub event: QueryEvent,
+    pub event: Event,
     pub client_name: Option<String>,
+}
+
+impl QueryLogEntry {
+    /// The name this entry is *about* — a DNS question's domain or an HTTP
+    /// request's host. One accessor so the `domain` filter, the aggregates and
+    /// the API all read the same field rather than each picking one.
+    pub fn name(&self) -> &str {
+        match &self.event {
+            Event::Dns(event) => &event.query.domain,
+            Event::Http(event) => &event.request.host,
+        }
+    }
 }
 
 /// `verdict` filter values (API.md `GET /api/v1/queries`: `allow|block|pass`).
@@ -53,6 +73,9 @@ pub struct QueryLogFilter {
     pub verdict: Option<VerdictKind>,
     pub from: Option<SystemTime>,
     pub to: Option<SystemTime>,
+    /// `dns` / `http` (p2-04). `None` returns both, which is what an operator
+    /// looking at "what did this client just do" wants by default.
+    pub kind: Option<EventKind>,
 }
 
 impl QueryLogFilter {
@@ -68,28 +91,37 @@ impl QueryLogFilter {
     }
 
     fn matches(&self, entry: &QueryLogEntry) -> bool {
-        if let Some(ip) = self.client {
-            if entry.event.query.client_ip != ip {
+        if let Some(kind) = self.kind {
+            if entry.event.kind() != kind {
                 return false;
             }
         }
-        if let Some(domain) = &self.domain {
-            if !entry.event.query.domain.contains(domain.as_str()) {
+        if let Some(ip) = self.client {
+            if entry.event.client_ip() != ip {
+                return false;
+            }
+        }
+        if let Some(needle) = &self.domain {
+            // The same filter reads a DNS question's name and an HTTP
+            // request's host: an operator searching "doubleclick" means the
+            // same thing in both pipelines and should not have to know which
+            // one answered.
+            if !entry.name().contains(needle.as_str()) {
                 return false;
             }
         }
         if let Some(kind) = self.verdict {
-            if !kind.matches(&entry.event.verdict) {
+            if !kind.matches(entry.event.verdict()) {
                 return false;
             }
         }
         if let Some(from) = self.from {
-            if entry.event.query.timestamp < from {
+            if entry.event.timestamp() < from {
                 return false;
             }
         }
         if let Some(to) = self.to {
-            if entry.event.query.timestamp > to {
+            if entry.event.timestamp() > to {
                 return false;
             }
         }

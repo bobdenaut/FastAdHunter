@@ -51,9 +51,18 @@ Every rule is classified:
   - hosts entries and plain domain lines
   - AdGuard DNS extensions: `$dnstype`, `$dnsrewrite`
   - `$client` — parsed and stored, **inactive** until Phase 2 (Policies)
-- **non-DNS** — cosmetic (`##`), URL-path patterns, HTTP `$options`
-  (`$script`, `$third-party`, …); parsed, counted, stored **inactive** until
-  the HTTP/HTML phases. Counts are visible per list in the API.
+- **request-applicable** — acts on a URL; active since Phase 2 (`p2-03`):
+  URL-path patterns, wildcards, address anchors, and the HTTP `$options`
+  (`$script`, `$third-party`, `$domain=`, …). See §HTTP matching.
+- **inactive** — cosmetic (`##`, Phase 4), `$client` (Policies), and patterns
+  no supported syntax expresses. Parsed and counted, but no tier answers them.
+  Counts are visible per list in the API.
+
+A rule belongs to exactly one of the three. The split is decided by what the
+rule *addresses*, not by its syntax family: `||ads.example.com^` is a domain
+rule, `||ads.example.com^$script` is a request rule (the option can only be
+judged once a request exists), and `||ads.example.com^*/pixel.gif` is a request
+rule because it names a path.
 
 Unparseable lines are skipped and counted (`parse_errors` per list) — one bad
 line never rejects a list.
@@ -74,6 +83,88 @@ inside a list and list order are otherwise not significant.
 Matching is on the query domain and its parent labels
 (`a.b.example.com` matches a rule for `example.com` when the rule's syntax
 implies subdomains, as `||example.com^` and hosts semantics do).
+
+## HTTP matching
+
+An HTTP request is a different question from a DNS query, so it gets its own
+typed entry point over the **same** compiled ruleset — not a second matcher,
+and not a trait object (PERFORMANCE.md forbids virtual calls on the hot path):
+
+```text
+DNS question  (domain, qtype)  ──► lookup_dns
+HTTP request  (url, host, method, resource type, referer) ──► lookup_http
+```
+
+The request model is `fah-model`'s `HttpRequest` — pure data, every field
+already extracted by the proxy. Deriving the resource type from the wire and
+the document host from `Referer` is the HTTP pipeline's job, not the engine's.
+
+### Both tiers answer a request
+
+`lookup_http` consults the URL tier **and** the domain tier, with one shared
+precedence order: **any allow beats any block**, whichever tier it came from.
+
+- A URL rule can decide it (`||ads.example.com^*/pixel.gif$third-party`).
+- A domain rule can decide it too: `||ads.example.com^` blocks that *name*, and
+  a request addressed to that name is exactly what it blocks. Subdomain
+  semantics carry over unchanged.
+- An `@@||cdn.example.com^` exception therefore overrides a URL-tier block, not
+  only a domain-tier one.
+
+**`$dnstype`-restricted rules never decide a request.** A request asks no DNS
+question, so `$dnstype=A` has nothing to match against; applying it anyway
+would let a record-type filter block a fetch.
+
+### Supported pattern syntax
+
+| Syntax | Meaning |
+| ------ | ------- |
+| `\|\|domain/path` | anchored at the host or any label boundary inside it |
+| `\|http://…` | anchored at the start of the URL |
+| `/ads/banner` | matches anywhere in the URL |
+| trailing `\|` | the pattern must reach the end of the URL |
+| `*` | any run of bytes |
+| `^` | one separator character, **or** the end of the URL |
+
+Separator is the adblock set: anything that is not a letter, digit, `_`, `-`,
+`.` or `%`. Matching is case-insensitive unless the rule carries `$match-case`.
+
+**`/regex/` literals are not supported** and are classified inactive rather
+than silently never matching — a regex engine on the per-request path is
+exactly what PERFORMANCE.md rules out.
+
+### Supported options
+
+`$script`, `$image`, `$stylesheet`/`$css`, `$xmlhttprequest`/`$xhr`,
+`$document`, `$subdocument`/`$frame`, `$font`, `$media`, `$websocket`,
+`$ping`/`$beacon`, `$object`, `$other` — and each negated (`~script`).
+Negation folds at compile time into a single mask, the same way `$dnstype=~A`
+does; a set that folds to nothing (`$script,~script`) is refused rather than
+compiled into a rule that would match everything.
+
+`$third-party` / `$first-party` (and their `~` forms), `$domain=` (evaluated
+against the **document** host, `|`-separated, `~` entries veto), `$method=`,
+`$match-case`.
+
+**An option the engine does not recognize drops the rule.** Honouring a
+pattern while ignoring the restriction it carries is how a narrow rule becomes
+a broad one — `||hltv.org^*=|$popup` must not block ordinary navigation.
+
+### Third-party is approximated without a Public Suffix List
+
+Two hosts are same-party when they share their last two labels. This gets
+`img.example.com` vs `www.example.com` right and `a.co.uk` vs `b.co.uk` wrong.
+A PSL would cost a dependency, ~200 KB of tables and a refresh story; the error
+direction here only ever *narrows* a rule, so it under-blocks rather than
+over-blocks. Revisit if measurements show `$third-party` accuracy matters.
+
+### Cost
+
+Rules are indexed by one literal token each, so a request checks only the rules
+whose token the URL actually contains, never the whole corpus. Lookup is
+allocation-free, like the DNS one. Measured against EasyList + EasyPrivacy
+(18,778 URL rules) on a dev box: **2.93 µs** for a request nothing matches,
+against the < 1 ms budget.
 
 ## Compiled matcher
 
@@ -106,8 +197,16 @@ budget for nothing.
   query log and `rules/test` report it — and is never an input to a verdict.
   There is no "matched in N lists" reporting.
 - **Per-list counts stay parse-based.** `GET /api/v1/lists`' `rules_total` /
-  `rules_active_dns` / `rules_inactive` describe what each list contains; the
-  envelope's `compiled_rules` and `duplicates_removed` describe the merge.
+  `rules_active_dns` / `rules_active_url` / `rules_inactive` describe what each
+  list contains; the envelope's `compiled_rules` and `duplicates_removed`
+  describe the merge. The `rules_active_url` column arrived with `p2-03` and
+  was **split out of `rules_inactive`**, which until then counted 18,778 of
+  EasyList + EasyPrivacy's rules as doing nothing while they were filtering.
+- **The URL tier deduplicates separately.** Identity there is the pattern, the
+  action, the anchors, the resource-type mask and the option payloads. Its
+  duplicate count is *not* folded into `duplicates_removed`, because the
+  arithmetic identity below is stated over the domain tier and folding two
+  tiers into one figure would break it.
   Compiling logs the duplicate count at `DEBUG` — every list refresh recompiles
   the whole combined ruleset, so at `INFO` a boot refresh would repeat the same
   line once per list. The per-list outcome is logged at `INFO`, by name, when

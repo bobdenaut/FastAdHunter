@@ -93,7 +93,11 @@ pub enum LifecycleError {
 /// success, and what a [`RefreshResult::Ok`] status carries.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct RefreshStats {
+    /// DNS-applicable rules.
     pub active: usize,
+    /// Request-applicable rules — the URL tier (p2-03).
+    pub url: usize,
+    /// Rules no tier answers yet (cosmetic, `$client`, unsupported patterns).
     pub inactive: usize,
     pub parse_errors: u32,
 }
@@ -102,6 +106,7 @@ impl From<&ParsedRuleList> for RefreshStats {
     fn from(parsed: &ParsedRuleList) -> Self {
         Self {
             active: parsed.active_count(),
+            url: parsed.url_count(),
             inactive: parsed.inactive_count(),
             parse_errors: parsed.parse_errors,
         }
@@ -128,7 +133,7 @@ impl RefreshStats {
     pub fn looks_misparsed(&self) -> bool {
         self.parse_errors >= MISPARSE_ERROR_FLOOR
             && usize::try_from(self.parse_errors).unwrap_or(usize::MAX)
-                > self.active + self.inactive
+                > self.active + self.url + self.inactive
     }
 }
 
@@ -1186,6 +1191,7 @@ mod tests {
     fn a_list_read_as_the_wrong_format_is_not_reported_as_healthy() {
         let misparsed = RefreshStats {
             active: 83,
+            url: 0,
             inactive: 0,
             parse_errors: 69_514,
         };
@@ -1197,6 +1203,7 @@ mod tests {
         // A real hosts list: 93,156 rules, one bad line.
         assert!(!RefreshStats {
             active: 93_156,
+            url: 0,
             inactive: 0,
             parse_errors: 1,
         }
@@ -1205,6 +1212,7 @@ mod tests {
         // floor there is not enough evidence to call it a format problem.
         assert!(!RefreshStats {
             active: 0,
+            url: 0,
             inactive: 0,
             parse_errors: 12,
         }

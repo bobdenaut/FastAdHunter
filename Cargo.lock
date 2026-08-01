@@ -606,9 +606,17 @@ dependencies = [
 name = "fah-http"
 version = "0.1.0"
 dependencies = [
+ "bytes",
+ "criterion",
  "fah-common",
  "fah-config",
+ "fah-model",
+ "fah-rules",
+ "http-body-util",
+ "hyper",
+ "hyper-util",
  "tokio",
+ "tower-service",
  "tracing",
 ]
 
@@ -673,6 +681,7 @@ version = "0.1.0"
 dependencies = [
  "criterion",
  "fah-api",
+ "fah-common",
  "fah-config",
  "fah-dns",
  "fah-http",

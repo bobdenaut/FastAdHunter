@@ -114,10 +114,42 @@ max_connections = 1024        # boot    — ceiling on concurrent connections; t
                               #           accept loop takes its permit before
                               #           accepting, so a burst queues in the
                               #           kernel rather than in process memory
-idle_timeout_ms = 60000       # boot    — reserved for the proxy (p2-02); no
-                              #           consumer yet, the scaffold closes
-                              #           every connection immediately
-header_timeout_ms = 10000     # boot    — slowloris bound; also p2-02
+idle_timeout_ms = 60000       # boot    — how long an idle *upstream* connection
+                              #           is kept in the pool. Client-side idle
+                              #           is bounded by header_timeout_ms below,
+                              #           which hyper arms while waiting for the
+                              #           next request head
+header_timeout_ms = 10000     # boot    — slowloris bound: deadline for a client
+                              #           to finish sending its request head.
+                              #           Also caps how long a keep-alive
+                              #           connection may sit between requests
+
+# ─── Egress (where the proxies may connect) ────────────────────────────
+# NOT under [http] on purpose: Phase 3's HTTPS path derives its destination
+# from SNI — an equally client-controlled claim — and judges it with these same
+# rules (CONTEXT.md §Egress Guard).
+#
+# The router dst-nats port 80 into the container and RouterOS exposes no
+# SO_ORIGINAL_DST, so the only statement of where a client meant to go is a
+# header it wrote. Default-deny is therefore the security property, not a
+# preference: without it any LAN device could use the proxy to reach the router
+# or FastAdHunter's own API.
+[egress]
+allow_destinations = []       # boot    — private/local destinations the proxy
+                              #           may nonetheless reach, as IPs or CIDR
+                              #           blocks ("192.168.10.50",
+                              #           "192.168.10.0/24"). Empty = every
+                              #           private, loopback, link-local, CGNAT
+                              #           and unique-local address is refused.
+                              #           Judged on the RESOLVED address, so a
+                              #           public name pointing at 192.168.x.x
+                              #           (a DNS rebind) is refused too
+allow_ip_literal_hosts = false # boot   — whether a client may name a bare IP as
+                              #           its destination. A browser resolving a
+                              #           name never produces one, so this is
+                              #           the shape of a probe; prefer
+                              #           allow_destinations, which is checked
+                              #           against the resolved address
 
 # ─── Rule lists ────────────────────────────────────────────────────────
 [rules]

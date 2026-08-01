@@ -54,11 +54,23 @@ impl ParseErrorLog {
 }
 
 impl ParsedRuleList {
+    /// Rules that answer a **domain** question. Unchanged in meaning by
+    /// p2-03 — this is what the API's `rules_active_dns` has always reported.
     pub fn active_count(&self) -> usize {
         self.rules.iter().filter(|rule| rule.is_active()).count()
     }
 
+    /// Rules that answer an **HTTP request** (p2-03). Reported separately
+    /// rather than folded into either neighbour: they are not DNS-applicable,
+    /// so they cannot join `active_count`, and they do filter, so calling them
+    /// inactive would misreport ~22k EasyList rules as doing nothing.
+    pub fn url_count(&self) -> usize {
+        self.rules.iter().filter(|rule| rule.is_url()).count()
+    }
+
+    /// Rules no tier answers yet — cosmetic (Phase 4), `$client` (p2-05), and
+    /// patterns no supported syntax expresses.
     pub fn inactive_count(&self) -> usize {
-        self.rules.len() - self.active_count()
+        self.rules.len() - self.active_count() - self.url_count()
     }
 }

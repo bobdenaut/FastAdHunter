@@ -54,11 +54,12 @@
 
 use std::collections::HashMap;
 
-use fah_model::{DecisiveRule, QueryType, Verdict};
+use fah_model::{DecisiveRule, HttpRequest, QueryType, Verdict};
 
-use crate::rule::{DomainRule, RuleAction};
+use crate::rule::{DomainRule, RuleAction, UrlRule};
+use crate::url_matcher::{UrlDecision, UrlIndex, UrlIndexBuilder};
 
-const EMPTY: u32 = u32::MAX;
+pub(crate) const EMPTY: u32 = u32::MAX;
 
 // Record flag bits.
 const FLAG_ALLOW: u8 = 1 << 0;
@@ -92,11 +93,30 @@ impl Record {
     }
 }
 
+/// Marks a [`RuleRef`] as pointing into the URL tier rather than the domain
+/// one. A tag bit rather than a second ref type: both tiers answer the same
+/// [`MatchDecision`], so a caller never has to know which one decided, and
+/// [`Matcher::decisive_rule`] dispatches on it. Rule counts are bounded by the
+/// 40 MB budget long before 2^31, so the bit is never contested.
+const URL_TIER: u32 = 1 << 31;
+
 /// A compact, `Copy` handle to the rule that decided a [`MatchDecision`].
 /// Resolve to a human-readable [`DecisiveRule`] with [`Matcher::decisive_rule`]
 /// only when reporting (query log / `rules/test`) — that step allocates.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct RuleRef(u32);
+
+impl RuleRef {
+    /// True when the deciding rule is a URL-tier rule (RULE_ENGINE.md: HTTP
+    /// matching), false when it is a domain rule.
+    pub fn is_url_rule(&self) -> bool {
+        self.0 & URL_TIER != 0
+    }
+
+    fn index(&self) -> u32 {
+        self.0 & !URL_TIER
+    }
+}
 
 /// The allocation-free result of [`Matcher::lookup`]. Mirrors [`Verdict`] but
 /// carries a [`RuleRef`] instead of an allocated [`DecisiveRule`].
@@ -251,7 +271,7 @@ const MAX_PREALLOC_RULES: usize = 4_000_000;
 /// up to the next power of two, which for 1M rules would waste ~4 MB of empty
 /// slots (PERFORMANCE.md 40 MB budget).
 #[inline]
-fn fastrange(hash: u64, cap: usize) -> usize {
+pub(crate) fn fastrange(hash: u64, cap: usize) -> usize {
     ((hash as u128 * cap as u128) >> 64) as usize
 }
 
@@ -272,6 +292,10 @@ pub struct MatcherBuilder {
     /// `Arc` refcounts.
     dedup: Vec<u32>,
     duplicates_removed: usize,
+    /// The URL tier (p2-03). Built alongside the domain tier from the same
+    /// parsed lists, so one `add_parsed_list` fills both and the two can never
+    /// disagree about which lists are loaded.
+    url: UrlIndexBuilder,
 }
 
 impl MatcherBuilder {
@@ -309,10 +333,10 @@ impl MatcherBuilder {
         id
     }
 
-    /// Registers a list by name and adds every DNS-applicable (active) rule
-    /// from its parsed form. Inactive rules are ignored — they carry no
-    /// verdict in this phase (RULE_ENGINE.md) and their raw text is not
-    /// retained, keeping the compiled structure within budget.
+    /// Registers a list by name and adds every rule from its parsed form that
+    /// some tier can answer: domain rules to the domain tier, URL rules to the
+    /// URL tier. Inactive rules are still ignored — they carry no verdict
+    /// (RULE_ENGINE.md) and retain no text to compile.
     pub fn add_parsed_list(
         &mut self,
         name: impl Into<std::sync::Arc<str>>,
@@ -320,10 +344,17 @@ impl MatcherBuilder {
     ) {
         let list_id = self.add_list(name);
         for rule in &list.rules {
-            if let crate::rule::RuleKind::Active(domain_rule) = &rule.kind {
-                self.add_rule(list_id, domain_rule);
+            match &rule.kind {
+                crate::rule::RuleKind::Active(domain_rule) => self.add_rule(list_id, domain_rule),
+                crate::rule::RuleKind::Url(url_rule) => self.add_url_rule(list_id, url_rule),
+                crate::rule::RuleKind::Inactive(_) => {}
             }
         }
+    }
+
+    /// Adds one request-applicable rule to the URL tier.
+    pub fn add_url_rule(&mut self, list_id: u16, rule: &UrlRule) {
+        self.url.add(list_id, rule);
     }
 
     /// Adds one DNS-applicable rule to the given list. Domains longer than 255
@@ -519,6 +550,7 @@ impl MatcherBuilder {
             dnstype: self.dnstype,
             rewrite: self.rewrite,
             duplicates_removed: self.duplicates_removed,
+            url: self.url.build(),
         }
     }
 }
@@ -534,6 +566,7 @@ pub struct Matcher {
     dnstype: HashMap<u32, (u32, std::sync::Arc<str>)>,
     rewrite: HashMap<u32, std::sync::Arc<str>>,
     duplicates_removed: usize,
+    url: UrlIndex,
 }
 
 impl Matcher {
@@ -569,8 +602,16 @@ impl Matcher {
     /// A `block` is remembered but never returned early — a less specific
     /// `allow` at a parent label must still be able to override it.
     pub fn lookup(&self, domain: &str, qtype: &QueryType) -> MatchDecision {
+        self.lookup_domain(domain, Some(qtype_bit(qtype)))
+    }
+
+    /// The domain walk shared by both entry points. `qbit` is the query type's
+    /// bit for a DNS question, or `None` for an HTTP request — which has no
+    /// record type, so a `$dnstype`-restricted rule simply does not apply to
+    /// it. Answering otherwise would let `$dnstype=A` decide a request that
+    /// never asked a DNS question.
+    fn lookup_domain(&self, domain: &str, qbit: Option<u32>) -> MatchDecision {
         let query = domain.strip_suffix('.').unwrap_or(domain).as_bytes();
-        let qbit = qtype_bit(qtype);
         let mut blocked: Option<u32> = None;
 
         let mut start = 0usize;
@@ -583,8 +624,18 @@ impl Matcher {
                 let idx = self.slots[slot];
                 if self.domain_of(idx).eq_ignore_ascii_case(suffix) {
                     let rec = &self.records[idx as usize];
+                    let type_applies = !rec.has_dnstype()
+                        || qbit.is_some_and(|bit| self.dnstype[&idx].0 & bit != 0);
+                    // `$dnsrewrite` synthesizes a DNS *answer*. An HTTP request
+                    // asked no DNS question, so there is nothing to rewrite —
+                    // and reading the rule as a plain block would refuse a
+                    // fetch it never said to refuse (`$dnsrewrite=1.2.3.4` is a
+                    // redirect, not a denial). Same reasoning as `$dnstype`
+                    // above, and the same `qbit.is_none()` signal.
+                    let dns_only = rec.has_rewrite() && qbit.is_none();
                     let applies = (!is_subdomain_level || rec.include_subdomains())
-                        && (!rec.has_dnstype() || self.dnstype[&idx].0 & qbit != 0);
+                        && type_applies
+                        && !dns_only;
                     if applies {
                         if rec.is_allow() {
                             return MatchDecision::Allow(RuleRef(idx));
@@ -612,12 +663,95 @@ impl Matcher {
         }
     }
 
+    /// Answers a verdict for one HTTP request. **Allocation-free**, like its
+    /// DNS counterpart, and the second typed entry point over the same
+    /// compiled ruleset (Phase-2 CLAUDE.md: one matcher, one typed interface
+    /// per request model, no trait objects on the hot path).
+    ///
+    /// **Both tiers are consulted.** A URL rule can decide it, and so can a
+    /// plain domain rule: `||ads.example.com^` blocks the *name*, and a request
+    /// addressed to that name is exactly what it blocks. Ignoring the domain
+    /// tier here would mean a host blocked for DNS was still fetched over HTTP
+    /// whenever the client resolved it some other way. Precedence is unchanged
+    /// and spans both tiers — **any** allow beats **any** block, so an
+    /// `@@||cdn.example.com^` exception overrides a URL-tier block just as it
+    /// overrides a domain-tier one.
+    pub fn lookup_http(&self, request: &HttpRequest<'_>) -> MatchDecision {
+        let mut blocked = match self.url.lookup(request) {
+            UrlDecision::Allow(index) => return MatchDecision::Allow(RuleRef(index | URL_TIER)),
+            UrlDecision::Block(index) => Some(RuleRef(index | URL_TIER)),
+            UrlDecision::Pass => None,
+        };
+        match self.lookup_domain(request.host, None) {
+            MatchDecision::Allow(rule) => return MatchDecision::Allow(rule),
+            MatchDecision::Block(rule) => blocked = blocked.or(Some(rule)),
+            MatchDecision::Pass => {}
+        }
+        match blocked {
+            Some(rule) => MatchDecision::Block(rule),
+            None => MatchDecision::Pass,
+        }
+    }
+
+    /// Convenience: full [`Verdict`] for a request, with the decisive rule
+    /// materialized. Allocates on allow/block — for tests and `rules/test`,
+    /// not the hot path.
+    pub fn verdict_http(&self, request: &HttpRequest<'_>) -> Verdict {
+        match self.lookup_http(request) {
+            MatchDecision::Allow(rule) => Verdict::Allow(self.decisive_rule(rule)),
+            MatchDecision::Block(rule) => Verdict::Block(self.decisive_rule(rule)),
+            MatchDecision::Pass => Verdict::Pass,
+        }
+    }
+
+    /// Number of compiled URL-tier rules, distinct like the domain tier's.
+    /// Reported separately from [`Self::len`] because the API's
+    /// `compiled_rules` has always meant "rules that answer a domain
+    /// question", and widening it silently would change what every existing
+    /// metric and list count means.
+    pub fn url_len(&self) -> usize {
+        self.url.len()
+    }
+
+    /// URL-tier rules dropped as exact duplicates. Separate from
+    /// [`Self::duplicates_removed`] for the same reason as [`Self::url_len`]:
+    /// RULE_ENGINE.md pins an arithmetic identity on the domain-tier figure.
+    pub fn url_duplicates_removed(&self) -> usize {
+        self.url.duplicates_removed()
+    }
+
+    /// URL rules no token could file, and which are therefore checked on every
+    /// request. Exposed so a bench can assert the token index is still doing
+    /// its job rather than silently degrading to a linear scan.
+    pub fn url_unindexed(&self) -> usize {
+        self.url.unindexed_len()
+    }
+
+    /// URL-tier lookups that hit the matcher's work allowance and stopped
+    /// early, leaving some rule unenforced for that request. Zero under any
+    /// traffic that is not deliberately shaped to feed a backtracking pattern;
+    /// exposed so the binary can surface it, because nothing else would ever
+    /// reveal a rule that quietly stopped firing.
+    pub fn url_budget_exhausted(&self) -> u64 {
+        self.url.budget_exhausted()
+    }
+
+    /// Resident bytes of the compiled URL tier alone — p2-03's acceptance
+    /// criterion asks for this as an absolute number.
+    pub fn url_heap_bytes(&self) -> usize {
+        self.url.heap_bytes()
+    }
+
     /// `$dnsrewrite` payload for a decided rule, if any — used by fah-dns for
     /// answer synthesis (interpretation is out of scope here). Borrow, no alloc.
     pub fn rewrite(&self, r: RuleRef) -> Option<&str> {
-        let rec = &self.records[r.0 as usize];
+        if r.is_url_rule() {
+            return None;
+        }
+        let index = r.index();
+        let rec = &self.records[index as usize];
         if rec.has_rewrite() {
-            self.rewrite.get(&r.0).map(|s| &**s)
+            self.rewrite.get(&index).map(|s| &**s)
         } else {
             None
         }
@@ -627,8 +761,13 @@ impl Matcher {
     /// query log / `rules/test`. Allocates the reconstructed rule text — call
     /// only off the hot path (block/allow, never `Pass`).
     pub fn decisive_rule(&self, r: RuleRef) -> DecisiveRule {
-        let rec = &self.records[r.0 as usize];
-        let domain = std::str::from_utf8(self.domain_of(r.0)).unwrap_or("");
+        let index = r.index();
+        if r.is_url_rule() {
+            let list = self.lists[self.url.list_id(index) as usize].clone();
+            return DecisiveRule::new(list, self.url.rule_text(index));
+        }
+        let rec = &self.records[index as usize];
+        let domain = std::str::from_utf8(self.domain_of(index)).unwrap_or("");
         let mut text = String::with_capacity(domain.len() + 6);
         if rec.is_allow() {
             text.push_str("@@");
@@ -638,13 +777,13 @@ impl Matcher {
         text.push('^');
         // AdGuard option syntax: one `$`, further options comma-separated.
         let mut sep = '$';
-        if let Some((_, raw)) = self.dnstype.get(&r.0) {
+        if let Some((_, raw)) = self.dnstype.get(&index) {
             text.push(sep);
             text.push_str("dnstype=");
             text.push_str(raw);
             sep = ',';
         }
-        if let Some(raw) = self.rewrite.get(&r.0) {
+        if let Some(raw) = self.rewrite.get(&index) {
             text.push(sep);
             text.push_str("dnsrewrite=");
             text.push_str(raw);
@@ -698,6 +837,7 @@ impl Matcher {
             + lists
             + dnstype
             + rewrite
+            + self.url.heap_bytes()
     }
 }
 
@@ -917,6 +1057,46 @@ mod tests {
             Verdict::Allow(d) => assert_eq!(&*d.rule, "@@||cdn.example.com^"),
             other => panic!("expected allow, got {other:?}"),
         }
+    }
+
+    /// `$dnsrewrite` synthesizes a DNS answer; it is not a block. Reading it as
+    /// one on the HTTP path refused fetches the rule never said to refuse —
+    /// `$dnsrewrite=1.2.3.4` is a redirect.
+    #[test]
+    fn a_dnsrewrite_rule_does_not_decide_an_http_request() {
+        let rule = DomainRule {
+            dns_rewrite: Some(Arc::from("1.2.3.4")),
+            ..block("rewrite.example.com")
+        };
+        let m = matcher_with(&[("", rule)]);
+        // Still decisive for the DNS question it was written for.
+        assert!(matches!(
+            m.lookup("rewrite.example.com", &QueryType::A),
+            MatchDecision::Block(_)
+        ));
+        let request = HttpRequest {
+            url: "http://rewrite.example.com/x",
+            host: "rewrite.example.com",
+            method: "GET",
+            resource_type: fah_model::ResourceType::Unknown,
+            document_host: None,
+        };
+        assert_eq!(m.lookup_http(&request), MatchDecision::Pass);
+    }
+
+    /// A plain block rule *does* still decide a request — the exclusion above
+    /// is about `$dnsrewrite` specifically, not about the domain tier.
+    #[test]
+    fn a_plain_domain_block_still_decides_an_http_request() {
+        let m = matcher_with(&[("", block("ads.example.com"))]);
+        let request = HttpRequest {
+            url: "http://ads.example.com/x",
+            host: "ads.example.com",
+            method: "GET",
+            resource_type: fah_model::ResourceType::Unknown,
+            document_host: None,
+        };
+        assert!(matches!(m.lookup_http(&request), MatchDecision::Block(_)));
     }
 
     #[test]

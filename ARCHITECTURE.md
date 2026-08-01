@@ -113,12 +113,28 @@ Accept (TCP/8080, router dst-nats 80 here)
       │
 Read request line + headers   ── header timeout bounds a slowloris
       │
-Rule Engine ── URL verdict (host + path + method + resource type)
+Destination Claim ── Host header parsed; missing/duplicate/IP-literal refused
       │
-      ├─ Block → synthesized response, connection closed ──► Client
+Resolve ── HostResolver port (our own upstreams, never /etc/resolv.conf)
+      │
+Egress Guard ── judges the RESOLVED address; default-deny (CONTEXT.md)
+      │           refused → 403, counted, logged with the client
+      │
+Rule Engine ── URL verdict (host + path + method + resource type)
+      │           taken on the HEAD, before Resolve — a block costs no lookup
+      │
+      ├─ Block → synthesized response by resource type ──► Client
+      │           subresource: empty 200/204 · document: explained 403
       │
 Pass-through: stream upstream ⇄ client, byte for byte
+      │
+Request Event ──► the one bounded channel, shared with DNS ──► stats/metrics/WS
 ```
+
+Note the verdict sits **above** Resolve and the Egress Guard in the real
+ordering, even though the diagram reads top-down: a blocked request must cost no
+DNS lookup and no upstream connection, and resolving first would already have
+leaked the intent to the upstream resolver.
 
 Pipeline properties:
 
@@ -131,16 +147,33 @@ Pipeline properties:
   must cost a verdict lookup and a copy loop, nothing else — it is benched in
   p2-02 *before* filtering exists, so a later regression has a baseline to fail
   against.
+- **One event channel for both pipelines.** DNS and HTTP write `fah_model::Event`
+  to the same bounded mpsc, with one fan-out task and one `dropped_events`
+  counter. Two channels would have had a smaller blast radius and would have
+  forfeited the single shed figure the observability design rests on: two drop
+  counters answer different questions about different queues and cannot be
+  added into "we shed N".
 - **Bounded concurrency.** `[http] max_connections` caps in-flight connections;
   the accept loop takes its permit before accepting, so a burst queues in the
   kernel backlog instead of becoming process memory.
 - **Transparent interception.** Clients are not configured with a proxy; the
   router dst-nats port 80 to the container, exactly as it already does for
   DNS. Rollback is removing one rule.
+- **Not an open relay.** Interception costs us `SO_ORIGINAL_DST`, so the
+  destination comes from a header the client writes. The Egress Guard
+  (CONTEXT.md) judges the *resolved* address under a default-deny policy, which
+  is what keeps a LAN device from using the proxy to reach the router or this
+  process's own API. The request target is then rewritten to the approved
+  literal address, so the connector never resolves again and a rebind has no
+  second lookup to race.
+- **Transport-agnostic connections.** The connection handler is generic over the
+  stream, not written against `TcpStream`, so Phase 3 hands it a TLS-terminated
+  stream and reuses this pipeline unchanged. Monomorphised, not a trait object —
+  a `Box<dyn …>` would put a virtual call on every body read.
 
 Only unencrypted traffic is in scope for Phase 2. Most of the web is HTTPS, so
 the real coverage arrives with Phase 3's TLS termination — which reuses this
-same request model rather than adding a third one.
+same request model, and this same pipeline, rather than adding a third one.
 
 ---
 
@@ -198,17 +231,24 @@ manifest: an internal dependency that does not point strictly downward fails
 trait describing what it needs and the binary supplies the implementation — the
 dependency arrow stays pointing down. Two of these exist:
 
-| Port                             | Declared by      | Implemented in `fastadhunter` over       |
-| -------------------------------- | ---------------- | ---------------------------------------- |
-| `StatsSource`, `TelemetrySource` | `fah-api` (L3)   | `fah-stats`, `fah-metrics` (L3 siblings) |
-| `HostResolver`                   | `fah-rules` (L2) | `fah-dns`'s `UpstreamPool` (L3)          |
+| Port                             | Declared by       | Implemented in `fastadhunter` over       |
+| -------------------------------- | ----------------- | ---------------------------------------- |
+| `StatsSource`, `TelemetrySource` | `fah-api` (L3)    | `fah-stats`, `fah-metrics` (L3 siblings) |
+| `HostResolver`                   | `fah-common` (L1) | `fah-dns`'s `UpstreamPool` (L3)          |
 
-`HostResolver` is what lets the Rule Engine's list downloader resolve its
-sources through FastAdHunter's own configured upstreams rather than the
-system's `/etc/resolv.conf` — the container has no working one. It deliberately
-bypasses the query pipeline: resolution for list downloads must not be
-filterable, or a blocklist could block the host serving its own next copy and
-permanently prevent its own replacement.
+`HostResolver` is what lets anything inside FastAdHunter resolve a hostname
+through its own configured upstreams rather than the system's
+`/etc/resolv.conf` — the container has no working one. It has two consumers:
+the Rule Engine's list downloader (L2) and the HTTP Engine's proxy upstreams
+(L3). It sits at **L1 rather than in either of them** precisely so there is one
+port and one implementation; `fah-rules` re-exports it for compatibility.
+
+It deliberately bypasses the query pipeline — no Rule Engine, no cache — for a
+different reason on each side. For list downloads, a blocklist that blocked the
+host serving its own next copy would permanently prevent its own replacement.
+For proxy upstreams, HTTP filtering decides on host *and path*, so folding a
+verdict into name resolution would turn a blocked URL into a connection failure
+and would block a whole host for a rule aimed at one path on it.
 
 Cargo enforces acyclicity natively; the layering above is enforced by review
 against this document.

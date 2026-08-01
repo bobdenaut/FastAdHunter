@@ -10,12 +10,24 @@ workspace = true
 
 # L3 (ARCHITECTURE.md §Dependency Layering): may depend on fah-rules (L2) and
 # L1 only, never on fah-dns / fah-api / fah-stats / fah-metrics — the binary
-# wires the siblings together. fah-rules arrives with p2-04, when verdicts are
-# actually consulted; an unused dependency now would only be decoration.
+# wires the siblings together. `fah-rules` and `fah-model` arrive with p2-04,
+# which is when verdicts are actually consulted and events actually emitted.
 [dependencies]
 fah-common = { path = "../fah-common" }
 fah-config = { path = "../fah-config" }
+fah-model = { path = "../fah-model" }
+fah-rules = { path = "../fah-rules" }
+
+bytes = "1"
+http-body-util = "0.1"
+hyper = { version = "1", features = ["http1", "server", "client"] }
+# `client-legacy` is hyper-util's pooling client — the connection reuse the
+# proxy needs upstream. Already in-tree via fah-api, so this adds no new crate.
+hyper-util = { version = "0.1", features = ["client", "client-legacy", "http1", "tokio"] }
 tokio = { workspace = true, features = ["io-util", "net", "sync", "time"] }
+# The connector is a `tower_service::Service<Uri>`; the one trait, not the
+# whole tower stack.
+tower-service = "0.3"
 tracing = { workspace = true }
 
 [dev-dependencies]
@@ -27,3 +39,10 @@ tokio = { workspace = true, features = [
     "macros",
     "rt-multi-thread",
 ] }
+criterion = { workspace = true }
+http-body-util = "0.1"
+
+# harness=false: the criterion runner replaces libtest so `cargo bench` drives it.
+[[bench]]
+name = "proxy"
+harness = false

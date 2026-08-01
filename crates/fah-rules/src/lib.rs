@@ -5,8 +5,10 @@ mod format;
 mod lifecycle;
 mod matcher;
 mod parser;
+mod resource;
 mod rule;
 mod rule_list;
+mod url_matcher;
 
 pub use format::{detect_format, RuleFormat};
 pub use lifecycle::{
@@ -14,7 +16,9 @@ pub use lifecycle::{
     ListStatus, RefreshResult, RefreshStats, Resolving,
 };
 pub use matcher::{MatchDecision, Matcher, MatcherBuilder, RuleRef};
-pub use rule::{DomainRule, InactiveReason, ParsedRule, RuleAction, RuleKind};
+pub use rule::{
+    DomainRule, InactiveReason, ParsedRule, Party, RuleAction, RuleKind, UrlAnchor, UrlRule,
+};
 pub use rule_list::ParsedRuleList;
 
 /// Parses one rule list's raw text, auto-detecting its format

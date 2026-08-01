@@ -224,6 +224,31 @@ delta only when its interval is narrow relative to the change it reports — a
 result quoted as `[366.0 ns 366.8 ns 367.5 ns]` is a measurement; one quoted as
 `[737 ns 882 ns 1.04 µs]` is noise wearing a number's clothes.
 
+Three further traps, each of which produced a wrong number during p2-03/p2-04
+before being caught:
+
+- **Criterion's `change:` line compares against the *previous run*, whatever
+  that was.** Run the same bench under a different corpus — or after any earlier
+  variant — and the percentage is meaningless. It once reported `−77 %` for a
+  change that was noise-level, because the stored baseline came from a
+  real-corpus run and the new one was synthetic. Quote **absolutes** when
+  comparing variants, and `rm -rf target/criterion` when establishing a baseline.
+- **The default corpus can hide the regression the real one shows.**
+  `benches/url_matcher.rs` falls back to a synthetic EasyList-shaped corpus that
+  compiles **zero** unindexed rules; the real lists compile 77, and that is where
+  URL-tier cost concentrates. A change that measured +4 % synthetic was +28 % on
+  real lists. Set `FAH_URL_CORPUS` before believing a URL-tier number.
+- **Subtract the harness's own cost before attributing a stage.** A per-stage
+  profile put header stripping at 1.34 µs; timing the setup alone
+  (`HeaderMap::clone`) showed 1.28 µs of that was the harness. The real figure
+  was ~170 ns — an 8× misattribution that would have aimed optimisation at the
+  wrong function.
+
+A **control arm** — one the change cannot possibly affect — is the cheapest
+noise detector available. When `http_pass_through/direct_to_origin`, which never
+touches the proxy, moved +8.8 % (p = 0.13), that alone said the box was drifting
+and the proxy arm's +9.5 % was not real.
+
 Throughput is the exception to core-pinning: restrict it to four cores
 (`ProcessorAffinity = 15` / `taskset -c 0-3`) so the figure is shaped like the
 RB5009's quad-core budget rather than a dev box's full core count.

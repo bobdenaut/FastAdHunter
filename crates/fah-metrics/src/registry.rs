@@ -14,7 +14,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 
 use arc_swap::ArcSwap;
-use fah_model::{QueryEvent, Verdict};
+use fah_model::{QueryEvent, RequestEvent, Verdict};
 
 use crate::histogram::Histogram;
 use crate::ruleset::RulesetSnapshot;
@@ -38,6 +38,21 @@ pub struct Metrics {
     pub(crate) duration_block: Histogram,
     pub(crate) duration_cache_hit: Histogram,
     pub(crate) duration_forward: Histogram,
+    /// HTTP request counters (p2-04). Separate from the DNS ones rather than
+    /// shared: `fastadhunter_queries_total` has meant "DNS questions answered"
+    /// since p1-08, and folding requests into it would silently redefine every
+    /// existing dashboard and alert built on it.
+    pub(crate) requests_pass: AtomicU64,
+    pub(crate) requests_allow: AtomicU64,
+    pub(crate) requests_block: AtomicU64,
+    /// Response bytes relayed downstream — the figure that makes "a blocked
+    /// request ships nothing" visible as a trend rather than as an assertion.
+    pub(crate) response_bytes: AtomicU64,
+    /// Request latency, bucketed the way the DNS one is: a block never touches
+    /// the network, so mixing it with a forward would hide the very budget row
+    /// (`< 1 ms` for a synthesized block) it exists to prove.
+    pub(crate) request_duration_block: Histogram,
+    pub(crate) request_duration_forward: Histogram,
     pub(crate) dropped_events: AtomicU64,
     /// Stale-while-refresh counters (ADR-0005). Stored as one value rather than
     /// five atomics because they are read together, replaced together off
@@ -85,6 +100,12 @@ impl Metrics {
             duration_block: Histogram::new(),
             duration_cache_hit: Histogram::new(),
             duration_forward: Histogram::new(),
+            requests_pass: AtomicU64::new(0),
+            requests_allow: AtomicU64::new(0),
+            requests_block: AtomicU64::new(0),
+            response_bytes: AtomicU64::new(0),
+            request_duration_block: Histogram::new(),
+            request_duration_forward: Histogram::new(),
             dropped_events: AtomicU64::new(0),
             swr: ArcSwap::new(Arc::new(SwrSnapshot::default())),
             cleanup: ArcSwap::new(Arc::new(CleanupSnapshot::default())),
@@ -136,6 +157,24 @@ impl Metrics {
             &self.duration_cache_hit
         } else {
             &self.duration_forward
+        };
+        stage.observe(event.duration);
+    }
+
+    /// Records one completed HTTP request (p2-04). Same contract as
+    /// [`Metrics::record`]: atomic increments only, no lock, no allocation.
+    pub fn record_http(&self, event: &RequestEvent) {
+        match event.verdict {
+            Verdict::Pass => self.requests_pass.fetch_add(1, Ordering::Relaxed),
+            Verdict::Allow(_) => self.requests_allow.fetch_add(1, Ordering::Relaxed),
+            Verdict::Block(_) => self.requests_block.fetch_add(1, Ordering::Relaxed),
+        };
+        self.response_bytes
+            .fetch_add(event.bytes, Ordering::Relaxed);
+        let stage = if matches!(event.verdict, Verdict::Block(_)) {
+            &self.request_duration_block
+        } else {
+            &self.request_duration_forward
         };
         stage.observe(event.duration);
     }
@@ -198,11 +237,17 @@ impl Metrics {
             cache_misses: self.cache_misses.load(Ordering::Relaxed),
             cache_stale: self.cache_stale.load(Ordering::Relaxed),
             dropped_events: self.dropped_events.load(Ordering::Relaxed),
+            requests_pass: self.requests_pass.load(Ordering::Relaxed),
+            requests_allow: self.requests_allow.load(Ordering::Relaxed),
+            requests_block: self.requests_block.load(Ordering::Relaxed),
+            response_bytes: self.response_bytes.load(Ordering::Relaxed),
             swr: **self.swr.load(),
             cleanup: **self.cleanup.load(),
             block: stage_histogram(&self.duration_block),
             cache_hit: stage_histogram(&self.duration_cache_hit),
             forward: stage_histogram(&self.duration_forward),
+            request_block: stage_histogram(&self.request_duration_block),
+            request_forward: stage_histogram(&self.request_duration_forward),
             upstreams: self.upstreams.load().as_ref().clone(),
         }
     }

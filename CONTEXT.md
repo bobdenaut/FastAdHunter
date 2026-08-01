@@ -9,9 +9,17 @@ details belong here.
 ### Rule
 
 A single filtering instruction from a rule list (e.g. `||ads.example.com^`,
-a hosts entry, an exception `@@||cdn.example.com^`). A rule is either
-**DNS-applicable** (acts on a domain name) or **non-DNS** (cosmetic, URL-path,
-HTTP-option based — inactive until the HTTP/HTML phases).
+a hosts entry, an exception `@@||cdn.example.com^`). Every rule is exactly one
+of three kinds, decided by what it *addresses*:
+
+- **DNS-applicable** — acts on a domain name. Answered by the Domain Tier.
+- **request-applicable** — acts on a URL or on request context (`$script`,
+  `$third-party`). Answered by the URL Tier since Phase 2.
+- **inactive** — no tier answers it yet: cosmetic (Phase 4), `$client`
+  (Policies), and patterns no supported syntax expresses.
+
+"non-DNS" is retired as a category name — it merged the second and third, which
+is precisely the distinction that matters now that the URL Tier exists.
 
 ### Rule List
 
@@ -25,11 +33,45 @@ The single component that loads, parses, manages and processes rule lists in
 all supported formats, compiles them into matchers, and answers verdicts.
 There is no separate "Filter Engine" — that term is retired.
 
+### Domain Tier / URL Tier
+
+The two halves of the compiled ruleset, one per request model. The **Domain
+Tier** answers a domain name and its parent labels; the **URL Tier** answers a
+full request — URL, method, resource type, referer. One compiled matcher holds
+both, and one typed entry point serves each; there is no "HTTP matcher" as a
+separate component.
+
+A request consults **both** tiers, under one precedence order (see Verdict).
+A DNS query consults only the Domain Tier — a URL rule has no answer for a
+question that carries no URL.
+
+### HTTP Request
+
+One request as the Rule Engine sees it: URL, host, method, **Resource Type**,
+and the document host taken from `Referer`. The HTTP counterpart of a Query,
+and equally a pure data type — everything in it is already extracted, so the
+engine parses nothing.
+
+### Resource Type
+
+What a request is fetching — `script`, `image`, `stylesheet`, `document`,
+`xmlhttprequest`, … — as the adblock `$script` / `$image` options name it.
+`unknown` is the honest fallback when the proxy cannot tell. A type-restricted
+**block** declines it — guessing `$script` wrong would refuse something nobody
+asked to refuse — while a type-restricted **exception** still applies, because
+declining one leaves the block it exists to override standing. Both directions
+therefore under-block, which is the safe one.
+
+The proxy derives it from `Sec-Fetch-Dest` first (the browser stating its own
+intent), then `Accept`, then the path extension, and leaves it `unknown` rather
+than guessing when none of them speak.
+
 ### Verdict
 
-The Rule Engine's decision for one query: **Allow** (explicit exception match),
-**Block** (block rule match), or **Pass** (no rule matched — forward normally).
-Allow always wins over Block.
+The Rule Engine's decision for one query or request: **Allow** (explicit
+exception match), **Block** (block rule match), or **Pass** (no rule matched —
+forward normally). Allow always wins over Block, **across both tiers**: a
+domain-tier exception overrides a URL-tier block and vice versa.
 
 ### Blocklist / Allowlist
 
@@ -128,18 +170,55 @@ browsers hold no proxy setting and nothing on the client changes. The same
 mechanism already carries DNS; extending it to HTTP is one more rule, and
 rollback is removing it.
 
+### Destination Claim
+
+Where a client *says* it was going. After Interception there is no
+`SO_ORIGINAL_DST` on RouterOS, so the claim is all we have: the `Host` header
+for HTTP, and SNI for HTTPS in Phase 3. It is written by the client, so it is
+**never** trusted — it is parsed, then judged by the Egress Guard. Parsing is
+protocol-specific and lives in the engine; judging is not.
+
+### Egress Guard
+
+The default-deny policy deciding where a proxy may connect. It judges the
+**resolved address**, never the Destination Claim's name — checking the name
+would let a public hostname whose record points at `192.168.10.1` walk straight
+through (a DNS rebind). Refuses loopback, link-local, unique-local, RFC 1918,
+CGNAT, multicast and broadcast, plus any port other than the intercepted one;
+`[egress] allow_destinations` opts specific ranges back in.
+
+Shared by HTTP and HTTPS because both face the same problem, so it lives at L1
+(`fah-common`) rather than in either engine. What stops the proxy being an
+**open relay** into the LAN.
+
 ### Port
 
 A trait a lower layer declares to describe what it needs from a higher one, so
 the binary can supply the implementation without the dependency arrow pointing
-upward. `HostResolver` (declared by the Rule Engine, implemented over the
-Upstreams) and `StatsSource`/`TelemetrySource`/`CacheSource` (declared by
-the API) are the existing ones. See ARCHITECTURE.md §Dependency Layering.
+upward. `HostResolver` (at L1, implemented over the Upstreams; used by the Rule
+Engine for list downloads and by the HTTP Engine for proxy upstreams) and
+`StatsSource`/`TelemetrySource`/`CacheSource` (declared by the API) are the
+existing ones. See ARCHITECTURE.md §Dependency Layering.
+
+### Request Event
+
+The completed-HTTP-request record the proxy publishes: the **HTTP Request** as
+served, plus verdict, duration, response status and relayed bytes. The
+counterpart of a Query Event, and it travels the same channel — see Event.
+
+### Event
+
+What the one bounded observability channel carries: a Query Event or a Request
+Event, tagged `dns` / `http`. **One channel, not one per pipeline**, so
+"we shed N events" stays a single number; two independent drop counters would
+answer different questions about different queues and could not be added.
 
 ### Query Log
 
-The bounded, persisted record of individual queries (timestamp, client, domain,
-type, verdict, duration). Product data, distinct from Statistics.
+The bounded, persisted record of individual queries **and requests** (timestamp,
+client, name, verdict, duration, plus each kind's own fields). Product data,
+distinct from Statistics. A DNS question's domain and an HTTP request's host are
+both "the name it was about", and the log's `domain` filter searches either.
 
 ### Statistics
 

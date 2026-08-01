@@ -165,6 +165,40 @@ impl Stats {
             clients.name(event.query.client_ip)
         };
 
+        self.log(fah_model::Event::dns(event), client_name);
+    }
+
+    /// Records one completed HTTP request (p2-04). The proxy's counterpart of
+    /// [`Stats::record`], on the same fan-out task and the same ring.
+    ///
+    /// **Deliberately not fed into the domain aggregates.** `/stats`'s top
+    /// domains have meant "names asked for" since p1-07; one page load is a
+    /// single DNS question and then dozens of HTTP requests to the same host,
+    /// so folding requests in would not enrich that table, it would inflate it
+    /// by whatever a site's asset count happens to be. Per-*client* activity is
+    /// fed in, because "this client made N requests, M blocked" reads the same
+    /// way whichever pipeline refused them — and p2-06 needs exactly that
+    /// number per client.
+    pub fn record_http(&self, event: fah_model::RequestEvent) {
+        let at = event.request.timestamp;
+        let blocked = matches!(event.verdict, fah_model::Verdict::Block(_));
+        let client_ip = event.request.client_ip;
+
+        let client_name = {
+            let mut clients = self.clients.lock().unwrap();
+            // `cache_hit: false` — an HTTP request has no cache to hit; the DNS
+            // cache answered a different question earlier.
+            clients.record(client_ip, at, blocked, false);
+            clients.name(client_ip)
+        };
+
+        self.log(fah_model::Event::http(event), client_name);
+    }
+
+    /// Appends one event to the ring and the pending flush batch. Shared by
+    /// both pipelines so the log's bounds and shed accounting cannot differ
+    /// between them.
+    fn log(&self, event: fah_model::Event, client_name: Option<String>) {
         if !self.query_log_enabled {
             return;
         }
@@ -531,7 +565,7 @@ mod tests {
     }
 
     fn event(domain: &str, client: IpAddr, verdict: Verdict) -> QueryEvent {
-        QueryEvent::new(
+        fah_model::QueryEvent::new(
             Query::new(domain, QueryType::A, client, SystemTime::now()),
             verdict,
             std::time::Duration::from_micros(100),
@@ -549,7 +583,7 @@ mod tests {
         cache_hit: bool,
         at: SystemTime,
     ) -> QueryEvent {
-        QueryEvent::new(
+        fah_model::QueryEvent::new(
             Query::new(domain, qtype, client, at),
             verdict,
             std::time::Duration::from_micros(100),

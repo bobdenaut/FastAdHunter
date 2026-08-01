@@ -1,16 +1,32 @@
 //! HTTP engine (ARCHITECTURE.md L3): transparent proxy for unencrypted
 //! traffic, with a streaming pass-through fast path.
 //!
-//! **Scaffold only (p2-01).** [`Server`] binds `[http.listen]` and accepts
-//! connections, then closes each one immediately. Proxying arrives in p2-02
-//! and filtering in p2-04 — deliberately in that order, so the pass-through
-//! path is benched against PERFORMANCE.md before any verdict touches it.
+//! [`Server`] binds `[http.listen]` and accepts; [`Proxy`] serves each
+//! connection — parse the head, judge the destination, **take a verdict**,
+//! then stream the body. The pass-through path was benched against
+//! PERFORMANCE.md in p2-02, before any rule touched it, so the cost of
+//! filtering is a delta against a known number rather than a first
+//! measurement.
 //!
-//! The listener exists at all this early for one reason: binding is the part
-//! that can fail in deployment (privileged ports, address families, a port
-//! already held), and `engine.mode` gating is the part that must be provably
-//! off in `dns` mode. Both are cheaper to get right against an empty engine.
+//! Two properties are load-bearing beyond this phase:
+//!
+//! - [`Proxy::serve_connection`] is **generic over the stream**, so Phase 3
+//!   reuses this pipeline unchanged by handing it a TLS-terminated stream.
+//! - The destination decision lives at L1 in [`fah_common::egress`], not here,
+//!   because HTTPS judges SNI with exactly the same rules. Only the *claim
+//!   parsing* is HTTP-shaped, and that is what stays in this crate.
+//!
+//! This crate does not depend on `fah-dns`: name resolution arrives as the
+//! injected [`fah_common::resolve::HostResolver`] port (siblings never import
+//! each other, hard rule 1).
 
+mod block;
+mod claim;
+mod proxy;
+mod request;
 mod server;
 
+pub use block::BlockStyle;
+pub use claim::{ClaimError, Destination};
+pub use proxy::{Proxy, ProxyCounters, ProxyStats, Ruleset};
 pub use server::Server;

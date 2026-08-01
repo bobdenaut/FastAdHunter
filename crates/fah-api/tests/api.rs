@@ -48,7 +48,7 @@ impl FakeStats {
                 blocked_24h: 3_020,
             }]),
             queries: Mutex::new(vec![QueryRecord {
-                event: blocked_event(ip),
+                event: fah_model::Event::dns(blocked_event(ip)),
                 client_name: Some("liviu-phone".to_string()),
             }]),
             applied_history: Mutex::new(None),
@@ -1802,10 +1802,10 @@ async fn the_event_socket_streams_a_blocked_query_end_to_end() {
 
     // Publish as the binary's fan-out task would.
     let client = IpAddr::V4(Ipv4Addr::new(192, 168, 10, 15));
-    harness
-        .server
-        .events()
-        .publish_query(blocked_event(client), Some("liviu-phone".to_string()));
+    harness.server.events().publish_query(
+        fah_model::Event::dns(blocked_event(client)),
+        Some("liviu-phone".to_string()),
+    );
 
     // The periodic stats push shares the socket; take messages until the
     // query arrives.

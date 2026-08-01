@@ -9,7 +9,6 @@
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 
-use fah_model::QueryEvent;
 use serde::Serialize;
 use serde_json::json;
 use tokio::sync::broadcast;
@@ -62,10 +61,14 @@ impl EventHub {
         Self { sender }
     }
 
-    /// Publishes a completed query. The binary calls this from the task that
-    /// fans `QueryEvent`s out to stats and metrics. `client_name` is resolved
-    /// by the caller (it holds the stats handle).
-    pub fn publish_query(&self, event: QueryEvent, client_name: Option<String>) {
+    /// Publishes a completed event from either pipeline. The binary calls this
+    /// from the task that fans events out to stats and metrics; `client_name`
+    /// is resolved by the caller (it holds the stats handle).
+    ///
+    /// One method for both kinds, not two: a dashboard subscribes to "what is
+    /// happening", and the `kind` field on the record already says which
+    /// pipeline it came from.
+    pub fn publish_query(&self, event: fah_model::Event, client_name: Option<String>) {
         self.publish(Event::Query(Box::new(QueryRecord { event, client_name })));
     }
 
@@ -181,8 +184,8 @@ mod tests {
 
     use super::*;
 
-    fn blocked_event() -> QueryEvent {
-        QueryEvent::new(
+    fn blocked_event() -> fah_model::QueryEvent {
+        fah_model::QueryEvent::new(
             Query::new(
                 "ads.example.com",
                 QueryType::A,
@@ -200,7 +203,7 @@ mod tests {
     #[test]
     fn query_event_encodes_with_the_documented_envelope() {
         let json: Value = serde_json::from_str(&encode(Event::Query(Box::new(QueryRecord {
-            event: blocked_event(),
+            event: fah_model::Event::dns(blocked_event()),
             client_name: Some("liviu-phone".to_string()),
         }))))
         .unwrap();
@@ -236,7 +239,7 @@ mod tests {
         let mut first = hub.subscribe();
         let mut second = hub.subscribe();
 
-        hub.publish_query(blocked_event(), None);
+        hub.publish_query(fah_model::Event::dns(blocked_event()), None);
 
         for receiver in [&mut first, &mut second] {
             let event = receiver.recv().await.unwrap();
@@ -262,7 +265,7 @@ mod tests {
     #[tokio::test]
     async fn publishing_with_no_subscribers_is_not_an_error() {
         let hub = EventHub::new();
-        hub.publish_query(blocked_event(), None);
+        hub.publish_query(fah_model::Event::dns(blocked_event()), None);
         hub.publish(Event::ConfigChanged {
             restart_required: false,
         });
@@ -276,7 +279,7 @@ mod tests {
         // Overrun the buffer without ever reading: the next read reports the
         // lag, which `run_socket` turns into a disconnect.
         for _ in 0..(CHANNEL_CAPACITY + 10) {
-            hub.publish_query(blocked_event(), None);
+            hub.publish_query(fah_model::Event::dns(blocked_event()), None);
         }
 
         assert!(matches!(

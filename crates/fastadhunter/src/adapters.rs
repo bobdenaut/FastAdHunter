@@ -114,6 +114,7 @@ impl StatsSource for StatsAdapter {
             }),
             from: request.from,
             to: request.to,
+            kind: request.kind,
         };
         let page = self
             .stats

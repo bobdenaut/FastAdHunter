@@ -55,6 +55,19 @@ Liveness/readiness. No auth (default). Used by the Docker healthcheck
 Prometheus text exposition format (ops telemetry: QPS, latency histograms,
 cache hit ratio, memory, per-verdict counters). No auth by default.
 
+HTTP filtering (p2-04) adds three families, kept **separate from the DNS ones**
+because `fastadhunter_queries_total` has meant "DNS questions answered" since
+p1-08 and widening it would silently redefine every dashboard built on it:
+
+| Metric | Type | Notes |
+| ------ | ---- | ----- |
+| `fastadhunter_http_requests_total{verdict}` | counter | `pass` / `allow` / `block` |
+| `fastadhunter_http_response_bytes_total` | counter | Body bytes relayed downstream; a block adds nothing, so this and the block counter together show what filtering saved |
+| `fastadhunter_http_request_duration_seconds{stage}` | histogram | `block` is fully in-engine (no upstream contacted, comparable with the DNS `block` stage); `forward` is end-to-end including the origin round trip |
+
+`fastadhunter_events_dropped_total` covers **both** pipelines: they share one
+bounded channel, so the shed figure stays one number.
+
 ---
 
 ## Statistics & query log
@@ -81,7 +94,17 @@ Aggregated statistics (product data, for users/dashboard).
 
 Query log, newest first. Pagination + filters via query string:
 `limit` (default 100, max 1000), `cursor`, `client`, `domain` (substring),
-`verdict` (`allow|block|pass`), `from`, `to` (RFC 3339).
+`verdict` (`allow|block|pass`), `kind` (`dns|http`), `from`, `to` (RFC 3339).
+
+**Both pipelines share this log since p2-04.** Every item carries `kind`, and
+`domain` filters on the DNS question's name *or* the HTTP request's host —
+searching `doubleclick` means the same thing whichever pipeline answered, and a
+caller should not have to know which one did. Omit `kind` to get both.
+
+An HTTP item leaves the DNS-only fields `null` (`qtype`) or `false` (`cached`),
+and a DNS item leaves the HTTP-only ones `null` (`method`, `path`,
+`resource_type`, `status`, `bytes`). The keys are always **present**, so a
+client never has to tell "absent" from "not applicable".
 
 **Serves the in-RAM ring only.** This endpoint reads `[query_log] ring_entries`
 (default 10 000) most-recent events; it does **not** read the `/data` segments
@@ -99,6 +122,7 @@ aggregates come from `/api/v1/history/*` instead, which reads `/data/history`.
 {
   "items": [
     {
+      "kind": "dns",
       "ts": "2026-07-17T10:41:03.412Z",
       "client": "192.168.10.15",
       "client_name": "liviu-phone",
@@ -109,12 +133,48 @@ aggregates come from `/api/v1/history/*` instead, which reads `/data/history`.
       "list": "oisd-basic",
       "duration_ms": 0.3,
       "upstream": null,
-      "cached": false
+      "cached": false,
+      "method": null,
+      "path": null,
+      "resource_type": null,
+      "status": null,
+      "bytes": null
+    },
+    {
+      "kind": "http",
+      "ts": "2026-07-17T10:41:03.610Z",
+      "client": "192.168.10.15",
+      "client_name": "liviu-phone",
+      "domain": "ads.example.com",
+      "qtype": null,
+      "verdict": "block",
+      "rule": "||ads.example.com^",
+      "list": "easylist",
+      "duration_ms": 0.1,
+      "upstream": null,
+      "cached": false,
+      "method": "GET",
+      "path": "/pixel.gif?id=7",
+      "resource_type": "image",
+      "status": 200,
+      "bytes": 0
     }
   ],
   "next_cursor": "opaque-token-or-null"
 }
 ```
+
+`status` is what the client actually received — a synthesized block's status as
+much as an origin's — and `bytes` is the response body relayed downstream, so a
+block reads `0`. `resource_type` is the `$option` vocabulary
+(`script`, `image`, `xmlhttprequest`, …) or `unknown` when the proxy could not
+tell (RULE_ENGINE.md §HTTP matching).
+
+**Persisted-format note.** The `/data` segments now store a tagged event
+(`"kind":"dns"` / `"kind":"http"`). Records written before this version have no
+tag and will not parse. That is tolerated only because the query log is bounded
+and pruned by age, no endpoint reads the segments yet (the reader is `p2-09`),
+and the log self-heals within one retention window.
 
 ---
 
@@ -360,8 +420,9 @@ to RSS is explainable — not an allocator audit.
       "refresh_hours": 24,
       "last_refresh": "2026-07-17T04:00:00Z",
       "last_status": "ok",
-      "rules_total": 214001,
+      "rules_total": 223182,
       "rules_active_dns": 198500,
+      "rules_active_url": 9181,
       "rules_inactive": 15501
     }
   ],
@@ -369,6 +430,20 @@ to RSS is explainable — not an allocator audit.
   "duplicates_removed": 87422
 }
 ```
+
+The three `rules_*` counts partition `rules_total` — a rule is in exactly one:
+
+| Field | Rules that… |
+| ----- | ----------- |
+| `rules_active_dns` | answer a domain question (the Domain Tier) |
+| `rules_active_url` | answer an HTTP request (the URL Tier) |
+| `rules_inactive` | no tier answers yet: cosmetic, `$client`, unsupported |
+
+`rules_active_url` **was split out of `rules_inactive`** in `p2-03`, when the
+URL Tier went live. Before that it did not exist and those rules were counted
+inactive, which for an EasyList-family list understated what the list actually
+does by tens of thousands of rules. Expect `rules_inactive` to drop sharply for
+adblock-format lists on upgrade; the sum is unchanged.
 
 `compiled_rules` and `duplicates_removed` describe the **merged** ruleset, not
 any single list, which is why they sit on the envelope. The compiled matcher

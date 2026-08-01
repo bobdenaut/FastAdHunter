@@ -16,6 +16,8 @@ use tokio::net::TcpListener;
 use tokio::sync::Semaphore;
 use tokio::task::JoinHandle;
 
+use crate::proxy::Proxy;
+
 /// Named in bind failures so the operator is sent to the right setting.
 const PORT_SETTING: &str = "[http.listen] port, or FAH__HTTP__LISTEN__PORT";
 
@@ -58,12 +60,12 @@ impl Server {
 
     /// Spawns the accept loop. Call after any privilege drop; a second call
     /// does nothing, since the listener has already been handed over.
-    pub fn serve(&mut self) {
+    pub fn serve(&mut self, proxy: Arc<Proxy>) {
         let Some(listener) = self.listener.take() else {
             return;
         };
         let permits = Arc::clone(&self.permits);
-        self.handle = Some(tokio::spawn(accept_loop(listener, permits)));
+        self.handle = Some(tokio::spawn(accept_loop(listener, permits, proxy)));
     }
 
     pub fn local_addr(&self) -> SocketAddr {
@@ -77,14 +79,17 @@ impl Server {
     }
 }
 
-/// Accepts and immediately closes (p2-01 scaffold).
+/// Accepts connections and hands each to the proxy.
 ///
 /// The permit is acquired *before* `accept`, not after: taking the connection
 /// off the queue first and then waiting would let the backlog convert into
 /// in-process state, which is the bound `max_connections` exists to hold. At
 /// the ceiling the loop simply stops accepting and the kernel queues, which is
 /// the behaviour a client's own timeout is designed for.
-async fn accept_loop(listener: TcpListener, permits: Arc<Semaphore>) {
+///
+/// Since p2-02 the permit is held for the whole transfer rather than released
+/// immediately, so the ceiling now genuinely binds — the gap p2-01 documented.
+async fn accept_loop(listener: TcpListener, permits: Arc<Semaphore>, proxy: Arc<Proxy>) {
     loop {
         let Ok(permit) = Arc::clone(&permits).acquire_owned().await else {
             // Semaphore closed — only on shutdown.
@@ -92,9 +97,15 @@ async fn accept_loop(listener: TcpListener, permits: Arc<Semaphore>) {
         };
         match listener.accept().await {
             Ok((stream, peer)) => {
+                let proxy = Arc::clone(&proxy);
                 tokio::spawn(async move {
                     let _permit = permit;
-                    handle_connection(stream, peer).await;
+                    // Proxied writes are small and latency-visible; Nagle would
+                    // hold a request head waiting for more to send.
+                    if let Err(err) = stream.set_nodelay(true) {
+                        tracing::debug!(%peer, error = %err, "could not set TCP_NODELAY");
+                    }
+                    proxy.serve_connection(stream, peer).await;
                 });
             }
             Err(err) => {
@@ -107,15 +118,13 @@ async fn accept_loop(listener: TcpListener, permits: Arc<Semaphore>) {
     }
 }
 
-/// p2-01: close immediately. p2-02 replaces this with the proxy.
-async fn handle_connection(stream: tokio::net::TcpStream, peer: SocketAddr) {
-    tracing::trace!(%peer, "HTTP connection accepted and closed (scaffold)");
-    drop(stream);
-}
-
 #[cfg(test)]
 mod tests {
-    use tokio::io::AsyncReadExt as _;
+    use std::time::Duration;
+
+    use fah_common::egress::DestinationPolicy;
+    use fah_common::resolve::{HostResolver, Resolving};
+    use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
     use tokio::net::TcpStream;
 
     use super::*;
@@ -128,6 +137,39 @@ mod tests {
             },
             ..HttpConfig::default()
         }
+    }
+
+    /// Resolves nothing: these tests exercise the listener and the connection
+    /// ceiling, never a forwarded request.
+    struct NoResolver;
+
+    impl HostResolver for NoResolver {
+        fn resolve(&self, _host: String) -> Resolving {
+            Box::pin(async {
+                Err(std::io::Error::new(
+                    std::io::ErrorKind::NotFound,
+                    "no resolver in this test",
+                ))
+            })
+        }
+    }
+
+    fn proxy_with(header_timeout: Duration) -> Arc<Proxy> {
+        Arc::new(Proxy::new(
+            Arc::new(NoResolver),
+            DestinationPolicy::new(80, Vec::new()),
+            80,
+            header_timeout,
+            Duration::from_secs(1),
+            1,
+            false,
+        ))
+    }
+
+    /// Long enough that the header timeout never fires incidentally — tests
+    /// that want it use [`proxy_with`] and say so.
+    fn proxy() -> Arc<Proxy> {
+        proxy_with(Duration::from_secs(5))
     }
 
     #[tokio::test]
@@ -162,54 +204,133 @@ mod tests {
         );
     }
 
+    /// The proxy now answers rather than closing: an unusable `Host` is a 400,
+    /// not a dropped connection, so the client learns why.
     #[tokio::test]
-    async fn serve_accepts_then_closes_the_connection() {
+    async fn serve_answers_a_request_instead_of_closing_it() {
         let mut server = Server::bind(&config(0)).await.unwrap();
         let addr = server.local_addr();
-        server.serve();
+        server.serve(proxy());
 
         let mut stream = TcpStream::connect(addr).await.unwrap();
-        let mut buf = [0u8; 1];
-        let read = tokio::time::timeout(std::time::Duration::from_secs(5), stream.read(&mut buf))
-            .await
-            .expect("the scaffold must close promptly, not hang");
-        assert_eq!(
-            read.unwrap(),
-            0,
-            "a closed connection reads EOF, not a response"
+        stream.write_all(b"GET / HTTP/1.0\r\n\r\n").await.unwrap();
+        let mut response = Vec::new();
+        tokio::time::timeout(
+            std::time::Duration::from_secs(5),
+            stream.read_to_end(&mut response),
+        )
+        .await
+        .expect("the proxy must answer promptly, not hang")
+        .unwrap();
+
+        let text = String::from_utf8_lossy(&response);
+        assert!(
+            text.starts_with("HTTP/1.0 400") || text.starts_with("HTTP/1.1 400"),
+            "a request with no Host has no destination; got: {text:?}"
         );
         server.shutdown();
     }
 
-    /// Verifies what is verifiable now: the pool is sized from config, and a
-    /// ceiling of 1 does not stall the listener.
-    ///
-    /// **It does not prove the cap binds**, and cannot at this stage — the
-    /// scaffold releases its permit the instant it closes, so no window exists
-    /// in which a second connection could be made to wait. That test needs
-    /// connections with duration and belongs to p2-02, where the proxy holds a
-    /// permit for the life of a transfer. Named for what it checks rather than
-    /// what the semaphore is for, so this gap stays visible.
+    /// A connection that speaks something other than HTTP is closed, not
+    /// answered, and does not take the listener down with it.
     #[tokio::test]
-    async fn max_connections_sizes_the_permit_pool_without_stalling() {
+    async fn non_http_bytes_are_closed_and_counted() {
+        let mut server = Server::bind(&config(0)).await.unwrap();
+        let addr = server.local_addr();
+        let proxy = proxy();
+        let counters = proxy.counters();
+        server.serve(Arc::clone(&proxy));
+
+        let mut stream = TcpStream::connect(addr).await.unwrap();
+        stream
+            .write_all(b"\x16\x03\x01\x00\xa5garbage")
+            .await
+            .unwrap();
+        let mut response = Vec::new();
+        tokio::time::timeout(
+            std::time::Duration::from_secs(5),
+            stream.read_to_end(&mut response),
+        )
+        .await
+        .expect("garbage must be closed promptly")
+        .unwrap();
+
+        assert_eq!(
+            counters.snapshot().non_http,
+            1,
+            "a non-HTTP connection must be counted, not silently dropped"
+        );
+        server.shutdown();
+    }
+
+    /// `header_timeout_ms` is the slowloris bound, and it must be real — a
+    /// client that opens a connection and dribbles a header forever would
+    /// otherwise hold a `max_connections` permit indefinitely.
+    #[tokio::test]
+    async fn a_client_that_never_finishes_its_head_is_cut_off() {
+        let mut server = Server::bind(&config(0)).await.unwrap();
+        let addr = server.local_addr();
+        server.serve(proxy_with(Duration::from_millis(150)));
+
+        let mut stream = TcpStream::connect(addr).await.unwrap();
+        stream.write_all(b"GET / HTTP/1.1\r\n").await.unwrap();
+
+        let mut response = Vec::new();
+        tokio::time::timeout(
+            std::time::Duration::from_secs(5),
+            stream.read_to_end(&mut response),
+        )
+        .await
+        .expect("the header timeout must close a stalled request head")
+        .unwrap();
+        server.shutdown();
+    }
+
+    /// The gap p2-01 documented and could not close: with the proxy holding a
+    /// permit for the life of a connection, `max_connections` finally binds.
+    #[tokio::test]
+    async fn max_connections_actually_blocks_the_second_connection() {
         let config = HttpConfig {
             max_connections: 1,
             ..config(0)
         };
         let mut server = Server::bind(&config).await.unwrap();
         assert_eq!(server.permits.available_permits(), 1);
-        server.serve();
+        let addr = server.local_addr();
+        server.serve(proxy());
 
-        // Both must complete: a ceiling of 1 throttles, it does not deadlock.
-        for _ in 0..2 {
-            let mut stream = TcpStream::connect(server.local_addr()).await.unwrap();
-            let mut buf = [0u8; 1];
-            let read =
-                tokio::time::timeout(std::time::Duration::from_secs(5), stream.read(&mut buf))
-                    .await
-                    .expect("capped does not mean stalled");
-            assert_eq!(read.unwrap(), 0);
-        }
+        // Hold the only permit: connected, and deliberately sending nothing, so
+        // the proxy sits waiting for a request head.
+        let mut holder = TcpStream::connect(addr).await.unwrap();
+        holder.write_all(b"GET / HTTP/1.1\r\n").await.unwrap();
+        // Give the accept loop time to take the permit.
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        assert_eq!(
+            server.permits.available_permits(),
+            0,
+            "the in-flight connection must hold the permit"
+        );
+
+        // A second connection is accepted by the kernel backlog but must not be
+        // serviced while the ceiling is reached.
+        let mut queued = TcpStream::connect(addr).await.unwrap();
+        queued.write_all(b"GET / HTTP/1.0\r\n\r\n").await.unwrap();
+        let mut buf = [0u8; 1];
+        let serviced =
+            tokio::time::timeout(std::time::Duration::from_millis(300), queued.read(&mut buf))
+                .await;
+        assert!(
+            serviced.is_err(),
+            "the ceiling must hold the second connection in the kernel queue"
+        );
+
+        // Release the first: the queued one is then served, so the cap
+        // throttles rather than deadlocks.
+        drop(holder);
+        let read = tokio::time::timeout(std::time::Duration::from_secs(5), queued.read(&mut buf))
+            .await
+            .expect("a released permit must let the queued connection through");
+        assert!(read.unwrap() > 0, "the queued connection gets a response");
         server.shutdown();
     }
 

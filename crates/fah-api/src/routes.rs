@@ -222,6 +222,17 @@ fn parse_query_params(params: &HashMap<String, String>) -> ApiResult<QueryLogReq
         None => None,
     };
 
+    let kind = match params.get("kind").map(String::as_str) {
+        Some("dns") => Some(fah_model::EventKind::Dns),
+        Some("http") => Some(fah_model::EventKind::Http),
+        Some(other) => {
+            return Err(ApiError::BadRequest(format!(
+                "kind must be one of dns|http, got {other:?}"
+            )))
+        }
+        None => None,
+    };
+
     Ok(QueryLogRequest {
         limit,
         cursor: params.get("cursor").cloned(),
@@ -230,6 +241,7 @@ fn parse_query_params(params: &HashMap<String, String>) -> ApiResult<QueryLogReq
         verdict,
         from: timestamp_param(params, "from")?,
         to: timestamp_param(params, "to")?,
+        kind,
     })
 }
 
@@ -480,10 +492,10 @@ fn list_response(
     // (RULE_ENGINE.md failure policy), so `last_status: "failed"` alongside a
     // non-zero `rules_total` is the correct — and operationally important —
     // report: the fetch broke, protection did not.
-    let (active, inactive) = status
+    let (active, url_active, inactive) = status
         .compiled
         .as_ref()
-        .map_or((0, 0), |stats| (stats.active, stats.inactive));
+        .map_or((0, 0, 0), |stats| (stats.active, stats.url, stats.inactive));
     ListResponse {
         id: entry.id,
         url: entry.url,
@@ -492,8 +504,9 @@ fn list_response(
         refresh_hours: entry.refresh_hours.unwrap_or(default_hours),
         last_refresh: status.last_refreshed,
         last_status,
-        rules_total: active + inactive,
+        rules_total: active + url_active + inactive,
         rules_active_dns: active,
+        rules_active_url: url_active,
         rules_inactive: inactive,
     }
 }
@@ -1160,6 +1173,7 @@ mod tests {
         };
         let stats = fah_rules::RefreshStats {
             active: 198_500,
+            url: 9_181,
             inactive: 15_501,
             parse_errors: 0,
         };
@@ -1175,8 +1189,9 @@ mod tests {
             "falls back to the global default"
         );
         assert_eq!(response.last_status, "ok");
-        assert_eq!(response.rules_total, 214_001);
+        assert_eq!(response.rules_total, 223_182);
         assert_eq!(response.rules_active_dns, 198_500);
+        assert_eq!(response.rules_active_url, 9_181);
         assert_eq!(response.rules_inactive, 15_501);
         assert_eq!(response.format, "auto");
     }
@@ -1196,6 +1211,7 @@ mod tests {
             last_result: RefreshResult::Failed("dns error: EAI_AGAIN".to_string()),
             compiled: Some(fah_rules::RefreshStats {
                 active: 55_866,
+                url: 0,
                 inactive: 0,
                 parse_errors: 0,
             }),

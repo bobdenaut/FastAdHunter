@@ -24,6 +24,12 @@ pub struct MetricsSnapshot {
     pub cache_misses: u64,
     pub cache_stale: u64,
     pub dropped_events: u64,
+    /// HTTP request counters (p2-04), kept apart from the DNS ones because
+    /// `queries_*` has meant "DNS questions" since p1-08.
+    pub requests_pass: u64,
+    pub requests_allow: u64,
+    pub requests_block: u64,
+    pub response_bytes: u64,
     /// Stale-while-refresh counters (ADR-0005), read off
     /// `fah_dns::Pipeline::swr_stats()` on each poll.
     pub swr: SwrSnapshot,
@@ -36,6 +42,11 @@ pub struct MetricsSnapshot {
     pub cache_hit: StageHistogram,
     /// End-to-end forwarded-query latency, including the upstream round trip.
     pub forward: StageHistogram,
+    /// In-engine blocked-request latency: no upstream is contacted, so this
+    /// is directly comparable with `block` above.
+    pub request_block: StageHistogram,
+    /// End-to-end forwarded-request latency, including the origin round trip.
+    pub request_forward: StageHistogram,
     pub upstreams: Vec<UpstreamSnapshot>,
 }
 
