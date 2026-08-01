@@ -13,3 +13,4 @@
 Dockerfile
 *.code-workspace
 .gitignore
+!/.probe-corpus

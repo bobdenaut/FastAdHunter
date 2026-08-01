@@ -1,0 +1,59 @@
+# syntax=docker/dockerfile:1
+#
+# Throwaway on-device probe for p2-08: worst-case URL lookup on the RB5009.
+#
+# NOT a deployable artefact. It exists because the RB5009's FastAdHunter image
+# is distroless and RouterOS exposes no `docker exec`, so the only way to run a
+# measurement on that CPU is to ship a second container whose entrypoint *is*
+# the measurement. It writes nothing, mounts nothing, listens on nothing, and
+# exits when done; the results come back through RouterOS's container log.
+#
+# The corpora are baked in rather than mounted. `/data` on the router is
+# mounted read-write by the production container, and a probe has no business
+# anywhere near the live cache. Baking also pins the corpus, which is what
+# makes the x86 -> ARM ratio a measurement rather than a comparison of two
+# different rulesets.
+#
+# Two corpora, answering two different questions (both are reported):
+#   /corpus/easylist   - EasyList + EasyPrivacy, 77 unindexed rules.
+#                        "Can the architecture carry a large URL corpus?"
+#   /corpus/production - the deployed lists that actually carry URL rules,
+#                        3 unindexed. "What does this router see every day?"
+#
+# Build (arm64, legacy docker-archive for RouterOS — see docs/deploy-rb5009.md
+# §1: OCI layout makes RouterOS hang at `extracting` forever with no error):
+#
+#   docker buildx build --platform linux/arm64 -f Dockerfile.probe \
+#     -t fah-urlbench:1 -o type=docker,dest=fah-urlbench-arm64.tar .
+#   tar -xOf fah-urlbench-arm64.tar manifest.json     # check "Layers"
+#   # if blobs/sha256/... then convert:
+#   docker run --rm -v "$PWD:/work" quay.io/skopeo/stable copy \
+#     --insecure-policy oci-archive:/work/fah-urlbench-arm64.tar \
+#     docker-archive:/work/fah-urlbench-rosready.tar:fah-urlbench:1
+
+# Same base and Rust version as Dockerfile, so the compiler and libc match what
+# production is built with — otherwise the ARM figures describe a toolchain the
+# router never runs.
+FROM rust:1.96.0-alpine AS builder
+
+# mimalloc compiles C via the `cc` crate and needs libc headers. The probe
+# selects mimalloc explicitly (see examples/urlbench.rs) to match the shipped
+# binary's allocator.
+RUN apk add --no-cache musl-dev
+
+WORKDIR /build
+COPY . .
+
+RUN cargo build --release --locked -p fah-rules --example urlbench
+
+FROM gcr.io/distroless/static-debian12:nonroot
+
+COPY --from=builder /build/target/release/examples/urlbench /urlbench
+COPY .probe-corpus /corpus
+
+# Root, like the production image, purely so nothing here can fail on a
+# permission difference the measurement would then have to explain. The probe
+# opens two directories read-only and writes to stdout.
+USER 0:0
+
+ENTRYPOINT ["/urlbench"]

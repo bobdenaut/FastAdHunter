@@ -8,3 +8,8 @@
 
 # Local editor settings — contains the API key in plaintext, never commit.
 .vscode/
+
+# p2-08 probe: third-party lists (EasyList is GPLv3 and changes daily) and
+# the throwaway image built from them. Rebuild via Dockerfile.probe.
+/.probe-corpus/
+fah-urlbench-*.tar
