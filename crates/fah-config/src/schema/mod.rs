@@ -5,6 +5,7 @@ mod engine;
 mod history;
 mod http;
 mod log;
+mod policy;
 mod query_log;
 mod rules;
 mod stats;
@@ -19,6 +20,7 @@ pub use engine::{EngineConfig, EngineMode};
 pub use history::HistoryConfig;
 pub use http::{HttpConfig, HttpListenConfig};
 pub use log::{LogConfig, LogFormat, LogLevel};
+pub use policy::{parse_days, parse_time_of_day, AssignmentConfig, PolicyConfig, ScheduleConfig};
 pub use query_log::QueryLogConfig;
 pub use rules::{RuleListConfig, RulesConfig};
 pub use stats::StatsConfig;
@@ -43,6 +45,13 @@ pub struct Config {
     /// it is a section of its own rather than a key under `[http]`.
     pub egress: EgressConfig,
     pub rules: RulesConfig,
+    /// `[schedule]` — the timezone every [`Self::policies`] window is read in.
+    pub schedule: ScheduleConfig,
+    /// `[[policies]]` (Phase 2). Empty is the zero-config case: every client
+    /// gets the default policy, which is every enabled list, and the compiled
+    /// ruleset carries no per-policy masks at all.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub policies: Vec<PolicyConfig>,
     pub query_log: QueryLogConfig,
     pub stats: StatsConfig,
     pub history: HistoryConfig,

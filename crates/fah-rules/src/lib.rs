@@ -5,6 +5,7 @@ mod format;
 mod lifecycle;
 mod matcher;
 mod parser;
+mod policy;
 mod resource;
 mod rule;
 mod rule_list;
@@ -15,7 +16,8 @@ pub use lifecycle::{
     HostResolver, LifecycleError, ListEntryView, ListManager, ListPatch, ListRefreshOutcome,
     ListStatus, RefreshResult, RefreshStats, Resolving,
 };
-pub use matcher::{MatchDecision, Matcher, MatcherBuilder, RuleRef};
+pub use matcher::{ClientContext, MatchDecision, Matcher, MatcherBuilder, RuleRef};
+pub use policy::{PolicyError, PolicySet};
 pub use rule::{
     DomainRule, InactiveReason, ParsedRule, Party, RuleAction, RuleKind, UrlAnchor, UrlRule,
 };

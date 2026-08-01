@@ -73,6 +73,7 @@ pub(crate) fn parse(text: &str) -> ParsedRuleList {
                     include_subdomains: true,
                     dns_types: None,
                     dns_rewrite: None,
+                    client: None,
                 }),
             });
         }

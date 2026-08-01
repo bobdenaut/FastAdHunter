@@ -55,8 +55,9 @@
 
 use std::collections::HashMap;
 
-use fah_model::{DecisiveRule, HttpRequest, QueryType, Verdict};
+use fah_model::{DecisiveRule, HttpRequest, PolicyId, QueryType, Verdict};
 
+use crate::policy::{ClientScope, ALL_POLICIES};
 use crate::rule::{DomainRule, RuleAction, UrlRule};
 use crate::url_matcher::{UrlDecision, UrlIndex, UrlIndexBuilder};
 
@@ -67,6 +68,7 @@ const FLAG_ALLOW: u8 = 1 << 0;
 const FLAG_SUBDOMAINS: u8 = 1 << 1;
 const FLAG_DNSTYPE: u8 = 1 << 2;
 const FLAG_REWRITE: u8 = 1 << 3;
+const FLAG_CLIENT: u8 = 1 << 4;
 
 /// One compiled rule: where its domain lives in the arena, plus flags and the
 /// owning list. Exactly 8 bytes so 1M rules cost 8 MB (PERFORMANCE.md budget).
@@ -91,6 +93,33 @@ impl Record {
     }
     fn has_rewrite(&self) -> bool {
         self.flags & FLAG_REWRITE != 0
+    }
+    fn has_client(&self) -> bool {
+        self.flags & FLAG_CLIENT != 0
+    }
+}
+
+/// Who is asking, and under which policy — everything a rule may be scoped to
+/// beyond the question itself.
+///
+/// [`Default`] is the pre-Policies behaviour: the default policy, and a client
+/// the caller cannot name. `Matcher::lookup` and `Matcher::lookup_http` use it,
+/// so every existing caller keeps its signature and its meaning; p2-06 is what
+/// threads a real context through the two pipelines.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct ClientContext<'a> {
+    pub policy: PolicyId,
+    /// The client's source address, when there is a request behind the lookup.
+    pub ip: Option<std::net::IpAddr>,
+    /// The client's user-assigned name (CONTEXT.md §Client), if it has one.
+    pub name: Option<&'a str>,
+}
+
+impl ClientContext<'_> {
+    /// The policy bit tested against a rule's mask.
+    #[inline]
+    fn policy_bit(&self) -> u16 {
+        self.policy.bit()
     }
 }
 
@@ -211,15 +240,26 @@ fn hash_extend(mut h: u64, bytes: &[u8]) -> u64 {
 /// it), flags, and any option payloads. Only ever a probe accelerator: the
 /// dedup path confirms every candidate with a real comparison, so two
 /// identities colliding here costs one extra comparison and nothing else.
-fn identity_hash(domain: &[u8], flags: u8, dns_types: Option<&str>, rewrite: Option<&str>) -> u64 {
+fn identity_hash(
+    domain: &[u8],
+    flags: u8,
+    dns_types: Option<&str>,
+    rewrite: Option<&str>,
+    client: Option<&str>,
+) -> u64 {
     let mut h = hash_extend(hash_domain(domain), &[flags]);
-    if let Some(raw) = dns_types {
-        h = hash_extend(h, raw.as_bytes());
-    }
-    if let Some(raw) = rewrite {
+    for raw in [dns_types, rewrite, client].into_iter().flatten() {
         h = hash_extend(h, raw.as_bytes());
     }
     h
+}
+
+/// Where an incoming rule lands in the transient dedup index.
+enum DedupSlot {
+    /// Free slot for a rule not yet compiled.
+    Vacant(usize),
+    /// The record index already carrying this exact rule.
+    Duplicate(u32),
 }
 
 /// Slot count for the compiled `slots` table: a ~0.7 load factor, which keeps
@@ -285,6 +325,18 @@ pub struct MatcherBuilder {
     lists: Vec<std::sync::Arc<str>>,
     dnstype: HashMap<u32, (u32, std::sync::Arc<str>)>,
     rewrite: HashMap<u32, std::sync::Arc<str>>,
+    /// Compiled `$client=` scopes, keyed by record index. A side map like the
+    /// two above and for the same reason: the deployed corpus carries zero of
+    /// these and the public lists one apiece, so the cost belongs on the rules
+    /// that use it rather than on every [`Record`].
+    clients: HashMap<u32, ClientScope>,
+    /// Which policies can see each list's rules, parallel to `lists`.
+    list_policy: Vec<u16>,
+    /// Which policies can see each *record*, parallel to `records`. Not derived
+    /// from `list_policy` at lookup time because deduplication collapses a rule
+    /// arriving from several lists into one record attributed to the first —
+    /// so this is the union of every contributing list's mask.
+    record_policy: Vec<u16>,
     /// Transient dedup index: an open-addressing table of *record indices*
     /// keyed by [`identity_hash`], never owned copies of the rules. Dropped
     /// with the builder at [`Self::build`], so it costs compile-time memory
@@ -328,9 +380,22 @@ impl MatcherBuilder {
     }
 
     /// Registers a rule list by name, returning its id for [`Self::add_rule`].
+    /// The list is visible to every policy; [`Self::add_list_masked`] narrows
+    /// it.
     pub fn add_list(&mut self, name: impl Into<std::sync::Arc<str>>) -> u16 {
+        self.add_list_masked(name, ALL_POLICIES)
+    }
+
+    /// Registers a rule list visible only to the policies in `policy_mask`
+    /// (`PolicySet::mask_for_list`).
+    pub fn add_list_masked(
+        &mut self,
+        name: impl Into<std::sync::Arc<str>>,
+        policy_mask: u16,
+    ) -> u16 {
         let id = u16::try_from(self.lists.len()).expect("at most 65_535 rule lists");
         self.lists.push(name.into());
+        self.list_policy.push(policy_mask);
         id
     }
 
@@ -343,7 +408,18 @@ impl MatcherBuilder {
         name: impl Into<std::sync::Arc<str>>,
         list: &crate::rule_list::ParsedRuleList,
     ) {
-        let list_id = self.add_list(name);
+        self.add_parsed_list_masked(name, list, ALL_POLICIES);
+    }
+
+    /// [`Self::add_parsed_list`], with the list visible only to the policies in
+    /// `policy_mask`.
+    pub fn add_parsed_list_masked(
+        &mut self,
+        name: impl Into<std::sync::Arc<str>>,
+        list: &crate::rule_list::ParsedRuleList,
+        policy_mask: u16,
+    ) {
+        let list_id = self.add_list_masked(name, policy_mask);
         for rule in &list.rules {
             match &rule.kind {
                 crate::rule::RuleKind::Active(domain_rule) => self.add_rule(list_id, domain_rule),
@@ -355,7 +431,8 @@ impl MatcherBuilder {
 
     /// Adds one request-applicable rule to the URL tier.
     pub fn add_url_rule(&mut self, list_id: u16, rule: &UrlRule) {
-        self.url.add(list_id, rule);
+        self.url
+            .add(list_id, rule, self.list_policy[list_id as usize]);
     }
 
     /// Adds one DNS-applicable rule to the given list. Domains longer than 255
@@ -387,9 +464,31 @@ impl MatcherBuilder {
             flags |= FLAG_REWRITE;
         }
 
-        let Some(slot) = self.dedup_slot_for(rule, domain, flags) else {
-            self.duplicates_removed += 1;
-            return;
+        // A `$client` payload the parser accepted but that compiles to no
+        // selector would leave the rule applying to everyone. Dropped instead:
+        // the restriction is part of the rule, not decoration on it.
+        let scope = match &rule.client {
+            None => None,
+            Some(raw) => match ClientScope::parse(raw) {
+                Some(scope) => {
+                    flags |= FLAG_CLIENT;
+                    Some(scope)
+                }
+                None => return,
+            },
+        };
+
+        let policy_mask = self.list_policy[list_id as usize];
+        let slot = match self.dedup_slot_for(rule, domain, flags, scope.as_ref()) {
+            DedupSlot::Vacant(slot) => slot,
+            // The rule is already compiled, from another list. Attribution
+            // stays with the first list to supply it, but *visibility* is the
+            // union: a policy that enabled only this list must still see it.
+            DedupSlot::Duplicate(existing) => {
+                self.record_policy[existing as usize] |= policy_mask;
+                self.duplicates_removed += 1;
+                return;
+            }
         };
 
         let dom_off = u32::try_from(self.arena.len()).expect("arena within 4 GiB");
@@ -401,6 +500,9 @@ impl MatcherBuilder {
         if let Some(raw) = &rule.dns_rewrite {
             self.rewrite.insert(rec_idx, raw.clone());
         }
+        if let Some(scope) = scope {
+            self.clients.insert(rec_idx, scope);
+        }
 
         self.arena.extend_from_slice(domain);
         self.records.push(Record {
@@ -409,14 +511,21 @@ impl MatcherBuilder {
             flags,
             list_id,
         });
+        self.record_policy.push(policy_mask);
         self.dedup[slot] = rec_idx;
     }
 
-    /// Probes the dedup index for `rule`'s identity: `Some(slot)` is where the
-    /// new record index goes, `None` means an identical rule is already
-    /// compiled. The hash picks where to start looking; acceptance is always
-    /// [`Self::identity_matches`] reading the arena back, never the hash.
-    fn dedup_slot_for(&mut self, rule: &DomainRule, domain: &[u8], flags: u8) -> Option<usize> {
+    /// Probes the dedup index for `rule`'s identity: where the new record index
+    /// goes, or which record already carries this rule. The hash picks where to
+    /// start looking; acceptance is always [`Self::identity_matches`] reading
+    /// the arena back, never the hash.
+    fn dedup_slot_for(
+        &mut self,
+        rule: &DomainRule,
+        domain: &[u8],
+        flags: u8,
+        scope: Option<&ClientScope>,
+    ) -> DedupSlot {
         self.reserve_dedup();
         let cap = self.dedup.len();
         let mut slot = fastrange(
@@ -425,28 +534,36 @@ impl MatcherBuilder {
                 flags,
                 rule.dns_types.as_deref(),
                 rule.dns_rewrite.as_deref(),
+                scope.map(|scope| &*scope.raw),
             ),
             cap,
         );
         // `reserve_dedup` keeps the table under its load factor, so an empty
         // slot always exists and this walk always terminates.
         while self.dedup[slot] != EMPTY {
-            if self.identity_matches(self.dedup[slot], rule, domain, flags) {
-                return None;
+            if self.identity_matches(self.dedup[slot], rule, domain, flags, scope) {
+                return DedupSlot::Duplicate(self.dedup[slot]);
             }
             slot += 1;
             if slot == cap {
                 slot = 0;
             }
         }
-        Some(slot)
+        DedupSlot::Vacant(slot)
     }
 
     /// Full-identity comparison of an already-compiled record against an
     /// incoming rule, read back from the arena, the record's flags and (only
     /// when the flags say so) the option side maps. `list_id` is deliberately
     /// not compared: attribution is informational, never part of a verdict.
-    fn identity_matches(&self, idx: u32, rule: &DomainRule, domain: &[u8], flags: u8) -> bool {
+    fn identity_matches(
+        &self,
+        idx: u32,
+        rule: &DomainRule,
+        domain: &[u8],
+        flags: u8,
+        scope: Option<&ClientScope>,
+    ) -> bool {
         let rec = &self.records[idx as usize];
         // The side-map indexing below is guarded by these flag bits; the
         // invariant is that `add_rule` inserts the map entry for every record
@@ -472,6 +589,10 @@ impl MatcherBuilder {
             return false;
         }
         if rec.has_rewrite() && &*self.rewrite[&idx] != rule.dns_rewrite.as_deref().unwrap_or("") {
+            return false;
+        }
+        // Two rules that differ only in who they apply to are two rules.
+        if rec.has_client() && &*self.clients[&idx].raw != scope.map(|s| &*s.raw).unwrap_or("") {
             return false;
         }
         true
@@ -501,6 +622,7 @@ impl MatcherBuilder {
                     rec.flags,
                     self.dnstype.get(&idx).map(|(_, raw)| raw.as_ref()),
                     self.rewrite.get(&idx).map(|raw| raw.as_ref()),
+                    self.clients.get(&idx).map(|scope| &*scope.raw),
                 ),
                 cap,
             );
@@ -540,6 +662,20 @@ impl MatcherBuilder {
             slots[slot] = idx as u32;
         }
 
+        // A mask array is only worth its bytes once some rule is invisible to
+        // some policy, and an empty array is the flag that skips the test on
+        // the hot path. The comparison is against the union of every list's
+        // mask rather than against `ALL_POLICIES`: with three policies all
+        // enabling every list the masks are `0b111`, which filters nothing but
+        // is not the sentinel. Both the zero-config case and that one drop the
+        // array, so neither pays the ~1 MB nor the per-candidate check.
+        let full = self.list_policy.iter().fold(0u16, |acc, &mask| acc | mask);
+        let policy_mask = if self.record_policy.iter().all(|&mask| mask == full) {
+            Box::default()
+        } else {
+            self.record_policy.into_boxed_slice()
+        };
+
         // `self.dedup` is dropped here with the builder: the dedup index is
         // compile-time working memory and never rides along with the matcher.
         Matcher {
@@ -550,8 +686,10 @@ impl MatcherBuilder {
             lists: self.lists.into_boxed_slice(),
             dnstype: self.dnstype,
             rewrite: self.rewrite,
+            clients: self.clients,
+            policy_mask,
             duplicates_removed: self.duplicates_removed,
-            url: self.url.build(),
+            url: self.url.build(full),
         }
     }
 }
@@ -566,6 +704,11 @@ pub struct Matcher {
     lists: Box<[std::sync::Arc<str>]>,
     dnstype: HashMap<u32, (u32, std::sync::Arc<str>)>,
     rewrite: HashMap<u32, std::sync::Arc<str>>,
+    clients: HashMap<u32, ClientScope>,
+    /// Which policies can see each record. **Empty when every rule is visible
+    /// to every policy**, which is both the zero-config case and the signal to
+    /// skip the check entirely.
+    policy_mask: Box<[u16]>,
     duplicates_removed: usize,
     url: UrlIndex,
 }
@@ -603,7 +746,38 @@ impl Matcher {
     /// A `block` is remembered but never returned early — a less specific
     /// `allow` at a parent label must still be able to override it.
     pub fn lookup(&self, domain: &str, qtype: &QueryType) -> MatchDecision {
-        self.lookup_domain(domain, Some(qtype_bit(qtype)))
+        self.lookup_in(domain, qtype, &ClientContext::default())
+    }
+
+    /// [`Self::lookup`] under a policy, for a named client — the entry point
+    /// p2-06 threads through the DNS pipeline. Rules from a list the policy
+    /// does not enable, and `$client` rules scoped to somebody else, do not
+    /// participate in the decision at all: they are filtered *during* the walk,
+    /// not after it, so an excluded list's exception cannot suppress a block
+    /// the policy should still see.
+    pub fn lookup_in(
+        &self,
+        domain: &str,
+        qtype: &QueryType,
+        ctx: &ClientContext<'_>,
+    ) -> MatchDecision {
+        self.lookup_domain(domain, Some(qtype_bit(qtype)), ctx)
+    }
+
+    /// Whether `idx` participates in a decision made for `ctx`.
+    #[inline]
+    fn visible(&self, idx: u32, ctx: &ClientContext<'_>) -> bool {
+        if !self.policy_mask.is_empty() && self.policy_mask[idx as usize] & ctx.policy_bit() == 0 {
+            return false;
+        }
+        true
+    }
+
+    /// The `$client` half, split out because it is reached only by the handful
+    /// of records that carry a scope.
+    #[inline]
+    fn client_admits(&self, idx: u32, ctx: &ClientContext<'_>) -> bool {
+        self.clients[&idx].admits(ctx.ip, ctx.name)
     }
 
     /// The domain walk shared by both entry points. `qbit` is the query type's
@@ -611,7 +785,12 @@ impl Matcher {
     /// record type, so a `$dnstype`-restricted rule simply does not apply to
     /// it. Answering otherwise would let `$dnstype=A` decide a request that
     /// never asked a DNS question.
-    fn lookup_domain(&self, domain: &str, qbit: Option<u32>) -> MatchDecision {
+    fn lookup_domain(
+        &self,
+        domain: &str,
+        qbit: Option<u32>,
+        ctx: &ClientContext<'_>,
+    ) -> MatchDecision {
         let query = domain.strip_suffix('.').unwrap_or(domain).as_bytes();
         let mut blocked: Option<u32> = None;
 
@@ -636,7 +815,9 @@ impl Matcher {
                     let dns_only = rec.has_rewrite() && qbit.is_none();
                     let applies = (!is_subdomain_level || rec.include_subdomains())
                         && type_applies
-                        && !dns_only;
+                        && !dns_only
+                        && self.visible(idx, ctx)
+                        && (!rec.has_client() || self.client_admits(idx, ctx));
                     if applies {
                         if rec.is_allow() {
                             return MatchDecision::Allow(RuleRef(idx));
@@ -678,12 +859,23 @@ impl Matcher {
     /// `@@||cdn.example.com^` exception overrides a URL-tier block just as it
     /// overrides a domain-tier one.
     pub fn lookup_http(&self, request: &HttpRequest<'_>) -> MatchDecision {
-        let mut blocked = match self.url.lookup(request) {
+        self.lookup_http_in(request, &ClientContext::default())
+    }
+
+    /// [`Self::lookup_http`] under a policy, for a named client. The HTTP half
+    /// of [`Self::lookup_in`], and the entry point p2-06 threads through the
+    /// proxy.
+    pub fn lookup_http_in(
+        &self,
+        request: &HttpRequest<'_>,
+        ctx: &ClientContext<'_>,
+    ) -> MatchDecision {
+        let mut blocked = match self.url.lookup(request, ctx) {
             UrlDecision::Allow(index) => return MatchDecision::Allow(RuleRef(index | URL_TIER)),
             UrlDecision::Block(index) => Some(RuleRef(index | URL_TIER)),
             UrlDecision::Pass => None,
         };
-        match self.lookup_domain(request.host, None) {
+        match self.lookup_domain(request.host, None, ctx) {
             MatchDecision::Allow(rule) => return MatchDecision::Allow(rule),
             MatchDecision::Block(rule) => blocked = blocked.or(Some(rule)),
             MatchDecision::Pass => {}
@@ -796,6 +988,12 @@ impl Matcher {
             text.push(sep);
             text.push_str("dnsrewrite=");
             text.push_str(raw);
+            sep = ',';
+        }
+        if let Some(scope) = self.clients.get(&index) {
+            text.push(sep);
+            text.push_str("client=");
+            text.push_str(&scope.raw);
         }
         DecisiveRule::new(self.lists[rec.list_id as usize].clone(), text)
     }
@@ -840,12 +1038,19 @@ impl Matcher {
             .values()
             .map(|raw| 4 + arc_overhead + raw.len() + 8)
             .sum();
+        let clients: usize = self
+            .clients
+            .values()
+            .map(|scope| 4 + arc_overhead + scope.heap_bytes() + 8)
+            .sum();
         self.arena.len()
             + self.records.len() * std::mem::size_of::<Record>()
             + self.slots.len() * std::mem::size_of::<u32>()
+            + self.policy_mask.len() * std::mem::size_of::<u16>()
             + lists
             + dnstype
             + rewrite
+            + clients
             + self.url.heap_bytes()
     }
 }
@@ -863,6 +1068,7 @@ mod tests {
             include_subdomains: true,
             dns_types: None,
             dns_rewrite: None,
+            client: None,
         }
     }
 

@@ -50,13 +50,13 @@ Every rule is classified:
   - `||domain^` block rules and `@@||domain^` exceptions
   - hosts entries and plain domain lines
   - AdGuard DNS extensions: `$dnstype`, `$dnsrewrite`
-  - `$client` — parsed and stored, **inactive** until Phase 2 (Policies)
+  - `$client` — active since Phase 2 (`p2-05`); see §Policies
 - **request-applicable** — acts on a URL; active since Phase 2 (`p2-03`):
   URL-path patterns, wildcards, address anchors, and the HTTP `$options`
   (`$script`, `$third-party`, `$domain=`, …). See §HTTP matching.
-- **inactive** — cosmetic (`##`, Phase 4), `$client` (Policies), and patterns
-  no supported syntax expresses. Parsed and counted, but no tier answers them.
-  Counts are visible per list in the API.
+- **inactive** — cosmetic (`##`, Phase 4), and patterns or options no supported
+  syntax expresses. Parsed and counted, but no tier answers them. Counts are
+  visible per list in the API.
 
 A rule belongs to exactly one of the three. The split is decided by what the
 rule *addresses*, not by its syntax family: `||ads.example.com^` is a domain
@@ -79,6 +79,11 @@ For a query the engine returns exactly one verdict:
 
 **Precedence: allow > block.** Within a class, first match wins; rule order
 inside a list and list order are otherwise not significant.
+
+A rule the asking client's Policy cannot see, or that a `$client` option scopes
+to somebody else, takes no part in this at all — it is filtered *during* the
+walk, not after. The difference matters for exceptions: an `@@` rule in a list
+the policy does not enable must not suppress a block the policy still carries.
 
 Matching is on the query domain and its parent labels
 (`a.b.example.com` matches a rule for `example.com` when the rule's syntax
@@ -165,6 +170,58 @@ whose token the URL actually contains, never the whole corpus. Lookup is
 allocation-free, like the DNS one. Measured against EasyList + EasyPrivacy
 (18,778 URL rules) on a dev box: **2.93 µs** for a request nothing matches,
 against the < 1 ms budget.
+
+## Policies
+
+A **Policy** (CONTEXT.md) is a named subset of the rule lists plus setting
+overrides, assigned to clients and optionally to schedules. It changes *which
+rules participate* in a lookup, never how they match.
+
+```text
+lookup_dns  (domain, qtype, client context)
+lookup_http (request,       client context)
+```
+
+The client context carries the resolved policy and the client's identity
+(address, optional name). Both entry points have a context-free form that means
+"the default policy, no identifiable client" — which is what every caller did
+before Policies existed and what `rules/test` still does.
+
+### One ruleset, one mask per rule
+
+All policies share **one** compiled ruleset. Each rule carries a 16-bit mask of
+the policies that can see it, and a lookup tests one bit.
+
+The alternative — a compiled matcher per policy — costs the whole corpus again
+per policy. Measured on two policies over four overlapping lists: 12.099 MiB
+against 6.839 MiB for their union. At deployed scale that is roughly +17 MiB
+per policy against ~24 MiB of headroom, so the *second* policy would overrun
+PERFORMANCE.md's budget on its own. The mask array is ~2 MiB at 1.06 M rules
+and **flat** in the number of policies.
+
+The mask is per *rule* rather than per *list* because deduplication collapses a
+rule appearing in several lists into one record attributed to the first. Keying
+visibility off that attribution would hide the rule from every policy that
+enabled only one of the other lists, so the builder unions the masks of every
+list a duplicate arrives from.
+
+Nothing is allocated when no policy narrows anything. The default
+single-policy deployment therefore carries no masks and pays no runtime cost.
+
+### `$client` — an inline per-client policy
+
+`||ads.example.com^$client=192.168.1.50|~laptop` scopes a rule to particular
+clients: addresses, CIDR blocks and client names, `~` negating a term. Positive
+terms must match and negated ones must not. A payload that compiles to no
+selector at all makes the rule **inactive** rather than unrestricted — dropping
+a restriction is how a one-device rule becomes a network-wide one.
+
+`$client` says *who*, not *what*, so it is orthogonal to the tier: a
+domain-shaped rule stays in the domain tier and a URL-shaped one in the URL
+tier. Payloads live in a side map keyed by record index, like `$dnstype` — the
+public lists carry essentially none of these, so the cost belongs on the rules
+that use it rather than on every record. Two rules differing only in `$client`
+are two rules, and the reported decisive rule echoes the scope back.
 
 ## Compiled matcher
 

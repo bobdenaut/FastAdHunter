@@ -28,6 +28,9 @@ pub struct DomainRule {
     pub dns_types: Option<Arc<str>>,
     /// Raw `$dnsrewrite` value, parsed and stored, not yet interpreted.
     pub dns_rewrite: Option<Arc<str>>,
+    /// Raw `$client` value (`"192.168.1.5|~laptop"`), active since p2-05 — an
+    /// inline per-client policy (RULE_ENGINE.md §Policies).
+    pub client: Option<Arc<str>>,
 }
 
 /// Where a URL pattern is anchored (RULE_ENGINE.md §HTTP matching).
@@ -80,6 +83,10 @@ pub struct UrlRule {
     pub domains: Option<Arc<str>>,
     /// Raw `$method=` value.
     pub methods: Option<Arc<str>>,
+    /// Raw `$client` value — see [`DomainRule::client`]. A URL rule can carry
+    /// one too: `$client` scopes *who* a rule applies to, which is orthogonal
+    /// to which tier answers it.
+    pub client: Option<Arc<str>>,
 }
 
 /// Why a parsed rule is not active in any tier (RULE_ENGINE.md: Supported
@@ -89,8 +96,8 @@ pub struct UrlRule {
 /// inactive rules as "stored inactive, counted, activated by later phases";
 /// the storage half was never built, so a phase that activates one of these
 /// has to reintroduce retention for it (and pay the memory), not merely flip a
-/// flag. p2-03 did exactly that for URL patterns and HTTP options, which is why
-/// those two are no longer listed here — they compile into [`UrlRule`] now.
+/// flag. p2-03 did exactly that for URL patterns and HTTP options, and p2-05
+/// for `$client` — which is why none of the three is listed here any more.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum InactiveReason {
     /// Cosmetic rule (`##`, `#@#`, …) — activates in the HTML phase (Phase 4).
@@ -98,13 +105,14 @@ pub enum InactiveReason {
     /// alone, and retaining their text would cost the allocation-per-rule that
     /// [`ParsedRule`] exists to avoid, for a phase that cannot use them yet.
     Cosmetic,
-    /// Carries `$client` — otherwise active, but scoped to a client the engine
-    /// cannot apply until Policies (p2-05).
-    ClientScoped,
-    /// URL-shaped, but in a form the URL tier cannot express: a `/regex/`
-    /// literal (PERFORMANCE.md forbids regex on the hot path) or a pattern
-    /// that survives none of p2-03's supported syntax.
-    UnsupportedUrlPattern,
+    /// Carries something no tier can honour: a `/regex/` literal
+    /// (PERFORMANCE.md forbids regex on the hot path), a pattern that survives
+    /// none of p2-03's supported syntax, or an option whose restriction cannot
+    /// be applied — `$client` with no value, an unknown `$option`.
+    ///
+    /// The rule is dropped rather than applied without its restriction, which
+    /// is how a narrow rule turns into a broad one.
+    Unsupported,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

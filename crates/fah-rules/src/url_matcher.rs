@@ -89,7 +89,8 @@ use std::sync::Arc;
 
 use fah_model::HttpRequest;
 
-use crate::matcher::{fastrange, EMPTY};
+use crate::matcher::{fastrange, ClientContext, EMPTY};
+use crate::policy::ClientScope;
 use crate::resource::bit_for_request;
 use crate::rule::{Party, RuleAction, UrlAnchor, UrlRule};
 
@@ -102,6 +103,8 @@ const ANCHOR_SHIFT: u16 = 4;
 const ANCHOR_MASK: u16 = 0b11 << ANCHOR_SHIFT;
 const PARTY_SHIFT: u16 = 6;
 const PARTY_MASK: u16 = 0b11 << PARTY_SHIFT;
+/// Carries a `$client` scope, held in a side map like `$method` (p2-05).
+const FLAG_CLIENT: u16 = 1 << 8;
 
 const ANCHOR_DOMAIN: u16 = 0;
 const ANCHOR_START: u16 = 1;
@@ -233,6 +236,9 @@ impl Record {
     fn has_methods(&self) -> bool {
         self.flags & FLAG_METHODS != 0
     }
+    fn has_client(&self) -> bool {
+        self.flags & FLAG_CLIENT != 0
+    }
     fn anchor(&self) -> u16 {
         (self.flags & ANCHOR_MASK) >> ANCHOR_SHIFT
     }
@@ -254,6 +260,9 @@ fn flags_of(rule: &UrlRule) -> u16 {
     }
     if rule.methods.is_some() {
         flags |= FLAG_METHODS;
+    }
+    if rule.client.is_some() {
+        flags |= FLAG_CLIENT;
     }
     let anchor = match rule.anchor {
         UrlAnchor::Domain => ANCHOR_DOMAIN,
@@ -739,7 +748,11 @@ pub(crate) struct UrlIndexBuilder {
     domains: Vec<u8>,
     records: Vec<Record>,
     list_ids: Vec<u16>,
+    /// Which policies can see each rule — see `crate::policy` for why this is
+    /// per record and not per list.
+    policy_mask: Vec<u16>,
     methods: HashMap<u32, Arc<str>>,
+    clients: HashMap<u32, ClientScope>,
     /// Identity hash -> record indices. Build-time only, dropped at
     /// [`Self::build`]; every candidate is confirmed by real comparison, so a
     /// collision costs a comparison and never a dropped rule.
@@ -748,7 +761,7 @@ pub(crate) struct UrlIndexBuilder {
 }
 
 impl UrlIndexBuilder {
-    pub(crate) fn add(&mut self, list_id: u16, rule: &UrlRule) {
+    pub(crate) fn add(&mut self, list_id: u16, rule: &UrlRule, policy_mask: u16) {
         let pattern = rule.pattern.as_bytes();
         let Ok(pat_len) = u16::try_from(pattern.len()) else {
             return;
@@ -762,12 +775,25 @@ impl UrlIndexBuilder {
         };
         let flags = flags_of(rule);
 
+        // Same fail-closed rule as the domain tier: a `$client` payload that
+        // compiles to no selector drops the rule rather than widening it.
+        let scope = match &rule.client {
+            None => None,
+            Some(raw) => match ClientScope::parse(raw) {
+                Some(scope) => Some(scope),
+                None => return,
+            },
+        };
+
         let identity = self.identity_hash(pattern, domains, flags, rule);
         if let Some(existing) = self.dedup.get(&identity) {
-            if existing
+            if let Some(&idx) = existing
                 .iter()
-                .any(|&idx| self.identity_matches(idx, pattern, domains, flags, rule))
+                .find(|&&idx| self.identity_matches(idx, pattern, domains, flags, rule))
             {
+                // Attribution stays with the first list; visibility is the
+                // union of every list that supplied the rule.
+                self.policy_mask[idx as usize] |= policy_mask;
                 self.duplicates_removed += 1;
                 return;
             }
@@ -781,6 +807,9 @@ impl UrlIndexBuilder {
         if let Some(raw) = &rule.methods {
             self.methods.insert(index, raw.clone());
         }
+        if let Some(scope) = scope {
+            self.clients.insert(index, scope);
+        }
         self.records.push(Record {
             pat_off,
             dom_off,
@@ -790,6 +819,7 @@ impl UrlIndexBuilder {
             flags,
         });
         self.list_ids.push(list_id);
+        self.policy_mask.push(policy_mask);
         self.dedup.entry(identity).or_default().push(index);
     }
 
@@ -822,6 +852,8 @@ impl UrlIndexBuilder {
             && self.pattern_of(record) == pattern
             && self.domains_of(record) == domains
             && self.methods.get(&index).map(|raw| &**raw) == rule.methods.as_deref()
+            // Two rules that differ only in who they apply to are two rules.
+            && self.clients.get(&index).map(|scope| &*scope.raw) == rule.client.as_deref()
     }
 
     fn pattern_of(&self, record: &Record) -> &[u8] {
@@ -834,7 +866,9 @@ impl UrlIndexBuilder {
         &self.domains[start..start + record.dom_len as usize]
     }
 
-    pub(crate) fn build(self) -> UrlIndex {
+    /// `full` is the union of every list's policy mask — see the domain
+    /// tier's `build` for why the mask array is compared against it.
+    pub(crate) fn build(self, full: u16) -> UrlIndex {
         // Pass 1 — how common is each key across the whole compile?
         let mut frequency: HashMap<u64, u32> = HashMap::new();
         for record in &self.records {
@@ -1002,12 +1036,22 @@ impl UrlIndexBuilder {
             slots[slot] = bucket as u32;
         }
 
+        // Empty unless some rule is invisible to some policy — see the domain
+        // tier's `build` for why that is the flag and not a separate one.
+        let policy_mask = if self.policy_mask.iter().all(|&mask| mask == full) {
+            Box::default()
+        } else {
+            self.policy_mask.into_boxed_slice()
+        };
+
         UrlIndex {
             patterns: self.patterns.into_boxed_slice(),
             domains: self.domains.into_boxed_slice(),
             records: self.records.into_boxed_slice(),
             list_ids: self.list_ids.into_boxed_slice(),
+            policy_mask,
             methods: self.methods,
+            clients: self.clients,
             slots: slots.into_boxed_slice(),
             slot_cap,
             bucket_hash: bucket_hash.into_boxed_slice(),
@@ -1043,11 +1087,15 @@ struct Probe<'a> {
     host_end: usize,
     type_bit: u16,
     third_party: bool,
+    /// Who is asking and under which policy, carried here so [`UrlIndex::check`]
+    /// — the one place every lookup path funnels through, the scanning oracle
+    /// included — can filter without each caller remembering to.
+    ctx: ClientContext<'a>,
     budget: Budget,
 }
 
 impl<'a> Probe<'a> {
-    fn new(request: &'a HttpRequest<'a>) -> Self {
+    fn new(request: &'a HttpRequest<'a>, ctx: &ClientContext<'a>) -> Self {
         let url = request.url.as_bytes();
         let (host_start, host_end) = host_span(url);
         Self {
@@ -1057,6 +1105,7 @@ impl<'a> Probe<'a> {
             host_end,
             type_bit: bit_for_request(request.resource_type),
             third_party: is_third_party(request),
+            ctx: *ctx,
             budget: Budget::new(),
         }
     }
@@ -1069,7 +1118,11 @@ pub(crate) struct UrlIndex {
     domains: Box<[u8]>,
     records: Box<[Record]>,
     list_ids: Box<[u16]>,
+    /// Which policies can see each rule. **Empty when every rule is visible to
+    /// every policy** — the zero-config case, and the flag that skips the test.
+    policy_mask: Box<[u16]>,
     methods: HashMap<u32, Arc<str>>,
+    clients: HashMap<u32, ClientScope>,
     slots: Box<[u32]>,
     slot_cap: usize,
     bucket_hash: Box<[u64]>,
@@ -1143,8 +1196,8 @@ impl UrlIndex {
     ///
     /// Precedence matches the domain tier: an allow wins outright and returns
     /// immediately; a block is remembered in case an allow turns up later.
-    pub(crate) fn lookup(&self, request: &HttpRequest<'_>) -> UrlDecision {
-        let mut probe = Probe::new(request);
+    pub(crate) fn lookup(&self, request: &HttpRequest<'_>, ctx: &ClientContext<'_>) -> UrlDecision {
+        let mut probe = Probe::new(request, ctx);
         let mut blocked: Option<u32> = None;
         let mut found: Option<u32> = None;
 
@@ -1265,8 +1318,8 @@ impl UrlIndex {
     /// tested against. Test-only: this is the O(rules) cost the index exists to
     /// avoid.
     #[cfg(test)]
-    fn lookup_scanning(&self, request: &HttpRequest<'_>) -> UrlDecision {
-        let mut probe = Probe::new(request);
+    fn lookup_scanning(&self, request: &HttpRequest<'_>, ctx: &ClientContext<'_>) -> UrlDecision {
+        let mut probe = Probe::new(request, ctx);
         let mut blocked = None;
         for index in 0..self.records.len() as u32 {
             match self.check(index, &mut probe) {
@@ -1314,6 +1367,18 @@ impl UrlIndex {
     /// runs before it.
     fn check(&self, index: u32, probe: &mut Probe<'_>) -> Option<bool> {
         let record = &self.records[index as usize];
+
+        // Cheapest of all, and it must come first: a rule the policy cannot see
+        // has to be absent from the decision entirely, not merely lose it — an
+        // excluded list's exception must not suppress a block the policy keeps.
+        if !self.policy_mask.is_empty()
+            && self.policy_mask[index as usize] & probe.ctx.policy.bit() == 0
+        {
+            return None;
+        }
+        if record.has_client() && !self.clients[&index].admits(probe.ctx.ip, probe.ctx.name) {
+            return None;
+        }
 
         if record.types != 0 && record.types & probe.type_bit == 0 {
             // A type the proxy could not determine carries no bit, so every
@@ -1467,10 +1532,17 @@ impl UrlIndex {
             .values()
             .map(|raw| 4 + arc_overhead + raw.len() + 8)
             .sum();
+        let clients: usize = self
+            .clients
+            .values()
+            .map(|scope| 4 + arc_overhead + scope.heap_bytes() + 8)
+            .sum();
         self.patterns.len()
             + self.domains.len()
             + self.records.len() * std::mem::size_of::<Record>()
             + self.list_ids.len() * std::mem::size_of::<u16>()
+            + self.policy_mask.len() * std::mem::size_of::<u16>()
+            + clients
             + self.slots.len() * std::mem::size_of::<u32>()
             + self.bucket_hash.len() * std::mem::size_of::<u64>()
             + self.bucket_start.len() * std::mem::size_of::<u32>()
@@ -1540,6 +1612,7 @@ fn append_types(text: &mut String, types: u16, option: &mut impl FnMut(&mut Stri
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::policy::ALL_POLICIES;
     use fah_model::ResourceType;
 
     fn rule(pattern: &str) -> UrlRule {
@@ -1553,6 +1626,7 @@ mod tests {
             resource_types: 0,
             domains: None,
             methods: None,
+            client: None,
         }
     }
 
@@ -1569,13 +1643,16 @@ mod tests {
     fn index_of(rules: Vec<UrlRule>) -> UrlIndex {
         let mut builder = UrlIndexBuilder::default();
         for rule in &rules {
-            builder.add(0, rule);
+            builder.add(0, rule, ALL_POLICIES);
         }
-        builder.build()
+        builder.build(ALL_POLICIES)
     }
 
     fn blocks(index: &UrlIndex, request: &HttpRequest<'_>) -> bool {
-        matches!(index.lookup(request), UrlDecision::Block(_))
+        matches!(
+            index.lookup(request, &ClientContext::default()),
+            UrlDecision::Block(_)
+        )
     }
 
     // ─── The matcher itself ───────────────────────────────────────────────
@@ -1739,7 +1816,10 @@ mod tests {
             }
             let index = index_of(rules);
             assert!(matches!(
-                index.lookup(&request("http://e.com/ads/banner.gif", "e.com")),
+                index.lookup(
+                    &request("http://e.com/ads/banner.gif", "e.com"),
+                    &ClientContext::default()
+                ),
                 UrlDecision::Allow(_)
             ));
         }
@@ -1749,7 +1829,10 @@ mod tests {
     fn nothing_matching_is_a_pass() {
         let index = index_of(vec![rule("/ads/banner")]);
         assert!(matches!(
-            index.lookup(&request("http://e.com/index.html", "e.com")),
+            index.lookup(
+                &request("http://e.com/index.html", "e.com"),
+                &ClientContext::default()
+            ),
             UrlDecision::Pass
         ));
     }
@@ -1866,7 +1949,10 @@ mod tests {
         let mut req = request("http://cdn.example.com/assets/a.js", "cdn.example.com");
         req.resource_type = ResourceType::Unknown;
         assert!(
-            matches!(index.lookup(&req), UrlDecision::Allow(_)),
+            matches!(
+                index.lookup(&req, &ClientContext::default()),
+                UrlDecision::Allow(_)
+            ),
             "the exception must survive an undetermined type"
         );
 
@@ -1959,8 +2045,8 @@ mod tests {
         ];
         for url in urls {
             let req = request(url, "example.com");
-            let indexed = index.lookup(&req);
-            let scanned = index.lookup_scanning(&req);
+            let indexed = index.lookup(&req, &ClientContext::default());
+            let scanned = index.lookup_scanning(&req, &ClientContext::default());
             assert_eq!(
                 matches!(indexed, UrlDecision::Block(_)),
                 matches!(scanned, UrlDecision::Block(_)),
@@ -2059,7 +2145,10 @@ mod tests {
         let req = request(&url, "h.example.com");
 
         let start = std::time::Instant::now();
-        assert!(matches!(index.lookup(&req), UrlDecision::Pass));
+        assert!(matches!(
+            index.lookup(&req, &ClientContext::default()),
+            UrlDecision::Pass
+        ));
         let elapsed = start.elapsed();
 
         assert_eq!(
@@ -2158,8 +2247,8 @@ mod tests {
                     UrlDecision::Pass => 0,
                 };
                 assert_eq!(
-                    outcome(index.lookup(&req)),
-                    outcome(index.lookup_scanning(&req)),
+                    outcome(index.lookup(&req, &ClientContext::default())),
+                    outcome(index.lookup_scanning(&req, &ClientContext::default())),
                     "round {round}: index and full scan disagree on {url}\npatterns: {:?}",
                     rules.iter().map(|r| &*r.pattern).collect::<Vec<_>>()
                 );
@@ -2186,7 +2275,7 @@ mod tests {
         let req = request(&url, "h.example.com");
 
         let start = std::time::Instant::now();
-        let decision = index.lookup(&req);
+        let decision = index.lookup(&req, &ClientContext::default());
         let elapsed = start.elapsed();
 
         assert!(matches!(decision, UrlDecision::Pass));
@@ -2241,15 +2330,17 @@ mod tests {
     #[test]
     fn an_identical_rule_from_two_lists_is_compiled_once() {
         let mut builder = UrlIndexBuilder::default();
-        builder.add(0, &rule("/ads/banner"));
-        builder.add(1, &rule("/ads/banner"));
-        builder.add(1, &rule("/ads/other"));
-        let index = builder.build();
+        builder.add(0, &rule("/ads/banner"), ALL_POLICIES);
+        builder.add(1, &rule("/ads/banner"), ALL_POLICIES);
+        builder.add(1, &rule("/ads/other"), ALL_POLICIES);
+        let index = builder.build(ALL_POLICIES);
         assert_eq!(index.len(), 2);
         assert_eq!(index.duplicates_removed(), 1);
         // Attribution stays with the first list to supply it.
-        let UrlDecision::Block(idx) = index.lookup(&request("http://e.com/ads/banner", "e.com"))
-        else {
+        let UrlDecision::Block(idx) = index.lookup(
+            &request("http://e.com/ads/banner", "e.com"),
+            &ClientContext::default(),
+        ) else {
             panic!("expected a block");
         };
         assert_eq!(index.list_id(idx), 0);
@@ -2258,13 +2349,14 @@ mod tests {
     #[test]
     fn rules_differing_only_in_an_option_are_distinct() {
         let mut builder = UrlIndexBuilder::default();
-        builder.add(0, &rule("/ads/banner"));
+        builder.add(0, &rule("/ads/banner"), ALL_POLICIES);
         builder.add(
             0,
             &UrlRule {
                 party: Party::Third,
                 ..rule("/ads/banner")
             },
+            ALL_POLICIES,
         );
         builder.add(
             0,
@@ -2272,8 +2364,9 @@ mod tests {
                 domains: Some(Arc::from("news.org")),
                 ..rule("/ads/banner")
             },
+            ALL_POLICIES,
         );
-        let index = builder.build();
+        let index = builder.build(ALL_POLICIES);
         assert_eq!(index.len(), 3);
         assert_eq!(index.duplicates_removed(), 0);
     }
@@ -2283,7 +2376,10 @@ mod tests {
         let index = index_of(vec![]);
         assert_eq!(index.len(), 0);
         assert!(matches!(
-            index.lookup(&request("http://e.com/ads/banner", "e.com")),
+            index.lookup(
+                &request("http://e.com/ads/banner", "e.com"),
+                &ClientContext::default()
+            ),
             UrlDecision::Pass
         ));
     }

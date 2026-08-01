@@ -39,8 +39,11 @@ fn easylist_fixture_parses_expected_counts() {
 fn adguard_dns_fixture_parses_expected_counts() {
     let result = parse_rule_list(include_str!("fixtures/adguard_dns.txt"));
     assert_eq!(result.format, RuleFormat::Adblock);
-    assert_eq!(result.active_count(), 4);
-    assert_eq!(result.inactive_count(), 2);
+    // All six are active since p2-05. The two that carry `$client` used to be
+    // the inactive pair: nothing could identify a client, so applying them
+    // would have applied them to every client.
+    assert_eq!(result.active_count(), 6);
+    assert_eq!(result.inactive_count(), 0);
     assert_eq!(result.parse_errors, 0);
 }
 

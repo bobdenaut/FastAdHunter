@@ -3,6 +3,7 @@
 mod env;
 mod error;
 mod schema;
+mod tz;
 
 use std::fs;
 use std::net::IpAddr;
@@ -10,11 +11,13 @@ use std::path::Path;
 
 pub use error::ConfigError;
 pub use schema::{
-    ApiConfig, BlockingMode, Config, DnsBlockingConfig, DnsCacheConfig, DnsConfig, DnsListenConfig,
-    DnsUpstreamsConfig, EngineConfig, EngineMode, HistoryConfig, HttpConfig, HttpListenConfig,
-    LogConfig, LogFormat, LogLevel, QueryLogConfig, RuleListConfig, RulesConfig, StatsConfig,
-    UpstreamProtocol, UpstreamServerConfig, UpstreamStrategy,
+    parse_days, parse_time_of_day, ApiConfig, AssignmentConfig, BlockingMode, Config,
+    DnsBlockingConfig, DnsCacheConfig, DnsConfig, DnsListenConfig, DnsUpstreamsConfig,
+    EngineConfig, EngineMode, HistoryConfig, HttpConfig, HttpListenConfig, LogConfig, LogFormat,
+    LogLevel, PolicyConfig, QueryLogConfig, RuleListConfig, RulesConfig, ScheduleConfig,
+    StatsConfig, UpstreamProtocol, UpstreamServerConfig, UpstreamStrategy,
 };
+pub use tz::{LocalTime, PosixTz, TzError};
 
 impl Config {
     /// Loads config with the documented precedence: defaults < file < `FAH__` env vars
@@ -208,6 +211,160 @@ fn validate(config: &Config) -> Result<(), ConfigError> {
     // only surfaced on the next real boot is the p1.5-07 defect all over again.
     for entry in &config.egress.allow_destinations {
         validate_allowed_destination(entry)?;
+    }
+
+    validate_policies(config)?;
+
+    Ok(())
+}
+
+/// The ceiling on distinct policies, the default one included. Mirrors
+/// `fah_model::PolicyId::MAX`, which this crate cannot name (sibling L1) — the
+/// compiled ruleset packs policy membership into a `u16` per rule, and
+/// `fah-rules` asserts the two constants agree.
+const MAX_POLICIES: usize = 16;
+
+/// `[schedule]` and `[[policies]]`. Everything here is checked while the
+/// operator is editing rather than on the evening a schedule first matters:
+/// a policy naming a list that does not exist, or a window whose times do not
+/// parse, silently does nothing at runtime.
+fn validate_policies(config: &Config) -> Result<(), ConfigError> {
+    if let Err(source) = tz::PosixTz::parse(&config.schedule.timezone) {
+        return Err(ConfigError::Validation {
+            key: "schedule.timezone",
+            message: format!("{source} (got {:?})", config.schedule.timezone),
+        });
+    }
+
+    // The default policy always exists and always occupies one slot.
+    if config.policies.len() + 1 > MAX_POLICIES {
+        return Err(ConfigError::Validation {
+            key: "policies",
+            message: format!(
+                "at most {} policies may be defined ({MAX_POLICIES} including the implicit \
+                 default); got {}",
+                MAX_POLICIES - 1,
+                config.policies.len()
+            ),
+        });
+    }
+
+    let mut seen: Vec<&str> = Vec::with_capacity(config.policies.len());
+    for policy in &config.policies {
+        if policy.id.trim().is_empty() {
+            return Err(ConfigError::Validation {
+                key: "policies.id",
+                message: "a policy id must not be empty".to_string(),
+            });
+        }
+        // "default" is the implicit policy every unassigned client gets;
+        // letting one be defined would leave two things answering to the name.
+        if policy.id == "default" {
+            return Err(ConfigError::Validation {
+                key: "policies.id",
+                message: "\"default\" is the implicit policy and cannot be redefined".to_string(),
+            });
+        }
+        if seen.contains(&policy.id.as_str()) {
+            return Err(ConfigError::Validation {
+                key: "policies.id",
+                message: format!("duplicate policy id {:?}", policy.id),
+            });
+        }
+        seen.push(&policy.id);
+
+        for list in policy.lists.iter().flatten() {
+            if !config.rules.lists.iter().any(|entry| &entry.id == list) {
+                return Err(ConfigError::Validation {
+                    key: "policies.lists",
+                    message: format!(
+                        "policy {:?} references rule list {list:?}, which is not in [[rules.lists]]",
+                        policy.id
+                    ),
+                });
+            }
+        }
+
+        if let Some(mode) = &policy.blocking_mode {
+            if mode.parse::<BlockingMode>().is_err() {
+                return Err(ConfigError::Validation {
+                    key: "policies.blocking_mode",
+                    message: format!(
+                        "policy {:?} sets blocking_mode {mode:?}; supported: null_ip",
+                        policy.id
+                    ),
+                });
+            }
+        }
+
+        for assignment in &policy.assignments {
+            validate_assignment(&policy.id, assignment)?;
+        }
+    }
+
+    Ok(())
+}
+
+fn validate_assignment(policy: &str, assignment: &AssignmentConfig) -> Result<(), ConfigError> {
+    let invalid = |key: &'static str, message: String| ConfigError::Validation { key, message };
+
+    if assignment.client.trim().is_empty() {
+        return Err(invalid(
+            "policies.assignments.client",
+            format!("policy {policy:?} has an assignment with an empty client"),
+        ));
+    }
+    // An address or prefix is recognized by parsing, anything else is a client
+    // name — but a *malformed* address must not silently become a name nobody
+    // will ever be called, so a `/` commits it to being a prefix.
+    if let Some((address, prefix)) = assignment.client.split_once('/') {
+        let Ok(address) = address.parse::<IpAddr>() else {
+            return Err(invalid(
+                "policies.assignments.client",
+                format!("{:?} is not a CIDR block", assignment.client),
+            ));
+        };
+        let max = if address.is_ipv4() { 32 } else { 128 };
+        if !matches!(prefix.parse::<u8>(), Ok(len) if len <= max) {
+            return Err(invalid(
+                "policies.assignments.client",
+                format!(
+                    "{:?} has an invalid prefix length (max /{max})",
+                    assignment.client
+                ),
+            ));
+        }
+    }
+
+    if let Some(days) = &assignment.days {
+        parse_days(days).map_err(|message| {
+            invalid(
+                "policies.assignments.days",
+                format!("policy {policy:?}: {message}"),
+            )
+        })?;
+    }
+
+    match (&assignment.start, &assignment.end) {
+        (None, None) => {}
+        (Some(start), Some(end)) => {
+            for (key, value) in [
+                ("policies.assignments.start", start),
+                ("policies.assignments.end", end),
+            ] {
+                parse_time_of_day(value)
+                    .map_err(|message| invalid(key, format!("policy {policy:?}: {message}")))?;
+            }
+        }
+        _ => {
+            return Err(invalid(
+                "policies.assignments.start",
+                format!(
+                    "policy {policy:?}: a schedule needs both start and end (a half-open window \
+                     would silently never close)"
+                ),
+            ));
+        }
     }
 
     Ok(())

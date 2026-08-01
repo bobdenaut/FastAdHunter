@@ -52,6 +52,7 @@ fn block(domain: String) -> DomainRule {
         include_subdomains: true,
         dns_types: None,
         dns_rewrite: None,
+        client: None,
     }
 }
 

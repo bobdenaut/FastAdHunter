@@ -58,6 +58,7 @@ fn build_1m() -> fah_rules::Matcher {
                 include_subdomains: true,
                 dns_types: None,
                 dns_rewrite: None,
+                client: None,
             },
         );
     }
@@ -139,6 +140,7 @@ fn report_dedup_savings(_c: &mut Criterion) {
             include_subdomains: true,
             dns_types: None,
             dns_rewrite: None,
+            client: None,
         }
     }
 

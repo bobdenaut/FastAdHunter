@@ -13,8 +13,10 @@
 //!   qualifiers, wildcards, non-anchored substrings, and the HTTP `$options`.
 //!   Its pattern text is **retained**, because unlike a domain rule there is
 //!   nothing to reconstruct it from.
-//! - **inactive** — cosmetic (Phase 4), `$client` (p2-05), and patterns no
-//!   supported syntax can express.
+//! - **inactive** — cosmetic (Phase 4), and patterns or options no supported
+//!   syntax can express. `$client` left this list in p2-05: it scopes a rule to
+//!   a client, which is orthogonal to which tier answers it, so it is now
+//!   retained on whichever rule carries it.
 //!
 //! The domain tier is tried first and is deliberately narrow: only a rule that
 //! is *purely* about a name stays there. `||paypal.com^*/pixel.gif` addresses a
@@ -59,12 +61,14 @@ pub(crate) fn parse(text: &str) -> ParsedRuleList {
             }
         };
 
-        // `$client` scopes a rule to a client the engine cannot identify until
-        // Policies (p2-05). That is true whichever tier the pattern would
-        // otherwise land in, so it is decided before either — activating such a
-        // rule in the URL tier would apply it to *every* client.
-        if options.client {
-            rules.push(inactive(InactiveReason::ClientScoped));
+        // Checked before either tier is tried, because an option nothing can
+        // honour is not a property of the pattern's shape: `||ads.example.com^
+        // $client` is domain-shaped and still unusable. Until p2-05 every site
+        // that set `unsupported` happened to set `http_scoped` too, so the URL
+        // arm caught them all — an invariant held by accident, which `$client`
+        // (scoped to a client, not to a request) breaks.
+        if options.unsupported {
+            rules.push(inactive(InactiveReason::Unsupported));
             continue;
         }
 
@@ -165,20 +169,18 @@ fn domain_rule(pattern: &str, exception: bool, options: &Options) -> DomainVerdi
         include_subdomains,
         dns_types: options.dns_types.clone(),
         dns_rewrite: options.dns_rewrite.clone(),
+        client: options.client.clone(),
     })
 }
 
 /// Compiles what the domain tier rejected into a URL-tier rule — or classifies
 /// it inactive when no supported syntax expresses it.
 fn url_rule(pattern: &str, exception: bool, options: &Options) -> ParsedRule {
-    if options.unsupported {
-        return inactive(InactiveReason::UnsupportedUrlPattern);
-    }
     // A `/regex/` literal would need a regex engine, which PERFORMANCE.md
     // forbids on the hot path. Recognized so it is classified rather than
     // matched literally, which would silently never fire.
     if pattern.len() > 2 && pattern.starts_with('/') && pattern.ends_with('/') {
-        return inactive(InactiveReason::UnsupportedUrlPattern);
+        return inactive(InactiveReason::Unsupported);
     }
 
     let (anchor, body) = if let Some(rest) = pattern.strip_prefix("||") {
@@ -197,7 +199,7 @@ fn url_rule(pattern: &str, exception: bool, options: &Options) -> ParsedRule {
     // the whole web on the strength of one option. Refused rather than
     // compiled.
     if body.is_empty() {
-        return inactive(InactiveReason::UnsupportedUrlPattern);
+        return inactive(InactiveReason::Unsupported);
     }
 
     // The compiled record addresses both arenas with 16-bit lengths, so a
@@ -211,7 +213,7 @@ fn url_rule(pattern: &str, exception: bool, options: &Options) -> ParsedRule {
             .as_deref()
             .is_some_and(|domains| domains.len() > u16::MAX as usize);
     if too_long {
-        return inactive(InactiveReason::UnsupportedUrlPattern);
+        return inactive(InactiveReason::Unsupported);
     }
 
     // Matching is case-insensitive unless `$match-case`, so the stored pattern
@@ -234,6 +236,7 @@ fn url_rule(pattern: &str, exception: bool, options: &Options) -> ParsedRule {
             resource_types: options.resource_types,
             domains: options.domains.clone(),
             methods: options.methods.clone(),
+            client: options.client.clone(),
         }),
     }
 }
@@ -249,7 +252,10 @@ fn action(exception: bool) -> RuleAction {
 struct Options {
     dns_types: Option<Arc<str>>,
     dns_rewrite: Option<Arc<str>>,
-    client: bool,
+    /// Raw `$client` payload. Active since p2-05 in **both** tiers: it scopes
+    /// who a rule applies to, which says nothing about whether a domain or a
+    /// URL answers it.
+    client: Option<Arc<str>>,
     party: Party,
     resource_types: u16,
     domains: Option<Arc<str>>,
@@ -272,7 +278,7 @@ fn parse_options(raw: &str) -> Result<Options, ()> {
     let mut options = Options {
         dns_types: None,
         dns_rewrite: None,
-        client: false,
+        client: None,
         party: Party::Any,
         resource_types: 0,
         domains: None,
@@ -317,7 +323,14 @@ fn parse_options(raw: &str) -> Result<Options, ()> {
         match name {
             "dnstype" => options.dns_types = value.map(Arc::from),
             "dnsrewrite" => options.dns_rewrite = value.map(Arc::from),
-            "client" => options.client = true,
+            // A bare `$client` with no value restricts the rule to nothing an
+            // engine can name, so it is unsupported rather than ignored —
+            // dropping the restriction would widen a one-device rule to the
+            // whole network.
+            "client" => match value {
+                Some(value) if !value.is_empty() => options.client = Some(Arc::from(value)),
+                _ => options.unsupported = true,
+            },
             "third-party" | "3p" => {
                 options.http_scoped = true;
                 options.party = if negated { Party::First } else { Party::Third };
@@ -422,23 +435,41 @@ mod tests {
         assert_eq!(result.active_count(), 2);
     }
 
+    /// p2-05: a `$client` rule is active and keeps its payload. It used to be
+    /// classified inactive, on the reasoning that activating it would apply it
+    /// to every client — true only while nothing could identify one.
     #[test]
-    fn client_option_is_inactive_and_deferred() {
+    fn client_option_is_active_and_retains_its_payload() {
         let result = parse("||kids.example.com^$client=192.168.1.5\n");
-        assert_eq!(result.active_count(), 0);
-        assert_eq!(
-            result.rules[0].kind,
-            RuleKind::Inactive(InactiveReason::ClientScoped)
-        );
+        assert_eq!(result.active_count(), 1);
+        let RuleKind::Active(rule) = &result.rules[0].kind else {
+            panic!("expected a domain rule, got {:?}", result.rules[0].kind);
+        };
+        assert_eq!(rule.client.as_deref(), Some("192.168.1.5"));
     }
 
-    /// `$client` decides the tier on its own: activating the URL half would
-    /// apply a client-scoped rule to every client.
+    /// `$client` says *who*, an HTTP option says *what*. A rule carrying both
+    /// is a URL rule scoped to a client, not an inactive one.
     #[test]
-    fn client_option_wins_over_http_options() {
+    fn client_scoping_survives_alongside_http_options() {
+        let RuleKind::Url(rule) = one("||ads.example.com^$client=192.168.1.5,third-party") else {
+            panic!("expected a URL rule");
+        };
+        assert_eq!(rule.client.as_deref(), Some("192.168.1.5"));
+        assert_eq!(rule.party, Party::Third);
+    }
+
+    /// A `$client` with nothing after it restricts to nothing nameable, and is
+    /// dropped rather than applied to the whole network.
+    #[test]
+    fn a_valueless_client_option_is_unsupported() {
         assert_eq!(
-            one("||ads.example.com^$client=192.168.1.5,third-party"),
-            RuleKind::Inactive(InactiveReason::ClientScoped)
+            one("||ads.example.com^$client"),
+            RuleKind::Inactive(InactiveReason::Unsupported)
+        );
+        assert_eq!(
+            one("||ads.example.com^$client="),
+            RuleKind::Inactive(InactiveReason::Unsupported)
         );
     }
 
@@ -540,7 +571,7 @@ mod tests {
     fn a_type_set_that_folds_to_nothing_is_refused() {
         assert_eq!(
             one("||ads.example.com^$script,~script"),
-            RuleKind::Inactive(InactiveReason::UnsupportedUrlPattern)
+            RuleKind::Inactive(InactiveReason::Unsupported)
         );
     }
 
@@ -582,7 +613,7 @@ mod tests {
     fn a_regex_literal_is_unsupported() {
         assert_eq!(
             one("/^https?:\\/\\/ads\\./"),
-            RuleKind::Inactive(InactiveReason::UnsupportedUrlPattern)
+            RuleKind::Inactive(InactiveReason::Unsupported)
         );
     }
 
@@ -592,11 +623,11 @@ mod tests {
         // restriction would apply it to ordinary navigation too.
         assert_eq!(
             one("||hltv.org^*=|$popup,domain=hltv.org"),
-            RuleKind::Inactive(InactiveReason::UnsupportedUrlPattern)
+            RuleKind::Inactive(InactiveReason::Unsupported)
         );
         assert_eq!(
             one("||ads.example.com^$removeparam=utm_source"),
-            RuleKind::Inactive(InactiveReason::UnsupportedUrlPattern)
+            RuleKind::Inactive(InactiveReason::Unsupported)
         );
     }
 
@@ -609,14 +640,14 @@ mod tests {
         let long_pattern = format!("||big.example.com/{}", "a".repeat(70_000));
         assert_eq!(
             one(&long_pattern),
-            RuleKind::Inactive(InactiveReason::UnsupportedUrlPattern)
+            RuleKind::Inactive(InactiveReason::Unsupported)
         );
 
         let entries: Vec<String> = (0..7_000).map(|i| format!("d{i}.example.com")).collect();
         let long_domains = format!("||big.example.com^$domain={}", entries.join("|"));
         assert_eq!(
             one(&long_domains),
-            RuleKind::Inactive(InactiveReason::UnsupportedUrlPattern)
+            RuleKind::Inactive(InactiveReason::Unsupported)
         );
     }
 
@@ -624,7 +655,7 @@ mod tests {
     fn an_options_only_line_matches_nothing_rather_than_everything() {
         assert_eq!(
             one("$third-party"),
-            RuleKind::Inactive(InactiveReason::UnsupportedUrlPattern)
+            RuleKind::Inactive(InactiveReason::Unsupported)
         );
     }
 

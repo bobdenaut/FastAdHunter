@@ -38,6 +38,12 @@ The whole `[http]` section is **boot** for the same reason, including
 sized once when the listener binds. Promoting a key means giving it a live
 consumer first — never relabelling it and hoping.
 
+`[schedule]` and `[[policies]]` are **boot** as well. A schedule *evaluates*
+live — a window opening at 21:00 needs no restart — but which policies exist
+decides the per-rule masks baked into the compiled ruleset, so editing the
+policy set means recompiling it. The engine sets the policies and then compiles,
+in that order, at startup.
+
 ## Reference
 
 Values below are the built-in defaults.
@@ -163,6 +169,38 @@ enabled = true
 #                             #          refresh_hours_default (omit to follow it)
 # format auto-detected: hosts | domains | easylist-family
 # a mounted file is a list too: url = "/data/lists/local.txt"
+
+# ─── Policies (Phase 2) ────────────────────────────────────────────────
+# Optional. With no [[policies]] every client is judged under the implicit
+# default policy — every enabled list, no overrides — which is exactly what
+# filtering did before Policies existed (CONTEXT.md §Policy).
+[schedule]
+timezone = "UTC"              # boot    — POSIX TZ string, not an IANA name:
+                              #           the distroless image ships no
+                              #           timezone database. Bucharest is
+                              #           "EET-2EEST,M3.5.0/3,M10.5.0/4".
+                              #           Note POSIX signs offsets WEST-positive
+                              #           — "EET-2" is UTC+2.
+
+# [[policies]]                # boot    — at most 15, plus the default
+# id = "kids"                 #           referenced by nothing else; stable
+# name = "Kids"               #           optional label, defaults to id
+# lists = ["oisd-basic"]      #           subset of [[rules.lists]] ids; omit
+#                             #           to inherit every enabled list
+# blocking_mode = "null_ip"   #           per-policy override of
+#                             #           [dns.blocking] mode — DECLARED, no
+#                             #           consumer until p2-06
+#
+#   [[policies.assignments]]  #           which clients this policy applies to
+#   client = "192.168.1.50"   #           an address, a CIDR block, or a
+#                             #           client name (CONTEXT.md §Client)
+#   days = "mon-fri"          #           mon-fri | sat,sun | daily | fri-mon
+#   start = "21:00"           #           local wall clock, in [schedule]
+#   end = "07:00"             #           timezone; end <= start wraps midnight
+#
+# days alone (no start/end) means whole days. Omit all three for an assignment
+# that is always in force. The most specific assignment wins: a name, then an
+# address, then the longest prefix.
 
 # ─── Query log ─────────────────────────────────────────────────────────
 [query_log]

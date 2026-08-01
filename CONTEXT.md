@@ -86,13 +86,43 @@ timestamp).
 ### Client
 
 A device on the network, identified by the source IP of its queries. May carry
-an optional user-assigned name. In Phase 1 clients are observed and reported
-(per-client statistics); filtering policy is global.
+an optional user-assigned name. In Phase 1 clients were observed and reported
+(per-client statistics) while filtering stayed global; since `p2-05` a client
+is also what a Policy is assigned to, and what a `$client` rule names.
 
-### Policy *(reserved — not implemented in Phase 1)*
+### Policy
 
 A named bundle of rule lists and settings assignable to clients or schedules
-(parental-control style). Planned for Phase 2+.
+(parental-control style). Landed in Phase 2 (`p2-05`).
+
+Every deployment has a **default policy** — every enabled list, no overrides —
+and a client with no Assignment is judged under it. That is what filtering was
+before Policies existed, so a configuration that defines none behaves exactly
+as it did.
+
+A policy is a *subset* of the configured rule lists, never a source of new
+ones: which lists exist stays a property of `[[rules.lists]]`. All policies
+share one compiled ruleset, each rule carrying the set of policies that can see
+it — a second policy costs a mask, not a second copy of the corpus.
+
+### Schedule
+
+A recurring weekly window — days of the week plus a start and end time — during
+which an Assignment applies. Deliberately not a date range: "school nights
+21:00–07:00" is the shape parental control needs.
+
+Times are **local wall-clock**, read in the timezone from `[schedule]
+timezone`. A window whose end is not after its start wraps midnight, and
+belongs to the day it opened: `mon-fri 21:00–07:00` covers Saturday morning
+because Friday opened it, and does not cover Monday morning.
+
+### Assignment
+
+Binds a Client to a Policy, optionally only while a Schedule is active. The
+most specific Assignment matching a client wins — a name, then an address, then
+the longest prefix. One whose schedule is not currently active does not apply,
+and the client falls to the next Assignment that covers it, reaching the
+default policy only when none does.
 
 ### Blocked Response
 

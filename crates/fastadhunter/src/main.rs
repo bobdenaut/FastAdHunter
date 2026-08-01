@@ -225,8 +225,28 @@ impl Engine {
             data_dir.to_path_buf(),
             Arc::new(adapters::UpstreamResolver::new(upstreams.clone())),
         )?);
+        // Before `boot`, which compiles: the policy set decides the per-rule
+        // masks the compiled ruleset carries, so setting it afterwards would
+        // leave the first ruleset built for the wrong policies.
+        //
+        // `Config::validate` already rejected anything malformed, so a failure
+        // here is a bug rather than operator error — logged and degraded to the
+        // single default policy (every client, every enabled list), never a
+        // silent partial policy set.
+        match fah_rules::PolicySet::from_config(&config.schedule.timezone, &config.policies) {
+            Ok(policies) => rules.set_policies(policies),
+            Err(error) => tracing::error!(
+                %error,
+                "policies failed to compile after validation — serving every client the \
+                 default policy"
+            ),
+        }
         rules.boot().await;
-        tracing::info!(rules = rules.matcher().len(), "ruleset compiled from cache");
+        tracing::info!(
+            rules = rules.matcher().len(),
+            policies = rules.policies().len(),
+            "ruleset compiled from cache"
+        );
 
         // ── Observers (L3) ──
         let stats = Arc::new(fah_stats::Stats::new(

@@ -34,6 +34,7 @@ pub use resolver::{HostResolver, Resolving};
 
 use self::source::ListSource;
 use crate::matcher::{Matcher, MatcherBuilder};
+use crate::policy::PolicySet;
 use crate::rule_list::ParsedRuleList;
 
 /// Synthetic list id for inline personal rules (RULE_ENGINE.md §Sources: User
@@ -314,6 +315,15 @@ pub struct ListManager {
     /// The hot path's only touchpoint: an atomic-swap read, never a lock
     /// (PERFORMANCE.md, ARCHITECTURE.md §Runtime Model).
     matcher: ArcSwap<Matcher>,
+    /// The compiled `[[policies]]`, swapped the same way.
+    ///
+    /// Held here rather than passed to the constructor so every existing call
+    /// site keeps its signature, and because it has the same lifetime as the
+    /// matcher: which policies exist decides how the ruleset is compiled, so
+    /// the two must be replaced together (`set_policies` then `compile`).
+    /// Defaults to [`PolicySet::single_default`], which is the pre-Policies
+    /// behaviour.
+    policies: ArcSwap<PolicySet>,
     /// Full ruleset rebuilds since start.
     ///
     /// A compile re-reads every enabled list and rebuilds the whole matcher, so
@@ -400,6 +410,7 @@ impl ListManager {
             status: Mutex::new(status),
             compile_lock: tokio::sync::Mutex::new(()),
             matcher: ArcSwap::new(Arc::new(MatcherBuilder::new().build())),
+            policies: ArcSwap::from_pointee(PolicySet::single_default()),
             compiles: std::sync::atomic::AtomicU64::new(0),
             last_compile_micros: std::sync::atomic::AtomicU64::new(0),
         })
@@ -1067,6 +1078,11 @@ impl ListManager {
             texts.push((Arc::from(USER_RULES_ID), text));
         }
 
+        // Snapshotted with the texts, before the blocking compile: the ruleset
+        // that comes out has to be the one this policy set describes, and a
+        // concurrent `set_policies` is picked up by the next compile.
+        let policies = self.policies.load_full();
+
         tokio::task::spawn_blocking(move || {
             // One pass over the raw text bounds how many rules can come out
             // of it, so the builder's dedup index is allocated once, before
@@ -1079,6 +1095,7 @@ impl ListManager {
             let mut builder = MatcherBuilder::with_capacity(upper_bound);
             let mut stats = HashMap::new();
             for (id, text) in &texts {
+                let policy_mask = policies.mask_for_list(id);
                 let parsed = crate::parse_rule_list(text);
                 let list_stats = RefreshStats::from(&parsed);
                 // One line per misread list, not one per bad line: a list whose
@@ -1098,7 +1115,7 @@ impl ListManager {
                     );
                 }
                 stats.insert(id.clone(), list_stats);
-                builder.add_parsed_list(id.clone(), &parsed);
+                builder.add_parsed_list_masked(id.clone(), &parsed, policy_mask);
             }
             let lists = texts.len();
             let matcher = builder.build();
@@ -1124,6 +1141,19 @@ impl ListManager {
             );
         })
         .expect("ruleset compile task panicked")
+    }
+
+    /// The compiled policy set the ruleset in [`Self::matcher`] was built for.
+    pub fn policies(&self) -> Arc<PolicySet> {
+        self.policies.load_full()
+    }
+
+    /// Replaces the policy set. **Takes effect on the next compile**, because
+    /// which policies exist decides the per-rule masks the ruleset carries —
+    /// the caller recompiles after this, and until it does the running matcher
+    /// keeps answering under the policies it was built with.
+    pub fn set_policies(&self, policies: PolicySet) {
+        self.policies.store(Arc::new(policies));
     }
 
     /// Publishes a freshly compiled ruleset and, in the same step, records what

@@ -28,6 +28,7 @@ fn rule(domain: &str, action: RuleAction, include_subdomains: bool) -> DomainRul
         include_subdomains,
         dns_types: None,
         dns_rewrite: None,
+        client: None,
     }
 }
 
