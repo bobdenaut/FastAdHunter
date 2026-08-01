@@ -96,11 +96,12 @@ port 80 → container).
 
   Two findings the criterion did not anticipate, both recorded in the report:
 
-  - **The RB5009 does not boost a single busy core.** 45 s of a pinned core at
-    100 % held **350 MHz**, not the 1.4 GHz PERFORMANCE.md assumes (38/40 router
-    samples; the container's own `scaling_cur_freq` agrees). Every ARM figure
-    here is therefore an upper bound — and the verdict survives correcting all
-    the way to nominal (5,336 ÷ 4 = 1.33 ms, still over budget).
+  - **During the measurements a single busy core remained at 350–700 MHz and no
+    boost to the nominal 1.4 GHz was observed.** 45 s of a pinned core at 100 %
+    (38/40 router samples at 350; the container's own `scaling_cur_freq`
+    agrees), against the 1.4 GHz PERFORMANCE.md assumes. Every ARM figure here
+    is therefore an upper bound — and the verdict survives correcting all the
+    way to nominal (5,336 ÷ 4 = 1.33 ms, still over budget).
   - **97 % of an 8 KiB lookup is the unindexed scan.** Cost ≈ 176 µs fixed +
     67 µs per unindexed rule, so an index would take 5,336 µs → ~176 µs (~30×).
     That ~176 µs is also the floor with a *perfect* index, since tokenization

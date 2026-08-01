@@ -144,11 +144,12 @@ quirk:
    350–700 MHz.
 2. Both the router's own counter and the container's kernel interface agree.
 
-**This is a finding beyond p2-08: the RB5009 does not boost a single busy
-core.** PERFORMANCE.md's budgets assume 4×ARMv8 at 1.4 GHz; any single-threaded
-hot path on this device appears to run at a quarter of that. Whether it boosts
-under all-cores load is untested and now a distinct open question — the 20k QPS
-ceiling suggests it might.
+**This is a finding beyond p2-08.** During these measurements a single busy core
+remained at 350–700 MHz and no boost to the nominal 1.4 GHz was observed.
+PERFORMANCE.md's budgets assume 4×ARMv8 at 1.4 GHz; on this workload a
+single-threaded hot path ran at a quarter to a half of that. Whether other
+workloads — in particular all-cores load — behave differently is untested and
+now a distinct open question; the 20k QPS ceiling suggests they might.
 
 ## Where the cost actually goes
 

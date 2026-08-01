@@ -20,7 +20,8 @@ verifies.
 5. **No global locks** — atomic swap for ruleset/config, sharding for the
    cache, bounded channels between components.
 6. **Cache-friendly layouts** — compact contiguous structures; pointer-chasing
-   is the enemy on a 1.4 GHz ARM core.
+   is the enemy on the RB5009, whose measured single-threaded benchmark
+   throughput is roughly 9× slower than the development machine (see §Budgets).
 7. **Bounded everything** — cache, ring buffers, channels, retention. Memory
    must not grow with traffic or uptime.
 8. **Deterministic execution** — predictable latency beats occasional
@@ -30,9 +31,32 @@ verifies.
 
 ## Budgets (acceptance targets)
 
-Reference hardware: MikroTik RB5009 — Marvell Armada quad-core ARMv8 @ 1.4 GHz,
-1 GB RAM shared with RouterOS. Verified with criterion benches in `benches/`
-(`cargo bench`) and soak tests on the device.
+Reference hardware: MikroTik RB5009 — Marvell Armada quad-core ARMv8, nominally
+1.4 GHz, 1 GB RAM shared with RouterOS. Verified with criterion benches in
+`benches/` (`cargo bench`) and soak tests on the device.
+
+> **The nominal clock is not what single-threaded work was observed to get.**
+> Measured 2026-08-01 (`docs/code-review/p2-08-url-lookup-arm.md`): during the
+> measurements, a single busy core remained at **350–700 MHz** — 38 of 40
+> samples at 350, two at 700, one at 466 — and **no boost to the nominal
+> 1.4 GHz was observed**. The router's own counter and the container's
+> `/sys/.../cpufreq/scaling_cur_freq` agree.
+>
+> For FastAdHunter measurements, treat the nominal 1.4 GHz as an architectural
+> specification rather than the observed operating frequency. Budget
+> calculations should use the measured x86 → RB5009 factor (~9×) unless new
+> measurements supersede it.
+>
+> Whether all-cores load behaves differently is **untested**; the measured
+> 20k+ QPS ceiling hints it might, and that is an open question rather than a
+> claim in either direction.
+>
+> **Where the ~9× comes from:** 8.25–10.0× across twelve arms spanning three
+> orders of magnitude and two corpora, median ~9.05, measured with the same
+> binary over the same corpus on both sides. Flat across URL lengths, which says
+> the gap is CPU throughput rather than memory bandwidth — so it converts, and a
+> pinned bench on this dev box usually answers the on-device question without
+> building a probe container.
 
 | Metric | Budget |
 |--------|--------|
@@ -48,6 +72,7 @@ Reference hardware: MikroTik RB5009 — Marvell Armada quad-core ARMv8 @ 1.4 GHz
 | **HTTP** pass-through added latency, p99 *(Phase 2 — to measure)* | < 5 ms |
 | **HTTP** pass-through throughput, opaque body *(Phase 2 — to measure)* | to establish in p2-02 |
 | **HTTP** concurrent connections | bounded by `[http] max_connections` (default 1024) |
+| **HTTP** request verdict (URL tier), in-engine p99 | < 1 ms — **breached at ≥ 4 KiB URLs with the EasyList target corpus**, see below |
 
 Notes:
 
@@ -137,12 +162,52 @@ Notes:
   - A clean now also returns the eviction-queue nodes the removed entries left
     behind (each held a cloned domain), so `cache_estimated_bytes` falls where
     it previously stayed flat. The hash-table slab is still **not** returned:
-    `shrink_to_fit` is a reallocation plus a full rehash, and its cost on the
-    RB5009's 1.4 GHz cores has not been measured.
-    `fastadhunter_cache_cleanup_duration_seconds` at real occupancy is the
-    baseline that decision needs — take it before adding a shrink, not after.
+    `shrink_to_fit` is a reallocation plus a full rehash.
+    **The baseline that decision needs now exists** — the 0.2.9 soak caught the
+    sweeper reclaiming for the first time
+    (`docs/code-review/0.2.9-soak-24h.md`), 29 non-empty sweeps fitting
+
+    ```text
+    duration_us ≈ 330 + 64.4 × entries_removed     (R² = 0.928, n = 29)
+    ```
+
+    at 900–1,100 entries: the walk is the 330 µs intercept and each removal
+    costs ~64 µs, the second O(len) pass `Shard::sweep_queue` makes on every
+    shard that lost an entry. **It still does not settle the shrink**, and the
+    reason is worth stating rather than re-deriving: `table_bytes` follows
+    `map.capacity()`, and this cache peaked at 1,100 entries — 2.2 % of
+    `max_entries`. The tables never grew, so nothing could shrink. Settling it
+    needs a fill-then-drain, not a soak.
   - Freed memory goes back to **mimalloc**, not necessarily to the kernel, so
     RSS lags `cache_estimated_bytes` (CONTEXT.md §Accounted/Residual).
+- **The URL-tier verdict budget is met for ordinary URLs and breached for long
+  ones at target-corpus scale.** Measured on the RB5009 2026-08-01
+  (`docs/code-review/p2-08-url-lookup-arm.md`), minimum of ~5,000 batches:
+
+  | URL length | EasyList + EasyPrivacy (77 unindexed) | Deployed lists (3 unindexed) |
+  |---|---|---|
+  | 64 B | 35.0 µs | 2.7 µs |
+  | 1 KiB | 452.7 µs | 55.5 µs |
+  | 4 KiB | **2,091.9 µs** ❌ | 195.4 µs |
+  | 8 KiB | **5,335.7 µs** ❌ | 376.8 µs |
+
+  Two things this table must not be read as saying. It is **not** "the URL tier
+  is too slow" — at the corpus this router runs, 8 KiB costs 377 µs and the
+  budget holds with 2.7× to spare. It is **not** "the deployment is at risk"
+  either. The discriminator is the **unindexed-rule count**, not the URL-rule
+  count: 714 rules with 3 unindexed are cheap, 18,781 with 77 unindexed are not,
+  and a corpus with 15,000 well-tokenised URL rules would also be cheap.
+
+  Long URLs are ordinary traffic, not an attack — OAuth redirects, ad-tech
+  beacons and analytics payloads routinely carry multi-KB query strings. The
+  adversarial case is separately capped by the p2-03 work allowance, which was
+  never reached in this run.
+
+  ~97 % of an 8 KiB lookup is the unindexed scan (≈176 µs fixed + ~67 µs per
+  unindexed rule), so a substring index would return it to ~176 µs. That work
+  is decided and recorded in `plan/wip/phase2/CLAUDE.md`; ~176 µs is also the
+  floor a *perfect* index would leave, since tokenization scales with URL
+  length too.
 - 10k QPS is ~100× a busy household's peak; the headroom is the proof of
   efficiency, and it's what keeps p99 flat at real loads.
 - Budgets are compared against `main` on every perf-relevant change; a >10%
@@ -252,6 +317,31 @@ and the proxy arm's +9.5 % was not real.
 Throughput is the exception to core-pinning: restrict it to four cores
 (`ProcessorAffinity = 15` / `taskset -c 0-3`) so the figure is shaped like the
 RB5009's quad-core budget rather than a dev box's full core count.
+
+### Measuring on the RB5009
+
+The device cannot be benched the way the dev box can: the image is
+distroless and RouterOS exposes no `docker exec`, so an on-device measurement
+ships as **its own throwaway container** with the measurement as the entrypoint,
+reporting through `/log print where topics~"container"`. `Dockerfile.probe` and
+`crates/fah-rules/examples/urlbench.rs` are the working example — note it bakes
+its corpus in rather than mounting `/data`, which the production container holds
+read-write.
+
+Two rules that a wrong number has already been traced to:
+
+- **Sample `/system/resource/print` *during* the run, not before or after.** The
+  clock is not a constant: a single busy core has been measured at 350 MHz
+  against a 1.4 GHz nominal (§Budgets). A µs figure quoted without the
+  concurrent frequency reading cannot be checked by anyone, including its
+  author, and the difference is up to 4×.
+- **Size the probe to hold a core busy long enough to sample** — tens of
+  seconds, not a burst. A probe that finishes before the governor could react
+  reports the idle clock and nobody can tell.
+
+Convert rather than re-measure where you can: the **~9× x86 → RB5009 factor**
+in §Budgets was flat across three orders of magnitude, so a pinned dev-box
+number usually answers the on-device question without building anything.
 
 ## Positioning
 

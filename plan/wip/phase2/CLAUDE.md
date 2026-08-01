@@ -170,9 +170,10 @@ not.
 
 The deferral rested on "3.09 µs sits 300× inside the budget", which was the
 short-URL figure. At 8 KiB the same corpus costs 5.3× the *whole* budget, and
-even 4 KiB costs 2,092 µs. The conclusion survives the frequency caveat: the
-RB5009 held **350 MHz** through the run and does not boost a single busy core,
-but correcting all the way to its 1.4 GHz nominal still gives 1.33 ms.
+even 4 KiB costs 2,092 µs. The conclusion survives the frequency caveat: during
+the run a single busy core remained at **350–700 MHz** with no boost to the
+nominal 1.4 GHz observed, but correcting all the way to nominal still gives
+1.33 ms.
 
 **What an index buys, and what it does not.** At 8 KiB the cost is ≈ 176 µs
 fixed + **67 µs per unindexed rule**, so at 77 rules **97 % of the lookup is the
@@ -196,7 +197,7 @@ definition of done depends on it — the deployed corpus meets budget today.
 | 5 | `p2-05-policy-model.md` | Policy = named bundle of lists + settings; schedules; `$client` | Sonnet | WAITING |
 | 6 | `p2-06-per-client-enforcement.md` | DNS + HTTP consult policy per client; policy API endpoints | Sonnet | WAITING |
 | 7 | `p2-07-memory-accounting.md` | **REOPENED 2026-07-26, NARROWED 2026-07-30** — instrumentation all shipped (component `heap_bytes()`, both metric families, `/debug/memory`, `AllocatorStats` in 0.2.8); the one thing left is persisting `MemoryComponents` + `minor_page_faults` into `PerfSample` and `/history/perf`, so a soak can chart residual rather than only RSS. The reopen's motivating question is **answered** — the RouterOS climb was page cache (`docs/code-review/0.2.7-router-memory-and-throughput.md`) — so this is now a safety net, not an investigation, and its priority drops accordingly | Sonnet | WAITING |
-| 8 | `p2-08-phase2-verification.md` | HTTP benches + budgets, e2e tests, RB5009 dns+http validation. **One acceptance criterion already MET out of order (2026-08-01): the on-device long-URL sweep.** A substring index is required for the EasyList+EasyPrivacy target corpus (8 KiB = 5,336 µs, 5.3× over budget) and not for this router's own lists (377 µs); x86→ARM factor is a flat ~9×; the RB5009 does not boost a single busy core (350 MHz under load). Do not re-run it — `docs/code-review/p2-08-url-lookup-arm.md`. Everything else in the task is untouched | Sonnet | WAITING |
+| 8 | `p2-08-phase2-verification.md` | HTTP benches + budgets, e2e tests, RB5009 dns+http validation. **One acceptance criterion already MET out of order (2026-08-01): the on-device long-URL sweep.** A substring index is required for the EasyList+EasyPrivacy target corpus (8 KiB = 5,336 µs, 5.3× over budget) and not for this router's own lists (377 µs); x86→ARM factor is a flat ~9×; a single busy core was observed at 350–700 MHz with no boost to the nominal 1.4 GHz. Do not re-run it — `docs/code-review/p2-08-url-lookup-arm.md`. Everything else in the task is untouched | Sonnet | WAITING |
 | 9 | `p2-09-query-log-reader.md` | `QueryLogReader` over the persisted segments; unified `GET /queries` (no filter → ring, any filter → segments); `next_sequence` derived at boot; `qtype`; `oldest_retained`; flush on shutdown | Opus | WAITING |
 
 **Definition of done:** router dst-nats port 80 to the container; a plain-HTTP
