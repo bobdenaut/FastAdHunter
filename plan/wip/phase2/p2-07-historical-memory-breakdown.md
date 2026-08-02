@@ -7,14 +7,10 @@
 > soak that can only report RSS answers "is it growing?" but never "growing
 > *where*?".
 
-## Status — narrowed 2026-07-30
+## Status — code complete 2026-08-02, `AWAITING SOAK`
 
-**One deliverable is left: persist the breakdown.** Everything else this file
-asks for has shipped. `PerfSample` still carries `rss_bytes` and nothing else
-(`crates/fah-model/src/perf.rs`), so `GET /api/v1/history/perf` can chart RSS
-over 30 days and still cannot chart residual. That is the task.
-
-The instrumentation half is done and should not be re-implemented:
+**Everything this file asks for has shipped except its two on-device criteria.**
+Commit `0cfa317`, report `docs/code-review/p2-07-review.md` §11.
 
 | Asked for | State |
 | --------- | ----- |
@@ -24,7 +20,17 @@ The instrumentation half is done and should not be re-implemented:
 | `/api/v1/debug/memory` | shipped |
 | Single-instant sampling on the telemetry poll | shipped |
 | Allocator figures (`AllocatorStats`) | shipped 0.2.8, live only |
-| **`MemoryComponents` in `PerfSample` + `/history/perf`** | **not started** |
+| `MemoryComponents` in `PerfSample` + `/history/perf` | **shipped 2026-08-02** |
+| Residual against a fresh mimalloc baseline | **needs the RB5009 — p2-08** |
+| Residual slope over a soak window | **needs the RB5009 — p2-08** |
+
+**What flips this to `DONE`:** the p2-08 soak, pulling the series from
+`/history/perf` **on-device** (not an external curl loop — the point is that the
+router self-hosts it), confirming a residual per sample across the window and a
+row agreeing with a `/debug/memory` read at the same instant, then **stating the
+slope over the final third**. A *drifting* residual still flips this to `DONE` —
+the instrument worked — and opens a leak task with the series attached. Fixing a
+leak was never in this task's scope.
 
 ### The reopen's motivating question has been answered — the instrument is still worth building
 
@@ -56,12 +62,11 @@ Priority accordingly: lower than when it was reopened, unchanged in position.
   pages, so `committed − accounted` only ever rises. `minor_page_faults` was
   added in its place. CONTEXT.md records "allocator retained" as a retired
   term; do not reintroduce it.
-- **`fastadhunter_memory_collection_seconds` goes sooner than this file says.**
-  It was to survive until `p2-08` closed; the agreed removal date is now **on or
-  after 2026-08-03**, independent of this task. It has already served its
-  purpose — the accounting pass now runs on `spawn_blocking`, off the DNS
-  workers. Remove the gauge, its `set_memory_collection_micros` setter and the
-  `TEMPORARY` comment block together.
+- ~~**`fastadhunter_memory_collection_seconds` goes sooner than this file
+  says.**~~ **REMOVED 2026-08-02** in `0cfa317` — gauge, setter, atomic and the
+  `TEMPORARY` block together. Last on-device reading `0.000986` (986 µs), and
+  the pass runs on `spawn_blocking`, off the DNS workers, so its duration no
+  longer reaches query latency.
 
 ## Goal
 

@@ -31,6 +31,9 @@ RouterOS container). Performance is the primary feature.
 | Conventions? | [CONTRIBUTING.md](CONTRIBUTING.md) |
 | Why is X this way? | [docs/decisions/](docs/decisions/) (ADRs) |
 | Creating a code-review file? | [docs/code-review/CLAUDE.md](docs/code-review/CLAUDE.md) |
+| Where is the work right now? | [docs/project-state.md](docs/project-state.md) |
+| Touching the router / deploying? | [docs/routeros-traps.md](docs/routeros-traps.md) |
+| Reading a benchmark, soak or memory figure? | [docs/measurement-traps.md](docs/measurement-traps.md) |
 
 Docs are the source of truth and were approved before any code. A change that
 contradicts them needs the doc updated in the same change — or an ADR if the
@@ -82,10 +85,6 @@ section is needed.
 
 Treat this project as production infrastructure software where correctness,
 maintainability and predictable performance are more important than cleverness.
-**This list is canonical and lives only here** — it used to be duplicated in
-`plan/CLAUDE.md`, where rules 19 and 20 were added and then went unread because
-that file is not always loaded.
-
 When designing or modifying code, follow these principles in priority order:
 
 1. Correctness before optimization.
@@ -164,14 +163,92 @@ When designing or modifying code, follow these principles in priority order:
     Read only the section(s) relevant to the task.
     Never summarize or rewrite unrelated sections.
 
+## Working agreement
+
+Standing instructions from the repo owner. Each one was a correction; breaking
+them costs real time.
+
+### The router is off limits
+
+**YOU ARE NOT ALLOWED TO CHANGE ANYTHING ON THE RB5009.** Not with permission,
+not "just this once", not because it is reversible. No `/container set|add|
+remove|start|stop`, no `/ip` or `/ipv6` firewall edit, no `/disk set`, no
+`/system` anything, no config edit. This is the household's live DNS resolver and
+the owner's own device.
+
+**Read-only queries are fine and need no asking** — `/system/resource/print`,
+`/container/print`, `/log print`, `/file print`, GETs against the FAH API.
+
+When a change is needed: **propose the exact commands, say what each one does and
+when it takes effect, and stop.** The owner runs them. Reversibility says nothing
+about blast radius — `memory-high=200M` was proposed as a "safe falsifiable
+check" and OOM-killed the live resolver.
+
+### Ask first — permission is per-request and never generalizes
+
+1. **No `.md` file** created, edited, renamed or deleted without an explicit yes.
+   A task file saying "update API.md in the same change" is not permission, and
+   neither is "let's get it done". This **overrides hard rule 7** — finish the
+   code, then list the doc edits you propose and wait.
+2. **No commit, push or tag** without a fresh go for that specific changeset. A
+   sketched plan ending in "then commit" does not pre-approve the commit.
+   Approved pushes go to **both** remotes — `origin` and `backup` — and are not
+   done until both succeed.
+3. **Never move a phase `open` → `wip`** on your own, despite what
+   plan/CLAUDE.md's algorithm says. Identify the next task, then stop.
+
+### How to answer
+
+4. **Be brief.** Lead with the one-line answer; detail only if asked or if
+   omitting it causes a wrong decision. No tables in chat unless comparing
+   numbers that were asked for.
+5. **Challenge, don't accept.** Form an independent judgment before replying and
+   lead with it. The failure mode is subtle — opening with validation and burying
+   the objection, softening a real disagreement into "you might also consider",
+   or dropping a correct position after one "are you sure?" that carries no new
+   argument. Correct your own oversold claims unprompted.
+6. **Scope claims to evidence.** "No boost was observed during these
+   measurements" is owned; "the device does not boost" is not. Every result
+   carries the corpus, workload and device it applies to, and how it can be
+   superseded.
+7. **HTTPS interception is legitimate project work** — own LAN, own CA, opt-in
+   per client, governed by SECURITY.md. Answer directly, anchored in that doc; do
+   not hedge or deflect.
+
+### Before prescribing or measuring
+
+8. **Read the owner's actual config first** — firewall, container, routing.
+   Never emit a firewall `add` without reading the chain and deciding placement;
+   `add` appends behind any final drop, where it does nothing.
+9. **Measure the benefit before tuning the cost**, and report a trade across
+   every axis it touches (memory / build time / lookup-hit / miss / throughput),
+   not one headline. Memory-vs-compile-time thresholds on this project:
+   <1 MB not worth it, 1–3 MB debatable, 3–5 MB starts to be worth it, >5 MB
+   keep. A/B against a real pre-change checkout, never criterion's stored
+   baseline. See [docs/measurement-traps.md](docs/measurement-traps.md).
+10. **Every config key ships with a production-ready compiled-in default.** Never
+    tell the owner to hand-edit the TOML inside the container to enable a
+    feature; say "confirm via `GET /api/v1/config`".
+
+**Phase 0 is frozen** at tag `v0.1.0-phase0` (commit `42a31b1`) — do not modify
+it except for a genuine bug (correctness, security, build failure, regression).
+No refactoring, renaming, style or perf changes there.
+
 ## Quality gates (local — there is no CI)
 
 ```sh
-cargo fmt --check
-cargo clippy --workspace --all-targets -- -D warnings
-cargo test --workspace
-cargo bench   # when a hot path is touched; >10% regression needs justification
+sh scripts/gates.sh   # fmt + clippy -D warnings + test --workspace
+cargo bench           # when a hot path is touched; >10% regression needs justification
 ```
+
+**Run the script, not the three commands.** It prints one line per gate — four
+lines when green, where the raw commands print ~1,000 — and on failure prints
+`file:line:col: error: …` for each real diagnostic.
+
+**Nothing is lost.** Every gate's complete output always goes to
+`target/gates.log` (gitignored), and the line numbers in the failure summary are
+offsets into it. When the summary is not enough, read that file — never re-run
+the build for detail you already paid for.
 
 Conventional Commits (`feat:`, `fix:`, `perf:`, …), trunk-based, short-lived
 branches. `unsafe` requires a `// SAFETY:` comment.
