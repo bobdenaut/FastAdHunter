@@ -1,0 +1,183 @@
+# HELP fastadhunter_queries_total Total DNS queries processed, by verdict.
+# TYPE fastadhunter_queries_total counter
+fastadhunter_queries_total{verdict="pass"} 90
+fastadhunter_queries_total{verdict="allow"} 0
+fastadhunter_queries_total{verdict="block"} 333
+# HELP fastadhunter_cache_hits_total Queries answered from the DNS cache.
+# TYPE fastadhunter_cache_hits_total counter
+fastadhunter_cache_hits_total 21
+# HELP fastadhunter_cache_misses_total Queries not found in the DNS cache.
+# TYPE fastadhunter_cache_misses_total counter
+fastadhunter_cache_misses_total 69
+# HELP fastadhunter_cache_stale_total Queries served from an expired cache entry (RFC 8767 serve-stale).
+# TYPE fastadhunter_cache_stale_total counter
+fastadhunter_cache_stale_total 0
+# HELP fastadhunter_query_duration_seconds Query latency by answering path: block/cache_hit are in-engine (PERFORMANCE.md <1ms p99 budgets); forward is end-to-end including the upstream round trip.
+# TYPE fastadhunter_query_duration_seconds histogram
+fastadhunter_query_duration_seconds_bucket{stage="block",le="0.0001"} 331
+fastadhunter_query_duration_seconds_bucket{stage="block",le="0.00025"} 333
+fastadhunter_query_duration_seconds_bucket{stage="block",le="0.0005"} 333
+fastadhunter_query_duration_seconds_bucket{stage="block",le="0.00075"} 333
+fastadhunter_query_duration_seconds_bucket{stage="block",le="0.001"} 333
+fastadhunter_query_duration_seconds_bucket{stage="block",le="0.0025"} 333
+fastadhunter_query_duration_seconds_bucket{stage="block",le="0.005"} 333
+fastadhunter_query_duration_seconds_bucket{stage="block",le="0.01"} 333
+fastadhunter_query_duration_seconds_bucket{stage="block",le="0.025"} 333
+fastadhunter_query_duration_seconds_bucket{stage="block",le="0.05"} 333
+fastadhunter_query_duration_seconds_bucket{stage="block",le="0.1"} 333
+fastadhunter_query_duration_seconds_bucket{stage="block",le="+Inf"} 333
+fastadhunter_query_duration_seconds_sum{stage="block"} 0.01313692
+fastadhunter_query_duration_seconds_count{stage="block"} 333
+fastadhunter_query_duration_seconds_bucket{stage="cache_hit",le="0.0001"} 21
+fastadhunter_query_duration_seconds_bucket{stage="cache_hit",le="0.00025"} 21
+fastadhunter_query_duration_seconds_bucket{stage="cache_hit",le="0.0005"} 21
+fastadhunter_query_duration_seconds_bucket{stage="cache_hit",le="0.00075"} 21
+fastadhunter_query_duration_seconds_bucket{stage="cache_hit",le="0.001"} 21
+fastadhunter_query_duration_seconds_bucket{stage="cache_hit",le="0.0025"} 21
+fastadhunter_query_duration_seconds_bucket{stage="cache_hit",le="0.005"} 21
+fastadhunter_query_duration_seconds_bucket{stage="cache_hit",le="0.01"} 21
+fastadhunter_query_duration_seconds_bucket{stage="cache_hit",le="0.025"} 21
+fastadhunter_query_duration_seconds_bucket{stage="cache_hit",le="0.05"} 21
+fastadhunter_query_duration_seconds_bucket{stage="cache_hit",le="0.1"} 21
+fastadhunter_query_duration_seconds_bucket{stage="cache_hit",le="+Inf"} 21
+fastadhunter_query_duration_seconds_sum{stage="cache_hit"} 0.00085976
+fastadhunter_query_duration_seconds_count{stage="cache_hit"} 21
+fastadhunter_query_duration_seconds_bucket{stage="forward",le="0.0001"} 0
+fastadhunter_query_duration_seconds_bucket{stage="forward",le="0.00025"} 0
+fastadhunter_query_duration_seconds_bucket{stage="forward",le="0.0005"} 0
+fastadhunter_query_duration_seconds_bucket{stage="forward",le="0.00075"} 0
+fastadhunter_query_duration_seconds_bucket{stage="forward",le="0.001"} 0
+fastadhunter_query_duration_seconds_bucket{stage="forward",le="0.0025"} 3
+fastadhunter_query_duration_seconds_bucket{stage="forward",le="0.005"} 66
+fastadhunter_query_duration_seconds_bucket{stage="forward",le="0.01"} 66
+fastadhunter_query_duration_seconds_bucket{stage="forward",le="0.025"} 68
+fastadhunter_query_duration_seconds_bucket{stage="forward",le="0.05"} 69
+fastadhunter_query_duration_seconds_bucket{stage="forward",le="0.1"} 69
+fastadhunter_query_duration_seconds_bucket{stage="forward",le="+Inf"} 69
+fastadhunter_query_duration_seconds_sum{stage="forward"} 0.26678404
+fastadhunter_query_duration_seconds_count{stage="forward"} 69
+# HELP fastadhunter_http_requests_total Total HTTP requests processed by the proxy, by verdict.
+# TYPE fastadhunter_http_requests_total counter
+fastadhunter_http_requests_total{verdict="pass"} 5
+fastadhunter_http_requests_total{verdict="allow"} 0
+fastadhunter_http_requests_total{verdict="block"} 0
+# HELP fastadhunter_http_response_bytes_total Response body bytes relayed downstream. A blocked request adds nothing, so this and the block counter together show what filtering actually saved.
+# TYPE fastadhunter_http_response_bytes_total counter
+fastadhunter_http_response_bytes_total 110
+# HELP fastadhunter_http_request_duration_seconds HTTP request latency by answering path: block is fully in-engine (no upstream contacted); forward is end-to-end including the origin round trip.
+# TYPE fastadhunter_http_request_duration_seconds histogram
+fastadhunter_http_request_duration_seconds_bucket{stage="block",le="0.0001"} 0
+fastadhunter_http_request_duration_seconds_bucket{stage="block",le="0.00025"} 0
+fastadhunter_http_request_duration_seconds_bucket{stage="block",le="0.0005"} 0
+fastadhunter_http_request_duration_seconds_bucket{stage="block",le="0.00075"} 0
+fastadhunter_http_request_duration_seconds_bucket{stage="block",le="0.001"} 0
+fastadhunter_http_request_duration_seconds_bucket{stage="block",le="0.0025"} 0
+fastadhunter_http_request_duration_seconds_bucket{stage="block",le="0.005"} 0
+fastadhunter_http_request_duration_seconds_bucket{stage="block",le="0.01"} 0
+fastadhunter_http_request_duration_seconds_bucket{stage="block",le="0.025"} 0
+fastadhunter_http_request_duration_seconds_bucket{stage="block",le="0.05"} 0
+fastadhunter_http_request_duration_seconds_bucket{stage="block",le="0.1"} 0
+fastadhunter_http_request_duration_seconds_bucket{stage="block",le="+Inf"} 0
+fastadhunter_http_request_duration_seconds_sum{stage="block"} 0
+fastadhunter_http_request_duration_seconds_count{stage="block"} 0
+fastadhunter_http_request_duration_seconds_bucket{stage="forward",le="0.0001"} 0
+fastadhunter_http_request_duration_seconds_bucket{stage="forward",le="0.00025"} 0
+fastadhunter_http_request_duration_seconds_bucket{stage="forward",le="0.0005"} 0
+fastadhunter_http_request_duration_seconds_bucket{stage="forward",le="0.00075"} 0
+fastadhunter_http_request_duration_seconds_bucket{stage="forward",le="0.001"} 0
+fastadhunter_http_request_duration_seconds_bucket{stage="forward",le="0.0025"} 0
+fastadhunter_http_request_duration_seconds_bucket{stage="forward",le="0.005"} 0
+fastadhunter_http_request_duration_seconds_bucket{stage="forward",le="0.01"} 0
+fastadhunter_http_request_duration_seconds_bucket{stage="forward",le="0.025"} 0
+fastadhunter_http_request_duration_seconds_bucket{stage="forward",le="0.05"} 2
+fastadhunter_http_request_duration_seconds_bucket{stage="forward",le="0.1"} 2
+fastadhunter_http_request_duration_seconds_bucket{stage="forward",le="+Inf"} 5
+fastadhunter_http_request_duration_seconds_sum{stage="forward"} 0.90669964
+fastadhunter_http_request_duration_seconds_count{stage="forward"} 5
+# HELP fastadhunter_events_dropped_total Events dropped because the observers' one event channel was full — DNS and HTTP share it, so this stays a single shed figure.
+# TYPE fastadhunter_events_dropped_total counter
+fastadhunter_events_dropped_total 0
+# HELP fastadhunter_swr_refreshes_enqueued_total Background refreshes queued after a stale cache hit.
+# TYPE fastadhunter_swr_refreshes_enqueued_total counter
+fastadhunter_swr_refreshes_enqueued_total 0
+# HELP fastadhunter_swr_refreshes_deduplicated_total Stale hits that found a refresh already claimed, so queued nothing.
+# TYPE fastadhunter_swr_refreshes_deduplicated_total counter
+fastadhunter_swr_refreshes_deduplicated_total 0
+# HELP fastadhunter_swr_refreshes_dropped_total Refreshes skipped because the queue was full. The client was still answered from the stale entry; sustained growth means [dns.cache] swr_workers is undersized.
+# TYPE fastadhunter_swr_refreshes_dropped_total counter
+fastadhunter_swr_refreshes_dropped_total 0
+# HELP fastadhunter_swr_refreshes_completed_total Background refreshes that replaced their cache entry.
+# TYPE fastadhunter_swr_refreshes_completed_total counter
+fastadhunter_swr_refreshes_completed_total 0
+# HELP fastadhunter_swr_refreshes_failed_total Background refreshes that failed or returned an uncacheable answer, putting the entry into its failure cooldown.
+# TYPE fastadhunter_swr_refreshes_failed_total counter
+fastadhunter_swr_refreshes_failed_total 0
+# HELP fastadhunter_cache_cleanup_runs_total Cache sweeps completed — the scheduled ones and any triggered by POST /api/v1/cache/clean, which share one implementation.
+# TYPE fastadhunter_cache_cleanup_runs_total counter
+fastadhunter_cache_cleanup_runs_total 1
+# HELP fastadhunter_cache_cleanup_entries_removed_total Cache entries removed by those sweeps. Near-zero is expected with serve_stale on: an entry only becomes sweepable 24h past its TTL, and under load capacity eviction reaches it first.
+# TYPE fastadhunter_cache_cleanup_entries_removed_total counter
+fastadhunter_cache_cleanup_entries_removed_total 0
+# HELP fastadhunter_cache_cleanup_bytes_freed_total Entry heap returned by those sweeps. The figure to watch rather than the entry count — a large TXT/SOA answer and an A record differ by an order of magnitude, and [dns.cache] max_bytes is what actually bounds the cache.
+# TYPE fastadhunter_cache_cleanup_bytes_freed_total counter
+fastadhunter_cache_cleanup_bytes_freed_total 0
+# HELP fastadhunter_cache_cleanup_duration_seconds Wall time of the LAST cache sweep. A gauge, not a total: at the shipped cadence there is at most one sweep per scrape, so the last value hides no outlier.
+# TYPE fastadhunter_cache_cleanup_duration_seconds gauge
+fastadhunter_cache_cleanup_duration_seconds 0.000017
+# HELP fastadhunter_upstream_attempts_total Upstream resolution attempts, by server.
+# TYPE fastadhunter_upstream_attempts_total counter
+fastadhunter_upstream_attempts_total{address="9.9.9.9",protocol="udp"} 79
+fastadhunter_upstream_attempts_total{address="1.1.1.1",protocol="udp"} 0
+# HELP fastadhunter_upstream_failures_total Upstream resolution failures, by server.
+# TYPE fastadhunter_upstream_failures_total counter
+fastadhunter_upstream_failures_total{address="9.9.9.9",protocol="udp"} 0
+fastadhunter_upstream_failures_total{address="1.1.1.1",protocol="udp"} 0
+# HELP fastadhunter_upstream_consecutive_failures Failures since the last success, by server (0 = healthy).
+# TYPE fastadhunter_upstream_consecutive_failures gauge
+fastadhunter_upstream_consecutive_failures{address="9.9.9.9",protocol="udp"} 0
+fastadhunter_upstream_consecutive_failures{address="1.1.1.1",protocol="udp"} 0
+# HELP fastadhunter_upstream_tls_handshakes_total TLS handshakes performed, by server (flat under steady load = connection reuse).
+# TYPE fastadhunter_upstream_tls_handshakes_total counter
+fastadhunter_upstream_tls_handshakes_total{address="9.9.9.9",protocol="udp"} 0
+fastadhunter_upstream_tls_handshakes_total{address="1.1.1.1",protocol="udp"} 0
+# HELP fastadhunter_ruleset_rules Compiled rule count in the active ruleset.
+# TYPE fastadhunter_ruleset_rules gauge
+fastadhunter_ruleset_rules 794931
+# HELP fastadhunter_ruleset_heap_bytes Heap memory held by the compiled ruleset.
+# TYPE fastadhunter_ruleset_heap_bytes gauge
+fastadhunter_ruleset_heap_bytes 26909316
+# HELP fastadhunter_ruleset_duplicates_removed Rules dropped by the last compile as duplicates of one already present.
+# TYPE fastadhunter_ruleset_duplicates_removed gauge
+fastadhunter_ruleset_duplicates_removed 343215
+# HELP fastadhunter_ruleset_compile_duration_seconds Wall time of the most recent ruleset compile.
+# TYPE fastadhunter_ruleset_compile_duration_seconds gauge
+fastadhunter_ruleset_compile_duration_seconds 2.7096
+# HELP fastadhunter_memory_component_bytes Heap attributed to each bounded component, at the last telemetry poll.
+# TYPE fastadhunter_memory_component_bytes gauge
+fastadhunter_memory_component_bytes{component="ruleset"} 26909316
+fastadhunter_memory_component_bytes{component="cache"} 88512
+fastadhunter_memory_component_bytes{component="stats_aggregates"} 403397
+fastadhunter_memory_component_bytes{component="stats_clients"} 132352
+fastadhunter_memory_component_bytes{component="query_log_ring"} 511341
+fastadhunter_memory_component_bytes{component="query_log_pending"} 0
+# HELP fastadhunter_memory_residual_bytes RSS minus every accounted component: binary pages, stacks, runtime and allocator retention. Growth here while components stay flat is the leak signal.
+# TYPE fastadhunter_memory_residual_bytes gauge
+fastadhunter_memory_residual_bytes 32903562
+# HELP fastadhunter_allocator_committed_bytes Bytes the allocator has committed, by its own accounting. A lifetime high-water mark, not a live figure: mimalloc v3 does not decrement it when a purge returns pages, so it routinely exceeds process RSS. Do not derive retention from it — RSS is the authority on footprint.
+# TYPE fastadhunter_allocator_committed_bytes gauge
+fastadhunter_allocator_committed_bytes 190447616
+# HELP fastadhunter_allocator_committed_peak_bytes High-water mark of committed bytes since start. Currently equal to the committed gauge at every reading; the two diverging would mean the allocator has started accounting purges, making the committed gauge a live figure.
+# TYPE fastadhunter_allocator_committed_peak_bytes gauge
+fastadhunter_allocator_committed_peak_bytes 190447616
+# HELP fastadhunter_process_peak_rss_bytes Peak RSS since start, from getrusage. Process-lifetime monotonic: a budget check, not a trend — but a spike between two scrapes cannot be missed.
+# TYPE fastadhunter_process_peak_rss_bytes gauge
+fastadhunter_process_peak_rss_bytes 129753088
+# HELP fastadhunter_process_major_page_faults_total Major (disk-backed) page faults since start, from getrusage. Structurally near-zero here — non-zero means real host memory pressure.
+# TYPE fastadhunter_process_major_page_faults_total counter
+fastadhunter_process_major_page_faults_total 0
+# HELP fastadhunter_process_minor_page_faults_total Minor (no disk I/O) page faults since start, from getrusage. The purge-thrash detector: rate(...) rising at flat RSS means pages are being returned with MADV_DONTNEED and immediately faulted back in — lengthen MIMALLOC_PURGE_DELAY.
+# TYPE fastadhunter_process_minor_page_faults_total counter
+fastadhunter_process_minor_page_faults_total 22972
+# HELP process_resident_memory_bytes Resident memory size in bytes.
+# TYPE process_resident_memory_bytes gauge
+process_resident_memory_bytes 60858368

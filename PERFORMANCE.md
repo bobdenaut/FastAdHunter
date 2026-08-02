@@ -74,11 +74,11 @@ Reference hardware: MikroTik RB5009 — Marvell Armada quad-core ARMv8, nominall
 | Verdict + cache hit, in-engine p99 | < 1 ms |
 | Blocked query, in-engine p99 | < 1 ms |
 | Forwarded query overhead added by engine, p99 | < 1 ms |
-| Sustained throughput on RB5009 | ≥ 10 000 QPS |
+| **DNS** sustained throughput on RB5009 | ≥ 10 000 QPS |
 | Startup to serving (cached lists, 1M-domain parse) | 1–3 s (< 3 s hard, ~1 s goal) |
 | Container image size | ≤ 30 MB |
-| **HTTP** pass-through added latency, p99 *(Phase 2 — to measure)* | < 5 ms |
-| **HTTP** pass-through throughput, opaque body *(Phase 2 — to measure)* | to establish in p2-02 |
+| **HTTP** pass-through added latency, head path | < 1 ms — measured +36.8 µs on the dev box, see below |
+| **HTTP** pass-through throughput, opaque body | ≥ 100 MiB/s (target on RB5009; pending on-device validation) — 1.13 GiB/s measured on x86 loopback, see below |
 | **HTTP** concurrent connections | bounded by `[http] max_connections` (default 1024) |
 | **HTTP** request verdict (URL tier), in-engine p99 | < 1 ms — met at every measured length; 8 KiB against EasyList + EasyPrivacy is 569.5 µs p99, see below |
 
@@ -108,7 +108,7 @@ Notes:
   is now seeded from the cached copies' mtimes. Serving was never blocked either
   way; what this returns is ~2.3 s of ARM CPU, ~24 MB of downloads and a second
   ~158 MiB peak-RSS transient per restart.
-- **Sustained throughput, measured 2026-07-24** (dev box, four cores per
+- **DNS sustained throughput, measured 2026-07-24** (dev box, four cores per
   §Measuring reliably, realistic mix — a third blocked, a third cache-hit, a
   third forwarded): **~567 000 elem/s** (median of 3 pinned runs, range
   560.7–574.8 K; 336 µs per 192-query wave). The budget
@@ -137,6 +137,62 @@ Notes:
   they can only establish that no regression exceeding ~15% exists, and none
   does. 15 assignments walked to the end (worst case, no early hit) add a
   further 10.7 ns.
+- **RAM on the RB5009 at 0.2.10, `dns+http`, measured 2026-08-02** (p2-08 T0,
+  16 lists, 1 138 898 parsed → 794 931 compiled rules, 1 policy): steady RSS
+  **58.13 MiB**, well inside the 128 MB budget. **Peak RSS at boot is
+  123.74 MiB — 96.7 % of that budget.** The peak is the compile (2.71 s), which
+  holds source text and compiled form at once; it is not steady state. The
+  budget holds at this corpus size, with little headroom at the worst instant.
+  Nothing enforces 128 MB at runtime — the container runs
+  `memory-high=unlimited`, so exceeding it is a budget breach, not a failure —
+  but a cgroup limit set near this figure would make boot the point of death.
+  Full baseline: `docs/code-review/0.2.10-soak-baseline.md`.
+
+  **Known optimization lever:** compile-time peak RSS may be reducible by
+  streaming list parsing. Deferred until a heap profile identifies the dominant
+  transient allocation — raw list text and the pre-dedup index are both
+  plausible, and streaming only helps if the text dominates.
+
+  **The peak is not the thing to watch; the return is.** A compile happens at
+  boot and at each list refresh (daily by default), so the expected shape is
+  58 → 123 → 58 repeatedly. A sawtooth that ratchets — 58 → 123 → 92 → 123 →
+  108 — indicates memory that is not being released after successive compiles.
+  The current implementation returns to its steady-state baseline.
+- **HTTP pass-through, head path — measured 2026-08-02** (p2-08, dev box,
+  `fah-http/benches/proxy.rs`, loopback, warm keep-alive on both sides). Direct
+  to origin **34.9 µs**, through the proxy **71.8 µs** — the proxy adds
+  **+36.8 µs**, consistent with p2-02's +35 µs and p2-04's +32.4 µs. At the
+  measured ~9× factor that is ~330 µs on the RB5009, inside the 1 ms budget.
+  Connection setup is excluded from both arms: a transparent proxy amortises it
+  across every request on the connection.
+- **HTTP opaque-body throughput — measured 2026-08-02** (same bench, three body
+  sizes, 20 samples each). Bodies the proxy never parses: the verdict is taken
+  on the head, then the bytes are relayed.
+
+  | body | direct | proxied | proxied throughput | proxy adds |
+  | --- | ---: | ---: | ---: | ---: |
+  | 8 KiB | 35.7 µs | 72.7 µs | 107 MiB/s | +37 µs |
+  | 1 MiB | 1.23 ms | 1.26 ms | 795 MiB/s | +33 µs |
+  | 8 MiB | 6.17 ms | 6.89 ms | 1.13 GiB/s | +720 µs |
+
+  From 8 KiB to 1 MiB the added cost is a flat ~35 µs — the head cost, not
+  something that grows with the body. At 8 MiB it does scale.
+
+  **The proxy sustained 1.13 GiB/s in a single-connection loopback benchmark on
+  x86. Applying the previously measured ~9× ARM slowdown suggests throughput
+  close to gigabit line rate on the RB5009, but this is an estimate rather than
+  a verified network measurement. End-to-end throughput depends on NIC, kernel
+  networking, concurrent traffic and other system overhead.**
+
+  What the benchmark does **not** establish: which cost scales at 8 MiB.
+  Copying, socket buffering, task wakeups and cache behaviour all scale with
+  body size, and these arms separate none of them — attribution needs profiling.
+  Nor does 1.13 GiB/s rule out parsing or buffering; it establishes only that
+  neither is dominant. Treat a regression in this bench as a signal to profile,
+  not as a diagnosis.
+- **Inspected content (HTML) is budgeted separately and does not exist yet.**
+  Phase 4 rewrites HTML through `lol_html`; the rows above are the opaque path
+  and must not be read as covering it.
 - **DNS cache is bounded twice** (p1.5-05): `dns.cache.max_entries` and
   `dns.cache.max_bytes` (default 64 MiB), both enforced by the same O(1)
   amortized FIFO eviction, which runs until *both* hold. Entry count alone did

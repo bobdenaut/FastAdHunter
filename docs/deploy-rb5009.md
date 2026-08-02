@@ -406,53 +406,6 @@ If you miss it, the key file is at `kingston/fastadhunter/config/apikey` on the
 SSD; rotate it via `POST /api/v1/config/apikey/rotate` if it may have been
 exposed in the log.
 
-### Port 53 needs a redirect — this is required, not optional
-
-**Confirmed on RouterOS 7 / RB5009:** the container cannot bind port 53
-directly. RouterOS honours the image's `USER nonroot` (uid 65532) and does
-**not** set `net.ipv4.ip_unprivileged_port_start=0` the way Docker does, so
-binding a port below 1024 fails with `EACCES`. The container starts, compiles
-its ruleset, then exits 1:
-
-```text
-INFO  fastadhunter starting config_path=/config/fastadhunter.toml
-INFO  ruleset compiled from cache rules=0
-ERROR fastadhunter failed to start error=Permission denied (os error 13)
-```
-
-Note what this log rules out: `/config` and `/data` are both writable, or
-those first two lines would not appear. A permission error here is the port,
-not the mounts.
-
-RouterOS exposes no `cap-add`, so `CAP_NET_BIND_SERVICE` is unavailable, and
-running the container as root contradicts SECURITY.md. Move the listener to an
-unprivileged port and redirect instead:
-
-1. Stop the container.
-2. Add to the container's `Envlist` (cleaner than editing the TOML on the SSD):
-
-   ```text
-   FAH__DNS__LISTEN__PORT=5353
-   ```
-
-   Env overrides beat the file per CONFIGURATION.md §Precedence.
-   `dns.listen.port` is boot-class, so this takes effect on restart.
-3. Redirect 53 → 5353 on the router so clients still use the standard port:
-
-   ```routeros
-   /ip/firewall/nat/add chain=dstnat action=dst-nat \
-     dst-address=172.17.0.2 protocol=udp dst-port=53 to-ports=5353 \
-     comment="fastadhunter dns udp"
-   /ip/firewall/nat/add chain=dstnat action=dst-nat \
-     dst-address=172.17.0.2 protocol=tcp dst-port=53 to-ports=5353 \
-     comment="fastadhunter dns tcp"
-   ```
-
-4. Start the container again.
-
-Record which path was needed in the completion note — if the workaround is
-required, that is a deployment fact worth an issue against the image.
-
 ## 5. Point the LAN at FastAdHunter
 
 Hand the container's address to clients via DHCP:
@@ -648,6 +601,117 @@ The cutover is then:
 Confirm first whether the veth address is globally routable, since nothing
 NATs in front of it — LAN-side firewalling is the operator's, not the
 guide's.
+
+## 5b. HTTP interception (Phase 2, `dns+http`)
+
+Optional and independent of DNS: skip this section and the deployment is a
+DNS-only resolver, exactly as before. Everything here is reversible by removing
+two firewall rules.
+
+### Turn on the HTTP engine
+
+The listener does not exist until `engine.mode` includes http, and the key is
+boot-class:
+
+```routeros
+/container/envs/add name=fah-env key=FAH__ENGINE__MODE value=dns+http
+```
+
+Restart the container, then confirm before touching the firewall:
+
+```routeros
+/log/print where message~"HTTP listener bound"
+```
+
+`addr=[::]:8080` — the default `[http.listen] port` is **8080**, not 80. The
+router dst-nats 80 to it, so the listener needs no privilege after the ADR-0004
+drop.
+
+### The redirect
+
+Order matters: the skip rule must precede the dst-nat rule. Appending them in
+this order does that. The `dstnat` chain has no final drop and the existing DNS
+redirects only match port 53, so no `place-before` is needed.
+
+```routeros
+/ip/firewall/address-list/add list=fah-http-skip address=192.168.0.0/16
+/ip/firewall/address-list/add list=fah-http-skip address=10.0.0.0/8
+/ip/firewall/address-list/add list=fah-http-skip address=172.16.0.0/12
+/ip/firewall/address-list/add list=fah-http-skip address=169.254.0.0/16
+/ip/firewall/address-list/add list=fah-http-skip address=127.0.0.0/8
+
+/ip/firewall/nat/add chain=dstnat action=accept protocol=tcp dst-port=80 \
+  dst-address-list=fah-http-skip \
+  comment="fastadhunter http: leave local traffic alone"
+
+/ip/firewall/nat/add chain=dstnat action=dst-nat protocol=tcp dst-port=80 \
+  in-interface-list=LAN src-address=!172.17.0.0/24 \
+  to-addresses=172.17.0.2 to-ports=8080 \
+  comment="fastadhunter http"
+```
+
+Three parts of that are load-bearing:
+
+- **The skip list is not optional.** The egress guard refuses private
+  destinations by design (`[egress] allow_destinations = []`), so LAN-to-LAN
+  HTTP must never enter the proxy or every local web UI stops loading.
+- **`src-address=!172.17.0.0/24`** keeps the proxy's own outbound fetches from
+  being redirected back into itself.
+- **`to-ports=8080`** must match `[http.listen] port`.
+
+**The forward chain needs nothing** on the reference deployment: its only
+catch-all drop is `in-interface-list=WAN`, so LAN → container falls through to
+the default accept. Read your own chain before assuming that — a deployment with
+a final LAN drop needs an accept for `172.17.0.2:8080`, mirroring the DNS one.
+
+### Verify
+
+```routeros
+/ip/firewall/nat/print stats where comment~"fastadhunter"
+```
+
+A packet count above zero on the dst-nat rule is the only proof traffic is being
+intercepted; everything else can look healthy while nothing arrives. Then:
+
+```sh
+curl -s -o /dev/null -w "%{remote_ip}\n" http://neverssl.com/
+curl -sk -H "Authorization: Bearer $FAH_KEY" \
+  "https://172.17.0.2:8443/api/v1/queries?kind=http&limit=10"
+```
+
+Rows carry `method`, `path`, `resource_type`, `status` and `bytes`.
+
+**Two results that look like failures and are not:**
+
+- **Blocked ad domains never appear in the HTTP log.** DNS blocking preempts
+  HTTP: the domain resolves to `0.0.0.0`, the client never opens a socket, and
+  the request never reaches the proxy.
+- **A low `kind=http` count is the web being HTTPS.** Phase 2 filters only the
+  unencrypted remainder. The nat counter distinguishes "no traffic" from "not
+  intercepted".
+
+### IPv6 is not covered by the rules above
+
+The rules live in `/ip/firewall/nat`. A client reaching a host over IPv6
+bypasses the proxy entirely — verified: `httpforever.com` connects over
+`2606:4700:…` and is absent from the log, while the same host forced to IPv4 is
+intercepted. The mirror rules live in
+[`docs/code-review/0.2.10-soak-baseline.md`](code-review/0.2.10-soak-baseline.md)
+§Known gap, along with the two open points (`to-ports` support on IPv6 dstnat,
+and IPv6-only origins being unreachable from a ULA-only container).
+
+The proxy fetches origins over **IPv4 regardless** — `resolve_host` returns A
+before AAAA deliberately — so this is a steering gap, not an egress one.
+
+### Rollback
+
+```routeros
+/ip/firewall/nat/remove [find comment~"fastadhunter http"]
+```
+
+Removes both rules; plain HTTP goes straight out again immediately. To disable
+the engine as well, remove `FAH__ENGINE__MODE` from `fah-env` and restart. The
+image and the DNS path are untouched either way.
 
 ## 6. On-device verification checklist
 

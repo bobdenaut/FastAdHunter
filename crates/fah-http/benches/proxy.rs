@@ -7,10 +7,13 @@
 //! setup excluded from both, because a transparent proxy amortises it across
 //! every request on the connection.
 //!
-//! The body is deliberately small. This measures the *head* path; the body path
-//! is a copy with no per-byte work, which
-//! `the_body_streams_rather_than_being_buffered_whole` covers for behaviour and
-//! `a_multi_megabyte_body_is_relayed_intact` for integrity.
+//! `pass_through` keeps its body deliberately small: it measures the *head*
+//! path. `opaque_body` is the second budget row — bytes the proxy never parses
+//! (images, archives, video), where the verdict is taken on the head and the
+//! body is relayed untouched. Its arms are the same direct/proxied pair at
+//! growing sizes, so a cost that scales with body size shows up as a widening
+//! gap rather than a constant offset. Which cost it is, these benches cannot
+//! say — see `opaque_body`.
 
 use std::convert::Infallible;
 use std::net::{IpAddr, SocketAddr};
@@ -18,7 +21,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use bytes::Bytes;
-use criterion::{criterion_group, criterion_main, Criterion};
+use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
 use fah_common::egress::{AllowedNet, DestinationPolicy};
 use fah_common::resolve::{HostResolver, Resolving};
 use http_body_util::{BodyExt, Full};
@@ -44,7 +47,17 @@ impl HostResolver for FixedResolver {
 
 const PAYLOAD: &[u8] = b"HTTP pass-through benchmark payload; small on purpose.";
 
+/// Body sizes for the opaque row. 8 KiB is a small asset, 1 MiB a photo,
+/// 8 MiB a video chunk — enough spread that a per-byte cost cannot hide.
+const BODY_SIZES: [usize; 3] = [8 * 1024, 1024 * 1024, 8 * 1024 * 1024];
+
 async fn origin() -> SocketAddr {
+    origin_serving(Bytes::from_static(PAYLOAD)).await
+}
+
+/// Allocated once and cloned per response: `Bytes` clones are a refcount bump,
+/// so the origin's own cost stays out of the measurement at every size.
+async fn origin_serving(body: Bytes) -> SocketAddr {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
     tokio::spawn(async move {
@@ -52,9 +65,11 @@ async fn origin() -> SocketAddr {
             let Ok((stream, _)) = listener.accept().await else {
                 return;
             };
+            let body = body.clone();
             tokio::spawn(async move {
-                let service = service_fn(|_request: Request<hyper::body::Incoming>| async {
-                    Ok::<_, Infallible>(Response::new(Full::new(Bytes::from_static(PAYLOAD))))
+                let service = service_fn(move |_request: Request<hyper::body::Incoming>| {
+                    let body = body.clone();
+                    async move { Ok::<_, Infallible>(Response::new(Full::new(body))) }
                 });
                 let _ = hyper::server::conn::http1::Builder::new()
                     .timer(TokioTimer::new())
@@ -178,5 +193,80 @@ fn pass_through(c: &mut Criterion) {
     group.finish();
 }
 
-criterion_group!(benches, pass_through);
+/// Opaque bodies: the verdict is taken on the head, then the bytes are relayed
+/// with no parsing, buffering or rewriting. Reported as throughput so the two
+/// arms are directly comparable across sizes — the pass criterion is that the
+/// proxied/direct ratio stays flat as the body grows.
+///
+/// **What a widening ratio does and does not say.** It shows a cost that scales
+/// with body size; it does not say which cost. Copying, socket buffering, task
+/// wakeups and cache behaviour all scale, and this bench separates none of them.
+/// Treat a regression here as a signal to profile, not as a diagnosis.
+fn opaque_body(c: &mut Criterion) {
+    let rt = Runtime::new().unwrap();
+
+    let mut group = c.benchmark_group("http_opaque_body");
+    // Multi-megabyte transfers over loopback are slow enough that criterion's
+    // default 100 samples would run for minutes per arm.
+    group.sample_size(20);
+
+    for size in BODY_SIZES {
+        let body = Bytes::from(vec![b'x'; size]);
+        let origin_addr = rt.block_on(origin_serving(body));
+        let proxy_addr = rt.block_on(proxy_in_front_of(origin_addr));
+        let host = format!("origin.test:{}", origin_addr.port());
+
+        group.throughput(Throughput::Bytes(size as u64));
+
+        let mut direct = rt.block_on(connect(origin_addr));
+        rt.block_on(async {
+            direct.ready().await.unwrap();
+            let _ = direct
+                .send_request(request(&host))
+                .await
+                .unwrap()
+                .into_body()
+                .collect()
+                .await;
+        });
+
+        group.bench_with_input(BenchmarkId::new("direct_to_origin", size), &size, |b, _| {
+            b.iter(|| {
+                rt.block_on(async {
+                    direct.ready().await.unwrap();
+                    let response = direct.send_request(request(&host)).await.unwrap();
+                    response.into_body().collect().await.unwrap().to_bytes()
+                })
+            });
+        });
+
+        // Connected after the direct arm for the same reason as `pass_through`:
+        // an idle keep-alive connection would not have survived it.
+        let mut proxied = rt.block_on(connect(proxy_addr));
+        rt.block_on(async {
+            proxied.ready().await.unwrap();
+            let _ = proxied
+                .send_request(request(&host))
+                .await
+                .unwrap()
+                .into_body()
+                .collect()
+                .await;
+        });
+
+        group.bench_with_input(BenchmarkId::new("through_proxy", size), &size, |b, _| {
+            b.iter(|| {
+                rt.block_on(async {
+                    proxied.ready().await.unwrap();
+                    let response = proxied.send_request(request(&host)).await.unwrap();
+                    response.into_body().collect().await.unwrap().to_bytes()
+                })
+            });
+        });
+    }
+
+    group.finish();
+}
+
+criterion_group!(benches, pass_through, opaque_body);
 criterion_main!(benches);

@@ -534,7 +534,7 @@ dependencies = [
 
 [[package]]
 name = "fah-api"
-version = "0.1.0"
+version = "0.2.10"
 dependencies = [
  "arc-swap",
  "axum",
@@ -564,7 +564,7 @@ dependencies = [
 
 [[package]]
 name = "fah-common"
-version = "0.1.0"
+version = "0.2.10"
 dependencies = [
  "socket2",
  "thiserror",
@@ -573,7 +573,7 @@ dependencies = [
 
 [[package]]
 name = "fah-config"
-version = "0.1.0"
+version = "0.2.10"
 dependencies = [
  "serde",
  "tempfile",
@@ -583,7 +583,7 @@ dependencies = [
 
 [[package]]
 name = "fah-dns"
-version = "0.1.0"
+version = "0.2.10"
 dependencies = [
  "criterion",
  "fah-common",
@@ -604,7 +604,7 @@ dependencies = [
 
 [[package]]
 name = "fah-http"
-version = "0.1.0"
+version = "0.2.10"
 dependencies = [
  "bytes",
  "criterion",
@@ -622,7 +622,7 @@ dependencies = [
 
 [[package]]
 name = "fah-logging"
-version = "0.1.0"
+version = "0.2.10"
 dependencies = [
  "tracing",
  "tracing-subscriber",
@@ -630,7 +630,7 @@ dependencies = [
 
 [[package]]
 name = "fah-metrics"
-version = "0.1.0"
+version = "0.2.10"
 dependencies = [
  "arc-swap",
  "criterion",
@@ -639,7 +639,7 @@ dependencies = [
 
 [[package]]
 name = "fah-model"
-version = "0.1.0"
+version = "0.2.10"
 dependencies = [
  "serde",
  "serde_json",
@@ -647,7 +647,7 @@ dependencies = [
 
 [[package]]
 name = "fah-rules"
-version = "0.1.0"
+version = "0.2.10"
 dependencies = [
  "arc-swap",
  "criterion",
@@ -665,7 +665,7 @@ dependencies = [
 
 [[package]]
 name = "fah-stats"
-version = "0.1.0"
+version = "0.2.10"
 dependencies = [
  "fah-config",
  "fah-model",
@@ -678,7 +678,7 @@ dependencies = [
 
 [[package]]
 name = "fastadhunter"
-version = "0.1.0"
+version = "0.2.10"
 dependencies = [
  "criterion",
  "fah-api",
