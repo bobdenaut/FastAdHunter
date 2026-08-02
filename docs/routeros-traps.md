@@ -35,7 +35,7 @@ list (`FAH__DNS__LISTEN__PORT`) is likewise unused; the live one is `fah-env`
 | Field | Verdict |
 | --- | --- |
 | `comment` | **exactly `fastadhunter`**, no version — `[find comment="fastadhunter"]` is exact equality and breaks if a version is appended |
-| `DNS` | **no-op trap** — accepted and displayed, never written to `/etc/resolv.conf` |
+| `DNS` | **is** written to `/etc/resolv.conf`, once, at container start (7.21.5 — older builds did not). Empty falls back to whatever `/ip/dns servers` holds *at that instant*, and it is never refreshed afterwards. Harmless here: FAH resolves through its own upstreams and never reads the file |
 | `Tmpfs` | harmful — `/data` on tmpfs loses cache mtimes, which brings back the double compile at boot |
 | `Auto Restart Interval` | **empty = nothing restarts FAH if it dies**; `Start On Boot` only covers router boot |
 | `Workdir` | `/home/nonroot`, inherited from the `:nonroot` base, harmless (all FAH paths are absolute) |
@@ -88,8 +88,16 @@ dropped after binding, which the start-up log states.
 - **`/system/resource/print` uptime is the ROUTER's, not the container's.** The
   container log is authoritative for FAH's start time.
 - **There is no `/system/scheduler`** on this box — the `fah-liveness` script in
-  the deploy doc was never applied. Production runs with no liveness net; the
-  upside is that continuous `uptime_seconds` is direct proof of process life.
+  the deploy doc was never applied, so nothing restarts FAH if it dies.
+  Continuous `uptime_seconds` remains direct proof of process life.
+- **`/tool/netwatch` holds a DNS failover** (`comment="change DNS if needed"`):
+  every 1 min it resolves `www.google.com` against `172.17.0.2`, and on failure
+  points `/ip/dns servers` at public resolvers, restoring `172.17.0.2` on
+  recovery. It does not restart the container. Two consequences: **"nobody
+  complained" is not evidence FAH stayed up**, and clients resolve unfiltered
+  for the length of every redeploy. The probe survives blocking only because
+  `null_ip` returns a valid A record — under NXDOMAIN blocking, a list carrying
+  the probe host would read as FAH being dead.
 - **QPS is `/interface monitor-traffic veth1` → `tx-packets-per-second`**
   (`tx` = into the container). Firewall counters also work but this is the
   answer.
@@ -102,9 +110,10 @@ RouterOS has no `docker` CLI — never `docker load`.
    emits **OCI layout**, which RouterOS cannot import.
 2. Convert with skopeo to a legacy **docker-archive** (flat, ~12 MB).
 3. Copy the tar (see the deploy-copy note in agent memory for the scp target).
-4. `/container` add reusing the existing settings: `interface=veth2`,
-   `root-dir=kingston/fastadhunter/root`, `mounts=fah-config,fah-data`,
-   `workdir=/home/nonroot`, `start-on-boot=yes`.
+4. `/container` add reusing the existing settings: `interface=veth1`,
+   `root-dir=/kingston/fastadhunter/root`, `mountlists=fah-config,fah-data`,
+   `envlists=fah-env`, `workdir=/home/nonroot`, `start-on-boot=yes`,
+   `logging=yes`, `comment="fastadhunter"`.
 
 **buildx needs QEMU re-registered after any Docker Desktop restart**
 (`docker run --privileged --rm tonistiigi/binfmt --install arm64`) **and then the

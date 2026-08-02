@@ -307,13 +307,19 @@ your LAN.
 
 Confirm both attached — `/container/print detail` must list them.
 
-**No `resolv.conf` mount is needed.** Earlier builds required one: RouterOS
-accepts a `dns=` setting on the container and shows it in
-`/container/print detail`, but does **not** write it into `/etc/resolv.conf`,
-which the distroless image ships as a 0-byte file. With no nameserver, every
-list download failed after ~5 s with a useless `error sending request for url`,
-while DNS *forwarding* kept working (upstreams are IP literals) — so the
-container looked healthy while downloading nothing.
+**No `resolv.conf` mount is needed.** Earlier builds required one, on an older
+RouterOS that accepted a `dns=` setting, showed it in `/container/print detail`
+and never wrote it into `/etc/resolv.conf` — which the distroless image ships as
+a 0-byte file. With no nameserver, every list download failed after ~5 s with a
+useless `error sending request for url`, while DNS *forwarding* kept working
+(upstreams are IP literals) — so the container looked healthy while downloading
+nothing.
+
+7.21.5 does write the file, once, at container start: from `dns=` when set,
+otherwise from whatever `/ip/dns servers` holds at that instant. It is never
+refreshed, so the contents are a snapshot of that moment — and if a netwatch
+failover was active during the restart, the snapshot is of the *failover*
+resolvers. Confusing to read, harmless to have.
 
 FastAdHunter now resolves its own list sources through the servers in
 `[[dns.upstreams.servers]]` and never consults `/etc/resolv.conf`
@@ -337,8 +343,9 @@ snapshots) — see [CONFIGURATION.md](../CONFIGURATION.md) §Volumes.
 /container/add \
   file=kingston/fastadhunter-arm64-0.2.5.tar \
   interface=veth1 \
-  root-dir=kingston/fastadhunter/root \
-  mounts=fah-config,fah-data \
+  root-dir=/kingston/fastadhunter/root \
+  mountlists=fah-config,fah-data \
+  envlists=fah-env \
   logging=yes \
   start-on-boot=yes \
   comment="fastadhunter"
