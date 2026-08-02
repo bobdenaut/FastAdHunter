@@ -160,23 +160,26 @@ Notes:
   The current implementation returns to its steady-state baseline.
 - **HTTP pass-through, head path — measured 2026-08-02** (p2-08, dev box,
   `fah-http/benches/proxy.rs`, loopback, warm keep-alive on both sides). Direct
-  to origin **34.9 µs**, through the proxy **71.8 µs** — the proxy adds
-  **+36.8 µs**, consistent with p2-02's +35 µs and p2-04's +32.4 µs. At the
-  measured ~9× factor that is ~330 µs on the RB5009, inside the 1 ms budget.
-  Connection setup is excluded from both arms: a transparent proxy amortises it
-  across every request on the connection.
+  to origin 32.6–34.9 µs, through the proxy 65.7–76.1 µs — the proxy adds
+  **+33 to +43 µs across four runs**, consistent with p2-02's +35 µs and
+  p2-04's +32.4 µs. At the measured ~9× factor that is ~300–390 µs on the
+  RB5009, inside the 1 ms budget. Connection setup is excluded from both arms: a
+  transparent proxy amortises it across every request on the connection.
 - **HTTP opaque-body throughput — measured 2026-08-02** (same bench, three body
-  sizes, 20 samples each). Bodies the proxy never parses: the verdict is taken
-  on the head, then the bytes are relayed.
+  sizes, 20 samples each, four runs). Bodies the proxy never parses: the verdict
+  is taken on the head, then the bytes are relayed.
 
   | body | direct | proxied | proxied throughput | proxy adds |
   | --- | ---: | ---: | ---: | ---: |
-  | 8 KiB | 35.7 µs | 72.7 µs | 107 MiB/s | +37 µs |
-  | 1 MiB | 1.23 ms | 1.26 ms | 795 MiB/s | +33 µs |
-  | 8 MiB | 6.17 ms | 6.89 ms | 1.13 GiB/s | +720 µs |
+  | 8 KiB | 34.9–37.9 µs | 69.6–74.9 µs | 104–112 MiB/s | +34 to +37 µs |
+  | 1 MiB | *not quoted — see below* | | | |
+  | 8 MiB | 5.39–6.17 ms | 6.41–6.89 ms | 1.15–1.21 GiB/s | +0.6 to +1.4 ms |
 
-  From 8 KiB to 1 MiB the added cost is a flat ~35 µs — the head cost, not
-  something that grows with the body. At 8 MiB it does scale.
+  The added latency is consistently ~35 µs for small bodies (head path and
+  8 KiB). The 1 MiB measurements exhibited excessive run-to-run variance and are
+  therefore not quoted. At 8 MiB the additional latency increases, consistent
+  with work that scales with transfer size, although this benchmark does not
+  attribute that cost.
 
   **The proxy sustained 1.13 GiB/s in a single-connection loopback benchmark on
   x86. Applying the previously measured ~9× ARM slowdown suggests throughput
@@ -190,6 +193,15 @@ Notes:
   Nor does 1.13 GiB/s rule out parsing or buffering; it establishes only that
   neither is dominant. Treat a regression in this bench as a signal to profile,
   not as a diagnosis.
+
+  **How to run these.** Unpinned, and take the range across several runs. The
+  single-core pinning in §Measuring reliably is for CPU-bound microbenches and
+  **must not** be applied here: this bench hosts the client, the proxy and the
+  origin in one multi-threaded runtime, and forcing them onto one core turns the
+  result into a scheduling artifact (the 32.6 µs direct arm read
+  `[423 µs 7.49 ms 16.1 ms]` pinned). The 1 MiB arm is unstable even unpinned —
+  it swung 2.7× across four runs and twice reported the proxied arm as *faster*
+  than direct, which is how it was caught.
 - **Inspected content (HTML) is budgeted separately and does not exist yet.**
   Phase 4 rewrites HTML through `lol_html`; the rows above are the opaque path
   and must not be read as covering it.
