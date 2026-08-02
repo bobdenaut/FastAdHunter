@@ -77,7 +77,92 @@ section is needed.
 7. **After every done task**: DO NOT post to user in chat-screen what was implemented,
    just create a review file unde docs/code-review/ (e.g. docs/code-review/p1.5-03-review.md)
    and announce that the task is DONE and the new filename.
-8. **Don't use python to edit files!** Use the Edit tool!!!
+
+## Engineering principles
+
+Treat this project as production infrastructure software where correctness,
+maintainability and predictable performance are more important than cleverness.
+**This list is canonical and lives only here** — it used to be duplicated in
+`plan/CLAUDE.md`, where rules 19 and 20 were added and then went unread because
+that file is not always loaded.
+
+When designing or modifying code, follow these principles in priority order:
+
+1. Correctness before optimization.
+   Never trade correctness for speed.
+
+2. Keep the hot path extremely small.
+   Anything executed per DNS query or HTTP request must avoid unnecessary allocations, virtual dispatch, cloning, hashing and synchronization.
+
+3. Avoid heap allocations on the hot path whenever possible.
+   Prefer borrowing, stack allocation, slices, iterators and reusable buffers.
+   Every allocation must have a clear justification.
+
+4. Avoid code duplication.
+   Shared behavior should exist in exactly one place. Prefer extracting reusable pure functions over copying logic.
+
+5. Minimize coupling.
+   Components should depend only on what they actually need. If a parameter, trait or dependency becomes unnecessary, remove it.
+
+6. Keep responsibilities separated.
+   Libraries should contain pure logic.
+   Binaries own clocks, timers, background tasks, networking, IO and dependency wiring.
+
+7. Prefer immutable data.
+   Mutability should be local and short-lived.
+
+8. Optimize only after measurement.
+   Never introduce complexity for hypothetical performance gains.
+   Measure first, optimize second.
+
+9. Every optimization must preserve readability.
+   If an optimization significantly increases complexity, explain why it is worth it.
+
+10. Avoid hidden state.
+    No globals, unnecessary singletons, implicit caches or surprising side effects.
+
+11. Prefer compile-time guarantees over runtime checks whenever practical.
+
+12. Design for long-term maintenance.
+    The simplest correct design is preferred over the most clever one.
+
+13. Reduce memory footprint.
+    Reuse existing allocations.
+    Avoid duplicate storage.
+    Share immutable data with Arc when appropriate.
+    Never keep redundant copies of large datasets.
+
+14. Remove obsolete code.
+    If a previous optimization, abstraction or parameter is no longer justified, delete it instead of keeping it "just in case".
+
+15. Challenge your own assumptions.
+    Before introducing a dependency or abstraction, ask:
+    - Is this actually needed?
+    - Can this responsibility live elsewhere?
+    - Am I duplicating existing behavior?
+    - Can this be simpler?
+
+    When proposing an implementation:
+    - Explain the trade-offs.
+    - Mention memory impact.
+    - Mention hot-path impact.
+    - Mention compile-time/runtime complexity.
+    - Explicitly point out architectural risks.
+    - If a simpler design exists, present it first.
+
+16. Architecture over micro-optimizations.
+    Do not introduce additional state, dependencies or abstractions to save a tiny amount of CPU or memory unless measurements demonstrate a meaningful benefit.
+
+17. Don't use python to edit files! Use the Edit tool.
+
+18. Ask permission before using the scp command.
+
+19. Code comments: maximum 5 lines for important stuff, otherwise 2 lines maximum.
+
+20. CONFIGURATION.md is a reference.
+    Do not read the entire file.
+    Read only the section(s) relevant to the task.
+    Never summarize or rewrite unrelated sections.
 
 ## Quality gates (local — there is no CI)
 
@@ -104,9 +189,11 @@ plan/          # task orchestration — open/ wip/ closed/ phases
 
 ## Task workflow
 
-Implementation work is driven by [plan/CLAUDE.md](plan/CLAUDE.md): phases move
-`open` → `wip` → `closed`; tasks execute in `NN` order; status lives in each
-phase's `CLAUDE.md` table. When asked to "work on the plan", start there.
+**Read [plan/CLAUDE.md](plan/CLAUDE.md) once per session before any
+implementation work** — not only when asked to "work on the plan". A question
+that turns into an edit ("can you fix X", "is Y still needed") is implementation
+work too. Phases move `open` → `wip` → `closed`; tasks execute in `NN` order;
+status lives in each phase's `CLAUDE.md` table.
 
 ## Environment notes
 

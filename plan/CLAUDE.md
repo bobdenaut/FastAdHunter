@@ -3,103 +3,11 @@
 **Structure:** this directory exists to simplify the workflow and prevent
 loading the entire project into context.
 
-## Engineering Principles
-
-Treat this project as production infrastructure software where correctness, maintainability and predictable performance are more important than cleverness.
-
-When designing or modifying code, follow these principles in priority order:
-
-1. Correctness before optimization.
-   Never trade correctness for speed.
-
-2. Keep the hot path extremely small.
-   Anything executed per DNS query or HTTP request must avoid unnecessary allocations, virtual dispatch, cloning, hashing and synchronization.
-
-3. Avoid heap allocations on the hot path whenever possible.
-   Prefer borrowing, stack allocation, slices, iterators and reusable buffers.
-   Every allocation must have a clear justification.
-
-4. Avoid code duplication.
-   Shared behavior should exist in exactly one place. Prefer extracting reusable pure functions over copying logic.
-
-5. Minimize coupling.
-   Components should depend only on what they actually need. If a parameter, trait or dependency becomes unnecessary, remove it.
-
-6. Keep responsibilities separated.
-   Libraries should contain pure logic.
-   Binaries own clocks, timers, background tasks, networking, IO and dependency wiring.
-
-7. Prefer immutable data.
-   Mutability should be local and short-lived.
-
-8. Optimize only after measurement.
-   Never introduce complexity for hypothetical performance gains.
-   Measure first, optimize second.
-
-9. Every optimization must preserve readability.
-   If an optimization significantly increases complexity, explain why it is worth it.
-
-10. Avoid hidden state.
-    No globals, unnecessary singletons, implicit caches or surprising side effects.
-
-11. Prefer compile-time guarantees over runtime checks whenever practical.
-
-12. Design for long-term maintenance.
-    The simplest correct design is preferred over the most clever one.
-
-13. Reduce memory footprint.
-    Reuse existing allocations.
-    Avoid duplicate storage.
-    Share immutable data with Arc when appropriate.
-    Never keep redundant copies of large datasets.
-
-14. Remove obsolete code.
-    If a previous optimization, abstraction or parameter is no longer justified, delete it instead of keeping it "just in case".
-
-15. Challenge your own assumptions.
-    Before introducing a dependency or abstraction, ask:
-    - Is this actually needed?
-    - Can this responsibility live elsewhere?
-    - Am I duplicating existing behavior?
-    - Can this be simpler?
-
-    When proposing an implementation:
-    - Explain the trade-offs.
-    - Mention memory impact.
-    - Mention hot-path impact.
-    - Mention compile-time/runtime complexity.
-    - Explicitly point out architectural risks.
-    - If a simpler design exists, present it first.
-
-16. Architecture over micro-optimizations.
-    Do not introduce additional state, dependencies or abstractions to save a tiny amount of CPU or memory unless measurements demonstrate a meaningful benefit.
-
-17. Don't use python to edit files! Use the Edit tool.
-
-18. Ask permission before using the scp command.
-
-## Responses
-
-Be concise!!!
-Do not explain obvious Rust code!!!
-Prefer bullet points over long prose!!!
-Do not restate the prompt!!!
-Answer the question first, then explain only if necessary!!!
-
-## Communication
-
-Assume every generated token has a cost.
-Prefer the shortest explanation that preserves technical accuracy.
-Do not justify every decision.
-Do not explain alternatives unless explicitly asked.
-Do not narrate your reasoning.
-Report:
-
-- what changed;
-- why it changed (1-2 sentences);
-- measurable impact.
-
-Default to patch-review style, not essay style
+**This file is workflow only.** Engineering principles, hard rules and response
+style live in the repo root [CLAUDE.md](../CLAUDE.md), which is always loaded.
+They were duplicated here and drifted — rules 19 and 20 existed only in this
+copy, so they went unread until they were broken. One copy, in the file that is
+always loaded (principle 4).
 
 ## Phase execution order
 
@@ -113,7 +21,12 @@ Task files follow `p<phase>-<NN>-<slug>.md` (e.g. `p0-01-workspace-skeleton.md`)
 
 Status lives only in the phase's `CLAUDE.md` table (last column) — task files
 carry no status field. Valid values: `WAITING`, `DONE`, `BLOCKED` (a task that
-failed its test-fix retries — see "Mandatory steps" §3).
+failed its test-fix retries — see "Mandatory steps" §3), `AWAITING SOAK`.
+
+`AWAITING SOAK` — code complete and gates green, but an acceptance criterion
+needs on-device evidence a dev box cannot produce. The selector skips it like
+`DONE`, so the phase keeps moving; the table cell must name what flips it. A
+phase is not finished while one exists.
 
 ## Folders holding phases by status
 
