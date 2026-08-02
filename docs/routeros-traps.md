@@ -11,14 +11,24 @@ wrong once.
 
 ## Topology
 
+Verified against the device 2026-08-02 (`/interface/veth/print detail`,
+`/container/print detail`, `/container/mounts/print detail`).
+
 | Interface | Address | What |
 | --- | --- | --- |
-| `veth1` | `172.17.0.2` | AdGuard Home — **stopped since ~2026-07-19**, resolves nothing |
-| `veth2` | `172.17.0.3` | FastAdHunter, DNS on 53, API on 8443 |
+| `veth1` | `172.17.0.2` | **FastAdHunter**, DNS on 53, API on 8443 |
+| `veth2` | `172.17.0.3` | **postgres** (`postgres:17-alpine`), unrelated to FAH |
+| `veth3` | `172.17.0.4` | `test` — the scratch interface for trying a temporary FAH build beside the live one; currently disabled, no container attached |
 
-FastAdHunter has been the LAN's **only** resolver since AdGuard stopped, so
-household RSS readings are soak-grade evidence. Rollback to AdGuard is no longer
-one command — the container must be started first, and its existence verified.
+Gateway is `172.17.0.1`; each veth also carries an IPv6 in
+`fd6c:7f32:8e91:1::/64`.
+
+**Another container shares the box.** `postgres` runs `start-on-boot=yes` with
+`memory-high=unlimited` and holds ~49 MiB. It is not FAH's, but it is on the same
+1 GB budget, so router-wide memory graphs are **not** a FAH measurement —
+attribute per-cgroup with `memory-current` before blaming FAH. A stale `ENV_FAH`
+list (`FAH__DNS__LISTEN__PORT`) is likewise unused; the live one is `fah-env`
+(the `MIMALLOC_*` keys).
 
 ## Container configuration
 
@@ -31,6 +41,10 @@ one command — the container must be started first, and its existence verified.
 | `Workdir` | `/home/nonroot`, inherited from the `:nonroot` base, harmless (all FAH paths are absolute) |
 | `Entrypoint`/`Cmd` | only real use is `--healthcheck` to debug a bricked config — there is no shell in distroless |
 | `memory-high=200M` | **KILLS FAH.** Do not propose it as a "safe falsifiable check"; it took down the live resolver once |
+| `root-dir` | `/kingston/fastadhunter/root`. A path without the `kingston/` prefix is the internal NAND — ~15 MiB per extracted image on a 1 GiB partition shared with RouterOS |
+| `logging=yes` | **not the default.** Without it there is no container log, which is the only debugging channel and the authority on FAH's start time |
+| `envlists` | `fah-env` (the `MIMALLOC_*` keys). `ENV_FAH` is a stale list and is not attached |
+| `interface` | `veth1` |
 
 **A named mount is not a working mount.** RouterOS accepts `mounts=` and reports
 them in `/container/print detail` without guaranteeing the container writes
@@ -39,6 +53,32 @@ through them. A silently ineffective mount looks healthy and loses every write o
 When on-device state seems not to persist, check the *instance*, not the code:
 `/container/mounts/print detail` cross-checked against the running container's
 `mounts=`.
+
+The **direct** check is better: `/config` and `/data` exist inside the image as
+empty 777 stubs, so a failed mount does not error — FAH just writes into the
+store instead, where `/file/print` cannot see it and `container/remove` deletes
+it. **Anything with a size under `kingston/fastadhunter/root/data` means the
+mounts are not attached.** Empty stubs dated at image-build time mean they are.
+
+## Inside a container store
+
+`/file/print` shows a store as one opaque entry (`type=container store`) and
+never enumerates it. **SFTP does** — browse `kingston/fastadhunter/root/` with
+WinSCP to see the extracted rootfs. Not seeing a Linux tree in `/file/print` is
+not evidence that extraction failed.
+
+| Entry | Origin |
+| --- | --- |
+| `fastadhunter` (~9.5 MB) | the static musl binary — this is the whole application |
+| `etc`, `home/nonroot`, `tmp`, `root`, `var` | the distroless base |
+| `config`, `data` | mount-point stubs from the Dockerfile, 777, empty when the mounts work |
+| `bin`, `boot`, `dev`, `lib`, `proc`, `run`, `sbin`, `sys`, `usr` | **RouterOS's**, not ours — the runtime's mount-point skeleton, all stamped with the RouterOS build date |
+
+Timestamps read cleanly: the skeleton carries the RouterOS build date, the binary
+and the stubs carry the image build date, `home` carries the extraction, and
+`etc` is touched at every container start when the runtime writes `hosts`.
+Everything is owned by uid 0 even though FAH runs as 65532 — privileges are
+dropped after binding, which the start-up log states.
 
 ## Commands that are not where you expect
 
