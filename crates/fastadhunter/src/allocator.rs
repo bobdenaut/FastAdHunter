@@ -28,10 +28,7 @@ static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 /// components and the memory figures lands in the residual as noise.
 ///
 /// Cheap enough for the 10 s telemetry poll — two `getrusage` calls plus two
-/// relaxed atomic loads — and never called from the DNS hot path. The cost of
-/// the whole accounting pass is exported as
-/// `fastadhunter_memory_collection_seconds`, so it is measured rather than
-/// assumed.
+/// relaxed atomic loads — and never called from the DNS hot path.
 ///
 /// **`current_commit` is not a live figure.** mimalloc v3 does not decrement it
 /// on purge, so it reads as a lifetime high-water mark and can sit several times

@@ -1,6 +1,6 @@
-# p2-07 — Memory Accounting
+# p2-07 — Historical Memory Breakdown
 
-**Task:** [plan/wip/phase2/p2-07-memory-accounting.md](../../plan/wip/phase2/p2-07-memory-accounting.md)
+**Task:** [plan/wip/phase2/p2-07-historical-memory-breakdown.md](../../plan/wip/phase2/p2-07-historical-memory-breakdown.md)
 **Gates:** `fmt --check` clean · `clippy --workspace --all-targets -D warnings` clean · `test --workspace` **483 passed, 0 failed** (twice consecutively)
 
 ---
@@ -224,3 +224,80 @@ unset-reads-as-zero case.
 **Removal condition, stated so it does not become permanent by default:** delete
 it once a soak shows the on-device figure stable. It is a `# TEMPORARY`-marked
 gauge, an atomic + setter, a timer in the poll, and one API.md paragraph.
+
+**Executed 2026-08-02** — removed in §11 below, exactly those four hunks. Last
+on-device reading was `0.000986` (986 µs, inside the 495 µs–4.86 ms spread
+already recorded), and the pass has since moved to `spawn_blocking`, so its
+duration no longer reaches query latency at all.
+
+---
+
+## 11. The persisted series (2026-08-02) — the task's last deliverable
+
+**Gates:** `fmt --check` clean · `clippy --workspace --all-targets -D warnings`
+clean · `test --workspace` **778 passed, 0 failed** (one pre-existing
+environmental failure, below)
+
+Everything above is a *single instant*. The 0.2.9 soak's memory evidence is
+therefore one `debug-memory.json` reading — 24.9 MB residual of 52.9 MB RSS,
+with no way to say whether it was flat. This closes that.
+
+### What shipped
+
+| Change | Where |
+| --- | --- |
+| `MemoryComponents { ruleset, cache, stats }` split out of `MemoryBreakdown` | `fah-model/src/memory.rs` |
+| `PerfSample.memory` + `PerfSample.minor_page_faults`, both `#[serde(default)]` | `fah-model/src/perf.rs` |
+| `Metrics::memory()` — the sampler reads the poll's breakdown | `fah-metrics/src/registry.rs` |
+| `MemoryComponentsResponse`, flattened into `MemoryResponse`, nested in a perf row | `fah-api/src/wire.rs` |
+| `memory` + `minor_page_faults` in `PerfFields` / `NAMES` / `ALL` | `fah-api/src/wire.rs` |
+| `fastadhunter_memory_collection_seconds` and its atomic deleted (§10) | `fah-metrics`, `fastadhunter` |
+
+### Four decisions
+
+1. **The row stores components only.** No `rss` (that is `rss_bytes`, already a
+   `?fields=` selector and already in 30 days of files) and no residual — a
+   stored derived value can disagree with its own inputs after any change to
+   what a component counts. `residual_bytes` is computed on read.
+2. **`rss_bytes` now comes from the breakdown, not a fresh `/proc` read.** The
+   poll is 10 s and the sampler 60 s, so a fresh read would have paired a
+   just-read RSS with components up to 10 s older and put the skew in the
+   residual — the exact failure §4 exists to prevent. Also removes one procfs
+   read per sample.
+3. **One mapping, not two.** `/debug/memory` and the perf row both go through
+   `MemoryComponentsResponse::of(&MemoryBreakdown)`; `MemoryResponse` `flatten`s
+   it, so live/persisted agreement is structural — §3's lesson applied before
+   the duplication landed rather than after.
+4. **Only `minor_page_faults` from `AllocatorStats`.** Its *derivative* is the
+   purge-thrash signal and a rate needs consecutive rows. The other three are
+   monotone over process lifetime — as a series they are ramps.
+
+### Cost
+
+| | |
+| --- | ---: |
+| JSON per row | ~160 B |
+| 30 days at `sample_interval_seconds = 60` | **6.9 MB**, pruned by `retention_days` |
+| Hot path | unchanged — no `fah-dns` / `fah-http` file is in the diff |
+| Per sample | one `/proc/self/status` read **removed** |
+
+### Tests
+
+- `a_row_written_before_the_memory_breakdown_still_deserializes` — 30 days of
+  existing rows keep parsing, reading back all-zero.
+- `history_perf_derives_the_residual_from_each_row` — 55,000,000 − 30,000,000 =
+  25,000,000 computed on read; both new `?fields=` names trim to themselves.
+- `live_and_persisted_breakdowns_use_the_same_keys_and_arithmetic` — same eight
+  keys on both surfaces, `accounted_bytes` equals the sum.
+- `history_e2e` — the breakdown survives disk → HTTP, carrying no second RSS.
+
+### Not done — needs the device
+
+Two acceptance criteria are unmet and cannot be met on a dev box: **where the
+residual lands against a freshly measured mimalloc baseline**, and **its slope
+over a soak window**. Both are p2-08 soak work; the 45 % figure in §1 predates
+the allocator swap and must not be quoted as the number being improved on.
+
+`fastadhunter --test e2e` fails here with the §8 `WSAEACCES` again — the whole
+reserved block was drawn, not one port. Identical failure on the stashed clean
+tree, so it is environmental.

@@ -1170,6 +1170,8 @@ mod tests {
                     forward_p50: 0.005,
                     forward_p99: 0.05,
                 },
+                memory: fah_model::MemoryComponents::default(),
+                minor_page_faults: 0,
                 upstreams: vec![],
             })
             .await;

@@ -56,6 +56,19 @@ const CLIENT: IpAddr = IpAddr::V4(Ipv4Addr::new(192, 168, 1, 10));
 /// can't pass by coincidence.
 const SAMPLE_RSS_BYTES: u64 = 57_213_952;
 const SAMPLE_CACHE_ENTRIES: u64 = 1_234;
+/// Components summing to 30,000,000 B, so the residual the API derives from
+/// `SAMPLE_RSS_BYTES` is a distinctive 27,213,952 B.
+const SAMPLE_MEMORY: fah_model::MemoryComponents = fah_model::MemoryComponents {
+    ruleset: 23_000_000,
+    cache: 5_000_000,
+    stats: fah_model::StatsHeap {
+        aggregates: 1_000_000,
+        clients: 500_000,
+        ring: 499_000,
+        pending_log: 1_000,
+    },
+};
+const SAMPLE_MINOR_FAULTS: u64 = 4_211_337;
 
 fn at_hour(hour_epoch: u64) -> SystemTime {
     UNIX_EPOCH + Duration::from_secs(hour_epoch * SECS_PER_HOUR)
@@ -168,6 +181,23 @@ async fn history_is_written_to_disk_and_served_over_http() {
     assert_eq!(sample["rss_bytes"], SAMPLE_RSS_BYTES);
     assert_eq!(sample["cache"]["entries"], SAMPLE_CACHE_ENTRIES);
     assert_eq!(sample["cache"]["max_bytes"], 67_108_864);
+    // The memory breakdown survives the disk round trip, and the residual is
+    // derived from this row's own RSS rather than read back from it (p2-07).
+    assert_eq!(sample["memory"]["ruleset_bytes"], SAMPLE_MEMORY.ruleset);
+    assert_eq!(
+        sample["memory"]["query_log_ring_bytes"],
+        SAMPLE_MEMORY.stats.ring
+    );
+    assert_eq!(sample["memory"]["accounted_bytes"], 30_000_000);
+    assert_eq!(
+        sample["memory"]["residual_bytes"],
+        SAMPLE_RSS_BYTES - 30_000_000
+    );
+    assert_eq!(sample["minor_page_faults"], SAMPLE_MINOR_FAULTS);
+    assert!(
+        sample["memory"].get("rss_bytes").is_none(),
+        "the persisted breakdown must not carry a second copy of the RSS"
+    );
 
     // ── GET /history/top ── returns the seeded top-N (ads blocked twice).
     let top = harness
@@ -298,6 +328,8 @@ fn perf_sample(ts: u64) -> PerfSample {
             forward_p50: 0.005,
             forward_p99: 0.05,
         },
+        memory: SAMPLE_MEMORY,
+        minor_page_faults: SAMPLE_MINOR_FAULTS,
         upstreams: vec![],
     }
 }

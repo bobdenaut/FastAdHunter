@@ -378,6 +378,10 @@ pub struct PerfSampleResponse {
     pub latency: Option<LatencySummary>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub upstreams: Option<Vec<UpstreamSample>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub memory: Option<MemoryComponentsResponse>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub minor_page_faults: Option<u64>,
 }
 
 /// Which [`PerfSampleResponse`] keys `?fields=` kept. Names match the response
@@ -394,6 +398,8 @@ pub struct PerfFields {
     pub cache: bool,
     pub latency: bool,
     pub upstreams: bool,
+    pub memory: bool,
+    pub minor_page_faults: bool,
 }
 
 impl PerfFields {
@@ -407,6 +413,8 @@ impl PerfFields {
         cache: true,
         latency: true,
         upstreams: true,
+        memory: true,
+        minor_page_faults: true,
     };
 
     pub const NONE: Self = Self {
@@ -418,11 +426,13 @@ impl PerfFields {
         cache: false,
         latency: false,
         upstreams: false,
+        memory: false,
+        minor_page_faults: false,
     };
 
     /// The accepted `?fields=` names, in response order — also what a rejection
     /// message lists back.
-    pub const NAMES: [&'static str; 8] = [
+    pub const NAMES: [&'static str; 10] = [
         "rss_bytes",
         "qps",
         "queries_delta",
@@ -431,6 +441,8 @@ impl PerfFields {
         "cache",
         "latency",
         "upstreams",
+        "memory",
+        "minor_page_faults",
     ];
 
     /// Turns one `?fields=` name on; `false` for a name that is not a key.
@@ -444,6 +456,8 @@ impl PerfFields {
             "cache" => self.cache = true,
             "latency" => self.latency = true,
             "upstreams" => self.upstreams = true,
+            "memory" => self.memory = true,
+            "minor_page_faults" => self.minor_page_faults = true,
             _ => return false,
         }
         true
@@ -468,6 +482,16 @@ impl HistoryPerfResponse {
                     allowed_delta: fields.allowed_delta.then_some(sample.allowed_delta),
                     cache: fields.cache.then_some(sample.cache),
                     latency: fields.latency.then_some(sample.latency),
+                    // The row's own RSS, so its residual is single-instant and
+                    // goes through the same `residual()` the live path uses.
+                    memory: fields.memory.then(|| {
+                        MemoryComponentsResponse::of(&fah_model::MemoryBreakdown {
+                            components: sample.memory,
+                            rss: Some(sample.rss_bytes),
+                            allocator: None,
+                        })
+                    }),
+                    minor_page_faults: fields.minor_page_faults.then_some(sample.minor_page_faults),
                     upstreams: fields.upstreams.then_some(sample.upstreams),
                 })
                 .collect(),
@@ -897,10 +921,12 @@ pub struct CacheCleanParams {
     pub stale: bool,
 }
 
+/// The component figures and their two derived totals. One struct because
+/// `/debug/memory` and every `/history/perf` row serve exactly these numbers:
+/// flattened into [`MemoryResponse`], nested under `memory` in a perf row.
 #[derive(Debug, Serialize)]
-pub struct MemoryResponse {
+pub struct MemoryComponentsResponse {
     pub ruleset_bytes: u64,
-    pub cache_entries: u64,
     pub cache_estimated_bytes: u64,
     /// 24 h aggregates plus the bounded top-N domain counters.
     pub stats_aggregates_bytes: u64,
@@ -917,9 +943,34 @@ pub struct MemoryResponse {
     /// Growth here while the components stay flat is the leak signal (p2-07).
     /// `null` when RSS is unavailable, since it cannot then be computed.
     ///
-    /// The allocator counters below cannot refine this — see
-    /// `allocator_committed_bytes`. Judge it against its own history.
+    /// The allocator counters cannot refine this — see
+    /// `MemoryResponse::allocator_committed_bytes`. Judge it against its own
+    /// history.
     pub residual_bytes: Option<u64>,
+}
+
+impl MemoryComponentsResponse {
+    /// The only place these are derived, so a live read and a persisted row
+    /// cannot disagree about `accounted` or `residual`.
+    pub fn of(memory: &fah_model::MemoryBreakdown) -> Self {
+        Self {
+            ruleset_bytes: memory.components.ruleset,
+            cache_estimated_bytes: memory.components.cache,
+            stats_aggregates_bytes: memory.components.stats.aggregates,
+            stats_clients_bytes: memory.components.stats.clients,
+            query_log_ring_bytes: memory.components.stats.ring,
+            query_log_pending_bytes: memory.components.stats.pending_log,
+            accounted_bytes: memory.accounted(),
+            residual_bytes: memory.residual(),
+        }
+    }
+}
+
+#[derive(Debug, Serialize)]
+pub struct MemoryResponse {
+    #[serde(flatten)]
+    pub components: MemoryComponentsResponse,
+    pub cache_entries: u64,
     /// `null` off Linux — the deployment target is a Linux container; a dev
     /// box on another OS simply has no `/proc/self/status` to read.
     pub process_rss: Option<u64>,

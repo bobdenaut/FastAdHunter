@@ -5,6 +5,7 @@
 //! series the ~91h soak captured externally with a curl loop. Plain records:
 //! no logic, no I/O (root CLAUDE.md hard rule 2).
 
+use crate::memory::MemoryComponents;
 use serde::{Deserialize, Serialize};
 
 /// One sampling interval's live figures — everything a dashboard graphs that
@@ -31,6 +32,19 @@ pub struct PerfSample {
     pub cache: CacheStatsSample,
     pub latency: LatencySummary,
     pub upstreams: Vec<UpstreamSample>,
+    /// Named components at capture (p2-07). No `rss` (that is `rss_bytes`) and
+    /// no residual — residual is derived on read via
+    /// [`crate::MemoryBreakdown::residual`], so it cannot disagree with its own
+    /// inputs. `default`: rows predating p2-07, and the first row after boot if
+    /// the telemetry poll has not published yet, read back as all-zero.
+    #[serde(default)]
+    pub memory: MemoryComponents,
+    /// Minor page faults since start, 0 where unavailable. Persisted because
+    /// its *derivative* is the purge-thrash signal and a rate needs consecutive
+    /// rows; the other allocator figures are monotone ramps and are not.
+    /// Outside `memory` so `accounted()` cannot pick up a kernel counter.
+    #[serde(default)]
+    pub minor_page_faults: u64,
 }
 
 /// A range of [`PerfSample`]s plus the decimation applied to fit the caller's
@@ -136,6 +150,17 @@ mod tests {
                 forward_p50: 0.005,
                 forward_p99: 0.05,
             },
+            memory: MemoryComponents {
+                ruleset: 23_440_198,
+                cache: 1_445_728,
+                stats: crate::StatsHeap {
+                    aggregates: 271_090,
+                    clients: 132_352,
+                    ring: 2_628_867,
+                    pending_log: 938,
+                },
+            },
+            minor_page_faults: 4_211_337,
             upstreams: vec![UpstreamSample {
                 address: "1.1.1.1".to_string(),
                 protocol: "dot".to_string(),
@@ -166,5 +191,23 @@ mod tests {
         assert_eq!(sample.cache.entries, 1);
         assert_eq!(sample.cache.bytes, 0);
         assert_eq!(sample.cache.max_bytes, 0);
+    }
+
+    #[test]
+    fn a_row_written_before_the_memory_breakdown_still_deserializes() {
+        // 30 days of retained rows carry no `memory` and no
+        // `minor_page_faults`; rejecting them would orphan the whole series.
+        let legacy = r#"{"ts":1,"rss_bytes":40000000,"qps":0.0,"queries_delta":0,
+            "blocked_delta":0,"allowed_delta":0,
+            "cache":{"entries":1,"capacity":2,"fresh":1,"stale":0,"expired":0,
+                     "hits":0,"misses":0,"evictions":0,"bytes":9,"max_bytes":99},
+            "latency":{"block_p50":0.0,"block_p99":0.0,"cache_hit_p50":0.0,
+                       "cache_hit_p99":0.0,"forward_p50":0.0,"forward_p99":0.0},
+            "upstreams":[]}"#;
+        let sample: PerfSample = serde_json::from_str(legacy).unwrap();
+        assert_eq!(sample.rss_bytes, 40_000_000);
+        assert_eq!(sample.memory, MemoryComponents::default());
+        assert_eq!(sample.memory.accounted(), 0);
+        assert_eq!(sample.minor_page_faults, 0);
     }
 }

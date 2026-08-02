@@ -7,14 +7,18 @@
 //! (ARCHITECTURE.md §Dependency Layering — L3 siblings never import each
 //! other, so a shared shape belongs at L1).
 //!
-//! Data plus trivial accessors only, per hard rule 2. [`MemoryBreakdown::accounted`]
+//! Data plus trivial accessors only, per hard rule 2. [`MemoryComponents::accounted`]
 //! is a sum and [`MemoryBreakdown::residual`] a subtraction; defining them once
 //! here is what stops a new component from being added to the metrics path and
 //! silently forgotten on the API path.
 
+use serde::{Deserialize, Serialize};
+
 /// `fah-stats`'s slice of the breakdown: its bounded in-RAM structures.
 /// Excludes anything on `/data`, which `retention_max_mb` bounds separately.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+///
+/// Serializable because it is persisted inside [`crate::PerfSample`].
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct StatsHeap {
     /// 24 h rolling buckets, per-type counts and the bounded top-N counters.
     pub aggregates: u64,
@@ -105,6 +109,27 @@ pub struct AllocatorStats {
     pub minor_page_faults: u64,
 }
 
+/// The named, bounded structures — everything that can state its own size.
+///
+/// Split out of [`MemoryBreakdown`] so one field list serves both the live path
+/// and the persisted row ([`crate::PerfSample::memory`]): a component added
+/// here reaches the history series, `/metrics` and `/debug/memory` at once.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MemoryComponents {
+    /// Compiled ruleset — `Matcher::heap_bytes()`.
+    pub ruleset: u64,
+    /// DNS cache — the total it already tracks for eviction decisions.
+    pub cache: u64,
+    pub stats: StatsHeap,
+}
+
+impl MemoryComponents {
+    /// Everything attributed to a named, bounded component.
+    pub fn accounted(&self) -> u64 {
+        self.ruleset + self.cache + self.stats.total()
+    }
+}
+
 /// One consistent read of where memory is.
 ///
 /// **Every field must be sampled at the same instant.** If `rss` is read at *t*
@@ -112,13 +137,13 @@ pub struct AllocatorStats {
 /// and the residual is the whole point: a leak shows as *residual growing while
 /// the named components stay flat*, because the growth you legitimately expect
 /// has been subtracted out.
+///
+/// Live surfaces only. The persisted row keeps [`MemoryComponents`] alone —
+/// `rss` is already `PerfSample::rss_bytes`, and of the allocator figures only
+/// `minor_page_faults` says anything as a series.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct MemoryBreakdown {
-    /// Compiled ruleset — `Matcher::heap_bytes()`.
-    pub ruleset: u64,
-    /// DNS cache — the total it already tracks for eviction decisions.
-    pub cache: u64,
-    pub stats: StatsHeap,
+    pub components: MemoryComponents,
     /// Process resident set size, or `None` where it cannot be read (no
     /// `/proc/self/status` off Linux). The residual is then not computable.
     pub rss: Option<u64>,
@@ -131,7 +156,7 @@ pub struct MemoryBreakdown {
 impl MemoryBreakdown {
     /// Everything attributed to a named, bounded component.
     pub fn accounted(&self) -> u64 {
-        self.ruleset + self.cache + self.stats.total()
+        self.components.accounted()
     }
 
     /// `RSS − Σ(components)`: binary text and data pages, thread stacks, the
@@ -168,8 +193,8 @@ impl MemoryBreakdown {
 mod tests {
     use super::*;
 
-    fn breakdown(rss: Option<u64>) -> MemoryBreakdown {
-        MemoryBreakdown {
+    fn components() -> MemoryComponents {
+        MemoryComponents {
             ruleset: 100,
             cache: 10,
             stats: StatsHeap {
@@ -178,6 +203,12 @@ mod tests {
                 ring: 3,
                 pending_log: 2,
             },
+        }
+    }
+
+    fn breakdown(rss: Option<u64>) -> MemoryBreakdown {
+        MemoryBreakdown {
+            components: components(),
             rss,
             allocator: None,
         }
@@ -200,6 +231,22 @@ mod tests {
             "a negative residual must never wrap to a huge unsigned value"
         );
         assert!(memory.over_accounted(), "the accounting bug must stay loud");
+    }
+
+    #[test]
+    fn the_persisted_components_carry_every_named_heap() {
+        // The persisted row is `MemoryComponents`, not `MemoryBreakdown`: if a
+        // component is added to the live path without landing here, the history
+        // series silently charts it as residual.
+        let json = serde_json::to_string(&components()).unwrap();
+        let back: MemoryComponents = serde_json::from_str(&json).unwrap();
+        assert_eq!(back, components());
+        assert_eq!(back.accounted(), 124);
+        assert_eq!(
+            back.accounted(),
+            breakdown(None).accounted(),
+            "the live breakdown must delegate to the same sum the row uses"
+        );
     }
 
     #[test]

@@ -1,4 +1,4 @@
-# P2-07 — Memory Accounting
+# P2-07 — Historical Memory Breakdown
 
 **Phase:** 2 · **Depends on:** — · **Model:** Opus
 
@@ -226,7 +226,7 @@ capture where this gives a permanent signal. Re-opening the RouterOS
 
 ## Suggested prompt
 
-> Read plan/wip/phase2/p2-07-memory-accounting.md — note that the
+> Read plan/wip/phase2/p2-07-historical-memory-breakdown.md — note that the
 > instrumentation half already shipped and only persistence is left. Split
 > `MemoryComponents` out of `MemoryBreakdown`, add it plus `minor_page_faults`
 > to `PerfSample` behind `#[serde(default)]`, hand the sampler's existing

@@ -240,16 +240,16 @@ rollups record (`A`, `AAAA`, `HTTPS`, `MX`, `TXT`, `PTR`, `NS`, `SOA`, `SRV`,
 ### `GET /api/v1/history/perf`
 
 The persisted `PerfSample` series — RSS, QPS, per-interval verdict deltas,
-cache stats, latency percentiles and upstream health, one row per
-`history.sample_interval_seconds` (default 60 s). At that cadence a single day
-is 1440 samples, so this is the endpoint `stride` usually applies to.
+cache stats, latency percentiles, the memory breakdown and upstream health, one
+row per `history.sample_interval_seconds` (default 60 s). At that cadence a
+single day is 1440 samples, so this is the endpoint `stride` usually applies to.
 
 `fields` takes a comma-separated subset of the response keys —
 `rss_bytes`, `qps`, `queries_delta`, `blocked_delta`, `allowed_delta`, `cache`,
-`latency`, `upstreams` — and drops the rest (**absent**, not null). `ts` is
-always present. An unknown name is a `400` rather than being ignored, so a typo
-cannot silently remove the series a chart wanted. `fields` trims the response,
-not the read.
+`latency`, `upstreams`, `memory`, `minor_page_faults` — and drops the rest
+(**absent**, not null). `ts` is always present. An unknown name is a `400`
+rather than being ignored, so a typo cannot silently remove the series a chart
+wanted. `fields` trims the response, not the read.
 
 ```json
 {
@@ -275,6 +275,13 @@ not the read.
         "cache_hit_p50": 0.0001, "cache_hit_p99": 0.00025,
         "forward_p50": 0.005, "forward_p99": 0.05
       },
+      "memory": {
+        "ruleset_bytes": 23000000, "cache_estimated_bytes": 5000000,
+        "stats_aggregates_bytes": 1000000, "stats_clients_bytes": 500000,
+        "query_log_ring_bytes": 499000, "query_log_pending_bytes": 1000,
+        "accounted_bytes": 30000000, "residual_bytes": 25000000
+      },
+      "minor_page_faults": 4211337,
       "upstreams": [
         { "address": "1.1.1.1", "protocol": "dot",
           "attempts": 12000, "failures": 3,
@@ -292,6 +299,16 @@ per-interval; the `cache` counters `hits`/`misses`/`evictions` are
 process-lifetime totals, the rest of `cache` — `bytes` against `max_bytes`
 included — is point-in-time. Rows written before the byte cap existed carry
 neither field and read back as `0`.
+
+`memory` is the same breakdown `/api/v1/debug/memory` serves, minus the live-only
+figures: **no RSS** (`rss_bytes` above is it) and **no allocator counters**, of
+which only `minor_page_faults` is worth a series — the rest are monotone over
+process lifetime, so a chart of them is a ramp. `residual_bytes` is derived on
+read from the row's own `rss_bytes` rather than stored, so it cannot disagree
+with the components beside it. Rows written before this shipped carry neither
+key and read back as zeros. `minor_page_faults` is cumulative since process
+start: chart its **derivative** — a rising fault rate at flat RSS is the
+allocator purging and re-faulting pages it is about to reuse.
 
 ### `GET /api/v1/history/top`
 
@@ -812,11 +829,9 @@ The same figures are exported on `/metrics` as
 the 10 s telemetry poll, so they can lag this endpoint — which reads live — by
 up to one interval.
 
-`/metrics` also carries `fastadhunter_memory_collection_seconds`, a
-**temporary** gauge holding the wall time of that whole 10 s pass — every
-component heap plus the `/proc/self/status` read. It exists to measure the
-accounting's own cost on the ARM target rather than extrapolate it from an x86
-dev box, and will be removed once that figure is known to be stable.
+The components and `minor_page_faults` are also persisted per sample into
+`GET /api/v1/history/perf`, which is where a *trend* in the residual is read —
+this endpoint and `/metrics` both serve one instant.
 
 ---
 

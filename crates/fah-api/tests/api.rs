@@ -257,6 +257,19 @@ impl HistorySource for FakeHistory {
                     forward_p50: 0.005,
                     forward_p99: 0.05,
                 },
+                // 55 MB RSS against 30 MB accounted → a 25 MB residual the
+                // tests below assert is derived, not stored.
+                memory: fah_model::MemoryComponents {
+                    ruleset: 23_000_000,
+                    cache: 5_000_000,
+                    stats: fah_model::StatsHeap {
+                        aggregates: 1_000_000,
+                        clients: 500_000,
+                        ring: 499_000,
+                        pending_log: 1_000,
+                    },
+                },
+                minor_page_faults: 4_211_337,
                 upstreams: vec![],
             }],
             stride: 1,
@@ -815,6 +828,70 @@ async fn history_perf_serves_the_sample_series_and_fields_trim_it() {
     let mut keys: Vec<&str> = item.keys().map(String::as_str).collect();
     keys.sort_unstable();
     assert_eq!(keys, ["cache", "rss_bytes", "ts"]);
+}
+
+#[tokio::test]
+async fn history_perf_derives_the_residual_from_each_row() {
+    let harness = start().await;
+
+    let body = harness.get_json("/api/v1/history/perf").await;
+    let memory = &body["items"][0]["memory"];
+    assert_eq!(memory["ruleset_bytes"], 23_000_000u64);
+    assert_eq!(memory["stats_clients_bytes"], 500_000);
+    assert_eq!(memory["accounted_bytes"], 30_000_000u64);
+    // 55,000,000 RSS − 30,000,000 accounted, computed on read: the row stores
+    // neither the residual nor a second RSS.
+    assert_eq!(memory["residual_bytes"], 25_000_000u64);
+    assert!(memory.get("process_rss").is_none());
+    assert_eq!(body["items"][0]["minor_page_faults"], 4_211_337u64);
+
+    // Both are selectable, and selecting one does not drag the other in.
+    let body = harness.get_json("/api/v1/history/perf?fields=memory").await;
+    let item = body["items"][0].as_object().unwrap();
+    let mut keys: Vec<&str> = item.keys().map(String::as_str).collect();
+    keys.sort_unstable();
+    assert_eq!(keys, ["memory", "ts"]);
+
+    let body = harness
+        .get_json("/api/v1/history/perf?fields=minor_page_faults")
+        .await;
+    let item = body["items"][0].as_object().unwrap();
+    let mut keys: Vec<&str> = item.keys().map(String::as_str).collect();
+    keys.sort_unstable();
+    assert_eq!(keys, ["minor_page_faults", "ts"]);
+}
+
+/// The live and the persisted surface must agree by construction: both build a
+/// `MemoryBreakdown` and ask it for `accounted`/`residual` (p2-07).
+#[tokio::test]
+async fn live_and_persisted_breakdowns_use_the_same_keys_and_arithmetic() {
+    let harness = start().await;
+
+    let live = harness.get_json("/api/v1/debug/memory").await;
+    let row = &harness.get_json("/api/v1/history/perf").await["items"][0]["memory"];
+
+    for key in [
+        "ruleset_bytes",
+        "cache_estimated_bytes",
+        "stats_aggregates_bytes",
+        "stats_clients_bytes",
+        "query_log_ring_bytes",
+        "query_log_pending_bytes",
+        "accounted_bytes",
+        "residual_bytes",
+    ] {
+        assert!(live.get(key).is_some(), "/debug/memory lost {key}");
+        assert!(row.get(key).is_some(), "the perf row lost {key}");
+    }
+    assert_eq!(
+        live["accounted_bytes"].as_u64().unwrap(),
+        live["ruleset_bytes"].as_u64().unwrap()
+            + live["cache_estimated_bytes"].as_u64().unwrap()
+            + live["stats_aggregates_bytes"].as_u64().unwrap()
+            + live["stats_clients_bytes"].as_u64().unwrap()
+            + live["query_log_ring_bytes"].as_u64().unwrap()
+            + live["query_log_pending_bytes"].as_u64().unwrap(),
+    );
 }
 
 #[tokio::test]

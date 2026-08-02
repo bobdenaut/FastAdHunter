@@ -166,9 +166,11 @@ async fn debug_memory(State(state): State<Arc<AppState>>) -> Json<MemoryResponse
     // and `residual` are defined once. Adding a component updates both
     // surfaces or neither — never one silently (p2-07).
     let memory = fah_model::MemoryBreakdown {
-        ruleset: state.rules.matcher().heap_bytes() as u64,
-        cache: cache.estimated_bytes,
-        stats: state.stats.heap(),
+        components: fah_model::MemoryComponents {
+            ruleset: state.rules.matcher().heap_bytes() as u64,
+            cache: cache.estimated_bytes,
+            stats: state.stats.heap(),
+        },
         rss: crate::rss::process_rss(),
         // Via the telemetry port, so this crate never learns which allocator is
         // installed (see `crates/fastadhunter/src/allocator.rs`) — and read here rather than lifted from the last
@@ -176,15 +178,8 @@ async fn debug_memory(State(state): State<Arc<AppState>>) -> Json<MemoryResponse
         allocator: state.telemetry.allocator(),
     };
     Json(MemoryResponse {
-        ruleset_bytes: memory.ruleset,
+        components: crate::wire::MemoryComponentsResponse::of(&memory),
         cache_entries: cache.entries,
-        cache_estimated_bytes: memory.cache,
-        stats_aggregates_bytes: memory.stats.aggregates,
-        stats_clients_bytes: memory.stats.clients,
-        query_log_ring_bytes: memory.stats.ring,
-        query_log_pending_bytes: memory.stats.pending_log,
-        accounted_bytes: memory.accounted(),
-        residual_bytes: memory.residual(),
         process_rss: memory.rss,
         allocator_committed_bytes: memory.allocator.map(|a| a.current_commit),
         allocator_committed_peak_bytes: memory.allocator.map(|a| a.peak_commit),

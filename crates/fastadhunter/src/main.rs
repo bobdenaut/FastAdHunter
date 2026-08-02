@@ -625,13 +625,6 @@ fn spawn_telemetry_poll(
             // fah-rules, fah-dns and fah-stats are L3 siblings that never
             // import each other, and fah-metrics never learns what any of
             // them is — it just receives the finished snapshot.
-            // TEMPORARY (post-p2-07): times the WHOLE pass, not `stats.heap()`
-            // alone — matcher, cache, stats heaps and the `/proc/self/status`
-            // read — because the whole pass is what is paid every 10 s. The
-            // 43 µs from `fah-stats/tests/heap_cost.rs` is an x86 figure that
-            // excludes the RSS read entirely (no procfs there), so the ARM cost
-            // has never actually been measured. Remove once it is known stable.
-            //
             // **On the blocking pool, not a DNS worker.** Every read below is
             // synchronous, and on the RB5009 the pass has been measured between
             // 495 µs and 4.86 ms — a 10× spread that tracks cache occupancy.
@@ -646,36 +639,28 @@ fn spawn_telemetry_poll(
             // field sampled at the same instant" invariant above still holds:
             // moving the pass must not smear it across the two schedulers.
             let matcher = rules.matcher();
-            let (memory, collection_micros) = {
+            let memory = {
                 let pipeline = Arc::clone(&pipeline);
                 let stats = Arc::clone(&stats);
                 let matcher = Arc::clone(&matcher);
-                tokio::task::spawn_blocking(move || {
-                    let collection_started = std::time::Instant::now();
-                    let memory = fah_model::MemoryBreakdown {
+                tokio::task::spawn_blocking(move || fah_model::MemoryBreakdown {
+                    components: fah_model::MemoryComponents {
                         ruleset: matcher.heap_bytes() as u64,
                         cache: pipeline.cache_stats().bytes,
                         stats: stats.heap(),
-                        // `0` is this accessor's "couldn't determine" — a
-                        // non-Linux dev box, or an unreadable
-                        // /proc/self/status. Mapped to `None` so the residual
-                        // reports as absent rather than as a fabricated RSS of
-                        // zero.
-                        rss: match fah_metrics::resident_memory_bytes() {
-                            0 => None,
-                            bytes => Some(bytes),
-                        },
-                        // Same instant as the components above. Nothing is
-                        // derived from these any more, but `minor_page_faults`
-                        // is read as a rate against the query counters sampled
-                        // in this pass, and skew between them would land in
-                        // that rate.
-                        allocator: allocator::stats(),
-                    };
-                    // Captured before the `warn!` below, so a logging call can
-                    // never inflate the number this is meant to report.
-                    let micros = collection_started.elapsed().as_micros() as u64;
-                    (memory, micros)
+                    },
+                    // `0` is this accessor's "couldn't determine" — a
+                    // non-Linux dev box, or an unreadable /proc/self/status.
+                    // Mapped to `None` so the residual reports as absent rather
+                    // than as a fabricated RSS of zero.
+                    rss: match fah_metrics::resident_memory_bytes() {
+                        0 => None,
+                        bytes => Some(bytes),
+                    },
+                    // Same instant as the components above: `minor_page_faults`
+                    // is read as a rate against the query counters sampled in
+                    // this pass, and skew would land in that rate.
+                    allocator: allocator::stats(),
                 })
                 .await
                 .expect("memory accounting task panicked")
@@ -693,7 +678,6 @@ fn spawn_telemetry_poll(
                 );
             }
             metrics.set_memory(memory);
-            metrics.set_memory_collection_micros(collection_micros);
 
             metrics.set_ruleset(fah_metrics::RulesetSnapshot {
                 rules: matcher.len(),
@@ -768,8 +752,17 @@ fn spawn_perf_sampler(
             }
             let current = metrics.snapshot();
             let cache = pipeline.cache_stats();
-            let rss = fah_metrics::resident_memory_bytes();
-            let sample = build_perf_sample(&current, prev.as_ref(), &cache, rss, interval_secs);
+            // The telemetry poll's breakdown, not a second collection (p2-07):
+            // it costs up to 4.9 ms on-device, and its own RSS is preferred so
+            // `rss_bytes - accounted` stays a single-instant residual. Falls
+            // back to a fresh read before the first poll publishes, and off
+            // Linux where both are 0.
+            let memory = metrics.memory();
+            let rss = memory
+                .rss
+                .unwrap_or_else(fah_metrics::resident_memory_bytes);
+            let sample =
+                build_perf_sample(&current, prev.as_ref(), &cache, rss, &memory, interval_secs);
             stats.persist_perf_sample(sample).await;
             prev = Some(current);
         }
@@ -784,6 +777,7 @@ fn build_perf_sample(
     prev: Option<&fah_metrics::MetricsSnapshot>,
     cache: &fah_dns::CacheStats,
     rss_bytes: u64,
+    memory: &fah_model::MemoryBreakdown,
     interval_secs: f64,
 ) -> fah_model::PerfSample {
     let ts = std::time::SystemTime::now()
@@ -829,6 +823,8 @@ fn build_perf_sample(
             bytes: cache.bytes,
             max_bytes: cache.max_bytes,
         },
+        memory: memory.components,
+        minor_page_faults: memory.allocator.map_or(0, |a| a.minor_page_faults),
         latency: latency_summary(current, prev),
         upstreams: current
             .upstreams
@@ -968,12 +964,39 @@ mod tests {
         }
     }
 
+    fn breakdown() -> fah_model::MemoryBreakdown {
+        fah_model::MemoryBreakdown {
+            components: fah_model::MemoryComponents {
+                ruleset: 100,
+                cache: 10,
+                stats: fah_model::StatsHeap {
+                    aggregates: 5,
+                    clients: 4,
+                    ring: 3,
+                    pending_log: 2,
+                },
+            },
+            rss: Some(1000),
+            allocator: Some(fah_model::AllocatorStats {
+                minor_page_faults: 7,
+                ..Default::default()
+            }),
+        }
+    }
+
     #[test]
     fn perf_sample_deltas_and_qps_across_two_snapshots() {
         let prev = snapshot(100, 5, 20);
         let current = snapshot(160, 6, 34); // +60 pass, +1 allow, +14 block = +75
 
-        let sample = build_perf_sample(&current, Some(&prev), &empty_cache(), 1000, 60.0);
+        let sample = build_perf_sample(
+            &current,
+            Some(&prev),
+            &empty_cache(),
+            1000,
+            &breakdown(),
+            60.0,
+        );
         assert_eq!(sample.queries_delta, 75);
         assert_eq!(sample.blocked_delta, 14);
         assert_eq!(sample.allowed_delta, 1);
@@ -983,11 +1006,31 @@ mod tests {
     #[test]
     fn perf_sample_first_reading_has_zero_deltas_and_qps() {
         let current = snapshot(160, 6, 34);
-        let sample = build_perf_sample(&current, None, &empty_cache(), 1000, 60.0);
+        let sample = build_perf_sample(&current, None, &empty_cache(), 1000, &breakdown(), 60.0);
         assert_eq!(sample.queries_delta, 0);
         assert_eq!(sample.blocked_delta, 0);
         assert_eq!(sample.allowed_delta, 0);
         assert_eq!(sample.qps, 0.0);
+    }
+
+    #[test]
+    fn perf_sample_carries_the_components_and_the_fault_counter_but_no_rss_copy() {
+        let memory = breakdown();
+        let sample = build_perf_sample(
+            &snapshot(160, 6, 34),
+            None,
+            &empty_cache(),
+            1000,
+            &memory,
+            60.0,
+        );
+
+        assert_eq!(sample.memory, memory.components);
+        assert_eq!(sample.minor_page_faults, 7);
+        // The row's RSS is `rss_bytes` alone, so the residual is derivable and
+        // never stored twice.
+        assert_eq!(sample.rss_bytes, 1000);
+        assert_eq!(sample.memory.accounted(), 124);
     }
 
     #[test]

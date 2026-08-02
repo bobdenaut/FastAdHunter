@@ -18,7 +18,7 @@ pub use history::{
     HistorySeries, HourRollup, TopItems, TopKind,
 };
 pub use http::{HttpRequest, ResourceType};
-pub use memory::{AllocatorStats, MemoryBreakdown, StatsHeap};
+pub use memory::{AllocatorStats, MemoryBreakdown, MemoryComponents, StatsHeap};
 pub use operating_mode::{OperatingMode, ParseOperatingModeError};
 pub use perf::{CacheStatsSample, LatencySummary, PerfSample, PerfSeries, UpstreamSample};
 pub use policy::{Assignment, ClientSelector, Policy, PolicyId, Schedule};

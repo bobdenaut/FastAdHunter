@@ -49,6 +49,13 @@ port 80 → container).
   has RSS can say "it grew"; with `fastadhunter_memory_component_bytes` and the
   residual it can say *which* structure grew, and a flat residual is what
   actually retires the leak question.
+  **This soak also closes `p2-07`, which sits at `AWAITING SOAK` for exactly
+  this evidence.** Pull the series from `GET /api/v1/history/perf` on-device
+  (not from an external curl loop — the point is that the router self-hosts it),
+  confirm a residual per sample across the window and that a row agrees with a
+  `/debug/memory` read at the same instant, then **state the slope over the
+  final third**. A drifting residual still flips `p2-07` to `DONE` — the
+  instrument worked — and opens a leak task with the series attached.
 - Bench consolidation: HTTP benches map 1:1 to the new budget rows.
 - End-to-end (offline): mock origin + real binary in dns+http mode —
   page with ad script: script blocked (200-empty), page renders; second

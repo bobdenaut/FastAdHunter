@@ -271,8 +271,10 @@ hit ratio, memory). For operators; distinct from Statistics (for users).
 
 ### Accounted / Residual
 
-The two-way split of resident memory, reported by `/api/v1/debug/memory` and
-`/metrics` (p2-07, `crates/fastadhunter/src/allocator.rs`). Use these words for these things and no others.
+The two-way split of resident memory, reported by `/api/v1/debug/memory`,
+`/metrics` and — as a series — `/api/v1/history/perf` (p2-07,
+`crates/fastadhunter/src/allocator.rs`). Use these words for these things and no
+others.
 
 - **Accounted** — the sum of every *bounded* component that reports its own
   heap: compiled ruleset, DNS cache, and the Statistics structures. Growth here

@@ -164,6 +164,12 @@ mod tests {
                 forward_p50: 0.005,
                 forward_p99: 0.05,
             },
+            memory: fah_model::MemoryComponents {
+                ruleset: 23_440_198,
+                cache: 1_445_728,
+                stats: fah_model::StatsHeap::default(),
+            },
+            minor_page_faults: 231_655,
             upstreams: vec![UpstreamSample {
                 address: "1.1.1.1".to_string(),
                 protocol: "udp".to_string(),

@@ -400,3 +400,8 @@ The `[history]` defaults suit the RB5009's 1 TB SSD: hourly/daily rollups are
 kilobytes/day and the 60 s perf series is tens of MB over 90 days, so keeping
 `retention_days` at 30 (or raising it to 60/90) costs almost nothing. Both are
 pruned by age like the query log — memory and disk stay bounded (hard rule 4).
+
+Each perf row also carries the memory breakdown (`memory` + `minor_page_faults`,
+p2-07), which is what lets a soak attribute growth to a component instead of
+only reporting RSS. It adds roughly 7 MB per 30 days at the default 60 s
+cadence, pruned by `retention_days` like every other row.
