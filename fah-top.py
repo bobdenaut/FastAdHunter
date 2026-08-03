@@ -12,7 +12,7 @@ ROS_USER = "monitor"
 ROS_PASS = os.getenv("MP", "")
 ROS_AUTH = (ROS_USER, ROS_PASS)
 
-ROUTER_FETCH_INTERVAL = 5
+ROUTER_FETCH_INTERVAL = 15
 
 router_cache = {
     "last_fetch": 0,
@@ -150,7 +150,8 @@ def draw_multi_row_braille(data, width, height=3):
         if max_v == min_v:
             h_dots = 1
         else:
-            h_dots = int(((val - min_v) / (max_v - min_v)) * (total_dots_y - 1)) + 1
+            raw_h = ((val - min_v) / (max_v - min_v)) * (total_dots_y - 1) + 1
+            h_dots = max(1, min(total_dots_y, int(raw_h)))
         
         for y in range(h_dots):
             grid[total_dots_y - 1 - y][sub_x] = True
@@ -173,10 +174,11 @@ def draw_multi_row_braille(data, width, height=3):
             char_code = 0x2800
             for dy in range(4):
                 gy = y_offset + dy
-                if grid[gy][sub_x0]:
-                    char_code |= dot_map[dy][0]
-                if grid[gy][sub_x1]:
-                    char_code |= dot_map[dy][1]
+                if gy < total_dots_y:
+                    if grid[gy][sub_x0]:
+                        char_code |= dot_map[dy][0]
+                    if grid[gy][sub_x1]:
+                        char_code |= dot_map[dy][1]
             
             row_str += chr(char_code)
         rows_text.append(row_str)
@@ -196,10 +198,13 @@ def parse_metrics():
     try:
         r = requests.get(BASE + "/metrics", headers=H, verify=False, timeout=2)
         if r.status_code != 200:
-            return {}, 0
+            return {}, 0, "0.000 ms", "0.000 ms"
         
         rules = 0
         upstreams = {}
+        sum_block, cnt_block = 0.0, 0
+        sum_cache, cnt_cache = 0.0, 0
+
         for line in r.text.splitlines():
             if line.startswith("fastadhunter_ruleset_rules"):
                 parts = line.split()
@@ -210,9 +215,21 @@ def parse_metrics():
                 parts = line.split()
                 if m and len(parts) >= 2:
                     upstreams[m.group(1)] = int(parts[1])
-        return upstreams, rules
+            elif line.startswith('fastadhunter_query_duration_seconds_sum{stage="block"}'):
+                sum_block = float(line.split()[1])
+            elif line.startswith('fastadhunter_query_duration_seconds_count{stage="block"}'):
+                cnt_block = int(line.split()[1])
+            elif line.startswith('fastadhunter_query_duration_seconds_sum{stage="cache_hit"}'):
+                sum_cache = float(line.split()[1])
+            elif line.startswith('fastadhunter_query_duration_seconds_count{stage="cache_hit"}'):
+                cnt_cache = int(line.split()[1])
+
+        avg_block = f"{(sum_block / cnt_block * 1000):.3f} ms" if cnt_block > 0 else "0.000 ms"
+        avg_cache = f"{(sum_cache / cnt_cache * 1000):.3f} ms" if cnt_cache > 0 else "0.000 ms"
+
+        return upstreams, rules, avg_block, avg_cache
     except:
-        return {}, 0
+        return {}, 0, "0.000 ms", "0.000 ms"
 
 def is_allowed(item):
     v = str(item.get("verdict", item.get("action", ""))).lower()
@@ -236,6 +253,8 @@ def main(stdscr):
 
     while True:
         ch = stdscr.getch()
+        if ch == curses.KEY_RESIZE:
+            stdscr.clear()
         if ch == ord('q') or ch == ord('Q'):
             stdscr.clear()
             stdscr.refresh()
@@ -251,7 +270,7 @@ def main(stdscr):
         q_data, ok1 = j("/api/v1/queries")
         c_data, ok2 = j("/api/v1/cache")
         m_data, ok3 = j("/api/v1/debug/memory")
-        upstreams, rules_count = parse_metrics()
+        upstreams, rules_count, avg_block_str, avg_cache_str = parse_metrics()
         
         perf_pts = fetch_perf_history()
         
@@ -282,15 +301,21 @@ def main(stdscr):
 
         c1_rss   = f"  RSS   {bar(min(rss, 150) / 150 * 100)} {rss:5.1f} MB"
         c2_rss   = f"Peak {peak:5.1f} MB"
-        c3_rss   = f"Ruleset {ruleset_mb:4.1f} MB │ Alloc Peak {alloc_peak_mb:5.1f} MB"
+        
+        part1_rss   = f"Ruleset {ruleset_mb:4.1f} MB"
+        c3_rss      = f"{part1_rss:<15} │ Alloc Peak {alloc_peak_mb:5.1f} MB"
 
         c1_hit   = f"  Hit   {bar(hp)} {hp:5.1f}%"
-        c2_hit   = f"{h}/{h + ms}"
-        c3_hit   = ""
+        c2_hit   = f"Hit: {h} - Miss: {ms}"
+        
+        part1_hit   = f"DNS L: {avg_block_str}"
+        c3_hit      = f"{part1_hit:<15} │ Cache Hit: {avg_cache_str}"
 
         c1_cache = f"  Cache {bar(load)} {load:5.1f}%"
         c2_cache = f"{c.get('entries', 0)}/{c.get('capacity', 0)} ({c_bytes:.1f}/{c_max_bytes:.0f} MB)"
-        c3_cache = f"Fresh {fresh} │ Stale {stale}"
+        
+        part1_cache = f"Fresh {fresh}"
+        c3_cache    = f"{part1_cache:<15} │ Stale {stale}"
 
         left_part_l3 = f"│{c1_rss:<36}│ {c2_rss:<28}│ {c3_rss:<38}"
         left_part_l4 = f"│{c1_hit:<36}│ {c2_hit:<28}│ {c3_hit:<38}"
@@ -364,7 +389,6 @@ def main(stdscr):
         hdr_str = f"│  {'Client':<39} {'Domain':<{domain_width}} {'Type':<6} {'Verdict':<9} {'Cache':<6} {'Time':<7}"
         stdscr.addstr(7, 0, f"{hdr_str:<{w+1}}│")
 
-        # MODIFICAT: max_y - 14 oferă loc curat celor 4 rânduri de footer
         max_rows = max(3, max_y - 14)
         
         r = 8
@@ -405,15 +429,12 @@ def main(stdscr):
         cache_cnt = sum(1 for i in q if i.get('cached'))
         live_cnt = sum(1 for i in q if not i.get('cached'))
         
-        # Line 1 Footer - App stats (CORRECTED FORMATTING)
         ftr1_content = f" Allow {allow_cnt} │ Block {block_cnt} │ Cache {cache_cnt} │ Live {live_cnt} │ {ups_str} │ Refresh 1.0 s │ q Quit"
         stdscr.addstr(footer_r + 1, 0, f"│{ftr1_content:<{w}}│")
 
-        # Line 2 Footer - Empty Spacer (CORRECTED FORMATTING)
         empty_content = ""
         stdscr.addstr(footer_r + 2, 0, f"│{empty_content:<{w}}│")
         
-        # Line 3 Footer - RouterOS stats (CORRECTED FORMATTING)
         ros_mem = router_cache['free_mem']
         ros_freq = router_cache['cpu_freq']
         ros_load = router_cache['cpu_load']
@@ -422,7 +443,6 @@ def main(stdscr):
         ftr2_content = f" RouterOS: Free Mem: {ros_mem} │ CPU Freq: {ros_freq} │ CPU Load: {ros_load} │ Container Mem: {ros_cnt_mem}"
         stdscr.addstr(footer_r + 3, 0, f"│{ftr2_content:<{w}}│")
 
-        # Line 4 Footer - Bottom Border cu try/except
         try:
             stdscr.addstr(footer_r + 4, 0, "└" + "─" * w + "┘")
         except curses.error:
