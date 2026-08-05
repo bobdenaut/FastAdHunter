@@ -1,0 +1,16 @@
+host = "172.17.0.2"
+port = 8443
+token = "c48ac59cdaef2a10cf96ddeac66dd4d3c1be57bf1dcfbd9e96b0aed7de06ef65"
+
+[endpoints]
+ws_events = "/api/v1/events"
+cache = "/api/v1/cache"
+memory = "/api/v1/debug/memory"
+metrics = "/metrics"
+history_perf = "/api/v1/history/perf?fields=rss_bytes"
+history_summary = "/api/v1/history/summary"
+
+[routeros]
+ros_base = "https://192.168.10.1:8443/rest"
+ros_user = "monitor"
+router_fetch_interval = 15
