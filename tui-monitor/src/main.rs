@@ -300,29 +300,25 @@ async fn history_perf_worker(state: Arc<RwLock<AppState>>, cfg: Config) {
 
     let client = match reqwest::Client::builder()
         .danger_accept_invalid_certs(true)
-        .timeout(Duration::from_secs(10))
+        .timeout(Duration::from_secs(5))
         .build()
     {
         Ok(c) => c,
         Err(_) => return,
     };
 
-    const HISTORY_PERF_REFRESH: Duration = Duration::from_secs(5 * 60);  // 5 minutes
-    const MAX_POINTS: usize = 288;
-    let mut interval = tokio::time::interval(HISTORY_PERF_REFRESH);
+    const HISTORY_WINDOW_MINUTES: usize = 24 * 60;
+    const SAMPLE_INTERVAL_MINUTES: usize = 5;
+    const MAX_POINTS: usize = HISTORY_WINDOW_MINUTES / SAMPLE_INTERVAL_MINUTES;
 
-    loop {
-        interval.tick().await;
-        
-        if let Ok(resp) = client.get(&url).header("Authorization", &auth_header).send().await {
-            if let Ok(json) = resp.json::<HistoryPerf>().await {
-                if let Ok(mut st) = state.write() {
-                    let mut deque: VecDeque<f64> = json.items.iter()
-                        .map(|it| it.rss_bytes / 1024.0 / 1024.0)
-                        .collect();
-                    while deque.len() > MAX_POINTS { deque.pop_front(); }
-                    st.perf_points = deque;
-                }
+    if let Ok(resp) = client.get(&url).header("Authorization", &auth_header).send().await {
+        if let Ok(json) = resp.json::<HistoryPerf>().await {
+            if let Ok(mut st) = state.write() {
+                let mut deque: VecDeque<f64> = json.items.iter()
+                    .map(|it| it.rss_bytes / 1024.0 / 1024.0)
+                    .collect();
+                while deque.len() > MAX_POINTS { deque.pop_front(); }
+                st.perf_points = deque;
             }
         }
     }
@@ -1149,11 +1145,10 @@ async fn run_ui<B: ratatui::backend::Backend>(
 
                 f.render_widget(popup, area);
             }
-
-            // Slide the RSS history window at fixed rate (10 Hz)
             drop(st);  // Release read lock
         })?;
 
+        // Bootstrap history is loaded once; keep the graph moving with live RSS samples.
         if last_perf_update.elapsed() >= PERF_UPDATE_INTERVAL {
             if let Ok(mut state_lock) = state.write() {
                 let rss_val = state_lock.memory_data.process_rss / 1024.0 / 1024.0;
