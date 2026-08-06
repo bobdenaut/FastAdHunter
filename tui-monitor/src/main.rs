@@ -915,7 +915,7 @@ async fn run_ui<B: ratatui::backend::Backend>(
 
             let graph_width = size.width.saturating_sub(plain_l3.chars().count() as u16 + 2) as usize;
             let graph_rows = draw_multi_row_braille(&display_pts, graph_width, 3);
-
+            
             let lbl_graph = format!(" 24h RSS History (Min {} │ Avg {} │ Now {} MB) ", min_rss, avg_rss, now_rss);
             let graph_hdr = if graph_width > lbl_graph.len() {
                 let p_left = (graph_width - lbl_graph.len()) / 2;
@@ -943,14 +943,14 @@ async fn run_ui<B: ratatui::backend::Backend>(
                     let mut spans = vec![Span::raw(" RSS   ")];
                     spans.extend(sexy_bar(rss_percent_1024, bar_width, Color::Cyan));
                     spans.push(Span::raw(format!(" {:5.1} MB │ {:<width2$} │ {:<width3$} │ {:<width4$}│", rss, col2_str_l3, col3_str_l3, col4_str_l3, width2 = col2_w, width3 = col3_w, width4 = col4_w)));
-                    spans.push(Span::styled(&graph_rows[0], Style::default().fg(Color::Green)));
+                    spans.push(Span::styled(&graph_rows[0], Style::default().fg(Color::Red)));
                     spans
                 }),
                 Line::from({
                     let mut spans = vec![Span::raw(" Hit   ")];
                     spans.extend(sexy_bar(hit_p, bar_width, Color::Green));
                     spans.push(Span::raw(format!(" {:5.1}%   │ {:<width2$} │ {:<width3$} │ {:<width4$}│", hit_p, col2_str_l4, col3_str_l4, col4_str_l4, width2 = col2_w, width3 = col3_w, width4 = col4_w)));
-                    spans.push(Span::styled(&graph_rows[1], Style::default().fg(Color::Green)));
+                    spans.push(Span::styled(&graph_rows[1], Style::default().fg(Color::Yellow)));
                     spans
                 }),
                 Line::from({
