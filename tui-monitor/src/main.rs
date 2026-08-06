@@ -1117,7 +1117,10 @@ async fn run_ui<B: ratatui::backend::Backend>(
             let col3_str_l3 = format!("Rules {:4.1} MB", ruleset_mb);
             let col4_str_l3 = format!("Alloc {:5.1} MB", alloc_peak_mb);
 
-            let col2_str_l4 = format!("Hit: {} - Miss: {}", hits, misses);
+            // Denominator spelled out: this ratio is over cache *lookups*, not
+            // over all queries — a blocked query never reaches the cache. The
+            // left panel's "Hit (all q)" is the other denominator.
+            let col2_str_l4 = format!("{}/{} lookups", hits, hits + misses);
             let col3_str_l4 = format!("DNS L: {}", st.avg_block_str);
             let col4_str_l4 = format!("Cache H: {}", st.avg_cache_str);
 
@@ -1180,7 +1183,11 @@ async fn run_ui<B: ratatui::backend::Backend>(
                 }),
             ];
 
-            f.render_widget(Paragraph::new(header_lines).block(Block::default().borders(Borders::ALL).title("Status")), chunks[0]);
+            // "counters since boot", not "since boot": RSS, entries and
+            // Fresh/Stale are instantaneous, and the braille graph carries its
+            // own 24h label. Only the accumulating fields reset with the
+            // process — those are the ones comparable against the 24h panel.
+            f.render_widget(Paragraph::new(header_lines).block(Block::default().borders(Borders::ALL).title("Status (counters since boot)")), chunks[0]);
 
             let body_chunks = Layout::default()
                 .direction(Direction::Horizontal)
@@ -1199,7 +1206,9 @@ async fn run_ui<B: ratatui::backend::Backend>(
                     spans
                 }),
                 Line::from({
-                    let mut spans = vec![Span::styled("Cache Hit:    ", Style::default().fg(Color::Green).add_modifier(Modifier::BOLD))];
+                    // "all q" is the distinction from the Status panel's Hit
+                    // bar, which divides by cache lookups instead.
+                    let mut spans = vec![Span::styled("Hit (all q):  ", Style::default().fg(Color::Green).add_modifier(Modifier::BOLD))];
                     spans.extend(sexy_bar(st.cache_hit_percent, bar_w, Color::Green));
                     spans.push(Span::raw(" "));
                     spans.push(Span::styled(format!("{:5.1}%", st.cache_hit_percent), Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)));
