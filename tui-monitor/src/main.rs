@@ -1,7 +1,7 @@
 // FastAdHunter TUI - Versiune Optimizată (Zero-Allocation UI, Parallel Async Fetch, RwLock)
 
 use crossterm::{
-    event::{self, Event, KeyCode, EnableMouseCapture, DisableMouseCapture, MouseEventKind},
+    event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, MouseEventKind},
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
@@ -11,16 +11,24 @@ use ratatui::{
     layout::{Constraint, Direction, Layout},
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Clear, Block, Borders, Paragraph, Scrollbar, ScrollbarOrientation, ScrollbarState, Table, Row, Cell, TableState},
+    widgets::{
+        Block, Borders, Cell, Clear, Paragraph, Row, Scrollbar, ScrollbarOrientation,
+        ScrollbarState, Table, TableState,
+    },
     Terminal,
 };
 use serde::Deserialize;
 use std::{
-    collections::{BTreeMap, VecDeque}, error::Error, fs, io, sync::{Arc, RwLock}, time::{Duration, Instant},
+    collections::{BTreeMap, VecDeque},
+    error::Error,
+    fs, io,
+    sync::{Arc, RwLock},
+    time::{Duration, Instant},
 };
 
 use tokio_tungstenite::{
-    connect_async_tls_with_config, tungstenite::client::IntoClientRequest, tungstenite::protocol::Message, Connector,
+    connect_async_tls_with_config, tungstenite::client::IntoClientRequest,
+    tungstenite::protocol::Message, Connector,
 };
 
 // --- STRUCTURI TIPIZATE PENTRU MEMORIE ȘI SPEED ---
@@ -138,7 +146,6 @@ impl Config {
         let config: Config = toml::from_str(&contents)?;
         Ok(config)
     }
-
 }
 
 #[derive(Default)]
@@ -153,7 +160,7 @@ struct AppState {
     top_blocked_domains: Vec<TopDomain>,
     top_clients: Vec<TopClient>,
     top_queried_domains: Vec<TopDomain>,
-    
+
     query_scroll: usize,
     stats_scroll: u16,
 
@@ -245,9 +252,12 @@ async fn main() -> Result<(), Box<dyn Error>> {
     // Build full endpoint URLs once and spawn dedicated HTTP workers
     let auth_arc: Arc<str> = Arc::from(auth_header.into_boxed_str());
 
-    let cache_url: Arc<str> = Arc::from(format!("{base_url}{}", config.endpoints.cache).into_boxed_str());
-    let memory_url: Arc<str> = Arc::from(format!("{base_url}{}", config.endpoints.memory).into_boxed_str());
-    let metrics_url: Arc<str> = Arc::from(format!("{base_url}{}", config.endpoints.metrics).into_boxed_str());
+    let cache_url: Arc<str> =
+        Arc::from(format!("{base_url}{}", config.endpoints.cache).into_boxed_str());
+    let memory_url: Arc<str> =
+        Arc::from(format!("{base_url}{}", config.endpoints.memory).into_boxed_str());
+    let metrics_url: Arc<str> =
+        Arc::from(format!("{base_url}{}", config.endpoints.metrics).into_boxed_str());
 
     // URLs are owned by a single worker; the authorization header is shared.
     tokio::spawn(cache_worker(
@@ -271,11 +281,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     enable_raw_mode()?;
     let mut stdout = io::stdout();
-    execute!(
-        stdout,
-        EnterAlternateScreen,
-        EnableMouseCapture,
-    )?;
+    execute!(stdout, EnterAlternateScreen, EnableMouseCapture,)?;
 
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
@@ -311,13 +317,22 @@ async fn history_perf_worker(state: Arc<RwLock<AppState>>, cfg: Config) {
     const SAMPLE_INTERVAL_MINUTES: usize = 5;
     const MAX_POINTS: usize = HISTORY_WINDOW_MINUTES / SAMPLE_INTERVAL_MINUTES;
 
-    if let Ok(resp) = client.get(&url).header("Authorization", &auth_header).send().await {
+    if let Ok(resp) = client
+        .get(&url)
+        .header("Authorization", &auth_header)
+        .send()
+        .await
+    {
         if let Ok(json) = resp.json::<HistoryPerf>().await {
             if let Ok(mut st) = state.write() {
-                let mut deque: VecDeque<f64> = json.items.iter()
+                let mut deque: VecDeque<f64> = json
+                    .items
+                    .iter()
                     .map(|it| it.rss_bytes / 1024.0 / 1024.0)
                     .collect();
-                while deque.len() > MAX_POINTS { deque.pop_front(); }
+                while deque.len() > MAX_POINTS {
+                    deque.pop_front();
+                }
                 st.perf_points = deque;
             }
         }
@@ -343,7 +358,7 @@ async fn history_summary_worker(state: Arc<RwLock<AppState>>, cfg: Config) {
 
     loop {
         interval.tick().await;
-        
+
         fetch_summary_24h(state.clone(), &client, &url, &auth_header).await;
         fetch_summary_last_7days(state.clone(), &client, &url, &auth_header).await;
     }
@@ -355,11 +370,26 @@ async fn fetch_summary_24h(
     url: &str,
     auth_header: &str,
 ) {
-    if let Ok(resp) = client.get(url).header("Authorization", auth_header).send().await {
+    if let Ok(resp) = client
+        .get(url)
+        .header("Authorization", auth_header)
+        .send()
+        .await
+    {
         if let Ok(val) = resp.json::<serde_json::Value>().await {
-            let (total_queries, total_blocked, total_cache_hits, sum_a, 
-                sum_aaaa, sum_https, blocked_percent, cache_hit_percent, 
-                a_percent, aaaa_percent, https_percent) = parse_summary_data(&val);
+            let (
+                total_queries,
+                total_blocked,
+                total_cache_hits,
+                sum_a,
+                sum_aaaa,
+                sum_https,
+                blocked_percent,
+                cache_hit_percent,
+                a_percent,
+                aaaa_percent,
+                https_percent,
+            ) = parse_summary_data(&val);
 
             if let Ok(mut st) = state.write() {
                 st.summary_24h_total_queries = total_queries;
@@ -395,17 +425,28 @@ async fn fetch_summary_last_7days(
         .format("%Y-%m-%dT00:00:00Z")
         .to_string();
 
-    let url = format!(
-        "{}?from={}&resolution=day",
-        base_url,
-        from
-    );
+    let url = format!("{}?from={}&resolution=day", base_url, from);
 
-    if let Ok(resp) = client.get(&url).header("Authorization", auth_header).send().await {
+    if let Ok(resp) = client
+        .get(&url)
+        .header("Authorization", auth_header)
+        .send()
+        .await
+    {
         if let Ok(val) = resp.json::<serde_json::Value>().await {
-            let (total_queries, total_blocked, total_cache_hits, sum_a, 
-                sum_aaaa, sum_https, blocked_percent, cache_hit_percent, 
-                a_percent, aaaa_percent, https_percent) = parse_summary_data(&val);
+            let (
+                total_queries,
+                total_blocked,
+                total_cache_hits,
+                sum_a,
+                sum_aaaa,
+                sum_https,
+                blocked_percent,
+                cache_hit_percent,
+                a_percent,
+                aaaa_percent,
+                https_percent,
+            ) = parse_summary_data(&val);
 
             if let Ok(mut st) = state.write() {
                 st.summary_7d_total_queries = total_queries;
@@ -425,9 +466,12 @@ async fn fetch_summary_last_7days(
 }
 
 // Extracted the inner iteration logic here to prevent massive code duplication
-fn parse_summary_data(val: &serde_json::Value) -> (u64, u64, u64, u64, u64, u64, f64, f64, f64, f64, f64) {
+fn parse_summary_data(
+    val: &serde_json::Value,
+) -> (u64, u64, u64, u64, u64, u64, f64, f64, f64, f64, f64) {
     let empty_vec = vec![];
-    let items_arr = val.get("items")
+    let items_arr = val
+        .get("items")
         .or_else(|| val.get("data"))
         .and_then(|v| v.as_array())
         .unwrap_or_else(|| val.as_array().unwrap_or(&empty_vec));
@@ -440,38 +484,83 @@ fn parse_summary_data(val: &serde_json::Value) -> (u64, u64, u64, u64, u64, u64,
     let mut sum_https = 0;
 
     for item in items_arr {
-        total_queries += item.get("queries")
+        total_queries += item
+            .get("queries")
             .or_else(|| item.get("total_queries"))
             .or_else(|| item.get("total"))
-            .and_then(|v| v.as_u64()).unwrap_or(0);
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0);
 
-        total_blocked += item.get("blocked")
+        total_blocked += item
+            .get("blocked")
             .or_else(|| item.get("blocked_queries"))
-            .and_then(|v| v.as_u64()).unwrap_or(0);
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0);
 
-        total_cache_hits += item.get("cache_hits")
+        total_cache_hits += item
+            .get("cache_hits")
             .or_else(|| item.get("cache_hit"))
             .or_else(|| item.get("hits"))
-            .and_then(|v| v.as_u64()).unwrap_or(0);
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0);
 
-        if let Some(types) = item.get("per_type")
+        if let Some(types) = item
+            .get("per_type")
             .or_else(|| item.get("types"))
             .or_else(|| item.get("by_type"))
-            .and_then(|v| v.as_object()) 
+            .and_then(|v| v.as_object())
         {
-            if let Some(v) = types.get("A").and_then(|v| v.as_u64()) { sum_a += v; }
-            if let Some(v) = types.get("AAAA").and_then(|v| v.as_u64()) { sum_aaaa += v; }
-            if let Some(v) = types.get("HTTPS").and_then(|v| v.as_u64()) { sum_https += v; }
+            if let Some(v) = types.get("A").and_then(|v| v.as_u64()) {
+                sum_a += v;
+            }
+            if let Some(v) = types.get("AAAA").and_then(|v| v.as_u64()) {
+                sum_aaaa += v;
+            }
+            if let Some(v) = types.get("HTTPS").and_then(|v| v.as_u64()) {
+                sum_https += v;
+            }
         }
     }
 
-    let blocked_percent = if total_queries > 0 { (total_blocked as f64 / total_queries as f64) * 100.0 } else { 0.0 };
-    let cache_hit_percent = if total_queries > 0 { (total_cache_hits as f64 / total_queries as f64) * 100.0 } else { 0.0 };
-    let a_percent = if total_queries > 0 { (sum_a as f64 / total_queries as f64) * 100.0 } else { 0.0 };
-    let aaaa_percent = if total_queries > 0 { (sum_aaaa as f64 / total_queries as f64) * 100.0 } else { 0.0 };
-    let https_percent = if total_queries > 0 { (sum_https as f64 / total_queries as f64) * 100.0 } else { 0.0 };
+    let blocked_percent = if total_queries > 0 {
+        (total_blocked as f64 / total_queries as f64) * 100.0
+    } else {
+        0.0
+    };
+    let cache_hit_percent = if total_queries > 0 {
+        (total_cache_hits as f64 / total_queries as f64) * 100.0
+    } else {
+        0.0
+    };
+    let a_percent = if total_queries > 0 {
+        (sum_a as f64 / total_queries as f64) * 100.0
+    } else {
+        0.0
+    };
+    let aaaa_percent = if total_queries > 0 {
+        (sum_aaaa as f64 / total_queries as f64) * 100.0
+    } else {
+        0.0
+    };
+    let https_percent = if total_queries > 0 {
+        (sum_https as f64 / total_queries as f64) * 100.0
+    } else {
+        0.0
+    };
 
-    (total_queries, total_blocked, total_cache_hits, sum_a, sum_aaaa, sum_https, blocked_percent, cache_hit_percent, a_percent, aaaa_percent, https_percent)
+    (
+        total_queries,
+        total_blocked,
+        total_cache_hits,
+        sum_a,
+        sum_aaaa,
+        sum_https,
+        blocked_percent,
+        cache_hit_percent,
+        a_percent,
+        aaaa_percent,
+        https_percent,
+    )
 }
 
 async fn router_worker(state: Arc<RwLock<AppState>>, cfg: Config) {
@@ -479,25 +568,34 @@ async fn router_worker(state: Arc<RwLock<AppState>>, cfg: Config) {
         Some(b) => b,
         None => return,
     };
-    let ros_user = cfg.routeros.ros_user.unwrap_or_else(|| "monitor".to_string());
-    let ros_pass = cfg.routeros.ros_pass.or_else(|| std::env::var("MP").ok()).unwrap_or_default();
+    let ros_user = cfg
+        .routeros
+        .ros_user
+        .unwrap_or_else(|| "monitor".to_string());
+    let ros_pass = cfg
+        .routeros
+        .ros_pass
+        .or_else(|| std::env::var("MP").ok())
+        .unwrap_or_default();
     let interval = Duration::from_secs(cfg.routeros.router_fetch_interval.unwrap_or(15));
 
     let client = match reqwest::Client::builder()
         .danger_accept_invalid_certs(true)
         .timeout(Duration::from_secs(2))
-        .build() 
+        .build()
     {
         Ok(c) => c,
         Err(_) => return,
     };
 
     loop {
-        let req_sys = client.get(format!("{}/system/resource", ros_base))
+        let req_sys = client
+            .get(format!("{}/system/resource", ros_base))
             .basic_auth(&ros_user, Some(&ros_pass))
             .send();
 
-        let req_cnt = client.get(format!("{}/container", ros_base))
+        let req_cnt = client
+            .get(format!("{}/container", ros_base))
             .basic_auth(&ros_user, Some(&ros_pass))
             .send();
 
@@ -510,19 +608,42 @@ async fn router_worker(state: Arc<RwLock<AppState>>, cfg: Config) {
 
         if let Ok(resp) = res_sys {
             if let Ok(res_data) = resp.json::<serde_json::Value>().await {
-                let obj = res_data.as_array().and_then(|a| a.first()).unwrap_or(&res_data);
-                
+                let obj = res_data
+                    .as_array()
+                    .and_then(|a| a.first())
+                    .unwrap_or(&res_data);
+
                 if let Some(raw_free) = obj.get("free-memory").or_else(|| obj.get("free_memory")) {
-                    let bytes = raw_free.as_u64().or_else(|| raw_free.as_str().and_then(|s| s.parse().ok())).unwrap_or(0);
-                    if bytes > 0 { free_mem_val = format!("{:.1}MiB", bytes as f64 / 1024.0 / 1024.0); }
+                    let bytes = raw_free
+                        .as_u64()
+                        .or_else(|| raw_free.as_str().and_then(|s| s.parse().ok()))
+                        .unwrap_or(0);
+                    if bytes > 0 {
+                        free_mem_val = format!("{:.1}MiB", bytes as f64 / 1024.0 / 1024.0);
+                    }
                 }
-                if let Some(freq) = obj.get("cpu-frequency").or_else(|| obj.get("cpu_frequency")) {
-                    let f = freq.as_u64().map(|n| n.to_string()).or_else(|| freq.as_str().map(|s| s.to_string())).unwrap_or_default();
-                    if !f.is_empty() { cpu_freq_val = format!("{}MHz", f); }
+                if let Some(freq) = obj
+                    .get("cpu-frequency")
+                    .or_else(|| obj.get("cpu_frequency"))
+                {
+                    let f = freq
+                        .as_u64()
+                        .map(|n| n.to_string())
+                        .or_else(|| freq.as_str().map(|s| s.to_string()))
+                        .unwrap_or_default();
+                    if !f.is_empty() {
+                        cpu_freq_val = format!("{}MHz", f);
+                    }
                 }
                 if let Some(load) = obj.get("cpu-load").or_else(|| obj.get("cpu_load")) {
-                    let l = load.as_u64().map(|n| n.to_string()).or_else(|| load.as_str().map(|s| s.to_string())).unwrap_or_default();
-                    if !l.is_empty() { cpu_load_val = format!("{}%", l); }
+                    let l = load
+                        .as_u64()
+                        .map(|n| n.to_string())
+                        .or_else(|| load.as_str().map(|s| s.to_string()))
+                        .unwrap_or_default();
+                    if !l.is_empty() {
+                        cpu_load_val = format!("{}%", l);
+                    }
                 }
             }
         }
@@ -532,9 +653,18 @@ async fn router_worker(state: Arc<RwLock<AppState>>, cfg: Config) {
                 if let Some(arr) = containers.as_array() {
                     for item in arr {
                         if item.get("name").and_then(|v| v.as_str()) == Some("fastadhunter") {
-                            if let Some(raw_mem) = item.get("memory-current").or_else(|| item.get("memory_current")) {
-                                let bytes = raw_mem.as_u64().or_else(|| raw_mem.as_str().and_then(|s| s.parse().ok())).unwrap_or(0);
-                                if bytes > 0 { container_mem_val = format!("{:.1}MiB", bytes as f64 / 1024.0 / 1024.0); }
+                            if let Some(raw_mem) = item
+                                .get("memory-current")
+                                .or_else(|| item.get("memory_current"))
+                            {
+                                let bytes = raw_mem
+                                    .as_u64()
+                                    .or_else(|| raw_mem.as_str().and_then(|s| s.parse().ok()))
+                                    .unwrap_or(0);
+                                if bytes > 0 {
+                                    container_mem_val =
+                                        format!("{:.1}MiB", bytes as f64 / 1024.0 / 1024.0);
+                                }
                             }
                             break;
                         }
@@ -557,7 +687,10 @@ async fn router_worker(state: Arc<RwLock<AppState>>, cfg: Config) {
 }
 
 async fn background_worker(state: Arc<RwLock<AppState>>, cfg: Config) {
-    let ws_url = format!("wss://{}:{}{}?token={}", cfg.host, cfg.port, cfg.endpoints.ws_events, cfg.token);
+    let ws_url = format!(
+        "wss://{}:{}{}?token={}",
+        cfg.host, cfg.port, cfg.endpoints.ws_events, cfg.token
+    );
 
     let _client = reqwest::Client::builder()
         .danger_accept_invalid_certs(true)
@@ -579,9 +712,13 @@ async fn background_worker(state: Arc<RwLock<AppState>>, cfg: Config) {
     tokio::spawn(async move {
         loop {
             let mut req = ws_url_cl.as_str().into_client_request().unwrap();
-            req.headers_mut().insert("Authorization", format!("Bearer {}", ws_token).parse().unwrap());
+            req.headers_mut().insert(
+                "Authorization",
+                format!("Bearer {}", ws_token).parse().unwrap(),
+            );
 
-            match connect_async_tls_with_config(req, None, false, Some(connector_cl.clone())).await {
+            match connect_async_tls_with_config(req, None, false, Some(connector_cl.clone())).await
+            {
                 Ok((mut ws_stream, _)) => {
                     if let Ok(mut st) = ws_state.write() {
                         st.ws_connected = true;
@@ -591,35 +728,61 @@ async fn background_worker(state: Arc<RwLock<AppState>>, cfg: Config) {
                     while let Some(msg) = ws_stream.next().await {
                         if let Ok(Message::Text(text)) = msg {
                             if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&text) {
-                                let m_type = parsed.get("type").and_then(|v| v.as_str()).unwrap_or("");
+                                let m_type =
+                                    parsed.get("type").and_then(|v| v.as_str()).unwrap_or("");
                                 let payload = parsed.get("data");
 
                                 if let Some(p) = payload {
                                     let mut st = ws_state.write().unwrap();
                                     if m_type == "query" {
-                                        if let Ok(q_evt) = serde_json::from_value::<QueryEvent>(p.clone()) {
+                                        if let Ok(q_evt) =
+                                            serde_json::from_value::<QueryEvent>(p.clone())
+                                        {
                                             st.queries.push_front(q_evt);
-                                            if st.queries.len() > 200 { st.queries.pop_back(); }
+                                            if st.queries.len() > 200 {
+                                                st.queries.pop_back();
+                                            }
                                         }
                                     } else if m_type == "stats" {
-                                        st.queries_total = p.get("queries_total").and_then(|v| v.as_u64()).unwrap_or(0);
-                                        st.blocked_total = p.get("blocked_total").and_then(|v| v.as_u64()).unwrap_or(0);
-                                        st.blocked_percent = p.get("blocked_percent").and_then(|v| v.as_f64()).unwrap_or(0.0);
-                                        st.cache_hit_percent = p.get("cache_hit_percent").and_then(|v| v.as_f64()).unwrap_or(0.0);
+                                        st.queries_total = p
+                                            .get("queries_total")
+                                            .and_then(|v| v.as_u64())
+                                            .unwrap_or(0);
+                                        st.blocked_total = p
+                                            .get("blocked_total")
+                                            .and_then(|v| v.as_u64())
+                                            .unwrap_or(0);
+                                        st.blocked_percent = p
+                                            .get("blocked_percent")
+                                            .and_then(|v| v.as_f64())
+                                            .unwrap_or(0.0);
+                                        st.cache_hit_percent = p
+                                            .get("cache_hit_percent")
+                                            .and_then(|v| v.as_f64())
+                                            .unwrap_or(0.0);
 
                                         if let Some(arr) = p.get("top_blocked_domains") {
-                                            if let Ok(list) = serde_json::from_value::<Vec<TopDomain>>(arr.clone()) {
-                                                st.top_blocked_domains = list.into_iter().take(10).collect();
+                                            if let Ok(list) = serde_json::from_value::<Vec<TopDomain>>(
+                                                arr.clone(),
+                                            ) {
+                                                st.top_blocked_domains =
+                                                    list.into_iter().take(10).collect();
                                             }
                                         }
                                         if let Some(arr) = p.get("top_clients") {
-                                            if let Ok(list) = serde_json::from_value::<Vec<TopClient>>(arr.clone()) {
-                                                st.top_clients = list.into_iter().take(10).collect();
+                                            if let Ok(list) = serde_json::from_value::<Vec<TopClient>>(
+                                                arr.clone(),
+                                            ) {
+                                                st.top_clients =
+                                                    list.into_iter().take(10).collect();
                                             }
                                         }
                                         if let Some(arr) = p.get("top_queried_domains") {
-                                            if let Ok(list) = serde_json::from_value::<Vec<TopDomain>>(arr.clone()) {
-                                                st.top_queried_domains = list.into_iter().take(10).collect();
+                                            if let Ok(list) = serde_json::from_value::<Vec<TopDomain>>(
+                                                arr.clone(),
+                                            ) {
+                                                st.top_queried_domains =
+                                                    list.into_iter().take(10).collect();
                                             }
                                         }
                                     }
@@ -652,7 +815,12 @@ async fn cache_worker(
     let mut interval = tokio::time::interval(Duration::from_secs(60));
     loop {
         interval.tick().await;
-        if let Ok(resp) = client.get(url).header("Authorization", auth_header.as_ref()).send().await {
+        if let Ok(resp) = client
+            .get(url)
+            .header("Authorization", auth_header.as_ref())
+            .send()
+            .await
+        {
             if let Ok(json) = resp.json::<CacheStats>().await {
                 if let Ok(mut st) = state.write() {
                     st.cache_data = json;
@@ -672,7 +840,12 @@ async fn memory_worker(
     let mut interval = tokio::time::interval(Duration::from_secs(60));
     loop {
         interval.tick().await;
-        if let Ok(resp) = client.get(url).header("Authorization", auth_header.as_ref()).send().await {
+        if let Ok(resp) = client
+            .get(url)
+            .header("Authorization", auth_header.as_ref())
+            .send()
+            .await
+        {
             if let Ok(json) = resp.json::<MemoryStats>().await {
                 if let Ok(mut st) = state.write() {
                     st.memory_data = json;
@@ -700,22 +873,54 @@ async fn metrics_worker(
         let mut cnt_cache = 0u64;
         let mut upstreams: BTreeMap<String, u64> = BTreeMap::new();
 
-        if let Ok(resp) = client.get(url).header("Authorization", auth_header.as_ref()).send().await {
+        if let Ok(resp) = client
+            .get(url)
+            .header("Authorization", auth_header.as_ref())
+            .send()
+            .await
+        {
             if let Ok(text) = resp.text().await {
                 for line in text.lines() {
                     if line.starts_with("fastadhunter_ruleset_rules") {
-                        if let Some(val) = line.split_whitespace().nth(1) { rules = val.parse().unwrap_or(0); }
-                    } else if line.starts_with("fastadhunter_query_duration_seconds_sum{stage=\"block\"}") {
-                        if let Some(val) = line.split_whitespace().nth(1) { sum_block = val.parse().unwrap_or(0.0); }
-                    } else if line.starts_with("fastadhunter_query_duration_seconds_count{stage=\"block\"}") {
-                        if let Some(val) = line.split_whitespace().nth(1) { cnt_block = val.parse().unwrap_or(0); }
-                    } else if line.starts_with("fastadhunter_query_duration_seconds_sum{stage=\"cache_hit\"}") {
-                        if let Some(val) = line.split_whitespace().nth(1) { sum_cache = val.parse().unwrap_or(0.0); }
-                    } else if line.starts_with("fastadhunter_query_duration_seconds_count{stage=\"cache_hit\"}") {
-                        if let Some(val) = line.split_whitespace().nth(1) { cnt_cache = val.parse().unwrap_or(0); }
+                        if let Some(val) = line.split_whitespace().nth(1) {
+                            rules = val.parse().unwrap_or(0);
+                        }
+                    } else if line
+                        .starts_with("fastadhunter_query_duration_seconds_sum{stage=\"block\"}")
+                    {
+                        if let Some(val) = line.split_whitespace().nth(1) {
+                            sum_block = val.parse().unwrap_or(0.0);
+                        }
+                    } else if line
+                        .starts_with("fastadhunter_query_duration_seconds_count{stage=\"block\"}")
+                    {
+                        if let Some(val) = line.split_whitespace().nth(1) {
+                            cnt_block = val.parse().unwrap_or(0);
+                        }
+                    } else if line
+                        .starts_with("fastadhunter_query_duration_seconds_sum{stage=\"cache_hit\"}")
+                    {
+                        if let Some(val) = line.split_whitespace().nth(1) {
+                            sum_cache = val.parse().unwrap_or(0.0);
+                        }
+                    } else if line.starts_with(
+                        "fastadhunter_query_duration_seconds_count{stage=\"cache_hit\"}",
+                    ) {
+                        if let Some(val) = line.split_whitespace().nth(1) {
+                            cnt_cache = val.parse().unwrap_or(0);
+                        }
                     } else if line.starts_with("fastadhunter_upstream_attempts_total{address=\"") {
-                        if let Some(ip) = line.split("address=\"").nth(1).and_then(|s| s.split('"').next()) {
-                            let count = line.split_whitespace().nth(1).unwrap_or("0").parse::<u64>().unwrap_or(0);
+                        if let Some(ip) = line
+                            .split("address=\"")
+                            .nth(1)
+                            .and_then(|s| s.split('"').next())
+                        {
+                            let count = line
+                                .split_whitespace()
+                                .nth(1)
+                                .unwrap_or("0")
+                                .parse::<u64>()
+                                .unwrap_or(0);
                             upstreams.insert(ip.to_string(), count);
                         }
                     }
@@ -736,8 +941,12 @@ async fn metrics_worker(
                 st.s_dns_counter = *count;
             }
 
-            if cnt_block > 0 { st.avg_block_str = format!("{:.3} ms", (sum_block / cnt_block as f64) * 1000.0); }
-            if cnt_cache > 0 { st.avg_cache_str = format!("{:.3} ms", (sum_cache / cnt_cache as f64) * 1000.0); }
+            if cnt_block > 0 {
+                st.avg_block_str = format!("{:.3} ms", (sum_block / cnt_block as f64) * 1000.0);
+            }
+            if cnt_cache > 0 {
+                st.avg_cache_str = format!("{:.3} ms", (sum_cache / cnt_cache as f64) * 1000.0);
+            }
         }
     }
 }
@@ -781,12 +990,7 @@ fn draw_multi_row_braille(data: &[f64], width: usize, height: usize) -> Vec<Stri
     }
 
     let total_dots_y = height * 4;
-    let dot_map: [[u32; 2]; 4] = [
-        [0x1, 0x8],
-        [0x2, 0x10],
-        [0x4, 0x20],
-        [0x40, 0x80],
-    ];
+    let dot_map: [[u32; 2]; 4] = [[0x1, 0x8], [0x2, 0x10], [0x4, 0x20], [0x40, 0x80]];
 
     let mut rows_text = Vec::with_capacity(height);
 
@@ -801,22 +1005,32 @@ fn draw_multi_row_braille(data: &[f64], width: usize, height: usize) -> Vec<Stri
             let val0 = sampled[sub_x0];
             let val1 = sampled[sub_x1];
 
-            let h_dots0 = if (max_v - min_v).abs() < f64::EPSILON { 1 } else {
+            let h_dots0 = if (max_v - min_v).abs() < f64::EPSILON {
+                1
+            } else {
                 (((val0 - min_v) / (max_v - min_v)) * (total_dots_y as f64 - 1.0) + 1.0) as usize
-            }.clamp(1, total_dots_y);
+            }
+            .clamp(1, total_dots_y);
 
-            let h_dots1 = if (max_v - min_v).abs() < f64::EPSILON { 1 } else {
+            let h_dots1 = if (max_v - min_v).abs() < f64::EPSILON {
+                1
+            } else {
                 (((val1 - min_v) / (max_v - min_v)) * (total_dots_y as f64 - 1.0) + 1.0) as usize
-            }.clamp(1, total_dots_y);
+            }
+            .clamp(1, total_dots_y);
 
             let mut char_code = 0x2800;
 
-            for dy in 0..4 {
+            for (dy, dots) in dot_map.iter().enumerate() {
                 let gy = y_offset + dy;
                 let target_y = total_dots_y - 1 - gy;
 
-                if target_y < h_dots0 { char_code |= dot_map[dy][0]; }
-                if target_y < h_dots1 { char_code |= dot_map[dy][1]; }
+                if target_y < h_dots0 {
+                    char_code |= dots[0];
+                }
+                if target_y < h_dots1 {
+                    char_code |= dots[1];
+                }
             }
 
             row_str.push(char::from_u32(char_code).unwrap_or(' '));
@@ -827,7 +1041,11 @@ fn draw_multi_row_braille(data: &[f64], width: usize, height: usize) -> Vec<Stri
     rows_text
 }
 
-fn centered_rect(percent_x: u16, percent_y: u16, r: ratatui::layout::Rect) -> ratatui::layout::Rect {
+fn centered_rect(
+    percent_x: u16,
+    percent_y: u16,
+    r: ratatui::layout::Rect,
+) -> ratatui::layout::Rect {
     let popup_layout = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
@@ -854,7 +1072,7 @@ async fn run_ui<B: ratatui::backend::Backend>(
     let bar_width = 12;
     let mut table_state = TableState::default();
     let mut last_perf_update = Instant::now();
-    const PERF_UPDATE_INTERVAL: Duration = Duration::from_secs(5 * 60);  // 5 minutes
+    const PERF_UPDATE_INTERVAL: Duration = Duration::from_secs(5 * 60); // 5 minutes
 
     loop {
         terminal.draw(|f| {
@@ -915,7 +1133,7 @@ async fn run_ui<B: ratatui::backend::Backend>(
 
             let graph_width = size.width.saturating_sub(plain_l3.chars().count() as u16 + 2) as usize;
             let graph_rows = draw_multi_row_braille(&display_pts, graph_width, 3);
-            
+
             let lbl_graph = format!(" 24h RSS History (Min {} │ Avg {} │ Now {} MB) ", min_rss, avg_rss, now_rss);
             let graph_hdr = if graph_width > lbl_graph.len() {
                 let p_left = (graph_width - lbl_graph.len()) / 2;
@@ -1039,7 +1257,7 @@ async fn run_ui<B: ratatui::backend::Backend>(
             let stats_paragraph = Paragraph::new(stats_text)
                 .block(Block::default().borders(Borders::ALL).title("Metrics & Top Stats (24h)"))
                 .scroll((current_stats_scroll, 0));
-            
+
             f.render_widget(stats_paragraph, body_chunks[0]);
 
             let stats_scrollbar = Scrollbar::new(ScrollbarOrientation::VerticalRight)
@@ -1047,7 +1265,7 @@ async fn run_ui<B: ratatui::backend::Backend>(
                 .end_symbol(Some("▼"));
             let mut stats_scrollbar_state = ScrollbarState::new(max_stats_scroll as usize)
                 .position(current_stats_scroll as usize);
-            
+
             f.render_stateful_widget(stats_scrollbar, body_chunks[0], &mut stats_scrollbar_state);
 
             let client_w = 38;
@@ -1089,7 +1307,7 @@ async fn run_ui<B: ratatui::backend::Backend>(
                 rows,
                 [
                     Constraint::Length(client_w as u16),
-                    Constraint::Min(10), 
+                    Constraint::Min(10),
                     Constraint::Length(type_w as u16),
                     Constraint::Length(verdict_w as u16),
                     Constraint::Length(cache_col_w as u16),
@@ -1117,7 +1335,10 @@ async fn run_ui<B: ratatui::backend::Backend>(
             let footer_text = vec![
                 Line::from(format!(
                     " RouterOS: Free Mem: {} │ CPU Freq: {} │ CPU Load: {} │ Container Mem: {} │ {}: {} │ {}: {} │ ↑/↓: Queries ",
-                    st.router_free_mem, st.router_cpu_freq, st.router_cpu_load, st.router_container_mem, 
+                    st.router_free_mem,
+                    st.router_cpu_freq,
+                    st.router_cpu_load,
+                    st.router_container_mem,
                     st.p_upstream_ip, st.p_dns_counter, st.s_upstream_ip, st.s_dns_counter
                 )),
             ];
@@ -1162,58 +1383,56 @@ async fn run_ui<B: ratatui::backend::Backend>(
 
         if event::poll(Duration::from_millis(50))? {
             match event::read()? {
-                Event::Key(key) => {
-                    match key.code {
-                        KeyCode::Char('q') => break,
-                        KeyCode::Esc => {
-                            if let Ok(mut st) = state.write() {
-                                st.popup_query = None;
-                            }
+                Event::Key(key) => match key.code {
+                    KeyCode::Char('q') => break,
+                    KeyCode::Esc => {
+                        if let Ok(mut st) = state.write() {
+                            st.popup_query = None;
                         }
-                        KeyCode::Enter => {
-                            if let Ok(mut st) = state.write() {
-                                if st.popup_query.is_none() {
-                                    let idx = st.query_scroll;
-                                    if let Some(q) = st.queries.get(idx).cloned() {
-                                        st.query_scroll = idx;
-                                        st.popup_query = Some(q);
-                                    }
+                    }
+                    KeyCode::Enter => {
+                        if let Ok(mut st) = state.write() {
+                            if st.popup_query.is_none() {
+                                let idx = st.query_scroll;
+                                if let Some(q) = st.queries.get(idx).cloned() {
+                                    st.query_scroll = idx;
+                                    st.popup_query = Some(q);
                                 }
                             }
                         }
-                        KeyCode::Char('w') => {
-                            if let Ok(mut st) = state.write() {
-                                st.stats_scroll = st.stats_scroll.saturating_sub(1);
-                            }
-                        }
-                        KeyCode::Char('s') => {
-                            if let Ok(mut st) = state.write() {
-                                st.stats_scroll = st.stats_scroll.saturating_add(1);
-                            }
-                        }
-                        KeyCode::Up => {
-                            if let Ok(mut st) = state.write() {
-                                st.query_scroll = st.query_scroll.saturating_sub(1);
-                            }
-                        }
-                        KeyCode::Down => {
-                            if let Ok(mut st) = state.write() {
-                                st.query_scroll = st.query_scroll.saturating_add(1);
-                            }
-                        }
-                        KeyCode::PageUp => {
-                            if let Ok(mut st) = state.write() {
-                                st.query_scroll = st.query_scroll.saturating_sub(10);
-                            }
-                        }
-                        KeyCode::PageDown => {
-                            if let Ok(mut st) = state.write() {
-                                st.query_scroll = st.query_scroll.saturating_add(10);
-                            }
-                        }
-                        _ => {}
                     }
-                }
+                    KeyCode::Char('w') => {
+                        if let Ok(mut st) = state.write() {
+                            st.stats_scroll = st.stats_scroll.saturating_sub(1);
+                        }
+                    }
+                    KeyCode::Char('s') => {
+                        if let Ok(mut st) = state.write() {
+                            st.stats_scroll = st.stats_scroll.saturating_add(1);
+                        }
+                    }
+                    KeyCode::Up => {
+                        if let Ok(mut st) = state.write() {
+                            st.query_scroll = st.query_scroll.saturating_sub(1);
+                        }
+                    }
+                    KeyCode::Down => {
+                        if let Ok(mut st) = state.write() {
+                            st.query_scroll = st.query_scroll.saturating_add(1);
+                        }
+                    }
+                    KeyCode::PageUp => {
+                        if let Ok(mut st) = state.write() {
+                            st.query_scroll = st.query_scroll.saturating_sub(10);
+                        }
+                    }
+                    KeyCode::PageDown => {
+                        if let Ok(mut st) = state.write() {
+                            st.query_scroll = st.query_scroll.saturating_add(10);
+                        }
+                    }
+                    _ => {}
+                },
 
                 Event::Mouse(mouse) => {
                     if let Ok(mut st) = state.write() {
@@ -1224,15 +1443,22 @@ async fn run_ui<B: ratatui::backend::Backend>(
                                 if st.popup_query.is_some() {
                                     // Popup is open: close only if clicking outside
                                     let size = terminal.size().unwrap_or_default();
-                                    let popup_area = centered_rect(60, 40, ratatui::layout::Rect {
-                                        x: 0, y: 0, width: size.width, height: size.height
-                                    });
-                                    
+                                    let popup_area = centered_rect(
+                                        60,
+                                        40,
+                                        ratatui::layout::Rect {
+                                            x: 0,
+                                            y: 0,
+                                            width: size.width,
+                                            height: size.height,
+                                        },
+                                    );
+
                                     let click_in_popup = mouse.column >= popup_area.x
                                         && mouse.column < popup_area.x + popup_area.width
                                         && mouse.row >= popup_area.y
                                         && mouse.row < popup_area.y + popup_area.height;
-                                    
+
                                     if !click_in_popup {
                                         st.popup_query = None;
                                     }
@@ -1241,7 +1467,8 @@ async fn run_ui<B: ratatui::backend::Backend>(
                                     let table_y = 9;
                                     if mouse.row >= table_y {
                                         let click_offset = (mouse.row - table_y) as usize;
-                                        let selected_idx = table_state.offset().saturating_add(click_offset);
+                                        let selected_idx =
+                                            table_state.offset().saturating_add(click_offset);
                                         if let Some(q) = st.queries.get(selected_idx).cloned() {
                                             st.query_scroll = selected_idx;
                                             st.popup_query = Some(q);
