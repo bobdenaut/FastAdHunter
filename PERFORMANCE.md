@@ -42,8 +42,10 @@ Reference hardware: MikroTik RB5009 — Marvell Armada quad-core ARMv8, nominall
 > completed.
 >
 > **The reported frequency does not predict throughput, and that is measured,
-> not assumed.** Two on-device runs of the same probe reported 350 MHz and
-> 1400 MHz respectively — a 4× difference. A control arm barely touched by the
+> not assumed — three times now.** The tightest evidence is p2-08's HTTP probe:
+> four runs minutes apart on an unchanged device reported 350→700, 1400, 350 and
+> 700 MHz, and every arm agreed within 6 %. The first two instances were two runs
+> of the URL probe reporting 350 MHz and 1400 MHz respectively — a 4× difference. A control arm barely touched by the
 > code change between them (the deployed corpus at 8 KiB) moved **376.8 → 359.6
 > µs, −4.6 %**, and moved −5.3 % on the x86 box where the clock was fixed. A
 > genuine 4× clock change had to show up as ~4× there. It did not, so both runs
@@ -65,6 +67,11 @@ Reference hardware: MikroTik RB5009 — Marvell Armada quad-core ARMv8, nominall
 > the gap is CPU throughput rather than memory bandwidth — so it converts, and a
 > pinned bench on this dev box usually answers the on-device question without
 > building a probe container.
+>
+> **It converts CPU-bound work only.** p2-08's HTTP arms — syscall- and
+> copy-bound, and measured across two different OS network stacks — came out
+> **4.55–10.09×**, a 2.2× spread. Anything dominated by socket I/O needs a probe
+> container, not a conversion (`docs/code-review/p2-08-review.md` §Findings).
 
 | Metric | Budget |
 |--------|--------|
@@ -77,8 +84,8 @@ Reference hardware: MikroTik RB5009 — Marvell Armada quad-core ARMv8, nominall
 | **DNS** sustained throughput on RB5009 | ≥ 10 000 QPS |
 | Startup to serving (cached lists, 1M-domain parse) | 1–3 s (< 3 s hard, ~1 s goal) |
 | Container image size | ≤ 30 MB |
-| **HTTP** pass-through added latency, head path | < 1 ms — measured +36.8 µs on the dev box, see below |
-| **HTTP** pass-through throughput, opaque body | ≥ 100 MiB/s (target on RB5009; pending on-device validation) — 1.13 GiB/s measured on x86 loopback, see below |
+| **HTTP** pass-through added latency, head path | < 1 ms — **measured on the RB5009: +161 µs (min), +344 µs (p50)**, see below |
+| **HTTP** pass-through throughput, opaque body | ≥ 100 MiB/s — **measured on the RB5009: 271 MiB/s (min), 208 MiB/s (p50) at 1 MiB**, see below |
 | **HTTP** concurrent connections | bounded by `[http] max_connections` (default 1024) |
 | **HTTP** request verdict (URL tier), in-engine p99 | < 1 ms — met at every measured length; 8 KiB against EasyList + EasyPrivacy is 569.5 µs p99, see below |
 
@@ -180,13 +187,54 @@ Notes:
   syscall-churn concern, and neither that review's stress test nor the 2026-08-06
   measurement (~0.5 qps) exercised the allocation-heavy forward path. The check
   is `rate(fastadhunter_process_minor_page_faults_total)` at flat RSS.
-- **HTTP pass-through, head path — measured 2026-08-02** (p2-08, dev box,
+- **HTTP on the RB5009 — measured 2026-08-06** (p2-08,
+  `crates/fah-http/examples/httpbench.rs` in a throwaway probe container, median
+  of 4 runs, deployed 715-rule URL corpus, production FAH serving DNS
+  throughout). Client, proxy and origin all run on the container's own loopback,
+  so these are FastAdHunter's own costs — veth, dst-nat, conntrack and origin RTT
+  are excluded. Connection setup is excluded from both arms: a transparent proxy
+  amortises it across every request on the connection.
+
+  | arm | min | p50 |
+  | --- | ---: | ---: |
+  | head direct → proxied | 132.7 → 294.2 µs | 238.5 → 582.1 µs |
+  | **head, added** | **+161.5 µs (+122 %)** | **+343.6 µs (+144 %)** |
+  | head blocked | 151.7 µs | 261.7 µs |
+  | 8 KiB, added | +180.3 µs (+131 %) | +390.2 µs (+175 %) |
+  | 1 MiB proxied | 3.696 ms — **271 MiB/s** | 5.037 ms — **208 MiB/s** |
+  | 8 MiB proxied | 25.53 ms — **313 MiB/s** | 30.76 ms — **260 MiB/s** |
+
+  **Read all three estimators, never one alone.** `min` is the intrinsic cost,
+  `p50` what a client typically experiences, `p99` the tail. The added cost at
+  p50 is **2.1× the min** — quoting only `min` claims 6.2× headroom where the
+  user sees 2.9×. Proxied head p99 is 1.24–1.28 ms absolute against a direct-arm
+  p99 of 0.47–0.64 ms, so the added tail is **≈660–700 µs**; that is an estimate,
+  because the p99 of a difference is not the difference of two p99s.
+
+  **A blocked request costs 48–55 % less than a forwarded one** — the verdict is
+  taken on the head, so it never resolves and never opens an upstream connection.
+  This is not a claim that blocking makes the router faster in absolute terms;
+  load still rises with traffic.
+
+  **The percentages use a loopback fetch as denominator**, the harshest possible
+  baseline. Against a real origin at 10–50 ms RTT the same +344 µs is under 3 %
+  of the request.
+
+  **Do not convert these with the ~9× factor.** Per-arm x86 → ARM ratios came
+  out **4.55–10.09×** here, against the flat 8.25–10.0× the URL-lookup probe
+  measured. Those arms were CPU-bound; these are syscall- and copy-bound across
+  two different OS network stacks. The factor remains valid for CPU-bound work
+  only (`docs/code-review/p2-08-review.md` §Findings).
+
+  **Concurrency is unmeasured.** Every arm is one connection at a time, while
+  `[http] max_connections` defaults to 1024. Nothing here says what 50 or 500 in
+  flight cost.
+- **HTTP pass-through, head path — dev box, measured 2026-08-02** (p2-08,
   `fah-http/benches/proxy.rs`, loopback, warm keep-alive on both sides). Direct
   to origin 32.6–34.9 µs, through the proxy 65.7–76.1 µs — the proxy adds
   **+33 to +43 µs across four runs**, consistent with p2-02's +35 µs and
-  p2-04's +32.4 µs. At the measured ~9× factor that is ~300–390 µs on the
-  RB5009, inside the 1 ms budget. Connection setup is excluded from both arms: a
-  transparent proxy amortises it across every request on the connection.
+  p2-04's +32.4 µs. **The device came in 4.4× higher**, which is what the row
+  above is for: dev-box HTTP figures are a smoke test, not a result.
 - **HTTP opaque-body throughput — measured 2026-08-02** (same bench, three body
   sizes, 20 samples each, four runs). Bodies the proxy never parses: the verdict
   is taken on the head, then the bytes are relayed.
@@ -204,10 +252,12 @@ Notes:
   attribute that cost.
 
   **The proxy sustained 1.13 GiB/s in a single-connection loopback benchmark on
-  x86. Applying the previously measured ~9× ARM slowdown suggests throughput
-  close to gigabit line rate on the RB5009, but this is an estimate rather than
-  a verified network measurement. End-to-end throughput depends on NIC, kernel
-  networking, concurrent traffic and other system overhead.**
+  x86. The ~9× conversion predicted ~129 MiB/s on the RB5009; the device measured
+  271–313 MiB/s (min), so the estimate was conservative by ~2.3×** — see the
+  on-device row above, and note the conversion is retired for HTTP either way.
+  This remains a loopback figure rather than a verified network measurement:
+  end-to-end throughput depends on NIC, kernel networking, concurrent traffic and
+  other system overhead.
 
   What the benchmark does **not** establish: which cost scales at 8 MiB.
   Copying, socket buffering, task wakeups and cache behaviour all scale with

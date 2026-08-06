@@ -41,6 +41,12 @@ tokio = { workspace = true, features = [
 ] }
 criterion = { workspace = true }
 http-body-util = "0.1"
+# Example-only (`examples/httpbench.rs`, the on-device probe): the probe has to
+# run the allocator the router runs, or its figures describe a build production
+# never ships. A library must not participate in allocator selection — that is
+# the binary's job (`crates/fastadhunter/src/allocator.rs`) — and an example
+# imposes nothing on dependents.
+mimalloc = { workspace = true }
 
 # harness=false: the criterion runner replaces libtest so `cargo bench` drives it.
 [[bench]]

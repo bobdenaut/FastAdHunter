@@ -1,0 +1,99 @@
+x86 dev box (Windows 11, unpinned per PERFORMANCE.md "how to run these") — same
+example binary, same corpus (.probe-corpus/production, 715 URL rules), mimalloc.
+Four runs, 2026-08-06. Run 1 below was the first run; runs 2-4 were a loop.
+
+=============================== run 1 ===============================
+[bench] head_direct            min     26.352 us  p50     31.793  mean     33.348  p99     52.662  max    117.559   (5000 batches x 29)
+[bench] head_proxied           min     56.093 us  p50     64.657  mean     71.640  p99    214.421  max    428.993   (5000 batches x 14)
+[bench] head_rules_proxied     min     56.521 us  p50     63.943  mean     69.560  p99    151.857  max    480.757   (5000 batches x 14)
+[bench] head_blocked           min     31.538 us  p50     35.150  mean     37.855  p99     62.627  max    117.158   (5000 batches x 26)
+[bench] body_8KiB_direct       min     30.933 us  p50     34.615  mean     37.007  p99     57.741  max    111.926   (5000 batches x 27)
+[bench] body_8KiB_proxied      min     58.157 us  p50     67.264  mean     75.570  p99    268.886  max    479.664   (5000 batches x 14)
+[bench] body_1MiB_direct       min    217.800 us  p50    481.700  mean   1616.021  p99  17520.500  max  25871.500   (3834 batches x 1)
+[bench] body_1MiB_proxied      min    364.900 us  p50    569.300  mean   1315.308  p99  17620.300  max  41793.500   (5000 batches x 1)
+[bench] body_8MiB_direct       min   2309.300 us  p50   3708.200  mean   4422.193  p99  19875.600  max  37682.500   (1707 batches x 1)
+[bench] body_8MiB_proxied      min   3619.800 us  p50   4477.800  mean   4970.790  p99  19678.000  max  45077.800   (1617 batches x 1)
+
+=============================== run 2 ===============================
+[probe] fah httpbench — p2-08 on-device HTTP proxy cost
+[probe] cpu0 scaling_cur_freq: unavailable (informational — not a calibration input)
+[probe] ruleset : 2 corpus list(s), 715 url rules parsed, 715 compiled (0 unindexed), matcher 5.25 MiB
+[probe] --- measuring, ~8 s per arm ---
+[probe] head_direct            warm-up: 200 status, 54 body bytes
+[bench] head_direct            min     27.263 us  p50     31.480  mean     32.641  p99     46.147  max    129.253   (5000 batches x 30)
+[probe] head_proxied           warm-up: 200 status, 54 body bytes
+[bench] head_proxied           min     55.864 us  p50     62.279  mean     65.612  p99     94.793  max    226.950   (5000 batches x 14)
+[probe] head_rules_proxied     warm-up: 200 status, 54 body bytes
+[bench] head_rules_proxied     min     56.314 us  p50     63.514  mean     67.216  p99     98.836  max    221.386   (5000 batches x 14)
+[probe] head_blocked           warm-up: 200 status, 0 body bytes
+[bench] head_blocked           min     30.378 us  p50     34.156  mean     98.958  p99   1465.622  max   8703.633   (5000 batches x 9)
+[probe] body_8KiB_direct       warm-up: 200 status, 8192 body bytes
+[bench] body_8KiB_direct       min     30.174 us  p50     34.752  mean     36.669  p99     54.833  max     81.956   (5000 batches x 27)
+[probe] body_8KiB_proxied      warm-up: 200 status, 8192 body bytes
+[bench] body_8KiB_proxied      min     58.323 us  p50     67.346  mean     72.248  p99    122.008  max    320.092   (5000 batches x 13)
+[probe] body_1MiB_direct       warm-up: 200 status, 1048576 body bytes
+[bench] body_1MiB_direct       min    217.100 us  p50    402.800  mean   1931.362  p99  17333.800  max  25451.700   (4041 batches x 1)
+[probe] body_1MiB_proxied      warm-up: 200 status, 1048576 body bytes
+[bench] body_1MiB_proxied      min    367.800 us  p50    570.100  mean   1185.601  p99  16998.400  max  33413.100   (5000 batches x 1)
+[probe] body_8MiB_direct       warm-up: 200 status, 8388608 body bytes
+[bench] body_8MiB_direct       min   2388.600 us  p50   3818.500  mean   4758.133  p99  20860.600  max  37131.000   (1717 batches x 1)
+[probe] body_8MiB_proxied      warm-up: 200 status, 8388608 body bytes
+[bench] body_8MiB_proxied      min   3561.400 us  p50   5022.900  mean   6219.714  p99  26997.300  max  48164.500   (1319 batches x 1)
+[probe] cpu0 scaling_cur_freq: unavailable (informational — not a calibration input)
+[probe] done
+
+=============================== run 3 ===============================
+[probe] fah httpbench — p2-08 on-device HTTP proxy cost
+[probe] cpu0 scaling_cur_freq: unavailable (informational — not a calibration input)
+[probe] ruleset : 2 corpus list(s), 715 url rules parsed, 715 compiled (0 unindexed), matcher 5.25 MiB
+[probe] --- measuring, ~8 s per arm ---
+[probe] head_direct            warm-up: 200 status, 54 body bytes
+[bench] head_direct            min     27.019 us  p50     32.500  mean     35.884  p99     82.850  max    366.781   (5000 batches x 26)
+[probe] head_proxied           warm-up: 200 status, 54 body bytes
+[bench] head_proxied           min     56.093 us  p50     63.250  mean     68.780  p99    135.150  max    228.864   (5000 batches x 14)
+[probe] head_rules_proxied     warm-up: 200 status, 54 body bytes
+[bench] head_rules_proxied     min     56.329 us  p50     63.607  mean     68.955  p99    130.879  max    475.957   (5000 batches x 14)
+[probe] head_blocked           warm-up: 200 status, 0 body bytes
+[bench] head_blocked           min     31.581 us  p50     34.858  mean     37.709  p99     61.662  max    253.719   (5000 batches x 26)
+[probe] body_8KiB_direct       warm-up: 200 status, 8192 body bytes
+[bench] body_8KiB_direct       min     30.346 us  p50     34.842  mean     36.654  p99     55.177  max     87.023   (5000 batches x 26)
+[probe] body_8KiB_proxied      warm-up: 200 status, 8192 body bytes
+[bench] body_8KiB_proxied      min     59.108 us  p50     66.969  mean     71.603  p99    111.831  max    239.038   (5000 batches x 13)
+[probe] body_1MiB_direct       warm-up: 200 status, 1048576 body bytes
+[bench] body_1MiB_direct       min    212.200 us  p50    493.200  mean   1778.997  p99  17497.400  max  25540.300   (3848 batches x 1)
+[probe] body_1MiB_proxied      warm-up: 200 status, 1048576 body bytes
+[bench] body_1MiB_proxied      min    358.200 us  p50    570.400  mean   1196.286  p99  17216.100  max  34546.300   (5000 batches x 1)
+[probe] body_8MiB_direct       warm-up: 200 status, 8388608 body bytes
+[bench] body_8MiB_direct       min   2405.400 us  p50   3719.600  mean   4427.994  p99  20296.200  max  28826.700   (1787 batches x 1)
+[probe] body_8MiB_proxied      warm-up: 200 status, 8388608 body bytes
+[bench] body_8MiB_proxied      min   4367.700 us  p50   5057.300  mean   5772.811  p99  21062.700  max  35966.100   (1428 batches x 1)
+[probe] cpu0 scaling_cur_freq: unavailable (informational — not a calibration input)
+[probe] done
+
+=============================== run 4 ===============================
+[probe] fah httpbench — p2-08 on-device HTTP proxy cost
+[probe] cpu0 scaling_cur_freq: unavailable (informational — not a calibration input)
+[probe] ruleset : 2 corpus list(s), 715 url rules parsed, 715 compiled (0 unindexed), matcher 5.25 MiB
+[probe] --- measuring, ~8 s per arm ---
+[probe] head_direct            warm-up: 200 status, 54 body bytes
+[bench] head_direct            min     27.228 us  p50     31.314  mean     33.351  p99     52.410  max    116.328   (5000 batches x 29)
+[probe] head_proxied           warm-up: 200 status, 54 body bytes
+[bench] head_proxied           min     56.129 us  p50     63.286  mean     69.830  p99    175.521  max    452.157   (5000 batches x 14)
+[probe] head_rules_proxied     warm-up: 200 status, 54 body bytes
+[bench] head_rules_proxied     min     56.843 us  p50     64.307  mean     69.651  p99    130.850  max    235.336   (5000 batches x 14)
+[probe] head_blocked           warm-up: 200 status, 0 body bytes
+[bench] head_blocked           min     31.523 us  p50     35.104  mean     39.289  p99     91.038  max    311.785   (5000 batches x 26)
+[probe] body_8KiB_direct       warm-up: 200 status, 8192 body bytes
+[bench] body_8KiB_direct       min     30.074 us  p50     35.252  mean     38.624  p99     84.433  max    257.693   (5000 batches x 27)
+[probe] body_8KiB_proxied      warm-up: 200 status, 8192 body bytes
+[bench] body_8KiB_proxied      min     59.023 us  p50     68.492  mean     76.383  p99    219.308  max    457.331   (5000 batches x 13)
+[probe] body_1MiB_direct       warm-up: 200 status, 1048576 body bytes
+[bench] body_1MiB_direct       min    216.000 us  p50    412.400  mean   1420.514  p99  17352.500  max  25058.800   (5000 batches x 1)
+[probe] body_1MiB_proxied      warm-up: 200 status, 1048576 body bytes
+[bench] body_1MiB_proxied      min    368.400 us  p50    603.600  mean    973.212  p99  13462.000  max  34417.500   (5000 batches x 1)
+[probe] body_8MiB_direct       warm-up: 200 status, 8388608 body bytes
+[bench] body_8MiB_direct       min   2178.200 us  p50   3570.500  mean   4230.848  p99  19158.200  max  32684.400   (2002 batches x 1)
+[probe] body_8MiB_proxied      warm-up: 200 status, 8388608 body bytes
+[bench] body_8MiB_proxied      min   3253.500 us  p50   4742.900  mean   5318.411  p99  19748.600  max  27429.800   (1462 batches x 1)
+[probe] cpu0 scaling_cur_freq: unavailable (informational — not a calibration input)
+[probe] done

@@ -1,0 +1,92 @@
+RB5009 — fah-httpbench probe, four runs, 2026-08-06.
+Copied verbatim from `/log print where topics~"container"`. RouterOS renders the
+em dash as "E28094"; nothing else is altered.
+
+Image: fah-httpbench-rosready.tar (arm64, docker-archive), entrypoint
+/httpbench /corpus. Production FastAdHunter 0.2.10 served DNS throughout; the
+probe binds only its own loopback and mounts nothing.
+
+=============================== run 1 ===============================
+ 2026-08-06 18:42:06 container,info,debug [CONTAINER]: fah-httpbench-rosready: *** repull
+ 2026-08-06 18:42:06 container,info,debug [CONTAINER]: fah-httpbench-rosready: *** extracting tar archived image: fah-httpbench-rosready.tar
+ 2026-08-06 18:42:07 container,info,debug [CONTAINER]: fah-httpbench-rosready: *** download/extract done
+ 2026-08-06 18:45:33 container,info,debug [CONTAINER]: fah-httpbench-rosready: *** start
+ 2026-08-06 18:45:33 container,info,debug [CONTAINER]: fah-httpbench-rosready: *** started PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt TZ=Europe/Bucharest /httpbench /corpus
+ 2026-08-06 18:45:33 container,info,debug [CONTAINER]: fah-httpbench-rosready: [probe] fah httpbench E28094 p2-08 on-device HTTP proxy cost
+ 2026-08-06 18:45:33 container,info,debug [CONTAINER]: fah-httpbench-rosready: [probe] cpu0 scaling_cur_freq: 350 MHz (informational E28094 not a calibration input)
+ 2026-08-06 18:45:33 container,info,debug [CONTAINER]: fah-httpbench-rosready: [probe] ruleset : 2 corpus list(s), 715 url rules parsed, 715 compiled (0 unindexed), matcher 5.25 MiB
+ 2026-08-06 18:45:33 container,info,debug [CONTAINER]: fah-httpbench-rosready: [probe] --- measuring, ~8 s per arm ---
+ 2026-08-06 18:45:33 container,info,debug [CONTAINER]: fah-httpbench-rosready: [probe] head_direct            warm-up: 200 status, 54 body bytes
+ 2026-08-06 18:45:37 container,info,debug [CONTAINER]: fah-httpbench-rosready: [bench] head_direct            min    128.720 us  p50    240.067  mean    231.082  p99    467.920  max   3304.093   (5000 batches x 3)
+ 2026-08-06 18:45:37 container,info,debug [CONTAINER]: fah-httpbench-rosready: [probe] head_proxied           warm-up: 200 status, 54 body bytes
+ 2026-08-06 18:45:41 container,info,debug [CONTAINER]: fah-httpbench-rosready: [bench] head_proxied           min    289.880 us  p50    582.360  mean    632.937  p99   1274.520  max   6157.240   (5000 batches x 1)
+ 2026-08-06 18:45:41 container,info,debug [CONTAINER]: fah-httpbench-rosready: [probe] head_rules_proxied     warm-up: 200 status, 54 body bytes
+ 2026-08-06 18:45:45 container,info,debug [CONTAINER]: fah-httpbench-rosready: [bench] head_rules_proxied     min    313.600 us  p50    606.720  mean    667.475  p99   1260.000  max   3513.560   (5000 batches x 1)
+ 2026-08-06 18:45:45 container,info,debug [CONTAINER]: fah-httpbench-rosready: [probe] head_blocked           warm-up: 200 status, 0 body bytes
+ 2026-08-06 18:45:49 container,info,debug [CONTAINER]: fah-httpbench-rosready: [bench] head_blocked           min    151.227 us  p50    241.680  mean    257.710  p99    567.600  max   2528.867   (5000 batches x 3)
+ 2026-08-06 18:45:49 container,info,debug [CONTAINER]: fah-httpbench-rosready: [probe] body_8KiB_direct       warm-up: 200 status, 8192 body bytes
+ 2026-08-06 18:45:53 container,info,debug [CONTAINER]: fah-httpbench-rosready: [bench] body_8KiB_direct       min    135.800 us  p50    206.827  mean    239.713  p99    483.520  max   1964.653   (5000 batches x 3)
+ 2026-08-06 18:45:53 container,info,debug [CONTAINER]: fah-httpbench-rosready: [probe] body_8KiB_proxied      warm-up: 200 status, 8192 body bytes
+ 2026-08-06 18:45:57 container,info,debug [CONTAINER]: fah-httpbench-rosready: [bench] body_8KiB_proxied      min    309.560 us  p50    621.480  mean    706.382  p99   1308.240  max   7154.840   (5000 batches x 1)
+ 2026-08-06 18:45:57 container,info,debug [CONTAINER]: fah-httpbench-rosready: [probe] body_1MiB_direct       warm-up: 200 status, 1048576 body bytes
+ 2026-08-06 18:46:06 container,info,debug [CONTAINER]: fah-httpbench-rosready: [bench] body_1MiB_direct       min   2153.160 us  p50   2984.120  mean   3183.422  p99   4786.480  max   8652.960   (2520 batches x 1)
+ 2026-08-06 18:46:06 container,info,debug [CONTAINER]: fah-httpbench-rosready: [probe] body_1MiB_proxied      warm-up: 200 status, 1048576 body bytes
+ 2026-08-06 18:46:14 container,info,debug [CONTAINER]: fah-httpbench-rosready: [bench] body_1MiB_proxied      min   3652.760 us  p50   5015.560  mean   5336.357  p99   8500.240  max  54397.200   (1528 batches x 1)
+ 2026-08-06 18:46:15 container,info,debug [CONTAINER]: fah-httpbench-rosready: [probe] body_8MiB_direct       warm-up: 200 status, 8388608 body bytes
+ 2026-08-06 18:46:23 container,info,debug [CONTAINER]: fah-httpbench-rosready: [bench] body_8MiB_direct       min  14641.360 us  p50  17981.760  mean  18589.373  p99  27093.480  max  28578.760   (427 batches x 1)
+ 2026-08-06 18:46:23 container,info,debug [CONTAINER]: fah-httpbench-rosready: [probe] body_8MiB_proxied      warm-up: 200 status, 8388608 body bytes
+ 2026-08-06 18:46:31 container,info,debug [CONTAINER]: fah-httpbench-rosready: [bench] body_8MiB_proxied      min  25879.800 us  p50  29791.880  mean  36152.416  p99  89338.480  max 100928.880   (209 batches x 1)
+ 2026-08-06 18:46:31 container,info,debug [CONTAINER]: fah-httpbench-rosready: [probe] cpu0 scaling_cur_freq: 700 MHz (informational E28094 not a calibration input)
+ 2026-08-06 18:46:31 container,info,debug [CONTAINER]: fah-httpbench-rosready: [probe] done
+ 2026-08-06 18:46:31 container,info,debug [CONTAINER]: fah-httpbench-rosready: *** exited with status 0
+
+=============================== run 2 ===============================
+ 2026-08-06 18:49:26 container,info,debug [CONTAINER]: fah-httpbench-rosready: *** start
+ 2026-08-06 18:49:26 container,info,debug [CONTAINER]: fah-httpbench-rosready: [probe] cpu0 scaling_cur_freq: 1400 MHz (informational E28094 not a calibration input)
+ 2026-08-06 18:49:26 container,info,debug [CONTAINER]: fah-httpbench-rosready: [probe] ruleset : 2 corpus list(s), 715 url rules parsed, 715 compiled (0 unindexed), matcher 5.25 MiB
+ 2026-08-06 18:49:32 container,info,debug [CONTAINER]: fah-httpbench-rosready: [bench] head_direct            min    132.730 us  p50    213.080  mean    253.020  p99    640.890  max   3025.630   (5000 batches x 4)
+ 2026-08-06 18:49:36 container,info,debug [CONTAINER]: fah-httpbench-rosready: [bench] head_proxied           min    298.840 us  p50    583.280  mean    648.050  p99   1245.640  max   5259.640   (5000 batches x 1)
+ 2026-08-06 18:49:40 container,info,debug [CONTAINER]: fah-httpbench-rosready: [bench] head_rules_proxied     min    294.280 us  p50    624.000  mean    689.195  p99   1282.560  max   7354.200   (5000 batches x 1)
+ 2026-08-06 18:49:44 container,info,debug [CONTAINER]: fah-httpbench-rosready: [bench] head_blocked           min    150.920 us  p50    272.080  mean    275.416  p99    597.360  max   2032.707   (5000 batches x 3)
+ 2026-08-06 18:49:48 container,info,debug [CONTAINER]: fah-httpbench-rosready: [bench] body_8KiB_direct       min    137.813 us  p50    216.400  mean    252.088  p99    515.173  max   1937.707   (5000 batches x 3)
+ 2026-08-06 18:49:52 container,info,debug [CONTAINER]: fah-httpbench-rosready: [bench] body_8KiB_proxied      min    323.520 us  p50    597.440  mean    645.233  p99   1332.720  max   7409.440   (5000 batches x 1)
+ 2026-08-06 18:50:01 container,info,debug [CONTAINER]: fah-httpbench-rosready: [bench] body_1MiB_direct       min   2147.640 us  p50   2965.960  mean   3149.470  p99   5011.080  max  10284.880   (2547 batches x 1)
+ 2026-08-06 18:50:09 container,info,debug [CONTAINER]: fah-httpbench-rosready: [bench] body_1MiB_proxied      min   3725.800 us  p50   5057.560  mean   5345.948  p99   8184.880  max  10284.680   (1417 batches x 1)
+ 2026-08-06 18:50:18 container,info,debug [CONTAINER]: fah-httpbench-rosready: [bench] body_8MiB_direct       min  14691.640 us  p50  18117.680  mean  18682.926  p99  28882.040  max  34005.880   (437 batches x 1)
+ 2026-08-06 18:50:26 container,info,debug [CONTAINER]: fah-httpbench-rosready: [bench] body_8MiB_proxied      min  24759.040 us  p50  30777.880  mean  37482.084  p99  90586.840  max  96266.680   (198 batches x 1)
+ 2026-08-06 18:50:26 container,info,debug [CONTAINER]: fah-httpbench-rosready: [probe] cpu0 scaling_cur_freq: 1400 MHz (informational E28094 not a calibration input)
+ 2026-08-06 18:50:26 container,info,debug [CONTAINER]: fah-httpbench-rosready: *** exited with status 0
+
+=============================== run 3 ===============================
+ 2026-08-06 18:52:39 container,info,debug [CONTAINER]: fah-httpbench-rosready: *** start
+ 2026-08-06 18:52:39 container,info,debug [CONTAINER]: fah-httpbench-rosready: [probe] cpu0 scaling_cur_freq: 350 MHz (informational E28094 not a calibration input)
+ 2026-08-06 18:52:39 container,info,debug [CONTAINER]: fah-httpbench-rosready: [probe] ruleset : 2 corpus list(s), 715 url rules parsed, 715 compiled (0 unindexed), matcher 5.25 MiB
+ 2026-08-06 18:52:45 container,info,debug [CONTAINER]: fah-httpbench-rosready: [bench] head_direct            min    132.710 us  p50    237.010  mean    255.776  p99    596.280  max   2273.930   (5000 batches x 4)
+ 2026-08-06 18:52:48 container,info,debug [CONTAINER]: fah-httpbench-rosready: [bench] head_proxied           min    298.480 us  p50    581.920  mean    626.641  p99   1240.560  max   4305.600   (5000 batches x 1)
+ 2026-08-06 18:52:52 container,info,debug [CONTAINER]: fah-httpbench-rosready: [bench] head_rules_proxied     min    302.160 us  p50    608.960  mean    684.668  p99   1276.080  max   3541.880   (5000 batches x 1)
+ 2026-08-06 18:52:57 container,info,debug [CONTAINER]: fah-httpbench-rosready: [bench] head_blocked           min    152.080 us  p50    290.187  mean    273.954  p99    596.147  max   1940.387   (5000 batches x 3)
+ 2026-08-06 18:53:01 container,info,debug [CONTAINER]: fah-httpbench-rosready: [bench] body_8KiB_direct       min    137.413 us  p50    228.907  mean    272.051  p99    623.120  max   1732.213   (5000 batches x 3)
+ 2026-08-06 18:53:05 container,info,debug [CONTAINER]: fah-httpbench-rosready: [bench] body_8KiB_proxied      min    313.360 us  p50    609.320  mean    675.052  p99   1293.800  max   5322.960   (5000 batches x 1)
+ 2026-08-06 18:53:13 container,info,debug [CONTAINER]: fah-httpbench-rosready: [bench] body_1MiB_direct       min   2126.160 us  p50   2963.280  mean   3152.260  p99   4915.120  max   8053.360   (2394 batches x 1)
+ 2026-08-06 18:53:22 container,info,debug [CONTAINER]: fah-httpbench-rosready: [bench] body_1MiB_proxied      min   3666.320 us  p50   5007.520  mean   5444.522  p99   8699.520  max  64851.640   (1543 batches x 1)
+ 2026-08-06 18:53:31 container,info,debug [CONTAINER]: fah-httpbench-rosready: [bench] body_8MiB_direct       min  14950.480 us  p50  18494.200  mean  19045.937  p99  28570.840  max  32942.760   (443 batches x 1)
+ 2026-08-06 18:53:40 container,info,debug [CONTAINER]: fah-httpbench-rosready: [bench] body_8MiB_proxied      min  25178.760 us  p50  30747.440  mean  38596.838  p99  89601.040  max 100557.480   (214 batches x 1)
+ 2026-08-06 18:53:40 container,info,debug [CONTAINER]: fah-httpbench-rosready: [probe] cpu0 scaling_cur_freq: 350 MHz (informational E28094 not a calibration input)
+ 2026-08-06 18:53:40 container,info,debug [CONTAINER]: fah-httpbench-rosready: *** exited with status 0
+
+=============================== run 4 ===============================
+ 2026-08-06 18:54:30 container,info,debug [CONTAINER]: fah-httpbench-rosready: *** start
+ 2026-08-06 18:54:30 container,info,debug [CONTAINER]: fah-httpbench-rosready: [probe] cpu0 scaling_cur_freq: 700 MHz (informational E28094 not a calibration input)
+ 2026-08-06 18:54:30 container,info,debug [CONTAINER]: fah-httpbench-rosready: [probe] ruleset : 2 corpus list(s), 715 url rules parsed, 715 compiled (0 unindexed), matcher 5.25 MiB
+ 2026-08-06 18:54:35 container,info,debug [CONTAINER]: fah-httpbench-rosready: [bench] head_direct            min    133.600 us  p50    257.720  mean    261.882  p99    568.173  max   2165.253   (5000 batches x 3)
+ 2026-08-06 18:54:38 container,info,debug [CONTAINER]: fah-httpbench-rosready: [bench] head_proxied           min    284.200 us  p50    580.080  mean    612.019  p99   1283.720  max   5824.800   (5000 batches x 1)
+ 2026-08-06 18:54:42 container,info,debug [CONTAINER]: fah-httpbench-rosready: [bench] head_rules_proxied     min    302.000 us  p50    595.920  mean    650.963  p99   1332.160  max   5468.120   (5000 batches x 1)
+ 2026-08-06 18:54:47 container,info,debug [CONTAINER]: fah-httpbench-rosready: [bench] head_blocked           min    157.200 us  p50    251.240  mean    269.511  p99    537.427  max   2233.947   (5000 batches x 3)
+ 2026-08-06 18:54:52 container,info,debug [CONTAINER]: fah-httpbench-rosready: [bench] body_8KiB_direct       min    137.830 us  p50    228.490  mean    244.630  p99    506.280  max   1632.880   (5000 batches x 4)
+ 2026-08-06 18:54:56 container,info,debug [CONTAINER]: fah-httpbench-rosready: [bench] body_8KiB_proxied      min    322.480 us  p50    615.960  mean    672.645  p99   1349.720  max   6992.200   (5000 batches x 1)
+ 2026-08-06 18:55:04 container,info,debug [CONTAINER]: fah-httpbench-rosready: [bench] body_1MiB_direct       min   2172.120 us  p50   2982.120  mean   3132.486  p99   4966.160  max   8984.200   (2522 batches x 1)
+ 2026-08-06 18:55:13 container,info,debug [CONTAINER]: fah-httpbench-rosready: [bench] body_1MiB_proxied      min   3728.440 us  p50   5085.960  mean   5384.784  p99   8510.680  max  52053.120   (1430 batches x 1)
+ 2026-08-06 18:55:21 container,info,debug [CONTAINER]: fah-httpbench-rosready: [bench] body_8MiB_direct       min  15160.840 us  p50  19103.920  mean  19741.946  p99  28027.480  max  32240.320   (410 batches x 1)
+ 2026-08-06 18:55:30 container,info,debug [CONTAINER]: fah-httpbench-rosready: [bench] body_8MiB_proxied      min  26646.720 us  p50  31386.560  mean  38919.433  p99  90048.760  max  92082.640   (203 batches x 1)
+ 2026-08-06 18:55:30 container,info,debug [CONTAINER]: fah-httpbench-rosready: [probe] cpu0 scaling_cur_freq: 700 MHz (informational E28094 not a calibration input)
+ 2026-08-06 18:55:30 container,info,debug [CONTAINER]: fah-httpbench-rosready: *** exited with status 0
