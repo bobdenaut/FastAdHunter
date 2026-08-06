@@ -108,6 +108,11 @@ Notes:
   is now seeded from the cached copies' mtimes. Serving was never blocked either
   way; what this returns is ~2.3 s of ARM CPU, ~24 MB of downloads and a second
   ~158 MiB peak-RSS transient per restart.
+
+  **Do not read that 158 MiB as a baseline to compare later peaks against.** It
+  is one point on the compile ratchet described below, taken after an unknown
+  number of prior compiles. A higher figure elsewhere in this document is not
+  evidence of a regression against it (`docs/code-review/p2-11-compile-transient.md` §4).
 - **DNS sustained throughput, measured 2026-07-24** (dev box, four cores per
   §Measuring reliably, realistic mix — a third blocked, a third cache-hit, a
   third forwarded): **~567 000 elem/s** (median of 3 pinned runs, range
@@ -137,27 +142,44 @@ Notes:
   they can only establish that no regression exceeding ~15% exists, and none
   does. 15 assignments walked to the end (worst case, no early hit) add a
   further 10.7 ns.
-- **RAM on the RB5009 at 0.2.10, `dns+http`, measured 2026-08-02** (p2-08 T0,
-  16 lists, 1 138 898 parsed → 794 931 compiled rules, 1 policy): steady RSS
-  **58.13 MiB**, well inside the 128 MB budget. **Peak RSS at boot is
-  123.74 MiB — 96.7 % of that budget.** The peak is the compile (2.71 s), which
-  holds source text and compiled form at once; it is not steady state. The
-  budget holds at this corpus size, with little headroom at the worst instant.
-  Nothing enforces 128 MB at runtime — the container runs
-  `memory-high=unlimited`, so exceeding it is a budget breach, not a failure —
-  but a cgroup limit set near this figure would make boot the point of death.
-  Full baseline: `docs/code-review/0.2.10-soak-baseline.md`.
+- **RAM on the RB5009 at 0.2.10, `dns+http`** (16 lists, 1 138 898 parsed →
+  798 250 compiled rules, 1 policy). **The `≤ 128 MB` row above is
+  steady-state**; the compile peak is a transient and is judged against the
+  256 MB ceiling row, not against it. Earlier text here compared the boot peak
+  to the 128 MB figure — that was a steady-state budget applied to a transient.
 
-  **Known optimization lever:** compile-time peak RSS may be reducible by
-  streaming list parsing. Deferred until a heap profile identifies the dominant
-  transient allocation — raw list text and the pre-dedup index are both
-  plausible, and streaming only helps if the text dominates.
+  | | 2026-08-02 (`PURGE_DELAY=100`) | 2026-08-06 (`PURGE_DELAY=0`) |
+  | --- | ---: | ---: |
+  | Steady RSS | 58.13 MiB | **46.6 MiB** |
+  | Boot compile peak | 123.74 MiB | 122.0 MiB |
+  | Peak after repeated compiles | **230.7 MiB** | **181.4 MiB** |
 
-  **The peak is not the thing to watch; the return is.** A compile happens at
-  boot and at each list refresh (daily by default), so the expected shape is
-  58 → 123 → 58 repeatedly. A sawtooth that ratchets — 58 → 123 → 92 → 123 →
-  108 — indicates memory that is not being released after successive compiles.
-  The current implementation returns to its steady-state baseline.
+  Nothing enforces either budget at runtime — the container runs
+  `memory-high=unlimited`, so exceeding one is a budget breach, not a failure.
+  Baselines: `docs/code-review/0.2.10-soak-baseline.md` and
+  `docs/code-review/p2-11-compile-transient.md`.
+
+  **The peak is a ratchet across compiles, not one compile's cost.** Boot costs
+  ~122–131 MiB; the second and later compiles in a process climb to a saturation
+  point. Measured at `PURGE_DELAY=50`: 131.5 → 209.9 → 228.7 MiB over boot plus
+  two refreshes. Any single reading of `process_peak_rss` is therefore
+  meaningless without knowing how many compiles preceded it.
+
+  **~~Known optimization lever: streaming list parsing.~~** Retracted 2026-08-06.
+  The dominant term was allocator retention, not raw list text — forcing the
+  purge recovered 55 MiB with no code change, and a streaming parse would not
+  have touched it (`docs/code-review/p2-11-compile-transient.md`).
+
+  **What to watch is the return, and it is time-dependent.** At
+  `PURGE_DELAY=100` RSS held ~153 MiB for **7.4–9.9 s after the ruleset was
+  already swapped in** — dead memory awaiting a deferred purge. At `0` it
+  returns on the instant. A sawtooth that ratchets *across* compiles is the
+  arena filling; one that fails to return *at all* would be a leak.
+
+  **`PURGE_DELAY=0` is not yet proven under load.** 0.2.7 moved it 0 → 100 on a
+  syscall-churn concern, and neither that review's stress test nor the 2026-08-06
+  measurement (~0.5 qps) exercised the allocation-heavy forward path. The check
+  is `rate(fastadhunter_process_minor_page_faults_total)` at flat RSS.
 - **HTTP pass-through, head path — measured 2026-08-02** (p2-08, dev box,
   `fah-http/benches/proxy.rs`, loopback, warm keep-alive on both sides). Direct
   to origin 32.6–34.9 µs, through the proxy 65.7–76.1 µs — the proxy adds

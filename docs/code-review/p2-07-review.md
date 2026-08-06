@@ -301,3 +301,83 @@ the allocator swap and must not be quoted as the number being improved on.
 `fastadhunter --test e2e` fails here with the §8 `WSAEACCES` again — the whole
 reserved block was drawn, not one port. Identical failure on the stashed clean
 tree, so it is environmental.
+
+---
+
+## 12. Closed on-device (2026-08-06) — the instrument works
+
+**The two remaining criteria are met, twice, across two independent processes.**
+The series was pulled from the router's own `/history/perf` in one request, not
+reconstructed from an external poll loop.
+
+### Windows
+
+| Window | Span | Sampling | Raw | Used |
+| --- | --- | --- | ---: | ---: |
+| T0 process | `2026-08-02T10:18:25Z` → `2026-08-04T23:35Z` (61.3 h) | 60 s | 3,675 | 3,668 |
+| Current process | `2026-08-04T23:59:09Z` → `2026-08-06T12:11Z` (36.2 h) | 360 s | 363 | 323 |
+
+Exclusions, identical for both: each process's first sample (`accounted_bytes =
+0` — sampler runs before the ruleset registers, per the baseline) and any sample
+above 90 MiB RSS (list-refresh compile transients — see §Not this task).
+
+### Residual — the criteria
+
+| Criterion | T0 window | Current window |
+| --- | --- | --- |
+| Residual on **every** sample | 4,657 / 4,657 rows carry `memory.residual_bytes` — none absent | ← same request |
+| Slope, whole window | **+0.082 MiB/h** | **+0.027 MiB/h** |
+| Slope, **final third** | **+0.174 MiB/h** (20.4 h, n=1,216) | **−0.057 MiB/h** (12.1 h, n=100) |
+| Mean residual | 39.52 MiB | 39.68 MiB |
+| Band | 25.1 – 62.7 MiB | 21.7 – 61.1 MiB |
+| Residual / RSS | 57.4 % | 58.1 % |
+| `events_dropped_total` | — | 0 |
+
+**Not drift.** The final-third slopes disagree in sign, the band is ~37 MiB
+wide, and the two windows' means agree to 0.4 % despite being separate processes
+of different length and sampling rate. A real leak would leave the second
+process starting from a lower level than the first ended at; it does not.
+
+### Live vs persisted, same instant
+
+| Source | Timestamp | `process_rss` |
+| --- | --- | ---: |
+| `/history/perf` last row | `2026-08-06T12:11:09Z` | 70,545,408 |
+| `/debug/memory` live read | `2026-08-06T12:11:41Z` | 70,533,120 |
+
+12,288 B apart (0.02 %) across a 32 s gap — both through the same `residual()`.
+
+### Residual against a mimalloc baseline — stated, not compared
+
+**57–58 % of RSS**, flat, at a mean of 39.5 MiB. This is the baseline figure for
+0.2.10 under mimalloc. §1's 45 % is **not** the number this improves on and must
+not be quoted as one: it was measured pre-mimalloc, on a 21.94 MiB ruleset
+against today's 27.03 MiB, and with only two components accounted. What remains
+unaccounted is what §9 said it would be — binary text pages (13.1 MiB image),
+thread stacks, tokio, and allocator slack. None of it grows with traffic or
+uptime.
+
+### The criterion that failed
+
+**"Exactly one container start in the window"** — five starts on 2026-08-04
+between 23:36:05 and 23:59:09Z, visible in the series as `accounted_bytes = 0,
+cache_entries = 0, minor_page_faults = 0` rows. Cause is **external to
+FastAdHunter**: an upstream IPv6 outage at the ISP, diagnosed by the repo owner
+by rebooting and reconfiguring the router. `auto-restart-interval=none`, so none
+of the five was FAH restarting itself.
+
+The 61.3 h pre-reboot window satisfies every other criterion **on its own**, and
+the 36.2 h post-reboot window independently reproduces it. Two config values
+also changed at that boundary — `history.sample_interval_seconds` 60 → 360 and
+`query_log` persistence off (RouterOS was reporting ~700 MB of disk) — which is
+why the second window is 6× coarser.
+
+### Not this task
+
+The window also recorded a **compile-transient peak RSS of 230.7 MiB**
+(`process_peak_rss`) against a 128 MB budget, and a single 151.5 MiB sample at
+`2026-08-03T04:52:28Z`. That is a bounded transient, not a leak — the residual
+is flat around it — and it belongs to its own task. Prior art for the same
+phenomenon is already recorded in-code at
+[`crates/fah-rules/src/lifecycle/mod.rs`](../../crates/fah-rules/src/lifecycle/mod.rs)
+`fetch_and_commit`: **~158 MiB measured at 0.2.8**.
