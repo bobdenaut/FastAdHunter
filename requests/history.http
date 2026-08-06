@@ -12,16 +12,16 @@ GET {{base}}/history/summary
 {{auth}}
 
 ### Explicit window, one point per UTC day.
-GET {{base}}/history/summary?from=2026-06-24T00:00:00Z&to=2026-07-24T00:00:00Z&resolution=day
+GET {{base}}/history/summary?from=2026-07-28T00:00:00Z&resolution=day
 {{auth}}
 
 ### A 90-day hourly chart: 2160 points, under the 5000 default budget, so
 ### `stride` comes back as 1 (nothing decimated).
-GET {{base}}/history/summary?from=2026-04-25T00:00:00Z&to=2026-07-24T00:00:00Z&resolution=hour
+GET {{base}}/history/summary?from=2025-04-25T00:00:00Z&to=2029-07-24T00:00:00Z&resolution=hour
 {{auth}}
 
 ### A tight budget forces decimation — check `stride` in the response.
-GET {{base}}/history/summary?from=2026-04-25T00:00:00Z&to=2026-07-24T00:00:00Z&max_points=50
+GET {{base}}/history/summary?from=2026-08-03T00:00:00Z&to=2029-07-24T00:00:00Z&max_points=5
 {{auth}}
 
 ### Perf series, defaults: last 24h, budget 1000 (a day is 1440 samples at the
@@ -55,7 +55,7 @@ GET {{base}}/history/summary?from=1970-01-01T00:00:00Z&to=1970-01-02T00:00:00Z
 
 ### Bad parameters are REJECTED, not silently ignored — each of these should be
 ### 400, naming the offending parameter. Backwards window first:
-GET {{base}}/history/summary?from=2026-07-24T00:00:00Z&to=2026-07-01T00:00:00Z
+GET {{base}}/history/summary?from=2025-07-24T00:00:00Z&to=2029-07-01T00:00:00Z
 {{auth}}
 
 ###

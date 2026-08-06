@@ -35,7 +35,7 @@ GET {{base}}/queries?domain=doubleclick&limit=50
 {{auth}}
 
 ### Time window, RFC 3339. Both bounds optional.
-GET {{base}}/queries?from=2026-07-19T00:00:00Z&to=2026-07-20T00:00:00Z&limit=50
+GET {{base}}/queries?from=2026-07-19T00:00:00Z&to=2029-07-20T00:00:00Z&limit=50
 {{auth}}
 
 ### Combined filters.
