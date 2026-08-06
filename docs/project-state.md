@@ -10,8 +10,8 @@ what is true today.
 
 | | |
 | --- | --- |
-| Branch | `feat/phase2-http-pipeline` at `e214cc0`; `origin`/`backup` are behind by the commits since `10d9470` |
-| Tree | **dirty** — p2-08's probe (`crates/fah-http/examples/httpbench.rs`, `Dockerfile.httpprobe`, `crates/fah-http/Cargo.toml`), PERFORMANCE.md, phase table, this file, `docs/code-review/p2-08-review.md` + `p2-08-http-arm/` |
+| Branch | `feat/phase2-http-pipeline` at `4f7671e`, pushed to `origin` **and** `backup` |
+| Tree | clean; `main` fast-forwarded to the same commit and pushed to both remotes |
 | Tests | workspace green 2026-08-06 (779 across 40 binaries); `fmt`/`clippy` fail **only** in `tui-monitor/` |
 | Phase | 2 (`plan/wip/phase2`) — **every task DONE except p2-09, which is BLOCKED by decision** |
 | Next | phase-close decision (§Phase 2 status), then a commit. Neither is mine to make |
