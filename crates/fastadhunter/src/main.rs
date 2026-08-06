@@ -392,7 +392,6 @@ impl Engine {
         let mut tasks = vec![
             rules.spawn_scheduler(),
             stats.spawn_snapshot_scheduler(),
-            stats.spawn_query_log_scheduler(),
             stats.spawn_history_scheduler(),
             spawn_event_fanout(
                 events_rx,
@@ -415,6 +414,12 @@ impl Engine {
             ),
             spawn_policy_ticker(policy_state, rules, Arc::clone(&stats)),
         ];
+
+        // `None` when `[query_log] enabled = false` — the flush loop would
+        // otherwise tick every `flush_interval_seconds` only to return.
+        if let Some(flush) = stats.spawn_query_log_scheduler() {
+            tasks.push(flush);
+        }
 
         // Stale-while-refresh (ADR-0005). Started here rather than in
         // `Pipeline::new` so every long-lived task is aborted from one place on

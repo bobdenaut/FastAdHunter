@@ -287,17 +287,26 @@ impl Stats {
         }
     }
 
-    pub fn spawn_query_log_scheduler(self: &Arc<Self>) -> JoinHandle<()> {
+    /// Starts the query-log flush loop, returning its handle for the caller to
+    /// abort on shutdown — `None` when `[query_log] enabled = false`.
+    ///
+    /// `enabled` is boot-class (a plain `bool`, unlike `history_enabled`), so
+    /// the flag cannot change under a running process and the task would only
+    /// ever wake to hit [`Stats::flush_query_log`]'s own early return.
+    pub fn spawn_query_log_scheduler(self: &Arc<Self>) -> Option<JoinHandle<()>> {
+        if !self.query_log_enabled {
+            return None;
+        }
         let stats = Arc::clone(self);
         let interval = self.flush_interval;
-        tokio::spawn(async move {
+        Some(tokio::spawn(async move {
             let mut ticker = tokio::time::interval(interval);
             ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
             loop {
                 ticker.tick().await;
                 stats.flush_query_log().await;
             }
-        })
+        }))
     }
 
     pub async fn flush_query_log(&self) {
@@ -818,9 +827,10 @@ mod tests {
         stats.boot().await;
 
         let empty = stats.heap();
-        assert!(
-            empty.ring > 0,
-            "the ring allocates its buffer up front — capacity is what occupies RAM, not fill"
+        assert_eq!(
+            empty.ring, 0,
+            "an unwritten ring owns no buffer — reporting `ring_entries` worth of \
+             heap here would land as a constant offset in the p2-07 residual"
         );
 
         for i in 0..500u32 {
@@ -844,6 +854,12 @@ mod tests {
             "distinct clients must show up in the registry: {} -> {}",
             empty.clients,
             loaded.clients
+        );
+        assert!(
+            loaded.ring > empty.ring,
+            "the ring must account its buffer once written: {} -> {}",
+            empty.ring,
+            loaded.ring
         );
         assert!(loaded.total() > empty.total());
 

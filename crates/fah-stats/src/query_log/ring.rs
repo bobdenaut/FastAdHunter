@@ -16,7 +16,7 @@ pub(crate) struct Ring {
     /// Owned string bytes across all resident entries, maintained on push and
     /// eviction rather than walked on read (p2-07).
     ///
-    /// The ring is the largest counted structure — 16,384 entries by default,
+    /// The ring is the largest counted structure — 10,000 entries by default,
     /// each holding a heap-allocated domain — so walking it cost ~80 µs per
     /// accounting call on x86 and an estimated 0.4–0.6 ms on the RB5009, with
     /// the ring mutex held. That is only 0.005 % duty cycle at a 10 s poll, but
@@ -37,13 +37,17 @@ impl Ring {
         }
     }
 
-    /// Heap owned by the ring: the `VecDeque` buffer at its configured
-    /// capacity — the allocation is what occupies RAM, not the fill — plus the
-    /// running total of every resident entry's owned strings. O(1); see
-    /// [`Self::bytes`]. Excludes the segment files on `/data`, which
-    /// `retention_max_mb` bounds separately.
+    /// Heap owned by the ring: the `VecDeque`'s actual buffer plus the running
+    /// total of every resident entry's owned strings. O(1); see [`Self::bytes`].
+    /// Excludes the segment files on `/data`, which `retention_max_mb` bounds
+    /// separately.
+    ///
+    /// `entries.capacity()`, not `self.capacity`: the deque starts empty and
+    /// grows, so a ring that is never written (`[query_log] enabled = false`)
+    /// owns nothing and must not report `ring_entries` worth of heap into the
+    /// p2-07 residual.
     pub(crate) fn heap_bytes(&self) -> usize {
-        crate::heap::vecdeque_bytes::<QueryLogEntry>(self.capacity) + self.bytes
+        crate::heap::vecdeque_bytes::<QueryLogEntry>(self.entries.capacity()) + self.bytes
     }
 
     /// Pushes a new entry, evicting the oldest on overflow. Returns the
