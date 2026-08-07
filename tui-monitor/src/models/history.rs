@@ -30,6 +30,11 @@ pub struct HistoryPoint {
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct HistoryPerf {
+    /// `1` when every stored sample is present, `n` when only every `n`-th
+    /// survived the point budget. Carried for the same reason
+    /// [`HistorySummary::stride`] is: a sparse graph that does not say so is a
+    /// graph claiming a time span it never covered.
+    pub stride: u64,
     pub items: Vec<PerfPoint>,
 }
 
@@ -62,6 +67,7 @@ mod tests {
     fn a_field_filtered_perf_page_parses_without_the_dropped_keys() {
         let perf: HistoryPerf = serde_json::from_str(fixtures::HISTORY_PERF).unwrap();
 
+        assert_eq!(perf.stride, 1);
         assert_eq!(perf.items.len(), 4);
         assert_eq!(perf.items[0].rss_bytes, Some(53_907_456));
     }
@@ -71,7 +77,8 @@ mod tests {
     #[test]
     fn a_row_without_the_requested_field_is_absent_not_an_error() {
         let perf: HistoryPerf =
-            serde_json::from_str(r#"{"items":[{"ts":"a"},{"ts":"b","rss_bytes":1}]}"#).unwrap();
+            serde_json::from_str(r#"{"stride":1,"items":[{"ts":"a"},{"ts":"b","rss_bytes":1}]}"#)
+                .unwrap();
 
         assert_eq!(perf.items[0].rss_bytes, None);
         assert_eq!(perf.items[1].rss_bytes, Some(1));

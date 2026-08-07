@@ -13,11 +13,21 @@ use crate::models::telemetry::Telemetry;
 pub mod paths {
     pub const TELEMETRY: &str = "/api/v1/telemetry";
     pub const HISTORY_SUMMARY: &str = "/api/v1/history/summary";
-    /// `?fields=` drops every key but the one charted; a day of full samples
-    /// is otherwise ~1 MB of JSON.
-    pub const HISTORY_PERF: &str = "/api/v1/history/perf?fields=rss_bytes";
+    pub const HISTORY_PERF: &str = "/api/v1/history/perf";
     pub const EVENTS: &str = "/api/v1/events";
 }
+
+/// The `max_points` asked of `/history/perf`, meaning "do not decimate": the
+/// server thins a series by dropping whole rows (API.md §History), and a
+/// dropped row is a spike that never happened. Over-asking is safe — the
+/// endpoint clamps to its own ceiling rather than rejecting — so this is a
+/// floor on what arrives, never a number that has to track the server's.
+const UNDECIMATED: usize = 5_000;
+
+/// The wire budget must strictly exceed what the graph retains, or the client
+/// keeps room for samples the server was never asked to send. Strictly, because
+/// the half-open window can hold one more than the day it covers.
+const _: () = assert!(UNDECIMATED > crate::config::DAY_OF_SAMPLES);
 
 #[derive(Debug)]
 pub enum Error {
@@ -69,8 +79,9 @@ impl ApiClient {
         self.get(paths::TELEMETRY, self.timeout.telemetry()).await
     }
 
-    /// The default window — the last 24 h at hour resolution.
-    pub async fn history_today(&self) -> Result<HistorySummary, Error> {
+    /// The endpoint's default window: a **rolling** last-24 h at hour
+    /// resolution, which is not the same thing as since-midnight.
+    pub async fn history_last_24h(&self) -> Result<HistorySummary, Error> {
         self.get(paths::HISTORY_SUMMARY, self.timeout.history())
             .await
     }
@@ -83,7 +94,7 @@ impl ApiClient {
     }
 
     pub async fn history_perf(&self) -> Result<HistoryPerf, Error> {
-        self.get(paths::HISTORY_PERF, self.timeout.history()).await
+        self.get(&perf_query(), self.timeout.history()).await
     }
 
     async fn get<T: DeserializeOwned>(&self, path: &str, timeout: Duration) -> Result<T, Error> {
@@ -108,5 +119,47 @@ impl ApiClient {
             .json()
             .await
             .map_err(|err| Error::Decode(err.to_string()))
+    }
+}
+
+/// The RSS series request. `fields=` drops every key but the one charted — a
+/// day of full samples is otherwise ~1 MB of JSON.
+fn perf_query() -> String {
+    format!(
+        "{}?fields=rss_bytes&max_points={UNDECIMATED}",
+        paths::HISTORY_PERF
+    )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The budget itself is checked at compile time beside the constant; this
+    /// covers the request actually carrying it, alongside the field filter.
+    #[test]
+    fn the_perf_query_asks_for_a_full_day_undecimated() {
+        let query = perf_query();
+        assert!(query.starts_with("/api/v1/history/perf?"), "{query}");
+        assert!(query.contains("fields=rss_bytes"), "{query}");
+        assert!(
+            query.contains(&format!("max_points={UNDECIMATED}")),
+            "{query}"
+        );
+    }
+
+    /// One `?`, however many parameters: the path constants carry none of their
+    /// own, so appending a second query string cannot produce `??`.
+    #[test]
+    fn every_path_constant_is_a_bare_path() {
+        for path in [
+            paths::TELEMETRY,
+            paths::HISTORY_SUMMARY,
+            paths::HISTORY_PERF,
+            paths::EVENTS,
+        ] {
+            assert!(!path.contains('?'), "{path}");
+        }
+        assert_eq!(perf_query().matches('?').count(), 1);
     }
 }

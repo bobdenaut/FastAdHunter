@@ -23,13 +23,29 @@ mod workers;
 
 use std::error::Error;
 
+/// `Send + Sync` throughout: startup failures cross a `spawn_blocking`
+/// boundary, and a plain `Box<dyn Error>` cannot.
+pub type BoxError = Box<dyn Error + Send + Sync>;
+
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn Error>> {
-    let config = config::Config::load()?;
+async fn main() -> Result<(), BoxError> {
+    let path = match config::Startup::from_args(std::env::args_os().skip(1))? {
+        config::Startup::Help => {
+            println!("{}", config::USAGE);
+            return Ok(());
+        }
+        config::Startup::Run(path) => path,
+    };
+
+    let config = config::Config::load(&path)?;
     let clients = client::Clients::new(&config)?;
     let state = state::SharedState::new(config.ui.limits());
 
     workers::spawn(clients, &config, state.clone());
 
-    app::App::new(state, config.ui).run().await
+    // The UI loop is synchronous — `event::poll` blocks — so it runs on the
+    // blocking pool rather than parking one of the runtime's worker threads for
+    // the life of the process.
+    tokio::task::spawn_blocking(move || app::App::new(state, config.ui).run()).await??;
+    Ok(())
 }

@@ -1,8 +1,9 @@
 //! The terminal, the event loop and input handling.
 
-use std::error::Error;
 use std::io::{self, Stdout};
 use std::time::{Duration, Instant};
+
+use crate::BoxError;
 
 use crossterm::event::{
     self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEventKind, MouseButton,
@@ -40,7 +41,10 @@ impl App {
         }
     }
 
-    pub async fn run(mut self) -> Result<(), Box<dyn Error>> {
+    /// Blocking, and deliberately not `async`: every call in it — `draw`,
+    /// `event::poll`, `event::read` — is a synchronous terminal syscall, so an
+    /// `async fn` here would be one that never yields.
+    pub fn run(mut self) -> Result<(), BoxError> {
         let mut terminal = TerminalGuard::enter()?;
         let mut last_draw = Instant::now() - self.config.redraw();
 
@@ -53,7 +57,6 @@ impl App {
                 terminal
                     .0
                     .draw(|frame| ui::draw(frame, &state, &mut self.ui, &config))?;
-                drop(state);
                 last_draw = Instant::now();
             }
 
@@ -161,7 +164,7 @@ enum Flow {
 struct TerminalGuard(Terminal<CrosstermBackend<Stdout>>);
 
 impl TerminalGuard {
-    fn enter() -> Result<Self, Box<dyn Error>> {
+    fn enter() -> Result<Self, BoxError> {
         enable_raw_mode()?;
         let mut stdout = io::stdout();
         execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;

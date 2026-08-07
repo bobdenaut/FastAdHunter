@@ -2,7 +2,7 @@
 
 use crate::client::RouterOsClient;
 use crate::config::PollConfig;
-use crate::state::SharedState;
+use crate::state::{LinkStatus, SharedState};
 
 pub async fn run(client: RouterOsClient, poll: PollConfig, state: SharedState) {
     let mut ticker = tokio::time::interval(poll.routeros());
@@ -17,6 +17,10 @@ pub async fn run(client: RouterOsClient, poll: PollConfig, state: SharedState) {
 
         state.update(|app| {
             let router = &mut app.router;
+            router.link = match (&resource, &container) {
+                (Err(error), _) | (_, Err(error)) => LinkStatus::Down(error.clone()),
+                _ => LinkStatus::Online,
+            };
             // Each half is applied only when it succeeded, so one failing read
             // does not blank the figures the other one just refreshed.
             if let Ok(resource) = resource {

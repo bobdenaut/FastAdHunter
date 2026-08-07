@@ -1,28 +1,36 @@
-//! The footer: the router's own figures, and the key bindings.
+//! The footer: the router's own figures, on one line.
 
 use ratatui::layout::Rect;
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Paragraph};
 use ratatui::Frame;
 
-use crate::state::{AppState, RouterStatus};
-use crate::util::format::{bytes, percent, thousands};
+use crate::state::{AppState, LinkStatus, RouterStatus};
+use crate::util::format::{bytes, percent, spaced_uptime, truncate};
 
 use super::theme;
 
-const KEYS: &str = "↑/↓ PgUp/PgDn feed │ w/s stats │ Enter details │ q quit";
+/// Longest a router failure may print before the line stops fitting.
+const REASON_WIDTH: usize = 32;
 
 pub fn render(frame: &mut Frame, area: Rect, state: &AppState) {
-    let lines = vec![router_line(&state.router), engine_line(state)];
-
     frame.render_widget(
-        Paragraph::new(lines).block(Block::default().borders(Borders::ALL)),
+        Paragraph::new(router_line(&state.router)).block(Block::default().borders(Borders::ALL)),
         area,
     );
 }
 
 fn router_line<'a>(router: &RouterStatus) -> Line<'a> {
     let mut spans = vec![Span::styled(" RouterOS ", theme::heading())];
+
+    // The figures below are last-known-good. Without this a dead REST endpoint
+    // reads as a frozen-but-healthy router.
+    if let LinkStatus::Down(reason) = &router.link {
+        spans.push(Span::styled(
+            format!("✕ {} │ ", truncate(reason, REASON_WIDTH)),
+            theme::strong(theme::BLOCKED),
+        ));
+    }
 
     match (router.free_memory, router.total_memory) {
         (Some(free), Some(total)) if total > 0 => {
@@ -55,39 +63,14 @@ fn router_line<'a>(router: &RouterStatus) -> Line<'a> {
     }
 
     if let Some(uptime) = router.uptime.as_deref() {
-        spans.push(Span::raw(format!(" │ up {uptime}")));
+        spans.push(Span::raw(format!(" │ up {}", spaced_uptime(uptime))));
     }
     Line::from(spans)
-}
-
-/// Upstream attempt totals beside the key bindings — the one engine figure
-/// worth a permanent line rather than a scroll away.
-fn engine_line<'a>(state: &AppState) -> Line<'a> {
-    let upstreams = state
-        .telemetry
-        .as_ref()
-        .map(|telemetry| {
-            telemetry
-                .engine
-                .upstreams
-                .iter()
-                .map(|u| format!("{}: {}", u.address, thousands(u.attempts)))
-                .collect::<Vec<_>>()
-                .join(" │ ")
-        })
-        .filter(|text| !text.is_empty())
-        .unwrap_or_else(|| "no upstream data".to_string());
-
-    Line::from(vec![
-        Span::raw(format!(" {upstreams} │ ")),
-        Span::styled(KEYS, theme::label()),
-    ])
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::models::fixtures;
 
     fn text(line: &Line) -> String {
         line.spans.iter().map(|s| s.content.as_ref()).collect()
@@ -112,7 +95,7 @@ mod tests {
             cpu_load: Some(3),
             container_memory: Some(89_346_048),
             container_status: Some("running".to_string()),
-            uptime: Some("3d04:12:55".to_string()),
+            uptime: Some("2d23h57m20s".to_string()),
             ..Default::default()
         };
         let rendered = text(&router_line(&router));
@@ -120,24 +103,23 @@ mod tests {
         assert!(rendered.contains("750.0 MB of 1.0 GB"), "{rendered}");
         assert!(rendered.contains("CPU 3%"), "{rendered}");
         assert!(rendered.contains("(running)"), "{rendered}");
-        assert!(rendered.contains("up 3d04:12:55"), "{rendered}");
+        assert!(rendered.contains("up 2d 23h 57m 20s"), "{rendered}");
     }
 
+    /// Router figures are last-known-good, so a failing poll has to say so —
+    /// otherwise a dead REST endpoint is indistinguishable from a quiet router.
     #[test]
-    fn the_engine_line_lists_every_upstream_and_the_keys() {
-        let mut state = AppState::default();
-        state.telemetry = Some(fixtures::telemetry());
-        let rendered = text(&engine_line(&state));
+    fn a_failing_router_poll_is_marked_beside_its_stale_figures() {
+        let router = RouterStatus {
+            link: LinkStatus::Down("error decoding response body".to_string()),
+            free_memory: Some(786_432_000),
+            total_memory: Some(1_073_741_824),
+            ..Default::default()
+        };
+        let rendered = text(&router_line(&router));
 
-        assert!(rendered.contains("1.1.1.1:853: 201,883"), "{rendered}");
-        assert!(rendered.contains("9.9.9.9:853: 4,332"), "{rendered}");
-        assert!(rendered.contains("q quit"), "{rendered}");
-        assert!(rendered.contains("q quit"), "{rendered}");
-    }
-
-    #[test]
-    fn the_engine_line_says_so_before_the_first_poll() {
-        let rendered = text(&engine_line(&AppState::default()));
-        assert!(rendered.contains("no upstream data"), "{rendered}");
+        assert!(rendered.contains('✕'), "{rendered}");
+        assert!(rendered.contains("error decoding"), "{rendered}");
+        assert!(rendered.contains("750.0 MB"), "the last reading stays");
     }
 }

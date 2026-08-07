@@ -79,12 +79,12 @@ mod tests {
 
         // The overlay too: it is drawn over whatever rectangle is left, and a
         // popup open while the window shrinks is the likelier way to hit this.
-        let open = crate::models::events::decode(crate::models::fixtures::EVENTS_QUERY).and_then(
-            |event| match event {
-                crate::models::events::ServerEvent::Query(item) => Some(*item),
-                _ => None,
-            },
-        );
+        let open = match crate::models::events::decode(crate::models::fixtures::EVENTS_QUERY) {
+            crate::models::events::Decoded::Event(crate::models::events::ServerEvent::Query(
+                item,
+            )) => Some(*item),
+            _ => None,
+        };
         assert!(open.is_some(), "fixtures/events-query.json");
 
         for width in 1..=60u16 {

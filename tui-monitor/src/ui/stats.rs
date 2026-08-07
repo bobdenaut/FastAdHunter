@@ -9,7 +9,7 @@ use ratatui::widgets::{
 use ratatui::Frame;
 
 use crate::models::telemetry::Telemetry;
-use crate::state::{AppState, Window};
+use crate::state::{AppState, LinkStatus, Window};
 use crate::util::format::{bytes, mib, percent, thousands, truncate};
 
 use super::{chart, gauge, theme};
@@ -27,11 +27,19 @@ pub fn render(frame: &mut Frame, area: Rect, state: &AppState, scroll: u16) -> u
     let inner_width = area.width.saturating_sub(2) as usize;
     let bar_width = inner_width.saturating_sub(22).max(10);
 
+    // "Last 24 h", not "Today": the endpoint's default window is rolling, so
+    // this covers the same clock hour yesterday, not the time since midnight.
     let mut lines = live_rates(state, bar_width);
-    lines.extend(window_section("Today", state.today.as_ref(), inner_width));
+    lines.extend(window_section(
+        "Last 24 h",
+        state.last_24h.as_ref(),
+        &state.history,
+        inner_width,
+    ));
     lines.extend(window_section(
         "Last 7 days",
         state.week.as_ref(),
+        &state.history,
         inner_width,
     ));
     if let Some(telemetry) = state.telemetry.as_ref() {
@@ -111,11 +119,26 @@ fn rate_line<'a>(
     Line::from(spans)
 }
 
-fn window_section<'a>(title: &str, window: Option<&Window>, width: usize) -> Vec<Line<'a>> {
+fn window_section<'a>(
+    title: &str,
+    window: Option<&Window>,
+    link: &LinkStatus,
+    width: usize,
+) -> Vec<Line<'a>> {
     let mut lines = vec![Line::from(""), heading(title)];
 
     let Some(window) = window else {
-        lines.push(Line::from(Span::styled("  (no data yet)", theme::label())));
+        // A failing poller reads as "no data yet" forever otherwise, which is
+        // indistinguishable from an appliance that has simply not filled a
+        // bucket.
+        let (text, style) = match link {
+            LinkStatus::Down(reason) => (
+                format!("  {}", truncate(reason, NAME_WIDTH)),
+                theme::strong(theme::BLOCKED),
+            ),
+            _ => ("  (no data yet)".to_string(), theme::label()),
+        };
+        lines.push(Line::from(Span::styled(text, style)));
         return lines;
     };
 
@@ -300,7 +323,9 @@ fn top_sections<'a>(state: &AppState) -> Vec<Line<'a>> {
         "Top Clients",
         live.top_clients
             .iter()
-            .map(|c| (truncate(&c.label(), NAME_WIDTH), c.count)),
+            // `label()` builds a String, so the truncation of it has to be
+            // owned too — it cannot borrow a temporary that dies here.
+            .map(|c| (truncate(&c.label(), NAME_WIDTH).into_owned(), c.count)),
     ));
     lines.extend(top_list(
         "Top Queried Domains",
@@ -311,7 +336,12 @@ fn top_sections<'a>(state: &AppState) -> Vec<Line<'a>> {
     lines
 }
 
-fn top_list<'a>(title: &str, rows: impl Iterator<Item = (String, u64)>) -> Vec<Line<'a>> {
+/// Generic over the name so a borrowed [`truncate`] result can be passed
+/// straight through — `format!` consumes it by `Display` either way.
+fn top_list<'a>(
+    title: &str,
+    rows: impl Iterator<Item = (impl std::fmt::Display, u64)>,
+) -> Vec<Line<'a>> {
     let mut lines = vec![Line::from(""), heading(title)];
     for (name, count) in rows {
         lines.push(Line::from(format!(
@@ -355,9 +385,30 @@ mod tests {
 
     #[test]
     fn a_window_with_no_data_says_so_instead_of_printing_zeros() {
-        let rendered = text(&window_section("Today", None, 40));
+        let rendered = text(&window_section(
+            "Last 24 h",
+            None,
+            &LinkStatus::Connecting,
+            40,
+        ));
         assert!(rendered.contains("no data yet"), "{rendered}");
         assert!(!rendered.contains('0'), "{rendered}");
+    }
+
+    /// "No data yet" is true for a poller that has not answered *yet*. Once it
+    /// is failing, saying so is the difference between "the appliance has not
+    /// filled a bucket" and "this panel has been broken for an hour".
+    #[test]
+    fn a_failing_history_poll_names_the_error_instead_of_waiting_forever() {
+        let rendered = text(&window_section(
+            "Last 24 h",
+            None,
+            &LinkStatus::Down("unauthorized (check the token)".to_string()),
+            40,
+        ));
+
+        assert!(rendered.contains("unauthorized"), "{rendered}");
+        assert!(!rendered.contains("no data yet"), "{rendered}");
     }
 
     #[test]
@@ -365,7 +416,12 @@ mod tests {
         let summary: crate::models::history::HistorySummary =
             serde_json::from_str(fixtures::HISTORY_SUMMARY).unwrap();
         let window = Window::from_summary(&summary);
-        let rendered = text(&window_section("Today", Some(&window), 40));
+        let rendered = text(&window_section(
+            "Last 24 h",
+            Some(&window),
+            &LinkStatus::Online,
+            40,
+        ));
 
         assert!(rendered.contains("Total Queries"), "{rendered}");
         // 5312 + 5077 + 4500

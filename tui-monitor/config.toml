@@ -6,7 +6,7 @@
 
 host = "172.17.0.2"
 port = 8443
-token = "c48ac59cdaef2a10cf96ddeac66dd4d3c1be57bf1dcfbd9e96b0aed7de06ef65"
+token = "f3913abd3f920513dea59c298bda0f456a601bf30f5ca35b5e52442e56545b59"
 
 # The appliance's certificate is generated at first boot and trusted by no
 # root store.
@@ -27,10 +27,15 @@ telemetry_seconds = 5
 history_seconds = 15
 routeros_seconds = 2
 reconnect_seconds = 2
+# Silence on the events socket that counts as a dead connection. The server
+# pushes stats every ~2 s, so this is ~15 missed pushes.
+events_idle_seconds = 30
 
 [ui]
 feed_rows = 200
-rss_points = 288
+# Samples kept — 24 h at the appliance's 60 s perf cadence. A memory bound: the
+# series arrives undecimated and the chart reduces it to the terminal's width.
+rss_points = 1440
 redraw_millis = 250
 # Where the RSS graph changes colour. Applied per column, so the chart shows
 # when memory crossed a threshold, not only where it sits now.

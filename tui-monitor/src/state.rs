@@ -50,6 +50,15 @@ pub struct AppState {
     pub api: LinkStatus,
     /// The events websocket.
     pub events: LinkStatus,
+    /// The `/history/summary` poller, behind the two window panels.
+    pub history: LinkStatus,
+    /// The `/history/perf` poller, behind the RSS graph.
+    pub perf: LinkStatus,
+
+    /// Frames the socket delivered that this build could not decode. Counted
+    /// rather than ignored: a renamed server field empties the feed while the
+    /// socket stays up, which is otherwise indistinguishable from a quiet LAN.
+    pub undecodable_frames: u64,
 
     /// The last complete engine read. `None` until the first poll returns,
     /// which is a different thing from a genuine zero.
@@ -59,11 +68,19 @@ pub struct AppState {
     /// Newest first.
     pub queries: VecDeque<QueryItem>,
 
-    pub today: Option<Window>,
+    /// The rolling 24 h the API serves by default — *not* since midnight.
+    pub last_24h: Option<Window>,
     pub week: Option<Window>,
 
     /// Resident set in MiB, oldest first, straight from `/history/perf`.
-    pub rss_history: VecDeque<f64>,
+    /// A `Vec`, not a ring: the series is replaced whole on every read, so
+    /// nothing ever pushes or pops, and contiguity is what lets the chart
+    /// borrow it instead of copying it out each frame.
+    rss_history: Vec<f64>,
+    /// The `stride` that series was served at. `0` or `1` means every stored
+    /// sample is present; `n` means the graph spans `n`× the time its point
+    /// count suggests, which the header has to say out loud.
+    pub rss_stride: u64,
 
     pub router: RouterStatus,
 }
@@ -83,21 +100,25 @@ impl AppState {
         }
     }
 
-    /// Sets the graph to the appliance's persisted series, keeping the newest
-    /// `rss_points`. Whole-series replacement, never an append: every point
-    /// drawn is one `/history/perf` recorded, on one cadence and one clock.
-    pub fn set_rss_history(&mut self, samples: &[u64]) {
+    /// Sets the graph to the appliance's persisted series. Whole-series
+    /// replacement, never an append: every point drawn is one `/history/perf`
+    /// recorded, on one cadence and one clock.
+    ///
+    /// The `rss_points` trim is a memory bound, not a display choice: the chart
+    /// reduces to the terminal's width itself, by peak.
+    pub fn set_rss_history(&mut self, samples: &[u64], stride: u64) {
         let newest = samples.len().saturating_sub(self.limits.rss_points);
         self.rss_history = samples[newest..]
             .iter()
             .map(|bytes| crate::util::format::mib(*bytes))
             .collect();
+        self.rss_stride = stride;
     }
 
     /// The graph's series. Empty until the first `/history/perf` read returns —
     /// the header draws a blank chart rather than inventing a point.
-    pub fn rss_series(&self) -> Vec<f64> {
-        self.rss_history.iter().copied().collect()
+    pub fn rss_series(&self) -> &[f64] {
+        &self.rss_history
     }
 }
 
@@ -140,13 +161,18 @@ impl Window {
 
     /// How the buckets were served, and whether any were dropped.
     pub fn coverage(&self) -> String {
+        let count = self.series.len();
+        let bucket = if count == 1 { "bucket" } else { "buckets" };
+        // Spelled out, not suffixed: `day` + `ly` reads "dayly".
+        let cadence = match self.resolution.as_str() {
+            "hour" => "hourly",
+            "day" => "daily",
+            other => other,
+        };
+
         match self.stride {
-            0 | 1 => format!("{} buckets, {}ly", self.series.len(), self.resolution),
-            stride => format!(
-                "{} buckets, {}ly, 1 in {stride}",
-                self.series.len(),
-                self.resolution
-            ),
+            0 | 1 => format!("{count} {bucket}, {cadence}"),
+            stride => format!("{count} {bucket}, {cadence}, 1 in {stride}"),
         }
     }
 
@@ -169,6 +195,9 @@ impl Window {
 
 #[derive(Debug, Clone, Default)]
 pub struct RouterStatus {
+    /// Whether the router is answering. Its figures are last-known-good, so
+    /// without this a dead REST endpoint reads as a frozen-but-healthy device.
+    pub link: LinkStatus,
     pub free_memory: Option<u64>,
     pub total_memory: Option<u64>,
     pub cpu_load: Option<u64>,
@@ -271,12 +300,22 @@ mod tests {
     fn a_decimated_window_reports_the_stride_it_was_served_at() {
         assert_eq!(
             Window::from_summary(&summary(1, &[(1, 0, &[])])).coverage(),
-            "1 buckets, hourly"
+            "1 bucket, hourly"
         );
         assert_eq!(
             Window::from_summary(&summary(3, &[(1, 0, &[]), (2, 0, &[])])).coverage(),
             "2 buckets, hourly, 1 in 3"
         );
+    }
+
+    /// The weekly panel is served at `resolution=day`, where suffixing `ly`
+    /// produced "dayly".
+    #[test]
+    fn a_daily_window_names_its_cadence_in_english() {
+        let mut window = Window::from_summary(&summary(1, &[(1, 0, &[]), (2, 0, &[])]));
+        window.resolution = "day".to_string();
+
+        assert_eq!(window.coverage(), "2 buckets, daily");
     }
 
     #[test]
@@ -304,9 +343,45 @@ mod tests {
             rss_points: 3,
         });
         let samples: Vec<u64> = (1..=10).map(|n| n * 1_048_576).collect();
-        state.set_rss_history(&samples);
+        state.set_rss_history(&samples, 1);
 
         assert_eq!(state.rss_series(), vec![8.0, 9.0, 10.0]);
+    }
+
+    /// The bound must not bite at the size the graph is actually fed. A day of
+    /// 60 s samples arrives whole; the extra sample a half-open window can hold
+    /// is older than the 24 h the bound covers, so it is the one dropped —
+    /// from the far end, never the near one.
+    #[test]
+    fn a_full_day_of_samples_survives_the_default_bound() {
+        let bound = Limits::default().rss_points;
+        assert_eq!(bound, 1_440, "24 h at the appliance's 60 s cadence");
+
+        let mut state = AppState::new(Limits::default());
+        let day: Vec<u64> = (1..=bound as u64).map(|n| n * 1_048_576).collect();
+        state.set_rss_history(&day, 1);
+        assert_eq!(state.rss_series().len(), bound, "a full day passes whole");
+        assert_eq!(state.rss_series()[0], 1.0);
+
+        // Distinct from every value in `day`, so its absence is unambiguous.
+        let mut longer = vec![9_000 * 1_048_576];
+        longer.extend_from_slice(&day);
+        state.set_rss_history(&longer, 1);
+
+        assert_eq!(state.rss_series().len(), bound);
+        assert_eq!(state.rss_series()[0], 1.0, "the extra oldest sample went");
+        assert!(!state.rss_series().contains(&9_000.0));
+    }
+
+    /// A decimated series must carry its stride through to the header: the
+    /// same 720 points are 12 hours at stride 1 and a full day at stride 2.
+    #[test]
+    fn the_stride_the_series_was_served_at_reaches_the_state() {
+        let mut state = AppState::default();
+        assert_eq!(state.rss_stride, 0, "nothing read yet");
+
+        state.set_rss_history(&[1_048_576], 4);
+        assert_eq!(state.rss_stride, 4);
     }
 
     /// The series is replaced, never appended to: a second read that returns
@@ -314,8 +389,8 @@ mod tests {
     #[test]
     fn a_later_read_replaces_the_series_rather_than_extending_it() {
         let mut state = AppState::default();
-        state.set_rss_history(&[1_048_576, 2_097_152, 3_145_728]);
-        state.set_rss_history(&[4_194_304]);
+        state.set_rss_history(&[1_048_576, 2_097_152, 3_145_728], 1);
+        state.set_rss_history(&[4_194_304], 1);
 
         assert_eq!(state.rss_series(), vec![4.0]);
     }

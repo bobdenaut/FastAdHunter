@@ -9,8 +9,8 @@ use ratatui::Frame;
 
 use crate::config::RssThresholds;
 use crate::models::telemetry::Telemetry;
-use crate::state::AppState;
-use crate::util::format::{mib, millis, thousands};
+use crate::state::{AppState, LinkStatus};
+use crate::util::format::{mib, millis, thousands, truncate};
 
 use super::{chart, gauge, theme};
 
@@ -20,6 +20,11 @@ const COL3: usize = 16;
 const COL4: usize = 18;
 const LABEL_WIDTH: usize = 7;
 const VALUE_WIDTH: usize = 8;
+
+/// Longest a link's reason may print. `LinkStatus::Down` carries a whole
+/// reqwest error, which unbounded pushes the version, uptime and clock off the
+/// right edge — the figures most worth having when a link is down.
+const STATUS_WIDTH: usize = 28;
 
 /// Width of everything left of the graph. Fixed, so the divider's `┬` meets the
 /// graph's first column on every row.
@@ -31,11 +36,19 @@ pub fn render(frame: &mut Frame, area: Rect, state: &AppState, thresholds: RssTh
     let graph_width = inner_width.saturating_sub(LEFT_WIDTH);
 
     let series = state.rss_series();
-    let graph = chart::braille(&series, graph_width, 3);
+    let graph = chart::braille(series, graph_width, 3);
+
+    // Naming the failure beats "waiting" when the wait is permanent.
+    let waiting = match &state.perf {
+        LinkStatus::Down(reason) => {
+            format!("/history/perf: {}", truncate(reason, STATUS_WIDTH))
+        }
+        _ => "waiting for /history/perf".to_string(),
+    };
 
     let mut lines = vec![
         title_line(state, inner_width),
-        divider_line(&series, graph_width, thresholds),
+        divider_line(series, state.rss_stride, &waiting, graph_width, thresholds),
     ];
     lines.extend(gauge_lines(state, &graph, thresholds));
 
@@ -61,17 +74,26 @@ fn title_line<'a>(state: &AppState, inner_width: usize) -> Line<'a> {
         Span::styled(" FastAdHunter Monitor ", theme::heading()),
         Span::raw("  "),
         Span::styled(
-            format!("● WS {}", state.events.label()),
+            format!("● WS {}", truncate(state.events.label(), STATUS_WIDTH)),
             Style::default().fg(theme::link(state.events.is_online())),
         ),
         Span::raw(" │ "),
         // Two indicators: the socket can be up while the poller is failing.
         Span::styled(
-            format!("API {}", state.api.label()),
+            format!("API {}", truncate(state.api.label(), STATUS_WIDTH)),
             Style::default().fg(theme::link(state.api.is_online())),
         ),
         Span::raw(format!(" │ Rules: {}", thousands(rules))),
     ];
+
+    // Only when non-zero: frames arriving that this build cannot parse means
+    // the feed is under-reporting, which nothing else on screen would show.
+    if state.undecodable_frames > 0 {
+        spans.push(Span::styled(
+            format!(" │ ! {} undecodable", state.undecodable_frames),
+            theme::strong(theme::BLOCKED),
+        ));
+    }
 
     let right = right_status(state);
     let used: usize = spans.iter().map(|s| s.content.chars().count()).sum();
@@ -110,14 +132,20 @@ fn uptime(seconds: u64) -> String {
     }
 }
 
-fn divider_line<'a>(series: &[f64], graph_width: usize, thresholds: RssThresholds) -> Line<'a> {
+fn divider_line<'a>(
+    series: &[f64],
+    stride: u64,
+    waiting: &str,
+    graph_width: usize,
+    thresholds: RssThresholds,
+) -> Line<'a> {
     let min = series.iter().copied().fold(f64::INFINITY, f64::min);
     let max = series.iter().copied().fold(f64::NEG_INFINITY, f64::max);
 
     // Each figure carries its own colour, on the same thresholds the graph
     // uses; the words between them stay neutral.
     let parts: Vec<(String, Color)> = match series.last() {
-        Some(now) => vec![
+        Some(last) => vec![
             (" RSS history — persisted (Min ".to_string(), theme::MUTED),
             (
                 format!("{}", min.round() as u64),
@@ -128,19 +156,26 @@ fn divider_line<'a>(series: &[f64], graph_width: usize, thresholds: RssThreshold
                 format!("{}", max.round() as u64),
                 theme::rss(max, thresholds),
             ),
-            (" │ Now ".to_string(), theme::MUTED),
+            // "Last", not "Now": this is the newest *persisted* sample, up to
+            // one poll interval stale. The gauge above it carries live RSS, and
+            // two figures a row apart must not both claim to be current.
+            (" │ Last ".to_string(), theme::MUTED),
             (
-                format!("{}", now.round() as u64),
-                theme::rss(*now, thresholds),
+                format!("{}", last.round() as u64),
+                theme::rss(*last, thresholds),
             ),
-            (" MB) ".to_string(), theme::MUTED),
+            // A strided series covers `n`× the span its point count suggests.
+            (
+                match stride {
+                    0 | 1 => " MB) ".to_string(),
+                    n => format!(" MB, 1 in {n}) "),
+                },
+                theme::MUTED,
+            ),
         ],
         // Naming the source beats a graph frame labelled with numbers that
         // came from nowhere.
-        None => vec![(
-            " RSS history — waiting for /history/perf ".to_string(),
-            theme::MUTED,
-        )],
+        None => vec![(format!(" RSS history — {waiting} "), theme::MUTED)],
     };
 
     let length: usize = parts.iter().map(|(text, _)| text.chars().count()).sum();
@@ -327,6 +362,57 @@ mod tests {
     use super::*;
     use crate::models::fixtures;
 
+    const WAITING: &str = "waiting for /history/perf";
+
+    /// A reqwest error runs to ~100 characters. Unbounded it consumes the title
+    /// row, and the version, uptime and clock are clipped off the right edge —
+    /// exactly when a reader needs to know how long the process has been up.
+    #[test]
+    fn a_long_link_error_cannot_evict_the_version_and_clock() {
+        let mut state = AppState::default();
+        state.telemetry = Some(fixtures::telemetry());
+        state.api = LinkStatus::Down(
+            "error sending request for url (https://172.17.0.2:8443/api/v1/telemetry): \
+             connection refused (os error 111)"
+                .to_string(),
+        );
+
+        let line = title_line(&state, 200);
+        let rendered: String = line.spans.iter().map(|s| s.content.as_ref()).collect();
+
+        assert!(rendered.contains("v0.2.10"), "{rendered}");
+        assert!(rendered.contains("up 2d03h"), "{rendered}");
+        assert_eq!(rendered.chars().count(), 200, "the row still fits exactly");
+    }
+
+    /// The gauge row carries live RSS from `/api/v1/telemetry`; this figure is
+    /// the newest *persisted* `/history/perf` sample and lags it by up to a
+    /// poll interval. Both labelled "Now" is how 59.9 and 62 ended up on the
+    /// same header looking like a contradiction.
+    #[test]
+    fn the_divider_does_not_claim_its_last_sample_is_the_current_one() {
+        let line = divider_line(&[42.0, 62.0], 1, WAITING, 60, RssThresholds::default());
+        let rendered: String = line.spans.iter().map(|s| s.content.as_ref()).collect();
+
+        assert!(rendered.contains("Last 62"), "{rendered}");
+        assert!(!rendered.contains("Now"), "{rendered}");
+    }
+
+    /// A permanent failure must not read as an ongoing wait.
+    #[test]
+    fn an_empty_graph_names_the_failure_rather_than_saying_waiting() {
+        let line = divider_line(
+            &[],
+            1,
+            "/history/perf: HTTP 500",
+            60,
+            RssThresholds::default(),
+        );
+        let rendered: String = line.spans.iter().map(|s| s.content.as_ref()).collect();
+
+        assert!(rendered.contains("/history/perf: HTTP 500"), "{rendered}");
+    }
+
     #[test]
     fn uptime_shortens_as_the_magnitude_falls() {
         assert_eq!(uptime(184_920), "2d03h");
@@ -349,7 +435,7 @@ mod tests {
     #[test]
     fn the_divider_colours_each_figure_by_its_own_value() {
         let thresholds = RssThresholds::default();
-        let line = divider_line(&[42.0, 150.0, 46.0], 80, thresholds);
+        let line = divider_line(&[42.0, 150.0, 46.0], 1, WAITING, 80, thresholds);
 
         let coloured: Vec<(&str, Color)> = line
             .spans
@@ -385,7 +471,7 @@ mod tests {
     /// closing `│`, and the graph must start one column right of both.
     #[test]
     fn the_divider_tee_lands_on_the_gauge_rows_closing_bar() {
-        let divider: String = divider_line(&[48.0], 20, RssThresholds::default())
+        let divider: String = divider_line(&[48.0], 1, WAITING, 20, RssThresholds::default())
             .spans
             .iter()
             .map(|s| s.content.as_ref())
@@ -436,6 +522,29 @@ mod tests {
         assert_eq!(theme::rss(82.0, thresholds), theme::WARN);
         assert_eq!(theme::rss(100.0, thresholds), theme::BLOCKED);
         assert_eq!(theme::rss(230.0, thresholds), theme::BLOCKED);
+    }
+
+    /// A graph drawn from every `n`-th sample looks exactly like one drawn from
+    /// all of them, so the divider has to name the stride it was served at.
+    #[test]
+    fn the_divider_says_when_the_series_arrived_decimated() {
+        let thresholds = RssThresholds::default();
+        let text = |stride| -> String {
+            divider_line(&[48.0, 52.0], stride, WAITING, 60, thresholds)
+                .spans
+                .iter()
+                .map(|s| s.content.as_ref())
+                .collect()
+        };
+
+        // 0 is the pre-first-read state and 1 is an undecimated series; both
+        // mean "every stored sample is here", so neither may claim a stride.
+        for undecimated in [0, 1] {
+            let line = text(undecimated);
+            assert!(line.contains(" MB) "), "stride {undecimated}: {line}");
+            assert!(!line.contains("1 in"), "stride {undecimated}: {line}");
+        }
+        assert!(text(4).contains(" MB, 1 in 4) "), "{}", text(4));
     }
 
     /// A series crossing both thresholds paints three runs, in order, and

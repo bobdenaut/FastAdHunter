@@ -21,7 +21,14 @@ fah-model = { path = "../crates/fah-model" }
 reqwest = { workspace = true, features = ["json"] }
 serde.workspace = true
 serde_json.workspace = true
-tokio = { workspace = true, features = ["time", "sync"] }
+# `rt-multi-thread` is load-bearing and declared here rather than inherited: the
+# UI loop blocks, so the workers need threads of their own to make progress.
+tokio = { workspace = true, features = [
+    "macros",
+    "rt-multi-thread",
+    "time",
+    "sync",
+] }
 toml.workspace = true
 
 chrono = "0.4"

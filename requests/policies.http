@@ -1,0 +1,183 @@
+# Policies — API.md §Policies
+#
+# Named bundles of rule lists assignable to clients, optionally on a schedule
+# (CONTEXT.md §Policy). Mutations rewrite [[policies]] in
+# /config/fastadhunter.toml *before* the change reaches the engine, so a policy
+# created here survives a restart.
+#
+# ─────────────────────────────────────────────────────────────────────────────
+# THESE ARE INDIVIDUAL EXAMPLES, NOT A SUITE. Do not run top to bottom.
+#
+# Every request below the first mutates persistent state, and three of them
+# RECOMPILE THE RULESET — seconds of CPU on the RB5009, because per-rule policy
+# masks are built at compile time. Clean up with the last requests in this file.
+# ─────────────────────────────────────────────────────────────────────────────
+
+@base = {{host}}/api/v1
+@auth = Authorization: Bearer {{apiKey}}
+
+### Every policy, with the assignments attached to each.
+###
+### `lists: null` means every enabled list, NOT "no lists". `timezone` is the
+### one schedules are evaluated in. `active_assignments` counts what is in force
+### RIGHT NOW — a closed schedule window is excluded, so this reports a boundary
+### having passed without waiting for a query to prove it.
+GET {{base}}/policies
+{{auth}}
+
+# ─── Creating ──────────────────────────────────────────────────────────
+
+### Create one. 201 Created. RECOMPILES: a new policy adds a bit to every
+### rule's mask, so the ruleset is rebuilt before it can decide anything.
+###
+### `lists` names a SUBSET of the configured lists; omit it (or send null) for
+### every enabled one. Schedule fields are optional here too — an assignment
+### without `days`/`start`/`end` is always in force.
+POST {{base}}/policies
+{{auth}}
+Content-Type: application/json
+
+{
+  "id": "kids",
+  "name": "Kids",
+  "lists": ["oisd-basic"],
+  "assignments": [
+    { "client": "192.168.1.50", "days": "mon-fri", "start": "21:00", "end": "07:00" }
+  ]
+}
+
+### A duplicate id is 409, naming the policy that already holds it.
+POST {{base}}/policies
+{{auth}}
+Content-Type: application/json
+
+{ "id": "kids", "name": "Kids again" }
+
+### `default` is the implicit policy every unassigned client already gets, and
+### is reserved — 422, not 409.
+POST {{base}}/policies
+{{auth}}
+Content-Type: application/json
+
+{ "id": "default", "name": "Mine now" }
+
+### Ids are lowercase letters, digits, '.', '_' or '-', and may not start with
+### '.' — 422, naming what is allowed.
+POST {{base}}/policies
+{{auth}}
+Content-Type: application/json
+
+{ "id": "Kids At Home", "name": "Nope" }
+
+# ─── Editing ───────────────────────────────────────────────────────────
+
+### PATCH leaves absent fields alone. Renaming touches no mask, so this does
+### NOT recompile — it is live in milliseconds.
+PATCH {{base}}/policies/kids
+{{auth}}
+Content-Type: application/json
+
+{ "name": "Kids (school nights)" }
+
+### Changing `lists` is the one edit that RECOMPILES.
+PATCH {{base}}/policies/kids
+{{auth}}
+Content-Type: application/json
+
+{ "lists": ["oisd-basic", "1hosts-xtra"] }
+
+### `"lists": null` clears the subset back to every enabled list. Also
+### recompiles — it is a `lists` change like any other.
+PATCH {{base}}/policies/kids
+{{auth}}
+Content-Type: application/json
+
+{ "lists": null }
+
+### An unknown id is 404, on PATCH and DELETE alike.
+PATCH {{base}}/policies/no-such-policy
+{{auth}}
+Content-Type: application/json
+
+{ "name": "irrelevant" }
+
+# ─── Assigning clients ─────────────────────────────────────────────────
+#
+# NO RECOMPILE on any of these: an assignment changes no mask, so it is live in
+# milliseconds. That is the whole reason assignments are not part of the policy
+# body you PATCH.
+
+### The policy in force for one address RIGHT NOW. A client whose schedule
+### window is shut reports whatever else covers it — the subnet assignment, else
+### `default`. `assignment` is absent when the cover is a subnet or a name
+### rather than this exact address.
+GET {{base}}/clients/192.168.1.50/policy
+{{auth}}
+
+### Assign an address, on a schedule. `start`/`end` are set together or not at
+### all; a window that wraps midnight (21:00→07:00) is normal and expected.
+PUT {{base}}/clients/192.168.1.50/policy
+{{auth}}
+Content-Type: application/json
+
+{ "policy": "kids", "days": "mon-fri", "start": "21:00", "end": "07:00" }
+
+### Assign with no schedule — always in force.
+PUT {{base}}/clients/192.168.1.51/policy
+{{auth}}
+Content-Type: application/json
+
+{ "policy": "kids" }
+
+### ONE ASSIGNMENT PER ADDRESS. This does not add a second one: it replaces the
+### assignment above, in whatever policy currently holds it. The same client
+### listed under two policies would resolve by config order, which is not
+### something an operator asking "put this device on kids" is choosing.
+PUT {{base}}/clients/192.168.1.50/policy
+{{auth}}
+Content-Type: application/json
+
+{ "policy": "default" }
+
+### Assigning to a policy that does not exist is 404 — naming the policy, not
+### the client.
+PUT {{base}}/clients/192.168.1.50/policy
+{{auth}}
+Content-Type: application/json
+
+{ "policy": "no-such-policy" }
+
+### A malformed address is 400, distinct from the 404 above: the request itself
+### is wrong, rather than naming something that is not there.
+PUT {{base}}/clients/not-an-address/policy
+{{auth}}
+Content-Type: application/json
+
+{ "policy": "kids" }
+
+### Clear the assignment. 204.
+DELETE {{base}}/clients/192.168.1.51/policy
+{{auth}}
+
+### Clearing an address that has no assignment is 404, not a silent 204 — "there
+### was nothing to remove" is worth telling apart from "removed".
+DELETE {{base}}/clients/192.168.1.51/policy
+{{auth}}
+
+# ─── Cleaning up ───────────────────────────────────────────────────────
+
+### Remove the assignment made above, then the policy itself.
+DELETE {{base}}/clients/192.168.1.50/policy
+{{auth}}
+
+### 204, and RECOMPILES — every rule's mask loses a bit.
+DELETE {{base}}/policies/kids
+{{auth}}
+
+# ─── The ceiling ───────────────────────────────────────────────────────
+#
+# At most 15 policies may be defined: the compiled ruleset packs policy
+# membership into a u16 per rule, and `default` occupies one of the 16 bits
+# (crates/fah-config/src/lib.rs, MAX_POLICIES). Creating a 16th is rejected with
+# the limit named — the same validation that runs at boot, so a config edited by
+# hand cannot get past it either.

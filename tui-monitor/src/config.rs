@@ -4,13 +4,61 @@
 //! Endpoint paths are not configurable: they are API.md's, held in
 //! [`crate::client::api::paths`]. Unknown tables are ignored, not rejected.
 
-use std::error::Error;
-use std::path::Path;
+use std::ffi::OsString;
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use serde::Deserialize;
 
+use crate::BoxError;
+
 const CONFIG_FILE: &str = "config.toml";
+
+pub const USAGE: &str = "usage: fah-tui-monitor [--config <path>]";
+
+/// What the command line asked for. The config path is the program's only
+/// dependency on the working directory, so making it an argument is what lets
+/// the binary be started from anywhere.
+pub enum Startup {
+    Run(PathBuf),
+    Help,
+}
+
+impl Startup {
+    /// Unknown arguments are rejected rather than ignored: a typo must not
+    /// silently fall back to a different config than the one intended.
+    pub fn from_args(args: impl IntoIterator<Item = OsString>) -> Result<Self, BoxError> {
+        let mut args = args.into_iter();
+        let mut path = None;
+
+        while let Some(arg) = args.next() {
+            match arg.to_str() {
+                Some("--help" | "-h") => return Ok(Self::Help),
+                Some("--config") => {
+                    let value = args
+                        .next()
+                        .ok_or_else(|| format!("--config needs a path\n{USAGE}"))?;
+                    path = Some(PathBuf::from(value));
+                }
+                Some(other) if other.starts_with("--config=") => {
+                    path = Some(PathBuf::from(&other["--config=".len()..]));
+                }
+                _ => {
+                    let arg = arg.to_string_lossy();
+                    return Err(format!("unexpected argument {arg:?}\n{USAGE}").into());
+                }
+            }
+        }
+        Ok(Self::Run(
+            path.unwrap_or_else(|| PathBuf::from(CONFIG_FILE)),
+        ))
+    }
+}
+
+/// Perf samples a day holds at the appliance's 60 s cadence. The half-open
+/// window the server serves can straddle the sampler's phase and hold one more,
+/// so anything sizing itself against a day must clear this *strictly*.
+pub const DAY_OF_SAMPLES: usize = 1_440;
 
 /// Environment variable consulted for the API token, so a checked-in
 /// `config.toml` need not carry one.
@@ -93,6 +141,11 @@ pub struct TimeoutConfig {
     pub routeros_seconds: u64,
     /// Backoff between events-socket reconnection attempts.
     pub reconnect_seconds: u64,
+    /// Silence on the events socket that counts as a dead connection. The
+    /// server pushes `stats` every ~2 s, so this is ~15 missed pushes — long
+    /// enough never to fire on a healthy link, short enough that a half-open
+    /// TCP does not freeze the feed until someone notices.
+    pub events_idle_seconds: u64,
 }
 
 impl Default for TimeoutConfig {
@@ -102,6 +155,7 @@ impl Default for TimeoutConfig {
             history_seconds: 15,
             routeros_seconds: 2,
             reconnect_seconds: 2,
+            events_idle_seconds: 30,
         }
     }
 }
@@ -122,6 +176,10 @@ impl TimeoutConfig {
     pub fn reconnect(&self) -> Duration {
         seconds(self.reconnect_seconds)
     }
+
+    pub fn events_idle(&self) -> Duration {
+        seconds(self.events_idle_seconds)
+    }
 }
 
 /// Bounds on what the display retains. Both are memory ceilings as much as
@@ -131,7 +189,9 @@ impl TimeoutConfig {
 pub struct UiConfig {
     /// Rows kept in the live feed. One screen is ~40; the rest is scrollback.
     pub feed_rows: usize,
-    /// Points the RSS graph holds — 24 h at a 5-minute perf cadence.
+    /// Samples the RSS graph holds — [`DAY_OF_SAMPLES`] by default. A memory
+    /// bound, not a display choice: the series arrives undecimated and the
+    /// chart reduces it to the terminal's width by peak when it draws.
     pub rss_points: usize,
     /// Redraw budget: the longest the screen may go without repainting when
     /// no key or mouse event arrives.
@@ -148,7 +208,7 @@ impl Default for UiConfig {
     fn default() -> Self {
         Self {
             feed_rows: 200,
-            rss_points: 288,
+            rss_points: DAY_OF_SAMPLES,
             redraw_millis: 250,
             rss_warn_mb: 60.0,
             rss_alert_mb: 100.0,
@@ -235,11 +295,7 @@ impl Default for RouterOsConfig {
 }
 
 impl Config {
-    pub fn load() -> Result<Self, Box<dyn Error>> {
-        Self::from_path(Path::new(CONFIG_FILE))
-    }
-
-    fn from_path(path: &Path) -> Result<Self, Box<dyn Error>> {
+    pub fn load(path: &Path) -> Result<Self, BoxError> {
         let text = std::fs::read_to_string(path)
             .map_err(|err| format!("cannot read {}: {err}", path.display()))?;
         let mut config: Self = toml::from_str(&text)?;
@@ -349,7 +405,7 @@ mod tests {
             "defaulted"
         );
         assert_eq!(config.ui.limits().feed_rows, 500);
-        assert_eq!(config.ui.limits().rss_points, 288, "defaulted");
+        assert_eq!(config.ui.limits().rss_points, 1440, "defaulted");
     }
 
     /// A zero ring would silently discard everything handed to it.
@@ -397,6 +453,66 @@ mod tests {
         )
         .unwrap();
         assert_eq!(config.port, 1);
+    }
+
+    /// The file shipped beside the binary is the one the owner actually runs,
+    /// and a key renamed in this module leaves it parsing into silent defaults
+    /// — or failing at start-up, where the only reader is a terminal that has
+    /// already been cleared.
+    #[test]
+    fn the_shipped_config_file_parses_against_this_build() {
+        let config: Config = toml::from_str(include_str!("../config.toml")).unwrap();
+
+        assert_eq!(config.timeout.events_idle(), Duration::from_secs(30));
+        assert_eq!(config.ui.limits().rss_points, DAY_OF_SAMPLES);
+        assert!(config.routeros.base_url.is_some());
+    }
+
+    fn startup(args: &[&str]) -> Result<Startup, BoxError> {
+        Startup::from_args(args.iter().map(OsString::from))
+    }
+
+    /// The default has to stay the working directory, or every existing way of
+    /// starting this binary breaks at once.
+    #[test]
+    fn the_config_path_defaults_to_the_working_directory() {
+        let Ok(Startup::Run(path)) = startup(&[]) else {
+            panic!("no arguments must be valid");
+        };
+        assert_eq!(path, Path::new("config.toml"));
+    }
+
+    #[test]
+    fn the_config_path_can_be_given_in_either_spelling() {
+        for args in [
+            vec!["--config", "E:\\FastAdHunter\\tui-monitor\\config.toml"],
+            vec!["--config=E:\\FastAdHunter\\tui-monitor\\config.toml"],
+        ] {
+            let Ok(Startup::Run(path)) = startup(&args) else {
+                panic!("{args:?} must parse");
+            };
+            assert_eq!(
+                path,
+                Path::new("E:\\FastAdHunter\\tui-monitor\\config.toml")
+            );
+        }
+    }
+
+    /// Ignoring a bad argument would start the monitor against a different
+    /// config than the one the caller named — silently, and on a screen that
+    /// is about to be cleared.
+    #[test]
+    fn a_bad_argument_is_rejected_with_the_usage_line() {
+        for args in [vec!["--config"], vec!["--cofnig", "x"], vec!["config.toml"]] {
+            let error = startup(&args).err().expect("must be rejected").to_string();
+            assert!(error.contains(USAGE), "{args:?}: {error}");
+        }
+    }
+
+    #[test]
+    fn help_is_a_request_rather_than_an_error() {
+        assert!(matches!(startup(&["--help"]), Ok(Startup::Help)));
+        assert!(matches!(startup(&["-h"]), Ok(Startup::Help)));
     }
 
     #[test]

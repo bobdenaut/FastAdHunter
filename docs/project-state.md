@@ -4,17 +4,39 @@ Where the work is right now. **Rewrite this file — never append.** History
 belongs in `git log`, `docs/code-review/` and the phase tables; this file is only
 what is true today.
 
-**Last updated:** 2026-08-07
+**Last updated:** 2026-08-08
 
 ## Now
 
 | | |
 | --- | --- |
-| Branch | `feat/phase2-http-pipeline`, last pushed commit `04095d5` |
-| Tree | **dirty — p2-09 is written but uncommitted**, ~60 files |
-| Tests | workspace green; `fmt`/`clippy` fail **only** in `tui-monitor/` |
+| Branch | `feat/phase2-http-pipeline`, pushed `9273604` to **origin and backup** |
+| Tree | clean |
+| Tests | green — `fmt`/`clippy`/`test`, 834 workspace + 71 `tui-monitor` |
+| Deployed | **0.2.12** on the RB5009 since 2026-08-08T00:06Z |
 | Phase | 2 (`plan/wip/phase2`) — every task implemented; `p2-09` still reads `WAITING` in the phase table |
-| Next | the p2-09 on-device check, then the phase-table move and a commit. None of the three are mine to make |
+| **Next** | **the 0.2.12 soak review, due 2026-08-09 ~21:23Z** — then the phase-table move. Neither is mine to make |
+
+### The soak review is the next action
+
+Started **2026-08-07T21:23:11Z**, ≥ 48 h. Re-run the capture command in
+[`soak-0.2.12/README.md`](code-review/soak-0.2.12/README.md) and compare against
+its T0 table; that file also lists what fails and the four traps that produce a
+wrong reading. `/history/perf` covers the gap between captures.
+
+Two figures already worth watching: **peak RSS is 125.1 MB against a 128 MB
+budget** (the ruleset compile transient, which never falls back), and
+**residual is 53 % of RSS** — read it against `minor_page_faults`, since
+`MIMALLOC_PURGE_DELAY=0` makes purge thrash the likelier explanation than a
+leak.
+
+### Upgrading from any config older than 0.2.12
+
+`[query_log]` and `[api] metrics_public` are both **rejected** by
+`deny_unknown_fields`. Remove them from `fastadhunter.toml` *before* swapping
+the image, or the process will not boot. `GET /metrics` and
+`GET /api/v1/queries` are gone; everything they served is on
+`/api/v1/telemetry`, `/api/v1/debug/memory` or `/api/v1/history/perf`.
 
 `tui-monitor/` and `fah-top.py` are on this branch and are **off-plan** — a local
 monitoring utility, not a phase task.
@@ -29,7 +51,7 @@ Build artefacts at the repo root, gitignored (`*.tar`):
 | Task | State |
 | --- | --- |
 | p2-00 … p2-08, p2-10, p2-11 | DONE |
-| p2-09 | code written and green, **not yet committed**; phase table still says `WAITING` |
+| p2-09 | committed (`9273604`), deployed and verified on-device; phase table still says `WAITING` |
 
 `p2-09` was rewritten on 2026-08-06. The former task ("Query Log Reader") would
 have made the persisted segments searchable through `GET /api/v1/queries`; it
@@ -39,8 +61,9 @@ that endpoint and the query log entirely, and adds one
 [`p2-09-review.md`](code-review/p2-09-review.md). **The blocker is gone, not
 deferred.**
 
-Two things gate the phase move, both the owner's: the on-device check
-(§Open items), and moving the row to `DONE`.
+The on-device check is done: `0.2.12` boots, serves `/telemetry`, and returns
+404 for `/metrics` and `/queries`. Only the row move is left, and it is the
+owner's.
 
 ## p2-08 — closed on-device 2026-08-06
 
@@ -84,27 +107,31 @@ reconfigured the router while diagnosing it, giving five container starts on
 
 ## Deployed
 
-**0.2.10** on the RB5009, `mode=dns+http`, steady RSS **46.6 MiB**, compile peak
-**181.4 MiB**, 16 lists `ok`, 798,250 compiled rules, `events_dropped_total` 0.
+**0.2.12** on the RB5009 since 2026-08-08T00:06Z, `mode=dns+http`, RSS
+**59.7 MB**, peak **125.1 MB**, 798,287 compiled rules, `events_dropped` 0,
+container 56.4 MiB in the RouterOS view.
 
-**Three config values are live and differ from the 2026-08-02 baseline:**
+**Live config that differs from the 2026-08-02 baseline:**
 
-- `MIMALLOC_PURGE_DELAY` **100 → 0** — `p2-11`. Unproven under load.
+- `MIMALLOC_PURGE_DELAY` **100 → 0** — `p2-11`. Verified applied on-device
+  (mimalloc v3.3.2 accepts it, alongside `PURGE_DECOMMITS=1` and
+  `ARENA_EAGER_COMMIT=0`). Still unproven under a full load window.
 - `history.sample_interval_seconds` **60 → 360** — the perf series is 6× coarser.
-- `[query_log]` is still declared in `/config/fastadhunter.toml`. It **must be
-  deleted before the next binary starts** — see §Next deploy.
+- `[query_log]` and `[api] metrics_public` are **removed** from
+  `/config/fastadhunter.toml`; 0.2.12 would not have booted otherwise.
+- `FAH__ENGINE__MODE` was dropped from the container envlist — `mode` now comes
+  from the TOML alone.
 
 Rollback: the last four version tarballs are on `kingston/`, so reverting is
 `/container/add` from the previous tar rather than a rebuild.
 
-## Next deploy is order-dependent
+## Deploy ordering — done for 0.2.12, still true for the next one
 
-p2-09 removed the `[query_log]` config section. The root `Config` is
-`deny_unknown_fields`, so an unknown section is a **boot failure, not a
-warning**, and nothing migrates the file.
-
-1. Delete the whole `[query_log]` block from `/config/fastadhunter.toml`.
-2. Then start the new container.
+`deny_unknown_fields` on the root `Config` makes an unknown section a **boot
+failure, not a warning**, and nothing migrates the file. Any key a release
+removes must be deleted from `/config/fastadhunter.toml` *before* that release
+starts. `[query_log]` (p2-09) and `[api] metrics_public` were handled this way
+on 2026-08-08.
 
 Getting the order wrong bricks the resolver until the file is fixed —
 `/tool/netwatch` fails DNS over to public resolvers meanwhile, so clients keep
@@ -136,12 +163,9 @@ and can be deleted to reclaim disk.
 - **~59 MiB of compile ratchet survives `delay=0`** (122 → 181.4 MiB),
   decelerating hard. Suspect is `arena_reserve` = 1 GiB. Worth an experiment only
   if ≤128 MiB becomes the target or Phase 3's footprint makes 75 MB tight.
-- **p2-09's on-device check has not been run.** `GET /api/v1/telemetry` against
-  the container, confirming every chartable field is populated and agrees with
-  the equivalent `/metrics` family read at the same instant.
-- **The p2-07 residual moves at the next deploy.** The query log's ring is gone,
-  so the `stats` component drops by roughly the ring's accounted size and the
-  same bytes reappear in the residual. Expect a step, not a leak; re-baseline
+- **The p2-07 residual moved at the 0.2.12 deploy.** The query log's ring is
+  gone, so the `stats` component dropped and the same bytes reappear in the
+  residual. Expect a step, not a leak; re-baseline
   before reading a slope across the deploy.
 - **`heap::string_bytes` documents "Capacity, not length"** but takes `&str` and
   returns `len()`. Under-reports. Unfixed.

@@ -11,7 +11,7 @@ use tokio_tungstenite::tungstenite::protocol::Message;
 use tokio_tungstenite::Connector;
 
 use crate::config::Config;
-use crate::models::events::ServerEvent;
+use crate::models::events::Decoded;
 
 use super::api::paths;
 
@@ -32,10 +32,10 @@ impl EventsClient {
 
     /// Opens one socket. The caller owns what happens when it ends.
     ///
-    /// Frames that fail to decode are **skipped, not fatal**: a single
-    /// malformed or unrecognised frame must not drop a live feed, and the
-    /// envelope already degrades unknown kinds to `ServerEvent::Other`.
-    pub async fn connect(&self) -> Result<impl Stream<Item = ServerEvent>, String> {
+    /// Every text frame is yielded as a [`Decoded`], undecodable ones included:
+    /// a bad frame must not drop a live feed, but dropping it *silently* is how
+    /// a server-side rename empties the feed with the socket still up.
+    pub async fn connect(&self) -> Result<impl Stream<Item = Decoded>, String> {
         let mut request = self
             .url
             .as_str()
@@ -59,7 +59,7 @@ impl EventsClient {
 
         Ok(socket.filter_map(|message| async move {
             match message {
-                Ok(Message::Text(text)) => crate::models::events::decode(&text),
+                Ok(Message::Text(text)) => Some(crate::models::events::decode(&text)),
                 _ => None,
             }
         }))

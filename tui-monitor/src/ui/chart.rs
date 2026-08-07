@@ -10,7 +10,7 @@ const BRAILLE_BASE: u32 = 0x2800;
 pub struct Braille {
     /// Top row first.
     pub rows: Vec<String>,
-    /// Peak of the samples behind each cell column, left to right. Empty when
+    /// Peak of every sample behind each cell column, left to right. Empty when
     /// there was nothing to draw.
     pub columns: Vec<f64>,
 }
@@ -29,13 +29,20 @@ pub fn braille(data: &[f64], width: usize, height: usize) -> Braille {
     let flat = (max - min).abs() < f64::EPSILON;
     let dots_high = height * 4;
 
-    // Two sub-columns per cell, resampled from the series so the chart always
-    // spans the full width whatever the sample count.
+    // Two sub-columns per cell, each the PEAK of the range it covers rather
+    // than one point sampled from it: a spike narrower than a sub-column is
+    // exactly the reading an RSS graph exists to show.
     let columns = width * 2;
     let sampled: Vec<f64> = (0..columns)
         .map(|index| {
-            let position = index * (data.len() - 1) / (columns - 1).max(1);
-            data[position.min(data.len() - 1)]
+            let start = index * data.len() / columns;
+            // `start + 1` is the floor when there are fewer samples than
+            // sub-columns; without it the slice is empty and folds to −∞.
+            let end = ((index + 1) * data.len() / columns).clamp(start + 1, data.len());
+            data[start..end]
+                .iter()
+                .copied()
+                .fold(f64::NEG_INFINITY, f64::max)
         })
         .collect();
 
@@ -73,6 +80,8 @@ pub fn braille(data: &[f64], width: usize, height: usize) -> Braille {
         })
         .collect();
 
+    // A true range peak: the two sub-columns tile the cell's source range
+    // exactly, so the max of the pair is the max of everything behind it.
     let columns = (0..width)
         .map(|column| sampled[column * 2].max(sampled[column * 2 + 1]))
         .collect();
@@ -172,6 +181,42 @@ mod tests {
         let chart = braille(&[10.0, 200.0, 10.0, 10.0], 2, 3);
         assert_eq!(chart.columns.len(), 2);
         assert_eq!(chart.columns.iter().copied().fold(0.0, f64::max), 200.0);
+    }
+
+    /// The graph holds far more samples than it has sub-columns, so the
+    /// reduction has to be a bucket peak. Picking one point per position drops
+    /// this spike from both the drawn height and the colour band — the two
+    /// things the RSS graph is read for.
+    #[test]
+    fn a_spike_between_two_positions_survives_the_reduction() {
+        const BLANK: char = '\u{2800}';
+        let chart = braille(&[10.0, 10.0, 10.0, 95.0, 10.0, 10.0, 10.0], 2, 3);
+
+        assert_eq!(chart.columns, vec![10.0, 95.0]);
+        let top: Vec<char> = chart.rows[0].chars().collect();
+        assert_eq!(top[0], BLANK, "the flat column stays empty at the top");
+        assert_ne!(top[1], BLANK, "the spike reaches the top row");
+    }
+
+    /// The buckets must tile the series with no gap, at every width — a spike
+    /// that falls between two of them is invisible however tall it is. Sweeping
+    /// the spike's position is what catches an off-by-one at either edge.
+    #[test]
+    fn no_sample_falls_between_two_buckets() {
+        const LENGTH: usize = 37;
+
+        for width in 1..=12usize {
+            for spike in 0..LENGTH {
+                let mut data = vec![10.0; LENGTH];
+                data[spike] = 95.0;
+                let chart = braille(&data, width, 3);
+
+                assert!(
+                    chart.columns.contains(&95.0),
+                    "width {width}, spike at {spike}"
+                );
+            }
+        }
     }
 
     #[test]

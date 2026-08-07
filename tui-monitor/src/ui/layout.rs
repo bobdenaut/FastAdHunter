@@ -10,8 +10,8 @@ pub const STATS_WIDTH: u16 = 46;
 /// Header: three gauge rows plus the graph, inside a border.
 const HEADER_HEIGHT: u16 = 7;
 
-/// Footer: two content lines inside a border.
-const FOOTER_HEIGHT: u16 = 4;
+/// Footer: one content line inside a border.
+const FOOTER_HEIGHT: u16 = 3;
 
 pub struct Regions {
     /// The whole terminal, kept so an overlay can be hit-tested against the

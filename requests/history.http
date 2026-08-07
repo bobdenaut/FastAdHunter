@@ -54,18 +54,24 @@ GET {{base}}/history/summary?from=1970-01-01T00:00:00Z&to=1970-01-02T00:00:00Z
 {{auth}}
 
 ### Bad parameters are REJECTED, not silently ignored — each of these should be
-### 400, naming the offending parameter. Backwards window first:
-GET {{base}}/history/summary?from=2025-07-24T00:00:00Z&to=2029-07-01T00:00:00Z
+### 400, naming the offending parameter. A backwards window first: `from` is
+### after `to`, so the range cannot hold data no matter what is stored.
+GET {{base}}/history/summary?from=2029-07-01T00:00:00Z&to=2025-07-24T00:00:00Z
 {{auth}}
 
-###
-GET {{base}}/history/summary?resolution=day
+### `resolution` is hour|day only — `week` is not a silent fallback to `day`.
+GET {{base}}/history/summary?resolution=week
 {{auth}}
 
-###
-GET {{base}}/history/top?kind=blocked
+### `kind` is blocked|queried|clients only.
+GET {{base}}/history/top?kind=advertisers
 {{auth}}
 
-###
-GET {{base}}/history/perf?fields=rss_bytes
+### An unknown `fields` name is rejected rather than ignored, so a typo cannot
+### silently remove the series a chart was asking for.
+GET {{base}}/history/perf?fields=rss_bytes,rss_byte
+{{auth}}
+
+### And a non-numeric budget.
+GET {{base}}/history/perf?max_points=lots
 {{auth}}

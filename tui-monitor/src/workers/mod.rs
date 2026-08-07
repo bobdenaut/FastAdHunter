@@ -33,6 +33,7 @@ pub fn spawn(clients: Clients, config: &Config, state: SharedState) {
     tokio::spawn(events::run(
         events,
         config.timeout.reconnect(),
+        config.timeout.events_idle(),
         state.clone(),
     ));
 

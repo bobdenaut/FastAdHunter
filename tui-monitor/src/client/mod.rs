@@ -10,10 +10,10 @@ pub mod api;
 pub mod events;
 pub mod routeros;
 
-use std::error::Error as StdError;
 use std::sync::Arc;
 
 use crate::config::Config;
+use crate::BoxError;
 
 pub use api::ApiClient;
 pub use events::EventsClient;
@@ -29,7 +29,7 @@ pub struct Clients {
 }
 
 impl Clients {
-    pub fn new(config: &Config) -> Result<Self, Box<dyn StdError>> {
+    pub fn new(config: &Config) -> Result<Self, BoxError> {
         let tls = TlsPolicy::from(config);
         Ok(Self {
             api: ApiClient::new(config, &tls)?,

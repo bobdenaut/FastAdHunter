@@ -772,6 +772,25 @@ mod tests {
         assert_eq!(series.points[0].queries, 100);
     }
 
+    /// The other half of the budget contract: a series *under* the budget must
+    /// come back whole, at stride 1. The TUI monitor asks for 5000 points so a
+    /// day of 60 s samples is never thinned — and a half-open 24 h window holds
+    /// 1440 or 1441 of them depending on the sampler's phase, so both counts
+    /// have to clear it or the graph flips resolution between polls.
+    #[test]
+    fn a_series_under_the_budget_is_not_decimated_at_all() {
+        for count in [1_440u64, 1_441] {
+            let mut decimator = Decimator::new(5_000);
+            for i in 0..count {
+                decimator.push(i);
+            }
+            let (kept, stride) = decimator.finish();
+
+            assert_eq!(stride, 1, "{count} samples must arrive undecimated");
+            assert_eq!(kept.len() as u64, count, "every row survives");
+        }
+    }
+
     #[test]
     fn decimator_keeps_an_evenly_spaced_sample_within_its_budget() {
         for (count, max) in [(10u64, 100usize), (101, 100), (1_000, 10), (100_000, 7)] {

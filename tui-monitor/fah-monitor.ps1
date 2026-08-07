@@ -1,2 +1,1 @@
-Set-Location "E:\FastAdHunter\tui-monitor\"
-..\target\release\fah-tui-monitor.exe
+& "$PSScriptRoot\..\target\release\fah-tui-monitor.exe" --config "$PSScriptRoot\config.toml"

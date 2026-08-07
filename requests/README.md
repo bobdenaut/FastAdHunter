@@ -39,6 +39,7 @@ to a public root.
 | `stats.http` | Aggregated 24h statistics |
 | `history.http` | Persisted series: summary, perf, top-N |
 | `clients.http` | Client discovery and naming |
+| `policies.http` | Policy CRUD and client assignment |
 | `cache.http` | Cache usage and `POST /api/v1/cache/clean` |
 | `settings.http` | `GET`/`POST /api/v1/config` |
 
@@ -49,7 +50,15 @@ endpoint owns, which 401s without a key and 404s with one.
 
 Each file includes the failure cases, not just the happy path — 401s, 404s,
 409s and 422s are requests you can run, because "does it reject this correctly"
-is as much a part of the contract as "does it accept that".
+is as much a part of the contract as "does it accept that". Every one of those
+is checked against the handler before it is written down: a request filed under
+"should be 400" that the server happily answers is worse than no example, and
+`history.http` carried four of them for months.
+
+The coverage claim above is enforced, not maintained by hand —
+`crates/fah-api/tests/request_coverage.rs` enumerates the router and fails if a
+route has no request here. `WS /api/v1/events` is the one listed exclusion, with
+its reason. Add a route and the test names it.
 
 ## Not covered
 

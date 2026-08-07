@@ -24,6 +24,21 @@ pub fn render(frame: &mut Frame, screen: Rect, item: &QueryItem) {
     frame.render_widget(Clear, area);
 
     let colour = theme::verdict(item.verdict);
+    frame.render_widget(
+        Paragraph::new(detail_lines(item))
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .title(" Query Details — Esc to close ")
+                    .style(ratatui::style::Style::default().fg(colour)),
+            )
+            .wrap(Wrap { trim: true }),
+        area,
+    );
+}
+
+fn detail_lines<'a>(item: &QueryItem) -> Vec<Line<'a>> {
+    let colour = theme::verdict(item.verdict);
     let mut lines = vec![
         field("Client", item.client.to_string()),
         field(
@@ -47,41 +62,32 @@ pub fn render(frame: &mut Frame, screen: Rect, item: &QueryItem) {
 
     // DNS and HTTP items carry disjoint fields; showing the absent half as
     // null would suggest a value that was measured and came back empty.
-    match item.qtype.as_deref() {
-        Some(qtype) => {
-            lines.push(field("Type", qtype.to_string()));
-            lines.push(field(
-                "Cached",
-                if item.cached { "yes" } else { "no" }.to_string(),
-            ));
-        }
-        None => {
-            if let Some(method) = item.method.as_deref() {
-                lines.push(field("Method", method.to_string()));
-            }
-            if let Some(path) = item.path.as_deref() {
-                lines.push(field("Path", path.to_string()));
-            }
-            if let Some(status) = item.status {
-                lines.push(field("Status", status.to_string()));
-            }
-            if let Some(relayed) = item.bytes {
-                lines.push(field("Bytes", bytes(relayed)));
+    //
+    // Keyed on `kind`, which API.md §Events names as the discriminator — not on
+    // whether `qtype` happens to be set, which hides every HTTP field the
+    // moment a request carries one.
+    if item.kind == "http" {
+        for (label, value) in [
+            ("Method", item.method.clone()),
+            ("Path", item.path.clone()),
+            ("Status", item.status.map(|s| s.to_string())),
+            ("Bytes", item.bytes.map(bytes)),
+        ] {
+            if let Some(value) = value {
+                lines.push(field(label, value));
             }
         }
+    } else {
+        lines.push(field(
+            "Type",
+            item.qtype.clone().unwrap_or_else(|| "—".to_string()),
+        ));
+        lines.push(field(
+            "Cached",
+            if item.cached { "yes" } else { "no" }.to_string(),
+        ));
     }
-
-    frame.render_widget(
-        Paragraph::new(lines)
-            .block(
-                Block::default()
-                    .borders(Borders::ALL)
-                    .title(" Query Details — Esc to close ")
-                    .style(ratatui::style::Style::default().fg(colour)),
-            )
-            .wrap(Wrap { trim: true }),
-        area,
-    );
+    lines
 }
 
 fn field<'a>(label: &str, value: String) -> Line<'a> {
@@ -89,4 +95,97 @@ fn field<'a>(label: &str, value: String) -> Line<'a> {
         Span::styled(format!("{label:<11}"), theme::label()),
         Span::raw(value),
     ])
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::models::events::Verdict;
+
+    fn text(lines: &[Line]) -> String {
+        lines
+            .iter()
+            .map(|line| {
+                line.spans
+                    .iter()
+                    .map(|s| s.content.as_ref())
+                    .collect::<String>()
+            })
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+
+    fn item(kind: &str) -> QueryItem {
+        QueryItem {
+            kind: kind.to_string(),
+            ts: "2026-07-17T10:41:03.610Z".to_string(),
+            client: std::net::IpAddr::from([192, 168, 10, 15]),
+            client_name: None,
+            domain: "ads.example.com".to_string(),
+            qtype: None,
+            verdict: Verdict::Block,
+            rule: None,
+            list: None,
+            duration_ms: 0.1,
+            cached: false,
+            method: None,
+            path: None,
+            status: None,
+            bytes: None,
+        }
+    }
+
+    #[test]
+    fn a_dns_item_shows_the_record_type_and_the_cache_flag() {
+        let rendered = text(&detail_lines(&QueryItem {
+            qtype: Some("AAAA".to_string()),
+            cached: true,
+            ..item("dns")
+        }));
+
+        assert!(rendered.contains("AAAA"), "{rendered}");
+        assert!(rendered.contains("Cached"), "{rendered}");
+        assert!(!rendered.contains("Method"), "{rendered}");
+    }
+
+    #[test]
+    fn an_http_item_shows_the_request_fields() {
+        let rendered = text(&detail_lines(&QueryItem {
+            method: Some("GET".to_string()),
+            path: Some("/pixel.gif?id=7".to_string()),
+            status: Some(200),
+            bytes: Some(0),
+            ..item("http")
+        }));
+
+        assert!(rendered.contains("GET"), "{rendered}");
+        assert!(rendered.contains("/pixel.gif?id=7"), "{rendered}");
+        assert!(rendered.contains("200"), "{rendered}");
+        assert!(!rendered.contains("Cached"), "{rendered}");
+    }
+
+    /// The reason `kind` is the discriminator and `qtype` is not: keying on the
+    /// payload field hid every HTTP detail the moment one arrived set.
+    #[test]
+    fn an_http_item_carrying_a_qtype_still_shows_its_http_fields() {
+        let rendered = text(&detail_lines(&QueryItem {
+            qtype: Some("A".to_string()),
+            method: Some("POST".to_string()),
+            status: Some(403),
+            ..item("http")
+        }));
+
+        assert!(rendered.contains("POST"), "{rendered}");
+        assert!(rendered.contains("403"), "{rendered}");
+    }
+
+    /// A DNS event whose `qtype` is missing must still print the row — absent
+    /// is a dash, not a reason to drop the field.
+    #[test]
+    fn a_dns_item_without_a_qtype_prints_a_dash() {
+        let rendered = text(&detail_lines(&item("dns")));
+
+        assert!(rendered.contains("Type"), "{rendered}");
+        assert!(rendered.contains('—'), "{rendered}");
+    }
 }
