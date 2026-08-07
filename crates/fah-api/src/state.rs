@@ -40,13 +40,6 @@ impl AppState {
     pub fn uptime_seconds(&self) -> u64 {
         self.started_at.elapsed().as_secs()
     }
-
-    /// Whether `GET /health` and `GET /metrics` skip authentication
-    /// (`[api] metrics_public`, runtime-mutable — so it is read per request
-    /// rather than captured at startup).
-    pub fn metrics_public(&self) -> bool {
-        self.config.current().api.metrics_public
-    }
 }
 
 /// The handles the binary supplies; `started_at` and the event hub are the

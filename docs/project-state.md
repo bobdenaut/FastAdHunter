@@ -4,17 +4,17 @@ Where the work is right now. **Rewrite this file — never append.** History
 belongs in `git log`, `docs/code-review/` and the phase tables; this file is only
 what is true today.
 
-**Last updated:** 2026-08-06
+**Last updated:** 2026-08-07
 
 ## Now
 
 | | |
 | --- | --- |
-| Branch | `feat/phase2-http-pipeline` at `4f7671e`, pushed to `origin` **and** `backup` |
-| Tree | clean; `main` fast-forwarded to the same commit and pushed to both remotes |
-| Tests | workspace green 2026-08-06 (779 across 40 binaries); `fmt`/`clippy` fail **only** in `tui-monitor/` |
-| Phase | 2 (`plan/wip/phase2`) — **every task DONE except p2-09, which is BLOCKED by decision** |
-| Next | phase-close decision (§Phase 2 status), then a commit. Neither is mine to make |
+| Branch | `feat/phase2-http-pipeline`, last pushed commit `04095d5` |
+| Tree | **dirty — p2-09 is written but uncommitted**, ~60 files |
+| Tests | workspace green; `fmt`/`clippy` fail **only** in `tui-monitor/` |
+| Phase | 2 (`plan/wip/phase2`) — every task implemented; `p2-09` still reads `WAITING` in the phase table |
+| Next | the p2-09 on-device check, then the phase-table move and a commit. None of the three are mine to make |
 
 `tui-monitor/` and `fah-top.py` are on this branch and are **off-plan** — a local
 monitoring utility, not a phase task.
@@ -29,13 +29,18 @@ Build artefacts at the repo root, gitignored (`*.tar`):
 | Task | State |
 | --- | --- |
 | p2-00 … p2-08, p2-10, p2-11 | DONE |
-| p2-09 | **BLOCKED by decision 2026-08-06** — `query_log` stays off in production (§Blocker) |
+| p2-09 | code written and green, **not yet committed**; phase table still says `WAITING` |
 
-**The phase cannot close on the algorithm in `plan/CLAUDE.md`** — it moves
-`wip` → `closed` only when every task is `DONE`, and `p2-09` is `BLOCKED`, not
-`DONE`. Two ways out, both the owner's call: close the phase and carry `p2-09`
-into Phase 3, or leave the phase open until persistence is re-enabled and the
-task can run. Nothing else is waiting on it.
+`p2-09` was rewritten on 2026-08-06. The former task ("Query Log Reader") would
+have made the persisted segments searchable through `GET /api/v1/queries`; it
+was blocked because persistence was off on the device. The replacement removes
+that endpoint and the query log entirely, and adds one
+`GET /api/v1/telemetry` — see
+[`p2-09-review.md`](code-review/p2-09-review.md). **The blocker is gone, not
+deferred.**
+
+Two things gate the phase move, both the owner's: the on-device check
+(§Open items), and moving the row to `DONE`.
 
 ## p2-08 — closed on-device 2026-08-06
 
@@ -86,18 +91,25 @@ reconfigured the router while diagnosing it, giving five container starts on
 
 - `MIMALLOC_PURGE_DELAY` **100 → 0** — `p2-11`. Unproven under load.
 - `history.sample_interval_seconds` **60 → 360** — the perf series is 6× coarser.
-- `query_log` persistence **off** (`enabled:false`, `retention_days:0`).
+- `[query_log]` is still declared in `/config/fastadhunter.toml`. It **must be
+  deleted before the next binary starts** — see §Next deploy.
 
 Rollback: the last four version tarballs are on `kingston/`, so reverting is
 `/container/add` from the previous tar rather than a rebuild.
 
-## Blocker for p2-09
+## Next deploy is order-dependent
 
-`p2-09` is a reader over the **persisted** query-log segments. Persistence is
-off on the device, and the same flag empties the in-memory ring, so there is no
-on-device data source at all. **Decision 2026-08-06: leave it blocked.** It is
-picked up only if persistence itself needs validating — and then it needs the
-flag re-enabled with a bounded `retention_max_mb` first.
+p2-09 removed the `[query_log]` config section. The root `Config` is
+`deny_unknown_fields`, so an unknown section is a **boot failure, not a
+warning**, and nothing migrates the file.
+
+1. Delete the whole `[query_log]` block from `/config/fastadhunter.toml`.
+2. Then start the new container.
+
+Getting the order wrong bricks the resolver until the file is fixed —
+`/tool/netwatch` fails DNS over to public resolvers meanwhile, so clients keep
+working *unfiltered* and nobody complains. A stale `/data/query_log/` is inert
+and can be deleted to reclaim disk.
 
 ## Open items
 
@@ -124,16 +136,15 @@ flag re-enabled with a bounded `retention_max_mb` first.
 - **~59 MiB of compile ratchet survives `delay=0`** (122 → 181.4 MiB),
   decelerating hard. Suspect is `arena_reserve` = 1 GiB. Worth an experiment only
   if ≤128 MiB becomes the target or Phase 3's footprint makes 75 MB tight.
-- **`[query_log] enabled` controls two things**, not one: the disk segments *and*
-  the in-memory ring. With it off, `GET /api/v1/queries` returns an empty page;
-  `WS /api/v1/events` is unaffected. Splitting the flag was considered and
-  rejected.
-- **Re-read the p2-07 residual once `query_log` is re-enabled** — `Ring::heap_bytes`
-  was fixed 2026-08-06
-  ([`query-log-disabled-and-ring-accounting.md`](code-review/query-log-disabled-and-ring-accounting.md)),
-  so the `stats` component shifts by the ring delta.
+- **p2-09's on-device check has not been run.** `GET /api/v1/telemetry` against
+  the container, confirming every chartable field is populated and agrees with
+  the equivalent `/metrics` family read at the same instant.
+- **The p2-07 residual moves at the next deploy.** The query log's ring is gone,
+  so the `stats` component drops by roughly the ring's accounted size and the
+  same bytes reappear in the residual. Expect a step, not a leak; re-baseline
+  before reading a slope across the deploy.
 - **`heap::string_bytes` documents "Capacity, not length"** but takes `&str` and
-  returns `len()`. Same under-report class as the ring bug. Unfixed.
+  returns `len()`. Under-reports. Unfixed.
 - **No regression guard on the compile peak.** Invisible to every automated gate,
   and the dev box cannot help — `process_rss` returns `None` on Windows.
 - The mimalloc-vs-`System` A/B to isolate the −17 % CPU from the hit-ratio
@@ -148,8 +159,11 @@ flag re-enabled with a bounded `retention_max_mb` first.
 - `ListStatus::last_refreshed` reports `null` after a restart alongside
   `last_result: Ok`. Confirmed still true 2026-08-06. Deliberately not fixed —
   reversing it needs RULE_ENGINE.md/API.md review.
-- `main` is 25+ commits behind this branch; merge is a fast-forward when the
-  phase closes.
+- `main` is behind this branch; merge is a fast-forward when the phase closes.
+- Any dashboard client can now collapse three pollers into one and drop its
+  Prometheus text parsing. Not done for `tui-monitor/`, which also has two
+  standing bugs: `history_perf_worker` has no loop, and `parse_summary_data`
+  `.or_else()`-chains three guesses at the same field name.
 
 ## Known-good gate note
 

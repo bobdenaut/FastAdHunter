@@ -60,12 +60,6 @@ pub(crate) fn hashmap_bytes<K, V>(len: usize) -> usize {
     slots * (std::mem::size_of::<K>() + std::mem::size_of::<V>() + 1)
 }
 
-/// A `VecDeque<T>`'s buffer. Capacity, not length — the allocation is what
-/// occupies RAM.
-pub(crate) fn vecdeque_bytes<T>(capacity: usize) -> usize {
-    capacity * std::mem::size_of::<T>()
-}
-
 /// The payload behind an `Arc<str>`: string bytes plus the two reference
 /// counts in the control block.
 pub(crate) fn arc_str_bytes(value: &Arc<str>) -> usize {

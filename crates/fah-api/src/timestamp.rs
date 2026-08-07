@@ -19,7 +19,7 @@ pub fn to_rfc3339(at: SystemTime) -> String {
         .unwrap_or_else(|_| "1970-01-01T00:00:00Z".to_string())
 }
 
-/// Parses the `from`/`to` filters of `GET /api/v1/queries`.
+/// Parses the `from`/`to` range parameters of `GET /api/v1/history/*`.
 pub fn from_rfc3339(text: &str) -> Option<SystemTime> {
     OffsetDateTime::parse(text, &Rfc3339)
         .ok()

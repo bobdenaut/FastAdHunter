@@ -133,7 +133,7 @@ const URL_TIER: u32 = 1 << 31;
 
 /// A compact, `Copy` handle to the rule that decided a [`MatchDecision`].
 /// Resolve to a human-readable [`DecisiveRule`] with [`Matcher::decisive_rule`]
-/// only when reporting (query log / `rules/test`) — that step allocates.
+/// only when reporting (`WS /api/v1/events` / `rules/test`) — that allocates.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct RuleRef(u32);
 
@@ -1028,9 +1028,9 @@ impl Matcher {
         }
     }
 
-    /// Materializes the human-readable decisive rule + owning list for the
-    /// query log / `rules/test`. Allocates the reconstructed rule text — call
-    /// only off the hot path (block/allow, never `Pass`).
+    /// Materializes the human-readable decisive rule + owning list for
+    /// `WS /api/v1/events` / `rules/test`. Allocates the reconstructed rule
+    /// text — call only off the hot path (block/allow, never `Pass`).
     pub fn decisive_rule(&self, r: RuleRef) -> DecisiveRule {
         let index = r.index();
         if r.is_url_rule() {

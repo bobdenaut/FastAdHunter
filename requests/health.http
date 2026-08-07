@@ -1,7 +1,7 @@
 # Health & liveness — API.md §Health & telemetry
 #
-# Unauthenticated by default. `[api] metrics_public = false` puts both this and
-# /metrics behind the API key, which the last request here checks.
+# The only unauthenticated route. Returns status, version, uptime — nothing
+# else, which is why it needs no key.
 
 @base = {{host}}
 

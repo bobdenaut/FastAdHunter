@@ -58,8 +58,7 @@ pub struct UpstreamStatus {
     /// The `address` exactly as configured — the stable identity for
     /// metrics labels.
     pub address: String,
-    /// `"udp"` | `"dot"` | `"doh"`.
-    pub protocol: &'static str,
+    pub protocol: fah_model::Protocol,
     pub attempts: u64,
     pub failures: u64,
     /// Failures since the last success — non-zero means currently unhealthy.
@@ -227,7 +226,7 @@ impl Forwarder for UpstreamPool {
 
 struct UpstreamServer {
     address: String,
-    protocol: &'static str,
+    protocol: fah_model::Protocol,
     transport: Transport,
     attempts: AtomicU64,
     failures: AtomicU64,
@@ -243,7 +242,7 @@ impl UpstreamServer {
     fn new(config: &UpstreamServerConfig, tls: &Arc<ClientConfig>) -> io::Result<Self> {
         let (protocol, transport) = match config.protocol {
             UpstreamProtocol::Udp => (
-                "udp",
+                fah_model::Protocol::Udp,
                 Transport::Udp {
                     addr: socket_addr(&config.address, 53)?,
                 },
@@ -268,7 +267,7 @@ impl UpstreamServer {
                     ))
                 })?;
                 (
-                    "dot",
+                    fah_model::Protocol::Dot,
                     Transport::Encrypted(ExchangeConn::new(
                         ConnectTarget::Dot {
                             addr: socket_addr(&config.address, 853)?,
@@ -310,7 +309,7 @@ impl UpstreamServer {
                     .filter(|hostname| !hostname.is_empty())
                     .map_or_else(|| Arc::clone(&host), Into::into);
                 (
-                    "doh",
+                    fah_model::Protocol::Doh,
                     Transport::Encrypted(ExchangeConn::new(
                         ConnectTarget::Doh {
                             host,

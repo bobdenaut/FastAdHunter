@@ -15,8 +15,9 @@ Single API key (bearer token), generated on first boot, rotatable.
 Authorization: Bearer <api-key>
 ```
 
-Required for everything under `/api/v1/`. Exempt by default: `GET /health`,
-`GET /metrics` (exemption configurable). Missing/invalid key → `401`.
+Required for everything under `/api/v1/`. `GET /health` is the one exemption.
+Missing/invalid key → `401`, and auth answers before routing does — an unknown
+path under `/api/v1/` is `401` without a key, `404` with one.
 
 ## Error format
 
@@ -50,27 +51,90 @@ Liveness/readiness. No auth (default). Used by the Docker healthcheck
 
 `status`: `ok` | `degraded` (e.g. all upstreams failing — serve-stale active).
 
-### `GET /metrics`
+### `GET /api/v1/telemetry`
 
-Prometheus text exposition format (ops telemetry: QPS, latency histograms,
-cache hit ratio, memory, per-verdict counters). No auth by default.
+The whole engine state as JSON, so a dashboard makes one call instead of
+polling `/api/v1/cache` and `/api/v1/debug/memory` separately.
 
-HTTP filtering (p2-04) adds three families, kept **separate from the DNS ones**
-because `fastadhunter_queries_total` has meant "DNS questions answered" since
-p1-08 and widening it would silently redefine every dashboard built on it:
+Every endpoint serves data no other endpoint serves. There is no Prometheus
+surface: it published nothing that is not here or on `/api/v1/debug/memory`,
+apart from raw histogram buckets, whose percentiles `/api/v1/history/perf`
+already reports as JSON.
 
-| Metric | Type | Notes |
-| ------ | ---- | ----- |
-| `fastadhunter_http_requests_total{verdict}` | counter | `pass` / `allow` / `block` |
-| `fastadhunter_http_response_bytes_total` | counter | Body bytes relayed downstream; a block adds nothing, so this and the block counter together show what filtering saved |
-| `fastadhunter_http_request_duration_seconds{stage}` | histogram | `block` is fully in-engine (no upstream contacted, comparable with the DNS `block` stage); `forward` is end-to-end including the origin round trip |
+`counters.events_dropped` covers **both** pipelines: they share one bounded
+channel, so the shed figure stays one number. `counters.http` is kept separate
+from `counters.dns` because "queries" has meant "DNS questions answered" since
+p1-08 and widening it would silently redefine every figure built on it.
 
-`fastadhunter_events_dropped_total` covers **both** pipelines: they share one
-bounded channel, so the shed figure stays one number.
+**Compatibility contract.** New fields may be added; existing fields must not
+change meaning or units. Figures that may change with the implementation live
+under `/api/v1/debug/*` instead, which promises nothing.
+
+The boundary is **who produces a figure**, not how useful it looks:
+
+| Producer | Home |
+| -------- | ---- |
+| FastAdHunter's own counters, ruleset, latency, upstreams, cache | `/api/v1/telemetry` |
+| Kernel (`process_rss`, `process_peak_rss`, major/minor page faults) | `/api/v1/telemetry` |
+| The linked allocator (`allocator_committed_*`) | `/api/v1/debug/memory` |
+
+Top-level blocks: `process`, `ruleset`, `counters`, `latency`, `upstreams`,
+`cache` (identical to `GET /api/v1/cache`), `memory` (identical to
+`GET /api/v1/debug/memory` minus the two `allocator_committed_*` fields).
+
+```json
+{
+  "process": { "version": "0.2.10", "uptime_seconds": 184920 },
+  "ruleset": { "rules": 1043886, "duplicates_removed": 41207,
+               "compile_duration_seconds": 7.412 },
+  "counters": {
+    "dns":  { "pass": 812044, "allow": 1201, "block": 96318,
+              "cache_hits": 640119, "cache_misses": 269446, "cache_stale": 3187 },
+    "http": { "pass": 4412, "allow": 0, "block": 918, "response_bytes": 148223904 },
+    "events_dropped": 0,
+    "swr": { "enqueued": 12044, "deduplicated": 3311, "dropped": 0,
+             "completed": 8702, "failed": 31 },
+    "cache_cleanup": { "runs": 308, "entries_removed": 44120,
+                       "bytes_freed": 9871232, "last_duration_micros": 1842 }
+  },
+  "latency": {
+    "dns":  { "block":     { "count": 96318,  "sum_seconds": 2.114 },
+              "cache_hit": { "count": 640119, "sum_seconds": 18.907 },
+              "forward":   { "count": 269446, "sum_seconds": 6021.338 } },
+    "http": { "block":   { "count": 918,  "sum_seconds": 0.031 },
+              "forward": { "count": 4412, "sum_seconds": 12.884 } }
+  },
+  "upstreams": [ { "address": "1.1.1.1:853", "protocol": "dot", "attempts": 201883,
+                   "failures": 12, "consecutive_failures": 0, "tls_handshakes": 41 } ]
+}
+```
+
+Reading it correctly:
+
+- **Every counter is process-lifetime cumulative**, so charting a rate means
+  deltaing two reads. Check `process.uptime_seconds` first: a restart returns
+  all of them to zero, and a delta taken across that boundary is meaningless,
+  not merely small.
+- **JSON carries no equivalent of Prometheus's `# TYPE`.** The one field that is
+  a **last-value gauge** rather than a total is
+  `counters.cache_cleanup.last_duration_micros` — the most recent sweep only.
+  Deltaing it produces nonsense.
+- **`latency` gives `count` and `sum_seconds`, never an average.** A lifetime
+  mean flattens within hours of uptime; delta both figures and divide for the
+  interval mean. Percentiles need buckets and are served, windowed, by
+  `GET /api/v1/history/perf`.
+- `counters.dns.cache_hits + cache_misses` equals `pass + allow`, never
+  `+ block` — a blocked query never reaches the cache (ADR-0001). A hit ratio
+  divides by resolved queries, not by every query.
+- No `ruleset.heap_bytes`: that is `memory.ruleset_bytes`, so the number has one
+  home.
+- `ruleset`, `upstreams`, `counters.swr` and `counters.cache_cleanup` are pushed
+  into the registry on a 10 s poll, so they can be up to one interval old.
+  `cache` and `memory` are read at request time.
 
 ---
 
-## Statistics & query log
+## Statistics
 
 ### `GET /api/v1/stats`
 
@@ -94,93 +158,6 @@ Aggregated statistics (product data, for users/dashboard).
 `policies` counts both pipelines, unlike the domain tables which stay DNS-only.
 Clients under no assignment are counted under `default`. Rows with no traffic in
 the window are omitted.
-
-### `GET /api/v1/queries`
-
-Query log, newest first. Pagination + filters via query string:
-`limit` (default 100, max 1000), `cursor`, `client`, `domain` (substring),
-`verdict` (`allow|block|pass`), `kind` (`dns|http`), `policy`, `from`, `to`
-(RFC 3339). `policy=default` selects the events no assignment covered.
-
-**Both pipelines share this log since p2-04.** Every item carries `kind`, and
-`domain` filters on the DNS question's name *or* the HTTP request's host —
-searching `doubleclick` means the same thing whichever pipeline answered, and a
-caller should not have to know which one did. Omit `kind` to get both.
-
-An HTTP item leaves the DNS-only fields `null` (`qtype`) or `false` (`cached`),
-and a DNS item leaves the HTTP-only ones `null` (`method`, `path`,
-`resource_type`, `status`, `bytes`). The keys are always **present**, so a
-client never has to tell "absent" from "not applicable".
-
-**Serves the in-RAM ring only.** This endpoint reads `[query_log] ring_entries`
-(default 10 000) most-recent events; it does **not** read the `/data` segments
-that `retention_days` / `retention_max_mb` govern. The window it can answer for
-is therefore `ring_entries ÷ current QPS` — about 2.8 h for a household at
-~1 QPS, but only ~2 minutes at 85 QPS. `from`/`to` filter *within* that window:
-a range older than the ring returns an **empty** `items` array, not an error, so
-"no results" here means "outside the retained ring", not "no queries happened".
-
-The on-disk segments are written for a future reader (per-query drill-down in
-the dashboard phase) and are not reachable through any endpoint today. Long-term
-aggregates come from `/api/v1/history/*` instead, which reads `/data/history`.
-
-```json
-{
-  "items": [
-    {
-      "kind": "dns",
-      "ts": "2026-07-17T10:41:03.412Z",
-      "client": "192.168.10.15",
-      "client_name": "liviu-phone",
-      "domain": "ads.example.com",
-      "qtype": "A",
-      "verdict": "block",
-      "rule": "||ads.example.com^",
-      "list": "oisd-basic",
-      "duration_ms": 0.3,
-      "upstream": null,
-      "cached": false,
-      "method": null,
-      "path": null,
-      "resource_type": null,
-      "status": null,
-      "bytes": null
-    },
-    {
-      "kind": "http",
-      "ts": "2026-07-17T10:41:03.610Z",
-      "client": "192.168.10.15",
-      "client_name": "liviu-phone",
-      "domain": "ads.example.com",
-      "qtype": null,
-      "verdict": "block",
-      "rule": "||ads.example.com^",
-      "list": "easylist",
-      "duration_ms": 0.1,
-      "upstream": null,
-      "cached": false,
-      "method": "GET",
-      "path": "/pixel.gif?id=7",
-      "resource_type": "image",
-      "status": 200,
-      "bytes": 0
-    }
-  ],
-  "next_cursor": "opaque-token-or-null"
-}
-```
-
-`status` is what the client actually received — a synthesized block's status as
-much as an origin's — and `bytes` is the response body relayed downstream, so a
-block reads `0`. `resource_type` is the `$option` vocabulary
-(`script`, `image`, `xmlhttprequest`, …) or `unknown` when the proxy could not
-tell (RULE_ENGINE.md §HTTP matching).
-
-**Persisted-format note.** The `/data` segments now store a tagged event
-(`"kind":"dns"` / `"kind":"http"`). Records written before this version have no
-tag and will not parse. That is tolerated only because the query log is bounded
-and pruned by age, no endpoint reads the segments yet (the reader is `p2-09`),
-and the log self-heals within one retention window.
 
 ---
 
@@ -278,8 +255,7 @@ wanted. `fields` trims the response, not the read.
       "memory": {
         "ruleset_bytes": 23000000, "cache_estimated_bytes": 5000000,
         "stats_aggregates_bytes": 1000000, "stats_clients_bytes": 500000,
-        "query_log_ring_bytes": 499000, "query_log_pending_bytes": 1000,
-        "accounted_bytes": 30000000, "residual_bytes": 25000000
+        "accounted_bytes": 29500000, "residual_bytes": 25500000
       },
       "minor_page_faults": 4211337,
       "upstreams": [
@@ -679,10 +655,10 @@ back to `/config/fastadhunter.toml`, and applied:
 ```
 
 Most options are boot-only: `[dns.cache]`, `[dns.upstreams]`, `[dns.blocking]`,
-`[query_log]`, `[stats]`, `log.level` and `history.sample_interval_seconds` are
+`[stats]`, `log.level` and `history.sample_interval_seconds` are
 each read once during startup, so they persist and ask for a restart rather
 than reporting an apply that no code performs. The runtime set is
-`history.enabled`, `history.retention_days`, `api.metrics_public`,
+`history.enabled`, `history.retention_days`,
 `rules.refresh_hours_default` and `schedule.timezone`. See
 [CONFIGURATION.md](CONFIGURATION.md) for every option and its mutability class.
 
@@ -713,14 +689,55 @@ Generates a new API key, returns it **once**, invalidates the old one.
 Live event stream (dashboard "tail" view). Auth via
 `Authorization` header or `?token=` query param on the upgrade request.
 
+**This is the only per-query feed** — a client that wants individual rows
+subscribes here rather than polling.
+
 Server → client messages:
 
 ```json
-{ "type": "query", "data": { /* same shape as a query-log item */ } }
-{ "type": "stats", "data": { /* periodic stats delta, every ~2s */ } }
+{ "type": "query", "data": { /* one event, shape below */ } }
+{ "type": "stats", "data": { /* the GET /api/v1/stats payload, every ~2s */ } }
 { "type": "config_changed", "data": { "restart_required": false } }
 { "type": "list_refreshed", "data": { "id": "oisd-basic", "status": "ok" } }
 ```
+
+A `query` event carries both pipelines (p2-04), tagged by `kind`:
+
+```json
+{
+  "kind": "http",
+  "ts": "2026-07-17T10:41:03.610Z",
+  "client": "192.168.10.15",
+  "client_name": "liviu-phone",
+  "domain": "ads.example.com",
+  "qtype": null,
+  "verdict": "block",
+  "rule": "||ads.example.com^",
+  "list": "easylist",
+  "duration_ms": 0.1,
+  "upstream": null,
+  "cached": false,
+  "method": "GET",
+  "path": "/pixel.gif?id=7",
+  "resource_type": "image",
+  "status": 200,
+  "bytes": 0
+}
+```
+
+Every key is always **present**, so a client never has to tell "absent" from
+"not applicable": a DNS event leaves the HTTP-only fields `null` (`method`,
+`path`, `resource_type`, `status`, `bytes`), and an HTTP event leaves `qtype`
+`null` and `cached` `false`.
+
+`status` is what the client actually received — a synthesized block's status as
+much as an origin's — and `bytes` is the body relayed downstream, so a block
+reads `0`. `resource_type` is the `$option` vocabulary (`script`, `image`,
+`xmlhttprequest`, …) or `unknown` when the proxy could not tell
+(RULE_ENGINE.md §HTTP matching).
+
+The `stats` push is byte-for-byte the `GET /api/v1/stats` payload. That endpoint
+is still worth calling once on connect: the first push is up to ~2 s away.
 
 Slow consumers are disconnected rather than back-pressuring the engine.
 
@@ -734,6 +751,20 @@ Where the RAM goes — for checking the PERFORMANCE.md memory budget against a
 live box. Every **bounded** structure reports its own heap; `residual_bytes` is
 what RSS holds beyond all of them.
 
+**This is `/api/v1/telemetry`'s `memory` block plus exactly the two
+`allocator_committed_*` fields**, and both are gathered in the same pass, so
+the two endpoints can never report a different RSS or residual for one instant.
+The split is the producer boundary: the allocator fields describe whichever
+allocator is linked in and carry **no** compatibility promise, where everything
+else is FastAdHunter's own accounting or a kernel reading. A dashboard should
+read `/api/v1/telemetry`; this endpoint is for diagnosing the allocator.
+
+The two come from independent sources — `getrusage` for the kernel figures,
+the allocator for the commit counters — so an allocator that reports nothing
+nulls `allocator_committed_*` and **only** those. `process_peak_rss` and both
+fault counters keep working, which is what makes the stable contract true
+rather than merely intended.
+
 ```json
 {
   "ruleset_bytes": 23002595,
@@ -741,10 +772,8 @@ what RSS holds beyond all of them.
   "cache_estimated_bytes": 1053072,
   "stats_aggregates_bytes": 41984,
   "stats_clients_bytes": 9216,
-  "query_log_ring_bytes": 1179648,
-  "query_log_pending_bytes": 24576,
-  "accounted_bytes": 25311091,
-  "residual_bytes": 18389133,
+  "accounted_bytes": 24106867,
+  "residual_bytes": 19593357,
   "process_rss": 43700224,
   "allocator_committed_bytes": 318046208,
   "allocator_committed_peak_bytes": 318046208,
@@ -819,19 +848,14 @@ per page faulted back in, which is exactly the trade-off `MIMALLOC_PURGE_DELAY`
 tunes. A rising fault rate at flat RSS means the purge delay is too short. It is
 `0` off Unix, where `getrusage` does not exist.
 
-The same figures are exported on `/metrics` as
-`fastadhunter_memory_component_bytes` (labelled by `component`),
-`fastadhunter_memory_residual_bytes`, `fastadhunter_allocator_committed_bytes`,
-`fastadhunter_allocator_committed_peak_bytes`,
-`fastadhunter_process_peak_rss_bytes`,
-`fastadhunter_process_major_page_faults_total` and
-`fastadhunter_process_minor_page_faults_total`. Those are sampled together on
-the 10 s telemetry poll, so they can lag this endpoint — which reads live — by
-up to one interval.
+This endpoint is `/api/v1/telemetry`'s `memory` block plus exactly
+`allocator_committed_bytes` and `allocator_committed_peak_bytes` — the two
+figures that read near zero under a different allocator, which is why they sit
+under `/debug/*` and carry no compatibility promise.
 
 The components and `minor_page_faults` are also persisted per sample into
 `GET /api/v1/history/perf`, which is where a *trend* in the residual is read —
-this endpoint and `/metrics` both serve one instant.
+this endpoint serves one instant.
 
 ---
 

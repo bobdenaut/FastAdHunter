@@ -8,9 +8,9 @@ use crate::schema::default_true;
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields, default)]
 pub struct HistoryConfig {
-    /// Master switch. `false` stops both history writers and the perf sampler,
-    /// mirroring `query_log.enabled` — see SECURITY.md (it narrows the
-    /// retained-data window).
+    /// Master switch, and the only one over what is persisted about traffic:
+    /// `false` stops both history writers and the perf sampler — see
+    /// SECURITY.md (it narrows the retained-data window).
     #[serde(default = "default_true")]
     pub enabled: bool,
     /// How often the perf/system/cache series is sampled and persisted. Boot:

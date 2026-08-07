@@ -7,8 +7,8 @@
 //! channel-drop numbers are polled snapshots the binary pushes in (those
 //! crates' own counters already exist for exactly this —
 //! `fah_dns::Pipeline::dropped_events`,
-//! `fah_dns::upstream::UpstreamPool::status`, `fah_rules::Matcher::len`/
-//! `heap_bytes` — this crate just never imports their types).
+//! `fah_dns::upstream::UpstreamPool::status`, `fah_rules::Matcher::len` —
+//! this crate just never imports their types).
 
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
@@ -19,7 +19,7 @@ use fah_model::{QueryEvent, RequestEvent, Verdict};
 use crate::histogram::Histogram;
 use crate::ruleset::RulesetSnapshot;
 use crate::snapshot::{CleanupSnapshot, MetricsSnapshot, StageHistogram, SwrSnapshot};
-use crate::upstream::UpstreamSnapshot;
+use fah_model::UpstreamSample;
 
 pub struct Metrics {
     pub(crate) queries_pass: AtomicU64,
@@ -66,7 +66,7 @@ pub struct Metrics {
     /// mid-update could otherwise show bytes freed by a run that has not been
     /// counted yet.
     pub(crate) cleanup: ArcSwap<CleanupSnapshot>,
-    pub(crate) upstreams: ArcSwap<Vec<UpstreamSnapshot>>,
+    pub(crate) upstreams: ArcSwap<Vec<UpstreamSample>>,
     pub(crate) ruleset: ArcSwap<RulesetSnapshot>,
     pub(crate) memory: ArcSwap<fah_model::MemoryBreakdown>,
 }
@@ -188,7 +188,7 @@ impl Metrics {
         self.cleanup.store(Arc::new(snapshot));
     }
 
-    pub fn set_upstreams(&self, snapshot: Vec<UpstreamSnapshot>) {
+    pub fn set_upstreams(&self, snapshot: Vec<UpstreamSample>) {
         self.upstreams.store(Arc::new(snapshot));
     }
 
@@ -209,6 +209,69 @@ impl Metrics {
     /// up to 4.9 ms on-device.
     pub fn memory(&self) -> fah_model::MemoryBreakdown {
         **self.memory.load()
+    }
+
+    /// The engine's operational state for `GET /api/v1/telemetry`, as the L1
+    /// value three crates share (`fah_model::EngineTelemetry`).
+    ///
+    /// Deliberately **not** built on [`Self::snapshot`]: that one allocates a
+    /// `Vec<u64>` of cumulative bucket counts per stage — five heap
+    /// allocations — and the telemetry surface reads none of them, only each
+    /// histogram's count and sum. The one allocation left is the upstream
+    /// vector, which is real data rather than a discarded intermediate.
+    pub fn engine_telemetry(&self) -> fah_model::EngineTelemetry {
+        let ruleset = self.ruleset.load();
+        let swr = **self.swr.load();
+        let cleanup = **self.cleanup.load();
+        fah_model::EngineTelemetry {
+            ruleset: fah_model::RulesetInfo {
+                rules: ruleset.rules as u64,
+                duplicates_removed: ruleset.duplicates_removed as u64,
+                compile_duration: ruleset.compile_duration,
+            },
+            counters: fah_model::EngineCounters {
+                dns: fah_model::DnsCounters {
+                    pass: self.queries_pass.load(Ordering::Relaxed),
+                    allow: self.queries_allow.load(Ordering::Relaxed),
+                    block: self.queries_block.load(Ordering::Relaxed),
+                    cache_hits: self.cache_hits.load(Ordering::Relaxed),
+                    cache_misses: self.cache_misses.load(Ordering::Relaxed),
+                    cache_stale: self.cache_stale.load(Ordering::Relaxed),
+                },
+                http: fah_model::HttpCounters {
+                    pass: self.requests_pass.load(Ordering::Relaxed),
+                    allow: self.requests_allow.load(Ordering::Relaxed),
+                    block: self.requests_block.load(Ordering::Relaxed),
+                    response_bytes: self.response_bytes.load(Ordering::Relaxed),
+                },
+                events_dropped: self.dropped_events.load(Ordering::Relaxed),
+                swr: fah_model::SwrCounters {
+                    enqueued: swr.enqueued,
+                    deduplicated: swr.deduplicated,
+                    dropped: swr.dropped,
+                    completed: swr.completed,
+                    failed: swr.failed,
+                },
+                cache_cleanup: fah_model::CacheCleanupCounters {
+                    runs: cleanup.runs,
+                    entries_removed: cleanup.entries_removed,
+                    bytes_freed: cleanup.bytes_freed,
+                    last_duration: std::time::Duration::from_micros(cleanup.last_duration_micros),
+                },
+            },
+            latency: fah_model::LatencyTotals {
+                dns: fah_model::DnsLatency {
+                    block: stage_totals(&self.duration_block),
+                    cache_hit: stage_totals(&self.duration_cache_hit),
+                    forward: stage_totals(&self.duration_forward),
+                },
+                http: fah_model::HttpLatency {
+                    block: stage_totals(&self.request_duration_block),
+                    forward: stage_totals(&self.request_duration_forward),
+                },
+            },
+            upstreams: self.upstreams.load().as_ref().clone(),
+        }
     }
 
     /// A point-in-time read of the whole registry for the perf sampler
@@ -237,6 +300,15 @@ impl Metrics {
             request_forward: stage_histogram(&self.request_duration_forward),
             upstreams: self.upstreams.load().as_ref().clone(),
         }
+    }
+}
+
+/// Reads one latency [`Histogram`] into the two numbers an average is made of,
+/// skipping the bucket vector [`stage_histogram`] builds.
+fn stage_totals(hist: &Histogram) -> fah_model::StageTotals {
+    fah_model::StageTotals {
+        count: hist.count(),
+        sum_seconds: hist.sum_seconds(),
     }
 }
 
@@ -396,9 +468,9 @@ mod tests {
         ));
         metrics.record(&event(Verdict::Pass, true, false, false)); // cache hit
         metrics.set_dropped_events(4);
-        metrics.set_upstreams(vec![UpstreamSnapshot {
+        metrics.set_upstreams(vec![UpstreamSample {
             address: "1.1.1.1".to_string(),
-            protocol: "udp",
+            protocol: fah_model::Protocol::Udp,
             attempts: 10,
             failures: 1,
             consecutive_failures: 0,
@@ -434,7 +506,6 @@ mod tests {
 
         metrics.set_ruleset(RulesetSnapshot {
             rules: 100,
-            heap_bytes: 4096,
             compile_duration: Duration::from_millis(50),
             duplicates_removed: 7,
         });

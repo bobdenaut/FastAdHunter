@@ -560,16 +560,14 @@ fn report_memory(_c: &mut Criterion) {
     let ruleset_bytes = matcher.heap_bytes();
     let ruleset_mb = ruleset_bytes as f64 / (1024.0 * 1024.0);
 
-    let rss = fah_metrics::resident_memory_bytes();
-    let rss_report = if rss == 0 {
-        "unavailable on this platform (/proc/self/status is Linux-only; \
-         the RB5009 figure is measured in p1-11)"
-            .to_string()
-    } else {
-        format!(
+    let rss_report = match fah_common::process::resident_bytes() {
+        Some(rss) => format!(
             "{:.1} MiB (budget: <= 128 MB)",
             rss as f64 / (1024.0 * 1024.0)
-        )
+        ),
+        None => "unavailable on this platform (/proc/self/status is Linux-only; \
+                 the RB5009 figure is measured in p1-11)"
+            .to_string(),
     };
 
     println!(

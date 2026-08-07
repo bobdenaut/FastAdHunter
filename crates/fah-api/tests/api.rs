@@ -13,8 +13,8 @@ use std::time::{Duration, SystemTime};
 
 use fah_api::{
     ApiKeyStore, ApiServer, AppStateBuilder, BucketCount, CacheClean, CacheSource, CacheStats,
-    ClientCount, ClientEntry, ConfigStore, DomainCount, HistorySource, PolicyCount, QueryLogPage,
-    QueryLogRequest, QueryRecord, StatsOverview, StatsSource, TelemetrySource,
+    ClientCount, ClientEntry, ConfigStore, DomainCount, HistorySource, PolicyCount, StatsOverview,
+    StatsSource, TelemetrySource,
 };
 use fah_config::{Config, RulesConfig};
 use fah_model::{
@@ -30,7 +30,6 @@ use serde_json::{json, Value};
 #[derive(Default)]
 struct FakeStats {
     clients: Mutex<Vec<ClientEntry>>,
-    queries: Mutex<Vec<QueryRecord>>,
     /// The `(enabled, retention_days)` last pushed by `apply_history_config` —
     /// lets a test prove `POST /api/v1/config` reaches the history writers live.
     applied_history: Mutex<Option<(bool, u32)>>,
@@ -46,10 +45,6 @@ impl FakeStats {
                 last_seen: SystemTime::UNIX_EPOCH,
                 queries_24h: 30_122,
                 blocked_24h: 3_020,
-            }]),
-            queries: Mutex::new(vec![QueryRecord {
-                event: fah_model::Event::dns(blocked_event(ip)),
-                client_name: Some("liviu-phone".to_string()),
             }]),
             applied_history: Mutex::new(None),
         }
@@ -106,21 +101,6 @@ impl StatsSource for FakeStats {
         }
     }
 
-    fn queries(&self, request: &QueryLogRequest) -> QueryLogPage {
-        let items: Vec<QueryRecord> = self
-            .queries
-            .lock()
-            .unwrap()
-            .iter()
-            .take(request.limit)
-            .cloned()
-            .collect();
-        QueryLogPage {
-            items,
-            next_cursor: None,
-        }
-    }
-
     fn clients(&self, _now: SystemTime) -> Vec<ClientEntry> {
         self.clients.lock().unwrap().clone()
     }
@@ -158,8 +138,6 @@ impl StatsSource for FakeStats {
         fah_model::StatsHeap {
             aggregates: 40_000,
             clients: 8_000,
-            ring: 300_000,
-            pending_log: 12_000,
         }
     }
 }
@@ -265,8 +243,6 @@ impl HistorySource for FakeHistory {
                     stats: fah_model::StatsHeap {
                         aggregates: 1_000_000,
                         clients: 500_000,
-                        ring: 499_000,
-                        pending_log: 1_000,
                     },
                 },
                 minor_page_faults: 4_211_337,
@@ -341,23 +317,91 @@ struct FakeTelemetry {
 }
 
 impl TelemetrySource for FakeTelemetry {
-    fn prometheus_text(&self) -> String {
-        "# HELP fastadhunter_queries_total Total DNS queries processed, by verdict.\n\
-         # TYPE fastadhunter_queries_total counter\n\
-         fastadhunter_queries_total{verdict=\"block\"} 1\n"
-            .to_string()
-    }
-
     /// `None` on purpose: the test binary does not install mimalloc, so the
     /// figures would be meaningless. This also exercises the absent branch —
     /// the allocator fields must serialize as `null`, never as a fabricated 0.
+    /// `None` on purpose: the kernel figures below must still be served, which
+    /// is exactly what an allocator swap would look like.
     fn allocator(&self) -> Option<fah_model::AllocatorStats> {
         None
+    }
+
+    fn process(&self) -> Option<fah_model::ProcessStats> {
+        Some(fah_model::ProcessStats {
+            peak_rss: 150_700_000,
+            major_page_faults: 0,
+            minor_page_faults: 4_211_337,
+        })
     }
 
     fn degraded(&self) -> bool {
         self.degraded
     }
+
+    /// Non-zero in every field the endpoint publishes, so a test asserting a
+    /// field is present cannot pass on a default-constructed value.
+    fn engine(&self) -> fah_model::EngineTelemetry {
+        fah_model::EngineTelemetry {
+            ruleset: fah_model::RulesetInfo {
+                rules: 1_043_886,
+                duplicates_removed: 41_207,
+                compile_duration: Duration::from_millis(7_412),
+            },
+            counters: fah_model::EngineCounters {
+                dns: fah_model::DnsCounters {
+                    pass: 812_044,
+                    allow: 1_201,
+                    block: 96_318,
+                    cache_hits: 640_119,
+                    cache_misses: 269_446,
+                    cache_stale: 3_187,
+                },
+                http: fah_model::HttpCounters {
+                    pass: 4_412,
+                    allow: 0,
+                    block: 918,
+                    response_bytes: 148_223_904,
+                },
+                events_dropped: 7,
+                swr: fah_model::SwrCounters {
+                    enqueued: 12_044,
+                    deduplicated: 3_311,
+                    dropped: 0,
+                    completed: 8_702,
+                    failed: 31,
+                },
+                cache_cleanup: fah_model::CacheCleanupCounters {
+                    runs: 308,
+                    entries_removed: 44_120,
+                    bytes_freed: 9_871_232,
+                    last_duration: Duration::from_micros(1_842),
+                },
+            },
+            latency: fah_model::LatencyTotals {
+                dns: fah_model::DnsLatency {
+                    block: stage(96_318, 2.114),
+                    cache_hit: stage(640_119, 18.907),
+                    forward: stage(269_446, 6_021.338),
+                },
+                http: fah_model::HttpLatency {
+                    block: stage(918, 0.031),
+                    forward: stage(4_412, 12.884),
+                },
+            },
+            upstreams: vec![fah_model::UpstreamSample {
+                address: "1.1.1.1:853".to_string(),
+                protocol: fah_model::Protocol::Dot,
+                attempts: 201_883,
+                failures: 12,
+                consecutive_failures: 0,
+                tls_handshakes: 41,
+            }],
+        }
+    }
+}
+
+fn stage(count: u64, sum_seconds: f64) -> fah_model::StageTotals {
+    fah_model::StageTotals { count, sum_seconds }
 }
 
 // ─── Harness ───────────────────────────────────────────────────────────
@@ -383,7 +427,6 @@ impl Drop for Harness {
 
 struct HarnessOptions {
     tls: bool,
-    metrics_public: bool,
     degraded: bool,
 }
 
@@ -391,7 +434,6 @@ impl Default for HarnessOptions {
     fn default() -> Self {
         Self {
             tls: true,
-            metrics_public: true,
             degraded: false,
         }
     }
@@ -406,7 +448,6 @@ async fn start_with(options: HarnessOptions) -> Harness {
     let data_dir = tempfile::tempdir().unwrap();
 
     let mut config = Config::default();
-    config.api.metrics_public = options.metrics_public;
     config.api.tls = options.tls;
     // No default lists: the shipped oisd entry would have the scheduler (and
     // some tests) reaching for the network.
@@ -524,7 +565,7 @@ async fn every_v1_route_requires_the_key() {
     // A representative route from each group; none may bypass auth.
     for path in [
         "/api/v1/stats",
-        "/api/v1/queries",
+        "/api/v1/telemetry",
         "/api/v1/clients",
         "/api/v1/history/summary",
         "/api/v1/history/perf",
@@ -541,24 +582,21 @@ async fn every_v1_route_requires_the_key() {
 }
 
 #[tokio::test]
-async fn health_and_metrics_are_public_by_default_but_lock_down_when_configured() {
+async fn health_is_public_and_every_other_route_is_not() {
     let harness = start().await;
-    for path in ["/health", "/metrics"] {
+
+    let health = harness
+        .client
+        .get(harness.url("/health"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(health.status(), 200);
+
+    for path in ["/api/v1/telemetry", "/api/v1/stats", "/api/v1/cache"] {
         let response = harness.client.get(harness.url(path)).send().await.unwrap();
-        assert_eq!(response.status(), 200, "{path} is exempt by default");
-    }
-
-    let locked = start_with(HarnessOptions {
-        metrics_public: false,
-        ..Default::default()
-    })
-    .await;
-    for path in ["/health", "/metrics"] {
-        let response = locked.client.get(locked.url(path)).send().await.unwrap();
-        assert_eq!(response.status(), 401, "{path} follows metrics_public");
-
-        let authorized = locked.get(path).await;
-        assert_eq!(authorized.status(), 200, "{path} still works with the key");
+        assert_eq!(response.status(), 401, "{path} needs the key");
+        assert_eq!(harness.get(path).await.status(), 200, "{path} with the key");
     }
 }
 
@@ -570,6 +608,15 @@ async fn an_unknown_route_is_a_json_not_found() {
 
     let body: Value = response.json().await.unwrap();
     assert_eq!(body["error"]["code"], "not_found");
+
+    // Auth wraps the whole router, so it answers before routing does.
+    let anonymous = harness
+        .client
+        .get(harness.url("/api/v1/nope"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(anonymous.status(), 401);
 }
 
 // ─── TLS ───────────────────────────────────────────────────────────────
@@ -622,25 +669,12 @@ async fn health_reports_degraded_when_every_upstream_is_failing() {
 }
 
 #[tokio::test]
-async fn metrics_serves_prometheus_text_with_the_right_content_type() {
+async fn metrics_is_gone() {
     let harness = start().await;
-    let response = harness.get("/metrics").await;
-
-    let content_type = response
-        .headers()
-        .get(reqwest::header::CONTENT_TYPE)
-        .unwrap()
-        .to_str()
-        .unwrap()
-        .to_string();
-    assert!(content_type.starts_with("text/plain"), "got {content_type}");
-
-    let body = response.text().await.unwrap();
-    assert!(body.contains("# HELP fastadhunter_queries_total"));
-    assert!(body.contains("# TYPE fastadhunter_queries_total counter"));
+    assert_eq!(harness.get("/metrics").await.status(), 404);
 }
 
-// ─── Statistics & query log ────────────────────────────────────────────
+// ─── Statistics ────────────────────────────────────────────────────────
 
 #[tokio::test]
 async fn stats_matches_the_documented_shape() {
@@ -664,51 +698,149 @@ async fn stats_matches_the_documented_shape() {
     assert_eq!(body["policies"][0]["blocked"], 244);
 }
 
-#[tokio::test]
-async fn queries_matches_the_documented_shape() {
-    let harness = start().await;
-    let body = harness.get_json("/api/v1/queries").await;
+// ─── Telemetry ─────────────────────────────────────────────────────────
 
-    let item = &body["items"][0];
-    assert_eq!(item["ts"], "1970-01-01T00:00:00Z");
-    assert_eq!(item["client"], "192.168.10.15");
-    assert_eq!(item["client_name"], "liviu-phone");
-    assert_eq!(item["domain"], "ads.example.com");
-    assert_eq!(item["qtype"], "A");
-    assert_eq!(item["verdict"], "block");
-    assert_eq!(item["rule"], "||ads.example.com^");
-    assert_eq!(item["list"], "oisd-basic");
-    assert_eq!(item["duration_ms"], 0.3);
-    assert!(item["upstream"].is_null());
-    assert_eq!(item["cached"], false);
-    assert!(body["next_cursor"].is_null());
+#[tokio::test]
+async fn there_is_no_query_log_endpoint() {
+    let harness = start().await;
+    assert_eq!(harness.get("/api/v1/queries").await.status(), 404);
 }
 
 #[tokio::test]
-async fn query_filters_are_validated() {
+async fn telemetry_matches_the_documented_shape() {
     let harness = start().await;
+    let body = harness.get_json("/api/v1/telemetry").await;
 
-    let response = harness.get("/api/v1/queries?verdict=maybe").await;
-    assert_eq!(response.status(), 400);
-    let body: Value = response.json().await.unwrap();
-    assert_eq!(body["error"]["code"], "bad_request");
+    assert!(body["process"]["version"].is_string());
+    assert!(body["process"]["uptime_seconds"].is_u64());
 
-    assert_eq!(
-        harness.get("/api/v1/queries?client=nope").await.status(),
-        400
+    assert_eq!(body["ruleset"]["rules"], 1_043_886);
+    assert_eq!(body["ruleset"]["duplicates_removed"], 41_207);
+    assert_eq!(body["ruleset"]["compile_duration_seconds"], 7.412);
+    assert!(
+        body["ruleset"].get("heap_bytes").is_none(),
+        "ruleset size has one home, and it is memory.ruleset_bytes"
     );
+
+    assert_eq!(body["counters"]["dns"]["block"], 96_318);
+    assert_eq!(body["counters"]["dns"]["cache_stale"], 3_187);
+    assert_eq!(body["counters"]["http"]["response_bytes"], 148_223_904);
+    assert_eq!(body["counters"]["events_dropped"], 7);
+    assert_eq!(body["counters"]["swr"]["failed"], 31);
     assert_eq!(
-        harness.get("/api/v1/queries?from=yesterday").await.status(),
-        400
+        body["counters"]["cache_cleanup"]["last_duration_micros"],
+        1_842
     );
-    // Valid filters pass through.
+
+    let upstream = &body["upstreams"][0];
+    assert_eq!(upstream["address"], "1.1.1.1:853");
+    assert_eq!(upstream["protocol"], "dot");
+    assert_eq!(upstream["attempts"], 201_883);
+}
+
+/// Both figures, never a pre-divided average: a lifetime mean flattens within
+/// hours of uptime, so the endpoint hands over the numerator and denominator
+/// and lets the caller delta them.
+#[tokio::test]
+async fn every_latency_stage_carries_count_and_sum_but_no_average() {
+    let harness = start().await;
+    let latency = harness.get_json("/api/v1/telemetry").await["latency"].clone();
+
+    for (protocol, stages) in [
+        ("dns", &["block", "cache_hit", "forward"][..]),
+        ("http", &["block", "forward"][..]),
+    ] {
+        for stage in stages {
+            let entry = &latency[protocol][stage];
+            assert!(entry["count"].is_u64(), "{protocol}.{stage} count");
+            assert!(entry["sum_seconds"].is_f64(), "{protocol}.{stage} sum");
+            assert!(
+                entry.get("mean_seconds").is_none() && entry.get("avg").is_none(),
+                "{protocol}.{stage} must not serve a lifetime average"
+            );
+        }
+    }
+    assert_eq!(latency["dns"]["forward"]["count"], 269_446);
+    assert_eq!(latency["http"]["block"]["sum_seconds"], 0.031);
+}
+
+/// The producer boundary, asserted structurally: `/debug/memory` is the
+/// telemetry memory block **plus exactly the two allocator figures**. If a
+/// future allocator field lands on the stable surface, this fails.
+#[tokio::test]
+async fn debug_memory_is_the_telemetry_block_plus_only_allocator_internals() {
+    let harness = start().await;
+    let telemetry = harness.get_json("/api/v1/telemetry").await;
+    let debug = harness.get_json("/api/v1/debug/memory").await;
+
+    let memory = telemetry["memory"].as_object().expect("memory object");
+    let debug = debug.as_object().expect("debug/memory object");
+
+    for key in memory.keys() {
+        assert!(debug.contains_key(key), "/debug/memory dropped {key}");
+    }
+    let extra: Vec<_> = debug
+        .keys()
+        .filter(|key| !memory.contains_key(*key))
+        .cloned()
+        .collect();
     assert_eq!(
-        harness
-            .get("/api/v1/queries?verdict=block&limit=10&domain=ads")
-            .await
-            .status(),
-        200
+        extra,
+        vec![
+            "allocator_committed_bytes".to_string(),
+            "allocator_committed_peak_bytes".to_string()
+        ],
+        "only allocator-specific figures may be debug-only"
     );
+}
+
+/// The reason the two live behind separate ports. `FakeTelemetry::allocator`
+/// returns `None` — what swapping mimalloc out looks like — and the kernel
+/// figures must still be served, because `/telemetry` promises them. A single
+/// shared `Option` nulled all three here.
+#[tokio::test]
+async fn the_kernel_figures_survive_an_allocator_that_reports_nothing() {
+    let harness = start().await;
+    let memory = harness.get_json("/api/v1/telemetry").await["memory"].clone();
+
+    assert_eq!(memory["process_peak_rss"], 150_700_000u64);
+    assert_eq!(memory["major_page_faults"], 0);
+    assert_eq!(memory["minor_page_faults"], 4_211_337u64);
+
+    let debug = harness.get_json("/api/v1/debug/memory").await;
+    assert!(
+        debug["allocator_committed_bytes"].is_null(),
+        "the allocator reported nothing, so only its own fields may be null"
+    );
+}
+
+/// `/telemetry.cache` must be derived from the same port snapshot `/cache` is,
+/// so the two can never report different numbers for the same instant.
+#[tokio::test]
+async fn the_telemetry_cache_block_equals_the_cache_endpoint() {
+    let harness = start().await;
+    let telemetry = harness.get_json("/api/v1/telemetry").await;
+    let cache = harness.get_json("/api/v1/cache").await;
+
+    assert_eq!(telemetry["cache"], cache);
+}
+
+/// Proves `collect()` gathered RSS and the components in one pass: if they came
+/// from two reads the identity would only hold by luck.
+#[tokio::test]
+async fn the_residual_is_consistent_within_a_single_response() {
+    let harness = start().await;
+    let memory = harness.get_json("/api/v1/telemetry").await["memory"].clone();
+
+    let accounted = memory["accounted_bytes"].as_u64().expect("accounted");
+    match memory["process_rss"].as_u64() {
+        Some(rss) => assert_eq!(
+            memory["residual_bytes"].as_u64().expect("residual"),
+            rss.saturating_sub(accounted)
+        ),
+        // Off Linux there is no procfs, so the residual is not computable.
+        None => assert!(memory["residual_bytes"].is_null()),
+    }
 }
 
 // ─── History (persisted series) ────────────────────────────────────────
@@ -838,10 +970,10 @@ async fn history_perf_derives_the_residual_from_each_row() {
     let memory = &body["items"][0]["memory"];
     assert_eq!(memory["ruleset_bytes"], 23_000_000u64);
     assert_eq!(memory["stats_clients_bytes"], 500_000);
-    assert_eq!(memory["accounted_bytes"], 30_000_000u64);
-    // 55,000,000 RSS − 30,000,000 accounted, computed on read: the row stores
+    assert_eq!(memory["accounted_bytes"], 29_500_000u64);
+    // 55,000,000 RSS − 29,500,000 accounted, computed on read: the row stores
     // neither the residual nor a second RSS.
-    assert_eq!(memory["residual_bytes"], 25_000_000u64);
+    assert_eq!(memory["residual_bytes"], 25_500_000u64);
     assert!(memory.get("process_rss").is_none());
     assert_eq!(body["items"][0]["minor_page_faults"], 4_211_337u64);
 
@@ -875,8 +1007,6 @@ async fn live_and_persisted_breakdowns_use_the_same_keys_and_arithmetic() {
         "cache_estimated_bytes",
         "stats_aggregates_bytes",
         "stats_clients_bytes",
-        "query_log_ring_bytes",
-        "query_log_pending_bytes",
         "accounted_bytes",
         "residual_bytes",
     ] {
@@ -888,9 +1018,7 @@ async fn live_and_persisted_breakdowns_use_the_same_keys_and_arithmetic() {
         live["ruleset_bytes"].as_u64().unwrap()
             + live["cache_estimated_bytes"].as_u64().unwrap()
             + live["stats_aggregates_bytes"].as_u64().unwrap()
-            + live["stats_clients_bytes"].as_u64().unwrap()
-            + live["query_log_ring_bytes"].as_u64().unwrap()
-            + live["query_log_pending_bytes"].as_u64().unwrap(),
+            + live["stats_clients_bytes"].as_u64().unwrap(),
     );
 }
 
@@ -1003,16 +1131,13 @@ async fn debug_memory_reports_the_resident_parts() {
         body["process_rss"]
     );
 
-    // `FakeTelemetry::allocator` returns `None`, so every allocator field must
+    // `FakeTelemetry::allocator` returns `None`, so both allocator fields must
     // be present and `null` — never absent (a client cannot tell a renamed
     // field from an unavailable one) and never `0`, which would chart as a real
     // measurement of an allocator holding nothing (see `crates/fastadhunter/src/allocator.rs`).
     for field in [
         "allocator_committed_bytes",
         "allocator_committed_peak_bytes",
-        "process_peak_rss",
-        "major_page_faults",
-        "minor_page_faults",
     ] {
         let value = body
             .get(field)
@@ -1022,6 +1147,11 @@ async fn debug_memory_reports_the_resident_parts() {
             "{field} must be null when the allocator cannot report, not {value:?}"
         );
     }
+    // The kernel figures come from `getrusage`, not the allocator, so they are
+    // unaffected by that `None` — asserted here as well as on `/telemetry`
+    // because `/debug/memory` embeds the same block.
+    assert_eq!(body["process_peak_rss"], 150_700_000u64);
+    assert_eq!(body["minor_page_faults"], 4_211_337u64);
 }
 
 // ─── Clients ───────────────────────────────────────────────────────────
@@ -1389,8 +1519,10 @@ async fn overlapping_lists_report_compiled_rules_net_of_duplicates() {
     let deadline = std::time::Instant::now() + Duration::from_secs(10);
     loop {
         let body = harness.get_json("/api/v1/lists").await;
-        if body["compiled_rules"] == 3 {
-            assert_eq!(body["duplicates_removed"], 2);
+        // Both conditions, not just the rule count: list `b` alone also
+        // compiles to 3 rules with 0 duplicates, so waiting on `compiled_rules`
+        // by itself can catch the single-list compile between the two refreshes.
+        if body["compiled_rules"] == 3 && body["duplicates_removed"] == 2 {
             assert_eq!(
                 body["items"][0]["rules_active_dns"], 2,
                 "per-list counts stay parse-based, before the merge"

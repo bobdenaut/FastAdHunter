@@ -356,7 +356,8 @@ GET   /health
 GET   /metrics                      Prometheus: QPS, latencies, cache,
                                     SWR refreshes, memory breakdown
 GET   /api/v1/stats                 aggregates, top domains/clients
-GET   /api/v1/queries               query log, filtered + paginated
+GET   /api/v1/telemetry             whole engine state as JSON: counters,
+                                    latency, upstreams, cache, memory
 GET   /api/v1/clients               per-client view; PUT to name one
 GET   /api/v1/lists                 rule lists; POST /lists/refresh
 POST  /api/v1/rules/test            verdict for a domain, with the rule
@@ -378,7 +379,7 @@ mounted volumes, outside the image.
 
 ```text
 /config    small, back this up      TOML, API key, TLS certificates
-/data      bulky, regenerable      cached lists, query log, history
+/data      bulky, regenerable      cached lists, snapshots, history
 ```
 
 The image is distroless/static with a statically linked musl binary — no shell,
@@ -432,7 +433,7 @@ FastAdHunter/
 │   ├── fah-http/         # HTTP engine: proxy, pass-through, URL filtering
 │   ├── fah-api/          # Axum REST + WebSocket
 │   ├── fah-metrics/      # ops telemetry: Prometheus
-│   ├── fah-stats/        # product data: query log, aggregates, history
+│   ├── fah-stats/        # product data: aggregates, clients, history
 │   └── fastadhunter/     # thin binary — wires everything
 ├── tests/                # workspace integration tests
 ├── benches/              # criterion benches vs PERFORMANCE.md budgets

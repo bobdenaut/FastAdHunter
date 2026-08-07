@@ -1490,7 +1490,7 @@ impl UrlIndex {
         matched.then_some(record.is_allow())
     }
 
-    /// Reconstructs the rule's canonical text for the query log. Allocates —
+    /// Reconstructs the rule's canonical text for reporting. Allocates —
     /// call only once a rule has decided a request, never on `Pass`.
     pub(crate) fn rule_text(&self, index: u32) -> String {
         let record = &self.records[index as usize];

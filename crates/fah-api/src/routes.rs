@@ -9,7 +9,7 @@ use std::time::{Duration, SystemTime};
 
 use axum::extract::{Path, Query, State, WebSocketUpgrade};
 use axum::http::StatusCode;
-use axum::response::{IntoResponse, Response};
+use axum::response::Response;
 use axum::routing::{get, post, put};
 use axum::{Json, Router};
 use fah_config::{AssignmentConfig, PolicyConfig, RuleListConfig};
@@ -18,15 +18,11 @@ use fah_rules::{ListPatch, ListStatus, RefreshResult};
 
 use crate::error::{ApiError, ApiResult};
 use crate::events::{self, Event};
-use crate::ports::{HistorySource, QueryLogRequest, VerdictFilter};
+use crate::ports::HistorySource;
 use crate::state::AppState;
+use crate::telemetry::{MemorySnapshot, TelemetryResponse, TelemetrySnapshot};
 use crate::timestamp;
 use crate::wire::*;
-
-/// `GET /api/v1/queries` pagination bounds (API.md: "limit (default 100, max
-/// 1000)").
-const DEFAULT_QUERY_LIMIT: usize = 100;
-const MAX_QUERY_LIMIT: usize = 1000;
 
 /// `GET /api/v1/history/*` bounds (API.md §History). The summary budget covers
 /// 90 days of hourly points (2160) whole, so the default chart is never
@@ -52,7 +48,7 @@ const DEFAULT_POLICY: &str = "default";
 pub fn router(state: Arc<AppState>) -> Router {
     let v1 = Router::new()
         .route("/stats", get(stats))
-        .route("/queries", get(queries))
+        .route("/telemetry", get(telemetry))
         .route("/clients", get(clients))
         .route("/history/summary", get(history_summary))
         .route("/history/perf", get(history_perf))
@@ -89,7 +85,6 @@ pub fn router(state: Arc<AppState>) -> Router {
 
     Router::new()
         .route("/health", get(health))
-        .route("/metrics", get(metrics))
         .nest("/api/v1", v1)
         .fallback(not_found)
         .layer(axum::middleware::from_fn_with_state(
@@ -115,17 +110,6 @@ async fn health(State(state): State<Arc<AppState>>) -> Json<HealthResponse> {
         version: env!("CARGO_PKG_VERSION"),
         uptime_seconds: state.uptime_seconds(),
     })
-}
-
-async fn metrics(State(state): State<Arc<AppState>>) -> Response {
-    (
-        [(
-            axum::http::header::CONTENT_TYPE,
-            "text/plain; version=0.0.4; charset=utf-8",
-        )],
-        state.telemetry.prometheus_text(),
-    )
-        .into_response()
 }
 
 // ─── Cache & memory ────────────────────────────────────────────────────
@@ -156,108 +140,37 @@ async fn cache_clean(
 /// `MemoryResponse::allocator_committed_bytes`. `minor_page_faults` is the one
 /// to pair with the residual: a rising fault rate at flat RSS is purge thrash,
 /// not a leak.
-///
-/// Same figures as `fastadhunter_memory_component_bytes` on `/metrics`, read
-/// here at request time rather than at the last poll, so the two can differ by
-/// one interval.
-async fn debug_memory(State(state): State<Arc<AppState>>) -> Json<MemoryResponse> {
-    let cache = state.cache.stats();
-    // Same `fah_model::MemoryBreakdown` the metrics path uses, so `accounted`
-    // and `residual` are defined once. Adding a component updates both
-    // surfaces or neither — never one silently (p2-07).
-    let memory = fah_model::MemoryBreakdown {
-        components: fah_model::MemoryComponents {
-            ruleset: state.rules.matcher().heap_bytes() as u64,
-            cache: cache.estimated_bytes,
-            stats: state.stats.heap(),
-        },
-        rss: crate::rss::process_rss(),
-        // Via the telemetry port, so this crate never learns which allocator is
-        // installed (see `crates/fastadhunter/src/allocator.rs`) — and read here rather than lifted from the last
-        // poll, keeping every field in this breakdown to one instant.
-        allocator: state.telemetry.allocator(),
-    };
-    Json(MemoryResponse {
-        components: crate::wire::MemoryComponentsResponse::of(&memory),
-        cache_entries: cache.entries,
-        process_rss: memory.rss,
-        allocator_committed_bytes: memory.allocator.map(|a| a.current_commit),
-        allocator_committed_peak_bytes: memory.allocator.map(|a| a.peak_commit),
-        process_peak_rss: memory.allocator.map(|a| a.peak_rss),
-        major_page_faults: memory.allocator.map(|a| a.page_faults),
-        minor_page_faults: memory.allocator.map(|a| a.minor_page_faults),
-    })
+async fn debug_memory(State(state): State<Arc<AppState>>) -> Json<DebugMemoryResponse> {
+    // Same gathering site `/telemetry`'s memory block uses, so the two cannot
+    // report a different RSS or residual for the same instant — and `accounted`
+    // / `residual` stay defined once, in `fah_model::MemoryBreakdown` (p2-07).
+    // Not the whole `TelemetrySnapshot`: the engine read is pure waste here.
+    let snapshot = MemorySnapshot::collect(&state);
+    Json(DebugMemoryResponse::of(
+        snapshot.breakdown(),
+        snapshot.cache_entries(),
+    ))
 }
 
-// ─── Statistics & query log ────────────────────────────────────────────
+/// The whole engine state in one JSON request: ruleset, lifetime counters,
+/// per-stage latency totals, upstreams, cache and memory (see
+/// [`crate::telemetry`]).
+///
+/// Everything here is produced by FastAdHunter or by the kernel, so the shape
+/// is a stable contract. Allocator-specific figures stay on `/debug/memory`,
+/// which promises nothing — swapping the allocator must not break a dashboard.
+async fn telemetry(State(state): State<Arc<AppState>>) -> Json<TelemetryResponse> {
+    Json(TelemetrySnapshot::collect(&state).into())
+}
+
+// ─── Statistics ────────────────────────────────────────────────────────
 
 async fn stats(State(state): State<Arc<AppState>>) -> Json<StatsResponse> {
     Json(state.stats.overview(SystemTime::now()).into())
 }
 
-async fn queries(
-    State(state): State<Arc<AppState>>,
-    Query(params): Query<HashMap<String, String>>,
-) -> ApiResult<Json<QueryPageResponse>> {
-    let request = parse_query_params(&params)?;
-    Ok(Json(state.stats.queries(&request).into()))
-}
-
-fn parse_query_params(params: &HashMap<String, String>) -> ApiResult<QueryLogRequest> {
-    let limit = match params.get("limit") {
-        Some(raw) => raw
-            .parse::<usize>()
-            .map_err(|_| ApiError::BadRequest(format!("limit must be a number, got {raw:?}")))?
-            .clamp(1, MAX_QUERY_LIMIT),
-        None => DEFAULT_QUERY_LIMIT,
-    };
-
-    let client = match params.get("client") {
-        Some(raw) => Some(
-            raw.parse::<IpAddr>()
-                .map_err(|_| ApiError::BadRequest(format!("client must be an IP, got {raw:?}")))?,
-        ),
-        None => None,
-    };
-
-    let verdict = match params.get("verdict").map(String::as_str) {
-        Some("allow") => Some(VerdictFilter::Allow),
-        Some("block") => Some(VerdictFilter::Block),
-        Some("pass") => Some(VerdictFilter::Pass),
-        Some(other) => {
-            return Err(ApiError::BadRequest(format!(
-                "verdict must be one of allow|block|pass, got {other:?}"
-            )))
-        }
-        None => None,
-    };
-
-    let kind = match params.get("kind").map(String::as_str) {
-        Some("dns") => Some(fah_model::EventKind::Dns),
-        Some("http") => Some(fah_model::EventKind::Http),
-        Some(other) => {
-            return Err(ApiError::BadRequest(format!(
-                "kind must be one of dns|http, got {other:?}"
-            )))
-        }
-        None => None,
-    };
-
-    Ok(QueryLogRequest {
-        limit,
-        cursor: params.get("cursor").cloned(),
-        client,
-        domain: params.get("domain").cloned(),
-        verdict,
-        from: timestamp_param(params, "from")?,
-        to: timestamp_param(params, "to")?,
-        kind,
-        policy: params.get("policy").cloned(),
-    })
-}
-
-/// An RFC 3339 `from`/`to` query parameter — shared by the query log and the
-/// history endpoints, which document the same spelling.
+/// An RFC 3339 `from`/`to` query parameter, as the history endpoints document
+/// it.
 fn timestamp_param(params: &HashMap<String, String>, key: &str) -> ApiResult<Option<SystemTime>> {
     match params.get(key) {
         Some(raw) => timestamp::from_rfc3339(raw).map(Some).ok_or_else(|| {
@@ -383,7 +296,7 @@ fn parse_range(
 }
 
 /// A positive integer query parameter, clamped to its documented ceiling
-/// (same contract as `GET /api/v1/queries`' `limit`).
+/// (the same clamping contract every bounded list parameter uses).
 fn parse_bounded(
     params: &HashMap<String, String>,
     key: &str,
@@ -1421,52 +1334,22 @@ mod tests {
     use super::*;
 
     #[test]
-    fn limit_defaults_and_is_capped_at_the_documented_maximum() {
-        let empty = HashMap::new();
+    fn a_bad_timestamp_is_rejected_rather_than_ignored() {
+        let params = HashMap::from([("from".to_string(), "yesterday".to_string())]);
+        assert!(matches!(
+            timestamp_param(&params, "from"),
+            Err(ApiError::BadRequest(_))
+        ));
+        assert_eq!(timestamp_param(&HashMap::new(), "from").unwrap(), None);
+    }
+
+    #[test]
+    fn a_timestamp_parses_into_the_range() {
+        let params = HashMap::from([("from".to_string(), "1970-01-01T00:00:00Z".to_string())]);
         assert_eq!(
-            parse_query_params(&empty).unwrap().limit,
-            DEFAULT_QUERY_LIMIT
+            timestamp_param(&params, "from").unwrap(),
+            Some(SystemTime::UNIX_EPOCH)
         );
-
-        let params = HashMap::from([("limit".to_string(), "5000".to_string())]);
-        assert_eq!(parse_query_params(&params).unwrap().limit, MAX_QUERY_LIMIT);
-
-        let params = HashMap::from([("limit".to_string(), "0".to_string())]);
-        assert_eq!(parse_query_params(&params).unwrap().limit, 1);
-    }
-
-    #[test]
-    fn bad_filter_values_are_rejected_rather_than_ignored() {
-        for (key, value) in [
-            ("limit", "many"),
-            ("client", "not-an-ip"),
-            ("verdict", "maybe"),
-            ("from", "yesterday"),
-        ] {
-            let params = HashMap::from([(key.to_string(), value.to_string())]);
-            assert!(
-                matches!(parse_query_params(&params), Err(ApiError::BadRequest(_))),
-                "{key}={value} must be rejected"
-            );
-        }
-    }
-
-    #[test]
-    fn filters_parse_into_the_request() {
-        let params = HashMap::from([
-            ("client".to_string(), "192.168.1.10".to_string()),
-            ("domain".to_string(), "ads".to_string()),
-            ("verdict".to_string(), "block".to_string()),
-            ("from".to_string(), "1970-01-01T00:00:00Z".to_string()),
-            ("cursor".to_string(), "42".to_string()),
-        ]);
-        let request = parse_query_params(&params).unwrap();
-
-        assert_eq!(request.client, Some("192.168.1.10".parse().unwrap()));
-        assert_eq!(request.domain.as_deref(), Some("ads"));
-        assert_eq!(request.verdict, Some(VerdictFilter::Block));
-        assert_eq!(request.from, Some(SystemTime::UNIX_EPOCH));
-        assert_eq!(request.cursor.as_deref(), Some("42"));
     }
 
     #[test]

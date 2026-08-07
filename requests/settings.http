@@ -22,7 +22,7 @@ GET {{base}}/config
 
 ### Runtime key — expect { "applied": true, "restart_required": false }.
 ### Only four keys are runtime (CONFIGURATION.md §Mutability classes): the two
-### [history] ones, api.metrics_public, and this. Everything else is read once
+### [history] ones and this. Everything else is read once
 ### at startup and is therefore boot.
 POST {{base}}/config
 {{auth}}
@@ -102,17 +102,6 @@ Content-Type: application/json
   }
 }
 
-### Put /health and /metrics behind the API key.
-POST {{base}}/config
-{{auth}}
-Content-Type: application/json
-
-{
-  "api": {
-    "metrics_public": false
-  }
-}
-
 ### Log level — boot: expect { "restart_required": true }. The tracing filter is
 ### built once at init, so the new level applies at the next start.
 POST {{base}}/config
@@ -125,18 +114,16 @@ Content-Type: application/json
   }
 }
 
-### Query log retention — boot: expect { "restart_required": true }. Note these
-### caps govern the /data segments, which NO endpoint reads yet; GET /queries
-### serves the in-RAM ring only (CONFIGURATION.md §What reads the query log).
+### An unknown section is a HARD FAILURE, not a warning — the root config is
+### `deny_unknown_fields`. Expect 422. The same is true at boot: a stale
+### `[query_log]` left in /config/fastadhunter.toml stops the binary starting.
 POST {{base}}/config
 {{auth}}
 Content-Type: application/json
 
 {
   "query_log": {
-    "enabled": true,
-    "retention_days": 7,
-    "retention_max_mb": 1024
+    "enabled": true
   }
 }
 

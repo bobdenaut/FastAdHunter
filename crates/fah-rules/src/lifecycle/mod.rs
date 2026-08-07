@@ -529,7 +529,7 @@ impl ListManager {
     /// or to lose the race [`Self::remove_list`] documents. Nothing reads a
     /// stranded copy ([`Self::compile`] iterates configured entries and looks
     /// each id up, never the directory), so it is disk cost only: up to
-    /// `MAX_LIST_BYTES` each, on a volume shared with the query log.
+    /// `MAX_LIST_BYTES` each, on a volume shared with the history series.
     ///
     /// **Boot only, and deliberately.** Here the scheduler has not spawned and
     /// no API listener is bound, so nothing else can be writing to `lists/`.

@@ -29,8 +29,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use fah_api::{
     ApiKeyStore, ApiServer, AppStateBuilder, CacheClean, CacheSource, CacheStats, ClientEntry,
-    ConfigStore, HistorySource, QueryLogPage, QueryLogRequest, StatsOverview, StatsSource,
-    TelemetrySource,
+    ConfigStore, HistorySource, StatsOverview, StatsSource, TelemetrySource,
 };
 use fah_config::{Config, RulesConfig};
 use fah_model::{
@@ -64,8 +63,6 @@ const SAMPLE_MEMORY: fah_model::MemoryComponents = fah_model::MemoryComponents {
     stats: fah_model::StatsHeap {
         aggregates: 1_000_000,
         clients: 500_000,
-        ring: 499_000,
-        pending_log: 1_000,
     },
 };
 const SAMPLE_MINOR_FAULTS: u64 = 4_211_337;
@@ -185,13 +182,13 @@ async fn history_is_written_to_disk_and_served_over_http() {
     // derived from this row's own RSS rather than read back from it (p2-07).
     assert_eq!(sample["memory"]["ruleset_bytes"], SAMPLE_MEMORY.ruleset);
     assert_eq!(
-        sample["memory"]["query_log_ring_bytes"],
-        SAMPLE_MEMORY.stats.ring
+        sample["memory"]["stats_clients_bytes"],
+        SAMPLE_MEMORY.stats.clients
     );
-    assert_eq!(sample["memory"]["accounted_bytes"], 30_000_000);
+    assert_eq!(sample["memory"]["accounted_bytes"], 29_500_000);
     assert_eq!(
         sample["memory"]["residual_bytes"],
-        SAMPLE_RSS_BYTES - 30_000_000
+        SAMPLE_RSS_BYTES - 29_500_000
     );
     assert_eq!(sample["minor_page_faults"], SAMPLE_MINOR_FAULTS);
     assert!(
@@ -346,12 +343,7 @@ async fn write_rollup_day(data_dir: &std::path::Path, day_epoch: u64) {
     config.history.enabled = true;
     // Wide window so this writer never prunes the fresh file it is laying down.
     config.history.retention_days = 3_650;
-    let stats = Stats::new(
-        &config.stats,
-        &config.query_log,
-        &config.history,
-        data_dir.to_path_buf(),
-    );
+    let stats = Stats::new(&config.stats, &config.history, data_dir.to_path_buf());
     stats.boot().await;
     let hour = day_epoch * 24;
     stats.record(event(
@@ -410,7 +402,6 @@ impl Harness {
 
         let stats = Arc::new(Stats::new(
             &config.stats,
-            &config.query_log,
             &config.history,
             data_dir.path().to_path_buf(),
         ));
@@ -522,13 +513,6 @@ impl StatsSource for StatsPort {
         vec![]
     }
 
-    fn queries(&self, _request: &QueryLogRequest) -> QueryLogPage {
-        QueryLogPage {
-            items: vec![],
-            next_cursor: None,
-        }
-    }
-
     fn clients(&self, _now: SystemTime) -> Vec<ClientEntry> {
         vec![]
     }
@@ -573,16 +557,20 @@ impl HistorySource for StatsPort {
 struct NoTelemetry;
 
 impl TelemetrySource for NoTelemetry {
-    fn prometheus_text(&self) -> String {
-        String::new()
-    }
-
     fn degraded(&self) -> bool {
         false
     }
 
     fn allocator(&self) -> Option<fah_model::AllocatorStats> {
         None
+    }
+
+    fn process(&self) -> Option<fah_model::ProcessStats> {
+        None
+    }
+
+    fn engine(&self) -> fah_model::EngineTelemetry {
+        fah_model::EngineTelemetry::default()
     }
 }
 

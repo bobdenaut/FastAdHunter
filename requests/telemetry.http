@@ -1,0 +1,56 @@
+# Engine telemetry — API.md §`GET /api/v1/telemetry`
+#
+# The whole engine state as JSON in one call: ruleset, lifetime counters,
+# per-stage latency totals, upstreams, cache and memory. Replaces polling
+# /cache and /debug/memory separately.
+#
+# Stable contract: new fields may be added, existing ones never change meaning
+# or units. Figures that may change with the implementation live under
+# /debug/* instead — see the boundary below.
+
+@base = {{host}}/api/v1
+@auth = Authorization: Bearer {{apiKey}}
+
+### Everything. Blocks: process, ruleset, counters, latency, upstreams, cache,
+### memory.
+GET {{base}}/telemetry
+{{auth}}
+
+### Auth is required, like every /api/v1 route — expect 401.
+GET {{base}}/telemetry
+
+# ─── Reading the response ──────────────────────────────────────────────
+#
+# EVERY counter is process-lifetime cumulative. Charting a rate means deltaing
+# two reads — and checking `process.uptime_seconds` first, because a restart
+# returns all of them to zero and a delta across that boundary is meaningless,
+# not merely small.
+#
+# JSON has no equivalent of Prometheus's `# TYPE`. The one field that is a
+# LAST-VALUE GAUGE rather than a total is:
+#   counters.cache_cleanup.last_duration_micros
+# Deltaing it produces nonsense.
+#
+# `latency` gives `count` and `sum_seconds`, never an average: a lifetime mean
+# flattens within hours of uptime. Delta both and divide for the interval mean.
+# Percentiles need buckets — `history.http` serves them, windowed.
+#
+# counters.dns.cache_hits + cache_misses == pass + allow, never + block: a
+# blocked query never reaches the cache (ADR-0001). Divide a hit ratio by the
+# resolved queries, not by every query, or the ratio falls as the blocker
+# improves.
+
+# ─── The producer boundary ─────────────────────────────────────────────
+#
+# What lands here vs on /debug/* is decided by WHO PRODUCES a figure, not by
+# how useful it looks:
+#
+#   FastAdHunter's own counters, ruleset, latency, upstreams, cache → here
+#   Kernel: process_rss, process_peak_rss, major/minor page faults    → here
+#   The linked allocator: allocator_committed_*                       → /debug
+#
+# The kernel figures come from getrusage and stay readable whatever allocator
+# is linked in, which is why the stable surface may promise them.
+
+# The allocator fields live in debug.http; the cache block is also served
+# standalone by cache.http.

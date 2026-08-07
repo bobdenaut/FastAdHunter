@@ -1,0 +1,416 @@
+//! The left column: live rates, the two history windows, engine health and the
+//! top-N tables. Scrollable, because it is longer than any terminal.
+
+use ratatui::layout::Rect;
+use ratatui::text::{Line, Span};
+use ratatui::widgets::{
+    Block, Borders, Paragraph, Scrollbar, ScrollbarOrientation, ScrollbarState,
+};
+use ratatui::Frame;
+
+use crate::models::telemetry::Telemetry;
+use crate::state::{AppState, Window};
+use crate::util::format::{bytes, mib, percent, thousands, truncate};
+
+use super::{chart, gauge, theme};
+
+/// Widest a name may print before it is elided.
+const NAME_WIDTH: usize = 27;
+
+pub fn render(frame: &mut Frame, area: Rect, state: &AppState, scroll: u16) -> u16 {
+    // Resizing can hand a panel any rectangle, and ratatui's Scrollbar panics
+    // on an empty one. A frame too small to hold the border has nothing to say.
+    if area.width < 2 || area.height < 2 {
+        return 0;
+    }
+
+    let inner_width = area.width.saturating_sub(2) as usize;
+    let bar_width = inner_width.saturating_sub(22).max(10);
+
+    let mut lines = live_rates(state, bar_width);
+    lines.extend(window_section("Today", state.today.as_ref(), inner_width));
+    lines.extend(window_section(
+        "Last 7 days",
+        state.week.as_ref(),
+        inner_width,
+    ));
+    if let Some(telemetry) = state.telemetry.as_ref() {
+        lines.extend(engine_section(telemetry));
+        lines.extend(cache_section(telemetry));
+        lines.extend(memory_section(telemetry));
+    }
+    lines.extend(top_sections(state));
+
+    // The scrollbar's range is the overflow, so the last line is reachable and
+    // no further.
+    let viewport = area.height.saturating_sub(2);
+    let max_scroll = (lines.len() as u16).saturating_sub(viewport);
+    let scroll = scroll.min(max_scroll);
+
+    frame.render_widget(
+        Paragraph::new(lines)
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .title("Metrics & Top Stats"),
+            )
+            .scroll((scroll, 0)),
+        area,
+    );
+
+    let mut scrollbar_state = ScrollbarState::new(max_scroll as usize).position(scroll as usize);
+    frame.render_stateful_widget(
+        Scrollbar::new(ScrollbarOrientation::VerticalRight)
+            .begin_symbol(Some("▲"))
+            .end_symbol(Some("▼")),
+        area,
+        &mut scrollbar_state,
+    );
+
+    max_scroll
+}
+
+fn live_rates<'a>(state: &AppState, bar_width: usize) -> Vec<Line<'a>> {
+    let live = &state.live;
+
+    vec![
+        rate_line(
+            "Blocked Rate:",
+            live.blocked_percent,
+            bar_width,
+            theme::BLOCKED,
+        ),
+        // "all q" distinguishes this from the header's Hit bar, which divides
+        // by cache lookups instead.
+        rate_line(
+            "Hit (all q): ",
+            live.cache_hit_percent,
+            bar_width,
+            theme::OK,
+        ),
+        Line::from(format!(
+            "Total: {} │ Blocked: {}",
+            thousands(live.queries_total),
+            thousands(live.blocked_total)
+        )),
+    ]
+}
+
+fn rate_line<'a>(
+    label: &'static str,
+    value: f64,
+    bar_width: usize,
+    colour: ratatui::style::Color,
+) -> Line<'a> {
+    let mut spans = vec![Span::styled(label, theme::strong(colour)), Span::raw(" ")];
+    spans.extend(gauge::bar(value, bar_width, colour));
+    spans.push(Span::styled(
+        format!(" {value:5.1}%"),
+        theme::strong(colour),
+    ));
+    Line::from(spans)
+}
+
+fn window_section<'a>(title: &str, window: Option<&Window>, width: usize) -> Vec<Line<'a>> {
+    let mut lines = vec![Line::from(""), heading(title)];
+
+    let Some(window) = window else {
+        lines.push(Line::from(Span::styled("  (no data yet)", theme::label())));
+        return lines;
+    };
+
+    lines.push(counter_line("Total Queries", window.queries, None));
+    lines.push(counter_line(
+        "Blocked",
+        window.blocked,
+        Some(window.percent_of_queries(window.blocked)),
+    ));
+    lines.push(counter_line(
+        "Cache Hits",
+        window.cache_hits,
+        Some(window.percent_of_queries(window.cache_hits)),
+    ));
+    // Whatever record types the window holds, most-used first — the label set
+    // is the API's, not a hard-coded A/AAAA/HTTPS.
+    for (kind, count) in window.types_by_count().into_iter().take(4) {
+        lines.push(counter_line(
+            kind,
+            count,
+            Some(window.percent_of_queries(count)),
+        ));
+    }
+
+    let spark = chart::sparkline(&window.series, width.saturating_sub(4));
+    if !spark.is_empty() {
+        lines.push(Line::from(Span::styled(
+            format!("  {spark}"),
+            ratatui::style::Style::default().fg(theme::ACCENT),
+        )));
+    }
+    lines.push(Line::from(Span::styled(
+        format!("  {}", window.coverage()),
+        theme::label(),
+    )));
+    lines
+}
+
+fn counter_line<'a>(label: &str, value: u64, share: Option<f64>) -> Line<'a> {
+    match share {
+        Some(share) => Line::from(format!(
+            " • {label:<14} {:>10} ({share:>5.1}%)",
+            thousands(value)
+        )),
+        None => Line::from(format!(" • {label:<14} {:>10}", thousands(value))),
+    }
+}
+
+/// Upstream health, plus the counters that only ever matter when non-zero.
+fn engine_section<'a>(telemetry: &Telemetry) -> Vec<Line<'a>> {
+    let counters = &telemetry.engine.counters;
+    let mut lines = vec![Line::from(""), heading("Upstreams")];
+
+    for upstream in &telemetry.engine.upstreams {
+        let failure_rate = percent(upstream.failures, upstream.attempts);
+        let healthy = upstream.consecutive_failures == 0;
+        lines.push(Line::from(vec![
+            Span::styled(
+                format!(" {} ", if healthy { "●" } else { "✕" }),
+                ratatui::style::Style::default().fg(theme::link(healthy)),
+            ),
+            Span::raw(format!(
+                "{:<21} {:>8}",
+                truncate(&upstream.address, 21),
+                thousands(upstream.attempts)
+            )),
+        ]));
+        lines.push(Line::from(Span::styled(
+            format!(
+                "     {} fail {} ({failure_rate:.2}%), streak {}",
+                protocol(upstream.protocol),
+                upstream.failures,
+                upstream.consecutive_failures
+            ),
+            theme::label(),
+        )));
+    }
+
+    lines.push(Line::from(""));
+    lines.push(heading("Engine"));
+    lines.push(counter_line("SWR done", counters.swr.completed, None));
+    lines.push(counter_line("SWR failed", counters.swr.failed, None));
+    lines.push(counter_line("Sweeps", counters.cache_cleanup.runs, None));
+    lines.push(Line::from(format!(
+        " • {:<14} {:>10}",
+        "Swept",
+        bytes(counters.cache_cleanup.bytes_freed)
+    )));
+
+    // Non-zero means Statistics and Metrics have both under-counted, so every
+    // figure on this screen is low by at least this much.
+    if counters.events_dropped > 0 {
+        lines.push(Line::from(Span::styled(
+            format!(" ! events dropped: {}", counters.events_dropped),
+            theme::strong(theme::BLOCKED),
+        )));
+    }
+    if counters.http.pass + counters.http.block > 0 {
+        lines.push(counter_line("HTTP blocked", counters.http.block, None));
+        lines.push(Line::from(format!(
+            " • {:<14} {:>10}",
+            "HTTP relayed",
+            bytes(counters.http.response_bytes)
+        )));
+    }
+    lines
+}
+
+fn cache_section<'a>(telemetry: &Telemetry) -> Vec<Line<'a>> {
+    let cache = &telemetry.cache;
+
+    vec![
+        Line::from(""),
+        heading("Cache"),
+        counter_line("Fresh", cache.fresh, None),
+        counter_line("Stale", cache.stale, None),
+        counter_line("Expired", cache.expired, None),
+        counter_line("Evictions", cache.evictions, None),
+        Line::from(format!(
+            " • {:<14} {:>10}",
+            "Bytes",
+            format!("{} / {}", bytes(cache.bytes), bytes(cache.max_bytes))
+        )),
+        // Two ceilings bound this cache — entries and bytes. Whichever is
+        // fuller is the one that will start evicting.
+        Line::from(format!(
+            " • {:<14} {:>10}",
+            "Load",
+            format!(
+                "{:.1}% e / {:.1}% b",
+                cache.load_percent, cache.byte_load_percent
+            )
+        )),
+    ]
+}
+
+fn memory_section<'a>(telemetry: &Telemetry) -> Vec<Line<'a>> {
+    let memory = &telemetry.memory;
+    let components = &memory.components;
+    let stats = components.stats_aggregates_bytes + components.stats_clients_bytes;
+
+    let mut lines = vec![Line::from(""), heading("Memory")];
+    for (label, value) in [
+        ("Ruleset", Some(components.ruleset_bytes)),
+        ("Cache", Some(components.cache_estimated_bytes)),
+        ("Stats", Some(stats)),
+        ("Accounted", Some(components.accounted_bytes)),
+        ("Residual", components.residual_bytes),
+    ] {
+        lines.push(Line::from(format!(
+            " • {label:<14} {:>10}",
+            value.map_or("—".to_string(), |v| format!("{:.1} MB", mib(v)))
+        )));
+    }
+
+    lines.push(counter_line("Cached entries", memory.cache_entries, None));
+    // A rising major count is the appliance swapping, which no other figure
+    // on this screen would show.
+    for (label, value) in [
+        ("Page faults maj", memory.major_page_faults),
+        ("Page faults min", memory.minor_page_faults),
+    ] {
+        lines.push(Line::from(format!(
+            " • {label:<14} {:>10}",
+            value.map_or("—".to_string(), thousands)
+        )));
+    }
+    lines
+}
+
+fn top_sections<'a>(state: &AppState) -> Vec<Line<'a>> {
+    let live = &state.live;
+    let mut lines = Vec::new();
+
+    lines.extend(top_list(
+        "Top Blocked Domains",
+        live.top_blocked_domains
+            .iter()
+            .map(|d| (truncate(&d.domain, NAME_WIDTH), d.count)),
+    ));
+    lines.extend(top_list(
+        "Top Clients",
+        live.top_clients
+            .iter()
+            .map(|c| (truncate(&c.label(), NAME_WIDTH), c.count)),
+    ));
+    lines.extend(top_list(
+        "Top Queried Domains",
+        live.top_queried_domains
+            .iter()
+            .map(|d| (truncate(&d.domain, NAME_WIDTH), d.count)),
+    ));
+    lines
+}
+
+fn top_list<'a>(title: &str, rows: impl Iterator<Item = (String, u64)>) -> Vec<Line<'a>> {
+    let mut lines = vec![Line::from(""), heading(title)];
+    for (name, count) in rows {
+        lines.push(Line::from(format!(
+            " • {name:<NAME_WIDTH$} {:>8}",
+            thousands(count)
+        )));
+    }
+    lines
+}
+
+fn heading<'a>(title: &str) -> Line<'a> {
+    Line::from(Span::styled(format!("── {title} ──"), theme::heading()))
+}
+
+fn protocol(protocol: fah_model::Protocol) -> &'static str {
+    match protocol {
+        fah_model::Protocol::Udp => "udp",
+        fah_model::Protocol::Dot => "dot",
+        fah_model::Protocol::Doh => "doh",
+        fah_model::Protocol::Unknown => "?",
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::models::fixtures;
+
+    fn text(lines: &[Line]) -> String {
+        lines
+            .iter()
+            .map(|line| {
+                line.spans
+                    .iter()
+                    .map(|s| s.content.as_ref())
+                    .collect::<String>()
+            })
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+
+    #[test]
+    fn a_window_with_no_data_says_so_instead_of_printing_zeros() {
+        let rendered = text(&window_section("Today", None, 40));
+        assert!(rendered.contains("no data yet"), "{rendered}");
+        assert!(!rendered.contains('0'), "{rendered}");
+    }
+
+    #[test]
+    fn a_window_lists_the_record_types_the_api_actually_returned() {
+        let summary: crate::models::history::HistorySummary =
+            serde_json::from_str(fixtures::HISTORY_SUMMARY).unwrap();
+        let window = Window::from_summary(&summary);
+        let rendered = text(&window_section("Today", Some(&window), 40));
+
+        assert!(rendered.contains("Total Queries"), "{rendered}");
+        // 5312 + 5077 + 4500
+        assert!(rendered.contains("14,889"), "{rendered}");
+        assert!(rendered.contains(" • A "), "{rendered}");
+        assert!(rendered.contains("HTTPS"), "{rendered}");
+        assert!(rendered.contains("3 buckets, hourly"), "{rendered}");
+    }
+
+    /// Both ceilings are shown: whichever is fuller is the one that evicts.
+    #[test]
+    fn the_cache_panel_reports_the_entry_and_byte_loads_separately() {
+        let rendered = text(&cache_section(&fixtures::telemetry()));
+
+        assert!(rendered.contains("2.6% e / 2.4% b"), "{rendered}");
+        assert!(rendered.contains("Evictions"), "{rendered}");
+    }
+
+    #[test]
+    fn an_unhealthy_upstream_is_marked_and_a_healthy_one_is_not() {
+        let rendered = text(&engine_section(&fixtures::telemetry()));
+
+        assert!(rendered.contains("● 1.1.1.1:853"), "{rendered}");
+        assert!(rendered.contains("✕ 9.9.9.9:853"), "{rendered}");
+        assert!(rendered.contains("streak 3"), "{rendered}");
+    }
+
+    /// The fixture has none dropped, so the warning must be absent — it is a
+    /// line that only appears when something is wrong.
+    #[test]
+    fn the_dropped_events_warning_appears_only_when_events_were_dropped() {
+        let mut telemetry = fixtures::telemetry();
+        assert!(!text(&engine_section(&telemetry)).contains("events dropped"));
+
+        telemetry.engine.counters.events_dropped = 7;
+        assert!(text(&engine_section(&telemetry)).contains("events dropped: 7"));
+    }
+
+    #[test]
+    fn memory_prints_a_dash_when_the_residual_cannot_be_derived() {
+        let mut telemetry = fixtures::telemetry();
+        telemetry.memory.components.residual_bytes = None;
+        let rendered = text(&memory_section(&telemetry));
+
+        assert!(rendered.contains("Residual"), "{rendered}");
+        assert!(rendered.contains('—'), "{rendered}");
+    }
+}

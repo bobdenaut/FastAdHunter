@@ -1,0 +1,56 @@
+{
+  "type": "stats",
+  "data": {
+    "window": "24h",
+    "queries_total": 96183,
+    "blocked_total": 69527,
+    "blocked_percent": 72.2861628354283,
+    "cache_hit_percent": 25.35687179647131,
+    "top_blocked_domains": [
+      {
+        "domain": "self.events.data.microsoft.com",
+        "count": 20283
+      },
+      {
+        "domain": "mobile.events.data.microsoft.com",
+        "count": 8959
+      }
+    ],
+    "top_queried_domains": [
+      {
+        "domain": "self.events.data.microsoft.com",
+        "count": 20283
+      },
+      {
+        "domain": "mobile.events.data.microsoft.com",
+        "count": 8959
+      }
+    ],
+    "top_clients": [
+      {
+        "ip": "192.168.10.17",
+        "name": null,
+        "count": 41489
+      },
+      {
+        "ip": "fd6c:7f32:8e91:0:4000:9341:51b1:ebbc",
+        "name": null,
+        "count": 15282
+      }
+    ],
+    "buckets": [
+      {
+        "start": "2026-08-06T18:00:00Z",
+        "queries": 5312,
+        "blocked": 4062
+      }
+    ],
+    "policies": [
+      {
+        "policy": "default",
+        "queries": 97841,
+        "blocked": 69527
+      }
+    ]
+  }
+}

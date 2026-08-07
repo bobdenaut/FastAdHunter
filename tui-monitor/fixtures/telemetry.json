@@ -1,0 +1,38 @@
+{
+  "process": { "version": "0.2.10", "uptime_seconds": 184920 },
+  "ruleset": { "rules": 1043886, "duplicates_removed": 41207,
+               "compile_duration_seconds": 7.412 },
+  "counters": {
+    "dns":  { "pass": 812044, "allow": 1201, "block": 96318,
+              "cache_hits": 640119, "cache_misses": 269446, "cache_stale": 3187 },
+    "http": { "pass": 4412, "allow": 0, "block": 918, "response_bytes": 148223904 },
+    "events_dropped": 0,
+    "swr": { "enqueued": 12044, "deduplicated": 3311, "dropped": 0,
+             "completed": 8702, "failed": 31 },
+    "cache_cleanup": { "runs": 308, "entries_removed": 44120,
+                       "bytes_freed": 9871232, "last_duration_micros": 1842 }
+  },
+  "latency": {
+    "dns":  { "block":     { "count": 96318,  "sum_seconds": 2.114 },
+              "cache_hit": { "count": 640119, "sum_seconds": 18.907 },
+              "forward":   { "count": 269446, "sum_seconds": 6021.338 } },
+    "http": { "block":   { "count": 918,  "sum_seconds": 0.031 },
+              "forward": { "count": 4412, "sum_seconds": 12.884 } }
+  },
+  "upstreams": [
+    { "address": "1.1.1.1:853", "protocol": "dot", "attempts": 201883,
+      "failures": 12, "consecutive_failures": 0, "tls_handshakes": 41 },
+    { "address": "9.9.9.9:853", "protocol": "dot", "attempts": 4332,
+      "failures": 105, "consecutive_failures": 3, "tls_handshakes": 12 }
+  ],
+  "cache": { "entries": 1294, "capacity": 50000, "fresh": 89, "stale": 1205,
+             "expired": 0, "hits": 9921, "misses": 5132, "evictions": 0,
+             "bytes": 1258291, "max_bytes": 52428800,
+             "load_percent": 2.59, "byte_load_percent": 2.4 },
+  "memory": { "ruleset_bytes": 27052081, "cache_estimated_bytes": 1258291,
+              "stats_aggregates_bytes": 65536, "stats_clients_bytes": 4096,
+              "accounted_bytes": 28380004, "residual_bytes": 31895996,
+              "cache_entries": 1294, "process_rss": 60276000,
+              "process_peak_rss": 190215680, "major_page_faults": 0,
+              "minor_page_faults": 84213 }
+}

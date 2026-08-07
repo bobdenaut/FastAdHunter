@@ -5,7 +5,8 @@
 //! would: fetch a page through the proxy, have an ad script on that page
 //! blocked while the page itself still renders, then repeat from a second
 //! client whose rule blocks the page host outright — and watch both verdicts
-//! arrive on the events socket and in the query log tagged `kind=http`.
+//! arrive on the events socket tagged `kind=http`, and counted as HTTP by
+//! `GET /api/v1/telemetry`.
 //!
 //! **Why the origin is on port 80.** `HTTP_ORIGIN_PORT` is a constant in
 //! `main.rs`, and the egress guard refuses any destination on another port
@@ -52,6 +53,11 @@ const PAGE_BODY: &str = "<html><head><script src=\"http://ads.example.com/track.
 const SCRIPT_BODY: &str = "/* tracker */";
 
 const TEST_BUDGET: Duration = Duration::from_secs(60);
+
+/// The page, the ad script it references, and the stricter client's blocked
+/// fetch — what this test drives through the proxy, and so what telemetry must
+/// have counted before the assertions below mean anything.
+const EXPECTED_HTTP_REQUESTS: u64 = 3;
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn the_binary_proxies_filters_and_reports_http() {
@@ -172,20 +178,17 @@ async fn the_binary_proxies_filters_and_reports_http() {
         "the stricter client's block must reach the events socket: {seen:?}"
     );
 
-    let queries = await_http_queries(&http, &base, &key).await;
-    let kinds: Vec<&str> = queries
-        .iter()
-        .filter_map(|row| row["kind"].as_str())
-        .collect();
+    // Per-request attribution (which client, which verdict) is proven on the
+    // events socket above; what telemetry adds is that HTTP is counted as HTTP
+    // and never folded into the DNS counters.
+    let counters = await_http_counters(&http, &base, &key).await;
     assert!(
-        kinds.iter().all(|kind| *kind == "http"),
-        "?kind=http must not return DNS rows: {kinds:?}"
+        counters.http.block >= 1,
+        "the stricter client's blocked request must be counted: {counters:?}"
     );
     assert!(
-        queries
-            .iter()
-            .any(|row| row["client"].as_str() == Some("127.0.0.2")),
-        "the stricter client's blocked request must be in the log: {queries:?}"
+        counters.http.response_bytes > 0,
+        "the relayed page must be counted in bytes: {counters:?}"
     );
 
     assert!(
@@ -236,9 +239,6 @@ allow_destinations = ["127.0.0.1"]
 refresh_hours_default = 24
 lists = []
 
-[query_log]
-enabled = true
-
 [stats]
 snapshot_interval_seconds = 300
 
@@ -246,7 +246,7 @@ snapshot_interval_seconds = 300
 address = "127.0.0.1"
 port = {api_port}
 tls = true
-metrics_public = true
+
 
 [log]
 level = "warn"
@@ -415,19 +415,29 @@ where
     events
 }
 
-/// The query log is fed by the same fan-out task as statistics, so it lands a
+/// The counters are fed by the same fan-out task as statistics, so they land a
 /// beat after the response — poll rather than sleep on a guessed delay.
-async fn await_http_queries(client: &reqwest::Client, base: &str, key: &str) -> Vec<Value> {
+///
+/// Deserialized into `fah_model::EngineCounters` rather than indexed as a
+/// `Value`: a renamed field then fails to compile instead of silently reading
+/// as absent.
+async fn await_http_counters(
+    client: &reqwest::Client,
+    base: &str,
+    key: &str,
+) -> fah_model::EngineCounters {
     let deadline = Instant::now() + Duration::from_secs(10);
     loop {
-        let page = get_json(client, base, key, "/api/v1/queries?kind=http").await;
-        let rows = page["items"].as_array().cloned().unwrap_or_default();
-        if rows.len() >= 3 {
-            return rows;
+        let body = get_json(client, base, key, "/api/v1/telemetry").await;
+        let counters: fah_model::EngineCounters =
+            serde_json::from_value(body["counters"].clone()).expect("counters block");
+        let http = &counters.http;
+        if http.pass + http.allow + http.block >= EXPECTED_HTTP_REQUESTS {
+            return counters;
         }
         assert!(
             Instant::now() < deadline,
-            "the query log never showed all three http requests: {page}"
+            "telemetry never counted all {EXPECTED_HTTP_REQUESTS} http requests: {counters:?}"
         );
         tokio::time::sleep(Duration::from_millis(100)).await;
     }

@@ -1,0 +1,44 @@
+{
+  "resolution": "hour",
+  "from": "2026-08-06T17:45:08.499223Z",
+  "to": "2026-08-07T17:45:08.499223Z",
+  "stride": 1,
+  "items": [
+    {
+      "ts": "2026-08-06T18:00:00Z",
+      "queries": 5312,
+      "blocked": 4062,
+      "blocked_percent": 76.47,
+      "cache_hits": 1210,
+      "per_type": {
+        "A": 2528,
+        "AAAA": 2352,
+        "HTTPS": 432
+      }
+    },
+    {
+      "ts": "2026-08-06T19:00:00Z",
+      "queries": 5077,
+      "blocked": 3962,
+      "blocked_percent": 78.04,
+      "cache_hits": 1017,
+      "per_type": {
+        "A": 2382,
+        "AAAA": 2292,
+        "HTTPS": 403
+      }
+    },
+    {
+      "ts": "2026-08-06T20:00:00Z",
+      "queries": 4500,
+      "blocked": 2967,
+      "blocked_percent": 65.93,
+      "cache_hits": 1315,
+      "per_type": {
+        "A": 2003,
+        "AAAA": 1945,
+        "HTTPS": 552
+      }
+    }
+  ]
+}

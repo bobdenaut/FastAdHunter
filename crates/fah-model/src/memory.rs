@@ -15,34 +15,72 @@
 use serde::{Deserialize, Serialize};
 
 /// `fah-stats`'s slice of the breakdown: its bounded in-RAM structures.
-/// Excludes anything on `/data`, which `retention_max_mb` bounds separately.
+/// Excludes anything on `/data`, which `[history] retention_days` bounds.
 ///
 /// Serializable because it is persisted inside [`crate::PerfSample`].
+/// Unknown keys are ignored on read, so a row persisted by an older version
+/// still loads — its retired components simply fall into the residual.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct StatsHeap {
     /// 24 h rolling buckets, per-type counts and the bounded top-N counters.
     pub aggregates: u64,
     /// Per-client records and names, capped with LRU eviction.
     pub clients: u64,
-    /// In-RAM query ring serving `GET /api/v1/queries`.
-    pub ring: u64,
-    /// Entries awaiting the next flush to `/data`.
-    pub pending_log: u64,
 }
 
 impl StatsHeap {
     pub fn total(&self) -> u64 {
-        self.aggregates + self.clients + self.ring + self.pending_log
+        self.aggregates + self.clients
     }
 }
 
-/// What the process allocator reports about itself, plus the two kernel figures
-/// that arrive from the same call.
+/// Kernel readings about the process, from `getrusage` (see
+/// `crates/fastadhunter/src/process.rs`).
+///
+/// **Separate from [`AllocatorStats`] because the two have different
+/// lifetimes as a contract.** These describe the process and stay readable
+/// whatever is linked in as the global allocator, which is what lets
+/// `GET /api/v1/telemetry` promise them; the allocator's own counters read near
+/// zero under a different allocator and so are confined to `/api/v1/debug/*`.
+/// Folding both into one `Option` made replacing the allocator — the exact
+/// scenario the split exists for — silently null three stable fields.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct ProcessStats {
+    /// Peak RSS since start (`ru_maxrss`) — a real kernel high-water mark.
+    /// **Process-lifetime monotonic and never decreasing**, so it answers "did
+    /// we ever exceed the budget" and must not be charted as a trend.
+    ///
+    /// Its value is that a spike between two samples cannot be missed, which
+    /// polled RSS alone cannot promise — and that has already paid off: the
+    /// 150.7 MiB startup-compile peak on 0.2.7 fell entirely between two
+    /// 2-minute RSS samples and was visible only here.
+    pub peak_rss: u64,
+    /// Major (disk-backed) page faults since start (`ru_majflt`).
+    /// Process-lifetime cumulative.
+    ///
+    /// Structurally near-zero for this workload — nothing FAH touches is
+    /// demand-paged from disk — so a non-zero value means the host is under
+    /// genuine memory pressure. `minor_page_faults` is the one that moves.
+    pub major_page_faults: u64,
+    /// Minor (no disk I/O) page faults since start (`ru_minflt`).
+    /// Process-lifetime cumulative.
+    ///
+    /// **This is the purge-thrash detector.** Returning pages with
+    /// `MADV_DONTNEED` and then reallocating costs one minor fault per page
+    /// faulted back in, and `MIMALLOC_PURGE_DELAY` tunes exactly that
+    /// trade-off. Without this field an over-aggressive purge setting is
+    /// invisible: RSS looks healthy while the process pays a syscall and fault
+    /// on memory it is about to reuse. Read it as a rate against query volume,
+    /// not as an absolute.
+    pub minor_page_faults: u64,
+}
+
+/// What the process allocator reports about itself — **only** figures that
+/// would read near zero under a different allocator.
 ///
 /// Read through the binary's allocator module (see `crates/fastadhunter/src/allocator.rs`) and carried as plain
 /// data from here on, so no crate but that one module knows which allocator is
-/// in use. The figures are only meaningful while that allocator is the global
-/// one — under a different one they read near zero.
+/// in use. Kernel readings live in [`ProcessStats`].
 ///
 /// **`current_rss` is deliberately absent.** mimalloc's `mi_process_info`
 /// exposes such a field, but on Linux it is never assigned: the function
@@ -79,41 +117,13 @@ pub struct AllocatorStats {
     /// diverge and the pair immediately becomes informative again. Their being
     /// equal is itself the signal documented above.
     pub peak_commit: u64,
-    /// Peak RSS from `getrusage` — a real kernel high-water mark, unlike
-    /// `current_commit`. **Process-lifetime monotonic and never decreasing**,
-    /// so it answers "did we ever exceed the budget" and must not be charted as
-    /// a trend.
-    ///
-    /// Its value is that a spike between two samples cannot be missed, which
-    /// polled RSS alone cannot promise — and that has already paid off: the
-    /// 150.7 MiB startup-compile peak on 0.2.7 fell entirely between two
-    /// 2-minute RSS samples and was visible only here.
-    pub peak_rss: u64,
-    /// Major (disk-backed) page faults since start. Process-lifetime cumulative.
-    ///
-    /// Structurally near-zero for this workload — nothing FAH touches is
-    /// demand-paged from disk — so a non-zero value means the host is under
-    /// genuine memory pressure. `minor_page_faults` is the one that moves.
-    pub page_faults: u64,
-    /// Minor (no disk I/O) page faults since start. Process-lifetime cumulative.
-    ///
-    /// **This is the purge-thrash detector.** Returning pages with
-    /// `MADV_DONTNEED` and then reallocating costs one minor fault per page
-    /// faulted back in, and `MIMALLOC_PURGE_DELAY` tunes exactly that
-    /// trade-off. Without this field an over-aggressive purge setting is
-    /// invisible: RSS looks healthy while the process pays a syscall and fault
-    /// on memory it is about to reuse. Read it as a rate against query volume,
-    /// not as an absolute.
-    ///
-    /// Zero off Unix, where `getrusage` does not exist.
-    pub minor_page_faults: u64,
 }
 
 /// The named, bounded structures — everything that can state its own size.
 ///
 /// Split out of [`MemoryBreakdown`] so one field list serves both the live path
 /// and the persisted row ([`crate::PerfSample::memory`]): a component added
-/// here reaches the history series, `/metrics` and `/debug/memory` at once.
+/// here reaches the history series, `/api/v1/telemetry` and `/debug/memory` at once.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct MemoryComponents {
     /// Compiled ruleset — `Matcher::heap_bytes()`.
@@ -147,6 +157,9 @@ pub struct MemoryBreakdown {
     /// Process resident set size, or `None` where it cannot be read (no
     /// `/proc/self/status` off Linux). The residual is then not computable.
     pub rss: Option<u64>,
+    /// Kernel readings, or `None` off Unix. Independent of `allocator` on
+    /// purpose — see [`ProcessStats`].
+    pub process: Option<ProcessStats>,
     /// Allocator's own view, or `None` where unavailable. Optional for the same
     /// reason as `rss`: a figure that cannot be read is served as absent rather
     /// than as zero, which would chart as a real measurement.
@@ -200,8 +213,6 @@ mod tests {
             stats: StatsHeap {
                 aggregates: 5,
                 clients: 4,
-                ring: 3,
-                pending_log: 2,
             },
         }
     }
@@ -210,15 +221,35 @@ mod tests {
         MemoryBreakdown {
             components: components(),
             rss,
+            process: None,
             allocator: None,
         }
+    }
+
+    /// The two are independent `Option`s so that dropping the allocator's own
+    /// counters cannot take the kernel's with it — `/api/v1/telemetry` promises
+    /// the kernel figures across an allocator swap, and one shared `Option`
+    /// made that promise unkeepable.
+    #[test]
+    fn kernel_figures_survive_an_allocator_that_reports_nothing() {
+        let memory = MemoryBreakdown {
+            process: Some(ProcessStats {
+                peak_rss: 150_700_000,
+                major_page_faults: 0,
+                minor_page_faults: 4_211_337,
+            }),
+            allocator: None,
+            ..breakdown(Some(200))
+        };
+        assert_eq!(memory.process.unwrap().peak_rss, 150_700_000);
+        assert!(memory.allocator.is_none());
     }
 
     #[test]
     fn residual_is_rss_minus_every_component() {
         let memory = breakdown(Some(200));
-        assert_eq!(memory.accounted(), 124);
-        assert_eq!(memory.residual(), Some(76));
+        assert_eq!(memory.accounted(), 119);
+        assert_eq!(memory.residual(), Some(81));
         assert!(!memory.over_accounted());
     }
 
@@ -241,11 +272,27 @@ mod tests {
         let json = serde_json::to_string(&components()).unwrap();
         let back: MemoryComponents = serde_json::from_str(&json).unwrap();
         assert_eq!(back, components());
-        assert_eq!(back.accounted(), 124);
+        assert_eq!(back.accounted(), 119);
         assert_eq!(
             back.accounted(),
             breakdown(None).accounted(),
             "the live breakdown must delegate to the same sum the row uses"
+        );
+    }
+
+    /// Up to 90 days of persisted rows may name components this build no longer
+    /// has. They must still load, with the unknown keys ignored rather than
+    /// rejected.
+    #[test]
+    fn a_row_naming_an_unknown_component_still_deserializes() {
+        let legacy = r#"{"ruleset":100,"cache":10,
+            "stats":{"aggregates":5,"clients":4,"ring":3,"pending_log":2}}"#;
+        let back: MemoryComponents = serde_json::from_str(legacy).unwrap();
+        assert_eq!(back, components());
+        assert_eq!(
+            back.accounted(),
+            119,
+            "an unknown component's bytes fall into the residual"
         );
     }
 
@@ -267,15 +314,12 @@ mod tests {
             allocator: Some(AllocatorStats {
                 current_commit: 318_046_208,
                 peak_commit: 318_046_208,
-                peak_rss: 157_990_912,
-                page_faults: 0,
-                minor_page_faults: 4_211_337,
             }),
             ..breakdown(Some(73_707_520))
         };
 
         assert!(!memory.over_accounted());
-        assert_eq!(memory.residual(), Some(73_707_520 - 124));
+        assert_eq!(memory.residual(), Some(73_707_520 - 119));
 
         // Guards the deleted `allocator_retained`: this subtraction is what it
         // served, and the result is larger than RSS — impossible for anything

@@ -13,7 +13,7 @@ use fah_model::{
 };
 use serde::{Deserialize, Serialize};
 
-use crate::ports::{CacheClean, CacheStats, ClientEntry, QueryLogPage, QueryRecord, StatsOverview};
+use crate::ports::{CacheClean, CacheStats, ClientEntry, QueryRecord, StatsOverview};
 use crate::timestamp;
 
 #[derive(Debug, Serialize)]
@@ -121,12 +121,6 @@ impl From<StatsOverview> for StatsResponse {
                 .collect(),
         }
     }
-}
-
-#[derive(Debug, Serialize)]
-pub struct QueryPageResponse {
-    pub items: Vec<QueryItemResponse>,
-    pub next_cursor: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -240,15 +234,6 @@ fn resource_type_name(kind: fah_model::ResourceType) -> String {
         R::Unknown => "unknown",
     }
     .to_string()
-}
-
-impl From<QueryLogPage> for QueryPageResponse {
-    fn from(page: QueryLogPage) -> Self {
-        Self {
-            items: page.items.into_iter().map(Into::into).collect(),
-            next_cursor: page.next_cursor,
-        }
-    }
 }
 
 /// Domains as API.md writes them: `"ads.example.com"`, not the wire's
@@ -488,6 +473,7 @@ impl HistoryPerfResponse {
                         MemoryComponentsResponse::of(&fah_model::MemoryBreakdown {
                             components: sample.memory,
                             rss: Some(sample.rss_bytes),
+                            process: None,
                             allocator: None,
                         })
                     }),
@@ -932,10 +918,6 @@ pub struct MemoryComponentsResponse {
     pub stats_aggregates_bytes: u64,
     /// Per-client records, capped at 4 096 with LRU eviction.
     pub stats_clients_bytes: u64,
-    /// In-RAM query ring serving `GET /api/v1/queries`.
-    pub query_log_ring_bytes: u64,
-    /// Query-log entries awaiting the next flush to `/data`.
-    pub query_log_pending_bytes: u64,
     /// Everything above, summed.
     pub accounted_bytes: u64,
     /// `process_rss − accounted_bytes`: binary pages, thread stacks, the tokio
@@ -958,14 +940,25 @@ impl MemoryComponentsResponse {
             cache_estimated_bytes: memory.components.cache,
             stats_aggregates_bytes: memory.components.stats.aggregates,
             stats_clients_bytes: memory.components.stats.clients,
-            query_log_ring_bytes: memory.components.stats.ring,
-            query_log_pending_bytes: memory.components.stats.pending_log,
             accounted_bytes: memory.accounted(),
             residual_bytes: memory.residual(),
         }
     }
 }
 
+/// The memory figures **both** `/api/v1/telemetry` and `/api/v1/debug/memory`
+/// serve: the named components, and the kernel's own readings.
+///
+/// The split from [`DebugMemoryResponse`] is the producer boundary, expressed
+/// in types rather than in prose. Everything here comes from FastAdHunter's own
+/// accounting or from the kernel (`/proc/self/status`, `getrusage` via
+/// `fah_model::ProcessStats`), so it survives an allocator change and belongs
+/// on the stable surface. Anything specific to whichever allocator is linked in
+/// goes one struct down, where no compatibility is promised — and reads a
+/// different `Option`, so dropping it cannot null anything here.
+///
+/// Because `/debug/memory` embeds this one, the two can never disagree about a
+/// field they share — the only way to add a figure to both is to add it here.
 #[derive(Debug, Serialize)]
 pub struct MemoryResponse {
     #[serde(flatten)]
@@ -974,6 +967,63 @@ pub struct MemoryResponse {
     /// `null` off Linux — the deployment target is a Linux container; a dev
     /// box on another OS simply has no `/proc/self/status` to read.
     pub process_rss: Option<u64>,
+    /// Peak RSS since start, from `getrusage` — a real kernel high-water mark,
+    /// unlike the commit counters. **Process-lifetime monotonic and never
+    /// decreasing**, so it answers "did this process ever exceed the memory
+    /// budget" rather than describing now.
+    ///
+    /// Its value over `process_rss` is that a spike between two polls cannot be
+    /// missed — the 150.7 MiB startup-compile peak on 0.2.7 fell between two
+    /// 2-minute samples and was visible only here.
+    pub process_peak_rss: Option<u64>,
+    /// Major (disk-backed) page faults since start. Process-lifetime
+    /// cumulative, and structurally near-zero: nothing FAH touches is
+    /// demand-paged from disk, so a non-zero value means real host memory
+    /// pressure. `null` off Unix.
+    pub major_page_faults: Option<u64>,
+    /// Minor (no disk I/O) page faults since start. Process-lifetime
+    /// cumulative, and the counter that actually moves.
+    ///
+    /// **The purge-thrash detector.** Handing pages back with `MADV_DONTNEED`
+    /// and then reallocating costs one minor fault per page faulted in again,
+    /// which is precisely the trade-off `MIMALLOC_PURGE_DELAY` tunes. Without
+    /// it, an over-aggressive purge setting is invisible — RSS looks healthy
+    /// while the process pays a syscall and a fault for memory it is about to
+    /// reuse. Read as a rate against query volume, not as an absolute. `null`
+    /// off Unix, where `getrusage` does not exist.
+    pub minor_page_faults: Option<u64>,
+}
+
+impl MemoryResponse {
+    /// Built from the breakdown, never from another endpoint's response — both
+    /// surfaces derive independently from the same snapshot, which is what
+    /// keeps them from becoming coupled.
+    pub fn of(memory: &fah_model::MemoryBreakdown, cache_entries: u64) -> Self {
+        Self {
+            components: MemoryComponentsResponse::of(memory),
+            cache_entries,
+            process_rss: memory.rss,
+            // `process`, not `allocator`: these three are kernel readings and
+            // must not disappear when the allocator's counters do.
+            process_peak_rss: memory.process.map(|p| p.peak_rss),
+            major_page_faults: memory.process.map(|p| p.major_page_faults),
+            minor_page_faults: memory.process.map(|p| p.minor_page_faults),
+        }
+    }
+}
+
+/// `GET /api/v1/debug/memory`: everything [`MemoryResponse`] carries, plus the
+/// figures that describe *this* allocator and would read near zero under
+/// another one.
+///
+/// They live here rather than on `/api/v1/telemetry` so that surface can stay a
+/// stable contract while the allocator remains replaceable — a dashboard built
+/// on `/telemetry` survives swapping mimalloc out, and a diagnostic built on
+/// these knowingly does not.
+#[derive(Debug, Serialize)]
+pub struct DebugMemoryResponse {
+    #[serde(flatten)]
+    pub memory: MemoryResponse,
     /// Bytes the allocator has committed, by its own accounting (see
     /// `crates/fastadhunter/src/allocator.rs`) — not a kernel reading. `null`
     /// where unavailable.
@@ -998,31 +1048,16 @@ pub struct MemoryResponse {
     /// has started accounting purges and `allocator_committed_bytes` has become
     /// a live figure worth reading as one.
     pub allocator_committed_peak_bytes: Option<u64>,
-    /// Peak RSS since start, from `getrusage` — a real kernel high-water mark,
-    /// unlike the commit counters. **Process-lifetime monotonic and never
-    /// decreasing**, so it answers "did this process ever exceed the memory
-    /// budget" rather than describing now.
-    ///
-    /// Its value over `process_rss` is that a spike between two polls cannot be
-    /// missed — the 150.7 MiB startup-compile peak on 0.2.7 fell between two
-    /// 2-minute samples and was visible only here.
-    pub process_peak_rss: Option<u64>,
-    /// Major (disk-backed) page faults since start. Process-lifetime
-    /// cumulative, and structurally near-zero: nothing FAH touches is
-    /// demand-paged from disk, so a non-zero value means real host memory
-    /// pressure.
-    pub major_page_faults: Option<u64>,
-    /// Minor (no disk I/O) page faults since start. Process-lifetime
-    /// cumulative, and the counter that actually moves.
-    ///
-    /// **The purge-thrash detector.** Handing pages back with `MADV_DONTNEED`
-    /// and then reallocating costs one minor fault per page faulted in again,
-    /// which is precisely the trade-off `MIMALLOC_PURGE_DELAY` tunes. Without
-    /// it, an over-aggressive purge setting is invisible — RSS looks healthy
-    /// while the process pays a syscall and a fault for memory it is about to
-    /// reuse. Read as a rate against query volume, not as an absolute. `0` off
-    /// Unix, where `getrusage` does not exist.
-    pub minor_page_faults: Option<u64>,
+}
+
+impl DebugMemoryResponse {
+    pub fn of(memory: &fah_model::MemoryBreakdown, cache_entries: u64) -> Self {
+        Self {
+            memory: MemoryResponse::of(memory, cache_entries),
+            allocator_committed_bytes: memory.allocator.map(|alloc| alloc.current_commit),
+            allocator_committed_peak_bytes: memory.allocator.map(|alloc| alloc.peak_commit),
+        }
+    }
 }
 
 /// Two-decimal rounding for percentages — `72.61`, not `72.61000000000001`.

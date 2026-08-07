@@ -191,8 +191,8 @@ FastAdHunter/
 │   ├── fah-dns/          # listeners, pipeline, cache, upstreams
 │   ├── fah-http/         # HTTP engine: proxy, pass-through, URL filtering
 │   ├── fah-api/          # Axum REST + WebSocket
-│   ├── fah-metrics/      # ops telemetry: Prometheus counters/histograms
-│   ├── fah-stats/        # product data: query log, aggregates, snapshots
+│   ├── fah-metrics/      # ops telemetry: counters/histograms behind /telemetry
+│   ├── fah-stats/        # product data: aggregates, clients, snapshots
 │   └── fastadhunter/     # thin binary — wires everything
 ├── tests/                # workspace integration tests
 ├── benches/              # criterion benches vs PERFORMANCE.md budgets

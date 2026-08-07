@@ -55,12 +55,15 @@ A control arm does.**
 
 ## Disk and retention
 
-- **`retention_max_mb` counts MiB and legitimately overshoots** by the
-  partially-written active segment (prune never deletes it; segments roll at
-  1 MiB). 240 KB over a 500 MiB cap is not a defect — CONFIGURATION.md documents
-  it.
+- **`/data` is bounded by age alone.** `[history] retention_days` is the only
+  retention control left; there is no byte cap on any series, so size is
+  `cadence × retention`, and halving `sample_interval_seconds` doubles the disk.
 - History costs **~740 B per perf sample** — per *sample*, not per query. ~31 MB
   at the default 30-day retention, plus ~6.9 MB for the p2-07 memory breakdown.
+- **A deploy that changes what `stats` accounts for steps the residual.**
+  Removing the query log's ring moved its bytes out of the `stats` component and
+  into the residual at once. Re-baseline across such a deploy; a step is not a
+  slope.
 
 ## Cost attribution
 
@@ -76,7 +79,7 @@ A control arm does.**
   so it was one dispatch site plus two new entry points.
 - Perf priority order for this pipeline, in order: insert-path allocation churn
   (entry drop, key clones), cache lookup, DNS packet parse, response serialize,
-  the tokio/socket path, lock contention, query logging, policy engine. **The
+  the tokio/socket path, lock contention, policy engine. **The
   matcher is not on this list** — it is 3 % of a cache-hit query and ~20 % of a
   blocked one; tuning it buys effectively nothing. Build a decomposition bench
   before optimising any of them.

@@ -266,13 +266,14 @@ top domains, top clients, rolling time buckets. Never per-query rows.
 
 ### Metrics
 
-Operational telemetry (Prometheus counters/histograms: QPS, latencies, cache
-hit ratio, memory). For operators; distinct from Statistics (for users).
+Operational telemetry (counters and histograms: QPS, latencies, cache hit
+ratio, memory), served as JSON on `/api/v1/telemetry`. For operators; distinct
+from Statistics (for users).
 
 ### Accounted / Residual
 
-The two-way split of resident memory, reported by `/api/v1/debug/memory`,
-`/metrics` and — as a series — `/api/v1/history/perf` (p2-07,
+The two-way split of resident memory, reported by `/api/v1/telemetry`,
+`/api/v1/debug/memory` and — as a series — `/api/v1/history/perf` (p2-07,
 `crates/fastadhunter/src/allocator.rs`). Use these words for these things and no
 others.
 

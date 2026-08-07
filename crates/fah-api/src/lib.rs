@@ -10,7 +10,7 @@
 //! `fah-config`/`fah-model` (L1) are held directly.
 //!
 //! ```text
-//! ApiServer::bind ─ routes::router ─ auth::require_api_key ─┬─ /health, /metrics
+//! ApiServer::bind ─ routes::router ─ auth::require_api_key ─┬─ /health
 //!                                                           └─ /api/v1/* ─ ports
 //! ```
 
@@ -21,9 +21,9 @@ mod events;
 mod keys;
 mod ports;
 mod routes;
-mod rss;
 mod server;
 mod state;
+mod telemetry;
 mod timestamp;
 mod tls;
 mod wire;
@@ -34,8 +34,7 @@ pub use events::{Event, EventHub};
 pub use keys::ApiKeyStore;
 pub use ports::{
     BucketCount, CacheClean, CacheSource, CacheStats, ClientCount, ClientEntry, DomainCount,
-    HistorySource, PolicyCount, QueryLogPage, QueryLogRequest, QueryRecord, StatsOverview,
-    StatsSource, TelemetrySource, VerdictFilter,
+    HistorySource, PolicyCount, QueryRecord, StatsOverview, StatsSource, TelemetrySource,
 };
 pub use server::ApiServer;
 pub use state::AppStateBuilder;

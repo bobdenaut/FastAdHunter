@@ -11,6 +11,7 @@
 mod adapters;
 mod allocator;
 mod privilege;
+mod process;
 
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
@@ -260,7 +261,6 @@ impl Engine {
         // ── Observers (L3) ──
         let stats = Arc::new(fah_stats::Stats::new(
             &config.stats,
-            &config.query_log,
             &config.history,
             data_dir.to_path_buf(),
         ));
@@ -329,17 +329,16 @@ impl Engine {
         // are spawned *after* this point, so no query is ever answered by a
         // privileged process.
         //
-        // The state subdirectories are named explicitly, not just `/data`: the
+        // The state subdirectory is named explicitly, not just `/data`: the
         // writers above (`rules.boot`, `stats.boot`) already ran as root and
-        // may have created `/data/history/*` and `/data/query_log/*` owned by
-        // root. When `/data` itself is already the service user's — the seeded
-        // image, or any later boot — `reown_if_needed` takes its top-level
-        // shortcut and never descends, so those fresh root-owned subtrees would
-        // stay unwritable after the drop. Passing them as their own roots
-        // reowns each on the next boot (a no-op once already adopted).
+        // may have created `/data/history/*` owned by root. When `/data` itself
+        // is already the service user's — the seeded image, or any later boot —
+        // `reown_if_needed` takes its top-level shortcut and never descends, so
+        // that fresh root-owned subtree would stay unwritable after the drop.
+        // Passing it as its own root reowns it on the next boot (a no-op once
+        // already adopted).
         let history_dir = data_dir.join("history");
-        let query_log_dir = data_dir.join("query_log");
-        privilege::drop_to_service_user(&[config_dir, data_dir, &history_dir, &query_log_dir])?;
+        privilege::drop_to_service_user(&[config_dir, data_dir, &history_dir])?;
 
         // ── API (L3) ──
         let (keys, generated) = fah_api::ApiKeyStore::load_or_create(config_dir)?;
@@ -414,12 +413,6 @@ impl Engine {
             ),
             spawn_policy_ticker(policy_state, rules, Arc::clone(&stats)),
         ];
-
-        // `None` when `[query_log] enabled = false` — the flush loop would
-        // otherwise tick every `flush_interval_seconds` only to return.
-        if let Some(flush) = stats.spawn_query_log_scheduler() {
-            tasks.push(flush);
-        }
 
         // Stale-while-refresh (ADR-0005). Started here rather than in
         // `Pipeline::new` so every long-lived task is aborted from one place on
@@ -609,7 +602,7 @@ fn spawn_telemetry_poll(
                 upstreams
                     .status()
                     .into_iter()
-                    .map(|status| fah_metrics::UpstreamSnapshot {
+                    .map(|status| fah_model::UpstreamSample {
                         address: status.address,
                         protocol: status.protocol,
                         attempts: status.attempts,
@@ -654,17 +647,14 @@ fn spawn_telemetry_poll(
                         cache: pipeline.cache_stats().bytes,
                         stats: stats.heap(),
                     },
-                    // `0` is this accessor's "couldn't determine" — a
-                    // non-Linux dev box, or an unreadable /proc/self/status.
-                    // Mapped to `None` so the residual reports as absent rather
-                    // than as a fabricated RSS of zero.
-                    rss: match fah_metrics::resident_memory_bytes() {
-                        0 => None,
-                        bytes => Some(bytes),
-                    },
+                    // `None` where RSS cannot be read (a non-Linux dev box, or
+                    // an unreadable /proc/self/status), so the residual reports
+                    // as absent rather than as a fabricated RSS of zero.
+                    rss: fah_common::process::resident_bytes(),
                     // Same instant as the components above: `minor_page_faults`
                     // is read as a rate against the query counters sampled in
                     // this pass, and skew would land in that rate.
+                    process: process::stats(),
                     allocator: allocator::stats(),
                 })
                 .await
@@ -684,9 +674,13 @@ fn spawn_telemetry_poll(
             }
             metrics.set_memory(memory);
 
+            // `len` and `duplicates_removed` are field reads. The ruleset's
+            // *size* is deliberately not read here: it is already in the
+            // breakdown above, sampled inside the `spawn_blocking`, and a second
+            // `heap_bytes()` walk on this runtime worker is precisely the tail
+            // the comment above moved off it.
             metrics.set_ruleset(fah_metrics::RulesetSnapshot {
                 rules: matcher.len(),
-                heap_bytes: matcher.heap_bytes(),
                 duplicates_removed: matcher.duplicates_removed(),
                 // Pulled from the lifecycle, not pushed on compile events. This
                 // poll rewrites the whole snapshot every tick, so a pushed value
@@ -763,9 +757,11 @@ fn spawn_perf_sampler(
             // back to a fresh read before the first poll publishes, and off
             // Linux where both are 0.
             let memory = metrics.memory();
-            let rss = memory
-                .rss
-                .unwrap_or_else(fah_metrics::resident_memory_bytes);
+            let rss = memory.rss.or_else(fah_common::process::resident_bytes);
+            // `PerfSample::rss_bytes` is a plain `u64`, so an unreadable RSS
+            // persists as 0 — which the history reader already charts as "not
+            // recorded" rather than as a real measurement.
+            let rss = rss.unwrap_or(0);
             let sample =
                 build_perf_sample(&current, prev.as_ref(), &cache, rss, &memory, interval_secs);
             stats.persist_perf_sample(sample).await;
@@ -829,20 +825,13 @@ fn build_perf_sample(
             max_bytes: cache.max_bytes,
         },
         memory: memory.components,
-        minor_page_faults: memory.allocator.map_or(0, |a| a.minor_page_faults),
+        minor_page_faults: memory.process.map_or(0, |p| p.minor_page_faults),
         latency: latency_summary(current, prev),
-        upstreams: current
-            .upstreams
-            .iter()
-            .map(|u| fah_model::UpstreamSample {
-                address: u.address.clone(),
-                protocol: u.protocol.to_string(),
-                attempts: u.attempts,
-                failures: u.failures,
-                consecutive_failures: u.consecutive_failures,
-                tls_handshakes: u.tls_handshakes,
-            })
-            .collect(),
+        // One type end to end (`fah_model::UpstreamSample`), so this is a clone
+        // rather than a field-by-field remap into a structurally identical
+        // struct — which is what the pool status, the registry and this row
+        // used to each have their own of.
+        upstreams: current.upstreams.clone(),
     }
 }
 
@@ -977,15 +966,14 @@ mod tests {
                 stats: fah_model::StatsHeap {
                     aggregates: 5,
                     clients: 4,
-                    ring: 3,
-                    pending_log: 2,
                 },
             },
             rss: Some(1000),
-            allocator: Some(fah_model::AllocatorStats {
+            process: Some(fah_model::ProcessStats {
                 minor_page_faults: 7,
                 ..Default::default()
             }),
+            allocator: Some(fah_model::AllocatorStats::default()),
         }
     }
 
@@ -1035,7 +1023,7 @@ mod tests {
         // The row's RSS is `rss_bytes` alone, so the residual is derivable and
         // never stored twice.
         assert_eq!(sample.rss_bytes, 1000);
-        assert_eq!(sample.memory.accounted(), 124);
+        assert_eq!(sample.memory.accounted(), 119);
     }
 
     #[test]

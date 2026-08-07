@@ -17,8 +17,8 @@ x509-parser only; no hand-rolled TLS or crypto anywhere.
 
 - **Single API key** (bearer token), generated on first boot:
   printed once to the container log and stored in `/config`.
-- Required for everything under `/api/v1/`. `GET /health` and `GET /metrics`
-  are exempt by default (configurable — `api.metrics_public`).
+- Required for everything under `/api/v1/`. `GET /health` is the one exemption
+  and is not configurable; it returns status, version and uptime only.
 - Rotation: `POST /api/v1/config/apikey/rotate` — new key returned once, old
   key invalid immediately.
 - No users, roles or sessions in Phase 1: single-admin appliance.
@@ -69,15 +69,15 @@ x509-parser only; no hand-rolled TLS or crypto anywhere.
 
 - `/config` holds secrets (API key, TLS private key) — back it up accordingly;
   file permissions restricted to the container user.
-- `/data` (query log, cached lists, snapshots, history rollups + perf series)
-  holds the DNS history — treat the SSD as sensitive when disposing of it.
-  Retention is bounded and configurable; disabling the query log
-  (`query_log.enabled = false`) is the privacy-maximal setting.
-- `[history]` widens the retained-data window: it keeps hourly/daily aggregates
-  and per-client top-N for `history.retention_days` (default 30, up to 90),
-  longer than the query log's raw segments. It stores aggregates, not raw
-  per-query rows, but `enabled = false` turns it off entirely — mirroring
-  `query_log.enabled` — for the privacy-maximal posture.
+- `/data` (cached lists, snapshots, history rollups + perf series) holds the DNS
+  history — treat the SSD as sensitive when disposing of it. Retention is
+  bounded and configurable.
+- **No per-query row is written to disk.** `/data` holds aggregates only; the
+  live per-query feed is `WS /api/v1/events`, which persists nothing.
+- `[history]` sets the retained-data window: hourly/daily aggregates and
+  per-client top-N for `history.retention_days` (default 30, up to 90). It
+  stores aggregates, not raw per-query rows, and `enabled = false` turns it off
+  entirely — the privacy-maximal posture.
 
 ## Later phases (principles fixed now)
 

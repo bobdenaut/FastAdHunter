@@ -2,6 +2,7 @@
 
 pub mod egress;
 pub mod listen;
+pub mod process;
 pub mod resolve;
 
 use thiserror::Error;

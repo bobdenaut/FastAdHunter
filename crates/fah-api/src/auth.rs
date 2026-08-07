@@ -1,6 +1,6 @@
 //! Bearer-key authentication (API.md §Authentication, SECURITY.md §API
-//! access): required for everything under `/api/v1/`, with `GET /health` and
-//! `GET /metrics` exempt by default via `[api] metrics_public`.
+//! access): required for everything under `/api/v1/`, with `GET /health`
+//! exempt.
 
 use std::sync::Arc;
 
@@ -11,9 +11,8 @@ use axum::response::{IntoResponse, Response};
 use crate::error::ApiError;
 use crate::state::AppState;
 
-/// Routes that `metrics_public` exempts. Every other path under `/api/v1/`
-/// requires the key; nothing else is served at all.
-const PUBLIC_PATHS: [&str; 2] = ["/health", "/metrics"];
+/// Liveness only — status, version, uptime. Every other path requires the key.
+const PUBLIC_PATHS: [&str; 1] = ["/health"];
 
 pub async fn require_api_key(
     State(state): State<Arc<AppState>>,
@@ -21,7 +20,7 @@ pub async fn require_api_key(
     next: Next,
 ) -> Response {
     let path = request.uri().path();
-    if PUBLIC_PATHS.contains(&path) && state.metrics_public() {
+    if PUBLIC_PATHS.contains(&path) {
         return next.run(request).await;
     }
 

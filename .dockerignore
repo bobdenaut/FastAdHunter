@@ -7,6 +7,15 @@
 /dashboard
 /benches
 /tests
+/requests
+# Image tarballs built by docs/deploy-rb5009.md §1, which live in the repo root
+# and would otherwise be re-sent as build context on every later build.
+*.tar
+# tui-monitor is NOT excluded, and cannot be: the workspace `members` list
+# names it, and a bin package whose `src/main.rs` is absent makes the manifest
+# unloadable, so `--locked` fails before `-p fastadhunter` runs. It costs
+# 217 KB of context and zero image bytes — the distroless stage copies one
+# binary, and ratatui/crossterm are in none of that binary's 190 crates.
 *.md
 !crates/**/*.md
 .dockerignore

@@ -103,13 +103,12 @@ pub struct LatencySummary {
 }
 
 /// One upstream server's counters at sample time — the persisted mirror of
-/// `fah-metrics`' `UpstreamSnapshot` (owned `protocol` string so the row
-/// serializes without borrowing a `'static`).
+/// `fah-metrics`' `UpstreamSnapshot`, and the same rows `GET /api/v1/telemetry`
+/// publishes live.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct UpstreamSample {
     pub address: String,
-    /// `"udp"` | `"dot"` | `"doh"`.
-    pub protocol: String,
+    pub protocol: crate::Protocol,
     pub attempts: u64,
     pub failures: u64,
     /// Failures since the last success — non-zero means currently unhealthy.
@@ -156,14 +155,12 @@ mod tests {
                 stats: crate::StatsHeap {
                     aggregates: 271_090,
                     clients: 132_352,
-                    ring: 2_628_867,
-                    pending_log: 938,
                 },
             },
             minor_page_faults: 4_211_337,
             upstreams: vec![UpstreamSample {
                 address: "1.1.1.1".to_string(),
-                protocol: "dot".to_string(),
+                protocol: crate::Protocol::Dot,
                 attempts: 12_000,
                 failures: 3,
                 consecutive_failures: 0,

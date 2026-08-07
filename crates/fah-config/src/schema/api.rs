@@ -12,8 +12,6 @@ pub struct ApiConfig {
     pub port: u16,
     #[serde(default = "default_true")]
     pub tls: bool,
-    #[serde(default = "default_true")]
-    pub metrics_public: bool,
 }
 
 impl Default for ApiConfig {
@@ -22,7 +20,6 @@ impl Default for ApiConfig {
             address: default_address(),
             port: default_port(),
             tls: default_true(),
-            metrics_public: default_true(),
         }
     }
 }

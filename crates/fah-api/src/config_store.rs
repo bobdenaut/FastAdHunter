@@ -19,10 +19,9 @@ use serde_json::Value;
 ///
 /// The bar for leaving a key out of this list is not "it would be nice to
 /// change it live" — it is that something actually re-reads it after a patch.
-/// Only four keys clear it today, each with a real consumer: `history.enabled`
+/// Only three keys clear it today, each with a real consumer: `history.enabled`
 /// and `history.retention_days` (pushed through `apply_history_config` into
-/// the writers' shared atomic), `api.metrics_public` (read per request by
-/// `AppState::metrics_public`), `rules.refresh_hours_default` (read per
+/// the writers' shared atomic), `rules.refresh_hours_default` (read per
 /// request by the lists handlers), and since p2-06 `schedule.timezone` and
 /// `policies` (recompiled and republished into the live client → policy
 /// snapshot). Everything else is consumed once during
@@ -33,7 +32,7 @@ use serde_json::Value;
 /// Sections are listed whole rather than field-by-field on purpose: a field
 /// added to `[dns.cache]` tomorrow is boot until someone wires it live, which
 /// is the safe default for this contract.
-const BOOT_KEYS: [&str; 15] = [
+const BOOT_KEYS: [&str; 14] = [
     "engine.mode",
     "dns.listen",
     "dns.blocking",
@@ -49,7 +48,6 @@ const BOOT_KEYS: [&str; 15] = [
     // security policy under in-flight connections — if that is ever wanted it
     // needs an atomic swap and a test, not a reclassification here.
     "egress",
-    "query_log",
     "stats",
     "history.sample_interval_seconds",
     "api.address",
@@ -259,13 +257,13 @@ mod tests {
     fn the_patch_is_written_back_to_the_toml_file() {
         let (store, _dir) = store();
         store
-            .apply_patch(&serde_json::json!({"query_log": {"retention_days": 30}}))
+            .apply_patch(&serde_json::json!({"history": {"retention_days": 30}}))
             .unwrap();
 
         let written = std::fs::read_to_string(store.path()).unwrap();
         let reparsed = Config::from_toml_str(&written).unwrap();
         assert_eq!(
-            reparsed.query_log.retention_days, 30,
+            reparsed.history.retention_days, 30,
             "the file must reflect the running intent"
         );
     }
@@ -368,8 +366,6 @@ mod tests {
             "dns.cache.max_entries",           // DnsCache::new, at boot
             "dns.cache.max_bytes",             // DnsCache::new, at boot
             "dns.upstreams.timeout_ms",        // UpstreamPool::from_config, at boot
-            "query_log.enabled",               // Stats::new, at boot
-            "query_log.retention_days",        // Stats::new, at boot
             "stats.snapshot_interval_seconds", // Stats::new, at boot
             "history.sample_interval_seconds", // the sampler's interval, at boot
             "api.tls",
@@ -386,10 +382,6 @@ mod tests {
             (
                 "history.retention_days",
                 "apply_history_config -> writers' atomic",
-            ),
-            (
-                "api.metrics_public",
-                "AppState::metrics_public, per request",
             ),
             (
                 "rules.refresh_hours_default",

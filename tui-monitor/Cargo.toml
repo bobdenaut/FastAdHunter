@@ -1,24 +1,41 @@
 [package]
 name = "fah-tui-monitor"
-version = "0.1.0"
-edition = "2021"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
 
 [dependencies]
-tokio = { version = "1.0", features = ["full"] }
-crossterm = "0.27"
-ratatui = "0.26"
-reqwest = { version = "0.11", features = ["json", "rustls-tls"], default-features = false }
-tokio-tungstenite = { version = "0.21", features = ["native-tls"] }
-native-tls = "0.2"
-serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
-futures-util = "0.3"
-toml = "0.8"
-chrono = "0.4"
+# `EngineTelemetry` *is* the published shape of GET /api/v1/telemetry and
+# derives Deserialize for exactly this consumer (fah-model/src/engine.rs). L1 is
+# legal for anyone; restating those eight structs here would be the duplication
+# that type exists to prevent, and a renamed field would degrade to a silent
+# `None` instead of a compile error.
+fah-model = { path = "../crates/fah-model" }
 
-[profile.release]
-lto = "fat"
-codegen-units = 1
-panic = "abort"
-strip = true
-opt-level = 3
+# Workspace versions on purpose: this crate carried its own reqwest 0.11 while
+# the workspace was on 0.13, so a `cargo build --workspace` compiled two.
+reqwest = { workspace = true, features = ["json"] }
+serde.workspace = true
+serde_json.workspace = true
+tokio = { workspace = true, features = ["time", "sync"] }
+toml.workspace = true
+
+chrono = "0.4"
+crossterm = "0.27"
+futures-util = "0.3"
+ratatui = "0.26"
+# rustls, not native-tls: SECURITY.md fixes this project's TLS backend and hard
+# rule 5 lists rustls/rcgen/x509-parser as the only crypto. The old native-tls
+# feature pulled a second stack (schannel/openssl) in beside the rustls reqwest
+# already links.
+# 0.29 matches the copy axum already pulls for the server's own events socket,
+# so the workspace compiles tungstenite once instead of twice.
+tokio-tungstenite = { version = "0.29", default-features = false, features = [
+    "connect",
+    "rustls-tls-webpki-roots",
+] }
+rustls.workspace = true

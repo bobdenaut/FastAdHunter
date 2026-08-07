@@ -1,25 +1,30 @@
 # Authentication — API.md §Authentication, SECURITY.md §API access
 #
 # One bearer key, generated on first boot and printed to the log exactly once.
-# Everything under /api/v1/ requires it; /health and /metrics are exempt unless
-# `[api] metrics_public = false`.
+# Everything under /api/v1/ requires it; /health is the one exemption.
+#
+# The probes below use a path no endpoint owns. Auth runs as a layer around the
+# whole router, so it answers before routing does: no key is 401 whether or not
+# the path exists, and a good key falls through to 404. That is what makes this
+# file testable without borrowing another file's endpoint.
 
 @base = {{host}}
+@probe = {{base}}/api/v1/auth-probe
 
-### Valid key — the cheapest authenticated call, use it to check a key works.
-GET {{base}}/api/v1/lists
+### Valid key — expect 404, which means the key was accepted and routing ran.
+GET {{probe}}
 Authorization: Bearer {{apiKey}}
 
 ### No header at all — expect 401 with code "unauthorized".
-GET {{base}}/api/v1/lists
+GET {{probe}}
 
 ### Wrong key — expect 401, and identically shaped to the request above. The
 ### response must not reveal whether the key exists or merely mismatched.
-GET {{base}}/api/v1/lists
+GET {{probe}}
 Authorization: Bearer definitely-not-the-key
 
 ### Malformed header (no "Bearer " prefix) — expect 401, not 500.
-GET {{base}}/api/v1/lists
+GET {{probe}}
 Authorization: {{apiKey}}
 
 ### Rotate the key. Returns the new key ONCE and invalidates the old one
@@ -32,6 +37,6 @@ POST {{base}}/api/v1/config/apikey/rotate
 Authorization: Bearer {{apiKey}}
 
 ### Confirm the OLD key is dead — run after a rotation, before updating the
-### stored value. Expect 401.
-GET {{base}}/api/v1/lists
+### stored value. Expect 401, not 404.
+GET {{probe}}
 Authorization: Bearer {{apiKey}}

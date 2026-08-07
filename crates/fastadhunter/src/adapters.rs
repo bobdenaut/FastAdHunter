@@ -11,13 +11,13 @@ use std::sync::Arc;
 use std::time::SystemTime;
 
 use fah_api::{
-    BucketCount, ClientCount, ClientEntry, DomainCount, HistorySource, PolicyCount, QueryLogPage,
-    QueryLogRequest, QueryRecord, StatsOverview, StatsSource, TelemetrySource, VerdictFilter,
+    BucketCount, ClientCount, ClientEntry, DomainCount, HistorySource, PolicyCount, StatsOverview,
+    StatsSource, TelemetrySource,
 };
 use fah_dns::UpstreamPool;
 use fah_metrics::Metrics;
 use fah_model::{HistoryRange, HistoryResolution, HistorySeries, PerfSeries, TopItems, TopKind};
-use fah_stats::{QueryLogFilter, Stats, VerdictKind};
+use fah_stats::Stats;
 
 /// Lets the Rule Engine's list fetcher (L2) resolve download hosts through the
 /// DNS engine's upstreams (L3) — the same crossing as above, in the other
@@ -109,36 +109,6 @@ impl StatsSource for StatsAdapter {
                     blocked: p.blocked,
                 })
                 .collect(),
-        }
-    }
-
-    fn queries(&self, request: &QueryLogRequest) -> QueryLogPage {
-        let filter = QueryLogFilter {
-            client: request.client,
-            domain: request.domain.clone(),
-            verdict: request.verdict.map(|kind| match kind {
-                VerdictFilter::Allow => VerdictKind::Allow,
-                VerdictFilter::Block => VerdictKind::Block,
-                VerdictFilter::Pass => VerdictKind::Pass,
-            }),
-            from: request.from,
-            to: request.to,
-            kind: request.kind,
-            policy: request.policy.clone(),
-        };
-        let page = self
-            .stats
-            .query_log(&filter, request.limit, request.cursor.as_deref());
-        QueryLogPage {
-            items: page
-                .items
-                .into_iter()
-                .map(|entry| QueryRecord {
-                    event: entry.event,
-                    client_name: entry.client_name,
-                })
-                .collect(),
-            next_cursor: page.next_cursor,
         }
     }
 
@@ -256,10 +226,6 @@ impl TelemetryAdapter {
 }
 
 impl TelemetrySource for TelemetryAdapter {
-    fn prometheus_text(&self) -> String {
-        fah_metrics::encode(&self.metrics)
-    }
-
     /// API.md's `degraded`: "all upstreams failing — serve-stale active".
     /// Read straight off the pool rather than the metrics snapshot so health
     /// never lags behind the poller's interval. A pool that has answered
@@ -276,5 +242,15 @@ impl TelemetrySource for TelemetryAdapter {
     /// same instant as the component heaps it reads beside them.
     fn allocator(&self) -> Option<fah_model::AllocatorStats> {
         crate::allocator::stats()
+    }
+
+    fn process(&self) -> Option<fah_model::ProcessStats> {
+        crate::process::stats()
+    }
+
+    /// Straight through: the registry already assembles the L1 value, and it is
+    /// the only place that can read its own atomics.
+    fn engine(&self) -> fah_model::EngineTelemetry {
+        self.metrics.engine_telemetry()
     }
 }

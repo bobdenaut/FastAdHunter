@@ -22,9 +22,9 @@ built-in defaults  <  config file  <  environment variables  <  API changes
 | **runtime** | applied live via atomic swap, no restart |
 | **boot** | API accepts + persists, responds `restart_required: true` |
 
-A key is **runtime** only when something re-reads it after the patch. Four do:
+A key is **runtime** only when something re-reads it after the patch. Three do:
 `history.enabled` and `history.retention_days` (pushed into the history
-writers' shared retention atomic), `api.metrics_public` and
+writers' shared retention atomic) and
 `rules.refresh_hours_default` (read per request), plus the list set, which the
 `/lists` endpoints keep in step with the file. Everything else is read once
 during startup — the cache and upstream pool are built there, the query-log and
@@ -213,16 +213,6 @@ timezone = "UTC"              # runtime — POSIX TZ string, not an IANA name:
 # that is always in force. The most specific assignment wins: a name, then an
 # address, then the longest prefix.
 
-# ─── Query log ─────────────────────────────────────────────────────────
-[query_log]
-enabled = true                # boot
-ring_entries = 10000          # boot    — in-RAM ring; the ONLY thing
-                              #           GET /api/v1/queries can read
-retention_days = 7            # boot    — SSD segment retention (age cap)
-retention_max_mb = 500        # boot    — SSD segment retention (size cap);
-                              #           whichever cap binds first prunes
-flush_interval_seconds = 5    # boot    — batched writes (SSD-friendly)
-
 # ─── Statistics ────────────────────────────────────────────────────────
 [stats]
 snapshot_interval_seconds = 300  # boot    — periodic snapshot to /data
@@ -242,7 +232,7 @@ retention_days = 30           # runtime — age cap on /data/history day-files;
 address = "0.0.0.0"           # boot    — bind LAN-side only; never expose to WAN
 port = 8443                   # boot
 tls = true                    # boot    — self-signed generated on first boot; opt-out is UNSAFE
-metrics_public = true         # runtime — /health + /metrics without API key
+# /health is unauthenticated and not configurable; every other route needs the key.
 # api key: stored in /config, never in this file's plaintext sections;
 # rotate via POST /api/v1/config/apikey/rotate
 
@@ -288,34 +278,15 @@ Editing `[[rules.lists]]` here by hand still works; it takes effect at the next
 start, like any boot value. Arrays replace wholesale rather than merging, which
 is another reason not to hand-edit a set the API is also maintaining.
 
-## What reads the query log
+## Per-query data
 
-`[query_log]` has two storage tiers and only one of them is readable today:
+FastAdHunter keeps no per-query record on disk. The live feed is
+`WS /api/v1/events`; long-term aggregates come from `GET /api/v1/history/*`,
+which reads `/data/history`. A client wanting searchable per-query history
+subscribes to the websocket and stores the events itself.
 
-- **`ring_entries`** — the in-RAM ring. This is what `GET /api/v1/queries`
-  serves, and the only thing it serves. The history it can answer for is
-  `ring_entries ÷ current QPS`: ~2.8 h for a household at ~1 QPS, ~2 minutes at
-  85 QPS. A `from`/`to` range older than the ring comes back **empty**, not as an
-  error.
-- **`retention_days` / `retention_max_mb`** — the `/data` segments. Written and
-  pruned correctly (whichever cap binds first), but **no endpoint reads them
-  yet**; they exist for per-query drill-down in the dashboard phase. Long-term
-  aggregates come from `/api/v1/history/*`, which reads `/data/history` instead.
-
-`retention_max_mb` counts **MiB** (`retention_max_mb × 1024 × 1024`), and the
-total may sit slightly *above* the cap: prune never deletes the segment
-currently being written, and segments roll at 1 MiB, so the real bound is
-`cap + (active segment < 1 MiB)`. Measured on the RB5009 at the 500 MiB default:
-524,534,431 B against a 524,288,000 B cap — 240 KB over, the active segment's
-fill. Bounded, and not a defect.
-
-Sizing consequence: the segments cost real disk and real write volume for data
-nothing can currently return. At household rates that is ~25 MB/day and
-irrelevant. Under a synthetic load generator it is not — 85 QPS produces roughly
-1.8 GB/day of segment writes, recycling a 500 MiB cap about every 6.7 hours, so
-`retention_max_mb` binds long before `retention_days` and the retained span is
-hours rather than the configured week. Consider `enabled = false` for synthetic
-soak runs.
+`[history] enabled` is the only switch over what is persisted about traffic, and
+`false` is the privacy-maximal setting (SECURITY.md).
 
 ## The two cache bounds
 
@@ -393,13 +364,13 @@ drained, not a soak.
 
 Setting it to `0` disables the sweep and touches nothing else. The admin
 `POST /api/v1/cache/clean` remains available either way, and both count into
-the same `fastadhunter_cache_cleanup_*` metrics because they are the same
-operation.
+the same `counters.cache_cleanup` figures on `/api/v1/telemetry` because they
+are the same operation.
 
 The `[history]` defaults suit the RB5009's 1 TB SSD: hourly/daily rollups are
 kilobytes/day and the 60 s perf series is tens of MB over 90 days, so keeping
 `retention_days` at 30 (or raising it to 60/90) costs almost nothing. Both are
-pruned by age like the query log — memory and disk stay bounded (hard rule 4).
+pruned by age, so memory and disk stay bounded (hard rule 4).
 
 Each perf row also carries the memory breakdown (`memory` + `minor_page_faults`,
 p2-07), which is what lets a soak attribute growth to a component instead of

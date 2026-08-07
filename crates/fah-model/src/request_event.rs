@@ -105,9 +105,9 @@ impl Event {
         Self::Http(Box::new(event))
     }
 
-    /// The stable `dns` / `http` discriminator the query log stores and the
-    /// API filters on. A method rather than a derived string so the two can
-    /// never disagree about spelling.
+    /// The stable `dns` / `http` discriminator the API publishes. A method
+    /// rather than a derived string so the surfaces using it can never
+    /// disagree about spelling.
     pub fn kind(&self) -> EventKind {
         match self {
             Event::Dns(_) => EventKind::Dns,
@@ -145,8 +145,8 @@ impl Event {
     }
 }
 
-/// Which pipeline produced an event. Persisted in the query log and accepted as
-/// a `GET /api/v1/queries` filter (API.md).
+/// Which pipeline produced an event — the `kind` field on every
+/// `WS /api/v1/events` message (API.md).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum EventKind {
@@ -240,8 +240,8 @@ mod tests {
         }
     }
 
-    /// The discriminator reaches the query log, the API filter and a metric
-    /// label. One spelling, asserted, so those three cannot drift.
+    /// The discriminator reaches the events socket and a metric label. One
+    /// spelling, asserted, so the two cannot drift.
     #[test]
     fn event_kind_spelling_is_stable_and_round_trips() {
         for (kind, text) in [(EventKind::Dns, "dns"), (EventKind::Http, "http")] {

@@ -12,7 +12,7 @@
 //! whole process lifetime and barely move between samples.
 
 use crate::histogram::BUCKETS_SECONDS;
-use crate::upstream::UpstreamSnapshot;
+use fah_model::UpstreamSample;
 
 /// A whole-registry read at one instant.
 #[derive(Debug, Clone)]
@@ -47,7 +47,7 @@ pub struct MetricsSnapshot {
     pub request_block: StageHistogram,
     /// End-to-end forwarded-request latency, including the origin round trip.
     pub request_forward: StageHistogram,
-    pub upstreams: Vec<UpstreamSnapshot>,
+    pub upstreams: Vec<UpstreamSample>,
 }
 
 /// Stale-while-refresh counters at one instant, mirroring

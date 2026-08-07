@@ -1,4 +1,4 @@
-# DNS cache admin — API.md §Cache, §Debug
+# DNS cache admin — API.md §Cache
 #
 # Entry stages (CONTEXT.md §Cache): fresh (within TTL), stale (past TTL but
 # inside the RFC 8767 serve-stale window — outage insurance), expired (dead
@@ -21,7 +21,3 @@ Authorization: Bearer {{apiKey}}
 POST {{base}}/api/v1/cache/clean?stale=true
 Authorization: Bearer {{apiKey}}
 
-### Where the RAM goes: compiled ruleset, cache estimate, process RSS
-### (RSS is null off Linux — no procfs on a Windows dev box).
-GET {{base}}/api/v1/debug/memory
-Authorization: Bearer {{apiKey}}

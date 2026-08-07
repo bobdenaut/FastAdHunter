@@ -59,8 +59,7 @@ Shipped and verified on-device; see `plan/closed/phase1/`.
 ### Stats & metrics
 
 - [x] `fah-stats`: in-RAM aggregates (24h rolling buckets, bounded top-N),
-      periodic `/data` snapshots; query log ring buffer + batched segments,
-      age/size retention, auto-prune
+      bounded per-client registry, periodic `/data` snapshots
 - [x] `fah-metrics`: Prometheus export — QPS, latency histograms, cache hit
       ratio, memory, per-verdict counters
 
@@ -91,7 +90,7 @@ in-RAM-only and lost everything on restart. See `plan/closed/phase1.5/`.
 
 - [x] History rollups — hourly/daily aggregation persisted to `/data`
 - [x] Perf sample series (bounded, ~740 B/sample)
-- [x] History retention config (`retention_days`, `retention_max_mb`)
+- [x] History retention config (`retention_days`)
 - [x] History query API + `GET /api/v1/history`
 - [x] Cache byte cap (`max_bytes`) alongside `max_entries`, O(1) eviction
 - [x] Config mutability contract: `boot` keys persist + `restart_required`,

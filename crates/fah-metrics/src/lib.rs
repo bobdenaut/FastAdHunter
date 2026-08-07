@@ -10,23 +10,21 @@
 //! `fah-dns`'s and
 //! `fah-rules`' own counters ([`Metrics::set_dropped_events`],
 //! [`Metrics::set_upstreams`], [`Metrics::set_ruleset`]) — siblings never
-//! import each other's types (ARCHITECTURE.md §Dependency Layering), so this
-//! crate defines its own [`UpstreamSnapshot`]/[`RulesetSnapshot`] DTOs rather
-//! than depending on `fah-dns`/`fah-rules`. [`encode`] renders the registry
-//! as Prometheus text exposition format for `fah-api`'s `GET /metrics`
-//! (p1-09) to serve verbatim.
+//! import each other's types (ARCHITECTURE.md §Dependency Layering), so where
+//! no shared shape exists this crate defines its own DTO rather than depending
+//! on `fah-dns`/`fah-rules` ([`RulesetSnapshot`]). Where one *does* exist at
+//! L1, it is used directly: upstream rows are [`fah_model::UpstreamSample`],
+//! the same type the pool status carries and every persisted `PerfSample`
+//! stores, so nothing is remapped between them.
+//!
+//! [`Metrics::engine_telemetry`] renders the registry as the L1 value
+//! `GET /api/v1/telemetry` publishes.
 
-mod encode;
 mod histogram;
-mod process;
 mod registry;
 mod ruleset;
 mod snapshot;
-mod upstream;
 
-pub use encode::encode;
-pub use process::resident_memory_bytes;
 pub use registry::Metrics;
 pub use ruleset::RulesetSnapshot;
 pub use snapshot::{CleanupSnapshot, MetricsSnapshot, StageHistogram, SwrSnapshot};
-pub use upstream::UpstreamSnapshot;

@@ -6,7 +6,6 @@ mod history;
 mod http;
 mod log;
 mod policy;
-mod query_log;
 mod rules;
 mod stats;
 
@@ -21,7 +20,6 @@ pub use history::HistoryConfig;
 pub use http::{HttpConfig, HttpListenConfig};
 pub use log::{LogConfig, LogFormat, LogLevel};
 pub use policy::{parse_days, parse_time_of_day, AssignmentConfig, PolicyConfig, ScheduleConfig};
-pub use query_log::QueryLogConfig;
 pub use rules::{RuleListConfig, RulesConfig};
 pub use stats::StatsConfig;
 
@@ -52,7 +50,6 @@ pub struct Config {
     /// ruleset carries no per-policy masks at all.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub policies: Vec<PolicyConfig>,
-    pub query_log: QueryLogConfig,
     pub stats: StatsConfig,
     pub history: HistoryConfig,
     pub api: ApiConfig,

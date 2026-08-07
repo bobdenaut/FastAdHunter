@@ -8,9 +8,9 @@ publish.workspace = true
 [lints]
 workspace = true
 
-# Aggregates/query log/client registry: pure state + `/data` persistence, no
+# Aggregates/history/client registry: pure state + `/data` persistence, no
 # network. fah-model for the QueryEvent DTO the DNS pipeline emits;
-# fah-config for [stats]/[query_log].
+# fah-config for [stats]/[history].
 [dependencies]
 fah-config = { path = "../fah-config" }
 fah-model = { path = "../fah-model" }
@@ -20,5 +20,13 @@ tokio = { workspace = true, features = ["fs", "io-util", "sync", "time"] }
 tracing = { workspace = true }
 
 [dev-dependencies]
+criterion = { workspace = true }
 tempfile = "3"
 tokio = { workspace = true, features = ["fs", "io-util", "sync", "time", "macros", "rt-multi-thread", "test-util"] }
+
+# `Stats::record` runs once per completed query in the binary's fan-out
+# consumer. Nothing measured it until now, so a regression on that path shipped
+# silently.
+[[bench]]
+name = "record"
+harness = false

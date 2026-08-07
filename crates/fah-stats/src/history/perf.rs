@@ -172,7 +172,7 @@ mod tests {
             minor_page_faults: 231_655,
             upstreams: vec![UpstreamSample {
                 address: "1.1.1.1".to_string(),
-                protocol: "udp".to_string(),
+                protocol: fah_model::Protocol::Udp,
                 attempts: 10,
                 failures: 0,
                 consecutive_failures: 0,

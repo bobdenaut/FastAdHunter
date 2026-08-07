@@ -43,7 +43,7 @@ use crate::upstream::Forwarder;
 /// is bounded by configuration, never by traffic or uptime.
 const QUEUE_DEPTH_PER_WORKER: usize = 64;
 
-/// SWR counters for `/metrics`, read by the binary off
+/// SWR counters for `/api/v1/telemetry`, read by the binary off
 /// [`crate::Pipeline::swr_stats`]. Process-lifetime totals.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct SwrStats {

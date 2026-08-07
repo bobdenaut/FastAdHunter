@@ -3,7 +3,7 @@ resolver = "2"
 members = ["crates/*", "tui-monitor"]
 
 [workspace.package]
-version = "0.2.10"
+version = "0.2.12"
 edition = "2021"
 rust-version = "1.96"
 publish = false
@@ -53,7 +53,7 @@ hickory-net = { version = "0.26", default-features = false, features = ["tokio",
 # allocator test), so replacing it later means editing one file.
 #
 # Two entries: the `mimalloc` wrapper does not re-export the FFI, so
-# `mi_process_info` — the allocator figures behind /debug/memory and /metrics —
+# `mi_process_info` — the allocator figures behind /debug/memory —
 # is reachable only through the -sys crate with `extended` (which pulls `cty`).
 # Feature unification resolves it to the same instance `mimalloc` already pulls,
 # so mimalloc's C compiles once.

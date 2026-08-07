@@ -1,4 +1,4 @@
-//! [`Stats`]: owns aggregates, client registry and query log; the internal
+//! [`Stats`]: owns the aggregates and the client registry; the internal
 //! handle `fah-api` (p1-09) will hold to serve API.md's stats/query/client
 //! endpoints. Consumes `QueryEvent`s from the bounded channel `fah-dns`
 //! emits into — created and wired in `fastadhunter` (siblings never import
@@ -7,11 +7,11 @@
 use std::io;
 use std::net::IpAddr;
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime};
 
-use fah_config::{HistoryConfig, QueryLogConfig, StatsConfig};
+use fah_config::{HistoryConfig, StatsConfig};
 use fah_model::{
     ClientHits, DailyTopN, DomainHits, HistoryRange, HistoryResolution, HistorySeries, PerfSample,
     PerfSeries, QueryEvent, TopItems, TopKind,
@@ -22,45 +22,20 @@ use crate::aggregates::Aggregates;
 use crate::client_registry::{ClientRegistry, ClientView};
 use crate::dto::{ClientCount, DomainCount, StatsSnapshot};
 use crate::history::{HistoryReader, PerfWriter, RollupWriter};
-use crate::query_log::ring::Ring;
-use crate::query_log::segment::SegmentWriter;
-use crate::query_log::{QueryLogFilter, QueryPage};
 use crate::snapshot::{self, SnapshotData};
 use fah_model::StatsHeap;
 
 const DEFAULT_TOP_N: usize = 10;
 
-/// Cap on entries buffered between segment flushes (hard rule 4: a stalled
-/// disk or a dead flush task must not let memory grow with traffic). Sized
-/// for ~3k QPS over a 5 s flush interval; beyond that, newest entries are
-/// dropped and counted — they're still in the ring for the query API.
-const MAX_PENDING_LOG: usize = 16_384;
-
 pub struct Stats {
-    query_log_enabled: bool,
     data_dir: PathBuf,
     snapshot_interval: Duration,
-    flush_interval: Duration,
-    retention_days: u32,
-    retention_max_mb: u32,
     aggregates: Mutex<Aggregates>,
     clients: Mutex<ClientRegistry>,
-    ring: Mutex<Ring>,
-    /// Entries recorded since the last flush — batched to keep segment
-    /// writes off the per-query path (flushed by the scheduler, not by
-    /// [`Stats::record`]). Capped at [`MAX_PENDING_LOG`]; overflow is
-    /// dropped and counted in `pending_dropped`.
-    pending_log: Mutex<Vec<crate::query_log::QueryLogEntry>>,
-    /// Entries dropped from the pending batch because the cap was hit —
-    /// exposed via [`Self::query_log_overflow_dropped`] for fah-metrics.
-    pending_dropped: AtomicU64,
-    /// Touched only by the flush scheduler, but async (rotate/prune do I/O),
-    /// so it's a `tokio::sync::Mutex` — mirrors `fah_rules::ListManager`'s
-    /// `compile_lock` (a lock guarding a section that awaits).
-    segment: tokio::sync::Mutex<SegmentWriter>,
     /// Long-term hourly/daily aggregate rollups on `/data/history` — written by
     /// the history scheduler, never the per-query path (hard rule 3). Async
-    /// mutex for the same reason as `segment`.
+    /// mutex because rotate/prune do I/O, mirroring `fah_rules::ListManager`'s
+    /// `compile_lock` (a lock guarding a section that awaits).
     history: tokio::sync::Mutex<RollupWriter>,
     /// Per-interval perf/system/cache sample series on `/data/history/perf`.
     /// The binary's sampler builds each [`PerfSample`] (it alone reads
@@ -73,7 +48,7 @@ pub struct Stats {
     history_reader: HistoryReader,
     /// Master switch for the history writers and the perf series. Live-settable
     /// through `POST /api/v1/config` ([`Self::set_history_enabled`]); a disabled
-    /// history simply drops each flush, mirroring `query_log.enabled`.
+    /// history simply drops each flush.
     history_enabled: AtomicBool,
     /// Retention shared with both history writers (one atomic, two readers), so
     /// [`Self::set_history_retention_days`] moves the next prune's cut-off for
@@ -84,29 +59,16 @@ pub struct Stats {
 impl Stats {
     pub fn new(
         stats_config: &StatsConfig,
-        query_log_config: &QueryLogConfig,
         history_config: &HistoryConfig,
         data_dir: PathBuf,
     ) -> Self {
         let history_retention_days = Arc::new(AtomicU32::new(history_config.retention_days));
         Self {
-            query_log_enabled: query_log_config.enabled,
             snapshot_interval: Duration::from_secs(u64::from(
                 stats_config.snapshot_interval_seconds.max(1),
             )),
-            flush_interval: Duration::from_secs(u64::from(
-                query_log_config.flush_interval_seconds.max(1),
-            )),
-            retention_days: query_log_config.retention_days,
-            retention_max_mb: query_log_config.retention_max_mb,
             aggregates: Mutex::new(Aggregates::default()),
             clients: Mutex::new(ClientRegistry::default()),
-            ring: Mutex::new(Ring::new(query_log_config.ring_entries as usize)),
-            pending_log: Mutex::new(Vec::new()),
-            pending_dropped: AtomicU64::new(0),
-            segment: tokio::sync::Mutex::new(SegmentWriter::new(
-                data_dir.join("query_log").join("segments"),
-            )),
             history: tokio::sync::Mutex::new(RollupWriter::new(
                 data_dir.join("history").join("rollups"),
                 Arc::clone(&history_retention_days),
@@ -125,17 +87,12 @@ impl Stats {
         }
     }
 
-    /// Loads the persisted snapshot (if any) and resumes segment numbering —
-    /// no network, mirrors `ListManager::boot`'s cache-first convention.
+    /// Loads the persisted snapshot (if any) — no network, mirrors
+    /// `ListManager::boot`'s cache-first convention.
     pub async fn boot(&self) {
         if let Some(data) = snapshot::load(&self.data_dir).await {
             *self.aggregates.lock().unwrap() = data.aggregates;
             *self.clients.lock().unwrap() = data.clients;
-        }
-        if self.query_log_enabled {
-            if let Err(err) = self.segment.lock().await.boot().await {
-                tracing::warn!(error = %err, "failed to initialize query log segment writer");
-            }
         }
         if let Err(err) = self.history.lock().await.boot().await {
             tracing::warn!(error = %err, "failed to initialize history rollup writer");
@@ -163,17 +120,14 @@ impl Stats {
             );
             aggregates.record_policy(event.policy.as_deref(), blocked, at);
         }
-        let client_name = {
-            let mut clients = self.clients.lock().unwrap();
-            clients.record(event.query.client_ip, at, blocked, event.cache_hit);
-            clients.name(event.query.client_ip)
-        };
-
-        self.log(fah_model::Event::dns(event), client_name);
+        self.clients
+            .lock()
+            .unwrap()
+            .record(event.query.client_ip, at, blocked, event.cache_hit);
     }
 
     /// Records one completed HTTP request (p2-04). The proxy's counterpart of
-    /// [`Stats::record`], on the same fan-out task and the same ring.
+    /// [`Stats::record`], on the same fan-out task.
     ///
     /// **Deliberately not fed into the domain aggregates.** `/stats`'s top
     /// domains have meant "names asked for" since p1-07; one page load is a
@@ -195,47 +149,21 @@ impl Stats {
             .unwrap()
             .record_policy(event.policy.as_deref(), blocked, at);
 
-        let client_name = {
-            let mut clients = self.clients.lock().unwrap();
-            // `cache_hit: false` — an HTTP request has no cache to hit; the DNS
-            // cache answered a different question earlier.
-            clients.record(client_ip, at, blocked, false);
-            clients.name(client_ip)
-        };
-
-        self.log(fah_model::Event::http(event), client_name);
-    }
-
-    /// Appends one event to the ring and the pending flush batch. Shared by
-    /// both pipelines so the log's bounds and shed accounting cannot differ
-    /// between them.
-    fn log(&self, event: fah_model::Event, client_name: Option<String>) {
-        if !self.query_log_enabled {
-            return;
-        }
-        let entry = self.ring.lock().unwrap().push(event, client_name);
-        let mut pending = self.pending_log.lock().unwrap();
-        if pending.len() >= MAX_PENDING_LOG {
-            self.pending_dropped.fetch_add(1, Ordering::Relaxed);
-        } else {
-            pending.push(entry);
-        }
-    }
-
-    /// Query-log entries lost to the pending-batch cap (flush stalled or
-    /// falling behind). The DNS-side channel drops are counted separately,
-    /// on the producer (`fah_dns::Pipeline::dropped_events`).
-    pub fn query_log_overflow_dropped(&self) -> u64 {
-        self.pending_dropped.load(Ordering::Relaxed)
+        // `cache_hit: false` — an HTTP request has no cache to hit; the DNS
+        // cache answered a different question earlier.
+        self.clients
+            .lock()
+            .unwrap()
+            .record(client_ip, at, blocked, false);
     }
 
     /// This crate's contribution to the memory breakdown (p2-07).
     ///
-    /// Takes the three sync locks in turn — never the async `segment`,
-    /// `history` or `perf` writers, so a poll can never contend with a flush
-    /// doing I/O. Those writers hold only paths and small buffers; their real
-    /// weight is on `/data`, bounded by `retention_max_mb`, and disk is not
-    /// what this accounts for.
+    /// Takes the two sync locks in turn — never the async `history` or `perf`
+    /// writers, so a poll can never contend with a flush doing I/O. Those
+    /// writers hold only paths and small buffers; their real weight is on
+    /// `/data`, bounded by `history.retention_days`, and disk is not what this
+    /// accounts for.
     ///
     /// Called on the 10 s telemetry poll, never on the query path. See
     /// [`crate::heap`] for which structures are walked and which track a
@@ -252,15 +180,6 @@ impl Stats {
                 .lock()
                 .expect("clients mutex poisoned")
                 .heap_bytes() as u64,
-            ring: self.ring.lock().expect("ring mutex poisoned").heap_bytes() as u64,
-            pending_log: {
-                let pending = self.pending_log.lock().expect("pending mutex poisoned");
-                (pending.capacity() * std::mem::size_of::<crate::query_log::QueryLogEntry>()
-                    + pending
-                        .iter()
-                        .map(crate::query_log::entry_string_bytes)
-                        .sum::<usize>()) as u64
-            },
         }
     }
 
@@ -284,56 +203,6 @@ impl Stats {
         };
         if let Err(err) = snapshot::save(&self.data_dir, &data).await {
             tracing::warn!(error = %err, "failed to save stats snapshot");
-        }
-    }
-
-    /// Starts the query-log flush loop, returning its handle for the caller to
-    /// abort on shutdown — `None` when `[query_log] enabled = false`.
-    ///
-    /// `enabled` is boot-class (a plain `bool`, unlike `history_enabled`), so
-    /// the flag cannot change under a running process and the task would only
-    /// ever wake to hit [`Stats::flush_query_log`]'s own early return.
-    pub fn spawn_query_log_scheduler(self: &Arc<Self>) -> Option<JoinHandle<()>> {
-        if !self.query_log_enabled {
-            return None;
-        }
-        let stats = Arc::clone(self);
-        let interval = self.flush_interval;
-        Some(tokio::spawn(async move {
-            let mut ticker = tokio::time::interval(interval);
-            ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
-            loop {
-                ticker.tick().await;
-                stats.flush_query_log().await;
-            }
-        }))
-    }
-
-    pub async fn flush_query_log(&self) {
-        if !self.query_log_enabled {
-            return;
-        }
-        let batch = std::mem::take(&mut *self.pending_log.lock().unwrap());
-        let mut segment = self.segment.lock().await;
-        let rotated = match segment.append(&batch).await {
-            Ok(rotated) => rotated,
-            Err(err) => {
-                tracing::warn!(error = %err, "failed to flush query log segment; will retry");
-                drop(segment);
-                self.requeue(batch);
-                return;
-            }
-        };
-        if let Err(err) = segment
-            .maybe_prune(
-                self.retention_days,
-                self.retention_max_mb,
-                SystemTime::now(),
-                rotated,
-            )
-            .await
-        {
-            tracing::warn!(error = %err, "failed to prune query log segments");
         }
     }
 
@@ -474,22 +343,6 @@ impl Stats {
         }
     }
 
-    /// Puts a batch that failed to persist back in front of whatever was
-    /// recorded meanwhile, so a transient disk error loses nothing; the
-    /// [`MAX_PENDING_LOG`] cap still holds (oldest dropped and counted), so
-    /// a *persistent* error can't grow memory (hard rule 4).
-    fn requeue(&self, mut batch: Vec<crate::query_log::QueryLogEntry>) {
-        let mut pending = self.pending_log.lock().unwrap();
-        batch.append(&mut pending);
-        if batch.len() > MAX_PENDING_LOG {
-            let overflow = batch.len() - MAX_PENDING_LOG;
-            batch.drain(..overflow);
-            self.pending_dropped
-                .fetch_add(overflow as u64, Ordering::Relaxed);
-        }
-        *pending = batch;
-    }
-
     /// Every field is windowed to the rolling 24h the `window` field
     /// declares (API.md `GET /api/v1/stats`).
     pub fn snapshot(&self, now: SystemTime) -> StatsSnapshot {
@@ -521,17 +374,6 @@ impl Stats {
     /// `PolicyState::refresh` so name assignments resolve to addresses.
     pub fn named_clients(&self) -> Vec<(IpAddr, std::sync::Arc<str>)> {
         self.clients.lock().unwrap().named()
-    }
-
-    pub fn query_log(
-        &self,
-        filter: &QueryLogFilter,
-        limit: usize,
-        cursor: Option<&str>,
-    ) -> QueryPage {
-        let cursor = cursor.and_then(|c| c.parse::<u64>().ok());
-        let filter = filter.normalized();
-        self.ring.lock().unwrap().query(&filter, limit, cursor)
     }
 
     pub fn clients(&self, now: SystemTime) -> Vec<ClientView> {
@@ -576,19 +418,10 @@ mod tests {
 
     use super::*;
 
-    fn config() -> (StatsConfig, QueryLogConfig) {
-        (
-            StatsConfig {
-                snapshot_interval_seconds: 300,
-            },
-            QueryLogConfig {
-                enabled: true,
-                ring_entries: 100,
-                retention_days: 7,
-                retention_max_mb: 500,
-                flush_interval_seconds: 5,
-            },
-        )
+    fn config() -> StatsConfig {
+        StatsConfig {
+            snapshot_interval_seconds: 300,
+        }
     }
 
     fn event(domain: &str, client: IpAddr, verdict: Verdict) -> QueryEvent {
@@ -625,12 +458,10 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn record_updates_aggregates_registry_and_ring() {
-        let (stats_config, query_log_config) = config();
+    async fn record_updates_aggregates_and_the_client_registry() {
         let dir = tempfile::tempdir().unwrap();
         let stats = Stats::new(
-            &stats_config,
-            &query_log_config,
+            &config(),
             &HistoryConfig::default(),
             dir.path().to_path_buf(),
         );
@@ -648,20 +479,15 @@ mod tests {
         assert_eq!(snapshot.queries_total, 2);
         assert_eq!(snapshot.blocked_total, 1);
         assert_eq!(snapshot.top_clients[0].ip, client);
-
-        let page = stats.query_log(&QueryLogFilter::default(), 10, None);
-        assert_eq!(page.items.len(), 2);
     }
 
     /// Per-policy counters, and the `default` row that covers events no policy
     /// was assigned for (p2-06).
     #[tokio::test]
-    async fn per_policy_counters_split_by_policy_and_filter_the_log() {
-        let (stats_config, query_log_config) = config();
+    async fn per_policy_counters_split_by_policy() {
         let dir = tempfile::tempdir().unwrap();
         let stats = Stats::new(
-            &stats_config,
-            &query_log_config,
+            &config(),
             &HistoryConfig::default(),
             dir.path().to_path_buf(),
         );
@@ -687,39 +513,15 @@ mod tests {
             .map(|p| (&*p.policy, p.queries, p.blocked))
             .collect();
         assert_eq!(counts, vec![("kids", 2, 1), ("default", 1, 0)]);
-
-        let kids_only = stats.query_log(
-            &QueryLogFilter {
-                policy: Some("kids".to_string()),
-                ..QueryLogFilter::default()
-            },
-            10,
-            None,
-        );
-        assert_eq!(kids_only.items.len(), 2);
-
-        // `default` selects exactly the events that name no policy.
-        let default_only = stats.query_log(
-            &QueryLogFilter {
-                policy: Some("default".to_string()),
-                ..QueryLogFilter::default()
-            },
-            10,
-            None,
-        );
-        assert_eq!(default_only.items.len(), 1);
-        assert_eq!(default_only.items[0].name(), "example.org");
     }
 
     /// An HTTP request counts toward its policy but never toward the domain
     /// tables — the p2-04 split, kept.
     #[tokio::test]
     async fn http_requests_count_toward_a_policy_but_not_the_domain_tables() {
-        let (stats_config, query_log_config) = config();
         let dir = tempfile::tempdir().unwrap();
         let stats = Stats::new(
-            &stats_config,
-            &query_log_config,
+            &config(),
             &HistoryConfig::default(),
             dir.path().to_path_buf(),
         );
@@ -755,13 +557,13 @@ mod tests {
         );
     }
 
+    /// The name is resolved on demand, not captured per event — the websocket
+    /// decorates each event by calling this at publish time.
     #[tokio::test]
-    async fn client_name_is_resolved_onto_new_log_entries() {
-        let (stats_config, query_log_config) = config();
+    async fn a_client_name_is_readable_once_assigned() {
         let dir = tempfile::tempdir().unwrap();
         let stats = Stats::new(
-            &stats_config,
-            &query_log_config,
+            &config(),
             &HistoryConfig::default(),
             dir.path().to_path_buf(),
         );
@@ -769,24 +571,20 @@ mod tests {
 
         let client = IpAddr::V4(Ipv4Addr::new(192, 168, 1, 10));
         stats.record(event("example.com", client, Verdict::Pass));
-        stats.set_client_name(client, Some("liviu-phone".to_string()));
-        stats.record(event("second.example.com", client, Verdict::Pass));
+        assert_eq!(stats.client_name(client), None);
 
-        let page = stats.query_log(&QueryLogFilter::default(), 10, None);
-        assert_eq!(page.items[0].client_name.as_deref(), Some("liviu-phone"));
-        assert_eq!(page.items[1].client_name, None);
+        stats.set_client_name(client, Some("liviu-phone".to_string()));
+        assert_eq!(stats.client_name(client).as_deref(), Some("liviu-phone"));
     }
 
     #[tokio::test]
     async fn kill_and_restart_recovers_stats_from_the_last_snapshot() {
-        let (stats_config, query_log_config) = config();
         let dir = tempfile::tempdir().unwrap();
         let client = IpAddr::V4(Ipv4Addr::new(192, 168, 1, 10));
 
         {
             let stats = Stats::new(
-                &stats_config,
-                &query_log_config,
+                &config(),
                 &HistoryConfig::default(),
                 dir.path().to_path_buf(),
             );
@@ -800,8 +598,7 @@ mod tests {
         }
 
         let restarted = Stats::new(
-            &stats_config,
-            &query_log_config,
+            &config(),
             &HistoryConfig::default(),
             dir.path().to_path_buf(),
         );
@@ -816,22 +613,15 @@ mod tests {
     /// proves nothing (p2-07).
     #[tokio::test]
     async fn heap_accounting_tracks_recorded_traffic_and_stays_bounded() {
-        let (stats_config, query_log_config) = config();
         let dir = tempfile::tempdir().unwrap();
         let stats = Stats::new(
-            &stats_config,
-            &query_log_config,
+            &config(),
             &HistoryConfig::default(),
             dir.path().to_path_buf(),
         );
         stats.boot().await;
 
         let empty = stats.heap();
-        assert_eq!(
-            empty.ring, 0,
-            "an unwritten ring owns no buffer — reporting `ring_entries` worth of \
-             heap here would land as a constant offset in the p2-07 residual"
-        );
 
         for i in 0..500u32 {
             let client = IpAddr::V4(Ipv4Addr::new(10, 0, (i / 256) as u8, (i % 256) as u8));
@@ -854,12 +644,6 @@ mod tests {
             "distinct clients must show up in the registry: {} -> {}",
             empty.clients,
             loaded.clients
-        );
-        assert!(
-            loaded.ring > empty.ring,
-            "the ring must account its buffer once written: {} -> {}",
-            empty.ring,
-            loaded.ring
         );
         assert!(loaded.total() > empty.total());
 
@@ -896,130 +680,52 @@ mod tests {
         );
     }
 
-    #[tokio::test]
-    async fn flush_persists_pending_entries_to_a_segment() {
-        let (stats_config, query_log_config) = config();
-        let dir = tempfile::tempdir().unwrap();
-        let stats = Stats::new(
-            &stats_config,
-            &query_log_config,
-            &HistoryConfig::default(),
-            dir.path().to_path_buf(),
-        );
-        stats.boot().await;
-
-        let client = IpAddr::V4(Ipv4Addr::new(192, 168, 1, 10));
-        stats.record(event("example.com", client, Verdict::Pass));
-        stats.flush_query_log().await;
-
-        let segments_dir = dir.path().join("query_log").join("segments");
-        let mut entries = tokio::fs::read_dir(&segments_dir).await.unwrap();
-        let first = entries.next_entry().await.unwrap();
-        assert!(
-            first.is_some(),
-            "flush must write at least one segment file"
-        );
+    /// Every path and size under `root`, recursively — enough to catch a file
+    /// appearing or growing.
+    fn tree(root: &std::path::Path) -> Vec<(PathBuf, u64)> {
+        let mut found = Vec::new();
+        let Ok(entries) = std::fs::read_dir(root) else {
+            return found;
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            match entry.metadata() {
+                Ok(meta) if meta.is_dir() => found.extend(tree(&path)),
+                Ok(meta) => found.push((path, meta.len())),
+                Err(_) => {}
+            }
+        }
+        found.sort();
+        found
     }
 
+    /// Recording writes nothing to `/data` on the query path — the only files
+    /// this crate creates are the snapshot and the history series, both on
+    /// their own schedulers.
     #[tokio::test]
-    async fn pending_log_stays_bounded_when_flush_never_runs() {
-        let (stats_config, query_log_config) = config();
+    async fn recording_touches_no_file_on_the_query_path() {
         let dir = tempfile::tempdir().unwrap();
         let stats = Stats::new(
-            &stats_config,
-            &query_log_config,
+            &config(),
             &HistoryConfig::default(),
             dir.path().to_path_buf(),
         );
         stats.boot().await;
+        // `boot` creates the history directories; what must not change is
+        // anything below them once queries start arriving.
+        let after_boot = tree(dir.path());
 
         let client = IpAddr::V4(Ipv4Addr::new(192, 168, 1, 10));
-        let extra = 100u64;
-        for _ in 0..(MAX_PENDING_LOG as u64 + extra) {
+        for _ in 0..1_000 {
             stats.record(event("example.com", client, Verdict::Pass));
         }
 
-        assert_eq!(stats.pending_log.lock().unwrap().len(), MAX_PENDING_LOG);
-        assert_eq!(stats.query_log_overflow_dropped(), extra);
-    }
-
-    #[tokio::test]
-    async fn failed_flush_keeps_entries_for_the_next_attempt() {
-        let (stats_config, query_log_config) = config();
-        let dir = tempfile::tempdir().unwrap();
-        // A *file* where the query_log directory should be makes every
-        // segment write fail until it's removed.
-        let blocker = dir.path().join("query_log");
-        tokio::fs::write(&blocker, "in the way").await.unwrap();
-
-        let stats = Stats::new(
-            &stats_config,
-            &query_log_config,
-            &HistoryConfig::default(),
-            dir.path().to_path_buf(),
-        );
-        stats.boot().await;
-
-        let client = IpAddr::V4(Ipv4Addr::new(192, 168, 1, 10));
-        stats.record(event("example.com", client, Verdict::Pass));
-        stats.flush_query_log().await;
         assert_eq!(
-            stats.pending_log.lock().unwrap().len(),
-            1,
-            "a failed flush must keep the batch for the next attempt"
+            tree(dir.path()),
+            after_boot,
+            "recording must not create or grow a file under /data"
         );
-
-        tokio::fs::remove_file(&blocker).await.unwrap();
-        stats.flush_query_log().await;
-        assert!(stats.pending_log.lock().unwrap().is_empty());
-        let segments_dir = dir.path().join("query_log").join("segments");
-        let mut entries = tokio::fs::read_dir(&segments_dir).await.unwrap();
-        assert!(entries.next_entry().await.unwrap().is_some());
-    }
-
-    #[tokio::test]
-    async fn domain_filter_is_case_insensitive() {
-        let (stats_config, query_log_config) = config();
-        let dir = tempfile::tempdir().unwrap();
-        let stats = Stats::new(
-            &stats_config,
-            &query_log_config,
-            &HistoryConfig::default(),
-            dir.path().to_path_buf(),
-        );
-        stats.boot().await;
-
-        let client = IpAddr::V4(Ipv4Addr::new(192, 168, 1, 10));
-        // The pipeline lowercases domains before emitting events.
-        stats.record(event("ads.example.com", client, Verdict::Pass));
-
-        let filter = QueryLogFilter {
-            domain: Some("ADS".to_string()),
-            ..Default::default()
-        };
-        let page = stats.query_log(&filter, 10, None);
-        assert_eq!(page.items.len(), 1);
-    }
-
-    #[tokio::test]
-    async fn disabled_query_log_skips_the_ring_and_segments() {
-        let (stats_config, mut query_log_config) = config();
-        query_log_config.enabled = false;
-        let dir = tempfile::tempdir().unwrap();
-        let stats = Stats::new(
-            &stats_config,
-            &query_log_config,
-            &HistoryConfig::default(),
-            dir.path().to_path_buf(),
-        );
-        stats.boot().await;
-
-        let client = IpAddr::V4(Ipv4Addr::new(192, 168, 1, 10));
-        stats.record(event("example.com", client, Verdict::Pass));
-
-        let page = stats.query_log(&QueryLogFilter::default(), 10, None);
-        assert!(page.items.is_empty());
-        assert_eq!(stats.snapshot(SystemTime::now()).queries_total, 1);
+        assert_eq!(stats.snapshot(SystemTime::now()).queries_total, 1_000);
     }
 
     fn at_hour(hour: u64) -> SystemTime {
@@ -1028,11 +734,10 @@ mod tests {
 
     #[tokio::test]
     async fn flush_history_writes_the_completed_hour_with_per_type_counts() {
-        let (stats_config, query_log_config) = config();
+        let stats_config = config();
         let dir = tempfile::tempdir().unwrap();
         let stats = Stats::new(
             &stats_config,
-            &query_log_config,
             &HistoryConfig::default(),
             dir.path().to_path_buf(),
         );
@@ -1100,11 +805,10 @@ mod tests {
 
     #[tokio::test]
     async fn flush_history_is_idempotent_across_ticks() {
-        let (stats_config, query_log_config) = config();
+        let stats_config = config();
         let dir = tempfile::tempdir().unwrap();
         let stats = Stats::new(
             &stats_config,
-            &query_log_config,
             &HistoryConfig::default(),
             dir.path().to_path_buf(),
         );
@@ -1146,11 +850,10 @@ mod tests {
     async fn persist_perf_sample_appends_a_line_to_the_day_file() {
         use fah_model::{CacheStatsSample, LatencySummary, PerfSample};
 
-        let (stats_config, query_log_config) = config();
+        let stats_config = config();
         let dir = tempfile::tempdir().unwrap();
         let stats = Stats::new(
             &stats_config,
-            &query_log_config,
             &HistoryConfig::default(),
             dir.path().to_path_buf(),
         );
@@ -1209,11 +912,10 @@ mod tests {
 
     #[tokio::test]
     async fn flush_history_writes_a_daily_top_n_when_a_day_completes() {
-        let (stats_config, query_log_config) = config();
+        let stats_config = config();
         let dir = tempfile::tempdir().unwrap();
         let stats = Stats::new(
             &stats_config,
-            &query_log_config,
             &HistoryConfig::default(),
             dir.path().to_path_buf(),
         );
@@ -1256,18 +958,13 @@ mod tests {
 
     #[tokio::test]
     async fn history_enabled_toggles_the_flush_live() {
-        let (stats_config, query_log_config) = config();
+        let stats_config = config();
         let history_config = HistoryConfig {
             enabled: false,
             ..HistoryConfig::default()
         };
         let dir = tempfile::tempdir().unwrap();
-        let stats = Stats::new(
-            &stats_config,
-            &query_log_config,
-            &history_config,
-            dir.path().to_path_buf(),
-        );
+        let stats = Stats::new(&stats_config, &history_config, dir.path().to_path_buf());
         stats.boot().await;
         assert!(!stats.history_enabled());
 

@@ -106,7 +106,7 @@ impl<F: Forwarder> Pipeline<F> {
         }
     }
 
-    /// Stale-while-refresh counters for `/metrics`. All-zero when the pool is
+    /// Stale-while-refresh counters for `/api/v1/telemetry`. All-zero when the pool is
     /// disabled, which is indistinguishable from an enabled pool that has had
     /// no stale hits yet — both mean "no refreshes are happening", which is
     /// what the counters are there to say.
@@ -191,7 +191,7 @@ impl<F: Forwarder> Pipeline<F> {
         }))
     }
 
-    /// Cleanup counters for `/metrics`. Counts the admin
+    /// Cleanup counters for `/api/v1/telemetry`. Counts the admin
     /// `POST /api/v1/cache/clean` too — both go through one `clean`, which is
     /// what keeps the counters from disagreeing with what happened to the
     /// cache.
@@ -229,8 +229,8 @@ impl<F: Forwarder> Pipeline<F> {
     ) -> Option<Vec<u8>> {
         // The dual-stack listener reports IPv4 peers as v4-mapped IPv6
         // (`::ffff:192.168.10.15`). Canonicalized once here — the single
-        // entry point for every transport — so stats, client names, the
-        // query log and future client-scoped rules all see one address per
+        // entry point for every transport — so stats, client names, the events
+        // socket and future client-scoped rules all see one address per
         // client. A handful of integer compares, free for the common case.
         let client_ip = client_ip.to_canonical();
         let request = match Message::from_vec(raw) {

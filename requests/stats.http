@@ -1,64 +1,18 @@
-# Statistics and query log — API.md §Statistics & query log
+# Statistics — API.md §Statistics
 #
-# Product data, as opposed to /metrics which is ops telemetry.
+# Product data (what the household did), as opposed to `telemetry.http` which
+# is ops telemetry (what the engine did). There is no per-query HTTP endpoint:
+# individual events are on `WS /api/v1/events` — see the README.
 
 @base = {{host}}/api/v1
 @auth = Authorization: Bearer {{apiKey}}
 
-### Aggregated stats: totals, block rate, cache hit rate, top domains and
-### clients, plus time buckets for charting.
+### Aggregated stats over a rolling 24h window: totals, block rate, cache hit
+### rate, top domains and clients, plus time buckets for charting.
 GET {{base}}/stats
 {{auth}}
 
-### Query log, newest first. Default limit 100.
-GET {{base}}/queries
-{{auth}}
-
-### Explicit limit. Capped at 1000 — a larger value is clamped, not rejected.
-GET {{base}}/queries?limit=1000000000
-{{auth}}
-
-### Clamping check: expect 1000 entries' worth, not 5000.
-GET {{base}}/queries?limit=5000
-{{auth}}
-
-### Blocked queries only. `verdict` is allow | block | pass.
-GET {{base}}/queries?verdict=block&limit=50
-{{auth}}
-
-### One client's traffic.
-GET {{base}}/queries?client=192.168.10.10&limit=50
-{{auth}}
-
-### Domain substring match — not a regex, not a glob.
-GET {{base}}/queries?domain=doubleclick&limit=50
-{{auth}}
-
-### Time window, RFC 3339. Both bounds optional.
-GET {{base}}/queries?from=2026-07-19T00:00:00Z&to=2029-07-20T00:00:00Z&limit=50
-{{auth}}
-
-### Combined filters.
-GET {{base}}/queries?verdict=block&client=192.168.10.15&domain=ads&limit=25
-{{auth}}
-
-### Pagination: take `next_cursor` from a response and feed it back.
-GET {{base}}/queries?limit=10&cursor=REPLACE-WITH-next_cursor
-{{auth}}
-
-### Bad filter values are REJECTED, not silently ignored — each of these
-### should be 400, naming the offending parameter.
-GET {{base}}/queries?limit=many
-{{auth}}
-
-###
-GET {{base}}/queries?client=not-an-ip
-{{auth}}
-
-###
-GET {{base}}/queries?verdict=block
-{{auth}}
-
-###
-GET {{base}}/queries?from=yesterday
+### The same payload the websocket pushes every 2 s. Worth one HTTP call at
+### dashboard start-up so the first paint does not wait for that tick.
+GET {{base}}/stats
 {{auth}}

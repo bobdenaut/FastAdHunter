@@ -84,20 +84,6 @@ fn apply_one(
             config.rules.refresh_hours_default = coerce_u32(var, path, value)?
         }
 
-        ["query_log", "enabled"] => config.query_log.enabled = coerce_bool(var, path, value)?,
-        ["query_log", "ring_entries"] => {
-            config.query_log.ring_entries = coerce_u32(var, path, value)?
-        }
-        ["query_log", "retention_days"] => {
-            config.query_log.retention_days = coerce_u32(var, path, value)?
-        }
-        ["query_log", "retention_max_mb"] => {
-            config.query_log.retention_max_mb = coerce_u32(var, path, value)?
-        }
-        ["query_log", "flush_interval_seconds"] => {
-            config.query_log.flush_interval_seconds = coerce_u32(var, path, value)?
-        }
-
         ["stats", "snapshot_interval_seconds"] => {
             config.stats.snapshot_interval_seconds = coerce_u32(var, path, value)?
         }
@@ -113,7 +99,6 @@ fn apply_one(
         ["api", "address"] => config.api.address = value.to_string(),
         ["api", "port"] => config.api.port = coerce_u16(var, path, value)?,
         ["api", "tls"] => config.api.tls = coerce_bool(var, path, value)?,
-        ["api", "metrics_public"] => config.api.metrics_public = coerce_bool(var, path, value)?,
 
         ["log", "level"] => config.log.level = coerce_enum(var, path, value)?,
         ["log", "format"] => config.log.format = coerce_enum(var, path, value)?,

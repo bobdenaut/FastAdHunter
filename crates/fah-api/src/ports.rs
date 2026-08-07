@@ -6,8 +6,7 @@
 //! These traits are those handles: `fah-api` states what it needs, and
 //! `fastadhunter` (L4, the one crate that may see both sides) implements them
 //! over `Arc<fah_stats::Stats>` and `Arc<fah_metrics::Metrics>`. Same pattern
-//! `fah-metrics` already uses for its `UpstreamSnapshot`/`RulesetSnapshot`
-//! DTOs.
+//! `fah-metrics` already uses for its `RulesetSnapshot` DTO.
 //!
 //! The DTOs here carry `SystemTime` and `fah_model` types — L1, legal for
 //! everyone. RFC 3339 formatting is the wire layer's job ([`crate::wire`]).
@@ -21,11 +20,10 @@ use fah_model::{
     Verdict,
 };
 
-/// Product data: aggregates, query log and the client registry
-/// (API.md §Statistics & query log, §Clients).
+/// Product data: aggregates and the client registry
+/// (API.md §Statistics, §Clients).
 pub trait StatsSource: Send + Sync + 'static {
     fn overview(&self, now: SystemTime) -> StatsOverview;
-    fn queries(&self, request: &QueryLogRequest) -> QueryLogPage;
     fn clients(&self, now: SystemTime) -> Vec<ClientEntry>;
     /// `None` when the IP has never been seen — the API answers `404`.
     fn set_client_name(&self, ip: IpAddr, name: Option<String>) -> Option<ClientEntry>;
@@ -71,8 +69,6 @@ pub trait HistorySource: Send + Sync + 'static {
 
 /// Ops telemetry (API.md §Health & telemetry).
 pub trait TelemetrySource: Send + Sync + 'static {
-    /// The `/metrics` body, already in Prometheus text exposition format.
-    fn prometheus_text(&self) -> String;
     /// True when every configured upstream is currently failing — API.md's
     /// `"degraded"` health status ("e.g. all upstreams failing — serve-stale
     /// active").
@@ -86,6 +82,19 @@ pub trait TelemetrySource: Send + Sync + 'static {
     /// that endpoint samples every other field, since the breakdown's residual
     /// is only meaningful when its inputs share an instant.
     fn allocator(&self) -> Option<fah_model::AllocatorStats>;
+    /// Kernel readings (`getrusage`) for `GET /api/v1/telemetry`, or `None` off
+    /// Unix. A separate method from [`Self::allocator`] because the two carry
+    /// different promises: these survive replacing the allocator, which is why
+    /// the stable surface may publish them.
+    fn process(&self) -> Option<fah_model::ProcessStats>;
+    /// The engine's operational state for `GET /api/v1/telemetry` — counters,
+    /// per-stage latency totals, the compiled ruleset and the upstream pool.
+    ///
+    /// An L1 value rather than a port-local DTO: `EngineTelemetry` is a domain
+    /// concept ("what the engine is doing right now"), not a wire shape, so it
+    /// lives beside [`fah_model::MemoryBreakdown`] for the same reason — three
+    /// crates need it and none of them may import another.
+    fn engine(&self) -> fah_model::EngineTelemetry;
 }
 
 /// The DNS cache's admin plane (API.md §Cache) — implemented by the binary
@@ -184,35 +193,6 @@ pub struct ClientEntry {
     pub last_seen: SystemTime,
     pub queries_24h: u64,
     pub blocked_24h: u64,
-}
-
-/// The parsed query string of `GET /api/v1/queries`.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub struct QueryLogRequest {
-    pub limit: usize,
-    pub cursor: Option<String>,
-    pub client: Option<IpAddr>,
-    pub domain: Option<String>,
-    pub verdict: Option<VerdictFilter>,
-    pub from: Option<SystemTime>,
-    pub to: Option<SystemTime>,
-    /// `kind=dns|http` (p2-04). `None` returns both.
-    pub kind: Option<fah_model::EventKind>,
-    /// `policy=<id>` (p2-06). `"default"` selects unassigned clients.
-    pub policy: Option<String>,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum VerdictFilter {
-    Allow,
-    Block,
-    Pass,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct QueryLogPage {
-    pub items: Vec<QueryRecord>,
-    pub next_cursor: Option<String>,
 }
 
 /// One query-log row. Wraps the L1 [`QueryEvent`] rather than restating its

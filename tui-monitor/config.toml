@@ -1,16 +1,46 @@
+# FastAdHunter TUI monitor.
+#
+# Only host/port/token are required; every other key below is shown at its
+# compiled-in default and can be deleted. The token may instead come from
+# $FAH_TOKEN, which overrides this file.
+
 host = "172.17.0.2"
 port = 8443
 token = "c48ac59cdaef2a10cf96ddeac66dd4d3c1be57bf1dcfbd9e96b0aed7de06ef65"
 
-[endpoints]
-ws_events = "/api/v1/events"
-cache = "/api/v1/cache"
-memory = "/api/v1/debug/memory"
-metrics = "/metrics"
-history_perf = "/api/v1/history/perf?fields=rss_bytes"
-history_summary = "/api/v1/history/summary"
+# The appliance's certificate is generated at first boot and trusted by no
+# root store.
+accept_invalid_certs = true
 
+# How often each source is asked, in seconds.
+[poll]
+telemetry_seconds = 60
+history_seconds = 60
+# The appliance persists a perf sample every 60 s; re-reading the series is the
+# only thing that advances the header's RSS graph.
+rss_history_seconds = 300
+routeros_seconds = 60
+
+# How long a request may take before it counts as unreachable, in seconds.
+[timeout]
+telemetry_seconds = 5
+history_seconds = 15
+routeros_seconds = 2
+reconnect_seconds = 2
+
+[ui]
+feed_rows = 200
+rss_points = 288
+redraw_millis = 250
+# Where the RSS graph changes colour. Applied per column, so the chart shows
+# when memory crossed a threshold, not only where it sits now.
+rss_warn_mb = 60
+rss_alert_mb = 100
+slow_query_ms = 50.0
+
+# Read-only. Omit base_url to drop the router figures from the footer.
 [routeros]
-ros_base = "https://192.168.10.1:8443/rest"
-ros_user = "monitor"
-router_fetch_interval = 15
+base_url = "https://192.168.10.1:8443/rest"
+user = "monitor"
+# password = "…"   # falls back to $MP
+container = "fastadhunter"

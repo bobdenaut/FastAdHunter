@@ -14,8 +14,8 @@ pub use schema::{
     parse_days, parse_time_of_day, ApiConfig, AssignmentConfig, BlockingMode, Config,
     DnsBlockingConfig, DnsCacheConfig, DnsConfig, DnsListenConfig, DnsUpstreamsConfig,
     EngineConfig, EngineMode, HistoryConfig, HttpConfig, HttpListenConfig, LogConfig, LogFormat,
-    LogLevel, PolicyConfig, QueryLogConfig, RuleListConfig, RulesConfig, ScheduleConfig,
-    StatsConfig, UpstreamProtocol, UpstreamServerConfig, UpstreamStrategy,
+    LogLevel, PolicyConfig, RuleListConfig, RulesConfig, ScheduleConfig, StatsConfig,
+    UpstreamProtocol, UpstreamServerConfig, UpstreamStrategy,
 };
 pub use tz::{LocalTime, PosixTz, TzError};
 
@@ -498,13 +498,6 @@ id = "oisd-basic"
 url = "https://small.oisd.nl"
 enabled = true
 
-[query_log]
-enabled = true
-ring_entries = 10000
-retention_days = 7
-retention_max_mb = 500
-flush_interval_seconds = 5
-
 [stats]
 snapshot_interval_seconds = 300
 
@@ -517,7 +510,6 @@ retention_days = 30
 address = "0.0.0.0"
 port = 8443
 tls = true
-metrics_public = true
 
 [log]
 level = "info"

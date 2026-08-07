@@ -251,7 +251,7 @@ budget for nothing.
 - **First contributor wins attribution.** The surviving rule is credited to
   the first list that supplied it (compile order: enabled lists in
   configuration order, then user rules). Attribution is informational — the
-  query log and `rules/test` report it — and is never an input to a verdict.
+  events socket and `rules/test` report it — never an input to a verdict.
   There is no "matched in N lists" reporting.
 - **Per-list counts stay parse-based.** `GET /api/v1/lists`' `rules_total` /
   `rules_active_dns` / `rules_active_url` / `rules_inactive` describe what each
@@ -325,5 +325,5 @@ ads out of the box.
 ## Debugging
 
 `POST /api/v1/rules/test` dry-runs a verdict for a domain/qtype/client and
-reports which rule in which list decided it. The query log records the decisive
-rule and list for every blocked/allowed query.
+reports which rule in which list decided it. `WS /api/v1/events` carries the
+decisive rule and list on every blocked/allowed query.

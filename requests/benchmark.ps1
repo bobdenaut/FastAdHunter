@@ -13,12 +13,11 @@
 
       /container/print detail where name~"fastadhunter"
 
-  Per-import COMPILE time is not collected either. The
-  fastadhunter_ruleset_compile_duration_seconds gauge is a stub — the binary
-  hardcodes it to zero (main.rs, spawn_telemetry_poll) because the lifecycle
-  does not report compile timing yet. 'Fetch+compile' below is wall-clock for
-  both together, which is the figure earlier runs recorded. Startup compile
-  time comes from the boot log, where it is real.
+  Per-import COMPILE time is not collected either, but the whole-ruleset
+  figure is: ruleset.compile_duration_seconds on /api/v1/telemetry is the last
+  compile's real wall time.
+  'Fetch+compile' below is wall-clock for both together, which is the figure
+  earlier runs recorded. Startup compile time comes from the boot log.
 
 .PARAMETER Host
   Base URL of the API, e.g. https://172.17.0.2:8443
@@ -57,23 +56,14 @@ $Lists = @(
     @{ id = '1hosts-xtra'; url = 'https://raw.githubusercontent.com/badmojr/1Hosts/master/Xtra/hosts.txt' }
 )
 
-function Get-Metrics {
-    $text = Invoke-RestMethod "$ApiHost/metrics" @script:Common
-    $out = @{}
-    foreach ($line in $text -split "`n") {
-        if ($line -match '^(fastadhunter_\w+)(\{[^}]*\})?\s+([0-9.e+-]+)$') {
-            # Unlabelled series only; the labelled ones (per-verdict, per-upstream)
-            # are not what this benchmark tracks.
-            if (-not $Matches[2]) { $out[$Matches[1]] = [double]$Matches[3] }
-        }
-    }
-    $out
+function Get-Telemetry {
+    Invoke-RestMethod "$base/telemetry" @script:Common
 }
 
 # Live rule counts, straight from the engine. `GET /lists` reports what each
 # list contributes to the ruleset that is *currently serving*, with no polling
-# delay — unlike the Prometheus gauges, which the binary refreshes on a 10 s
-# timer (TELEMETRY_POLL). Reading the gauges right after an import returns the
+# delay — unlike /telemetry's ruleset block, which the binary refreshes on a
+# 10 s timer (TELEMETRY_POLL). Reading it right after an import returns the
 # PREVIOUS ruleset; that is what made the first run of this script nonsense.
 function Get-ListRules {
     $items = (Invoke-RestMethod "$base/lists" @script:Common).items
@@ -83,15 +73,15 @@ function Get-ListRules {
     }
 }
 
-# Heap has no live endpoint, so it can only come from the polled gauge. Wait
-# until the gauge's rule count agrees with the engine's live count — only then
-# does the heap figure belong to the ruleset we just built.
+# /telemetry's ruleset block is refreshed on the binary's 10 s poll, so wait
+# until its rule count agrees with the engine's live count — only then does the
+# heap figure belong to the ruleset we just built.
 function Wait-ForGauge {
     param([int]$ExpectedRules, [int]$TimeoutSeconds = 60)
     $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
     while ((Get-Date) -lt $deadline) {
-        $m = Get-Metrics
-        if ([int]$m['fastadhunter_ruleset_rules'] -eq $ExpectedRules) { return $m }
+        $t = Get-Telemetry
+        if ([int]$t.ruleset.rules -eq $ExpectedRules) { return $t }
         Start-Sleep -Milliseconds 500
     }
     throw "ruleset gauge did not reach $ExpectedRules rules within $TimeoutSeconds s"
@@ -117,12 +107,12 @@ function Wait-ForRefresh {
 
 $baseline = Wait-ForGauge -ExpectedRules 0
 Write-Host ("`nBaseline: {0} rules, {1:N0} B ruleset heap" -f `
-    $baseline['fastadhunter_ruleset_rules'], $baseline['fastadhunter_ruleset_heap_bytes'])
+    $baseline.ruleset.rules, $baseline.memory.ruleset_bytes)
 
 Write-Host "`n=== Importing ===" -ForegroundColor Cyan
 $rows = @()
-$prevHeap = $baseline['fastadhunter_ruleset_heap_bytes']
-$prevRules = $baseline['fastadhunter_ruleset_rules']
+$prevHeap = $baseline.memory.ruleset_bytes
+$prevRules = $baseline.ruleset.rules
 
 foreach ($spec in $Lists) {
     # 1. Registration: validate, persist to fastadhunter.toml, register in the
@@ -145,8 +135,8 @@ foreach ($spec in $Lists) {
     # Live truth first, then block until the polled heap gauge catches up to it.
     $live  = Get-ListRules
     $rules = [int]$live.Total
-    $m     = Wait-ForGauge -ExpectedRules $rules
-    $heap  = $m['fastadhunter_ruleset_heap_bytes']
+    $t     = Wait-ForGauge -ExpectedRules $rules
+    $heap  = $t.memory.ruleset_bytes
 
     $rows += [pscustomobject]@{
         List             = $spec.id
@@ -166,12 +156,16 @@ foreach ($spec in $Lists) {
 $rows | Format-Table -AutoSize
 
 Write-Host "=== Query latency ===" -ForegroundColor Cyan
-Write-Host "Engine-side duration comes from the query log; run some traffic first."
+Write-Host "Engine-side duration is counted per stage; run some traffic first."
 Write-Host "  Blocked:   Resolve-DnsName doubleclick.net    -Server <container-ip>"
 Write-Host "  Cache hit: Resolve-DnsName example.com        -Server <container-ip>  (twice)"
 Write-Host ""
-Write-Host "Then read p99 back out of the query log:"
-Write-Host "  Invoke-RestMethod `"$base/queries?limit=1000`" -Headers @{Authorization='Bearer <key>'} -SkipCertificateCheck"
+Write-Host "latency.dns.{block,cache_hit,forward} carry count + sum_seconds. Two"
+Write-Host "reads, delta both, divide -> the mean over that interval:"
+Write-Host "  Invoke-RestMethod `"$base/telemetry`" -Headers @{Authorization='Bearer <key>'} -SkipCertificateCheck"
+Write-Host ""
+Write-Host "For percentiles use the windowed series instead:"
+Write-Host "  Invoke-RestMethod `"$base/history/perf?fields=latency`" -Headers @{Authorization='Bearer <key>'} -SkipCertificateCheck"
 Write-Host ""
 Write-Host "=== Startup ===" -ForegroundColor Cyan
 Write-Host "Restart the container, then read the boot log. Startup at this rule"

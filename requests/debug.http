@@ -1,0 +1,15 @@
+# Implementation diagnostics — API.md §Debug
+#
+# No compatibility promise: fields here may change or disappear with the
+# allocator or the runtime. Anything a dashboard should code against lives on
+# /api/v1/telemetry instead.
+
+@base = {{host}}/api/v1
+@auth = Authorization: Bearer {{apiKey}}
+
+### Where the RAM goes: compiled ruleset, cache estimate, process RSS (null off
+### Linux — no procfs on a Windows dev box). This is /telemetry's `memory`
+### block plus allocator_committed_bytes and allocator_committed_peak_bytes,
+### which are the two figures the stable surface will not promise.
+GET {{base}}/debug/memory
+{{auth}}

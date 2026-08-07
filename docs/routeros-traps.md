@@ -153,7 +153,9 @@ it is compared against were core-pinned.
 - The config file is `/config/fastadhunter.toml`, **not** `config.toml`.
 - `/api/v1/history/perf` returns **`items`**, not `samples`, and needs explicit
   `from`/`to` to return anything useful.
-- The query-log endpoint is `/api/v1/queries` — there is no `querylog`.
+- Engine counters, latency, upstreams, cache and memory come from one call:
+  `/api/v1/telemetry`. There is no per-query HTTP endpoint — individual events
+  are only on `WS /api/v1/events`.
 
 ## IPv6 — verify before acting
 

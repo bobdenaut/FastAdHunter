@@ -59,7 +59,7 @@ counts `size_of::<(CacheKey, Entry)>()` per *bucket*, so the real cost is 16 B �
 buckets — about 262 KB at the default 10 000 entries, ~2.6 MB at 100 k. Measured
 against `max_bytes`, not assumed.
 
-The `cache_hit` ratio in `/metrics` and `/api/v1/stats` will visibly rise, because
+The `cache_hit` ratio in `/api/v1/telemetry` and `/api/v1/stats` will visibly rise, because
 stale serves count as hits (they always did — there are simply more of them now).
 That is not an anomaly and not an improvement in cache efficiency; it is this
 change moving queries out of the forwarded bucket.

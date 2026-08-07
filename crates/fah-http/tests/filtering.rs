@@ -535,7 +535,7 @@ async fn two_clients_on_two_policies_get_different_verdicts_for_one_url() {
 /// A v4 client arriving through the dual-stack listener is reported as
 /// `::ffff:127.0.0.1`. It must be canonicalized before anything looks at it,
 /// or a policy assigned to the v4 address never matches — and the same device
-/// appears twice in the query log, once per pipeline.
+/// appears twice in the client registry, once per pipeline.
 #[tokio::test]
 async fn a_v4_mapped_peer_matches_its_v4_policy_assignment() {
     let (origin, accepts) = origin().await;

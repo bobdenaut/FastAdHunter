@@ -585,7 +585,7 @@ figures downward against PERFORMANCE.md budgets.
 Serving DNS *over* IPv6 is supported: set `[dns.listen] address = "::"` and
 one dual-stack socket serves both stacks (CONFIGURATION.md — `IPV6_V6ONLY`
 is cleared explicitly, so this does not depend on the host's `bindv6only`
-sysctl; IPv4 clients keep their plain addresses in stats and the query log).
+sysctl; IPv4 clients keep their plain addresses in stats).
 The cutover is then:
 
 1. `/interface/veth/print detail` — confirm the veth's IPv6 address (the
@@ -595,7 +595,7 @@ The cutover is then:
    `nslookup example.com <veth-IPv4>` and `nslookup example.com <veth-IPv6>`.
 3. Retarget whatever steers IPv6 `:53` (the reference deployment: two
    `/ipv6/firewall/nat` dstnat rules — move `to-address` to the veth's IPv6).
-4. Watch the dstnat counters and `GET /api/v1/queries`: IPv6-sourced clients
+4. Watch the dstnat counters and `GET /api/v1/clients`: IPv6-sourced clients
    appear under their own IPv6 addresses.
 
 Confirm first whether the veth address is globally routable, since nothing
@@ -676,10 +676,12 @@ intercepted; everything else can look healthy while nothing arrives. Then:
 ```sh
 curl -s -o /dev/null -w "%{remote_ip}\n" http://neverssl.com/
 curl -sk -H "Authorization: Bearer $FAH_KEY" \
-  "https://172.17.0.2:8443/api/v1/queries?kind=http&limit=10"
+  "https://172.17.0.2:8443/api/v1/telemetry" | grep -o '"http":{[^}]*}'
 ```
 
-Rows carry `method`, `path`, `resource_type`, `status` and `bytes`.
+`counters.http` must have moved. For the individual requests — each carrying
+`method`, `path`, `resource_type`, `status` and `bytes` — subscribe to
+`WS /api/v1/events` while the `curl` runs.
 
 **Two results that look like failures and are not:**
 
@@ -728,26 +730,23 @@ Work through these in order; each one is a gate for the next.
 | 7 | Known ad domain blocked | `nslookup doubleclick.net 172.17.0.2` | `0.0.0.0` (default `null_ip` blocking mode) |
 | 8 | Health endpoint | see below | `200` |
 | 9 | Stats show real counters | see below | non-zero `total`/`blocked` |
-| 10 | Metrics scrape | see below | Prometheus text |
+| 10 | Engine telemetry | see below | populated `ruleset`, `counters`, `upstreams` |
 | 11 | Phone browses with ads blocked | manual | ad slots empty |
 
 From a LAN client (`--insecure` because the certificate is self-signed —
 export the public cert via the API if you want to pin it):
 
 ```sh
-# 8 — health (no key needed; api.metrics_public defaults to true)
+# 8 — health (the one route that needs no key)
 curl --insecure https://172.17.0.2:8443/health
 
 # 9 — stats
 curl --insecure -H "Authorization: Bearer $FAH_KEY" \
   https://172.17.0.2:8443/api/v1/stats
 
-# 10 — metrics
-curl --insecure https://172.17.0.2:8443/metrics | head -40
-
-# recent queries, to confirm the block in check 7 was logged
+# 10 — engine state, to confirm the block in check 7 was counted
 curl --insecure -H "Authorization: Bearer $FAH_KEY" \
-  "https://172.17.0.2:8443/api/v1/queries?limit=20"
+  "https://172.17.0.2:8443/api/v1/telemetry"
 ```
 
 Endpoint shapes are in [API.md](../API.md).
@@ -826,21 +825,24 @@ restarts, and RSS ≤ 128 MB steady-state ([PERFORMANCE.md](../PERFORMANCE.md)
 
 ### Collection
 
-Sample `/metrics` every 5 minutes from any always-on LAN host:
+Sample `/api/v1/telemetry` every 5 minutes from any always-on LAN host. One
+call covers ruleset, counters, latency totals, upstreams, cache and memory:
 
 ```sh
 mkdir -p soak
 while true; do
   ts=$(date -u +%Y%m%dT%H%M%SZ)
-  curl -s --insecure https://172.17.0.2:8443/metrics > "soak/metrics-$ts.txt"
+  curl -s --insecure -H "Authorization: Bearer $FAH_KEY" \
+    https://172.17.0.2:8443/api/v1/telemetry > "soak/telemetry-$ts.json"
   curl -s --insecure -H "Authorization: Bearer $FAH_KEY" \
     https://172.17.0.2:8443/api/v1/stats > "soak/stats-$ts.json"
   sleep 300
 done
 ```
 
-If a Prometheus instance is available, scrape `172.17.0.2:8443/metrics`
-instead — the retention and querying are worth it for a 24 h window.
+The engine also persists its own series — `GET /api/v1/history/perf` returns
+per-sample RSS, latency percentiles and cache figures over the whole window, so
+the loop above is a cross-check rather than the only record.
 
 Also snapshot the RouterOS view periodically, since it accounts for memory
 differently than the process does:
@@ -856,7 +858,7 @@ differently than the process does:
 | ------ | -------------- |
 | RAM steady-state ≤ 128 MB | `process_resident_memory_bytes` (max over the window) |
 | RAM hard ceiling 256 MB | RouterOS `ram-high` never throttling |
-| Compiled ruleset ≤ 40 MB | `fastadhunter_ruleset_heap_bytes` |
+| Compiled ruleset ≤ 40 MB | `fastadhunter_memory_component_bytes{component="ruleset"}` |
 | Cache-hit / blocked p99 < 1 ms | `fastadhunter_query_duration_seconds` histogram, by `verdict` |
 | Throughput | `rate(fastadhunter_queries_total[5m])`, peak |
 | No dropped events | `fastadhunter_events_dropped_total` stays 0 |
@@ -893,4 +895,4 @@ design-level rather than a bug.
 | Lists never download, ruleset stays 0 | No egress — check the masquerade rule and that the container's `gateway=172.17.0.1` matches the bridge address |
 | LAN clients time out on DNS | DHCP not renewed yet, or the `forward` accept rules are missing |
 | API unreachable but DNS works | `api.address` bound narrower than `0.0.0.0`, or the 8443 forward rule is missing |
-| Ads still shown on the phone | Client using DoH/DoT to bypass the LAN resolver, or a hardcoded resolver — check `/api/v1/queries` for whether the domain reached FastAdHunter at all |
+| Ads still shown on the phone | Client using DoH/DoT to bypass the LAN resolver, or a hardcoded resolver — watch `WS /api/v1/events` for whether the domain reaches FastAdHunter at all |

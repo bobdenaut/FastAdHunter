@@ -134,17 +134,52 @@ async fn the_binary_blocks_resolves_reports_and_reconfigures_live() {
         "the blocked domain must appear in top_blocked_domains, got {blocked_domains:?}"
     );
 
-    // ── the query log ──
-    let queries: Value = get_json(&http, &base, &key, "/api/v1/queries?limit=100").await;
-    let logged: Vec<&str> = queries["items"]
-        .as_array()
-        .expect("items")
-        .iter()
-        .filter_map(|item| item["domain"].as_str())
-        .collect();
+    // ── telemetry, reflecting the traffic just driven through ──
+    // fah-api's own tests fake the telemetry port, so only this test proves the
+    // registry actually reaches the endpoint through the binary's adapter.
+    //
+    // The engine blocks deserialize into their `fah_model` types rather than
+    // being indexed as a `Value`: a renamed field then fails to compile instead
+    // of reading as silently absent.
+    let body: Value = get_json(&http, &base, &key, "/api/v1/telemetry").await;
+    let engine: fah_model::EngineTelemetry =
+        serde_json::from_value(body.clone()).expect("the engine blocks of /telemetry");
+
     assert!(
-        logged.contains(&"allowed.example.com"),
-        "the forwarded query must be in the query log, got {logged:?}"
+        engine.counters.dns.block >= 1,
+        "the blocked query must be counted, got {:?}",
+        engine.counters
+    );
+    assert!(
+        engine.latency.dns.forward.count >= 1,
+        "the forwarded query must have been timed, got {:?}",
+        engine.latency
+    );
+    assert_eq!(
+        engine.upstreams.len(),
+        1,
+        "the one configured upstream must be reported, got {:?}",
+        engine.upstreams
+    );
+    assert_eq!(engine.upstreams[0].protocol, fah_model::Protocol::Udp);
+    assert!(
+        body["process"]["uptime_seconds"].is_u64(),
+        "counters are lifetime-cumulative, so uptime must ship beside them"
+    );
+    // Key-for-key, not value-for-value: `fresh`/`stale`/`expired` are a walk
+    // against `now`, so two reads a round trip apart legitimately differ once a
+    // TTL boundary falls between them. Field-set equality is what proves both
+    // render through the same `From<CacheStats>`; `api.rs` asserts the values
+    // against a frozen fake, where equality is actually decidable.
+    let cache = get_json(&http, &base, &key, "/api/v1/cache").await;
+    assert_eq!(
+        sorted_keys(&body["cache"]),
+        sorted_keys(&cache),
+        "the telemetry cache block and /cache derive from one snapshot"
+    );
+    assert_eq!(
+        body["cache"]["capacity"], cache["capacity"],
+        "config-derived bounds cannot drift between two reads"
     );
 
     // ── the cache, inspected and cleaned through the admin API ──
@@ -260,6 +295,19 @@ async fn the_binary_blocks_resolves_reports_and_reconfigures_live() {
     );
 }
 
+/// A JSON object's field names, sorted — for comparing shape without comparing
+/// values that legitimately move between two reads.
+fn sorted_keys(value: &Value) -> Vec<String> {
+    let mut keys: Vec<String> = value
+        .as_object()
+        .expect("a JSON object")
+        .keys()
+        .cloned()
+        .collect();
+    keys.sort_unstable();
+    keys
+}
+
 // ─── the binary under test ──────────────────────────────────────────────
 
 fn config_toml(ports: &Ports, upstream: SocketAddr) -> String {
@@ -292,9 +340,6 @@ protocol = "udp"
 refresh_hours_default = 24
 lists = []
 
-[query_log]
-enabled = true
-
 [stats]
 snapshot_interval_seconds = 300
 
@@ -302,7 +347,7 @@ snapshot_interval_seconds = 300
 address = "127.0.0.1"
 port = {api_port}
 tls = true
-metrics_public = true
+
 
 [log]
 level = "warn"

@@ -31,15 +31,21 @@ to a public root.
 | File | Covers |
 | ---- | ------ |
 | `health.http` | `GET /health` |
-| `metrics.http` | `GET /metrics` (Prometheus text) |
+| `telemetry.http` | `GET /api/v1/telemetry` — the whole engine state as JSON |
+| `debug.http` | `GET /api/v1/debug/memory` — allocator internals, no contract |
 | `auth.http` | Key behaviour, 401 shapes, key rotation |
 | `lists.http` | Lists CRUD, refresh, persistence check |
 | `rules.http` | Inline user rules, verdict dry-run |
-| `stats.http` | Aggregates, query log, filters, pagination |
+| `stats.http` | Aggregated 24h statistics |
 | `history.http` | Persisted series: summary, perf, top-N |
 | `clients.http` | Client discovery and naming |
 | `cache.http` | Cache usage and `POST /api/v1/cache/clean` |
 | `settings.http` | `GET`/`POST /api/v1/config` |
+
+**One endpoint, one file.** No request appears in two files, so a response
+shape has exactly one place to be checked. `auth.http` is the sole exception,
+and only because testing the key needs *some* protected path — it probes one no
+endpoint owns, which 401s without a key and 404s with one.
 
 Each file includes the failure cases, not just the happy path — 401s, 404s,
 409s and 422s are requests you can run, because "does it reject this correctly"
@@ -47,8 +53,9 @@ is as much a part of the contract as "does it accept that".
 
 ## Not covered
 
-`WS /api/v1/events` — the REST Client extension cannot open a WebSocket. Use
-`websocat` or a browser console:
+`WS /api/v1/events` — the REST Client extension cannot open a WebSocket, and it
+is now the **only** per-query surface: there is no HTTP endpoint that lists
+individual queries or requests. Use `websocat` or a browser console:
 
 ```sh
 websocat --insecure "wss://172.17.0.2:8443/api/v1/events?token=YOUR-API-KEY"
@@ -71,8 +78,7 @@ silently drops everything you left out. Always send the complete set.
 422 and points you at `/lists`, which applies changes live and writes the TOML
 back for you. See `lists.http`.)
 
-**`GET /api/v1/queries` only sees the in-RAM ring.** It reads `ring_entries`
-(default 10 000) most-recent events, not the `/data` segments that
-`retention_days`/`retention_max_mb` govern — so its reach is
-`ring_entries ÷ QPS`, and a `from`/`to` range older than that returns an empty
-list rather than an error. Long-term series live behind `history.http`.
+**An unknown config section is a boot failure, not a warning.** The root config
+is `deny_unknown_fields`, so a key this build does not know stops the binary
+starting — `POST /config` returns 422 for the same reason. Covered at the
+bottom of `settings.http`.

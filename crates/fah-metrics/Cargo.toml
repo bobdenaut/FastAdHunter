@@ -14,7 +14,8 @@ workspace = true
 # not their own types). arc-swap: lock-free swap for the infrequently-updated
 # upstream/ruleset snapshots, mirroring fah-rules::ListManager's matcher swap.
 # No tokio: the binary's fan-out task calls `Metrics::record` directly; this
-# crate spawns nothing.
+# crate spawns nothing, and reads no file — every figure it renders arrives
+# through `Metrics::set_*`, which is what keeps a scrape internally consistent.
 [dependencies]
 arc-swap = { workspace = true }
 fah-model = { path = "../fah-model" }

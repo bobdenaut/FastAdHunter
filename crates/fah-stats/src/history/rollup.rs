@@ -1,7 +1,6 @@
 //! Append-only hourly/daily rollup writer on `/data/history/rollups`
-//! (ADR-0002: flat JSONL, no embedded DB). Mirrors the query-log
-//! [`SegmentWriter`](crate::query_log::segment)'s append + age-prune pattern
-//! and `snapshot.rs`'s atomic tmp-write+rename, but keyed by calendar day:
+//! (ADR-0002: flat JSONL, no embedded DB). Follows `snapshot.rs`'s atomic
+//! tmp-write+rename, keyed by calendar day:
 //!
 //! - `rollup-YYYY-MM-DD.jsonl` — one [`HourRollup`] line per completed hour
 //!   (≤24 lines/day, kilobytes/day).
@@ -169,7 +168,7 @@ impl RollupWriter {
 
     /// Deletes whole day-files (both `rollup-` and `top-`) older than
     /// `retention_days`; never the current day's file. Rollups are tiny, so
-    /// age is the only bound here (no byte cap, unlike the query log).
+    /// age is the only bound here — no byte cap.
     pub(crate) async fn prune(&self, now: SystemTime) -> io::Result<()> {
         let current_day = epoch_hour(now) / HOURS_PER_DAY;
         let mut read = match fs::read_dir(&self.dir).await {

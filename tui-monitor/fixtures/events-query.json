@@ -1,0 +1,22 @@
+{
+  "type": "query",
+  "data": {
+    "kind": "dns",
+    "ts": "2026-08-07T01:58:56Z",
+    "client": "192.168.10.12",
+    "client_name": "liviu-phone",
+    "domain": "google.com",
+    "qtype": "A",
+    "verdict": "pass",
+    "rule": null,
+    "list": null,
+    "duration_ms": 0.043,
+    "upstream": null,
+    "cached": true,
+    "method": null,
+    "path": null,
+    "resource_type": null,
+    "status": null,
+    "bytes": null
+  }
+}

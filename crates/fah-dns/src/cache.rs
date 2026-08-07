@@ -413,7 +413,7 @@ pub(crate) struct DnsCache {
     hits: AtomicU64,
     misses: AtomicU64,
     evictions: AtomicU64,
-    /// Lifetime cleanup totals for `/metrics`, bumped inside
+    /// Lifetime cleanup totals for `/api/v1/telemetry`, bumped inside
     /// [`DnsCache::clean`] — so the scheduled sweep and the admin
     /// `POST /api/v1/cache/clean` both count, through the one code path that
     /// actually removes entries. Splitting them would mean a second call site
@@ -428,7 +428,7 @@ pub(crate) struct DnsCache {
     cleanup_last_duration_micros: AtomicU64,
 }
 
-/// Lifetime cleanup counters for `/metrics`, read off
+/// Lifetime cleanup counters for `/api/v1/telemetry`, read off
 /// [`DnsCache::cleanup_stats`] on the telemetry poll.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct CacheCleanupStats {
@@ -823,7 +823,7 @@ impl DnsCache {
         outcome
     }
 
-    /// Lifetime cleanup counters for `/metrics`. Zero until the first sweep,
+    /// Lifetime cleanup counters for `/api/v1/telemetry`. Zero until the first sweep,
     /// which with `cleanup_interval_seconds = 0` means forever — the same
     /// "nothing is happening" reading a scheduled-but-idle cleaner gives, and
     /// what the counters exist to say.

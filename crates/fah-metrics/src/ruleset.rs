@@ -1,8 +1,14 @@
 //! Compiled-ruleset snapshot — this crate's own DTO. The binary reads
-//! `Matcher::len()` / `Matcher::heap_bytes()` off `ListManager::matcher()`
-//! and times its own `refresh_list`/`boot`/`set_user_rules` calls, then pushes
-//! the result through [`Metrics::set_ruleset`] (siblings never import each
-//! other, ARCHITECTURE.md §Dependency Layering).
+//! `Matcher::len()` / `Matcher::duplicates_removed()` off
+//! `ListManager::matcher()` and times its own `refresh_list`/`boot`/
+//! `set_user_rules` calls, then pushes the result through
+//! [`Metrics::set_ruleset`] (siblings never import each other,
+//! ARCHITECTURE.md §Dependency Layering).
+//!
+//! **No `heap_bytes`.** The ruleset's size is a memory figure and belongs to
+//! the one breakdown that owns them all (`fah_model::MemoryComponents`);
+//! carrying it here too published the same number twice and cost a second
+//! `Matcher::heap_bytes()` walk per poll.
 
 use std::time::Duration;
 
@@ -11,7 +17,6 @@ pub struct RulesetSnapshot {
     /// Distinct compiled rules — `rules` + `duplicates_removed` is what the
     /// lists parsed to before the merge collapsed identical rules.
     pub rules: usize,
-    pub heap_bytes: usize,
     pub compile_duration: Duration,
     /// Rules the last compile dropped as exact duplicates of one already
     /// present (`Matcher::duplicates_removed`). Zero is the normal reading

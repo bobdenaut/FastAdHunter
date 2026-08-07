@@ -1,7 +1,7 @@
 # Clients — API.md §Clients
 #
 # Clients are discovered by source IP as they query; there is no registration
-# step. Names are cosmetic labels for the dashboard and query log.
+# step. Names are cosmetic labels for the dashboard and the events socket.
 
 @base = {{host}}/api/v1
 @auth = Authorization: Bearer {{apiKey}}
