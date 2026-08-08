@@ -163,6 +163,27 @@ When designing or modifying code, follow these principles in priority order:
     Read only the section(s) relevant to the task.
     Never summarize or rewrite unrelated sections.
 
+21. Comments and docs state the present, not the change.
+    Every comment and doc describes the system as it is now. Never write what
+    something used to be, when it changed, or what it replaced — the diff and
+    `git log` carry that, and prose narrating change is wrong the moment the
+    next change lands.
+
+    Do not write: "was removed/renamed/replaced", "used to", "previously",
+    "no longer", "since 0.2.x", "new in". Write "X is Y", never "X was Z,
+    now Y".
+
+    This does not forbid two things that are present facts:
+    - Rationale — why a constraint exists, e.g. "the lease must outlast a
+      worst-case forward".
+    - Measurement provenance and retractions — the corpus, workload and device
+      a figure came from, and a superseded number someone would otherwise
+      re-derive.
+
+    `docs/decisions/` and `docs/code-review/` are exempt by purpose: an ADR
+    records a decision, a review records findings. Everything else — code
+    comments, the root docs, and plan files — is present-tense only.
+
 ## Working agreement
 
 Standing instructions from the repo owner. Each one was a correction; breaking
