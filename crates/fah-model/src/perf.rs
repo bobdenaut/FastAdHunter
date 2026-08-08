@@ -20,6 +20,11 @@ pub struct PerfSample {
     pub ts: u64,
     /// Process resident set size in bytes at capture.
     pub rss_bytes: u64,
+    /// High-water RSS from `getrusage`'s `ru_maxrss` — **monotone within one
+    /// container lifetime**, so a drop is a restart, never a reclaim. A
+    /// minutes-apart sampler catches the seconds-long compile only through it.
+    #[serde(default)]
+    pub peak_rss: u64,
     /// Queries per second over the interval since the previous sample
     /// (`queries_delta / interval_seconds`); `0.0` for the first sample after
     /// boot (no prior reading to delta against).
@@ -125,6 +130,7 @@ mod tests {
         let sample = PerfSample {
             ts: 1_695_600_000,
             rss_bytes: 55_000_000,
+            peak_rss: 123_539_456,
             qps: 12.5,
             queries_delta: 750,
             blocked_delta: 210,
@@ -206,5 +212,28 @@ mod tests {
         assert_eq!(sample.memory, MemoryComponents::default());
         assert_eq!(sample.memory.accounted(), 0);
         assert_eq!(sample.minor_page_faults, 0);
+    }
+
+    /// The shape a 0.2.13 sampler writes: every p2-07 field present, no
+    /// `peak_rss`. Those rows are the retained series on the router right now,
+    /// so reading them back has to leave the rest of the row untouched — a 0
+    /// here means "not recorded", never "the peak was zero".
+    #[test]
+    fn a_row_written_before_the_peak_still_deserializes() {
+        let legacy = r#"{"ts":1,"rss_bytes":49942528,"qps":1.5,"queries_delta":9,
+            "blocked_delta":2,"allowed_delta":0,
+            "cache":{"entries":57,"capacity":16384,"fresh":57,"stale":0,"expired":0,
+                     "hits":3,"misses":54,"evictions":0,"bytes":76976,"max_bytes":67108864},
+            "latency":{"block_p50":0.0,"block_p99":0.0,"cache_hit_p50":0.0,
+                       "cache_hit_p99":0.0,"forward_p50":0.0,"forward_p99":0.0},
+            "memory":{"ruleset":27064396,"cache":76976,
+                      "stats":{"aggregates":494055,"clients":264704}},
+            "minor_page_faults":37188,
+            "upstreams":[]}"#;
+        let sample: PerfSample = serde_json::from_str(legacy).unwrap();
+        assert_eq!(sample.peak_rss, 0);
+        assert_eq!(sample.rss_bytes, 49_942_528);
+        assert_eq!(sample.memory.ruleset, 27_064_396);
+        assert_eq!(sample.minor_page_faults, 37_188);
     }
 }

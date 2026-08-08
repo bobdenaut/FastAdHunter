@@ -222,8 +222,9 @@ row per `history.sample_interval_seconds` (default 60 s). At that cadence a
 single day is 1440 samples, so this is the endpoint `stride` usually applies to.
 
 `fields` takes a comma-separated subset of the response keys —
-`rss_bytes`, `qps`, `queries_delta`, `blocked_delta`, `allowed_delta`, `cache`,
-`latency`, `upstreams`, `memory`, `minor_page_faults` — and drops the rest
+`rss_bytes`, `peak_rss`, `qps`, `queries_delta`, `blocked_delta`,
+`allowed_delta`, `cache`, `latency`, `upstreams`, `memory`,
+`minor_page_faults` — and drops the rest
 (**absent**, not null). `ts` is always present. An unknown name is a `400`
 rather than being ignored, so a typo cannot silently remove the series a chart
 wanted. `fields` trims the response, not the read.
@@ -237,6 +238,7 @@ wanted. `fields` trims the response, not the read.
     {
       "ts": "2026-07-17T09:01:00Z",
       "rss_bytes": 55000000,
+      "peak_rss": 189071360,
       "qps": 12.5,
       "queries_delta": 750,
       "blocked_delta": 210,
@@ -275,6 +277,15 @@ per-interval; the `cache` counters `hits`/`misses`/`evictions` are
 process-lifetime totals, the rest of `cache` — `bytes` against `max_bytes`
 included — is point-in-time. Rows written before the byte cap existed carry
 neither field and read back as `0`.
+
+`peak_rss` is the process high-water RSS (`getrusage`'s `ru_maxrss`), **monotone
+within one container lifetime** — a drop in the series is a restart, never a
+reclaim. It is here because it is the only way this endpoint sees the ruleset
+compile: the compile is seconds long against a sampling interval of minutes, and
+a high-water mark does not have to be read while it is being set. Decimation
+keeps every n-th row verbatim, so a wide range can delay when a step appears but
+cannot erase it. `0` means the row predates the field or `getrusage` was
+unavailable — not that the peak was zero.
 
 `memory` is the same breakdown `/api/v1/debug/memory` serves, minus the live-only
 figures: **no RSS** (`rss_bytes` above is it) and **no allocator counters**, of

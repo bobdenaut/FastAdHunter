@@ -350,6 +350,8 @@ pub struct PerfSampleResponse {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub rss_bytes: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub peak_rss: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub qps: Option<f64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub queries_delta: Option<u64>,
@@ -376,6 +378,7 @@ pub struct PerfSampleResponse {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PerfFields {
     pub rss_bytes: bool,
+    pub peak_rss: bool,
     pub qps: bool,
     pub queries_delta: bool,
     pub blocked_delta: bool,
@@ -391,6 +394,7 @@ impl PerfFields {
     /// The default: `?fields=` omitted serves the whole sample.
     pub const ALL: Self = Self {
         rss_bytes: true,
+        peak_rss: true,
         qps: true,
         queries_delta: true,
         blocked_delta: true,
@@ -404,6 +408,7 @@ impl PerfFields {
 
     pub const NONE: Self = Self {
         rss_bytes: false,
+        peak_rss: false,
         qps: false,
         queries_delta: false,
         blocked_delta: false,
@@ -417,8 +422,9 @@ impl PerfFields {
 
     /// The accepted `?fields=` names, in response order — also what a rejection
     /// message lists back.
-    pub const NAMES: [&'static str; 10] = [
+    pub const NAMES: [&'static str; 11] = [
         "rss_bytes",
+        "peak_rss",
         "qps",
         "queries_delta",
         "blocked_delta",
@@ -434,6 +440,7 @@ impl PerfFields {
     pub fn enable(&mut self, name: &str) -> bool {
         match name {
             "rss_bytes" => self.rss_bytes = true,
+            "peak_rss" => self.peak_rss = true,
             "qps" => self.qps = true,
             "queries_delta" => self.queries_delta = true,
             "blocked_delta" => self.blocked_delta = true,
@@ -461,6 +468,7 @@ impl HistoryPerfResponse {
                 .map(|sample| PerfSampleResponse {
                     ts: instant(sample.ts),
                     rss_bytes: fields.rss_bytes.then_some(sample.rss_bytes),
+                    peak_rss: fields.peak_rss.then_some(sample.peak_rss),
                     qps: fields.qps.then_some(sample.qps),
                     queries_delta: fields.queries_delta.then_some(sample.queries_delta),
                     blocked_delta: fields.blocked_delta.then_some(sample.blocked_delta),

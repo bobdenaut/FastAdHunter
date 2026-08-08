@@ -211,6 +211,7 @@ impl HistorySource for FakeHistory {
             samples: vec![PerfSample {
                 ts: 3_600,
                 rss_bytes: 55_000_000,
+                peak_rss: 123_539_456,
                 qps: 12.5,
                 queries_delta: 750,
                 blocked_delta: 210,
@@ -946,6 +947,7 @@ async fn history_perf_serves_the_sample_series_and_fields_trim_it() {
     let item = &body["items"][0];
     assert_eq!(item["ts"], "1970-01-01T01:00:00Z");
     assert_eq!(item["rss_bytes"], 55_000_000u64);
+    assert_eq!(item["peak_rss"], 123_539_456u64);
     assert_eq!(item["qps"], 12.5);
     assert_eq!(item["queries_delta"], 750);
     assert_eq!(item["cache"]["entries"], 10_000);
@@ -960,6 +962,33 @@ async fn history_perf_serves_the_sample_series_and_fields_trim_it() {
     let mut keys: Vec<&str> = item.keys().map(String::as_str).collect();
     keys.sort_unstable();
     assert_eq!(keys, ["cache", "rss_bytes", "ts"]);
+
+    // The peak is selectable on its own, and does not drag its instantaneous
+    // sibling in — a chart of the compile peak wants one series, not two.
+    let body = harness
+        .get_json("/api/v1/history/perf?fields=peak_rss")
+        .await;
+    let item = body["items"][0].as_object().unwrap();
+    let mut keys: Vec<&str> = item.keys().map(String::as_str).collect();
+    keys.sort_unstable();
+    assert_eq!(keys, ["peak_rss", "ts"]);
+}
+
+/// A typo must name every accepted key back, or the caller cannot discover the
+/// one they wanted.
+#[tokio::test]
+async fn history_perf_rejects_an_unknown_field_and_lists_the_accepted_set() {
+    let harness = start().await;
+
+    let response = harness
+        .get("/api/v1/history/perf?fields=rss_bytes,nonsense")
+        .await;
+    assert_eq!(response.status(), 400);
+    let body: Value = response.json().await.unwrap();
+    let message = body["error"]["message"].as_str().expect("message");
+    for name in ["rss_bytes", "peak_rss", "memory", "minor_page_faults"] {
+        assert!(message.contains(name), "{message:?} must list {name}");
+    }
 }
 
 #[tokio::test]

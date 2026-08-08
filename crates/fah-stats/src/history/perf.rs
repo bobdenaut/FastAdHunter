@@ -140,6 +140,7 @@ mod tests {
         PerfSample {
             ts,
             rss_bytes: 55_000_000,
+            peak_rss: 123_539_456,
             qps,
             queries_delta: 100,
             blocked_delta: 30,

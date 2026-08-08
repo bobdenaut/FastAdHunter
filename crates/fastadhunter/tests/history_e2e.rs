@@ -54,6 +54,9 @@ const CLIENT: IpAddr = IpAddr::V4(Ipv4Addr::new(192, 168, 1, 10));
 /// `GET /api/v1/history/perf` — non-zero and distinctive so a wrong-field bug
 /// can't pass by coincidence.
 const SAMPLE_RSS_BYTES: u64 = 57_213_952;
+/// Well above `SAMPLE_RSS_BYTES`, as a compile peak is — so swapping the two
+/// fields anywhere in the round trip fails rather than coincides.
+const SAMPLE_PEAK_RSS: u64 = 189_071_360;
 const SAMPLE_CACHE_ENTRIES: u64 = 1_234;
 /// Components summing to 30,000,000 B, so the residual the API derives from
 /// `SAMPLE_RSS_BYTES` is a distinctive 27,213,952 B.
@@ -176,6 +179,7 @@ async fn history_is_written_to_disk_and_served_over_http() {
         .await;
     let sample = &perf["items"].as_array().expect("perf items")[0];
     assert_eq!(sample["rss_bytes"], SAMPLE_RSS_BYTES);
+    assert_eq!(sample["peak_rss"], SAMPLE_PEAK_RSS);
     assert_eq!(sample["cache"]["entries"], SAMPLE_CACHE_ENTRIES);
     assert_eq!(sample["cache"]["max_bytes"], 67_108_864);
     // The memory breakdown survives the disk round trip, and the residual is
@@ -301,6 +305,7 @@ fn perf_sample(ts: u64) -> PerfSample {
     PerfSample {
         ts,
         rss_bytes: SAMPLE_RSS_BYTES,
+        peak_rss: SAMPLE_PEAK_RSS,
         qps: 12.0,
         queries_delta: 720,
         blocked_delta: 200,

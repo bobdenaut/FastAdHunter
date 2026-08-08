@@ -865,6 +865,7 @@ mod tests {
             .persist_perf_sample(PerfSample {
                 ts,
                 rss_bytes: 55_000_000,
+                peak_rss: 123_539_456,
                 qps: 12.0,
                 queries_delta: 720,
                 blocked_delta: 200,

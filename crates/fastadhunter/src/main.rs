@@ -808,6 +808,7 @@ fn build_perf_sample(
     fah_model::PerfSample {
         ts,
         rss_bytes,
+        peak_rss: memory.process.map_or(0, |p| p.peak_rss),
         qps,
         queries_delta,
         blocked_delta,
@@ -971,6 +972,7 @@ mod tests {
             rss: Some(1000),
             process: Some(fah_model::ProcessStats {
                 minor_page_faults: 7,
+                peak_rss: 3000,
                 ..Default::default()
             }),
             allocator: Some(fah_model::AllocatorStats::default()),
@@ -1024,6 +1026,28 @@ mod tests {
         // never stored twice.
         assert_eq!(sample.rss_bytes, 1000);
         assert_eq!(sample.memory.accounted(), 119);
+        // The peak is the kernel's high-water mark, not this instant's RSS.
+        assert_eq!(sample.peak_rss, 3000);
+    }
+
+    /// `getrusage` unavailable reads back 0 — which the field documents as "not
+    /// recorded", never as a peak of zero.
+    #[test]
+    fn perf_sample_peak_is_zero_when_the_process_stats_are_absent() {
+        let memory = fah_model::MemoryBreakdown {
+            process: None,
+            ..breakdown()
+        };
+        let sample = build_perf_sample(
+            &snapshot(160, 6, 34),
+            None,
+            &empty_cache(),
+            1000,
+            &memory,
+            60.0,
+        );
+        assert_eq!(sample.peak_rss, 0);
+        assert_eq!(sample.minor_page_faults, 0);
     }
 
     #[test]
