@@ -11,6 +11,9 @@ pub fn percent(part: u64, whole: u64) -> f64 {
     }
 }
 
+/// Binary megabytes. Every byte figure in this monitor is scaled by 1024, so
+/// every label reads `MiB` — the API serves raw bytes and analyses of it in
+/// decimal MB run 4.9 % higher for the same reading.
 pub fn mib(bytes: u64) -> f64 {
     bytes as f64 / (1024.0 * 1024.0)
 }
@@ -28,9 +31,9 @@ pub fn thousands(value: u64) -> String {
     out
 }
 
-/// Bytes at a human scale — `27.1 MB`, `1.2 GB`.
+/// Bytes at a human scale — `27.1 MiB`, `1.2 GiB`. Binary, like [`mib`].
 pub fn bytes(value: u64) -> String {
-    const UNITS: [&str; 5] = ["B", "KB", "MB", "GB", "TB"];
+    const UNITS: [&str; 5] = ["B", "KiB", "MiB", "GiB", "TiB"];
     let mut scaled = value as f64;
     let mut unit = 0;
     while scaled >= 1024.0 && unit < UNITS.len() - 1 {
@@ -98,6 +101,15 @@ pub fn millis(value_ms: f64) -> String {
     }
 }
 
+/// A stage's lifetime mean in milliseconds, or `—` when it has recorded
+/// nothing — which is not the same as `0.000 ms`.
+pub fn mean_ms(stage: fah_model::StageTotals) -> String {
+    match stage.mean_seconds() {
+        Some(seconds) => format!("{} ms", millis(seconds * 1000.0)),
+        None => "—".to_string(),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -156,6 +168,6 @@ mod tests {
     #[test]
     fn bytes_scale_to_the_largest_whole_unit() {
         assert_eq!(bytes(512), "512 B");
-        assert_eq!(bytes(27_052_081), "25.8 MB");
+        assert_eq!(bytes(27_052_081), "25.8 MiB");
     }
 }

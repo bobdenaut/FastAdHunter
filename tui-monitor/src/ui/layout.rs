@@ -6,7 +6,7 @@ use ratatui::layout::{Constraint, Direction, Layout, Rect};
 
 /// Width of **both** flanking columns — one constant, because the screen reads
 /// as balanced only while they match. Wide enough for the statistics panel's
-/// gauges and for `Bytes  484.6 kB / 64.0 MB`, the widest detail row.
+/// gauges and for `Bytes  484.6 KiB / 64.0 MiB`, the widest detail row.
 pub const SIDE_WIDTH: u16 = 46;
 
 /// The feed's floor. Under it the detail column is dropped entirely rather than

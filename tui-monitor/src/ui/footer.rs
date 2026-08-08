@@ -102,7 +102,7 @@ mod tests {
         };
         let rendered = text(&router_line(&router));
 
-        assert!(rendered.contains("750.0 MB of 1.0 GB"), "{rendered}");
+        assert!(rendered.contains("750.0 MiB of 1.0 GiB"), "{rendered}");
         assert!(rendered.contains("CPU 3%"), "{rendered}");
         assert!(rendered.contains("(running)"), "{rendered}");
         // The device's clock, not the process's — the header carries that one.
@@ -123,6 +123,6 @@ mod tests {
 
         assert!(rendered.contains('✕'), "{rendered}");
         assert!(rendered.contains("error decoding"), "{rendered}");
-        assert!(rendered.contains("750.0 MB"), "the last reading stays");
+        assert!(rendered.contains("750.0 MiB"), "the last reading stays");
     }
 }

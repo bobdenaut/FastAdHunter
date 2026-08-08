@@ -10,7 +10,7 @@ use ratatui::Frame;
 use crate::config::RssThresholds;
 use crate::models::telemetry::Telemetry;
 use crate::state::{AppState, LinkStatus};
-use crate::util::format::{mib, millis, thousands, truncate};
+use crate::util::format::{mean_ms, mib, thousands, truncate};
 
 use super::{chart, gauge, theme};
 
@@ -19,7 +19,7 @@ const COL2: usize = 20;
 const COL3: usize = 16;
 const COL4: usize = 18;
 const LABEL_WIDTH: usize = 7;
-const VALUE_WIDTH: usize = 8;
+const VALUE_WIDTH: usize = 9;
 
 /// Longest a link's reason may print. `LinkStatus::Down` carries a whole
 /// reqwest error, which unbounded pushes the version, uptime and clock off the
@@ -169,8 +169,8 @@ fn divider_line<'a>(
             // A strided series covers `n`× the span its point count suggests.
             (
                 match stride {
-                    0 | 1 => " MB) ".to_string(),
-                    n => format!(" MB, 1 in {n}) "),
+                    0 | 1 => " MiB) ".to_string(),
+                    n => format!(" MiB, 1 in {n}) "),
                 },
                 theme::MUTED,
             ),
@@ -295,15 +295,15 @@ fn populated_rows(telemetry: &Telemetry) -> Vec<GaugeRow> {
     vec![
         GaugeRow {
             label: "RSS",
-            // Against the RB5009's 1 GB, shared with RouterOS.
+            // Against the RB5009's 1 GiB, shared with RouterOS.
             percent: (rss / 1024.0) * 100.0,
             colour: theme::ACCENT,
-            value: format!("{rss:5.1} MB"),
-            col2: format!("Peak {peak:6.1} MB"),
-            col3: format!("Rules {ruleset:5.1} MB"),
+            value: format!("{rss:5.1} MiB"),
+            col2: format!("Peak {peak:6.1} MiB"),
+            col3: format!("Rules {ruleset:5.1} MiB"),
             // RSS minus the accounted components: allocator overhead, thread
             // stacks and fragmentation.
-            col4: format!("Residual {residual:5.1} MB"),
+            col4: format!("Residual {residual:5.1} MiB"),
         },
         GaugeRow {
             label: "Hit",
@@ -314,6 +314,8 @@ fn populated_rows(telemetry: &Telemetry) -> Vec<GaugeRow> {
             // The stats panel's "Hit (all q)" is the other denominator.
             col2: format!("{}/{} lookups", cache.hits, cache.hits + cache.misses),
             col3: format!("DNS L: {}", mean_ms(latency.block)),
+            // Fresh hits *and* SWR stale serves since 0.2.13 — both answer from
+            // cache without touching the network (ADR-0005).
             col4: format!("Cache H: {}", mean_ms(latency.cache_hit)),
         },
         GaugeRow {
@@ -322,13 +324,15 @@ fn populated_rows(telemetry: &Telemetry) -> Vec<GaugeRow> {
             colour: theme::saturation(cache.load_percent),
             value: format!("{:5.1}%  ", cache.load_percent),
             col2: format!(
-                "{}/{} ({:.1}MB)",
+                "{}/{} ({:.1}MiB)",
                 cache.entries,
                 cache.capacity,
                 mib(cache.bytes)
             ),
             col3: format!("Fresh {}", cache.fresh),
-            col4: format!("Stale {}", cache.stale),
+            // Entries *currently* in the stale window, not the serve counter
+            // `counters.dns.cache_stale` — two different figures, one word.
+            col4: format!("Stale ent {}", cache.stale),
         },
     ]
 }
@@ -348,15 +352,6 @@ fn empty_rows() -> Vec<GaugeRow> {
             col4: "—".to_string(),
         })
         .collect()
-}
-
-/// A stage's lifetime mean in milliseconds, or `—` when it has recorded
-/// nothing — which is not the same as `0.000 ms`.
-fn mean_ms(stage: fah_model::StageTotals) -> String {
-    match stage.mean_seconds() {
-        Some(seconds) => format!("{} ms", millis(seconds * 1000.0)),
-        None => "—".to_string(),
-    }
 }
 
 #[cfg(test)]
@@ -496,10 +491,10 @@ mod tests {
             label: "Hit",
             percent: 0.0,
             colour: theme::MUTED,
-            value: "999999999 MB".to_string(),
+            value: "999999999 MiB".to_string(),
             col2: "1234567890/1234567890 lookups".to_string(),
             col3: "DNS L: 1234.567 ms".to_string(),
-            col4: "Residual 99999.9 MB".to_string(),
+            col4: "Residual 99999.9 MiB".to_string(),
         };
 
         assert_eq!(
@@ -543,10 +538,10 @@ mod tests {
         // mean "every stored sample is here", so neither may claim a stride.
         for undecimated in [0, 1] {
             let line = text(undecimated);
-            assert!(line.contains(" MB) "), "stride {undecimated}: {line}");
+            assert!(line.contains(" MiB) "), "stride {undecimated}: {line}");
             assert!(!line.contains("1 in"), "stride {undecimated}: {line}");
         }
-        assert!(text(4).contains(" MB, 1 in 4) "), "{}", text(4));
+        assert!(text(4).contains(" MiB, 1 in 4) "), "{}", text(4));
     }
 
     /// A series crossing both thresholds paints three runs, in order, and

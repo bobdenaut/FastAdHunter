@@ -14,7 +14,7 @@ pub const MUTED: Color = Color::DarkGray;
 /// data.
 pub const TRACK: Color = Color::Rgb(45, 50, 60);
 
-/// Colour for one RSS reading in MB. Applied per graph column, so the chart
+/// Colour for one RSS reading in MiB. Applied per graph column, so the chart
 /// shows *when* memory crossed a threshold rather than only where it is now —
 /// the chart autoscales, so its rows carry no fixed magnitude.
 pub fn rss(megabytes: f64, thresholds: crate::config::RssThresholds) -> Color {

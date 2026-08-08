@@ -18,7 +18,7 @@ use ratatui::Frame;
 
 use crate::models::telemetry::Telemetry;
 use crate::state::AppState;
-use crate::util::format::{bytes, mib, percent, thousands, truncate};
+use crate::util::format::{bytes, mean_ms, mib, percent, thousands, truncate};
 
 use super::theme;
 
@@ -171,7 +171,7 @@ fn memory_lines<'a>(telemetry: &Telemetry) -> Vec<Line<'a>> {
     ] {
         lines.push(figure(
             label,
-            value.map_or("—".to_string(), |v| format!("{:.1} MB", mib(v))),
+            value.map_or("—".to_string(), |v| format!("{:.1} MiB", mib(v))),
         ));
     }
 
@@ -213,8 +213,15 @@ fn cache_lines<'a>(telemetry: &Telemetry) -> Vec<Line<'a>> {
 
 fn engine_lines<'a>(telemetry: &Telemetry) -> Vec<Line<'a>> {
     let counters = &telemetry.engine.counters;
+    let latency = &telemetry.engine.latency.dns;
 
+    // The three stages partition every resolved query, so they are read
+    // together: only `forward` crosses the network, and since 0.2.13 an SWR
+    // stale serve is timed as the cache read it is, not as a forward.
     let mut lines = vec![
+        figure("Lat block", mean_ms(latency.block)),
+        figure("Lat cache hit", mean_ms(latency.cache_hit)),
+        figure("Lat forward", mean_ms(latency.forward)),
         figure("SWR done", thousands(counters.swr.completed)),
         figure("SWR failed", thousands(counters.swr.failed)),
         figure("Sweeps", thousands(counters.cache_cleanup.runs)),

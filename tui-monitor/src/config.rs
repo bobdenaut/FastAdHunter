@@ -196,9 +196,10 @@ pub struct UiConfig {
     /// Redraw budget: the longest the screen may go without repainting when
     /// no key or mouse event arrives.
     pub redraw_millis: u64,
-    /// RSS in MB at or above which the graph turns amber.
+    /// RSS in MiB at or above which the graph turns amber. The `_mb` suffix
+    /// stays for config compatibility; the unit it compares against is MiB.
     pub rss_warn_mb: f64,
-    /// RSS in MB at or above which it turns red.
+    /// RSS in MiB at or above which it turns red.
     pub rss_alert_mb: f64,
     /// A feed query slower than this is boxed in the Time column.
     pub slow_query_ms: f64,
