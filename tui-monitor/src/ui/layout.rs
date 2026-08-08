@@ -4,8 +4,14 @@
 
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
 
-/// Width of the statistics column. The panel's content is laid out against it.
-pub const STATS_WIDTH: u16 = 46;
+/// Width of **both** flanking columns — one constant, because the screen reads
+/// as balanced only while they match. Wide enough for the statistics panel's
+/// gauges and for `Bytes  484.6 kB / 64.0 MB`, the widest detail row.
+pub const SIDE_WIDTH: u16 = 46;
+
+/// The feed's floor. Under it the detail column is dropped entirely rather than
+/// squeezed out of the one panel whose rows are the point of the program.
+const QUERIES_MIN: u16 = 40;
 
 /// Header: three gauge rows plus the graph, inside a border.
 const HEADER_HEIGHT: u16 = 7;
@@ -20,6 +26,9 @@ pub struct Regions {
     pub header: Rect,
     pub stats: Rect,
     pub queries: Rect,
+    /// `None` when the terminal is too narrow to hold it without eating the
+    /// feed. The figures it carries are all reachable from the API anyway.
+    pub details: Option<Rect>,
     pub footer: Rect,
 }
 
@@ -33,9 +42,19 @@ pub fn split(area: Rect) -> Regions {
         ])
         .split(area);
 
+    let roomy = area.width >= 2 * SIDE_WIDTH + QUERIES_MIN;
+    let columns: &[Constraint] = if roomy {
+        &[
+            Constraint::Length(SIDE_WIDTH),
+            Constraint::Min(QUERIES_MIN),
+            Constraint::Length(SIDE_WIDTH),
+        ]
+    } else {
+        &[Constraint::Length(SIDE_WIDTH), Constraint::Min(QUERIES_MIN)]
+    };
     let body = Layout::default()
         .direction(Direction::Horizontal)
-        .constraints([Constraint::Length(STATS_WIDTH), Constraint::Min(40)])
+        .constraints(columns)
         .split(rows[1]);
 
     Regions {
@@ -43,6 +62,7 @@ pub fn split(area: Rect) -> Regions {
         header: rows[0],
         stats: body[0],
         queries: body[1],
+        details: roomy.then(|| body[2]),
         footer: rows[2],
     }
 }
@@ -97,14 +117,52 @@ mod tests {
         assert_eq!(regions.header.y, 0);
         assert_eq!(regions.header.height, HEADER_HEIGHT);
         assert_eq!(regions.stats.y, HEADER_HEIGHT);
-        assert_eq!(regions.stats.width, STATS_WIDTH);
-        assert_eq!(regions.queries.x, STATS_WIDTH);
+        assert_eq!(regions.stats.width, SIDE_WIDTH);
+        assert_eq!(regions.queries.x, SIDE_WIDTH);
         assert_eq!(
             regions.footer.y + regions.footer.height,
             screen().height,
             "the footer must reach the bottom edge"
         );
         assert_eq!(regions.stats.height, regions.queries.height);
+    }
+
+    /// The three columns must meet exactly — a gap or an overlap between the
+    /// feed and the detail column shows as a torn border.
+    #[test]
+    fn the_detail_column_abuts_the_feed_and_the_right_edge() {
+        let regions = split(screen());
+        let details = regions.details.expect("200 columns is roomy");
+
+        assert_eq!(regions.queries.x + regions.queries.width, details.x);
+        assert_eq!(details.x + details.width, screen().width);
+        assert_eq!(details.height, regions.queries.height);
+        // The screen reads as balanced only while the two flanks match.
+        assert_eq!(details.width, regions.stats.width);
+    }
+
+    /// The feed is the one panel whose rows are the point of the program, so it
+    /// keeps its floor and the detail column is what gives way.
+    #[test]
+    fn a_narrow_terminal_drops_the_detail_column_rather_than_the_feed() {
+        let threshold = 2 * SIDE_WIDTH + QUERIES_MIN;
+
+        for width in [40u16, 80, threshold - 1] {
+            let regions = split(Rect { width, ..screen() });
+            assert!(regions.details.is_none(), "width {width}");
+            assert!(
+                regions.queries.width >= QUERIES_MIN.min(width),
+                "width {width}: feed squeezed to {}",
+                regions.queries.width
+            );
+        }
+
+        assert!(split(Rect {
+            width: threshold,
+            ..screen()
+        })
+        .details
+        .is_some());
     }
 
     /// The hit test behind mouse clicks and scroll routing.

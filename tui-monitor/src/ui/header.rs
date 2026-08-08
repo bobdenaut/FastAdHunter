@@ -123,10 +123,12 @@ fn uptime(seconds: u64) -> String {
     let hours = (seconds % 86_400) / 3600;
     let minutes = (seconds % 3600) / 60;
 
+    // Two units is enough at any magnitude, and the clock beside it already
+    // ticks — seconds here would only make the row twitch.
     if days > 0 {
-        format!("{days}d{hours:02}h")
+        format!("{days}d {hours:02}h")
     } else if hours > 0 {
-        format!("{hours}h{minutes:02}m")
+        format!("{hours}h {minutes:02}m")
     } else {
         format!("{minutes}m")
     }
@@ -381,7 +383,7 @@ mod tests {
         let rendered: String = line.spans.iter().map(|s| s.content.as_ref()).collect();
 
         assert!(rendered.contains("v0.2.10"), "{rendered}");
-        assert!(rendered.contains("up 2d03h"), "{rendered}");
+        assert!(rendered.contains("up 2d 03h"), "{rendered}");
         assert_eq!(rendered.chars().count(), 200, "the row still fits exactly");
     }
 
@@ -415,8 +417,8 @@ mod tests {
 
     #[test]
     fn uptime_shortens_as_the_magnitude_falls() {
-        assert_eq!(uptime(184_920), "2d03h");
-        assert_eq!(uptime(7_260), "2h01m");
+        assert_eq!(uptime(184_920), "2d 03h");
+        assert_eq!(uptime(7_260), "2h 01m");
         assert_eq!(uptime(90), "1m");
     }
 

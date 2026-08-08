@@ -62,6 +62,8 @@ fn router_line<'a>(router: &RouterStatus) -> Line<'a> {
         spans.push(Span::raw(")"));
     }
 
+    // The device's uptime. The header carries the FastAdHunter process's, which
+    // is a different clock — a container restart moves one and not the other.
     if let Some(uptime) = router.uptime.as_deref() {
         spans.push(Span::raw(format!(" │ up {}", spaced_uptime(uptime))));
     }
@@ -103,6 +105,7 @@ mod tests {
         assert!(rendered.contains("750.0 MB of 1.0 GB"), "{rendered}");
         assert!(rendered.contains("CPU 3%"), "{rendered}");
         assert!(rendered.contains("(running)"), "{rendered}");
+        // The device's clock, not the process's — the header carries that one.
         assert!(rendered.contains("up 2d 23h 57m 20s"), "{rendered}");
     }
 

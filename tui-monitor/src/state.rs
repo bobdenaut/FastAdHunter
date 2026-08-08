@@ -204,7 +204,9 @@ pub struct RouterStatus {
     pub cpu_frequency: Option<u64>,
     pub container_memory: Option<u64>,
     pub container_status: Option<String>,
-    /// RouterOS's own spelling, e.g. `3d04:12:55` — passed through unparsed.
+    /// The **device's** uptime, in RouterOS's own spelling. Not the header's,
+    /// which is the FastAdHunter process — a container restart moves one and
+    /// not the other, which is the whole reason both are on screen.
     pub uptime: Option<String>,
 }
 

@@ -1,5 +1,8 @@
-//! The left column: live rates, the two history windows, engine health and the
-//! top-N tables. Scrollable, because it is longer than any terminal.
+//! The left column: live rates, the two history windows and the top-N tables.
+//! Scrollable, because it is longer than any terminal.
+//!
+//! Engine, cache, memory and upstream figures live in [`super::details`] — they
+//! are read by glancing, and here they sat past the fold.
 
 use ratatui::layout::Rect;
 use ratatui::text::{Line, Span};
@@ -8,9 +11,8 @@ use ratatui::widgets::{
 };
 use ratatui::Frame;
 
-use crate::models::telemetry::Telemetry;
 use crate::state::{AppState, LinkStatus, Window};
-use crate::util::format::{bytes, mib, percent, thousands, truncate};
+use crate::util::format::{thousands, truncate};
 
 use super::{chart, gauge, theme};
 
@@ -42,11 +44,6 @@ pub fn render(frame: &mut Frame, area: Rect, state: &AppState, scroll: u16) -> u
         &state.history,
         inner_width,
     ));
-    if let Some(telemetry) = state.telemetry.as_ref() {
-        lines.extend(engine_section(telemetry));
-        lines.extend(cache_section(telemetry));
-        lines.extend(memory_section(telemetry));
-    }
     lines.extend(top_sections(state));
 
     // The scrollbar's range is the overflow, so the last line is reachable and
@@ -187,128 +184,6 @@ fn counter_line<'a>(label: &str, value: u64, share: Option<f64>) -> Line<'a> {
     }
 }
 
-/// Upstream health, plus the counters that only ever matter when non-zero.
-fn engine_section<'a>(telemetry: &Telemetry) -> Vec<Line<'a>> {
-    let counters = &telemetry.engine.counters;
-    let mut lines = vec![Line::from(""), heading("Upstreams")];
-
-    for upstream in &telemetry.engine.upstreams {
-        let failure_rate = percent(upstream.failures, upstream.attempts);
-        let healthy = upstream.consecutive_failures == 0;
-        lines.push(Line::from(vec![
-            Span::styled(
-                format!(" {} ", if healthy { "●" } else { "✕" }),
-                ratatui::style::Style::default().fg(theme::link(healthy)),
-            ),
-            Span::raw(format!(
-                "{:<21} {:>8}",
-                truncate(&upstream.address, 21),
-                thousands(upstream.attempts)
-            )),
-        ]));
-        lines.push(Line::from(Span::styled(
-            format!(
-                "     {} fail {} ({failure_rate:.2}%), streak {}",
-                protocol(upstream.protocol),
-                upstream.failures,
-                upstream.consecutive_failures
-            ),
-            theme::label(),
-        )));
-    }
-
-    lines.push(Line::from(""));
-    lines.push(heading("Engine"));
-    lines.push(counter_line("SWR done", counters.swr.completed, None));
-    lines.push(counter_line("SWR failed", counters.swr.failed, None));
-    lines.push(counter_line("Sweeps", counters.cache_cleanup.runs, None));
-    lines.push(Line::from(format!(
-        " • {:<14} {:>10}",
-        "Swept",
-        bytes(counters.cache_cleanup.bytes_freed)
-    )));
-
-    // Non-zero means Statistics and Metrics have both under-counted, so every
-    // figure on this screen is low by at least this much.
-    if counters.events_dropped > 0 {
-        lines.push(Line::from(Span::styled(
-            format!(" ! events dropped: {}", counters.events_dropped),
-            theme::strong(theme::BLOCKED),
-        )));
-    }
-    if counters.http.pass + counters.http.block > 0 {
-        lines.push(counter_line("HTTP blocked", counters.http.block, None));
-        lines.push(Line::from(format!(
-            " • {:<14} {:>10}",
-            "HTTP relayed",
-            bytes(counters.http.response_bytes)
-        )));
-    }
-    lines
-}
-
-fn cache_section<'a>(telemetry: &Telemetry) -> Vec<Line<'a>> {
-    let cache = &telemetry.cache;
-
-    vec![
-        Line::from(""),
-        heading("Cache"),
-        counter_line("Fresh", cache.fresh, None),
-        counter_line("Stale", cache.stale, None),
-        counter_line("Expired", cache.expired, None),
-        counter_line("Evictions", cache.evictions, None),
-        Line::from(format!(
-            " • {:<14} {:>10}",
-            "Bytes",
-            format!("{} / {}", bytes(cache.bytes), bytes(cache.max_bytes))
-        )),
-        // Two ceilings bound this cache — entries and bytes. Whichever is
-        // fuller is the one that will start evicting.
-        Line::from(format!(
-            " • {:<14} {:>10}",
-            "Load",
-            format!(
-                "{:.1}% e / {:.1}% b",
-                cache.load_percent, cache.byte_load_percent
-            )
-        )),
-    ]
-}
-
-fn memory_section<'a>(telemetry: &Telemetry) -> Vec<Line<'a>> {
-    let memory = &telemetry.memory;
-    let components = &memory.components;
-    let stats = components.stats_aggregates_bytes + components.stats_clients_bytes;
-
-    let mut lines = vec![Line::from(""), heading("Memory")];
-    for (label, value) in [
-        ("Ruleset", Some(components.ruleset_bytes)),
-        ("Cache", Some(components.cache_estimated_bytes)),
-        ("Stats", Some(stats)),
-        ("Accounted", Some(components.accounted_bytes)),
-        ("Residual", components.residual_bytes),
-    ] {
-        lines.push(Line::from(format!(
-            " • {label:<14} {:>10}",
-            value.map_or("—".to_string(), |v| format!("{:.1} MB", mib(v)))
-        )));
-    }
-
-    lines.push(counter_line("Cached entries", memory.cache_entries, None));
-    // A rising major count is the appliance swapping, which no other figure
-    // on this screen would show.
-    for (label, value) in [
-        ("Page faults maj", memory.major_page_faults),
-        ("Page faults min", memory.minor_page_faults),
-    ] {
-        lines.push(Line::from(format!(
-            " • {label:<14} {:>10}",
-            value.map_or("—".to_string(), thousands)
-        )));
-    }
-    lines
-}
-
 fn top_sections<'a>(state: &AppState) -> Vec<Line<'a>> {
     let live = &state.live;
     let mut lines = Vec::new();
@@ -354,15 +229,6 @@ fn top_list<'a>(
 
 fn heading<'a>(title: &str) -> Line<'a> {
     Line::from(Span::styled(format!("── {title} ──"), theme::heading()))
-}
-
-fn protocol(protocol: fah_model::Protocol) -> &'static str {
-    match protocol {
-        fah_model::Protocol::Udp => "udp",
-        fah_model::Protocol::Dot => "dot",
-        fah_model::Protocol::Doh => "doh",
-        fah_model::Protocol::Unknown => "?",
-    }
 }
 
 #[cfg(test)]
@@ -429,44 +295,5 @@ mod tests {
         assert!(rendered.contains(" • A "), "{rendered}");
         assert!(rendered.contains("HTTPS"), "{rendered}");
         assert!(rendered.contains("3 buckets, hourly"), "{rendered}");
-    }
-
-    /// Both ceilings are shown: whichever is fuller is the one that evicts.
-    #[test]
-    fn the_cache_panel_reports_the_entry_and_byte_loads_separately() {
-        let rendered = text(&cache_section(&fixtures::telemetry()));
-
-        assert!(rendered.contains("2.6% e / 2.4% b"), "{rendered}");
-        assert!(rendered.contains("Evictions"), "{rendered}");
-    }
-
-    #[test]
-    fn an_unhealthy_upstream_is_marked_and_a_healthy_one_is_not() {
-        let rendered = text(&engine_section(&fixtures::telemetry()));
-
-        assert!(rendered.contains("● 1.1.1.1:853"), "{rendered}");
-        assert!(rendered.contains("✕ 9.9.9.9:853"), "{rendered}");
-        assert!(rendered.contains("streak 3"), "{rendered}");
-    }
-
-    /// The fixture has none dropped, so the warning must be absent — it is a
-    /// line that only appears when something is wrong.
-    #[test]
-    fn the_dropped_events_warning_appears_only_when_events_were_dropped() {
-        let mut telemetry = fixtures::telemetry();
-        assert!(!text(&engine_section(&telemetry)).contains("events dropped"));
-
-        telemetry.engine.counters.events_dropped = 7;
-        assert!(text(&engine_section(&telemetry)).contains("events dropped: 7"));
-    }
-
-    #[test]
-    fn memory_prints_a_dash_when_the_residual_cannot_be_derived() {
-        let mut telemetry = fixtures::telemetry();
-        telemetry.memory.components.residual_bytes = None;
-        let rendered = text(&memory_section(&telemetry));
-
-        assert!(rendered.contains("Residual"), "{rendered}");
-        assert!(rendered.contains('—'), "{rendered}");
     }
 }

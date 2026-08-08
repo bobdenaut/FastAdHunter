@@ -5,6 +5,7 @@
 //! [`draw`].
 
 pub mod chart;
+pub mod details;
 pub mod footer;
 pub mod gauge;
 pub mod header;
@@ -25,6 +26,7 @@ use crate::state::AppState;
 pub struct UiState {
     pub feed_row: usize,
     pub stats_scroll: u16,
+    pub details_scroll: u16,
     pub popup: Option<crate::models::events::QueryItem>,
     pub table: TableState,
     /// The layout of the last frame, so a mouse event can be resolved against
@@ -53,13 +55,19 @@ pub fn draw(
     );
     footer::render(frame, regions.footer, state);
 
+    let details_max = regions
+        .details
+        .map(|area| details::render(frame, area, state, ui.details_scroll))
+        .unwrap_or(0);
+
     if let Some(item) = ui.popup.as_ref() {
         popup::render(frame, screen, item);
     }
 
-    // Clamped against what was actually laid out, so the scrollbar cannot run
+    // Clamped against what was actually laid out, so a scrollbar cannot run
     // past the last line of a panel whose height just changed.
     ui.stats_scroll = ui.stats_scroll.min(max_scroll);
+    ui.details_scroll = ui.details_scroll.min(details_max);
     ui.regions = Some(regions);
 }
 
@@ -99,6 +107,46 @@ mod tests {
                         .draw(|frame| draw(frame, &state.read(), &mut ui, &config))
                         .unwrap_or_else(|err| panic!("{width}x{height}: {err}"));
                 }
+            }
+        }
+
+        // The detail column only appears past a width threshold, so the sweep
+        // above never reaches it. Scrolled past its own end too, which is what
+        // a wheel over a column that just shrank produces.
+        for width in [126u16, 127, 160, 220] {
+            for height in [3u16, 11, 24, 60] {
+                for details_scroll in [0u16, 5, u16::MAX] {
+                    let mut terminal = Terminal::new(TestBackend::new(width, height)).unwrap();
+                    let mut ui = UiState {
+                        details_scroll,
+                        ..UiState::default()
+                    };
+                    terminal
+                        .draw(|frame| draw(frame, &state.read(), &mut ui, &config))
+                        .unwrap_or_else(|err| panic!("{width}x{height}: {err}"));
+                }
+            }
+        }
+    }
+
+    /// With telemetry present every box carries real figures, which is a
+    /// different height — and a different blit — from the empty case above.
+    #[test]
+    fn a_populated_detail_column_draws_at_every_offset() {
+        let state = crate::state::SharedState::new(crate::config::UiConfig::default().limits());
+        state.update(|app| app.telemetry = Some(crate::models::fixtures::telemetry()));
+        let config = crate::config::UiConfig::default();
+
+        for height in [3u16, 12, 30, 60] {
+            for details_scroll in [0u16, 1, 20, u16::MAX] {
+                let mut terminal = Terminal::new(TestBackend::new(140, height)).unwrap();
+                let mut ui = UiState {
+                    details_scroll,
+                    ..UiState::default()
+                };
+                terminal
+                    .draw(|frame| draw(frame, &state.read(), &mut ui, &config))
+                    .unwrap_or_else(|err| panic!("140x{height} @{details_scroll}: {err}"));
             }
         }
     }

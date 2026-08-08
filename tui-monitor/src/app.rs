@@ -92,6 +92,8 @@ impl App {
             KeyCode::Home => self.ui.feed_row = 0,
             KeyCode::Char('w') => self.ui.stats_scroll = self.ui.stats_scroll.saturating_sub(1),
             KeyCode::Char('s') => self.ui.stats_scroll = self.ui.stats_scroll.saturating_add(1),
+            KeyCode::Char('e') => self.ui.details_scroll = self.ui.details_scroll.saturating_sub(1),
+            KeyCode::Char('d') => self.ui.details_scroll = self.ui.details_scroll.saturating_add(1),
             _ => {}
         }
         Flow::Continue
@@ -103,6 +105,9 @@ impl App {
         };
         let (column, row) = (mouse.column, mouse.row);
         let over_stats = layout::contains(regions.stats, column, row);
+        let over_details = regions
+            .details
+            .is_some_and(|area| layout::contains(area, column, row));
 
         match mouse.kind {
             MouseEventKind::Down(MouseButton::Left) => {
@@ -123,6 +128,12 @@ impl App {
             }
             MouseEventKind::ScrollDown if over_stats => {
                 self.ui.stats_scroll = self.ui.stats_scroll.saturating_add(1);
+            }
+            MouseEventKind::ScrollUp if over_details => {
+                self.ui.details_scroll = self.ui.details_scroll.saturating_sub(1);
+            }
+            MouseEventKind::ScrollDown if over_details => {
+                self.ui.details_scroll = self.ui.details_scroll.saturating_add(1);
             }
             MouseEventKind::ScrollUp => self.scroll_feed(-1),
             MouseEventKind::ScrollDown => self.scroll_feed(1),
