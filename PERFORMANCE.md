@@ -1,455 +1,185 @@
 # PERFORMANCE
 
-Performance is the primary feature. This document is the contract: golden
-rules that every change must respect, and numeric budgets that `cargo bench`
-verifies.
+Performance is the primary feature. This document is the contract: golden rules
+every change must respect, and numeric budgets `cargo bench` verifies.
+
+**Measured detail lives in `docs/code-review/`** — one file per task, carrying the
+corpus, workload and device each figure came from. This file holds the targets
+and the traps, not the archive.
 
 ## Golden rules
 
 1. **Zero-copy where possible** — reference buffers, don't copy them.
 2. **Streaming before buffering** — process incrementally; never load whole
    documents into memory.
-3. **No runtime regex compilation** — and no regex on the hot path at all.
-   Rules compile to hash/trie matchers at load time.
+3. **No runtime regex compilation** — and no regex on the hot path at all. Rules
+   compile to hash/trie matchers at load time. SIMD `memchr` is the one
+   single-byte primitive this leaves open.
 4. **No GC, no hidden allocations** — the hot path is allocation-free;
-   allocations happen at load/reload time. The ones that do happen are served by
-   **mimalloc**, not by musl's `mallocng` (see `crates/fastadhunter/src/allocator.rs`): the artefact is static-musl,
-   so the allocator is a deliberate choice rather than a consequence of the
-   target libc. RSS figures recorded in this document and in the soak baselines
-   predate that swap and are not comparable to post-swap readings.
-5. **No global locks** — atomic swap for ruleset/config, sharding for the
-   cache, bounded channels between components.
-6. **Cache-friendly layouts** — compact contiguous structures; pointer-chasing
-   is the enemy on the RB5009, whose measured single-threaded benchmark
-   throughput is roughly 9× slower than the development machine (see §Budgets).
-7. **Bounded everything** — cache, ring buffers, channels, retention. Memory
-   must not grow with traffic or uptime.
-8. **Deterministic execution** — predictable latency beats occasional
-   brilliance; avoid work with unbounded tails on the query path.
-9. **Every feature justifies its runtime cost** — a PR that touches the hot
-   path states its cost in its description.
+   allocations happen at load/reload time and are served by **mimalloc**
+   (`crates/fastadhunter/src/allocator.rs`), a deliberate choice on a static-musl
+   artefact rather than a consequence of the target libc.
+5. **No global locks** — atomic swap for ruleset/config, sharding for the cache,
+   bounded channels between components.
+6. **Cache-friendly layouts** — compact contiguous structures; pointer-chasing is
+   the enemy on the RB5009.
+7. **Bounded everything** — cache, ring buffers, channels, retention. Memory must
+   not grow with traffic or uptime.
+8. **Deterministic execution** — predictable latency beats occasional brilliance;
+   avoid work with unbounded tails on the query path.
+9. **Every feature justifies its runtime cost** — a change that touches the hot
+   path states its cost.
 
-## Budgets (acceptance targets)
+## Budgets
 
 Reference hardware: MikroTik RB5009 — Marvell Armada quad-core ARMv8, nominally
-1.4 GHz, 1 GB RAM shared with RouterOS. Verified with criterion benches in
-`benches/` (`cargo bench`) and soak tests on the device.
+1.4 GHz, 1 GB RAM shared with RouterOS. Verified by criterion benches in
+`benches/` and soaks on the device.
 
-> **Do not budget from the reported clock — budget from the factor.** During
-> CPU-bound benchmarks, the RB5009 governor was observed boosting from 350 MHz
-> (idle) to 1400 MHz. CPU frequency was sampled repeatedly during the run
-> (`/system/resource/print`) and returned to 350 MHz after the benchmark
-> completed.
->
-> **The reported frequency does not predict throughput, and that is measured,
-> not assumed — three times now.** The tightest evidence is p2-08's HTTP probe:
-> four runs minutes apart on an unchanged device reported 350→700, 1400, 350 and
-> 700 MHz, and every arm agreed within 6 %. The first two instances were two runs
-> of the URL probe reporting 350 MHz and 1400 MHz respectively — a 4× difference. A control arm barely touched by the
-> code change between them (the deployed corpus at 8 KiB) moved **376.8 → 359.6
-> µs, −4.6 %**, and moved −5.3 % on the x86 box where the clock was fixed. A
-> genuine 4× clock change had to show up as ~4× there. It did not, so both runs
-> executed at the same effective speed and the frequency field is not reporting
-> what the workload got.
->
-> Use the measured x86 → RB5009 factor (~9×) for budget calculations, and treat
-> the nominal 1.4 GHz as an architectural specification. Both on-device sessions
-> agree on the factor while disagreeing on the reported clock, which is why the
-> factor is the durable input.
->
-> Whether all-cores load behaves differently is **untested**; the measured
-> 20k+ QPS ceiling hints it might, and that is an open question rather than a
-> claim in either direction.
->
-> **Where the ~9× comes from:** 8.25–10.0× across twelve arms spanning three
-> orders of magnitude and two corpora, median ~9.05, measured with the same
-> binary over the same corpus on both sides. Flat across URL lengths, which says
-> the gap is CPU throughput rather than memory bandwidth — so it converts, and a
-> pinned bench on this dev box usually answers the on-device question without
-> building a probe container.
->
-> **It converts CPU-bound work only.** p2-08's HTTP arms — syscall- and
-> copy-bound, and measured across two different OS network stacks — came out
-> **4.55–10.09×**, a 2.2× spread. Anything dominated by socket I/O needs a probe
-> container, not a conversion (`docs/code-review/p2-08-review.md` §Findings).
+Budgets are written in decimal MB. On-device readings are reported in MiB, which
+is ~4.9 % lower for the same bytes — compare like with like before declaring a
+breach.
 
-| Metric | Budget |
-|--------|--------|
-| RAM steady-state, 1M blocked domains loaded | ≤ 128 MB |
-| Compiled ruleset for 1M domains | ≤ 40 MB |
-| RAM hard ceiling (container limit) | 256 MB |
-| Verdict + cache hit, in-engine p99 | < 1 ms — the `cache_hit` stage, which since 0.2.13 covers **every** serve answered without waiting on the network, SWR stale serves included |
-| Blocked query, in-engine p99 | < 1 ms |
-| Forwarded query overhead added by engine, p99 | < 1 ms — the `forward` stage, which since 0.2.13 holds cache misses plus the RFC 8767 outage fallback, and **nothing else** |
-| **DNS** sustained throughput on RB5009 | ≥ 10 000 QPS |
-| Startup to serving (cached lists, 1M-domain parse) | 1–3 s (< 3 s hard, ~1 s goal) |
-| Container image size | ≤ 30 MB |
-| **HTTP** pass-through added latency, head path | < 1 ms — **measured on the RB5009: +161 µs (min), +344 µs (p50)**, see below |
-| **HTTP** pass-through throughput, opaque body | ≥ 100 MiB/s — **measured on the RB5009: 271 MiB/s (min), 208 MiB/s (p50) at 1 MiB**, see below |
-| **HTTP** concurrent connections | bounded by `[http] max_connections` (default 1024) |
-| **HTTP** request verdict (URL tier), in-engine p99 | < 1 ms — met at every measured length; 8 KiB against EasyList + EasyPrivacy is 569.5 µs p99, see below |
+| Metric | Budget | Measured on the RB5009 |
+|--------|--------|------------------------|
+| RAM steady-state | ≤ 128 MB | 46.6–53.6 MiB |
+| RAM hard ceiling (container limit) | 256 MB | — |
+| Compiled ruleset, 1M domains | ≤ 40 MB | 25.8 MiB at 799 k rules |
+| Startup to serving, cached lists | < 3 s hard, ~1 s goal | 2.85 s at 1.15 M parsed |
+| Container image size | ≤ 30 MB | 13.0 MiB |
+| Blocked query, in-engine p99 | < 1 ms | — |
+| `cache_hit` stage, in-engine p99 | < 1 ms | — |
+| `forward` stage overhead added by engine, p99 | < 1 ms | — |
+| **DNS** sustained throughput | ≥ 10 000 QPS | 20 k+ QPS |
+| **HTTP** added latency, head path | < 1 ms | +161 µs min · +344 µs p50 |
+| **HTTP** throughput, opaque body | ≥ 100 MiB/s | 271 MiB/s min · 208 MiB/s p50 at 1 MiB |
+| **HTTP** request verdict (URL tier), p99 | < 1 ms | 569.5 µs at 8 KiB, EasyList + EasyPrivacy |
+| **HTTP** concurrent connections | bounded by `[http] max_connections` (1024) | unmeasured |
 
-Notes:
+In-engine latency excludes upstream RTT — we measure what we add. Budgets are
+compared against `main` on every perf-relevant change; a >10 % regression on a
+hot-path bench needs an explicit justification ([CONTRIBUTING.md](CONTRIBUTING.md)).
 
-- In-engine latency excludes upstream RTT — we measure what we add.
-- **Measured on the RB5009, 2026-07-19, at 1 213 640 rules:** startup to
-  serving **2 440 ms**, compiled ruleset 28.3 MiB. Startup was 3 113 ms before
-  `c61c00b` removed two allocations per rule from the parser — the only budget
-  that has ever been outside its range. Parse dominates what remains (~75%),
-  so chunked parallel parsing is the next lever if list sizes grow.
-  `bench_startup_phases` splits read/parse/build; run it before optimising, as
-  the split is not what intuition suggests.
-- **Compile is now measured by the process, not by log timestamps.**
-  `fastadhunter_ruleset_compile_duration_seconds` was hardcoded to zero from the
-  day it shipped until 0.2.8; it now reports the real figure, so anything finer
-  than the RouterOS log's one-second resolution is finally demonstrable.
-  Measured on the RB5009 at 0.2.8: **2.317 s** to read, parse and build, from
-  1 047 409 parsed rules down to 702 178 compiled (345 231 duplicates, 33%).
-  That is ~2.2 µs per **parsed** rule — the parsed count is the denominator, not
-  the compiled one — and it consumes 2.32 s of the 3 s hard budget, leaving
-  roughly 300 k parsed rules of headroom before startup breaches it.
-- **A restart no longer compiles twice.** Until 0.2.8 the scheduler's first tick
-  found every list "never attempted" — its clock is a monotonic `Instant` that
-  resets with the process — so a restart compiled from cache and then refetched
-  and recompiled everything ~7 s later, for a byte-identical ruleset. The clock
-  is now seeded from the cached copies' mtimes. Serving was never blocked either
-  way; what this returns is ~2.3 s of ARM CPU, ~24 MB of downloads and a second
-  ~158 MiB peak-RSS transient per restart.
+Nothing enforces a budget at runtime: the container runs `memory-high=unlimited`,
+so exceeding one is a budget breach, not a failure.
 
-  **Do not read that 158 MiB as a baseline to compare later peaks against.** It
-  is one point on the compile ratchet described below, taken after an unknown
-  number of prior compiles. A higher figure elsewhere in this document is not
-  evidence of a regression against it (`docs/code-review/p2-11-compile-transient.md` §4).
-- **DNS sustained throughput, measured 2026-07-24** (dev box, four cores per
-  §Measuring reliably, realistic mix — a third blocked, a third cache-hit, a
-  third forwarded): **~567 000 elem/s** (median of 3 pinned runs, range
-  560.7–574.8 K; 336 µs per 192-query wave). The budget
-  is 10 000 QPS on the RB5009; this is the assembled pipeline with the cache's
-  byte cap active, so the cap costs nothing at steady state. A dev box is not
-  an RB5009 — the figure that counts against the budget is the device's — but
-  57× headroom on the same code is what makes the device number safe.
+### What the latency stages hold
+
+The three stages partition every resolved query, and a figure is meaningless
+without knowing which one it came from:
+
+- `block` — verdict only, no cache, no network.
+- `cache_hit` — every serve answered without waiting on the network, SWR stale
+  serves included.
+- `forward` — cache misses plus the RFC 8767 outage fallback
+  (`StaleServe::AfterForwardFailure`, which carries the upstream timeout), and
+  nothing else.
+
+Figures do not cross the 0.2.13 boundary; earlier `forward` numbers are pooled
+with cache reads and unusable
+([`0.2.13-stale-serve-metrics.md`](docs/code-review/0.2.13-stale-serve-metrics.md)).
+
+### Reading a memory figure
+
+- **The `≤ 128 MB` row is steady-state.** A compile peak is a transient and is
+  judged against the 256 MB ceiling.
+- **The compile peak is a ratchet across compiles, not one compile's cost.** Boot
+  costs ~118–122 MiB; the second and later compiles in a process climb toward a
+  saturation point (181.4 MiB at `MIMALLOC_PURGE_DELAY=0`, 230.7 MiB at 100). Any
+  single `process_peak_rss` reading is meaningless without knowing how many
+  compiles preceded it.
+- **Dead memory is returned on the instant at `PURGE_DELAY=0`.** A sawtooth that
+  ratchets *across* compiles is the arena filling; one that never returns is a
+  leak. `PURGE_DELAY=0` is unproven above ~0.5 qps — the check is
+  `memory.minor_page_faults` climbing at flat RSS.
+- **Freed memory goes back to mimalloc, not necessarily to the kernel**, so RSS
+  lags `cache_estimated_bytes` (CONTEXT.md §Accounted/Residual).
+- Reducing the refresh transient is
+  [`p2-12`](plan/wip/phase2/p2-12-compile-transient-structural.md);
+  the structural decomposition is
+  [`p2-11`](docs/code-review/p2-11-compile-transient.md).
+
+### Converting dev-box numbers
+
+**Budget from the factor, never from the reported clock.** The RB5009 governor
+boosts between 350 MHz and 1400 MHz, and the reported frequency does not predict
+throughput — measured three times, most tightly in p2-08, where four runs
+reporting 350, 700, 1400 and 700 MHz agreed within 6 %. Sample
+`/system/resource/print` during a run to document conditions, never to scale a
+result.
+
+The **~9× x86 → RB5009 factor** is the durable input: 8.25–10.0× across twelve
+arms spanning three orders of magnitude and two corpora, median ~9.05, flat
+across URL lengths — so the gap is CPU throughput, not memory bandwidth, and a
+pinned dev-box bench usually answers the on-device question without building a
+probe container.
+
+**It converts CPU-bound work only.** p2-08's HTTP arms — syscall- and copy-bound,
+across two OS network stacks — came out **4.55–10.09×**. Anything dominated by
+socket I/O needs a probe container, not a conversion
+([p2-08](docs/code-review/p2-08-review.md) §Findings).
+
+Whether all-cores load behaves differently is **untested**.
+
+## Design costs worth knowing
+
+Each of these is a hot-path or memory trade already paid; the review file holds
+the full measurement.
+
+- **Rule deduplication saves ~30 bytes per duplicate and shortens probe chains.**
+  A domain carried by two lists occupies one slot instead of two that hash to the
+  same place — **−46 %** on shared-domain lookups, −22 % on single-list hits. It
+  costs compile time only, and only where there is nothing to collapse: 1 M
+  *unique* rules move the build phase 41.6 → 93.3 ms, ~19 % of a whole compile,
+  paid once per compile and never per query. Two non-overlapping 1 M lists
+  compile to 57.7 MiB, **past the 40 MB budget** (p1.5-05).
 - **Per-client policy resolution costs +8.5 ns per query, and a deployment with
-  no policies pays that too** (p2-06, dev box, pinned per §Measuring reliably).
-  Schedules are evaluated on a 20 s tick and swapped atomically, so the query
-  path does no time arithmetic, no timezone conversion and no name lookup — it
-  walks a short array of address selectors. What remains is one `ArcSwap`
-  refcount bump plus that walk:
-
-  | arm | time | vs bare lookup |
-  | --- | --- | --- |
-  | `matcher_lookup/hit_exact` (no policy work) | 111.58 ns | — |
-  | `policy_resolution/zero_config` | 120.04 ns | +8.5 ns |
-  | `policy_resolution/assignments_1` | 119.55 ns | +8.0 ns |
-  | `policy_resolution/assignments_15` | 130.73 ns | +19.2 ns |
-
-  The zero-config arm is **not free**, and is documented as +8.5 ns rather than
-  claimed as zero. At pipeline scale it is 0.19–0.34% of one query
-  (`full_pipeline/blocked_query` 2.54 µs, `forwarded_query_overhead` 4.57 µs),
-  which is below what those benches resolve — their intervals are ±12–15%, so
-  they can only establish that no regression exceeding ~15% exists, and none
-  does. 15 assignments walked to the end (worst case, no early hit) add a
-  further 10.7 ns.
-- **RAM on the RB5009 at 0.2.10, `dns+http`** (16 lists, 1 138 898 parsed →
-  798 250 compiled rules, 1 policy). **The `≤ 128 MB` row above is
-  steady-state**; the compile peak is a transient and is judged against the
-  256 MB ceiling row, not against it. Earlier text here compared the boot peak
-  to the 128 MB figure — that was a steady-state budget applied to a transient.
-
-  | | 2026-08-02 (`PURGE_DELAY=100`) | 2026-08-06 (`PURGE_DELAY=0`) |
-  | --- | ---: | ---: |
-  | Steady RSS | 58.13 MiB | **46.6 MiB** |
-  | Boot compile peak | 123.74 MiB | 122.0 MiB |
-  | Peak after repeated compiles | **230.7 MiB** | **181.4 MiB** |
-
-  Nothing enforces either budget at runtime — the container runs
-  `memory-high=unlimited`, so exceeding one is a budget breach, not a failure.
-  Baselines: `docs/code-review/0.2.10-soak-baseline.md` and
-  `docs/code-review/p2-11-compile-transient.md`.
-
-  **The peak is a ratchet across compiles, not one compile's cost.** Boot costs
-  ~122–131 MiB; the second and later compiles in a process climb to a saturation
-  point. Measured at `PURGE_DELAY=50`: 131.5 → 209.9 → 228.7 MiB over boot plus
-  two refreshes. Any single reading of `process_peak_rss` is therefore
-  meaningless without knowing how many compiles preceded it.
-
-  **~~Known optimization lever: streaming list parsing.~~** Retracted 2026-08-06.
-  The dominant term was allocator retention, not raw list text — forcing the
-  purge recovered 55 MiB with no code change, and a streaming parse would not
-  have touched it (`docs/code-review/p2-11-compile-transient.md`).
-
-  **What to watch is the return, and it is time-dependent.** At
-  `PURGE_DELAY=100` RSS held ~153 MiB for **7.4–9.9 s after the ruleset was
-  already swapped in** — dead memory awaiting a deferred purge. At `0` it
-  returns on the instant. A sawtooth that ratchets *across* compiles is the
-  arena filling; one that fails to return *at all* would be a leak.
-
-  **`PURGE_DELAY=0` is not yet proven under load.** 0.2.7 moved it 0 → 100 on a
-  syscall-churn concern, and neither that review's stress test nor the 2026-08-06
-  measurement (~0.5 qps) exercised the allocation-heavy forward path. The check
-  is `rate(fastadhunter_process_minor_page_faults_total)` at flat RSS.
-- **HTTP on the RB5009 — measured 2026-08-06** (p2-08,
-  `crates/fah-http/examples/httpbench.rs` in a throwaway probe container, median
-  of 4 runs, deployed 715-rule URL corpus, production FAH serving DNS
-  throughout). Client, proxy and origin all run on the container's own loopback,
-  so these are FastAdHunter's own costs — veth, dst-nat, conntrack and origin RTT
-  are excluded. Connection setup is excluded from both arms: a transparent proxy
-  amortises it across every request on the connection.
-
-  | arm | min | p50 |
-  | --- | ---: | ---: |
-  | head direct → proxied | 132.7 → 294.2 µs | 238.5 → 582.1 µs |
-  | **head, added** | **+161.5 µs (+122 %)** | **+343.6 µs (+144 %)** |
-  | head blocked | 151.7 µs | 261.7 µs |
-  | 8 KiB, added | +180.3 µs (+131 %) | +390.2 µs (+175 %) |
-  | 1 MiB proxied | 3.696 ms — **271 MiB/s** | 5.037 ms — **208 MiB/s** |
-  | 8 MiB proxied | 25.53 ms — **313 MiB/s** | 30.76 ms — **260 MiB/s** |
-
-  **Read all three estimators, never one alone.** `min` is the intrinsic cost,
-  `p50` what a client typically experiences, `p99` the tail. The added cost at
-  p50 is **2.1× the min** — quoting only `min` claims 6.2× headroom where the
-  user sees 2.9×. Proxied head p99 is 1.24–1.28 ms absolute against a direct-arm
-  p99 of 0.47–0.64 ms, so the added tail is **≈660–700 µs**; that is an estimate,
-  because the p99 of a difference is not the difference of two p99s.
-
-  **A blocked request costs 48–55 % less than a forwarded one** — the verdict is
-  taken on the head, so it never resolves and never opens an upstream connection.
-  This is not a claim that blocking makes the router faster in absolute terms;
-  load still rises with traffic.
-
-  **The percentages use a loopback fetch as denominator**, the harshest possible
-  baseline. Against a real origin at 10–50 ms RTT the same +344 µs is under 3 %
-  of the request.
-
-  **Do not convert these with the ~9× factor.** Per-arm x86 → ARM ratios came
-  out **4.55–10.09×** here, against the flat 8.25–10.0× the URL-lookup probe
-  measured. Those arms were CPU-bound; these are syscall- and copy-bound across
-  two different OS network stacks. The factor remains valid for CPU-bound work
-  only (`docs/code-review/p2-08-review.md` §Findings).
-
-  **Concurrency is unmeasured.** Every arm is one connection at a time, while
-  `[http] max_connections` defaults to 1024. Nothing here says what 50 or 500 in
-  flight cost.
-- **HTTP pass-through, head path — dev box, measured 2026-08-02** (p2-08,
-  `fah-http/benches/proxy.rs`, loopback, warm keep-alive on both sides). Direct
-  to origin 32.6–34.9 µs, through the proxy 65.7–76.1 µs — the proxy adds
-  **+33 to +43 µs across four runs**, consistent with p2-02's +35 µs and
-  p2-04's +32.4 µs. **The device came in 4.4× higher**, which is what the row
-  above is for: dev-box HTTP figures are a smoke test, not a result.
-- **HTTP opaque-body throughput — measured 2026-08-02** (same bench, three body
-  sizes, 20 samples each, four runs). Bodies the proxy never parses: the verdict
-  is taken on the head, then the bytes are relayed.
-
-  | body | direct | proxied | proxied throughput | proxy adds |
-  | --- | ---: | ---: | ---: | ---: |
-  | 8 KiB | 34.9–37.9 µs | 69.6–74.9 µs | 104–112 MiB/s | +34 to +37 µs |
-  | 1 MiB | *not quoted — see below* | | | |
-  | 8 MiB | 5.39–6.17 ms | 6.41–6.89 ms | 1.15–1.21 GiB/s | +0.6 to +1.4 ms |
-
-  The added latency is consistently ~35 µs for small bodies (head path and
-  8 KiB). The 1 MiB measurements exhibited excessive run-to-run variance and are
-  therefore not quoted. At 8 MiB the additional latency increases, consistent
-  with work that scales with transfer size, although this benchmark does not
-  attribute that cost.
-
-  **The proxy sustained 1.13 GiB/s in a single-connection loopback benchmark on
-  x86. The ~9× conversion predicted ~129 MiB/s on the RB5009; the device measured
-  271–313 MiB/s (min), so the estimate was conservative by ~2.3×** — see the
-  on-device row above, and note the conversion is retired for HTTP either way.
-  This remains a loopback figure rather than a verified network measurement:
-  end-to-end throughput depends on NIC, kernel networking, concurrent traffic and
-  other system overhead.
-
-  What the benchmark does **not** establish: which cost scales at 8 MiB.
-  Copying, socket buffering, task wakeups and cache behaviour all scale with
-  body size, and these arms separate none of them — attribution needs profiling.
-  Nor does 1.13 GiB/s rule out parsing or buffering; it establishes only that
-  neither is dominant. Treat a regression in this bench as a signal to profile,
-  not as a diagnosis.
-
-  **How to run these.** Unpinned, and take the range across several runs. The
-  single-core pinning in §Measuring reliably is for CPU-bound microbenches and
-  **must not** be applied here: this bench hosts the client, the proxy and the
-  origin in one multi-threaded runtime, and forcing them onto one core turns the
-  result into a scheduling artifact (the 32.6 µs direct arm read
-  `[423 µs 7.49 ms 16.1 ms]` pinned). The 1 MiB arm is unstable even unpinned —
-  it swung 2.7× across four runs and twice reported the proxied arm as *faster*
-  than direct, which is how it was caught.
+  no policies pays it too.** Schedules are evaluated on a 20 s tick and swapped
+  atomically, so the query path does no time arithmetic and no name lookup. 15
+  assignments walked to the end add a further 10.7 ns. Documented rather than
+  claimed as zero (p2-06).
+- **All policies share one compiled ruleset** behind a 16-bit per-rule visibility
+  mask: **+2.03 MiB flat** at deployed scale instead of ~+17 MiB per policy
+  (p2-05).
+- **A blocked HTTP request costs 48–55 % less than a forwarded one** — the verdict
+  is taken on the head, so it never resolves and never opens an upstream
+  connection. This is not a claim that blocking makes the router faster in
+  absolute terms; load still rises with traffic.
+- **The DNS cache is bounded twice** — `max_entries` and `max_bytes` (default
+  64 MiB), both enforced by the same O(1) amortized FIFO eviction, which runs
+  until *both* hold. Entry count alone did not bound memory: an adversarial
+  large-answer mix plateaued at ~230 MiB, 80 % over budget (p1.5-05).
+- **A stale cache hit is answered from cache, and the refresh runs on a fixed
+  pool** of `[dns.cache] swr_workers` detached tasks — golden rule 8 applied to
+  the one cache state with an unbounded tail on the query path (ADR-0005). The
+  pool never back-pressures: enqueue is `try_send`, and a full queue drops the
+  refresh rather than delaying a client. Sustained growth in
+  `counters.swr.dropped` means the pool is undersized, not that anything failed.
+  Cost: one `Option<Instant>` per `Entry` (~16 B), charged per *bucket* — ~262 KB
+  at 10 000 entries, ~2.6 MB at 100 k. Expect `cache_hit` to rise and forwards to
+  fall; that is queries moving between buckets, not the cache becoming more
+  efficient.
+- **The expiry sweep runs on the blocking pool**, one shard lock at a time, every
+  `[dns.cache] cleanup_interval_seconds` (default 360). `clean` is synchronous and
+  O(entries) — exactly the unbounded tail golden rule 8 keeps off the query path.
+  It is **not** a bound; `max_entries`/`max_bytes` are, and they hold with the
+  sweep disabled. It costs 79 µs for a full 16-shard walk at 409 entries, ~19 ms
+  of CPU per day. At default settings it usually reclaims nothing, because
+  `serve_stale = true` makes an entry sweepable only 24 h past TTL — read
+  `counters.cache_cleanup.bytes_freed` near zero as normal.
 - **Inspected content (HTML) is budgeted separately and does not exist yet.**
-  Phase 4 rewrites HTML through `lol_html`; the rows above are the opaque path
-  and must not be read as covering it.
-- **DNS cache is bounded twice** (p1.5-05): `dns.cache.max_entries` and
-  `dns.cache.max_bytes` (default 64 MiB), both enforced by the same O(1)
-  amortized FIFO eviction, which runs until *both* hold. Entry count alone did
-  not bound memory — the ~91h soak plateaued at ~230 MiB under an adversarial
-  large-answer mix, 80% over the 128 MB budget. The tracked figure is the sum
-  of the per-entry estimates, maintained incrementally on insert/evict/clean so
-  the resolve path never walks a shard.
-- **A stale cache hit no longer costs an upstream round trip** (ADR-0005). It
-  used to fall through to the forwarder and only serve from cache if that
-  forward failed, so every client asking in the window between expiry and the
-  next refresh paid 20–50 ms — and they all paid it in parallel. A stale hit is
-  now answered from cache and the refresh runs on a fixed pool of
-  `[dns.cache] swr_workers` detached tasks. This is golden rule 8 applied to the
-  one cache state that still had an unbounded tail on the query path.
-  - Expect the `cache_hit` ratio to **rise** and the forwarded-query rate to
-    fall. That is this change moving queries between buckets, not the cache
-    becoming more efficient — do not read it as one.
-  - **The latency stages were not split to match until 0.2.13, and figures
-    across that boundary are not comparable.** Metrics timed every stale serve
-    as a `forward`, on a premise ADR-0005 had already invalidated. On the
-    RB5009 that put 5 698 sub-100 µs cache reads into a histogram holding
-    1 061 real forwards — 84 % of its samples — and reported a **2.40 ms
-    forward mean where the real figure was 15.06 ms**. `cache_hit` p99 was
-    correspondingly measured on 44 % of hits, with the SWR path excluded.
-    0.2.13 splits `StaleServe::FromSwr` (a cache read) from
-    `StaleServe::AfterForwardFailure` (carries the upstream timeout) and times
-    each in the stage it belongs to. Expect the reported forward mean to
-    **jump ~6×** at that version: it is the correction, not a regression.
-    `cache_stale` is unchanged and still counts both paths.
-  - The pool never back-pressures: enqueue is `try_send`, and a full queue drops
-    the refresh rather than delaying a client. Watch
-    `fastadhunter_swr_refreshes_dropped_total` — sustained growth means the pool
-    is undersized, not that anything is failing.
-  - Cost on the cache side: one `Option<Instant>` per `Entry` (~16 B), which the
-    byte accounting charges per *bucket*, so ~262 KB at the default 10 000
-    entries and ~2.6 MB at 100 k. Measure it against `max_bytes` rather than
-    assuming it is free at large `max_entries`.
-- **Deployed throughput moved with the allocator.** The `/tool profile` ceiling
-  on the RB5009 was ~15–16 k QPS before mimalloc replaced musl's `mallocng`
-  (`docs/code-review/0.2.7-router-memory-and-throughput.md`); the bench put that
-  swap at +27% throughput and −17% CPU per query, and the deployed box now
-  sustains **20 k+ QPS** — the two agree to within the precision either method
-  offers. Still FAH-handling-bound rather than ingest-bound: all four cores
-  share evenly, so `SO_REUSEPORT` stays a recipe rather than shipped code.
-- **The cleanup sweep is free at real occupancy.** Measured on the RB5009 at
-  0.2.9: **79 µs** for a full 16-shard walk at 409 resident entries. At the
-  default 360 s cadence that is ~19 ms of CPU per day. The figure is what the
-  deferred `map.shrink_to_fit()` question gets judged against — re-read it at a
-  cache holding tens of thousands of entries before concluding anything, since
-  the walk is O(entries) and this sample is not.
-- **Expired entries are swept on a schedule** (`[dns.cache]
-  cleanup_interval_seconds`, default 360 s), on the blocking pool rather than a
-  DNS worker — `clean` is synchronous and O(entries), which at a raised
-  `max_entries` is exactly the unbounded tail golden rule 8 keeps off the query
-  path. It holds one shard lock at a time, so a concurrent resolve waits at most
-  one shard's walk. It is **not** a bound: `max_entries`/`max_bytes` are, and
-  they hold with the sweep disabled.
-  - At default settings it will usually reclaim nothing, because
-    `serve_stale = true` means an entry is only sweepable 24 h past its TTL and
-    capacity eviction reaches such entries first under load. The case it serves
-    is a cache idling *below* both caps. Read
-    `fastadhunter_cache_cleanup_bytes_freed_total` near zero as normal, not as a
-    failure.
-  - A clean now also returns the eviction-queue nodes the removed entries left
-    behind (each held a cloned domain), so `cache_estimated_bytes` falls where
-    it previously stayed flat. The hash-table slab is still **not** returned:
-    `shrink_to_fit` is a reallocation plus a full rehash.
-    **The baseline that decision needs now exists** — the 0.2.9 soak caught the
-    sweeper reclaiming for the first time
-    (`docs/code-review/0.2.9-soak-24h.md`), 29 non-empty sweeps fitting
-
-    ```text
-    duration_us ≈ 330 + 64.4 × entries_removed     (R² = 0.928, n = 29)
-    ```
-
-    at 900–1,100 entries: the walk is the 330 µs intercept and each removal
-    costs ~64 µs, the second O(len) pass `Shard::sweep_queue` makes on every
-    shard that lost an entry. **It still does not settle the shrink**, and the
-    reason is worth stating rather than re-deriving: `table_bytes` follows
-    `map.capacity()`, and this cache peaked at 1,100 entries — 2.2 % of
-    `max_entries`. The tables never grew, so nothing could shrink. Settling it
-    needs a fill-then-drain, not a soak.
-  - Freed memory goes back to **mimalloc**, not necessarily to the kernel, so
-    RSS lags `cache_estimated_bytes` (CONTEXT.md §Accounted/Residual).
-- **The URL-tier verdict budget is met at every measured URL length.** Measured
-  on the RB5009 2026-08-01 (`docs/code-review/p2-10-url-substring-index.md`),
-  minimum of ~5,000 batches. The 2026-08-01 figures before the substring index
-  are kept alongside, because the shape of the fix is the point:
-
-  | URL length | EasyList + EasyPrivacy | before | Deployed lists |
-  |---|---|---|---|
-  | 64 B | 9.5 µs | 35.0 µs | 2.2 µs |
-  | 1 KiB | 64.1 µs | 452.7 µs | 52.4 µs |
-  | 4 KiB | 249.7 µs | 2,091.9 µs ❌ | 187.1 µs |
-  | 8 KiB | **553.8 µs** (p99 569.5) | 5,335.7 µs ❌ | 359.6 µs |
-
-  Long URLs are ordinary traffic, not an attack — OAuth redirects, ad-tech
-  beacons and analytics payloads routinely carry multi-KB query strings. The
-  adversarial case is separately capped by the p2-03 work allowance, which was
-  never reached in any of these runs.
-
-  **What the old breach actually was.** Every URL rule is now indexed
-  (`unindexed` is 0 on both corpora), which cost 645.9 → 441.2 µs on x86 — so
-  the earlier "~97 % of an 8 KiB lookup is the unindexed scan, ≈176 µs fixed +
-  67 µs per unindexed rule" model was wrong. It came from a two-point fit across
-  corpora differing 26× in rule count, which charged the entire gap to the
-  unindexed term; removing that term alone moved **32 %**. The remaining cost
-  was candidate rules each scanning the URL for their first byte a byte at a
-  time — ~3 µs apiece at 8 KiB, against 124 candidates — and SIMD (`memchr`)
-  is what removed it.
-- 10k QPS is ~100× a busy household's peak; the headroom is the proof of
-  efficiency, and it's what keeps p99 flat at real loads.
-- Budgets are compared against `main` on every perf-relevant change; a >10%
-  regression on a hot-path bench needs an explicit justification
-  (see [CONTRIBUTING.md](CONTRIBUTING.md)).
-
-## Rule deduplication — measured trade (p1.5-05)
-
-The compiled matcher holds distinct rules only (RULE_ENGINE.md
-§Deduplication). All figures below: dev box, pinned to one core per
-§Measuring reliably, 2026-07-24, synthetic domains with a real list's length
-distribution.
-
-**What it saves.** Two 1M-rule lists compiled together, by how much of the
-second repeats the first — `cargo bench -p fah-rules --bench matcher` prints
-this table:
-
-| overlap | duplicates removed | compiled | saved | build |
-|---------|-------------------|----------|-------|-------|
-| 0%      | 0                 | 57.7 MiB | —     | 493 ms |
-| 25%     | 250 000           | 50.4 MiB | 7.6 MiB | 469 ms |
-| 50%     | 500 000           | 43.0 MiB | 15.2 MiB | 454 ms |
-| 90%     | 900 000           | 31.3 MiB | 27.3 MiB | 430 ms |
-| 100%    | 1 000 000         | 28.3 MiB | 30.3 MiB | 437 ms |
-
-≈30 bytes per duplicate (arena + 8-byte record + ~1.43 slots). Note the 0% row:
-two non-overlapping 1M lists compile to 57.7 MiB, **past the 40 MB budget** —
-and note build time *falling* as overlap rises, because a duplicate's bytes are
-never appended in the first place.
-
-**What it costs.** Only compile time, and only in the worst case for it — a
-corpus with nothing to collapse. On 1M *unique* rules the build phase goes
-**41.6 ms → 93.3 ms**; parse (175 ms) and disk read (9 ms) are untouched, so
-whole-compile cost rises ~19%. Paid once per compile (boot, and each list
-refresh — default every 24 h), never per query. The remaining ~52 ms is
-essentially one random memory access per rule against the transient dedup
-index, which is the floor for membership-testing 1M rules; a 0.5 load factor
-and a rejected 8-byte tagged-slot variant are documented in `matcher.rs`.
-
-**What it also buys — the part the memory number hides.** Collapsing duplicates
-shrinks the open-addressing slot table, so probe chains shorten. Two 500k-rule
-lists sharing 250k domains (`--bench overlap_lookup`, A/B against a pre-dedup
-checkout):
-
-| lookup | before | after | |
-|--------|--------|-------|---|
-| hit, domain carried by **both** lists | 154.4 ns | ~83 ns | **−46%** |
-| hit, domain in one list | 57.2 ns | 44.5 ns | −22% |
-| miss | 63.1 ns | 57.1 ns | −10% |
-| compiled size | 28.2 MiB | 21.2 MiB | −7.0 MiB |
-
-"After" is the median of 3 pinned runs (shared-hit ranged 79.8–85.5 ns). A
-domain both lists carry used to occupy two slots that hash to the same place,
-and every query for it walked both. Dedup is therefore a **hot-path
-improvement**, not only a memory one — which is what settles the trade.
+  Phase 4 rewrites HTML through `lol_html`; the HTTP rows above are the opaque
+  path and must not be read as covering it.
+- 10 k QPS is ~100× a busy household's peak. The headroom is the proof of
+  efficiency, and it is what keeps p99 flat at real loads.
 
 ## Measuring reliably
 
-The hot-path benches resolve sub-microsecond work, which is below the noise
-floor of a loaded desktop. An unpinned `cargo bench` on a busy dev machine has
-been observed swinging **6×** between consecutive runs of an unmodified binary
-— enough to manufacture a "+159% regression" that does not exist. Before
-believing any regression, re-measure with the process pinned to one core:
+The hot-path benches resolve sub-microsecond work, below the noise floor of a
+loaded desktop. An unpinned `cargo bench` on a busy dev machine has been observed
+swinging **6×** between consecutive runs of an unmodified binary — enough to
+manufacture a "+159 % regression" that does not exist. Before believing any
+regression, re-measure pinned to one core:
 
 ```powershell
 # Windows: run the bench executable directly, one core, high priority
@@ -463,73 +193,57 @@ $p.ProcessorAffinity = 4; $p.PriorityClass = 'High'; $p.WaitForExit()
 taskset -c 2 nice -n -5 cargo bench -p <crate> --bench <bench>
 ```
 
-Pinned, the same benches hold a confidence interval under 1%. Trust a criterion
-delta only when its interval is narrow relative to the change it reports — a
-result quoted as `[366.0 ns 366.8 ns 367.5 ns]` is a measurement; one quoted as
-`[737 ns 882 ns 1.04 µs]` is noise wearing a number's clothes.
+Pinned, the same benches hold a confidence interval under 1 %. Trust a criterion
+delta only when its interval is narrow relative to the change it reports:
+`[366.0 ns 366.8 ns 367.5 ns]` is a measurement, `[737 ns 882 ns 1.04 µs]` is
+noise wearing a number's clothes.
 
-Three further traps, each of which produced a wrong number during p2-03/p2-04
-before being caught:
+Four traps, each of which has already produced a wrong number:
 
-- **Criterion's `change:` line compares against the *previous run*, whatever
-  that was.** Run the same bench under a different corpus — or after any earlier
-  variant — and the percentage is meaningless. It once reported `−77 %` for a
-  change that was noise-level, because the stored baseline came from a
-  real-corpus run and the new one was synthetic. Quote **absolutes** when
-  comparing variants, and `rm -rf target/criterion` when establishing a baseline.
+- **Criterion's `change:` line compares against the *previous run*, whatever that
+  was** — a different corpus, or another session. Quote **absolutes** when
+  comparing variants, A/B against a real pre-change checkout, and
+  `rm -rf target/criterion` when establishing a baseline.
 - **The default corpus can hide the regression the real one shows.**
-  `benches/url_matcher.rs` falls back to a synthetic EasyList-shaped corpus that
-  compiles **zero** unindexed rules; the real lists compile 77, and that is where
-  URL-tier cost concentrates. A change that measured +4 % synthetic was +28 % on
-  real lists. Set `FAH_URL_CORPUS` before believing a URL-tier number.
+  `crates/fah-rules/benches/url_matcher.rs` falls back to a synthetic
+  EasyList-shaped corpus that compiles **zero** unindexed rules. Set
+  `FAH_URL_CORPUS` before believing a URL-tier number.
 - **Subtract the harness's own cost before attributing a stage.** A per-stage
-  profile put header stripping at 1.34 µs; timing the setup alone
-  (`HeaderMap::clone`) showed 1.28 µs of that was the harness. The real figure
-  was ~170 ns — an 8× misattribution that would have aimed optimisation at the
-  wrong function.
+  profile put header stripping at 1.34 µs; the setup alone (`HeaderMap::clone`)
+  was 1.28 µs of it. The real figure was ~170 ns.
+- **Pinning is for CPU-bound microbenches only.** It must not be applied to
+  `fah-http/benches/proxy.rs`, which hosts client, proxy and origin in one
+  multi-threaded runtime — pinned, a 32.6 µs arm read `[423 µs 7.49 ms 16.1 ms]`.
+  Run those unpinned and take the range across several runs.
 
-A **control arm** — one the change cannot possibly affect — is the cheapest
-noise detector available. When `http_pass_through/direct_to_origin`, which never
-touches the proxy, moved +8.8 % (p = 0.13), that alone said the box was drifting
-and the proxy arm's +9.5 % was not real.
-
-Throughput is the exception to core-pinning: restrict it to four cores
+Throughput is the other exception: restrict it to four cores
 (`ProcessorAffinity = 15` / `taskset -c 0-3`) so the figure is shaped like the
-RB5009's quad-core budget rather than a dev box's full core count.
+RB5009's quad-core budget.
+
+A **control arm** — one the change cannot possibly affect, run in the same
+session — is the cheapest noise detector available, and the only thing that
+separates "the code got faster" from "the box was in a different state".
 
 ### Measuring on the RB5009
 
-The device cannot be benched the way the dev box can: the image is
-distroless and RouterOS exposes no `docker exec`, so an on-device measurement
-ships as **its own throwaway container** with the measurement as the entrypoint,
-reporting through `/log print where topics~"container"`. `Dockerfile.probe` and
-`crates/fah-rules/examples/urlbench.rs` are the working example — note it bakes
-its corpus in rather than mounting `/data`, which the production container holds
-read-write.
+The device cannot be benched the way the dev box can: the image is distroless and
+RouterOS exposes no `docker exec`, so an on-device measurement ships as **its own
+throwaway container** with the measurement as the entrypoint, reporting through
+`/log print where topics~"container"`. `Dockerfile.probe` with
+`crates/fah-rules/examples/urlbench.rs`, and `Dockerfile.httpprobe` with
+`crates/fah-http/examples/httpbench.rs`, are the working examples — note they
+bake their corpus in rather than mounting `/data`.
 
-Two rules that a wrong number has already been traced to:
-
-- **Report the CPU frequency as a methodology note, never as a calibration
-  input.** Dynamic frequency scaling is enabled. The startup frequency reported
-  by `scaling_cur_freq` is informational only and must not be interpreted as
-  the frequency used during the benchmark. Frequency sampled during execution
-  showed boosts up to 1400 MHz and a return to 350 MHz after the workload
-  completed.
-- **Sample `/system/resource/print` *during* the run, not before or after** —
-  and record the samples, because a single reading proves nothing either way.
-  What the samples are *for* is documenting conditions, not scaling results:
-  §Budgets shows two runs reporting 350 MHz and 1400 MHz that a control arm
-  proves ran at the same effective speed.
-- **Carry a control arm through every on-device comparison.** One measurement
-  the change under test barely touches, run in the same session. It is the only
-  thing that separates "the code got faster" from "the device was in a
-  different state", and it is what caught the frequency field misleading us.
-- **Size the probe to hold a core busy long enough to sample** — tens of
-  seconds, not a burst.
-
-Convert rather than re-measure where you can: the **~9× x86 → RB5009 factor**
-in §Budgets was flat across three orders of magnitude, so a pinned dev-box
-number usually answers the on-device question without building anything.
+- **Carry a control arm through every on-device comparison.** It is what caught
+  the frequency field misleading us.
+- **Size the probe to hold a core busy long enough to sample** — tens of seconds,
+  not a burst.
+- **Read all three estimators, never one alone.** `min` is the intrinsic cost,
+  `p50` what a client typically experiences, `p99` the tail. On the HTTP head path
+  the added cost at p50 is **2.1× the min** — quoting only `min` claims 6.2×
+  headroom where the user sees 2.9×.
+- **Percentages against a loopback baseline are the harshest possible reading.**
+  The same +344 µs is under 3 % of a request to a real origin at 10–50 ms RTT.
 
 ## Positioning
 

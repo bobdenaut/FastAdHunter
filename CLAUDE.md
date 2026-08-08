@@ -158,10 +158,13 @@ When designing or modifying code, follow these principles in priority order:
 
 19. Code comments: maximum 5 lines for important stuff, otherwise 2 lines maximum.
 
-20. CONFIGURATION.md is a reference.
+20. CONFIGURATION.md and PERFORMANCE.md are references.
     Do not read the entire file.
     Read only the section(s) relevant to the task.
     Never summarize or rewrite unrelated sections.
+    Measurements go to docs/code-review/, one file per task, with the corpus,
+    workload and device. A root doc gets the target, the trap and a pointer —
+    never the narrative.
 
 21. Comments and docs state the present, not the change.
     Every comment and doc describes the system as it is now. Never write what
