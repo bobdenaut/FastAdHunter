@@ -1,0 +1,11 @@
+[package]
+name = "szprobe"
+version = "0.0.0"
+edition = "2021"
+
+[dependencies]
+fah-rules = { path = "e:/FastAdHunter/crates/fah-rules" }
+mimalloc = "0.1.52"
+libmimalloc-sys = { version = "0.1.49", features = ["extended"] }
+
+[workspace]
