@@ -57,7 +57,7 @@ fn dns_event(index: usize, blocked: bool, cache_hit: bool) -> QueryEvent {
         Duration::from_micros(if blocked { 20 } else { 100 }),
         cache_hit,
         false,
-        false,
+        None,
     )
 }
 

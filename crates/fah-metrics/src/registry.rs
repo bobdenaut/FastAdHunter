@@ -14,7 +14,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 
 use arc_swap::ArcSwap;
-use fah_model::{QueryEvent, RequestEvent, Verdict};
+use fah_model::{QueryEvent, RequestEvent, StaleServe, Verdict};
 
 use crate::histogram::Histogram;
 use crate::ruleset::RulesetSnapshot;
@@ -30,11 +30,13 @@ pub struct Metrics {
     pub(crate) cache_stale: AtomicU64,
     /// Total in-pipeline latency, bucketed by the path that answered the
     /// query. `block` and `cache_hit` compare directly against
-    /// PERFORMANCE.md's <1 ms p99 rows; `forward` measures end-to-end
-    /// including the upstream round trip (and, for serve-stale, the failed
-    /// forward attempt that preceded it), so it is NOT comparable to the
-    /// "overhead added by engine" budget row — that would need a
-    /// pipeline-side timer around the upstream await.
+    /// PERFORMANCE.md's <1 ms p99 rows — `cache_hit` covers every serve that
+    /// came out of the cache without waiting on the network, SWR stale serves
+    /// included. `forward` measures end-to-end including the upstream round
+    /// trip (and, for the RFC 8767 fallback, the *failed* attempt that
+    /// preceded it), so it is NOT comparable to the "overhead added by
+    /// engine" budget row — that would need a pipeline-side timer around the
+    /// upstream await.
     pub(crate) duration_block: Histogram,
     pub(crate) duration_cache_hit: Histogram,
     pub(crate) duration_forward: Histogram,
@@ -107,12 +109,16 @@ impl Metrics {
     /// Records one completed query. The hot-path entry point — atomic
     /// increments only, no lock, no allocation (PERFORMANCE.md). Blocked
     /// queries never reach the cache or an upstream (ADR-0001), so their
-    /// `cache_hit`/`stale` are always false. A stale serve has
-    /// `cache_hit == true` but only happens after a forward attempt failed
-    /// (its duration includes that upstream timeout), so it belongs to the
-    /// `forward` stage — routing it to `cache_hit` would blow that
-    /// histogram's <1 ms budget signal during exactly the outages it should
-    /// stay clean through.
+    /// `cache_hit`/`stale` are always unset. A stale serve has
+    /// `cache_hit == true`, and which of the two stale paths produced it
+    /// decides the stage: [`StaleServe::AfterForwardFailure`] carries an
+    /// upstream timeout and belongs to `forward` — routing it to `cache_hit`
+    /// would blow that histogram's <1 ms budget signal during exactly the
+    /// outages it should stay clean through — while
+    /// [`StaleServe::FromSwr`] never touched the network (ADR-0005) and is a
+    /// cache read like any other. Pooling them under one bool put 84 % of the
+    /// RB5009's `forward` samples in the wrong histogram and reported the
+    /// forward mean as 2.40 ms when it was 15.06 ms.
     pub fn record(&self, event: &QueryEvent) {
         match event.verdict {
             Verdict::Pass => self.queries_pass.fetch_add(1, Ordering::Relaxed),
@@ -131,7 +137,7 @@ impl Metrics {
         if !matches!(event.verdict, Verdict::Block(_)) {
             if event.cache_hit {
                 self.cache_hits.fetch_add(1, Ordering::Relaxed);
-                if event.stale {
+                if event.is_stale() {
                     self.cache_stale.fetch_add(1, Ordering::Relaxed);
                 }
             } else {
@@ -141,7 +147,7 @@ impl Metrics {
 
         let stage = if matches!(event.verdict, Verdict::Block(_)) {
             &self.duration_block
-        } else if event.cache_hit && !event.stale {
+        } else if event.cache_hit && event.stale != Some(StaleServe::AfterForwardFailure) {
             &self.duration_cache_hit
         } else {
             &self.duration_forward
@@ -331,7 +337,12 @@ mod tests {
 
     use super::*;
 
-    fn event(verdict: Verdict, cache_hit: bool, upstream_used: bool, stale: bool) -> QueryEvent {
+    fn event(
+        verdict: Verdict,
+        cache_hit: bool,
+        upstream_used: bool,
+        stale: Option<StaleServe>,
+    ) -> QueryEvent {
         QueryEvent::new(
             Query::new(
                 "example.com",
@@ -350,18 +361,18 @@ mod tests {
     #[test]
     fn counts_queries_by_verdict() {
         let metrics = Metrics::new();
-        metrics.record(&event(Verdict::Pass, false, true, false));
+        metrics.record(&event(Verdict::Pass, false, true, None));
         metrics.record(&event(
             Verdict::Block(DecisiveRule::new("oisd", "||ads.example.com^")),
             false,
             false,
-            false,
+            None,
         ));
         metrics.record(&event(
             Verdict::Allow(DecisiveRule::new("allow", "@@||example.com^")),
             false,
             true,
-            false,
+            None,
         ));
 
         assert_eq!(metrics.queries_pass.load(Ordering::Relaxed), 1);
@@ -372,13 +383,42 @@ mod tests {
     #[test]
     fn cache_hit_miss_and_stale_are_counted_independently() {
         let metrics = Metrics::new();
-        metrics.record(&event(Verdict::Pass, true, false, false));
-        metrics.record(&event(Verdict::Pass, true, false, true));
-        metrics.record(&event(Verdict::Pass, false, true, false));
+        metrics.record(&event(Verdict::Pass, true, false, None));
+        metrics.record(&event(
+            Verdict::Pass,
+            true,
+            false,
+            Some(StaleServe::AfterForwardFailure),
+        ));
+        metrics.record(&event(Verdict::Pass, false, true, None));
 
         assert_eq!(metrics.cache_hits.load(Ordering::Relaxed), 2);
         assert_eq!(metrics.cache_stale.load(Ordering::Relaxed), 1);
         assert_eq!(metrics.cache_misses.load(Ordering::Relaxed), 1);
+    }
+
+    /// `cache_stale` counts stale serves, not stale *fallbacks* — both paths
+    /// answered from an expired entry, and an operator watching the counter
+    /// is asking how often that happened at all.
+    #[test]
+    fn both_stale_paths_count_as_stale_serves() {
+        let metrics = Metrics::new();
+        metrics.record(&event(
+            Verdict::Pass,
+            true,
+            false,
+            Some(StaleServe::FromSwr),
+        ));
+        metrics.record(&event(
+            Verdict::Pass,
+            true,
+            false,
+            Some(StaleServe::AfterForwardFailure),
+        ));
+
+        assert_eq!(metrics.cache_stale.load(Ordering::Relaxed), 2);
+        assert_eq!(metrics.cache_hits.load(Ordering::Relaxed), 2);
+        assert_eq!(metrics.cache_misses.load(Ordering::Relaxed), 0);
     }
 
     /// A blocked query never reaches the cache (ADR-0001), so it must not land
@@ -395,14 +435,14 @@ mod tests {
                 Verdict::Block(DecisiveRule::new("oisd", "||ads.example.com^")),
                 false,
                 false,
-                false,
+                None,
             )
         };
         for _ in 0..5 {
             metrics.record(&blocked());
         }
-        metrics.record(&event(Verdict::Pass, true, false, false)); // resolved, hit
-        metrics.record(&event(Verdict::Pass, false, true, false)); // resolved, miss
+        metrics.record(&event(Verdict::Pass, true, false, None)); // resolved, hit
+        metrics.record(&event(Verdict::Pass, false, true, None)); // resolved, miss
 
         assert_eq!(metrics.queries_block.load(Ordering::Relaxed), 5);
         assert_eq!(metrics.cache_hits.load(Ordering::Relaxed), 1);
@@ -429,23 +469,28 @@ mod tests {
             Verdict::Block(DecisiveRule::new("oisd", "||ads.example.com^")),
             false,
             false,
-            false,
+            None,
         ));
-        metrics.record(&event(Verdict::Pass, true, false, false));
-        metrics.record(&event(Verdict::Pass, false, true, false));
+        metrics.record(&event(Verdict::Pass, true, false, None));
+        metrics.record(&event(Verdict::Pass, false, true, None));
 
         assert_eq!(metrics.duration_block.count(), 1);
         assert_eq!(metrics.duration_cache_hit.count(), 1);
         assert_eq!(metrics.duration_forward.count(), 1);
     }
 
-    /// A stale serve is a cache hit whose duration includes the failed
+    /// The RFC 8767 fallback is a cache hit whose duration includes the failed
     /// forward attempt — it must land in `forward`, or an upstream outage
     /// reads as a cache-latency regression.
     #[test]
-    fn stale_serve_records_into_the_forward_stage() {
+    fn stale_after_forward_failure_records_into_the_forward_stage() {
         let metrics = Metrics::new();
-        metrics.record(&event(Verdict::Pass, true, false, true));
+        metrics.record(&event(
+            Verdict::Pass,
+            true,
+            false,
+            Some(StaleServe::AfterForwardFailure),
+        ));
 
         assert_eq!(metrics.duration_cache_hit.count(), 0);
         assert_eq!(metrics.duration_forward.count(), 1);
@@ -457,6 +502,60 @@ mod tests {
         assert_eq!(metrics.cache_stale.load(Ordering::Relaxed), 1);
     }
 
+    /// An SWR stale serve never reached the forwarder (ADR-0005), so timing it
+    /// as a forward is what made the RB5009 report a 2.40 ms forward mean when
+    /// the 1 061 real forwards averaged 15.06 ms — 84 % of that histogram's
+    /// samples were sub-100 µs cache reads.
+    #[test]
+    fn stale_from_swr_records_into_the_cache_hit_stage() {
+        let metrics = Metrics::new();
+        metrics.record(&event(
+            Verdict::Pass,
+            true,
+            false,
+            Some(StaleServe::FromSwr),
+        ));
+
+        assert_eq!(metrics.duration_cache_hit.count(), 1);
+        assert_eq!(
+            metrics.duration_forward.count(),
+            0,
+            "a serve that never touched the network is not a forward"
+        );
+        assert_eq!(metrics.cache_stale.load(Ordering::Relaxed), 1);
+    }
+
+    /// The identity a snapshot reader relies on: every resolved query lands in
+    /// exactly one stage, and `forward` holds the misses plus the outage
+    /// fallbacks — nothing else.
+    #[test]
+    fn stages_partition_resolved_queries() {
+        let metrics = Metrics::new();
+        metrics.record(&event(Verdict::Pass, true, false, None)); // fresh hit
+        metrics.record(&event(
+            Verdict::Pass,
+            true,
+            false,
+            Some(StaleServe::FromSwr),
+        ));
+        metrics.record(&event(Verdict::Pass, false, true, None)); // miss
+        metrics.record(&event(
+            Verdict::Pass,
+            true,
+            false,
+            Some(StaleServe::AfterForwardFailure),
+        ));
+
+        let snap = metrics.snapshot();
+        assert_eq!(snap.cache_hit.count, 2, "fresh hit + SWR stale serve");
+        assert_eq!(snap.forward.count, 2, "miss + RFC 8767 fallback");
+        assert_eq!(
+            snap.cache_hit.count + snap.forward.count,
+            snap.queries_pass + snap.queries_allow,
+            "the two resolved stages must account for every resolved query"
+        );
+    }
+
     #[test]
     fn snapshot_reflects_recorded_counters_and_histograms() {
         let metrics = Metrics::new();
@@ -464,9 +563,9 @@ mod tests {
             Verdict::Block(DecisiveRule::new("oisd", "||ads.example.com^")),
             false,
             false,
-            false,
+            None,
         ));
-        metrics.record(&event(Verdict::Pass, true, false, false)); // cache hit
+        metrics.record(&event(Verdict::Pass, true, false, None)); // cache hit
         metrics.set_dropped_events(4);
         metrics.set_upstreams(vec![UpstreamSample {
             address: "1.1.1.1".to_string(),

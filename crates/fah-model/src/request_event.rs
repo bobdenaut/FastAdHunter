@@ -225,7 +225,7 @@ mod tests {
             Duration::from_micros(250),
             false,
             true,
-            false,
+            None,
         ));
         let http = Event::http(RequestEvent::new(
             request(),

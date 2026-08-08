@@ -41,7 +41,7 @@ async fn measure_heap_walk_cost() {
             std::time::Duration::from_micros(100),
             false,
             true,
-            false,
+            None,
         ));
     }
 

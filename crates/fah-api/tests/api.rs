@@ -63,7 +63,7 @@ fn blocked_event(client: IpAddr) -> QueryEvent {
         Duration::from_micros(300),
         false,
         false,
-        false,
+        None,
     )
 }
 

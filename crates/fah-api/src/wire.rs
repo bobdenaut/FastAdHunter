@@ -1100,7 +1100,7 @@ mod tests {
                 Duration::from_micros(300),
                 false,
                 false,
-                false,
+                None,
             )),
             client_name: Some("liviu-phone".to_string()),
         };

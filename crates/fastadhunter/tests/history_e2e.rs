@@ -289,7 +289,7 @@ fn event(
         Duration::from_micros(100),
         cache_hit,
         true,
-        false,
+        None,
     )
 }
 

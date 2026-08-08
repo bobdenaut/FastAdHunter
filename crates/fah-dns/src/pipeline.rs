@@ -14,7 +14,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use fah_config::DnsCacheConfig;
-use fah_model::{Event, Query as FahQuery, QueryEvent, Verdict};
+use fah_model::{Event, Query as FahQuery, QueryEvent, StaleServe, Verdict};
 use fah_rules::{ListManager, MatchDecision, PolicyState};
 use hickory_proto::op::{Message, MessageType, OpCode, Query as WireQuery, ResponseCode};
 use tokio::sync::mpsc;
@@ -297,7 +297,7 @@ impl<F: Forwarder> Pipeline<F> {
         drop(matcher);
 
         let (response_message, cache_hit, upstream_used, stale) = match local_response {
-            Some(blocked) => (blocked, false, false, false),
+            Some(blocked) => (blocked, false, false, None),
             None => {
                 let resolved = self
                     .resolve(
@@ -339,9 +339,11 @@ impl<F: Forwarder> Pipeline<F> {
     /// **A stale hit does not reach the forwarder at all** when
     /// stale-while-refresh is on (ADR-0005): it is answered from cache at
     /// cache-hit latency and a refresh job goes to the detached pool, which the
-    /// client never waits on. With `[dns.cache] swr_workers = 0` the pool is
-    /// absent and a stale entry falls through to the forward below, answering
-    /// only if that fails — the pre-ADR-0005 behaviour, kept intact.
+    /// client never waits on — [`StaleServe::FromSwr`]. With `[dns.cache]
+    /// swr_workers = 0` the pool is absent and a stale entry falls through to
+    /// the forward below, answering only if that fails
+    /// ([`StaleServe::AfterForwardFailure`]) — the pre-ADR-0005 behaviour,
+    /// kept intact. Metrics splits the two on exactly this distinction.
     async fn resolve(
         &self,
         request: &Message,
@@ -349,7 +351,7 @@ impl<F: Forwarder> Pipeline<F> {
         domain: &str,
         qtype: hickory_proto::rr::RecordType,
         qclass: hickory_proto::rr::DNSClass,
-    ) -> (Message, bool, bool, bool) {
+    ) -> (Message, bool, bool, Option<StaleServe>) {
         let key = self.cache.key(domain, qtype, qclass);
         // One lookup serves both paths. It claims the refresh only when there
         // is a pool to consume it, so a disabled pool takes no claim and leaves
@@ -361,7 +363,7 @@ impl<F: Forwarder> Pipeline<F> {
         match cached {
             Lookup::Fresh(answer, remaining_ttl) => {
                 let response = response::from_cache(request, query, &answer, remaining_ttl);
-                return (response, true, false, false);
+                return (response, true, false, None);
             }
             Lookup::Stale {
                 answer,
@@ -374,7 +376,7 @@ impl<F: Forwarder> Pipeline<F> {
                         swr.note_deduplicated();
                     }
                     let response = response::from_cache(request, query, &answer, STALE_SERVE_TTL);
-                    return (response, true, false, true);
+                    return (response, true, false, Some(StaleServe::FromSwr));
                 }
             }
             Lookup::Miss => {}
@@ -389,7 +391,7 @@ impl<F: Forwarder> Pipeline<F> {
                     if let Lookup::Stale { answer, .. } = self.cache.lookup(&key) {
                         let response =
                             response::from_cache(request, query, &answer, STALE_SERVE_TTL);
-                        return (response, true, false, true);
+                        return (response, true, false, Some(StaleServe::AfterForwardFailure));
                     }
                     // `REFUSED` and friends are deliberate upstream policy,
                     // not an outage — they relay below without stale fallback.
@@ -399,20 +401,20 @@ impl<F: Forwarder> Pipeline<F> {
                 let _ = self.cache.store(&key, &upstream_response);
                 // Wire ID is per-hop; always answer with the client's own.
                 upstream_response.metadata.id = request.metadata.id;
-                (upstream_response, false, true, false)
+                (upstream_response, false, true, None)
             }
             Err(err) => {
                 trace!(error = %err, "upstream forward failed");
                 // Non-claiming, as above.
                 if let Lookup::Stale { answer, .. } = self.cache.lookup(&key) {
                     let response = response::from_cache(request, query, &answer, STALE_SERVE_TTL);
-                    return (response, true, false, true);
+                    return (response, true, false, Some(StaleServe::AfterForwardFailure));
                 }
                 (
                     response::error(request, ResponseCode::ServFail),
                     false,
                     false,
-                    false,
+                    None,
                 )
             }
         }
@@ -426,7 +428,7 @@ impl<F: Forwarder> Pipeline<F> {
         duration: std::time::Duration,
         cache_hit: bool,
         upstream_used: bool,
-        stale: bool,
+        stale: Option<StaleServe>,
         policy: Option<Arc<str>>,
     ) {
         let event = QueryEvent::new(query, verdict, duration, cache_hit, upstream_used, stale)
@@ -802,7 +804,7 @@ mod tests {
             .unwrap();
         let second_event = dns_event(rx.try_recv().unwrap());
         assert!(second_event.cache_hit);
-        assert!(!second_event.stale);
+        assert_eq!(second_event.stale, None);
 
         assert_eq!(
             calls.load(Ordering::Relaxed),
@@ -869,7 +871,9 @@ mod tests {
             calls: Arc::new(AtomicU64::new(0)),
         };
         let (tx, mut rx) = mpsc::channel(8);
-        let pipeline = Pipeline::new(rules, forwarder, 10, &DnsCacheConfig::default(), tx);
+        // Pool off, or the stale entry is served by SWR before the forwarder is
+        // ever asked — which is not the path this test is named for.
+        let pipeline = Pipeline::new(rules, forwarder, 10, &swr_cache_config(0), tx);
 
         let raw = encode_query("example.com.", RecordType::A);
         pipeline
@@ -891,7 +895,11 @@ mod tests {
 
         let event = dns_event(rx.try_recv().unwrap());
         assert!(event.cache_hit);
-        assert!(event.stale);
+        assert_eq!(
+            event.stale,
+            Some(StaleServe::AfterForwardFailure),
+            "the forward was attempted and failed — this duration carries its timeout"
+        );
         assert!(!event.upstream_used);
     }
 
@@ -927,7 +935,8 @@ mod tests {
             calls: Arc::new(AtomicU64::new(0)),
         };
         let (tx, mut rx) = mpsc::channel(8);
-        let pipeline = Pipeline::new(rules, forwarder, 10, &DnsCacheConfig::default(), tx);
+        // Pool off, as above: the SERVFAIL fallback lives past the forward.
+        let pipeline = Pipeline::new(rules, forwarder, 10, &swr_cache_config(0), tx);
 
         let raw = encode_query("example.com.", RecordType::A);
         pipeline
@@ -953,7 +962,7 @@ mod tests {
 
         let event = dns_event(rx.try_recv().unwrap());
         assert!(event.cache_hit);
-        assert!(event.stale);
+        assert_eq!(event.stale, Some(StaleServe::AfterForwardFailure));
     }
 
     #[tokio::test]
@@ -1057,7 +1066,11 @@ mod tests {
 
         let event = dns_event(rx.try_recv().unwrap());
         assert!(event.cache_hit);
-        assert!(event.stale);
+        assert_eq!(
+            event.stale,
+            Some(StaleServe::FromSwr),
+            "the forwarder was never asked, so this must not be timed as a forward"
+        );
         assert!(!event.upstream_used);
 
         // The refresh was queued, exactly once, and nothing consumed it — no
@@ -1138,7 +1151,7 @@ mod tests {
         );
         let event = dns_event(rx.try_recv().unwrap());
         assert!(event.upstream_used);
-        assert!(!event.stale);
+        assert_eq!(event.stale, None);
         assert_eq!(
             pipeline.swr_stats(),
             crate::swr::SwrStats::default(),
@@ -1179,7 +1192,7 @@ mod tests {
         assert_eq!(response.metadata.response_code, ResponseCode::NoError);
         assert_eq!(response.answers.len(), 1);
         let event = dns_event(rx.try_recv().unwrap());
-        assert!(event.stale);
+        assert_eq!(event.stale, Some(StaleServe::AfterForwardFailure));
         assert!(event.cache_hit);
     }
 
@@ -1361,7 +1374,8 @@ mod tests {
         assert_eq!(response.metadata.response_code, ResponseCode::NoError);
         assert_eq!(response.answers.len(), 1);
         let event = dns_event(rx.try_recv().unwrap());
-        assert!(event.cache_hit && event.stale);
+        assert!(event.cache_hit);
+        assert_eq!(event.stale, Some(StaleServe::AfterForwardFailure));
 
         cleanup.abort();
     }

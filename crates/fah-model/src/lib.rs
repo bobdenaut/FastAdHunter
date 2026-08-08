@@ -30,6 +30,6 @@ pub use perf::{CacheStatsSample, LatencySummary, PerfSample, PerfSeries, Upstrea
 pub use policy::{Assignment, ClientSelector, Policy, PolicyId, Schedule};
 pub use protocol::Protocol;
 pub use query::{Query, QueryType};
-pub use query_event::QueryEvent;
+pub use query_event::{QueryEvent, StaleServe};
 pub use request_event::{Event, EventKind, Request, RequestEvent};
 pub use verdict::{DecisiveRule, Verdict};

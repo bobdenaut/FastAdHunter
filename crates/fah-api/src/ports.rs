@@ -269,7 +269,7 @@ mod tests {
                 Duration::from_micros(300),
                 false,
                 false,
-                false,
+                None,
             )),
             client_name: None,
         }

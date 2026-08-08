@@ -431,7 +431,7 @@ mod tests {
             std::time::Duration::from_micros(100),
             false,
             true,
-            false,
+            None,
         )
     }
 
@@ -449,7 +449,7 @@ mod tests {
             std::time::Duration::from_micros(100),
             cache_hit,
             true,
-            false,
+            None,
         )
     }
 
