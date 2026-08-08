@@ -6,6 +6,13 @@
 **ANSWERED 2026-08-06 — no code changed.** Result and full measurements:
 [`docs/code-review/p2-11-compile-transient.md`](../../../docs/code-review/p2-11-compile-transient.md).
 
+> **Continued in [`p2-12`](p2-12-compile-transient-structural.md).** This task
+> answered term 4 (allocator retention) and states that terms 1–3 were never
+> tested. They have since been measured: the structural live heap at the peak
+> is 132.45 MB, of which **56.51 MB is one list's `ParsedRuleList`** — not the
+> raw text, so the retraction below stands unchanged. `p2-12` decides whether
+> to spend the remaining terms; do not re-open the allocator question here.
+
 | | |
 | --- | --- |
 | Cause | mimalloc deferred purge; the peak **ratchets across compiles**, it is not one compile's cost |

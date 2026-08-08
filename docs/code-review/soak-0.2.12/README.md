@@ -53,8 +53,8 @@ between captures is not a blind spot.
 | events_dropped | 0 | 0 |
 | SWR enqueued / completed / failed / dropped | 42 / 42 / 0 / 0 | — |
 | latency mean — block | 47 µs | p99 < 1 ms |
-| latency mean — cache_hit | 46 µs | p99 < 1 ms |
-| latency mean — forward | 10.75 ms | — |
+| latency mean — cache_hit | 46 µs (fresh hits only — see below) | p99 < 1 ms |
+| latency mean — forward | ~~10.75 ms~~ **12.75 ms** | — |
 | upstream 1.1.1.1 attempts / failures | 277 / 0 | — |
 | upstream 9.9.9.9 attempts | 0 (fallback, unused) | — |
 
@@ -86,3 +86,31 @@ Percentiles come from `/history/perf`, windowed.
   transient, not steady state. It does not fall back.
 - **`cache_hits + cache_misses == pass + allow`**, never `+ block` — a blocked
   query never reaches the cache. Divide a hit ratio by resolved queries.
+- **This release times every stale serve as a `forward`.** 0.2.12 is the last
+  one that does. The `forward` histogram here holds `cache_misses + cache_stale`
+  — on this device 84 % of its samples are sub-100 µs SWR cache reads, which is
+  why the T0 row above needed correcting: 10.75 ms was the pooled figure,
+  12.75 ms is the mean over the 225 real forwards. The `cache_hit` histogram
+  correspondingly counts **fresh hits only**, so
+  `cache_hit_hist + cache_stale == cache_hits` holds in this release and stops
+  holding in 0.2.13. Full accounting:
+  [`0.2.13-stale-serve-metrics.md`](../0.2.13-stale-serve-metrics.md).
+
+## Refresh transient — captured 2026-08-08T13:16:35Z
+
+The first scheduled refresh landed inside this soak (48 h interval, seeded from
+the `/data` cache mtimes). All 16 lists `ok`, no restart, uptime continuous.
+
+| Figure | before (12:42Z) | after (13:39Z) |
+| --- | --- | --- |
+| **peak RSS** | 125.14 MB | **180.07 MB** |
+| allocator committed / peak | 224.5 MB | 324.1 / 324.1 MB |
+| container `memory-current` | 64.4 MiB | 98.4 MiB |
+| RSS | 58.53 MB | 54.38 MB |
+| ruleset heap / rules | 27.05 MB / 798 287 | 25.81 MB / 798 760 |
+
+**180.07 MB is not a new finding** — it is
+[`p2-11`](../../../plan/wip/phase2/p2-11-compile-peak-rss.md)'s post-fix figure
+(181.4 MiB) reproduced. Structural decomposition and what remains to be decided:
+[`p2-12`](../../../plan/wip/phase2/p2-12-compile-transient-structural.md).
+Steady RSS returning to 54 MB is the evidence that nothing persists.

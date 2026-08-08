@@ -64,6 +64,18 @@ stale serves count as hits (they always did — there are simply more of them no
 That is not an anomaly and not an improvement in cache efficiency; it is this
 change moving queries out of the forwarded bucket.
 
+**How a stale serve is timed (added 0.2.13).** This ADR's central claim — the
+client never waits on the network — is only observable if the serve is timed as
+what it is. Metrics originally routed every stale serve into the `forward`
+histogram, correctly, on the pre-ADR-0005 premise that a stale answer could only
+follow a failed forward. This ADR made that premise false and the routing was
+not updated with it, so SWR serves were reported at forward latency for four
+releases. `QueryEvent.stale` now names the path — `StaleServe::FromSwr` for the
+serve this ADR introduces, `StaleServe::AfterForwardFailure` for the RFC 8767
+§4 fallback that still lives past the forwarder — and only the second is timed
+as a forward. Measured impact on the RB5009 and the corrected figures:
+[`docs/code-review/0.2.13-stale-serve-metrics.md`](../code-review/0.2.13-stale-serve-metrics.md).
+
 ## On "lower priority than serving"
 
 Tokio has no priority scheduler, and neither a `yield_now()` nor a spawn order

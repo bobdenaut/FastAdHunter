@@ -78,9 +78,9 @@ Reference hardware: MikroTik RB5009 — Marvell Armada quad-core ARMv8, nominall
 | RAM steady-state, 1M blocked domains loaded | ≤ 128 MB |
 | Compiled ruleset for 1M domains | ≤ 40 MB |
 | RAM hard ceiling (container limit) | 256 MB |
-| Verdict + cache hit, in-engine p99 | < 1 ms |
+| Verdict + cache hit, in-engine p99 | < 1 ms — the `cache_hit` stage, which since 0.2.13 covers **every** serve answered without waiting on the network, SWR stale serves included |
 | Blocked query, in-engine p99 | < 1 ms |
-| Forwarded query overhead added by engine, p99 | < 1 ms |
+| Forwarded query overhead added by engine, p99 | < 1 ms — the `forward` stage, which since 0.2.13 holds cache misses plus the RFC 8767 outage fallback, and **nothing else** |
 | **DNS** sustained throughput on RB5009 | ≥ 10 000 QPS |
 | Startup to serving (cached lists, 1M-domain parse) | 1–3 s (< 3 s hard, ~1 s goal) |
 | Container image size | ≤ 30 MB |
@@ -294,6 +294,18 @@ Notes:
   - Expect the `cache_hit` ratio to **rise** and the forwarded-query rate to
     fall. That is this change moving queries between buckets, not the cache
     becoming more efficient — do not read it as one.
+  - **The latency stages were not split to match until 0.2.13, and figures
+    across that boundary are not comparable.** Metrics timed every stale serve
+    as a `forward`, on a premise ADR-0005 had already invalidated. On the
+    RB5009 that put 5 698 sub-100 µs cache reads into a histogram holding
+    1 061 real forwards — 84 % of its samples — and reported a **2.40 ms
+    forward mean where the real figure was 15.06 ms**. `cache_hit` p99 was
+    correspondingly measured on 44 % of hits, with the SWR path excluded.
+    0.2.13 splits `StaleServe::FromSwr` (a cache read) from
+    `StaleServe::AfterForwardFailure` (carries the upstream timeout) and times
+    each in the stage it belongs to. Expect the reported forward mean to
+    **jump ~6×** at that version: it is the correction, not a regression.
+    `cache_stale` is unchanged and still counts both paths.
   - The pool never back-pressures: enqueue is `try_send`, and a full queue drops
     the refresh rather than delaying a client. Watch
     `fastadhunter_swr_refreshes_dropped_total` — sustained growth means the pool

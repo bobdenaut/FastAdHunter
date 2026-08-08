@@ -6,7 +6,7 @@
 
 host = "172.17.0.2"
 port = 8443
-token = "57ca867de9cdd09440a298e9050a0672ff78dba673470eae5da4585ec78bda95"
+token = "f4b804cc87c7ddba15ee996628cd780862927a3afbcd3aa58836d8c94c4055ca"
 
 # The appliance's certificate is generated at first boot and trusted by no
 # root store.

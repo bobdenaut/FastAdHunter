@@ -1,0 +1,22 @@
+** WARNING: connection is not using a post-quantum key exchange algorithm.
+** This session may be vulnerable to "store now, decrypt later" attacks.
+** The server may need to be upgraded. See https://openssh.com/pq.html
+                   uptime: 3d13h6m19s         
+                  version: 7.21.5 (long-term) 
+               build-time: 2026-07-03 10:23:40
+         factory-software: 7.8                
+              free-memory: 696.9MiB           
+             total-memory: 1024.0MiB          
+                      cpu: ARM64              
+                cpu-count: 4                  
+            cpu-frequency: 350MHz             
+                 cpu-load: 1%                 
+           free-hdd-space: 959.1MiB           
+          total-hdd-space: 1024.0MiB          
+  write-sect-since-reboot: 4816               
+         write-sect-total: 391389             
+               bad-blocks: 0%                 
+        architecture-name: arm64              
+               board-name: RB5009UG+S+        
+                 platform: MikroTik           
+
