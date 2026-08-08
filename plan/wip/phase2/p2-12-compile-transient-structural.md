@@ -11,12 +11,18 @@ test.
 
 ## Goal
 
-Decide whether the ~180 MiB refresh transient is worth reducing, and if so
-reduce it — **without changing the resulting ruleset or refresh semantics**.
+Know where the memory goes during a refresh. Correct what turns out to be
+wrong — **without changing the resulting ruleset or refresh semantics**.
 
-The first deliverable is the decision, not a patch. p2-11 deferred this work
-with a condition: "worth running only if ≤128 MiB becomes the target or Phase 3
-makes 75 MB of headroom tight." Answer that condition before spending anything.
+**≤128 MiB is a product and performance target, not an operational
+constraint.** The container runs `memory-high=unlimited` with ~697 MiB free on
+the device, and the peak returns to ~52 MiB steady. A 180 MB transient is
+therefore not, in itself, an operational problem on the RB5009 — it is a number
+that has to be explained rather than a breach that has to be fixed.
+
+So attribution comes first, and a change is justified only where a term is the
+wrong *shape*, not merely large. The first deliverable is the accounting; the
+patch, if any, follows from it.
 
 ## What is already known
 
@@ -68,35 +74,84 @@ inventing new ones.
    **Do not use the history sampler** — a compile is 2.7 s and at 360 s
    sampling a sample lands inside one 0.76 % of the time.
 2. **Dev box:** counting `GlobalAlloc` over `fah-rules`' public API against the
-   pinned corpus. Gives live heap, which is allocator- and OS-independent —
-   the one thing the dev box *can* measure here.
-3. Both arms per change. RSS is the budget; live heap is the attribution.
+   pinned corpus. Gives logical live-heap attribution independent of the
+   device's allocator/OS RSS behaviour — the one thing the dev box *can*
+   measure here, since `process_rss` returns `None` on Windows. It records
+   **requested** sizes, so it does **not** model allocator-specific RSS
+   overhead, page retention or size-class rounding, and a realloc chain appears
+   as its logical result rather than as the transient where both buffers are
+   live.
+3. Both arms per change. RSS is the budget; live heap is the attribution. The
+   gap between them is the allocator term (~19 MB in the table above), which
+   only the device can settle — do not expect the dev box to reproduce it.
 
 ## Work, in dependency order
 
-| # | Change | Expected peak saving | Risk |
+| # | Change | Estimated peak saving | Risk |
 | --- | --- | ---: | --- |
 | 1 | Stream parse → builder; never materialize `Vec<ParsedRule>` | −42 MB | public parser signature changes; `RefreshStats::from(&parsed)` and `looks_misparsed()` must accumulate incrementally |
 | 2 | Read one list text at a time inside the blocking compile | −16 MB | `upper_bound` currently needs every text before the loop — needs a second pass or a bound derived from file size |
 | 3 | Pre-size arena/records; tighten the dedup bound toward the real rule count | −7 to −10 MB | low |
 
-1 + 2 together: structural 132.45 → ~74 MB, device peak ≈ 122 MB. **That
-clears 128 MB by 6 MB — a pass, not headroom.** 1 alone does not clear it
-(~138 MB). Adding 3 gives ≈ 112 MB.
+These are the sizes of the available levers, listed so the decision has numbers
+— not a plan to execute.
+
+**Every figure below is estimated, not measured.** They are derived from the
+current decomposition by subtracting the term each change removes; nothing has
+been implemented, so none of them has been observed. 1 + 2 together take
+**estimated** structural live heap 132.45 → ~74 MB and the **estimated** device
+peak to ≈ 122 MB; 1 alone lands at an estimated ~138 MB; adding 3 gives an
+estimated ≈ 112 MB. The device-peak estimates additionally inherit the ~19 MB
+allocator term, which is itself inferred by subtraction — so they are the
+softest numbers here and must not be quoted as results.
+
+**Change 1 is the only one with an argument beyond size.** `ParsedRule` holds
+135.8 B/rule for data the builder immediately copies into an arena at
+33.9 B/rule — a 4× amplification on a buffer that is materialized whole and
+consumed once, in order. That is a shape defect, and it would be worth fixing
+at half the size. Changes 2 and 3 are size alone.
 
 ## Criteria
 
-- [ ] **The condition is answered first**: is ≤128 MiB the target, given
-      697 MiB free on the device and `memory-high=unlimited`? A "no" closes
-      this task with the measurements recorded and no code changed — that is a
-      legitimate outcome, as p2-11 demonstrated.
+- [ ] **Every term in the peak is attributed first**, and each is classified as
+      structural (the design requires it), incidental (an artefact of how the
+      code happens to be written) or allocator. Closing this task with the
+      accounting complete and no code changed is a legitimate outcome, as
+      p2-11 demonstrated — the deliverable is knowing where the memory goes.
 - [ ] Compile CPU measured before and after, on ARM64. Streaming removes
       436 k `Vec` pushes and a realloc chain, so it should be neutral or
       better — **unmeasured, and must not be assumed.** Current on-device
       compile is 2.75 s.
-- [ ] Resulting ruleset **byte-identical**: same rule count, same
-      `duplicates_removed`, same verdicts over the corpus. The determinism test
-      is the guard.
+- [ ] Resulting ruleset **structurally identical, not merely equivalent**.
+      Rule count, `duplicates_removed` and corpus verdicts are necessary but
+      **not sufficient** — none of them would catch a streaming builder that
+      silently reordered rules, changed arena layout or shifted which duplicate
+      wins. The guard is an equal **deterministic fingerprint**:
+
+      The guard is `matcher.rs`'s test-module `Fingerprint` — arena bytes +
+      flattened records + slot count — **extended with the `url` tier, and
+      nothing else.**
+
+      Those three fields already cover the ordering risk: the arena is appended
+      in rule order and records are flattened in order, so a reordered build, a
+      changed arena layout and a different duplicate winning each change the
+      fingerprint. `url` is added because change 1 feeds the URL tier too and
+      can affect it independently.
+
+      **Do not extend to the remaining fields.** `policy_mask`, `dnstype`,
+      `rewrite` and `clients` are keyed by record index, so a reorder that
+      corrupted them already shows in arena + records; `lists` is list identity
+      and is untouched by how rules arrive. Adding them means normalising three
+      `HashMap`s whose iteration order is unstable, for coverage this criterion
+      already has.
+
+      Byte-for-byte `Matcher` equality is not available at all — those same
+      `HashMap`s, plus `Arc<str>` addresses that differ between runs, would
+      make it report false failures.
+
+      Capture the fingerprint on the **pre-change** checkout over the pinned
+      corpus, then require equality after. Fingerprint **and** verdicts, not
+      either alone.
 - [ ] Refresh semantics unchanged: the old ruleset serves until `swap_in`, a
       failed fetch still keeps the last-good copy.
 - [ ] Steady-state RSS unchanged or better (p2-11 improved it 20 %; do not
