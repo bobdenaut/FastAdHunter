@@ -222,13 +222,22 @@ the whole of what `/log print` can answer:
 | `/log print where topics~"container"` | FastAdHunter's own output |
 
 `dhcp`, `route`, `interface` and `pppoe` are **disk-only** and return nothing
-from `/log print`. Read them with:
+from `/log print`. Read them from the build host, never in the RouterOS console:
 
-```routeros
-:put [/file get [find name="kingston/net-log.0.txt"] contents]
+```powershell
+ssh rb5009 ':put [/file get [find name="kingston/net-log.0.txt"] contents]' |
+    Out-File net-log.txt
+Select-String "WAN change|IPv6 global" net-log.txt
 ```
 
 Prefixes `[DHCP]`, `[ROUTE]`, `[LINK]`, `[PPPOE]` tag those lines in the file.
+
+**Running that `:put` interactively is unreadable, and the file is not corrupt.**
+RouterOS emits the contents with bare `\n` — 54 LF against 1 CR in a measured
+sample — so a terminal moves down a line without returning to column 0 and every
+line starts where the previous one ended. `/log print` is unaffected because
+RouterOS formats that output itself. Piping through `Out-File` writes CRLF and
+fixes it; PuTTY's *Implicit CR in every LF* does the same at the terminal.
 
 - **`topics=dhcp` matches `dhcp,debug,packet` too**, and one LAN client's lease
   renewal is ~20 lines of option dumps. The rule is `dhcp,!debug,!packet`;
