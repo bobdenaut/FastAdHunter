@@ -58,15 +58,23 @@ reach the proxy over v6 while the proxy reaches origins over v4.
 
 ## The delegated prefix is not stable — do not hardcode it
 
-Four distinct `/56` delegations observed inside a week, one of them a change
-during a single working session:
+Five distinct `/56` delegations observed inside a week, three of them inside one
+working session:
 
 | When | Delegated prefix |
 | --- | --- |
 | `0.2.10-soak-baseline.md`'s draft rules | `2a02:2f04:5100:e700` |
 | Previously pinned in the BRIDGE address | `2a02:2f04:5303:6800` |
-| 2026-08-09, early | `2a02:2f04:520a:3d00` |
-| 2026-08-09, minutes later | `2a02:2f04:540c:7900` |
+| 2026-08-09 11:0x | `2a02:2f04:520a:3d00` |
+| 2026-08-09 11:09 | `2a02:2f04:540c:7900` |
+| 2026-08-09 11:36 | `2a02:2f04:5407:c600` |
+
+**The mechanism is a PPPoE redial, not a DHCPv6 lease policy.** At the 11:36
+rotation the WAN IPv4 changed at 11:36:21 and the IPv6 address and delegation at
+11:36:25 — IPCP first on the fresh PPP session, DHCPv6 four seconds behind it.
+Session uptime read `2m27s` shortly after. So all three values turn over
+together, on every redial, and the `never` (infinite) DHCPv6 lifetimes are not
+contradictory: the lease is not expiring, the session under it is.
 
 **`p2-08`'s draft skip rule names the first of those**, so applying it verbatim
 skips a prefix that no longer exists.
@@ -95,23 +103,52 @@ pool. It tracked two rotations without going invalid.
 
 ### Rules to apply
 
-Have the delegated prefix maintain its own address list, so a rotation cannot
-stale the skip rule:
+Four stages with a checkpoint between 2 and 3. **The order is mandatory, not
+stylistic** — see the checkpoint for what applying step 4 early does.
+
+**Steps 1–3 are applied. Step 4 is not**, and waits on both gates in
+§Sequencing.
+
+#### Step 1 — the delegated prefix maintains its own list
 
 ```routeros
 /ipv6/dhcp-client set [find interface=DIGI] prefix-address-lists=fah-lan6
 ```
 
-Static locals, then the two skips, then the redirect. `in-interface-list=LAN`
-matches the IPv4 rule already live (`/ip/firewall/nat` index 10); `p2-08`'s
-draft used `in-interface=BRIDGE`, which is narrower than the v4 rule and would
-leave `CONTAINERS` uncovered:
+#### Step 2 — checkpoint
+
+```routeros
+/ipv6/firewall/address-list/print where list="fah-lan6"
+```
+
+Must show a `D` (dynamic) entry carrying the **current** delegation. RouterOS
+populates it on the next DHCPv6 renewal, so it can lag; a rebind forces it, and
+is safe while global v6 is already down because v6 DNS interception rides on the
+ULA `fd6c:…`, which a rebind does not touch:
+
+```routeros
+/ipv6/dhcp-client release [find interface=DIGI]
+```
+
+**Do not run step 4 while that list is empty.** An empty list means
+`dst-address-list=fah-lan6` matches nothing, the second skip never fires, and the
+redirect below it sends **LAN-to-LAN IPv6 `:80` into the proxy**.
+
+#### Step 3 — static locals
 
 ```routeros
 /ipv6/firewall/address-list/add list=fah-http-skip6 address=fd6c:7f32:8e91::/48
 /ipv6/firewall/address-list/add list=fah-http-skip6 address=fe80::/10
 /ipv6/firewall/address-list/add list=fah-http-skip6 address=::1/128
+```
 
+#### Step 4 — the NAT rules, in this order
+
+`in-interface-list=LAN` matches the IPv4 rule already live (`/ip/firewall/nat`
+index 10); `p2-08`'s draft used `in-interface=BRIDGE`, which is narrower and
+leaves `CONTAINERS` uncovered.
+
+```routeros
 /ipv6/firewall/nat/add chain=dstnat action=accept protocol=tcp dst-port=80 \
   dst-address-list=fah-http-skip6 \
   comment="fastadhunter http v6: leave local traffic alone"
@@ -126,8 +163,15 @@ leave `CONTAINERS` uncovered:
   comment="fastadhunter http v6"
 ```
 
-`to-address` is `veth1`'s container address, confirmed against
-`/interface/veth/print`.
+They append after the two DNS dstnat rules, which is correct — different port,
+no interaction. Effective immediately. `to-address` is `veth1`'s container
+address, confirmed against `/interface/veth/print`.
+
+#### Rollback
+
+```routeros
+/ipv6/firewall/nat/remove [find comment~"fastadhunter http v6"]
+```
 
 ## Criteria
 
@@ -141,6 +185,13 @@ leave `CONTAINERS` uncovered:
       Check it before and after the prefix next changes; a static-looking entry
       means `prefix-address-lists` did not take and the skip is one rotation
       away from failing.
+- [ ] **The rotation gap is bounded.** A redial gives clients the new prefix at
+      the moment `fah-lan6` still holds the old one, and in that window
+      LAN-to-LAN v6 `:80` is redirected into the proxy. Measure how long the list
+      lags the delegation across one redial; with session uptimes in minutes this
+      window recurs constantly rather than rarely. If it is not small, the second
+      skip needs a broader match (the whole `2000::/3` reaching a LAN interface)
+      rather than the exact delegation.
 - [ ] LAN-to-LAN v6 HTTP is not redirected — the router's own `:80` and one
       client-to-client request stay off the proxy.
 - [ ] Gates green if any code changed; nothing to run if none did.
