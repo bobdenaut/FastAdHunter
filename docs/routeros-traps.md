@@ -179,12 +179,17 @@ other. **Re-read the live config before changing anything here.**
 Pattern behind all of it: globals from an expired DIGI delegation hardcoded in
 several places. Prefer link-local or pool-derived addresses on this router.
 
-**The delegation rotates, so no rule may hardcode a global v6 prefix.** Four
-distinct `/56`s observed inside a week, one of them a change during a single
-working session: `2a02:2f04:5100:e700`, `…5303:6800`, `…520a:3d00`,
-`…540c:7900`. The WAN address moves with it, and DIGI advertises both with a
-`never` (infinite) lifetime while replacing them — which is what leaves clients
-holding addresses from prefixes that no longer route.
+**The delegation rotates, so no rule may hardcode a global v6 prefix.** Five
+distinct `/56`s observed inside a week, three of them in one working session:
+`2a02:2f04:5100:e700`, `…5303:6800`, `…520a:3d00`, `…540c:7900`, `…5407:c600`.
+
+**The cause is a PPPoE redial**, not DHCPv6 lease policy. Public IPv4, WAN IPv6
+and the delegation all turn over together on each redial — measured 2026-08-09,
+IPv4 at 11:36:21 and the two v6 values at 11:36:25, IPCP first on the fresh
+session with DHCPv6 four seconds behind, session uptime `2m27s` shortly after.
+The `never` (infinite) DHCPv6 lifetimes are therefore not self-contradictory:
+the lease is not expiring, the session under it is. Diagnose a rotation by
+`/interface/pppoe-client/monitor` uptime, not by the DHCPv6 client.
 
 - The BRIDGE address is `::1/64` `from-pool=ipv6-pool` — offset pinned, prefix
   followed. A prefix pinned in the address goes `I` invalid at the next
