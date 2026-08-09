@@ -186,7 +186,11 @@ parameters, never supply JavaScript.
 ## Backlog (no phase committed)
 
 - Local DNSSEC validation (off by default)
-- Upstream load-balancing strategies (latency-based, round-robin)
+- Upstream health and load-balancing: use `consecutive_failures` for selection
+  instead of only reporting it — a dead server at index 0 costs `timeout_ms` on
+  every query until the config is edited. Prerequisite for latency-based and
+  round-robin strategies, and what makes a second-family (IPv6) upstream safe to
+  add; the sockets and config already accept one.
 - Per-client blocked-response modes (NXDOMAIN, REFUSED, custom IP)
 - Dashboard (`dashboard/`) — separate deliverable, API-only consumer
 - List-file management endpoints (upload/edit local lists via API)
