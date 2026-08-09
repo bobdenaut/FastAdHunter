@@ -61,7 +61,9 @@ pub struct UpstreamStatus {
     pub protocol: fah_model::Protocol,
     pub attempts: u64,
     pub failures: u64,
-    /// Failures since the last success — non-zero means currently unhealthy.
+    /// Failures since the last success. **Not a liveness signal**: `forward`
+    /// walks the list in order and never skips, so a secondary is attempted
+    /// only when the primary fails and its streak can be hours old.
     pub consecutive_failures: u64,
     /// TLS handshakes attempted (always 0 for plain UDP). Staying flat while
     /// `attempts` grows is the connection-reuse proof (p1-06 acceptance).

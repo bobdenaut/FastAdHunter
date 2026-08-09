@@ -116,7 +116,9 @@ pub struct UpstreamSample {
     pub protocol: crate::Protocol,
     pub attempts: u64,
     pub failures: u64,
-    /// Failures since the last success — non-zero means currently unhealthy.
+    /// Failures since the last success. **Not a liveness signal**: under
+    /// `fallback` a secondary is attempted only when the primary fails, so a
+    /// non-zero streak can be hours old. Read it beside `attempts`.
     pub consecutive_failures: u64,
     pub tls_handshakes: u64,
 }

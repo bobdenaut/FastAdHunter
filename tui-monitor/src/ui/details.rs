@@ -124,11 +124,14 @@ fn upstream_lines<'a>(telemetry: &Telemetry) -> Vec<Line<'a>> {
 
     for upstream in &telemetry.engine.upstreams {
         let failure_rate = percent(upstream.failures, upstream.attempts);
-        let healthy = upstream.consecutive_failures == 0;
+        // The marker reports the **last attempt**, not current health: a
+        // fallback secondary is only ever tried when the primary fails, so its
+        // streak can be hours old and says nothing about now.
+        let last_ok = upstream.consecutive_failures == 0;
         lines.push(Line::from(vec![
             Span::styled(
-                format!(" {} ", if healthy { "●" } else { "✕" }),
-                ratatui::style::Style::default().fg(theme::link(healthy)),
+                format!(" {} ", if last_ok { "●" } else { "○" }),
+                ratatui::style::Style::default().fg(theme::link(last_ok)),
             ),
             Span::raw(format!(
                 "{:<26} {:>14}",
@@ -138,10 +141,14 @@ fn upstream_lines<'a>(telemetry: &Telemetry) -> Vec<Line<'a>> {
         ]));
         lines.push(Line::from(Span::styled(
             format!(
-                "     {} fail {} ({failure_rate:.2}%), streak {}",
+                "     {} fail {} ({failure_rate:.2}%), last {}",
                 protocol(upstream.protocol),
                 upstream.failures,
-                upstream.consecutive_failures
+                if last_ok {
+                    "ok".to_string()
+                } else {
+                    format!("{} failed", upstream.consecutive_failures)
+                }
             ),
             theme::label(),
         )));
@@ -288,13 +295,18 @@ mod tests {
         assert!(rendered.contains("Evictions"), "{rendered}");
     }
 
+    /// The marker reports the last attempt, not health. A fallback secondary is
+    /// tried only when the primary fails, so a streak on it can be hours old —
+    /// rendering it as "down" is what made a reachable resolver look dead.
     #[test]
-    fn an_unhealthy_upstream_is_marked_and_a_healthy_one_is_not() {
+    fn the_upstream_marker_reports_the_last_attempt_not_health() {
         let rendered = text(&upstream_lines(&fixtures::telemetry()));
 
         assert!(rendered.contains("● 1.1.1.1:853"), "{rendered}");
-        assert!(rendered.contains("✕ 9.9.9.9:853"), "{rendered}");
-        assert!(rendered.contains("streak 3"), "{rendered}");
+        assert!(rendered.contains("last ok"), "{rendered}");
+        assert!(rendered.contains("○ 9.9.9.9:853"), "{rendered}");
+        assert!(rendered.contains("last 3 failed"), "{rendered}");
+        assert!(!rendered.contains('✕'), "no down verdict: {rendered}");
     }
 
     /// The fixture has none dropped, so the warning must be absent — it is a
