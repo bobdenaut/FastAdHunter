@@ -211,10 +211,12 @@ the lease is not expiring, the session under it is. Diagnose a rotation by
   default route. Measured 2026-08-09: `/ping 2606:4700:4700::1111` from the
   router, 100 % loss, with both present. Test it, do not infer it.
 
-## Logging — what is instrumented, and three traps
+## Logging — what is instrumented, and its traps
 
-`/log print` reads the **memory** buffer only. A topic routed to a disk action
-is invisible there and looks like it is not logging at all.
+**`/log print` is a unified view over every logging action, not the memory
+buffer.** A topic routed only to disk still appears there — `dhcp` has one rule,
+to `netlog`, and its lines show up in `/log print` all the same. A quiet
+`/log print` means nothing was logged, not that it went somewhere else.
 
 Topics go to a `netlog` action on the Kingston (`kingston/net-log.*.txt`,
 8 × 5000 lines) rather than to memory or internal flash: memory is 500 lines
@@ -223,42 +225,43 @@ internal flash means wear.
 
 ### What to search for
 
-Only `warning`, `error`, `critical` and `container` reach memory, so these are
-the whole of what `/log print` can answer:
-
 | Query | Returns |
 | --- | --- |
 | `/log print where message~"IPv6 global"` | v6 reachability, `UP` / `DOWN`, on transition |
 | `/log print where message~"IPv4 global"` | v4 reachability, same |
 | `/log print where message~"WAN change"` | `[old] => [new]` for `v4=` public address, `v6=` WAN global, `pd=` delegated prefix |
 | `/log print where topics~"script"` | all of the above together — netwatch and `log-wan-ip` |
+| `/log print where topics~"ppp"` | session up/down **with the disconnect reason** |
 | `/log print where topics~"container"` | FastAdHunter's own output |
 
-`dhcp`, `route`, `interface` and `pppoe` are **disk-only** and return nothing
-from `/log print`. Read them from the build host, never in the RouterOS console:
+Prefixes `[DHCP]`, `[ROUTE]`, `[LINK]`, `[PPPOE]`, `[PPP]` tag those lines in the
+file on disk.
+
+### Reading the file needs `scp`, not `/file get`
+
+**`/file get … contents` returns an empty string above ~64 KiB, with no error.**
+Measured: a 65.1 KiB file gives `:len` of `0`. With `disk-lines-per-file=5000`
+each file reaches ~500 KiB, so this is the normal state, not an edge case — and
+it fails silently, which reads as "logging stopped".
 
 ```powershell
-ssh rb5009 ':put [/file get [find name="kingston/net-log.0.txt"] contents]' |
-    Out-File net-log.txt
-Select-String "WAN change|IPv6 global" net-log.txt
+scp rb5009:kingston/net-log.0.txt .
+Select-String "WAN change|IPv6 global|\[PPP\]" net-log.0.txt
 ```
 
-Prefixes `[DHCP]`, `[ROUTE]`, `[LINK]`, `[PPPOE]` tag those lines in the file.
-
-**Running that `:put` interactively is unreadable, and the file is not corrupt.**
-RouterOS emits the contents with bare `\n` — 54 LF against 1 CR in a measured
-sample — so a terminal moves down a line without returning to column 0 and every
-line starts where the previous one ended. `/log print` is unaffected because
-RouterOS formats that output itself. Piping through `Out-File` writes CRLF and
-fixes it; PuTTY's *Implicit CR in every LF* does the same at the terminal.
+Under 64 KiB, `:put [/file get …]` does work, but it emits bare `\n` — 54 LF
+against 1 CR in a measured sample — so a terminal staircases each line from where
+the previous one ended. The file is not corrupt. `/log print` is unaffected
+because RouterOS formats that output itself.
 
 - **`topics=dhcp` matches `dhcp,debug,packet` too**, and one LAN client's lease
   renewal is ~20 lines of option dumps. The rule is `dhcp,!debug,!packet`;
   without the negations the DHCPv6 prefix events are buried within hours.
-- `warning` has two rules on purpose — `netlog` for retention, `memory` so
-  `/log print where message~"…"` works. **`/log print` renders one entry per
-  matching rule**, so every warning appears twice there while the disk file holds
-  one copy. Do not count occurrences in `/log print`.
+- `warning` has two rules, `netlog` and `memory`, and **`/log print` renders one
+  entry per matching rule** — so every warning appears there twice while the disk
+  file holds one copy. Do not count occurrences in `/log print`. The second rule
+  is redundant, since `/log print` already shows disk-routed entries; removing it
+  removes the duplication and loses nothing.
 - Netwatch (`v6-global`, `v4-global`) fires its scripts on **transition only**;
   verified by an entry sitting `down` across probe intervals without emitting a
   second line.
