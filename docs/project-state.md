@@ -13,31 +13,34 @@ what is true today.
 | Branch | `main`, pushed to **origin and backup** |
 | Tree | clean |
 | Tests | green — `fmt`/`clippy`/`test`, 878 across 41 binaries |
-| Deployed | **0.2.13** on the RB5009 since 2026-08-08T14:54Z |
-| Phase | 2 (`plan/wip/phase2`) — `p2-13` and `p2-14` open, everything else DONE |
-| **Next** | **build and deploy `p2-13`**, then verify `peak_rss` on-device and close it |
+| Deployed | **0.2.14** on the RB5009 since 2026-08-09T10:33Z |
+| Phase | 2 (`plan/wip/phase2`) — **`p2-14` is the only open task**, and it is blocked on the ISP |
+| **Next** | nothing actionable here; `p2-14` waits for IPv6 to route |
 
 `feat/phase2-http-pipeline` is fully merged into `main` and not deleted.
+
+**Phase 2 is one task from closing, and that task is blocked externally.** The
+phase move is the owner's to make.
 
 ## Phase 2 status
 
 | Task | State |
 | --- | --- |
-| p2-00 … p2-12 | DONE |
-| p2-13 | code complete, gates green, **not deployed** |
-| p2-14 | blocked twice over — see below |
+| p2-00 … p2-13 | DONE |
+| p2-14 | blocked on the ISP — see below |
 
-### `p2-13` — the next action
+### `p2-13` — closed on-device 2026-08-09
 
-`PerfSample` gains `peak_rss`, served through `/history/perf` and `?fields=`.
-Committed and pushed; the only outstanding criterion is on-device. `ru_maxrss` is
-a monotone high-water mark, so a 360 s sampler records the compile peak without
-having to land inside the 2.75 s compile — which is what makes the guard
-possible at all.
+`peak_rss` is in `/history/perf`, verified on `0.2.14`: 117.73 MiB in the series,
+the same figure `/debug/memory` reports live, and 241 rows written by `0.2.13`
+read back intact. Report:
+[`p2-13-review.md`](code-review/p2-13-review.md).
 
-After deploying, expect the **boot** peak (~118 MiB) first. The ~180 MB refresh
-peak lands at the next scheduled refresh, up to 48 h later
-(`refresh_hours = 48`). A flat series is not the peak having gone away.
+**The refresh peak has not appeared yet.** `refresh_hours = 48`, so the first one
+lands up to two days after deploy and should raise the series 117.73 → ~180 MiB.
+A flat series until then is not the peak having gone away, and `peak_rss ≈ 180`
+beside `rss ≈ 52` afterwards is correct rather than a leak — it is a high-water
+mark, not an average.
 
 ### `p2-14` — blocked, and not on us
 
@@ -53,10 +56,15 @@ IPv6 HTTP interception. Steps 1–3 of its procedure are applied (dynamic
 
 ## Deployed
 
-**0.2.13** on the RB5009 since 2026-08-08T14:54Z, `mode=dns+http`, 798,760
-compiled rules, compile 2.85 s.
+**0.2.14** on the RB5009 since 2026-08-09T10:33Z, `mode=dns+http`, 798,760
+compiled rules, boot peak 117.73 MiB. It adds `peak_rss` to the history and
+changes nothing else; **no config key moved**, so the `deny_unknown_fields`
+ordering trap below did not apply to this release. T0 captures in
+`code-review/soak-0.2.14/`.
 
-Verified over 18.5 h — [`soak-0.2.13-report.md`](code-review/soak-0.2.13-report.md):
+Its predecessor **0.2.13** was verified over 18.5 h —
+[`soak-0.2.13-report.md`](code-review/soak-0.2.13-report.md), and the findings
+still describe the running system:
 
 | | |
 | --- | --- |

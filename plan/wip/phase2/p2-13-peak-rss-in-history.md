@@ -47,21 +47,40 @@ was zero". Do not invent a second convention for the same situation.
 
 ## Criteria
 
-- [ ] A row written before this task deserialises, with `peak_rss` 0 and every
-      other field unchanged.
-- [ ] `?fields=peak_rss` serves it alone; an unknown name still lists the
-      accepted set back, now with 11 entries.
-- [ ] The series is non-decreasing within one container lifetime, and a restart
+**Met 2026-08-09 on `0.2.14`**, deployed at 10:33:17Z.
+
+- [x] A row written before this task deserialises, with `peak_rss` 0 and every
+      other field unchanged. **241 rows written by `0.2.13` read back intact.**
+      This is the criterion with a real and silent failure mode: without
+      `#[serde(default)]` the whole retained series would have been orphaned at
+      the deploy, and nobody would have noticed until they looked back.
+- [x] `?fields=peak_rss` serves it alone; an unknown name still lists the
+      accepted set back, now with 11 entries. Both verified against the device.
+- [x] The series is non-decreasing within one container lifetime, and a restart
       is the only thing that resets it. State this where the field is
       documented — a reader who does not know it will misread a restart as a
-      drop.
-- [ ] Retention cost stated. One `u64` plus its JSON key is ~20 B/row: at 60 s
+      drop. **Structurally guaranteed by `getrusage(ru_maxrss)` and observed for
+      the first post-deploy sample; each refresh adds an empirical point.**
+- [x] Retention cost stated. One `u64` plus its JSON key is ~20 B/row: at 60 s
       ≈ +0.9 MB/30 days, at the deployed 360 s ≈ +0.15 MB, against p2-07's
       ~6.9 MB/30 days at 60 s.
-- [ ] Gates green.
-- [ ] Deployed and the series read back on-device — **after the 0.2.13 soak
-      ends**, since a deploy restarts the container and zeroes the counters the
-      soak is accumulating.
+- [x] Gates green — 878 tests across 41 binaries.
+- [x] Deployed and the series read back on-device. `/history/perf` carries
+      **117.73 MiB**, the same figure `/debug/memory` reports live. The two
+      agree by construction — `build_perf_sample` receives the breakdown the
+      debug endpoint serves rather than re-deriving it — so the match rules out
+      a wiring fault, not a wrong `ru_maxrss`.
+
+### The boot row is empty, and that is documented behaviour
+
+The first row after a start (`10:33:17Z`) carries `peak_rss` 0 **together with**
+`ruleset_bytes` 0 and `minor_page_faults` 0, while `rss_bytes` is populated. All
+three zeros come from the same breakdown, which the 10 s telemetry poll has not
+published yet; `rss_bytes` is read separately from `/proc`. A `ruleset_bytes` of
+0 is impossible as a real value, which is what identifies the row.
+
+**`peak_rss` non-zero while `ruleset_bytes` is 0 would be the bug**, and it is
+the comparison to make if this ever needs re-checking.
 
 ## Out of scope
 

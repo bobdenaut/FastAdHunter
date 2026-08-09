@@ -1,0 +1,19 @@
+                   uptime: 4m32s              
+                  version: 7.21.5 (long-term) 
+               build-time: 2026-07-03 10:23:40
+         factory-software: 7.8                
+              free-memory: 799.9MiB           
+             total-memory: 1024.0MiB          
+                      cpu: ARM64              
+                cpu-count: 4                  
+            cpu-frequency: 350MHz             
+                 cpu-load: 1%                 
+           free-hdd-space: 959.3MiB           
+          total-hdd-space: 1024.0MiB          
+  write-sect-since-reboot: 59                 
+         write-sect-total: 393703             
+               bad-blocks: 0%                 
+        architecture-name: arm64              
+               board-name: RB5009UG+S+        
+                 platform: MikroTik           
+

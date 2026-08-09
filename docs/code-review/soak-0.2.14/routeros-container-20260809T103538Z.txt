@@ -1,0 +1,7 @@
+Flags: R - RUNNING
+Columns: NAME, ROOT-DIR, INTERFACE, MOUNTLISTS
+#   NAME          ROOT-DIR                     INTERFACE  MOUNTLISTS
+;;; fastadhunter
+0 R fastadhunter  /kingston/fastadhunter/root  veth1      fah-config
+                                                          fah-data  
+
