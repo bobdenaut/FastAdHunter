@@ -33,6 +33,12 @@ GET {{base}}/history/perf
 GET {{base}}/history/perf?fields=rss_bytes
 {{auth}}
 
+### The compile peak — a `getrusage` high-water mark, so a 360 s sampler records
+### it without landing inside the 2.85 s compile. A drop is a restart, never a
+### reclaim; 0 means the row predates the field. Far above `rss_bytes` is normal.
+GET {{base}}/history/perf?fields=peak_rss
+{{auth}}
+
 ### Latency + cache only.
 GET {{base}}/history/perf?fields=latency,cache
 {{auth}}
