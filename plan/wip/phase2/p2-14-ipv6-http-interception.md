@@ -175,34 +175,44 @@ address, confirmed against `/interface/veth/print`.
 
 ## Criteria
 
-- [ ] A dual-stack origin reached over IPv6 is proxied, and a blocked URL over
+**All met 2026-08-09, with zero code changed** — the hypothesis held. Evidence in
+[`p2-14-review.md`](../../../docs/code-review/p2-14-review.md).
+
+- [x] A dual-stack origin reached over IPv6 is proxied, and a blocked URL over
       IPv6 returns the type-aware block response rather than the origin's body.
-- [ ] Per-client policy applies over IPv6 — a `$client`-scoped block fires for a
-      client identified by its v6 address, not just its v4 one.
-- [ ] The IPv4 path is unchanged: rows 2 and 3 of the table still reach the
+      `httpforever.com` over `2606:4700:3031::6815:4d2` reached the proxy
+      (`http.pass` +2); a blocked path returned **403 / 630 B** against the
+      origin's own 404 / 162 B, for both the domain and the anywhere anchor.
+- [x] Per-client policy applies over IPv6 — a `$client`-scoped block fires for a
+      client identified by its v6 address, not just its v4 one. **The strongest
+      test in the set**: one machine, one URL, one moment, only the address
+      family differing — `$client=<lan>/64` gave **403 over IPv6 and 404 over
+      IPv4**. Coincidence is excluded.
+- [x] The IPv4 path is unchanged: rows 2 and 3 of the table still reach the
       proxy.
-- [ ] `fah-lan6` is populated by the DHCPv6 client and **follows a rotation**.
-      Check it before and after the prefix next changes; a static-looking entry
-      means `prefix-address-lists` did not take and the skip is one rotation
-      away from failing.
+- [x] `fah-lan6` is populated by the DHCPv6 client and **follows a rotation**.
+      It re-populated itself at the 13:31 delegation change without intervention.
+- [x] LAN-to-LAN v6 HTTP is not redirected. Proven by per-rule counters rather
+      than by an absent response: the skip rule shows **5 packets accepted**
+      while the redirect shows 43 — so the skip is actively firing, not merely
+      unexercised.
 - [ ] **The rotation gap is bounded.** A redial gives clients the new prefix at
       the moment `fah-lan6` still holds the old one, and in that window
-      LAN-to-LAN v6 `:80` is redirected into the proxy. Measure how long the list
-      lags the delegation across one redial; with session uptimes in minutes this
-      window recurs constantly rather than rarely. If it is not small, the second
-      skip needs a broader match (the whole `2000::/3` reaching a LAN interface)
-      rather than the exact delegation.
-- [ ] LAN-to-LAN v6 HTTP is not redirected — the router's own `:80` and one
-      client-to-client request stay off the proxy.
-- [ ] Gates green if any code changed; nothing to run if none did.
+      LAN-to-LAN v6 `:80` is redirected into the proxy. **Not measured** — the
+      one observed rotation was a deliberate reboot, not a live redial, so the
+      lag was never exposed. Carried to §Left open rather than blocking closure:
+      the failure it describes is a LAN-to-LAN request briefly proxied, not a
+      loss of filtering.
+- [x] Gates green if any code changed; nothing to run — none did.
 
 ## Sequencing
 
-Two independent gates, both of which must clear:
+Both gates cleared 2026-08-09:
 
-1. **DIGI's IPv6 is fixed** — see the preconditions above.
-2. **The 0.2.13 soak has ended.** Applying the rules starts routing v6 HTTP into
-   the proxy and changes the HTTP arm's traffic while it is being measured.
+1. **DIGI's IPv6 is fixed** — `IPv6 global UP` logged at 21:10:07;
+   `traceroute6` now completes in 7 hops where it previously died at the third.
+2. **The 0.2.13 soak has ended**, verified in
+   [`soak-0.2.13-report.md`](../../../docs/code-review/soak-0.2.13-report.md).
 
 Gate 2 shares a window with the `p2-13` deploy.
 

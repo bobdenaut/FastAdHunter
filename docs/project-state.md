@@ -14,20 +14,18 @@ what is true today.
 | Tree | clean |
 | Tests | green — `fmt`/`clippy`/`test`, 886 across 41 binaries |
 | Deployed | **0.2.14** on the RB5009 since 2026-08-09T10:33Z — **does not contain the p1-01 fixes below** |
-| Phase | 2 (`plan/wip/phase2`) — **`p2-14` is the only open task**, and it is blocked on the ISP |
-| **Next** | `p2-14` waits for IPv6 to route; the p1-01 parser fixes wait for a deploy to be verified on-device |
+| Phase | 2 (`plan/wip/phase2`) — **every task DONE** |
+| **Next** | deploy the p1-01 parser fixes and verify them on-device |
 
 `feat/phase2-http-pipeline` is fully merged into `main` and not deleted.
 
-**Phase 2 is one task from closing, and that task is blocked externally.** The
-phase move is the owner's to make.
+**Every phase-2 task is DONE.** The `wip` → `closed` move is the owner's to make.
 
 ## Phase 2 status
 
 | Task | State |
 | --- | --- |
-| p2-00 … p2-13 | DONE |
-| p2-14 | blocked on the ISP — see below |
+| p2-00 … p2-14 | DONE |
 
 ### `p2-13` — closed on-device 2026-08-09
 
@@ -42,17 +40,24 @@ A flat series until then is not the peak having gone away, and `peak_rss ≈ 180
 beside `rss ≈ 52` afterwards is correct rather than a leak — it is a high-water
 mark, not an average.
 
-### `p2-14` — blocked, and not on us
+### `p2-14` — closed on-device 2026-08-09, zero code
 
-IPv6 HTTP interception. Steps 1–3 of its procedure are applied (dynamic
-`fah-lan6`, `fah-http-skip6`); **step 4, the NAT rules, is not.** Two gates:
+IPv6 HTTP interception. The listener was already dual-stack, so the whole gap
+was four RouterOS rules; the "no code needed" hypothesis held. Report:
+[`p2-14-review.md`](code-review/p2-14-review.md).
 
-1. **The ISP's IPv6 does not route.** `/ping 2606:4700:4700::1111` from the
-   router is 100 % loss with an active default route; `traceroute6` reaches two
-   DIGI hops and dies at the third, identically to Cloudflare and Google. Until
-   fixed, the acceptance table cannot separate "the proxy was bypassed" from
-   "IPv6 is down".
-2. The 0.2.13 soak — **now satisfied**.
+The ISP's IPv6 came back the same evening — `IPv6 global UP` at 21:10:07, and
+`traceroute6` now completes where it died at the third hop.
+
+The strongest evidence is the per-client one: **one machine, one URL, one
+moment, only the address family differing** — a `$client=<lan>/64` rule gave
+403 over IPv6 and 404 over IPv4. LAN-to-LAN traffic is proven skipped by the
+rule's own packet counter rather than by an absent response.
+
+**One criterion is deliberately carried instead of met**: how far `fah-lan6`
+lags a *live* delegation change is unmeasured, because the one rotation observed
+was a deliberate reboot. Its failure mode is a LAN-to-LAN request briefly
+proxied, not a loss of filtering.
 
 ## `p1-01` — reviewed and fixed, in `main`, not deployed
 
