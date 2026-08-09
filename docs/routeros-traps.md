@@ -211,9 +211,22 @@ internal flash means wear.
 - **`topics=dhcp` matches `dhcp,debug,packet` too**, and one LAN client's lease
   renewal is ~20 lines of option dumps. The rule is `dhcp,!debug,!packet`;
   without the negations the DHCPv6 prefix events are buried within hours.
-- `warning` is logged twice on purpose — once to `netlog` for retention, once to
-  `memory` so `/log print where message~"…"` works.
+- `warning` has two rules on purpose — `netlog` for retention, `memory` so
+  `/log print where message~"…"` works. **`/log print` renders one entry per
+  matching rule**, so every warning appears twice there while the disk file holds
+  one copy. Do not count occurrences in `/log print`.
 - Netwatch (`v6-global`, `v4-global`) fires its scripts on **transition only**;
   verified by an entry sitting `down` across probe intervals without emitting a
-  second line. The disk action can drop an identical message repeated inside the
-  same second, so treat that file as detection, not as a complete audit trail.
+  second line.
+- **A scheduled script's `:global` state does not survive between runs** —
+  `/system/script/environment/print` is empty after a run that set one. A script
+  that logs "only on change" therefore logs on *every* run, ~8,600 entries/day
+  at a 1-minute interval, which rolls the whole disk log in under a day.
+  `log-wan-ip` keeps its previous reading in the **scheduler's comment**, which
+  survives runs and reboots; it writes to the scheduler rather than to itself so
+  nothing modifies a script mid-execution. Silence between runs is the proof it
+  persists.
+- `/ip/cloud`'s `public-address` lags by up to `ddns-update-interval` (1d) and is
+  measurably wrong: it read `5.12.207.102` while the PPPoE interface held
+  `5.12.68.56/32`. The interface address is authoritative; the IPv4 public
+  address rotates too, not only the v6 delegation.
