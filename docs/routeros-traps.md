@@ -163,21 +163,29 @@ These entries were written across several sessions and partly supersede each
 other. **Re-read the live config before changing anything here.**
 
 - Two `/ipv6/firewall/nat` dstnat rules catch *all* IPv6 :53 from BRIDGE
-  regardless of destination. They were retargeted off a stale SLAAC ULA on
-  2026-07-19; AdGuard stopped around the same date, so the current target needs
-  confirming.
+  regardless of destination, targeting `fd6c:7f32:8e91:1::2/128` — the
+  container's ULA on `veth1`. Confirmed 2026-08-09.
 - IPv6 **is** filtered in practice: 22 % of real traffic, and the dual-stack
   listener served ~22.4 M queries under load.
-- RA advertises `dns=2a02:2f04:530a:3800::1`, a prefix that exists nowhere on the
-  router (expired DIGI delegation). Harmless **only because the dstnat masks
-  it** — delete that dstnat believing it dead and IPv6 DNS drops.
+- RA advertises `dns=fd6c:7f32:8e91:1::2`, the same ULA, so client DNS survives
+  a delegation rotation. `preferred-lifetime=5m` / `valid-lifetime=10m` /
+  `ra-lifetime=10m` are short on purpose: clients abandon a dead prefix in
+  minutes rather than hours, which is what makes a rotating ISP survivable.
 - `/ipv6/firewall/filter` chain=input has **no final drop**: 8 accepts then
   implicit accept, while the router holds a global address. Router services are
   reachable from the internet over IPv6. A general input drop was deliberately
   not proposed without seeing the WireGuard config.
 
-Pattern behind all of it: globals from an expired DIGI delegation hardcoded in
-several places. Prefer link-local or pool-derived addresses on this router.
+**No DIGI global is hardcoded anywhere in the config.** Verified 2026-08-09 by
+grepping `2a02:` over a full `/export hide-sensitive`: the single hit is the
+`log-wan-ip` scheduler's comment, which is stored state rather than
+configuration. Keep it that way — every place that needs the LAN prefix derives
+it (`from-pool` on the address, `prefix-address-lists` on the firewall list),
+and everything else uses the ULA or link-local.
+
+What no router config can fix: clients hold global addresses from the delegated
+prefix, so a rotation kills their established connections regardless. The short
+RA lifetimes above are the only mitigation available.
 
 **The delegation rotates, so no rule may hardcode a global v6 prefix.** Five
 distinct `/56`s observed inside a week, three of them in one working session:
