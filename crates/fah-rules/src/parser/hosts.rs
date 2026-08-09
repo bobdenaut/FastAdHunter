@@ -67,14 +67,7 @@ pub(crate) fn parse(text: &str) -> ParsedRuleList {
             };
             handled = true;
             rules.push(ParsedRule {
-                kind: RuleKind::Active(DomainRule {
-                    domain,
-                    action: RuleAction::Block,
-                    include_subdomains: true,
-                    dns_types: None,
-                    dns_rewrite: None,
-                    client: None,
-                }),
+                kind: RuleKind::Active(DomainRule::plain(domain, RuleAction::Block, true)),
             });
         }
         if !handled {

@@ -19,7 +19,8 @@ pub use lifecycle::{
 pub use matcher::{ClientContext, MatchDecision, Matcher, MatcherBuilder, RuleRef};
 pub use policy::{ActivePolicies, PolicyError, PolicySet, PolicyState};
 pub use rule::{
-    DomainRule, InactiveReason, ParsedRule, Party, RuleAction, RuleKind, UrlAnchor, UrlRule,
+    DomainOpts, DomainRule, InactiveReason, ParsedRule, Party, RuleAction, RuleKind, UrlAnchor,
+    UrlRule,
 };
 pub use rule_list::{ParsedRuleList, RuleCounts};
 

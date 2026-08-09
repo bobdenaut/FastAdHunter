@@ -52,14 +52,7 @@ fn build_1m() -> fah_rules::Matcher {
     for n in 0..N as u64 {
         builder.add_rule(
             list,
-            &DomainRule {
-                domain: synthetic_domain(n).into(),
-                action: RuleAction::Block,
-                include_subdomains: true,
-                dns_types: None,
-                dns_rewrite: None,
-                client: None,
-            },
+            &DomainRule::plain(synthetic_domain(n).into(), RuleAction::Block, true),
         );
     }
     builder.build()
@@ -202,14 +195,7 @@ fn bench_policy_resolution(c: &mut Criterion) {
 /// durations. Build wall time is timed here directly, once per configuration.
 fn report_dedup_savings(_c: &mut Criterion) {
     fn rule(domain: String) -> DomainRule {
-        DomainRule {
-            domain: domain.into(),
-            action: RuleAction::Block,
-            include_subdomains: true,
-            dns_types: None,
-            dns_rewrite: None,
-            client: None,
-        }
+        DomainRule::plain(domain.into(), RuleAction::Block, true)
     }
 
     /// `shared` of list B's rules repeat list A's; the rest are its own.

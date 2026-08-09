@@ -11,10 +11,10 @@ The only Phase-1 task that never got a review. Ownership, borrowing and
 lifetimes are clean: parsers borrow `&str` end-to-end, the only owned data is
 the `Arc<str>` payloads that outlive the text by design, no `unsafe`, no
 interior mutability. **No Critical findings.** Five Major, five Minor, five
-Nitpick — m4 was filed Minor and re-rated Major once measured. Seven are fixed;
-M4, m5, m6 and the nitpicks stand. On Windows/x86 over the deployed corpus,
-**boot measured 398.7 → 290.6 ms (≈ −27 %)**, almost all of it m4. Not measured
-on the RB5009.
+Nitpick — m4 was filed Minor and re-rated Major once measured. Eight are fixed;
+m5, m6 and the nitpicks stand. On Windows/x86 over the deployed corpus, **boot
+measured 398.7 → 290.6 ms (≈ −27 %)**, almost all of it m4, and **M4 took the
+compile transient's peak down a further 12.00 MB**. Not measured on the RB5009.
 
 Two of the Majors are the same root cause: the comment-prefix test and the
 "refuse where it is counted" rule are each hand-copied per parser, and the
@@ -45,7 +45,7 @@ largest single win of the whole set, worth more than the other six together.
 | M1 | Major | `domain.rs:8`, `matcher.rs:481`,`:510` | Parser accepts, compiler drops silently | **fixed** |
 | M2 | Major | `parser/adblock.rs:43` | `#` is a comment in 3 parsers, a live rule in the 4th | **fixed** |
 | M3 | Major | `format.rs:137` | One heap allocation per hosts line | **fixed** |
-| M4 | Major | `rule.rs:18` | `ParsedRule` is 80 B; 48 B of it is unused on ~every rule | open |
+| M4 | Major | `rule.rs:18` | `ParsedRule` is 80 B; 48 B of it is unused on ~every rule | **fixed** |
 | m1 | Minor | `parser/domain_list.rs:18` | Whitespace pre-check is dead — `normalize_domain` already rejects it | **fixed** |
 | m2 | Minor | `rule_list.rs:59` | 4 passes over the rule vec to produce 3 counters | **fixed** |
 | m3 | Minor | `parser/adblock.rs:225`,`:346`,`:356` | `Arc::from(x.to_ascii_lowercase().as_str())` — String, then a second copy | **fixed** |
@@ -107,31 +107,70 @@ the phase measured at 81 % of a 2.44 s startup (PERFORMANCE.md).
 Measured: the all-hosts bench moves 180.2 → 143.9 ms (−20.1 %), the mixed real
 corpus −4.2 % to −8.4 % depending on how much of it is hosts-format.
 
-### M4 — `ParsedRule` layout
+### M4 — `ParsedRule` layout · measured, then fixed
 
-`p2-12` measured `size_of::<ParsedRule>()` = 80 B and the parsed form at
-56.51 MB / 135.8 B/rule for `big.oisd.nl`, then sized "stream parse into the
-builder" at −45 MB and declined it. 48 of the 80 B are three
-`Option<Arc<str>>` (`dns_types`, `dns_rewrite`, `client`) that the deployed
-corpus sets on ~no rule.
+Measured 2026-08-10 at `2271a10`, Windows/x86, mimalloc v3.3.2, over the 17
+lists refetched 2026-08-09. Instruments: [m4probe.rs](p1-01-ab/m4probe.rs)
+(layout, occupancy), [szprobe.rs](p2-12-attribution/szprobe.rs) (transient).
 
-`MatcherBuilder` already keeps those three in side maps keyed by record index
-(`matcher.rs:326-332`) — the pattern exists on the compiled side and is absent
-on the parsed side. Boxing the rare payloads and `RuleKind::Url` gives
-~40 B/rule. Lists are parsed one at a time and dropped
-(`lifecycle/mod.rs:1096-1119`), so the peak term is the largest single list.
+48 of the 80 B are three `Option<Arc<str>>`. `MatcherBuilder` keeps those three
+in side maps keyed by record index (`matcher.rs:326-332`); the parsed side has
+no equivalent. Boxing them and `RuleKind::Url` — sizes from the compiler, not
+arithmetic:
 
-**Estimated from `p2-12`'s per-rule figures, not measured** — confirm with the
-instrument in [p2-12-attribution/](p2-12-attribution/) before acting. Cost: one
-`Box` for ~3 % of lines, ~6 call sites plus benches.
+| Type | Now | After M4 |
+| --- | ---: | ---: |
+| `ParsedRule` | 80 B | **32 B** |
+| `DomainRule` | 72 B | 32 B (opts boxed, 48 B) |
+| `UrlRule` | 72 B | 8 B (behind a `Box`) |
 
-| Term (`big.oisd.nl`, ~416k rules) | Now | After M4 | Δ |
-| --- | --- | --- | --- |
-| `size_of::<ParsedRule>()` | 80 B | ~40 B | −40 B |
-| `Vec<ParsedRule>` | ~33.3 MB | ~16.6 MB | **−16.6 MB** |
-| Whole `ParsedRuleList` | 56.51 MB | ~40 MB | −29 % |
+Cost: **1,803 boxes over 964,154 rules — 0.19 %.**
 
-Against CLAUDE.md's ladder (>5 MB keep) and the 128 MB budget on a 1 GB device.
+| Field behind the box | Rules setting it | Share |
+| --- | ---: | ---: |
+| any of the three, active tier | 1,084 of 963,397 | 0.11 % |
+| — `$dnstype` / `$dnsrewrite` / `$client` | 0 / 1,084 / 0 | all in `filter_59` |
+| `RuleKind::Url` | 719 of 964,154 | 0.07 % |
+| — `$domain` / `$method` / `$client` | 0 / 0 / 0 | — |
+
+Lists are parsed one at a time and dropped (`lifecycle/mod.rs:1096-1119`), so
+the win is the largest single list's `Vec` spine:
+
+| Corpus | Peak in | Spine | After M4 | Δ |
+| --- | --- | ---: | ---: | ---: |
+| refetched, 964,154 rules | `filter_48` | 20.00 MB | 8.00 MB | **−12.00 MB** |
+| device `/data`, 1,148,780 rules | `big.oisd.nl` | 40.00 MB | 16.00 MB | **−24 MB** |
+
+**The two corpora differ by one list**: `big.oisd.nl` publishes 253,558 entries
+(its own header, 2026-08-09T17:05:33Z) against the 436,345 the device's `/data`
+holds. `p2-12`'s absolute figures scope to its pinned copy — on the refetched
+corpus the transient peaks at 105.93 MB, not 132.45 MB, and inside a different
+list. Both savings clear CLAUDE.md's >5 MB keep rung.
+
+**Fixed — what the change actually bought**, same probe, same corpus:
+
+| | before | after |
+| --- | ---: | ---: |
+| peak, requested | 105.93 MB | **93.93 MB** (−12.00) |
+| peak, mimalloc usable | 119.96 MB | 107.96 MB (−12.00) |
+| copying reallocs >1 MiB | 76 moves, 476.19 MB | **48 moves, 231.69 MB** |
+| compiled ruleset | 616,087 rules, 19.65 MB | identical |
+
+The realloc collapse is the part the sizing did not predict: 32-byte elements
+halve the bytes the `Vec` doublings copy, and that shows up as CPU. Two arms,
+`2271a10` vs the working tree, alternating, two passes agreeing within 1 %:
+
+| Bench | before | after | Δ | layout floor (p1-01 A/B) |
+| --- | ---: | ---: | ---: | ---: |
+| `2_parse_rule_list` | 151.9 / 155.8 ms | 131.0 / 132.4 ms | **−14.3 %** | +1.2 % |
+| `startup_from_cached_lists` | 338.2 / 337.1 ms | 313.2 / 313.2 ms | **−7.2 %** | −0.6 % |
+| `3_build_matcher` | 118.2 ms | 111.6 ms | −5.6 % | +7.9 % |
+| `blocked_query` | 1.766 / 1.735 µs | 1.812 / 1.810 µs | +3.4 % | **+11.7 %** |
+
+`blocked_query` moves inside its own layout floor and the compiled matcher it
+exercises is byte-identical, so the hot path is untouched — as designed, since
+nothing here reaches past `MatcherBuilder`. `3_build_matcher`'s first baseline
+pass is discarded: its CI spanned 120–298 ms.
 
 ### m1–m4 · fixed
 
@@ -169,11 +208,10 @@ Nothing here is an on-device figure. **PERFORMANCE.md's budgets must not be
 updated from this**; that needs `/history/perf` on the RB5009.
 
 **Corpus:** as above, compiling to 616,086 rules — a fresh download, not the
-router's bytes (it reports 798,760 across lists that change daily).
-**Device:** x86 dev box, Windows, mimalloc, pinned to 4 cores, box idle.
-**Method:** one compile per process; three arms, 11 iterations per arm per mode,
-arm order alternating, first 2 dropped. Raw output and instrument in
-[p1-01-ab/](p1-01-ab/) (`run3-quiet-3arm.txt`).
+router's 798,760; §M4 sizes the gap. **Device:** x86 dev box, Windows, mimalloc,
+pinned to 4 cores, box idle. **Method:** one compile per process; three arms, 11
+iterations per arm per mode, arm order alternating, first 2 dropped. Raw output
+and instrument in [p1-01-ab/](p1-01-ab/) (`run3-quiet-3arm.txt`).
 
 Arms: `a` = `689d9c5`; `cur` = working tree; **`b` = `a` plus one never-called
 `pub fn`** — identical behaviour, different code placement, so `layout vs a` is
@@ -193,16 +231,12 @@ the floor below which no delta means anything.
 | peak working set (phases) | 120.43 MiB | 120.43 MiB | 120.45 MiB | −0.0 % | +0.0 % | 0.4 % |
 | peak working set (boot) | 149.04 MiB | 145.20 MiB | 149.06 MiB | −2.6 % | +0.0 % | 2.7 % |
 
-What each row is worth:
-
-- **Established** — boot, parse total, adblock, plain-domain: each clears its
-  layout floor by 10× or more.
-- **Not established by this run** — `hosts −8.4 %`: the baseline arm's spread
-  (10.1 %) exceeds the delta. Hosts parsing did improve; the evidence is the
-  synthetic all-hosts bench below, not this row.
-- **Marginal** — `compile total −2.7 %` against a 1.1 % floor.
-- **Unchanged** — `add_parsed_list`, `build`, both peaks: null results with a
-  ±3 % floor, blind to a real 2 % move.
+Row confidence: **established** — boot, parse total, adblock, plain-domain, each
+clearing its layout floor by 10× or more. **Not established here** — `hosts
+−8.4 %`, whose delta sits inside the baseline arm's 10.1 % spread; the all-hosts
+bench below carries that claim. **Marginal** — `compile total −2.7 %` against a
+1.1 % floor. **Null** — `add_parsed_list`, `build`, both peaks, each blind to a
+real 2 % move.
 
 **The win tracks the corpus's format mix, not its size.** The pre-parse ceiling
 still tokenizes hosts lists, so an all-hosts corpus sees almost none of the boot
@@ -280,16 +314,19 @@ binaries).
 | `rule_list.rs`, `lib.rs` | `RuleCounts` + `counts()`, exported |
 | `lifecycle/mod.rs` | `RefreshStats::from` walks the rules once |
 | `matcher.rs` | adversarial-bound test re-pointed at hosts shape |
-| `docs/code-review/p1-01-ab/` | A/B instrument, runner, raw output (new) |
+| `rule.rs` | **M4**: `DomainOpts` + `DomainRule::plain`/accessors, `Url(Box<UrlRule>)`, 3 layout tests |
+| `parser/{adblock,hosts,domain_list}.rs` | M4 construction sites |
+| `matcher.rs` | M4: one `opts` test replaces three field reads on `add_rule` |
+| `docs/code-review/p1-01-ab/` | A/B instruments, runners, raw output (new) |
 
 ## Remaining TODOs
 
 | Item | Recommendation |
 | ---- | -------------- |
-| M4 | Measure first with `p2-12`'s instrument, then decide |
+| M4 | Fixed — see §M4 |
 | m5 | Carried from [p2-03-review.md](p2-03-review.md) §Raised, not fixed — still open |
 | m6, n1, n2, n3, n4, n5 | Leave unless the file is opened for another reason |
-| On-device confirmation | Every figure here is Windows/x86. Boot and peak RSS on the RB5009 need a deploy the owner runs — until then PERFORMANCE.md's budget rows stay as they are |
+| On-device confirmation | Every figure here is Windows/x86. Boot and peak RSS need a deploy the owner runs, over the `/data` bytes `0.2.14` compiled — the comparison expires when the scheduled refresh lands (≈ 2026-08-11T10:33Z) and `big.oisd.nl` drops to 253,558. PERFORMANCE.md's budget rows stay as they are until then |
 
 ## What is right
 

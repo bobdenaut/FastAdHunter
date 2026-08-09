@@ -1,0 +1,43 @@
+order: deployed
+size_of::<ParsedRule>() = 80
+
+old ruleset, held by ArcSwap :    19.69 MB requested,    30.66 MB usable  (+10.97, +55.7 %)
+  (616087 rules in 1118 live allocations, heap_bytes() 19.65 MB)
+
++ all 17 raw texts           :    21.76 MB requested,    22.70 MB usable  (+0.94, +4.3 %)
++ dedup index                :     8.17 MB requested,     9.00 MB usable  (+0.83, +10.1 %)
+  (bound 1071276 rules)
+
+list                     rules  vec cap Arc<str>   parsed     peak peak+move   usable
+big.oisd.nl             253558    20.00     9.34    29.34    86.09     87.15    99.85
+filter_1                164306    20.00     6.16    26.16    90.12     92.16   104.32
+filter_2                  6540     0.62     0.25     0.87    64.82     65.05    78.34
+filter_3                  3516     0.31     0.12     0.43    64.38     64.49    77.88
+filter_11                 6072     0.62     0.25     0.87    64.82     65.06    78.34
+filter_18               156181    20.00     5.85    25.85    89.80     98.88   103.84
+filter_30                35477     5.00     1.61     6.61    70.56     72.95    84.19
+filter_43                  175     0.02     0.01     0.03    63.98     63.99    77.47
+filter_48               215439    20.00     7.72    27.72   105.93    110.18   119.96
+filter_50                 3022     0.31     0.10     0.42    78.62     78.74    91.87
+filter_59                 1084     0.16     0.08     0.23    78.51     78.51    91.77
+filter_63                  389     0.04     0.02     0.06    78.35     78.37    91.61
+dyndns                    1524     0.16     0.05     0.20    78.50     78.56    91.75
+hosts                    99558    10.00     3.71    13.71    92.00     95.75   105.67
+spy                        347     0.04     0.01     0.05    78.35     78.37    91.60
+doh-vpn-proxy-bypass     16965     2.50     0.59     3.09    81.39     82.62    94.69
+user-rules                   1     0.00     0.00     0.00    78.30     78.30    91.55
+
+peak, requested bytes        :   105.93 MB  inside filter_48 (add_parsed_list_masked)
+peak, counting moved buffers :   110.18 MB  (+4.25 over requested)
+peak, mimalloc usable bytes  :   119.96 MB  (+14.03 size-class rounding, 254721 live allocs)
+  copying reallocs >1 MiB    : 76 moves, 476.19 MB copied, worst single 10.00 MB
+
+big.oisd.nl ParsedRuleList, the peak term:
+  whole                      :    29.34 MB requested,    30.24 MB usable  (+0.90, +3.1 %)
+  Vec spine                    :    20.00 MB  (262144 cap x 80 B)
+    of which used              :    19.34 MB  (253558 rules)
+    of which doubling slack    :     0.66 MB
+  Arc<str> domains             :     9.34 MB requested,    10.24 MB usable  (38.6 B/rule requested, 42.3 usable)
+
+build()                      :    78.30 ->    61.14 MB   new ruleset 19.65 MB, 616087 rules
+after swap_in drops the old  :    41.45 MB

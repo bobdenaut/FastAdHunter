@@ -22,14 +22,7 @@ impl Lcg {
 }
 
 fn rule(domain: &str, action: RuleAction, include_subdomains: bool) -> DomainRule {
-    DomainRule {
-        domain: domain.into(),
-        action,
-        include_subdomains,
-        dns_types: None,
-        dns_rewrite: None,
-        client: None,
-    }
+    DomainRule::plain(domain.into(), action, include_subdomains)
 }
 
 /// A pool of overlapping rules (same domains as both block and allow, nested

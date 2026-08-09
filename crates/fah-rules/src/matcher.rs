@@ -494,17 +494,17 @@ impl MatcherBuilder {
         if rule.include_subdomains {
             flags |= FLAG_SUBDOMAINS;
         }
-        if rule.dns_types.is_some() {
+        if rule.dns_types().is_some() {
             flags |= FLAG_DNSTYPE;
         }
-        if rule.dns_rewrite.is_some() {
+        if rule.dns_rewrite().is_some() {
             flags |= FLAG_REWRITE;
         }
 
         // A `$client` payload the parser accepted but that compiles to no
         // selector would leave the rule applying to everyone. Dropped instead:
         // the restriction is part of the rule, not decoration on it.
-        let scope = match &rule.client {
+        let scope = match rule.client() {
             None => None,
             Some(raw) => match ClientScope::parse(raw) {
                 Some(scope) => {
@@ -530,12 +530,16 @@ impl MatcherBuilder {
 
         let dom_off = u32::try_from(self.arena.len()).expect("arena within 4 GiB");
         let rec_idx = u32::try_from(self.records.len()).expect("at most u32::MAX rules");
-        if let Some(raw) = &rule.dns_types {
-            self.dnstype
-                .insert(rec_idx, (parse_dnstype_mask(raw), raw.clone()));
-        }
-        if let Some(raw) = &rule.dns_rewrite {
-            self.rewrite.insert(rec_idx, raw.clone());
+        // One test for the rule that carries no option, which is nearly every
+        // rule; the side maps still take the `Arc` by refcount, not by copy.
+        if let Some(opts) = &rule.opts {
+            if let Some(raw) = &opts.dns_types {
+                self.dnstype
+                    .insert(rec_idx, (parse_dnstype_mask(raw), raw.clone()));
+            }
+            if let Some(raw) = &opts.dns_rewrite {
+                self.rewrite.insert(rec_idx, raw.clone());
+            }
         }
         if let Some(scope) = scope {
             self.clients.insert(rec_idx, scope);
@@ -569,8 +573,8 @@ impl MatcherBuilder {
             identity_hash(
                 domain,
                 flags,
-                rule.dns_types.as_deref(),
-                rule.dns_rewrite.as_deref(),
+                rule.dns_types(),
+                rule.dns_rewrite(),
                 scope.map(|scope| &*scope.raw),
             ),
             cap,
@@ -622,10 +626,10 @@ impl MatcherBuilder {
         }
         // Equal flags mean both sides agree on whether each option is
         // present, so `unwrap_or_default` here is unreachable, not a fallback.
-        if rec.has_dnstype() && &*self.dnstype[&idx].1 != rule.dns_types.as_deref().unwrap_or("") {
+        if rec.has_dnstype() && &*self.dnstype[&idx].1 != rule.dns_types().unwrap_or("") {
             return false;
         }
-        if rec.has_rewrite() && &*self.rewrite[&idx] != rule.dns_rewrite.as_deref().unwrap_or("") {
+        if rec.has_rewrite() && &*self.rewrite[&idx] != rule.dns_rewrite().unwrap_or("") {
             return false;
         }
         // Two rules that differ only in who they apply to are two rules.
@@ -1128,17 +1132,32 @@ impl Matcher {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::rule::DomainRule;
+    use crate::rule::{DomainOpts, DomainRule};
     use std::sync::Arc;
 
     fn block(domain: &str) -> DomainRule {
+        DomainRule::plain(Arc::from(domain), RuleAction::Block, true)
+    }
+
+    /// `block(domain)` carrying `$options` — the 0.11 % shape.
+    fn block_with(domain: &str, opts: DomainOpts) -> DomainRule {
         DomainRule {
-            domain: Arc::from(domain),
-            action: RuleAction::Block,
-            include_subdomains: true,
-            dns_types: None,
-            dns_rewrite: None,
-            client: None,
+            opts: opts.boxed(),
+            ..block(domain)
+        }
+    }
+
+    fn dnstype(raw: &str) -> DomainOpts {
+        DomainOpts {
+            dns_types: Some(Arc::from(raw)),
+            ..DomainOpts::default()
+        }
+    }
+
+    fn rewrite(raw: &str) -> DomainOpts {
+        DomainOpts {
+            dns_rewrite: Some(Arc::from(raw)),
+            ..DomainOpts::default()
         }
     }
 
@@ -1239,10 +1258,7 @@ mod tests {
 
     #[test]
     fn dnstype_restricts_matching_qtype() {
-        let rule = DomainRule {
-            dns_types: Some(Arc::from("A")),
-            ..block("ads.example.com")
-        };
+        let rule = block_with("ads.example.com", dnstype("A"));
         let m = matcher_with(&[("", rule)]);
         assert!(matches!(
             m.lookup("ads.example.com", &QueryType::A),
@@ -1258,10 +1274,7 @@ mod tests {
     #[test]
     fn dnstype_negation_matches_everything_except_listed() {
         // $dnstype=~A: rule applies to every known type except A.
-        let rule = DomainRule {
-            dns_types: Some(Arc::from("~A")),
-            ..block("ads.example.com")
-        };
+        let rule = block_with("ads.example.com", dnstype("~A"));
         let m = matcher_with(&[("", rule)]);
         assert_eq!(
             m.lookup("ads.example.com", &QueryType::A),
@@ -1279,10 +1292,7 @@ mod tests {
 
     #[test]
     fn other_qtype_name_is_case_insensitive() {
-        let rule = DomainRule {
-            dns_types: Some(Arc::from("HTTPS")),
-            ..block("ads.example.com")
-        };
+        let rule = block_with("ads.example.com", dnstype("HTTPS"));
         let m = matcher_with(&[("", rule)]);
         assert!(matches!(
             m.lookup("ads.example.com", &QueryType::Other("https".into())),
@@ -1292,10 +1302,7 @@ mod tests {
 
     #[test]
     fn dnsrewrite_payload_is_carried() {
-        let rule = DomainRule {
-            dns_rewrite: Some(Arc::from("0.0.0.0")),
-            ..block("rewrite.example.com")
-        };
+        let rule = block_with("rewrite.example.com", rewrite("0.0.0.0"));
         let m = matcher_with(&[("", rule)]);
         let MatchDecision::Block(r) = m.lookup("rewrite.example.com", &QueryType::A) else {
             panic!("expected block");
@@ -1320,11 +1327,14 @@ mod tests {
     #[test]
     fn decisive_rule_separates_multiple_options_with_comma() {
         // AdGuard syntax: one `$`, options comma-separated.
-        let rule = DomainRule {
-            dns_types: Some(Arc::from("A")),
-            dns_rewrite: Some(Arc::from("0.0.0.0")),
-            ..block("ads.example.com")
-        };
+        let rule = block_with(
+            "ads.example.com",
+            DomainOpts {
+                dns_types: Some(Arc::from("A")),
+                dns_rewrite: Some(Arc::from("0.0.0.0")),
+                ..DomainOpts::default()
+            },
+        );
         let m = matcher_with(&[("", rule)]);
         let MatchDecision::Block(r) = m.lookup("ads.example.com", &QueryType::A) else {
             panic!("expected block");
@@ -1349,10 +1359,7 @@ mod tests {
     /// `$dnsrewrite=1.2.3.4` is a redirect.
     #[test]
     fn a_dnsrewrite_rule_does_not_decide_an_http_request() {
-        let rule = DomainRule {
-            dns_rewrite: Some(Arc::from("1.2.3.4")),
-            ..block("rewrite.example.com")
-        };
+        let rule = block_with("rewrite.example.com", rewrite("1.2.3.4"));
         let m = matcher_with(&[("", rule)]);
         // Still decisive for the DNS question it was written for.
         assert!(matches!(
@@ -1507,14 +1514,8 @@ mod tests {
     #[test]
     fn rules_differing_only_in_an_option_are_distinct_identities() {
         let plain = block("ads.example.com");
-        let typed = DomainRule {
-            dns_types: Some(Arc::from("A")),
-            ..block("ads.example.com")
-        };
-        let rewritten = DomainRule {
-            dns_rewrite: Some(Arc::from("0.0.0.0")),
-            ..block("ads.example.com")
-        };
+        let typed = block_with("ads.example.com", dnstype("A"));
+        let rewritten = block_with("ads.example.com", rewrite("0.0.0.0"));
         let exact = DomainRule {
             include_subdomains: false,
             ..block("ads.example.com")
@@ -1525,13 +1526,7 @@ mod tests {
             ("", rewritten),
             ("", exact),
             // …and one true duplicate of the $dnstype rule, which must go.
-            (
-                "",
-                DomainRule {
-                    dns_types: Some(Arc::from("A")),
-                    ..block("ads.example.com")
-                },
-            ),
+            ("", block_with("ads.example.com", dnstype("A"))),
         ]);
         assert_eq!(m.len(), 4, "only the identical pair may collapse");
         assert_eq!(m.duplicates_removed(), 1);
@@ -1563,13 +1558,7 @@ mod tests {
             ("a", allow("cdn.example.com")),
             ("b", block("ads.example.com")),
             ("b", block("tracker.example.org")),
-            (
-                "b",
-                DomainRule {
-                    dns_types: Some(Arc::from("AAAA")),
-                    ..block("ads.example.com")
-                },
-            ),
+            ("b", block_with("ads.example.com", dnstype("AAAA"))),
             ("c", block("tracker.example.org")),
         ];
 

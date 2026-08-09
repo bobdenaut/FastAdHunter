@@ -46,14 +46,7 @@ fn synthetic_domain(n: u64) -> String {
 }
 
 fn block(domain: String) -> DomainRule {
-    DomainRule {
-        domain: domain.into(),
-        action: RuleAction::Block,
-        include_subdomains: true,
-        dns_types: None,
-        dns_rewrite: None,
-        client: None,
-    }
+    DomainRule::plain(domain.into(), RuleAction::Block, true)
 }
 
 /// Two overlapping lists, compiled together exactly as `ListManager::compile`

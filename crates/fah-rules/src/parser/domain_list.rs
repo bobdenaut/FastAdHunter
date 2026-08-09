@@ -20,14 +20,7 @@ pub(crate) fn parse(text: &str) -> ParsedRuleList {
         // recorded as the same error.
         match normalize_domain(line) {
             Some(domain) => rules.push(ParsedRule {
-                kind: RuleKind::Active(DomainRule {
-                    domain,
-                    action: RuleAction::Block,
-                    include_subdomains: true,
-                    dns_types: None,
-                    dns_rewrite: None,
-                    client: None,
-                }),
+                kind: RuleKind::Active(DomainRule::plain(domain, RuleAction::Block, true)),
             }),
             None => errors.record(index),
         }

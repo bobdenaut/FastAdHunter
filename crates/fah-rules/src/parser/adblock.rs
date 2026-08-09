@@ -29,7 +29,8 @@ use crate::format::RuleFormat;
 use crate::policy::ClientScope;
 use crate::resource::{bit_for_option, ALL_TYPES};
 use crate::rule::{
-    DomainRule, InactiveReason, ParsedRule, Party, RuleAction, RuleKind, UrlAnchor, UrlRule,
+    DomainOpts, DomainRule, InactiveReason, ParsedRule, Party, RuleAction, RuleKind, UrlAnchor,
+    UrlRule,
 };
 use crate::rule_list::{ParseErrorLog, ParsedRuleList};
 
@@ -183,9 +184,12 @@ fn domain_rule(pattern: &str, exception: bool, options: &Options) -> DomainVerdi
         domain,
         action: action(exception),
         include_subdomains,
-        dns_types: options.dns_types.clone(),
-        dns_rewrite: options.dns_rewrite.clone(),
-        client: options.client.clone(),
+        opts: DomainOpts {
+            dns_types: options.dns_types.clone(),
+            dns_rewrite: options.dns_rewrite.clone(),
+            client: options.client.clone(),
+        }
+        .boxed(),
     })
 }
 
@@ -242,7 +246,7 @@ fn url_rule(pattern: &str, exception: bool, options: &Options) -> ParsedRule {
     };
 
     ParsedRule {
-        kind: RuleKind::Url(UrlRule {
+        kind: RuleKind::Url(Box::new(UrlRule {
             pattern: text,
             action: action(exception),
             anchor,
@@ -253,7 +257,7 @@ fn url_rule(pattern: &str, exception: bool, options: &Options) -> ParsedRule {
             domains: options.domains.clone(),
             methods: options.methods.clone(),
             client: options.client.clone(),
-        }),
+        })),
     }
 }
 
@@ -447,7 +451,7 @@ mod tests {
 
     fn url_of(text: &str) -> UrlRule {
         match one(text) {
-            RuleKind::Url(rule) => rule,
+            RuleKind::Url(rule) => *rule,
             other => panic!("{text} should be a URL rule, got {other:?}"),
         }
     }
@@ -491,7 +495,7 @@ mod tests {
         let RuleKind::Active(rule) = &result.rules[0].kind else {
             panic!("expected a domain rule, got {:?}", result.rules[0].kind);
         };
-        assert_eq!(rule.client.as_deref(), Some("192.168.1.5"));
+        assert_eq!(rule.client(), Some("192.168.1.5"));
     }
 
     /// `$client` says *who*, an HTTP option says *what*. A rule carrying both
@@ -785,7 +789,7 @@ mod tests {
         match &result.rules[0].kind {
             RuleKind::Active(rule) => {
                 assert!(!rule.include_subdomains);
-                assert_eq!(rule.dns_types.as_deref(), Some("A"));
+                assert_eq!(rule.dns_types(), Some("A"));
             }
             other => panic!("expected an active rule, got {other:?}"),
         }

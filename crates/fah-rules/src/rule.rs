@@ -12,6 +12,34 @@ pub enum RuleAction {
     Allow,
 }
 
+/// The `$options` a domain rule may carry, held behind a `Box` on
+/// [`DomainRule`] because inline they are 48 of its bytes and 0.11 % of the
+/// deployed corpus sets any of them.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct DomainOpts {
+    /// Raw `$dnstype` value (e.g. `"A|AAAA"`), parsed and stored, not yet
+    /// interpreted — RULE_ENGINE.md lists it DNS-applicable and active.
+    pub dns_types: Option<Arc<str>>,
+    /// Raw `$dnsrewrite` value, parsed and stored, not yet interpreted.
+    pub dns_rewrite: Option<Arc<str>>,
+    /// Raw `$client` value (`"192.168.1.5|~laptop"`) — an inline per-client
+    /// policy (RULE_ENGINE.md §Policies).
+    pub client: Option<Arc<str>>,
+}
+
+impl DomainOpts {
+    /// `None` when no option is set, so the rule carrying none — nearly every
+    /// rule — costs no allocation.
+    pub fn boxed(self) -> Option<Box<Self>> {
+        let bare = self.dns_types.is_none() && self.dns_rewrite.is_none() && self.client.is_none();
+        if bare {
+            None
+        } else {
+            Some(Box::new(self))
+        }
+    }
+}
+
 /// A domain-anchored, DNS-applicable rule — active in the domain tier
 /// (RULE_ENGINE.md: Supported formats).
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -23,14 +51,31 @@ pub struct DomainRule {
     /// hosts entries, plain domain lines) — RULE_ENGINE.md's matching rules
     /// give all of them subdomain semantics.
     pub include_subdomains: bool,
-    /// Raw `$dnstype` value (e.g. `"A|AAAA"`), parsed and stored, not yet
-    /// interpreted — RULE_ENGINE.md lists it DNS-applicable and active.
-    pub dns_types: Option<Arc<str>>,
-    /// Raw `$dnsrewrite` value, parsed and stored, not yet interpreted.
-    pub dns_rewrite: Option<Arc<str>>,
-    /// Raw `$client` value (`"192.168.1.5|~laptop"`), active since p2-05 — an
-    /// inline per-client policy (RULE_ENGINE.md §Policies).
-    pub client: Option<Arc<str>>,
+    pub opts: Option<Box<DomainOpts>>,
+}
+
+impl DomainRule {
+    /// A rule carrying no `$option` — the shape of nearly every parsed line.
+    pub fn plain(domain: Arc<str>, action: RuleAction, include_subdomains: bool) -> Self {
+        Self {
+            domain,
+            action,
+            include_subdomains,
+            opts: None,
+        }
+    }
+
+    pub fn dns_types(&self) -> Option<&str> {
+        self.opts.as_ref().and_then(|o| o.dns_types.as_deref())
+    }
+
+    pub fn dns_rewrite(&self) -> Option<&str> {
+        self.opts.as_ref().and_then(|o| o.dns_rewrite.as_deref())
+    }
+
+    pub fn client(&self) -> Option<&str> {
+        self.opts.as_ref().and_then(|o| o.client.as_deref())
+    }
 }
 
 /// Where a URL pattern is anchored (RULE_ENGINE.md §HTTP matching).
@@ -119,8 +164,10 @@ pub enum InactiveReason {
 pub enum RuleKind {
     /// DNS tier — answers a domain question.
     Active(DomainRule),
-    /// URL tier — answers an HTTP request (p2-03).
-    Url(UrlRule),
+    /// URL tier — answers an HTTP request (p2-03). Boxed: it is the widest
+    /// variant and 0.07 % of the deployed corpus, so inline it would set the
+    /// size of every rule.
+    Url(Box<UrlRule>),
     /// No tier yet.
     Inactive(InactiveReason),
 }
@@ -153,5 +200,52 @@ impl ParsedRule {
     /// HTTP-applicable — compiled into the URL tier.
     pub fn is_url(&self) -> bool {
         matches!(self.kind, RuleKind::Url(_))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The width is the whole point: it multiplies by the largest list's rule
+    /// count, and the compile transient peaks while that `Vec` is live.
+    #[test]
+    fn a_parsed_rule_is_32_bytes() {
+        assert_eq!(std::mem::size_of::<ParsedRule>(), 32);
+        assert_eq!(std::mem::size_of::<DomainRule>(), 32);
+    }
+
+    #[test]
+    fn a_rule_carrying_no_option_allocates_nothing() {
+        assert!(DomainOpts::default().boxed().is_none());
+        assert!(
+            DomainRule::plain(Arc::from("a.example.com"), RuleAction::Block, true)
+                .opts
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn each_option_alone_is_enough_to_box_and_reads_back() {
+        let one = |opts: DomainOpts| DomainRule {
+            opts: opts.boxed(),
+            ..DomainRule::plain(Arc::from("a.example.com"), RuleAction::Block, true)
+        };
+        let typed = one(DomainOpts {
+            dns_types: Some(Arc::from("A")),
+            ..DomainOpts::default()
+        });
+        let rewritten = one(DomainOpts {
+            dns_rewrite: Some(Arc::from("0.0.0.0")),
+            ..DomainOpts::default()
+        });
+        let scoped = one(DomainOpts {
+            client: Some(Arc::from("192.168.1.5")),
+            ..DomainOpts::default()
+        });
+        assert_eq!(typed.dns_types(), Some("A"));
+        assert_eq!(typed.dns_rewrite(), None);
+        assert_eq!(rewritten.dns_rewrite(), Some("0.0.0.0"));
+        assert_eq!(scoped.client(), Some("192.168.1.5"));
     }
 }
