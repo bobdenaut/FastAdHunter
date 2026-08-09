@@ -161,31 +161,30 @@ impl<F: Forwarder> Pipeline<F> {
                 // scheduled sweep: that zero is the on-device proof that
                 // serve-stale entries (ADR-0005) are being left alone.
                 //
-                // The two arms differ only in level because `tracing` fixes the
-                // level at compile time. Nothing-removed is the common case at
-                // default settings, and a `debug` line every interval is a line
-                // an operator can leave on; an `info` one is 240 a day saying
-                // nothing, which on a RouterOS log buffer costs real history.
+                // Nothing-removed is the common case at default settings, and a
+                // `debug` line every interval is one an operator can leave on;
+                // an `info` one is 240 a day saying nothing, which on a RouterOS
+                // log buffer costs real history.
+                // `tracing` builds a callsite whose level is const, so the two
+                // levels cannot collapse into one call — but they share one
+                // field list rather than two copies that can drift apart.
+                macro_rules! sweep {
+                    ($level:ident) => {
+                        tracing::$level!(
+                            expired_removed = outcome.removed_expired,
+                            stale_removed = outcome.removed_stale,
+                            bytes_freed = outcome.freed_bytes,
+                            entries_before = outcome.entries_before,
+                            entries_after = outcome.entries_after,
+                            duration_us = outcome.duration.as_micros() as u64,
+                            "cache cleanup complete"
+                        )
+                    };
+                }
                 if outcome.removed_expired + outcome.removed_stale > 0 {
-                    tracing::info!(
-                        expired_removed = outcome.removed_expired,
-                        stale_removed = outcome.removed_stale,
-                        bytes_freed = outcome.freed_bytes,
-                        entries_before = outcome.entries_before,
-                        entries_after = outcome.entries_after,
-                        duration_us = outcome.duration.as_micros() as u64,
-                        "cache cleanup complete"
-                    );
+                    sweep!(info);
                 } else {
-                    tracing::debug!(
-                        expired_removed = outcome.removed_expired,
-                        stale_removed = outcome.removed_stale,
-                        bytes_freed = outcome.freed_bytes,
-                        entries_before = outcome.entries_before,
-                        entries_after = outcome.entries_after,
-                        duration_us = outcome.duration.as_micros() as u64,
-                        "cache cleanup complete"
-                    );
+                    sweep!(debug);
                 }
             }
         }))
