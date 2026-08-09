@@ -2,7 +2,7 @@
 //! CONTEXT.md: Rule List).
 
 use crate::format::RuleFormat;
-use crate::rule::ParsedRule;
+use crate::rule::{ParsedRule, RuleKind};
 
 /// Cap on how many error line numbers [`ParsedRuleList::parse_error_lines`]
 /// retains. A corrupt 1M-line list must not turn its own errors into a
@@ -53,24 +53,49 @@ impl ParseErrorLog {
     }
 }
 
-impl ParsedRuleList {
-    /// Rules that answer a **domain** question. Unchanged in meaning by
-    /// p2-03 — this is what the API's `rules_active_dns` has always reported.
-    pub fn active_count(&self) -> usize {
-        self.rules.iter().filter(|rule| rule.is_active()).count()
-    }
-
+/// How many rules of each kind one [`ParsedRuleList`] holds.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct RuleCounts {
+    /// Rules that answer a **domain** question — the API's `rules_active_dns`.
+    pub active: usize,
     /// Rules that answer an **HTTP request** (p2-03). Reported separately
     /// rather than folded into either neighbour: they are not DNS-applicable,
-    /// so they cannot join `active_count`, and they do filter, so calling them
+    /// so they cannot join `active`, and they do filter, so calling them
     /// inactive would misreport ~22k EasyList rules as doing nothing.
-    pub fn url_count(&self) -> usize {
-        self.rules.iter().filter(|rule| rule.is_url()).count()
+    pub url: usize,
+    /// Rules no tier answers yet — cosmetic (Phase 4) and patterns no
+    /// supported syntax expresses.
+    pub inactive: usize,
+}
+
+impl ParsedRuleList {
+    /// All three counts from one walk of the rules. `RefreshStats` needs every
+    /// one of them after each parse, and the per-kind accessors below delegate
+    /// here, so no caller can pay a separate pass per counter.
+    pub fn counts(&self) -> RuleCounts {
+        let mut counts = RuleCounts::default();
+        for rule in &self.rules {
+            match rule.kind {
+                RuleKind::Active(_) => counts.active += 1,
+                RuleKind::Url(_) => counts.url += 1,
+                RuleKind::Inactive(_) => counts.inactive += 1,
+            }
+        }
+        counts
     }
 
-    /// Rules no tier answers yet — cosmetic (Phase 4), `$client` (p2-05), and
-    /// patterns no supported syntax expresses.
+    /// See [`RuleCounts::active`].
+    pub fn active_count(&self) -> usize {
+        self.counts().active
+    }
+
+    /// See [`RuleCounts::url`].
+    pub fn url_count(&self) -> usize {
+        self.counts().url
+    }
+
+    /// See [`RuleCounts::inactive`].
     pub fn inactive_count(&self) -> usize {
-        self.rules.len() - self.active_count() - self.url_count()
+        self.counts().inactive
     }
 }

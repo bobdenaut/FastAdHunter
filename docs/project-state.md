@@ -12,10 +12,10 @@ what is true today.
 | --- | --- |
 | Branch | `main`, pushed to **origin and backup** |
 | Tree | clean |
-| Tests | green — `fmt`/`clippy`/`test`, 878 across 41 binaries |
-| Deployed | **0.2.14** on the RB5009 since 2026-08-09T10:33Z |
+| Tests | green — `fmt`/`clippy`/`test`, 886 across 41 binaries |
+| Deployed | **0.2.14** on the RB5009 since 2026-08-09T10:33Z — **does not contain the p1-01 fixes below** |
 | Phase | 2 (`plan/wip/phase2`) — **`p2-14` is the only open task**, and it is blocked on the ISP |
-| **Next** | nothing actionable here; `p2-14` waits for IPv6 to route |
+| **Next** | `p2-14` waits for IPv6 to route; the p1-01 parser fixes wait for a deploy to be verified on-device |
 
 `feat/phase2-http-pipeline` is fully merged into `main` and not deleted.
 
@@ -53,6 +53,24 @@ IPv6 HTTP interception. Steps 1–3 of its procedure are applied (dynamic
    fixed, the acceptance table cannot separate "the proxy was bypassed" from
    "IPv6 is down".
 2. The 0.2.13 soak — **now satisfied**.
+
+## `p1-01` — reviewed and fixed, in `main`, not deployed
+
+Phase 1's only task that never got a code review. Seven of fifteen findings are
+fixed; report and instrument:
+[`p1-01-review.md`](code-review/p1-01-review.md), [`p1-01-ab/`](code-review/p1-01-ab/).
+
+On Windows/x86 over the 16 deployed lists refetched 2026-08-09 (22.8 MB;
+3 hosts, 12 adblock, 1 plain-domain), boot measured **398.7 → 290.6 ms, ≈ −27 %**,
+against a 1.4 % layout floor, with the compiled ruleset identical in every arm.
+
+**Nothing here is on-device.** `compile_duration_seconds` (2.844 s on 0.2.14)
+spans read + pre-parse ceiling + parse + build, so a container replace over the
+same `/data` cache is a clean before/after — boot-compile to boot-compile.
+Until that runs, PERFORMANCE.md's budget rows stay as they are.
+
+Still open from the review: **M4** (`ParsedRule` is 80 B, 48 of them unused on
+~every rule — needs `p2-12`'s instrument first), m5, m6 and five nitpicks.
 
 ## Deployed
 
@@ -147,6 +165,12 @@ not merely address churn.
   than fix.
 - A comment in `crates/fah-rules/src/lifecycle/mod.rs` narrates what the
   scheduler "used to emit", against root CLAUDE.md rule 21.
+- **`parse_errors` is counted per list and exposed nowhere.** `ListEntryView`
+  and `/api/v1/lists` omit it, and `looks_misparsed` only logs when errors
+  outnumber rules — so p1-01's 13 → 1 improvement cannot be confirmed on-device
+  without adding the field.
+- **`tui-monitor/config.toml` is tracked and holds a bearer token**, while
+  `.gitignore` excludes `.vscode/` for exactly that reason.
 
 ## Known-good gate note
 

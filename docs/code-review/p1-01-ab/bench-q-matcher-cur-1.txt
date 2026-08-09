@@ -1,0 +1,85 @@
+﻿
+[p1-02] compiled matcher: 1000000 rules, 29703238 bytes (28.3 MiB) resident (PERFORMANCE.md budget: <= 40 MB for 1M domains)
+
+matcher_lookup/hit_exact
+                        time:   [99.519 ns 100.33 ns 101.21 ns]
+                        change: [-4.6725% -3.2300% -1.5376%] (p = 0.00 < 0.05)
+                        Performance has improved.
+Found 5 outliers among 100 measurements (5.00%)
+  2 (2.00%) high mild
+  3 (3.00%) high severe
+matcher_lookup/hit_subdomain
+                        time:   [318.10 ns 319.24 ns 320.45 ns]
+                        change: [-4.2503% -3.7451% -3.2172%] (p = 0.00 < 0.05)
+                        Performance has improved.
+Found 1 outliers among 100 measurements (1.00%)
+  1 (1.00%) high severe
+matcher_lookup/miss     time:   [60.603 ns 60.757 ns 60.922 ns]
+                        change: [+0.4656% +0.7339% +1.0679%] (p = 0.00 < 0.05)
+                        Change within noise threshold.
+Found 2 outliers among 100 measurements (2.00%)
+  2 (2.00%) high mild
+
+policy_resolution/zero_config
+                        time:   [102.83 ns 103.25 ns 103.68 ns]
+                        change: [-5.1330% -3.8362% -2.5765%] (p = 0.00 < 0.05)
+                        Performance has improved.
+Found 7 outliers among 100 measurements (7.00%)
+  1 (1.00%) low mild
+  4 (4.00%) high mild
+  2 (2.00%) high severe
+policy_resolution/assignments_1
+                        time:   [104.37 ns 104.70 ns 105.05 ns]
+                        change: [-16.781% -15.156% -14.034%] (p = 0.00 < 0.05)
+                        Performance has improved.
+Found 6 outliers among 100 measurements (6.00%)
+  2 (2.00%) low mild
+  2 (2.00%) high mild
+  2 (2.00%) high severe
+policy_resolution/assignments_15
+                        time:   [112.53 ns 112.90 ns 113.31 ns]
+                        change: [-15.420% -14.842% -14.256%] (p = 0.00 < 0.05)
+                        Performance has improved.
+Found 4 outliers among 100 measurements (4.00%)
+  2 (2.00%) high mild
+  2 (2.00%) high severe
+
+
+[p1.5-05] deduplication: what it costs and what it saves
+  two 1000000-rule lists compiled together, by how much of the second repeats the first
+
+   overlap   duplicates        rules     compiled        saved      build
+        0%            0      2000000      57.7 MiB      0.0 MiB     417 ms
+       25%       250000      1750000      50.4 MiB      7.6 MiB     399 ms
+       50%       500000      1500000      43.0 MiB     15.2 MiB     386 ms
+       75%       750000      1250000      35.7 MiB     22.8 MiB     348 ms
+       90%       900000      1100000      31.3 MiB     27.3 MiB     342 ms
+      100%      1000000      1000000      28.3 MiB     30.3 MiB     341 ms
+
+
+Benchmarking matcher_lookup/hit_exact
+Benchmarking matcher_lookup/hit_exact: Warming up for 3.0000 s
+Benchmarking matcher_lookup/hit_exact: Collecting 100 samples in estimated 5.0001 s (51M iterations)
+Benchmarking matcher_lookup/hit_exact: Analyzing
+Benchmarking matcher_lookup/hit_subdomain
+Benchmarking matcher_lookup/hit_subdomain: Warming up for 3.0000 s
+Benchmarking matcher_lookup/hit_subdomain: Collecting 100 samples in estimated 5.0002 s (16M iterations)
+Benchmarking matcher_lookup/hit_subdomain: Analyzing
+Benchmarking matcher_lookup/miss
+Benchmarking matcher_lookup/miss: Warming up for 3.0000 s
+Benchmarking matcher_lookup/miss: Collecting 100 samples in estimated 5.0000 s (82M iterations)
+Benchmarking matcher_lookup/miss: Analyzing
+Benchmarking policy_resolution/zero_config
+Benchmarking policy_resolution/zero_config: Warming up for 3.0000 s
+Benchmarking policy_resolution/zero_config: Collecting 100 samples in estimated 5.0001 s (48M iterations)
+Benchmarking policy_resolution/zero_config: Analyzing
+Benchmarking policy_resolution/assignments_1
+Benchmarking policy_resolution/assignments_1: Warming up for 3.0000 s
+Benchmarking policy_resolution/assignments_1: Collecting 100 samples in estimated 5.0001 s (47M iterations)
+Benchmarking policy_resolution/assignments_1: Analyzing
+Benchmarking policy_resolution/assignments_15
+Benchmarking policy_resolution/assignments_15: Warming up for 3.0000 s
+Benchmarking policy_resolution/assignments_15: Collecting 100 samples in estimated 5.0003 s (43M iterations)
+Benchmarking policy_resolution/assignments_15: Analyzing
+
+peak_working_set_bytes=148480000

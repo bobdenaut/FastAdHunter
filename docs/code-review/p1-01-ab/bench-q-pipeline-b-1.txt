@@ -1,0 +1,88 @@
+﻿full_pipeline/blocked_query
+                        time:   [2.1944 ┬╡s 2.2927 ┬╡s 2.3957 ┬╡s]
+Found 4 outliers among 100 measurements (4.00%)
+  2 (2.00%) high mild
+  2 (2.00%) high severe
+
+full_pipeline/forwarded_query_overhead
+                        time:   [3.0239 ┬╡s 3.2404 ┬╡s 3.4753 ┬╡s]
+Found 6 outliers among 100 measurements (6.00%)
+  3 (3.00%) high mild
+  3 (3.00%) high severe
+
+full_pipeline/sustained_throughput
+                        time:   [305.48 ┬╡s 313.77 ┬╡s 323.41 ┬╡s]
+                        thrpt:  [593.68 Kelem/s 611.92 Kelem/s 628.52 Kelem/s]
+Found 11 outliers among 100 measurements (11.00%)
+  1 (1.00%) low mild
+  8 (8.00%) high mild
+  2 (2.00%) high severe
+
+startup/startup_from_cached_lists
+                        time:   [324.70 ms 326.51 ms 329.91 ms]
+
+
+[phases] input: 24988890 bytes, 1000000 active rules, 0 inactive
+
+startup_phases/1_read_from_data
+                        time:   [8.2948 ms 8.6146 ms 8.9540 ms]
+Found 2 outliers among 10 measurements (20.00%)
+  1 (10.00%) high mild
+  1 (10.00%) high severe
+startup_phases/2_parse_rule_list
+                        time:   [180.99 ms 182.31 ms 183.22 ms]
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) low mild
+startup_phases/3_build_matcher
+                        time:   [94.778 ms 96.197 ms 98.602 ms]
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high mild
+startup_phases/4_build_matcher_two_overlapping_lists
+                        time:   [161.23 ms 163.58 ms 165.21 ms]
+Found 2 outliers among 10 measurements (20.00%)
+  1 (10.00%) high mild
+  1 (10.00%) high severe
+
+[p1.5-05] dedup on fully overlapping lists: one list 1000000 rules / 28.3 MiB, the same list twice 1000000 rules / 28.3 MiB, 1000000 duplicates removed
+
+
+
+[p1-10] steady-state memory, 1000000 rules loaded and 16384 queries served:
+  compiled ruleset: 29703238 bytes (28.3 MiB) (budget: <= 40 MB)
+  process RSS: unavailable on this platform (/proc/self/status is Linux-only; the RB5009 figure is measured in p1-11)
+
+
+Benchmarking full_pipeline/blocked_query
+Benchmarking full_pipeline/blocked_query: Warming up for 3.0000 s
+Benchmarking full_pipeline/blocked_query: Collecting 100 samples in estimated 5.0089 s (1.9M iterations)
+Benchmarking full_pipeline/blocked_query: Analyzing
+Benchmarking full_pipeline/forwarded_query_overhead
+Benchmarking full_pipeline/forwarded_query_overhead: Warming up for 3.0000 s
+Benchmarking full_pipeline/forwarded_query_overhead: Collecting 100 samples in estimated 5.0099 s (1.7M iterations)
+Benchmarking full_pipeline/forwarded_query_overhead: Analyzing
+Benchmarking full_pipeline/sustained_throughput
+Benchmarking full_pipeline/sustained_throughput: Warming up for 3.0000 s
+Benchmarking full_pipeline/sustained_throughput: Collecting 100 samples in estimated 6.5783 s (20k iterations)
+Benchmarking full_pipeline/sustained_throughput: Analyzing
+Benchmarking startup/startup_from_cached_lists
+Benchmarking startup/startup_from_cached_lists: Warming up for 3.0000 s
+Benchmarking startup/startup_from_cached_lists: Collecting 10 samples in estimated 36.627 s (110 iterations)
+Benchmarking startup/startup_from_cached_lists: Analyzing
+Benchmarking startup_phases/1_read_from_data
+Benchmarking startup_phases/1_read_from_data: Warming up for 3.0000 s
+Benchmarking startup_phases/1_read_from_data: Collecting 10 samples in estimated 20.043 s (2420 iterations)
+Benchmarking startup_phases/1_read_from_data: Analyzing
+Benchmarking startup_phases/2_parse_rule_list
+Benchmarking startup_phases/2_parse_rule_list: Warming up for 3.0000 s
+Benchmarking startup_phases/2_parse_rule_list: Collecting 10 samples in estimated 20.006 s (110 iterations)
+Benchmarking startup_phases/2_parse_rule_list: Analyzing
+Benchmarking startup_phases/3_build_matcher
+Benchmarking startup_phases/3_build_matcher: Warming up for 3.0000 s
+Benchmarking startup_phases/3_build_matcher: Collecting 10 samples in estimated 23.184 s (220 iterations)
+Benchmarking startup_phases/3_build_matcher: Analyzing
+Benchmarking startup_phases/4_build_matcher_two_overlapping_lists
+Benchmarking startup_phases/4_build_matcher_two_overlapping_lists: Warming up for 3.0000 s
+Benchmarking startup_phases/4_build_matcher_two_overlapping_lists: Collecting 10 samples in estimated 29.017 s (165 iterations)
+Benchmarking startup_phases/4_build_matcher_two_overlapping_lists: Analyzing
+
+peak_working_set_bytes=298418176

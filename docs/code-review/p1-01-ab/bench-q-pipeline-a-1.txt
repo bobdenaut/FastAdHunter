@@ -1,0 +1,82 @@
+﻿full_pipeline/blocked_query
+                        time:   [1.9554 ┬╡s 2.0520 ┬╡s 2.1540 ┬╡s]
+Found 14 outliers among 100 measurements (14.00%)
+  1 (1.00%) high mild
+  13 (13.00%) high severe
+
+full_pipeline/forwarded_query_overhead
+                        time:   [2.5836 ┬╡s 2.8189 ┬╡s 3.0805 ┬╡s]
+Found 10 outliers among 100 measurements (10.00%)
+  8 (8.00%) high mild
+  2 (2.00%) high severe
+
+full_pipeline/sustained_throughput
+                        time:   [315.65 ┬╡s 324.17 ┬╡s 335.49 ┬╡s]
+                        thrpt:  [572.29 Kelem/s 592.27 Kelem/s 608.27 Kelem/s]
+Found 12 outliers among 100 measurements (12.00%)
+  3 (3.00%) low mild
+  4 (4.00%) high mild
+  5 (5.00%) high severe
+
+startup/startup_from_cached_lists
+                        time:   [327.12 ms 328.46 ms 330.72 ms]
+
+
+[phases] input: 24988890 bytes, 1000000 active rules, 0 inactive
+
+startup_phases/1_read_from_data
+                        time:   [8.7167 ms 9.1389 ms 9.5321 ms]
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high mild
+startup_phases/2_parse_rule_list
+                        time:   [179.63 ms 180.22 ms 181.38 ms]
+startup_phases/3_build_matcher
+                        time:   [88.758 ms 89.153 ms 89.540 ms]
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high mild
+startup_phases/4_build_matcher_two_overlapping_lists
+                        time:   [163.16 ms 168.95 ms 174.81 ms]
+
+[p1.5-05] dedup on fully overlapping lists: one list 1000000 rules / 28.3 MiB, the same list twice 1000000 rules / 28.3 MiB, 1000000 duplicates removed
+
+
+
+[p1-10] steady-state memory, 1000000 rules loaded and 16384 queries served:
+  compiled ruleset: 29703238 bytes (28.3 MiB) (budget: <= 40 MB)
+  process RSS: unavailable on this platform (/proc/self/status is Linux-only; the RB5009 figure is measured in p1-11)
+
+
+Benchmarking full_pipeline/blocked_query
+Benchmarking full_pipeline/blocked_query: Warming up for 3.0000 s
+Benchmarking full_pipeline/blocked_query: Collecting 100 samples in estimated 5.0098 s (1.7M iterations)
+Benchmarking full_pipeline/blocked_query: Analyzing
+Benchmarking full_pipeline/forwarded_query_overhead
+Benchmarking full_pipeline/forwarded_query_overhead: Warming up for 3.0000 s
+Benchmarking full_pipeline/forwarded_query_overhead: Collecting 100 samples in estimated 5.0163 s (965k iterations)
+Benchmarking full_pipeline/forwarded_query_overhead: Analyzing
+Benchmarking full_pipeline/sustained_throughput
+Benchmarking full_pipeline/sustained_throughput: Warming up for 3.0000 s
+Benchmarking full_pipeline/sustained_throughput: Collecting 100 samples in estimated 6.6416 s (20k iterations)
+Benchmarking full_pipeline/sustained_throughput: Analyzing
+Benchmarking startup/startup_from_cached_lists
+Benchmarking startup/startup_from_cached_lists: Warming up for 3.0000 s
+Benchmarking startup/startup_from_cached_lists: Collecting 10 samples in estimated 38.004 s (110 iterations)
+Benchmarking startup/startup_from_cached_lists: Analyzing
+Benchmarking startup_phases/1_read_from_data
+Benchmarking startup_phases/1_read_from_data: Warming up for 3.0000 s
+Benchmarking startup_phases/1_read_from_data: Collecting 10 samples in estimated 20.475 s (2310 iterations)
+Benchmarking startup_phases/1_read_from_data: Analyzing
+Benchmarking startup_phases/2_parse_rule_list
+Benchmarking startup_phases/2_parse_rule_list: Warming up for 3.0000 s
+Benchmarking startup_phases/2_parse_rule_list: Collecting 10 samples in estimated 29.837 s (165 iterations)
+Benchmarking startup_phases/2_parse_rule_list: Analyzing
+Benchmarking startup_phases/3_build_matcher
+Benchmarking startup_phases/3_build_matcher: Warming up for 3.0000 s
+Benchmarking startup_phases/3_build_matcher: Collecting 10 samples in estimated 24.675 s (275 iterations)
+Benchmarking startup_phases/3_build_matcher: Analyzing
+Benchmarking startup_phases/4_build_matcher_two_overlapping_lists
+Benchmarking startup_phases/4_build_matcher_two_overlapping_lists: Warming up for 3.0000 s
+Benchmarking startup_phases/4_build_matcher_two_overlapping_lists: Collecting 10 samples in estimated 26.970 s (165 iterations)
+Benchmarking startup_phases/4_build_matcher_two_overlapping_lists: Analyzing
+
+peak_working_set_bytes=298713088

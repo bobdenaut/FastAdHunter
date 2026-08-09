@@ -14,7 +14,7 @@ benches against PERFORMANCE.md budgets and the on-device soak.
 
 | # | Task file | Outcome | MODEL | STATUS |
 |---|-----------|---------|-------|--------|
-| 1 | `p1-01-rule-parsers.md` | 4 formats parsed + classified (DNS-active vs inactive) | Sonnet | DONE |
+| 1 | `p1-01-rule-parsers.md` | 4 formats parsed + classified (DNS-active vs inactive). **Reviewed 2026-08-09** — the last Phase-1 task to get one: 4 Major, 6 Minor, 5 Nitpick, seven fixed, boot ≈ −27 % on the deployed corpus on x86 ([`p1-01-review.md`](../../../docs/code-review/p1-01-review.md)) | Sonnet | DONE |
 | 2 | `p1-02-compiled-matcher.md` | Verdict lookup: allow > block, subdomains, <1ms, 1M domains ≤40MB | Opus | DONE |
 | 3 | `p1-03-list-lifecycle.md` | Download, validate, atomic swap, /data cache, refresh, user rules | Sonnet | DONE |
 | 4 | `p1-04-dns-pipeline.md` | UDP/TCP listeners, EDNS(0), verdict → blocked-response synthesis | Sonnet | DONE |

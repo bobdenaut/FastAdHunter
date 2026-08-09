@@ -2,12 +2,21 @@
 
 use std::sync::Arc;
 
+/// Longest name a rule may anchor to — the maximum length of a DNS name
+/// (RFC 1035), and inside the `u8` length a compiled `Record` addresses the
+/// arena with.
+///
+/// Refused here, where the parse counters see it: `MatcherBuilder::add_rule`
+/// drops a longer name silently, which would leave it counted in
+/// `rules_active_dns` while filtering nothing.
+const MAX_DOMAIN_LEN: usize = 253;
+
 /// Normalizes a candidate domain: lowercases and strips a trailing dot.
 /// Rejects anything containing whitespace, wildcards, or path separators —
 /// those belong to non-DNS rule syntax, not a domain anchor.
 pub(crate) fn normalize_domain(candidate: &str) -> Option<Arc<str>> {
     let candidate = candidate.trim().trim_end_matches('.');
-    if candidate.is_empty() {
+    if candidate.is_empty() || candidate.len() > MAX_DOMAIN_LEN {
         return None;
     }
     // Validity and case are decided in one pass: the character scan has to
@@ -68,5 +77,15 @@ mod tests {
     #[test]
     fn rejects_leading_hyphen() {
         assert_eq!(normalize_domain("-example.com"), None);
+    }
+
+    /// `MatcherBuilder::add_rule` drops a longer name silently, so refusing it
+    /// here is what keeps `rules_active_dns` honest.
+    #[test]
+    fn rejects_a_name_longer_than_dns_allows() {
+        assert!(normalize_domain(&"a".repeat(MAX_DOMAIN_LEN)).is_some());
+        assert_eq!(normalize_domain(&"a".repeat(MAX_DOMAIN_LEN + 1)), None);
+        // The bound applies to the normalized form, not the raw line.
+        assert!(normalize_domain(&format!("{}.", "a".repeat(MAX_DOMAIN_LEN))).is_some());
     }
 }

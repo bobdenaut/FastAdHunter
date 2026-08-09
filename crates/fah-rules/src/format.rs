@@ -43,11 +43,7 @@ pub fn detect_format(text: &str) -> RuleFormat {
 
     for line in text.lines() {
         let line = line.trim();
-        if line.is_empty()
-            || line.starts_with('#')
-            || line.starts_with('!')
-            || line.starts_with('[')
-        {
+        if is_ignorable(line) {
             continue;
         }
         match classify_line(line) {
@@ -72,6 +68,18 @@ pub fn detect_format(text: &str) -> RuleFormat {
     } else {
         RuleFormat::PlainDomainList
     }
+}
+
+/// True for a line no parser reads: blank, or opening with a comment (`#`,
+/// `!`) or a section header (`[Adblock Plus 2.0]`).
+///
+/// One definition so the detector, [`crate::parser::rule_upper_bound`] and the
+/// parsers agree on what a comment is. The adblock parser tests `#` on its own,
+/// **after** the cosmetic-marker scan: `###id` opens with `#` and is a rule.
+pub(crate) fn is_ignorable(line: &str) -> bool {
+    // One byte load, not a multi-`char` pattern searcher: this runs on every
+    // line of every list, twice per refresh.
+    matches!(line.as_bytes().first(), None | Some(b'#' | b'!' | b'['))
 }
 
 /// Classifies one content line, or `None` when it fits no format.
@@ -131,15 +139,23 @@ fn looks_like_bare_domain(line: &str) -> bool {
 }
 
 /// Loose IPv4/IPv6 shape check for hosts-line detection — not full validation.
+///
+/// Runs once per line of a hosts file, so it walks the token's parts in place:
+/// collecting them into a `Vec` is a heap allocation per line, which at ~1.2M
+/// lines is the whole parse budget's worth of allocator traffic for a check
+/// that needs no storage.
 pub(crate) fn looks_like_ip(token: &str) -> bool {
     if token.contains('.') && !token.contains(':') {
-        let parts: Vec<&str> = token.split('.').collect();
-        parts.len() >= 2
-            && parts
-                .iter()
-                .all(|p| !p.is_empty() && p.chars().all(|c| c.is_ascii_digit()))
+        let mut parts = 0usize;
+        for part in token.split('.') {
+            if part.is_empty() || !part.bytes().all(|b| b.is_ascii_digit()) {
+                return false;
+            }
+            parts += 1;
+        }
+        parts >= 2
     } else if token.contains(':') {
-        token.chars().all(|c| c.is_ascii_hexdigit() || c == ':')
+        token.bytes().all(|b| b.is_ascii_hexdigit() || b == b':')
     } else {
         false
     }
@@ -229,6 +245,16 @@ mod tests {
     fn hosts_entries_outvote_their_own_domain_tokens() {
         let text = "0.0.0.0 a.example.com\n0.0.0.0 b.example.com\n127.0.0.1 c.example.com\n";
         assert_eq!(detect_format(text), RuleFormat::Hosts);
+    }
+
+    #[test]
+    fn ip_shape_check_covers_its_edges() {
+        assert!(looks_like_ip("0.0.0.0"));
+        assert!(looks_like_ip("255.255.255.255"));
+        assert!(looks_like_ip("::1"));
+        assert!(!looks_like_ip("1..2"), "an empty part is not an address");
+        assert!(!looks_like_ip("1"), "a single part is not an address");
+        assert!(!looks_like_ip("ads.example.com"));
     }
 
     /// Detection must not read the whole file: a decisive sample followed by

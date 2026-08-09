@@ -1,0 +1,74 @@
+﻿
+[p1-02] compiled matcher: 1000000 rules, 29703238 bytes (28.3 MiB) resident (PERFORMANCE.md budget: <= 40 MB for 1M domains)
+
+matcher_lookup/hit_exact
+                        time:   [94.829 ns 95.113 ns 95.418 ns]
+Found 6 outliers among 100 measurements (6.00%)
+  5 (5.00%) high mild
+  1 (1.00%) high severe
+matcher_lookup/hit_subdomain
+                        time:   [312.93 ns 313.89 ns 314.94 ns]
+Found 4 outliers among 100 measurements (4.00%)
+  2 (2.00%) high mild
+  2 (2.00%) high severe
+matcher_lookup/miss     time:   [59.841 ns 59.946 ns 60.061 ns]
+Found 5 outliers among 100 measurements (5.00%)
+  3 (3.00%) high mild
+  2 (2.00%) high severe
+
+policy_resolution/zero_config
+                        time:   [102.74 ns 103.02 ns 103.32 ns]
+Found 7 outliers among 100 measurements (7.00%)
+  6 (6.00%) high mild
+  1 (1.00%) high severe
+policy_resolution/assignments_1
+                        time:   [105.08 ns 105.76 ns 106.46 ns]
+Found 7 outliers among 100 measurements (7.00%)
+  6 (6.00%) high mild
+  1 (1.00%) high severe
+policy_resolution/assignments_15
+                        time:   [115.36 ns 115.72 ns 116.09 ns]
+Found 3 outliers among 100 measurements (3.00%)
+  1 (1.00%) low mild
+  1 (1.00%) high mild
+  1 (1.00%) high severe
+
+
+[p1.5-05] deduplication: what it costs and what it saves
+  two 1000000-rule lists compiled together, by how much of the second repeats the first
+
+   overlap   duplicates        rules     compiled        saved      build
+        0%            0      2000000      57.7 MiB      0.0 MiB     410 ms
+       25%       250000      1750000      50.4 MiB      7.6 MiB     387 ms
+       50%       500000      1500000      43.0 MiB     15.2 MiB     373 ms
+       75%       750000      1250000      35.7 MiB     22.8 MiB     356 ms
+       90%       900000      1100000      31.3 MiB     27.3 MiB     349 ms
+      100%      1000000      1000000      28.3 MiB     30.3 MiB     337 ms
+
+
+Benchmarking matcher_lookup/hit_exact
+Benchmarking matcher_lookup/hit_exact: Warming up for 3.0000 s
+Benchmarking matcher_lookup/hit_exact: Collecting 100 samples in estimated 5.0004 s (53M iterations)
+Benchmarking matcher_lookup/hit_exact: Analyzing
+Benchmarking matcher_lookup/hit_subdomain
+Benchmarking matcher_lookup/hit_subdomain: Warming up for 3.0000 s
+Benchmarking matcher_lookup/hit_subdomain: Collecting 100 samples in estimated 5.0016 s (16M iterations)
+Benchmarking matcher_lookup/hit_subdomain: Analyzing
+Benchmarking matcher_lookup/miss
+Benchmarking matcher_lookup/miss: Warming up for 3.0000 s
+Benchmarking matcher_lookup/miss: Collecting 100 samples in estimated 5.0002 s (83M iterations)
+Benchmarking matcher_lookup/miss: Analyzing
+Benchmarking policy_resolution/zero_config
+Benchmarking policy_resolution/zero_config: Warming up for 3.0000 s
+Benchmarking policy_resolution/zero_config: Collecting 100 samples in estimated 5.0000 s (48M iterations)
+Benchmarking policy_resolution/zero_config: Analyzing
+Benchmarking policy_resolution/assignments_1
+Benchmarking policy_resolution/assignments_1: Warming up for 3.0000 s
+Benchmarking policy_resolution/assignments_1: Collecting 100 samples in estimated 5.0002 s (48M iterations)
+Benchmarking policy_resolution/assignments_1: Analyzing
+Benchmarking policy_resolution/assignments_15
+Benchmarking policy_resolution/assignments_15: Warming up for 3.0000 s
+Benchmarking policy_resolution/assignments_15: Collecting 100 samples in estimated 5.0005 s (43M iterations)
+Benchmarking policy_resolution/assignments_15: Analyzing
+
+peak_working_set_bytes=150048768

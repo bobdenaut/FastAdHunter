@@ -1,0 +1,154 @@
+=== iter=1 arm=before mode=boot ===
+[ab] mode=boot
+[ab] lists=16
+[ab] corpus_bytes=22818890
+[ab] boot_ms=587.721
+[ab] compiled_rules=616086
+[ab] compiled_url_rules=719
+[ab] compiled_heap_bytes=20607748
+[ab] peak_window_open
+[ab] done
+[ab] peak_working_set_bytes=156336128
+=== iter=1 arm=after mode=boot ===
+[ab] mode=boot
+[ab] lists=16
+[ab] corpus_bytes=22818890
+[ab] boot_ms=321.904
+[ab] compiled_rules=616086
+[ab] compiled_url_rules=719
+[ab] compiled_heap_bytes=20607748
+[ab] peak_window_open
+[ab] done
+[ab] peak_working_set_bytes=152289280
+=== iter=2 arm=before mode=boot ===
+[ab] mode=boot
+[ab] lists=16
+[ab] corpus_bytes=22818890
+[ab] boot_ms=625.958
+[ab] compiled_rules=616086
+[ab] compiled_url_rules=719
+[ab] compiled_heap_bytes=20607748
+[ab] peak_window_open
+[ab] done
+[ab] peak_working_set_bytes=156286976
+=== iter=2 arm=after mode=boot ===
+[ab] mode=boot
+[ab] lists=16
+[ab] corpus_bytes=22818890
+[ab] boot_ms=323.704
+[ab] compiled_rules=616086
+[ab] compiled_url_rules=719
+[ab] compiled_heap_bytes=20607748
+[ab] peak_window_open
+[ab] done
+[ab] peak_working_set_bytes=152231936
+=== iter=3 arm=before mode=boot ===
+[ab] mode=boot
+[ab] lists=16
+[ab] corpus_bytes=22818890
+[ab] boot_ms=717.227
+[ab] compiled_rules=616086
+[ab] compiled_url_rules=719
+[ab] compiled_heap_bytes=20607748
+[ab] peak_window_open
+[ab] done
+[ab] peak_working_set_bytes=156327936
+=== iter=3 arm=after mode=boot ===
+[ab] mode=boot
+[ab] lists=16
+[ab] corpus_bytes=22818890
+[ab] boot_ms=317.465
+[ab] compiled_rules=616086
+[ab] compiled_url_rules=719
+[ab] compiled_heap_bytes=20607748
+[ab] peak_window_open
+[ab] done
+[ab] peak_working_set_bytes=152211456
+=== iter=4 arm=before mode=boot ===
+[ab] mode=boot
+[ab] lists=16
+[ab] corpus_bytes=22818890
+[ab] boot_ms=643.823
+[ab] compiled_rules=616086
+[ab] compiled_url_rules=719
+[ab] compiled_heap_bytes=20607748
+[ab] peak_window_open
+[ab] done
+[ab] peak_working_set_bytes=149880832
+=== iter=4 arm=after mode=boot ===
+[ab] mode=boot
+[ab] lists=16
+[ab] corpus_bytes=22818890
+[ab] boot_ms=318.472
+[ab] compiled_rules=616086
+[ab] compiled_url_rules=719
+[ab] compiled_heap_bytes=20607748
+[ab] peak_window_open
+[ab] done
+[ab] peak_working_set_bytes=152272896
+=== iter=5 arm=before mode=boot ===
+[ab] mode=boot
+[ab] lists=16
+[ab] corpus_bytes=22818890
+[ab] boot_ms=614.261
+[ab] compiled_rules=616086
+[ab] compiled_url_rules=719
+[ab] compiled_heap_bytes=20607748
+[ab] peak_window_open
+[ab] done
+[ab] peak_working_set_bytes=156286976
+=== iter=5 arm=after mode=boot ===
+[ab] mode=boot
+[ab] lists=16
+[ab] corpus_bytes=22818890
+[ab] boot_ms=319.934
+[ab] compiled_rules=616086
+[ab] compiled_url_rules=719
+[ab] compiled_heap_bytes=20607748
+[ab] peak_window_open
+[ab] done
+[ab] peak_working_set_bytes=152297472
+=== iter=6 arm=before mode=boot ===
+[ab] mode=boot
+[ab] lists=16
+[ab] corpus_bytes=22818890
+[ab] boot_ms=680.936
+[ab] compiled_rules=616086
+[ab] compiled_url_rules=719
+[ab] compiled_heap_bytes=20607748
+[ab] peak_window_open
+[ab] done
+[ab] peak_working_set_bytes=152862720
+=== iter=6 arm=after mode=boot ===
+[ab] mode=boot
+[ab] lists=16
+[ab] corpus_bytes=22818890
+[ab] boot_ms=319.054
+[ab] compiled_rules=616086
+[ab] compiled_url_rules=719
+[ab] compiled_heap_bytes=20607748
+[ab] peak_window_open
+[ab] done
+[ab] peak_working_set_bytes=156717056
+=== iter=7 arm=before mode=boot ===
+[ab] mode=boot
+[ab] lists=16
+[ab] corpus_bytes=22818890
+[ab] boot_ms=695.993
+[ab] compiled_rules=616086
+[ab] compiled_url_rules=719
+[ab] compiled_heap_bytes=20607748
+[ab] peak_window_open
+[ab] done
+[ab] peak_working_set_bytes=152338432
+=== iter=7 arm=after mode=boot ===
+[ab] mode=boot
+[ab] lists=16
+[ab] corpus_bytes=22818890
+[ab] boot_ms=325.621
+[ab] compiled_rules=616086
+[ab] compiled_url_rules=719
+[ab] compiled_heap_bytes=20607748
+[ab] peak_window_open
+[ab] done
+[ab] peak_working_set_bytes=152268800

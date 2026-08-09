@@ -21,7 +21,7 @@ pub use policy::{ActivePolicies, PolicyError, PolicySet, PolicyState};
 pub use rule::{
     DomainRule, InactiveReason, ParsedRule, Party, RuleAction, RuleKind, UrlAnchor, UrlRule,
 };
-pub use rule_list::ParsedRuleList;
+pub use rule_list::{ParsedRuleList, RuleCounts};
 
 /// Parses one rule list's raw text, auto-detecting its format
 /// (RULE_ENGINE.md: Supported formats). Never fails — unparseable lines are

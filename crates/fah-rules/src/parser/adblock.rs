@@ -26,6 +26,7 @@ use std::sync::Arc;
 
 use crate::domain::normalize_domain;
 use crate::format::RuleFormat;
+use crate::policy::ClientScope;
 use crate::resource::{bit_for_option, ALL_TYPES};
 use crate::rule::{
     DomainRule, InactiveReason, ParsedRule, Party, RuleAction, RuleKind, UrlAnchor, UrlRule,
@@ -40,12 +41,27 @@ pub(crate) fn parse(text: &str) -> ParsedRuleList {
 
     for (index, line) in text.lines().enumerate() {
         let line = line.trim();
-        if line.is_empty() || line.starts_with('!') || line.starts_with('[') {
+        // One byte load for all three prefix tests — a multi-`char` pattern
+        // costs a searcher, and this runs on every line of every list.
+        let Some(&first) = line.as_bytes().first() else {
+            continue;
+        };
+        // `#` is not tested here: `###id` opens with it and is a cosmetic rule,
+        // so it can only be read as a comment once the marker scan has ruled
+        // that out.
+        if first == b'!' || first == b'[' {
             continue;
         }
 
         if COSMETIC_MARKERS.iter().any(|marker| line.contains(marker)) {
             rules.push(inactive(InactiveReason::Cosmetic));
+            continue;
+        }
+
+        // With cosmetic syntax ruled out, `#` is the comment it is in every
+        // other format (`format::is_ignorable`). Falling through here compiles
+        // the comment's text into a live URL substring rule.
+        if first == b'#' {
             continue;
         }
 
@@ -222,7 +238,7 @@ fn url_rule(pattern: &str, exception: bool, options: &Options) -> ParsedRule {
     let text: Arc<str> = if options.match_case {
         Arc::from(body)
     } else {
-        Arc::from(body.to_ascii_lowercase().as_str())
+        folded(body, AsciiCase::Lower)
     };
 
     ParsedRule {
@@ -246,6 +262,33 @@ fn action(exception: bool) -> RuleAction {
         RuleAction::Allow
     } else {
         RuleAction::Block
+    }
+}
+
+/// The ASCII case a payload is folded to before it is stored, so matching can
+/// compare without folding either side.
+#[derive(Clone, Copy)]
+enum AsciiCase {
+    Lower,
+    Upper,
+}
+
+/// `text` as an `Arc<str>` in `case`, skipping the intermediate `String` that
+/// `Arc::from(text.to_ascii_lowercase().as_str())` allocates and then copies.
+/// Payloads arrive in the target case often enough that the scan deciding it
+/// usually replaces an allocation. `normalize_domain` folds the same way, fused
+/// into the validity scan it has to run regardless.
+fn folded(text: &str, case: AsciiCase) -> Arc<str> {
+    let folds = match case {
+        AsciiCase::Lower => text.bytes().any(|byte| byte.is_ascii_uppercase()),
+        AsciiCase::Upper => text.bytes().any(|byte| byte.is_ascii_lowercase()),
+    };
+    if !folds {
+        return Arc::from(text);
+    }
+    match case {
+        AsciiCase::Lower => Arc::from(text.to_ascii_lowercase().as_str()),
+        AsciiCase::Upper => Arc::from(text.to_ascii_uppercase().as_str()),
     }
 }
 
@@ -323,12 +366,15 @@ fn parse_options(raw: &str) -> Result<Options, ()> {
         match name {
             "dnstype" => options.dns_types = value.map(Arc::from),
             "dnsrewrite" => options.dns_rewrite = value.map(Arc::from),
-            // A bare `$client` with no value restricts the rule to nothing an
-            // engine can name, so it is unsupported rather than ignored —
-            // dropping the restriction would widen a one-device rule to the
-            // whole network.
+            // Validated with the compiler's own parser, so both tiers agree on
+            // which payloads are usable and the rule is refused *here*, where
+            // it is counted. A payload that compiles to no selector is dropped
+            // rather than applied without its restriction, which would widen a
+            // one-device rule to the whole network.
             "client" => match value {
-                Some(value) if !value.is_empty() => options.client = Some(Arc::from(value)),
+                Some(value) if ClientScope::parse(value).is_some() => {
+                    options.client = Some(Arc::from(value))
+                }
                 _ => options.unsupported = true,
             },
             "third-party" | "3p" => {
@@ -343,7 +389,7 @@ fn parse_options(raw: &str) -> Result<Options, ()> {
                 options.http_scoped = true;
                 match value {
                     Some(value) if !value.is_empty() => {
-                        options.domains = Some(Arc::from(value.to_ascii_lowercase().as_str()))
+                        options.domains = Some(folded(value, AsciiCase::Lower))
                     }
                     // `$domain` with no value restricts to nothing at all.
                     _ => options.unsupported = true,
@@ -353,7 +399,7 @@ fn parse_options(raw: &str) -> Result<Options, ()> {
                 options.http_scoped = true;
                 match value {
                     Some(value) if !value.is_empty() => {
-                        options.methods = Some(Arc::from(value.to_ascii_uppercase().as_str()))
+                        options.methods = Some(folded(value, AsciiCase::Upper))
                     }
                     _ => options.unsupported = true,
                 }
@@ -471,6 +517,49 @@ mod tests {
             one("||ads.example.com^$client="),
             RuleKind::Inactive(InactiveReason::Unsupported)
         );
+    }
+
+    /// The compiler drops a `$client` payload that compiles to no selector, so
+    /// the parser refuses it first — otherwise the rule is counted active and
+    /// filters nothing.
+    #[test]
+    fn a_client_payload_the_compiler_cannot_use_is_unsupported() {
+        assert_eq!(
+            one("||ads.example.com^$client=10.0.0.1/99"),
+            RuleKind::Inactive(InactiveReason::Unsupported)
+        );
+        assert_eq!(
+            one("||ads.example.com^$client=|"),
+            RuleKind::Inactive(InactiveReason::Unsupported)
+        );
+    }
+
+    /// `#` is a comment here as it is in every other format. Read as a rule it
+    /// becomes a live URL substring pattern counted in `rules_active_url`.
+    #[test]
+    fn hash_comments_produce_no_rule() {
+        let result = parse("# Title: a hybrid list\n#\n||ads.example.com^\n");
+        assert_eq!(result.rules.len(), 1);
+        assert_eq!(result.active_count(), 1);
+        assert_eq!(result.url_count(), 0);
+        assert_eq!(result.parse_errors, 0);
+    }
+
+    /// Why `#` is tested *after* the marker scan: a generic cosmetic rule opens
+    /// with it.
+    #[test]
+    fn a_generic_cosmetic_rule_still_opens_with_a_hash() {
+        assert_eq!(
+            one("###banner-ad-container"),
+            RuleKind::Inactive(InactiveReason::Cosmetic)
+        );
+    }
+
+    /// Why `!` is tested *before* it: a comment may quote cosmetic syntax.
+    #[test]
+    fn a_comment_quoting_a_cosmetic_marker_is_not_a_rule() {
+        let result = parse("! use example.com##.ad-banner to hide banners\n");
+        assert_eq!(result.rules.len(), 0);
     }
 
     #[test]

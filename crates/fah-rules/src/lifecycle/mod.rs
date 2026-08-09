@@ -105,10 +105,11 @@ pub struct RefreshStats {
 
 impl From<&ParsedRuleList> for RefreshStats {
     fn from(parsed: &ParsedRuleList) -> Self {
+        let counts = parsed.counts();
         Self {
-            active: parsed.active_count(),
-            url: parsed.url_count(),
-            inactive: parsed.inactive_count(),
+            active: counts.active,
+            url: counts.url,
+            inactive: counts.inactive,
             parse_errors: parsed.parse_errors,
         }
     }

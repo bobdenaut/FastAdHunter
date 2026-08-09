@@ -2,7 +2,7 @@
 //! plain domain list). One bare domain per line.
 
 use crate::domain::normalize_domain;
-use crate::format::RuleFormat;
+use crate::format::{is_ignorable, RuleFormat};
 use crate::rule::{DomainRule, ParsedRule, RuleAction, RuleKind};
 use crate::rule_list::{ParseErrorLog, ParsedRuleList};
 
@@ -12,13 +12,12 @@ pub(crate) fn parse(text: &str) -> ParsedRuleList {
 
     for (index, line) in text.lines().enumerate() {
         let line = line.trim();
-        if line.is_empty() || line.starts_with('#') || line.starts_with('!') {
+        if is_ignorable(line) {
             continue;
         }
-        if line.split_whitespace().count() != 1 {
-            errors.record(index);
-            continue;
-        }
+        // No whitespace pre-check: `normalize_domain` admits only alphanumerics,
+        // `-`, `.` and `_`, so a line with a space in it fails there and is
+        // recorded as the same error.
         match normalize_domain(line) {
             Some(domain) => rules.push(ParsedRule {
                 kind: RuleKind::Active(DomainRule {

@@ -1,0 +1,294 @@
+=== iter=1 arm=before mode=phases ===
+[ab] mode=phases
+[ab] lists=16
+[ab] corpus_bytes=22818890
+[ab] control_hash=8ed5ee0b523991a5
+[ab] control_ms=19.335
+[ab] parse_total_ms=123.016
+[ab] parse_hosts_ms=13.354 n=3
+[ab] parse_adblock_ms=97.019 n=12
+[ab] parse_plain_ms=12.643 n=1
+[ab] add_ms=105.054
+[ab] build_ms=17.576
+[ab] compile_total_ms=245.645
+[ab] parsed_active=963396 parsed_url=719 parsed_inactive=38
+[ab] parse_errors=13
+[ab] compiled_rules=616086
+[ab] compiled_url_rules=719
+[ab] compiled_heap_bytes=20607748
+[ab] peak_window_open
+[ab] done
+[ab] peak_working_set_bytes=130699264
+=== iter=1 arm=after mode=phases ===
+[ab] mode=phases
+[ab] lists=16
+[ab] corpus_bytes=22818890
+[ab] control_hash=8ed5ee0b523991a5
+[ab] control_ms=17.597
+[ab] parse_total_ms=118.163
+[ab] parse_hosts_ms=12.089 n=3
+[ab] parse_adblock_ms=96.158 n=12
+[ab] parse_plain_ms=9.916 n=1
+[ab] add_ms=108.430
+[ab] build_ms=18.368
+[ab] compile_total_ms=244.961
+[ab] parsed_active=963396 parsed_url=719 parsed_inactive=38
+[ab] parse_errors=1
+[ab] compiled_rules=616086
+[ab] compiled_url_rules=719
+[ab] compiled_heap_bytes=20607748
+[ab] peak_window_open
+[ab] done
+[ab] peak_working_set_bytes=130670592
+=== iter=2 arm=before mode=phases ===
+[ab] mode=phases
+[ab] lists=16
+[ab] corpus_bytes=22818890
+[ab] control_hash=8ed5ee0b523991a5
+[ab] control_ms=17.770
+[ab] parse_total_ms=125.471
+[ab] parse_hosts_ms=12.511 n=3
+[ab] parse_adblock_ms=99.939 n=12
+[ab] parse_plain_ms=13.021 n=1
+[ab] add_ms=103.898
+[ab] build_ms=16.846
+[ab] compile_total_ms=246.216
+[ab] parsed_active=963396 parsed_url=719 parsed_inactive=38
+[ab] parse_errors=13
+[ab] compiled_rules=616086
+[ab] compiled_url_rules=719
+[ab] compiled_heap_bytes=20607748
+[ab] peak_window_open
+[ab] done
+[ab] peak_working_set_bytes=126828544
+=== iter=2 arm=after mode=phases ===
+[ab] mode=phases
+[ab] lists=16
+[ab] corpus_bytes=22818890
+[ab] control_hash=8ed5ee0b523991a5
+[ab] control_ms=17.917
+[ab] parse_total_ms=120.326
+[ab] parse_hosts_ms=11.194 n=3
+[ab] parse_adblock_ms=99.072 n=12
+[ab] parse_plain_ms=10.060 n=1
+[ab] add_ms=103.624
+[ab] build_ms=18.773
+[ab] compile_total_ms=242.723
+[ab] parsed_active=963396 parsed_url=719 parsed_inactive=38
+[ab] parse_errors=1
+[ab] compiled_rules=616086
+[ab] compiled_url_rules=719
+[ab] compiled_heap_bytes=20607748
+[ab] peak_window_open
+[ab] done
+[ab] peak_working_set_bytes=126251008
+=== iter=3 arm=before mode=phases ===
+[ab] mode=phases
+[ab] lists=16
+[ab] corpus_bytes=22818890
+[ab] control_hash=8ed5ee0b523991a5
+[ab] control_ms=17.762
+[ab] parse_total_ms=129.501
+[ab] parse_hosts_ms=14.542 n=3
+[ab] parse_adblock_ms=101.726 n=12
+[ab] parse_plain_ms=13.234 n=1
+[ab] add_ms=115.977
+[ab] build_ms=19.916
+[ab] compile_total_ms=265.394
+[ab] parsed_active=963396 parsed_url=719 parsed_inactive=38
+[ab] parse_errors=13
+[ab] compiled_rules=616086
+[ab] compiled_url_rules=719
+[ab] compiled_heap_bytes=20607748
+[ab] peak_window_open
+[ab] done
+[ab] peak_working_set_bytes=126296064
+=== iter=3 arm=after mode=phases ===
+[ab] mode=phases
+[ab] lists=16
+[ab] corpus_bytes=22818890
+[ab] control_hash=8ed5ee0b523991a5
+[ab] control_ms=17.507
+[ab] parse_total_ms=120.067
+[ab] parse_hosts_ms=13.207 n=3
+[ab] parse_adblock_ms=97.258 n=12
+[ab] parse_plain_ms=9.602 n=1
+[ab] add_ms=109.639
+[ab] build_ms=18.945
+[ab] compile_total_ms=248.651
+[ab] parsed_active=963396 parsed_url=719 parsed_inactive=38
+[ab] parse_errors=1
+[ab] compiled_rules=616086
+[ab] compiled_url_rules=719
+[ab] compiled_heap_bytes=20607748
+[ab] peak_window_open
+[ab] done
+[ab] peak_working_set_bytes=126251008
+=== iter=4 arm=before mode=phases ===
+[ab] mode=phases
+[ab] lists=16
+[ab] corpus_bytes=22818890
+[ab] control_hash=8ed5ee0b523991a5
+[ab] control_ms=17.777
+[ab] parse_total_ms=130.207
+[ab] parse_hosts_ms=14.931 n=3
+[ab] parse_adblock_ms=102.371 n=12
+[ab] parse_plain_ms=12.905 n=1
+[ab] add_ms=106.111
+[ab] build_ms=18.998
+[ab] compile_total_ms=255.315
+[ab] parsed_active=963396 parsed_url=719 parsed_inactive=38
+[ab] parse_errors=13
+[ab] compiled_rules=616086
+[ab] compiled_url_rules=719
+[ab] compiled_heap_bytes=20607748
+[ab] peak_window_open
+[ab] done
+[ab] peak_working_set_bytes=126304256
+=== iter=4 arm=after mode=phases ===
+[ab] mode=phases
+[ab] lists=16
+[ab] corpus_bytes=22818890
+[ab] control_hash=8ed5ee0b523991a5
+[ab] control_ms=18.259
+[ab] parse_total_ms=119.541
+[ab] parse_hosts_ms=12.803 n=3
+[ab] parse_adblock_ms=96.759 n=12
+[ab] parse_plain_ms=9.979 n=1
+[ab] add_ms=107.003
+[ab] build_ms=20.198
+[ab] compile_total_ms=246.742
+[ab] parsed_active=963396 parsed_url=719 parsed_inactive=38
+[ab] parse_errors=1
+[ab] compiled_rules=616086
+[ab] compiled_url_rules=719
+[ab] compiled_heap_bytes=20607748
+[ab] peak_window_open
+[ab] done
+[ab] peak_working_set_bytes=126251008
+=== iter=5 arm=before mode=phases ===
+[ab] mode=phases
+[ab] lists=16
+[ab] corpus_bytes=22818890
+[ab] control_hash=8ed5ee0b523991a5
+[ab] control_ms=17.507
+[ab] parse_total_ms=137.029
+[ab] parse_hosts_ms=14.156 n=3
+[ab] parse_adblock_ms=107.915 n=12
+[ab] parse_plain_ms=14.958 n=1
+[ab] add_ms=118.107
+[ab] build_ms=20.046
+[ab] compile_total_ms=275.182
+[ab] parsed_active=963396 parsed_url=719 parsed_inactive=38
+[ab] parse_errors=13
+[ab] compiled_rules=616086
+[ab] compiled_url_rules=719
+[ab] compiled_heap_bytes=20607748
+[ab] peak_window_open
+[ab] done
+[ab] peak_working_set_bytes=126271488
+=== iter=5 arm=after mode=phases ===
+[ab] mode=phases
+[ab] lists=16
+[ab] corpus_bytes=22818890
+[ab] control_hash=8ed5ee0b523991a5
+[ab] control_ms=17.519
+[ab] parse_total_ms=118.919
+[ab] parse_hosts_ms=12.695 n=3
+[ab] parse_adblock_ms=95.775 n=12
+[ab] parse_plain_ms=10.448 n=1
+[ab] add_ms=107.805
+[ab] build_ms=20.651
+[ab] compile_total_ms=247.374
+[ab] parsed_active=963396 parsed_url=719 parsed_inactive=38
+[ab] parse_errors=1
+[ab] compiled_rules=616086
+[ab] compiled_url_rules=719
+[ab] compiled_heap_bytes=20607748
+[ab] peak_window_open
+[ab] done
+[ab] peak_working_set_bytes=126296064
+=== iter=6 arm=before mode=phases ===
+[ab] mode=phases
+[ab] lists=16
+[ab] corpus_bytes=22818890
+[ab] control_hash=8ed5ee0b523991a5
+[ab] control_ms=17.760
+[ab] parse_total_ms=129.957
+[ab] parse_hosts_ms=13.678 n=3
+[ab] parse_adblock_ms=103.191 n=12
+[ab] parse_plain_ms=13.088 n=1
+[ab] add_ms=105.384
+[ab] build_ms=19.453
+[ab] compile_total_ms=254.794
+[ab] parsed_active=963396 parsed_url=719 parsed_inactive=38
+[ab] parse_errors=13
+[ab] compiled_rules=616086
+[ab] compiled_url_rules=719
+[ab] compiled_heap_bytes=20607748
+[ab] peak_window_open
+[ab] done
+[ab] peak_working_set_bytes=126300160
+=== iter=6 arm=after mode=phases ===
+[ab] mode=phases
+[ab] lists=16
+[ab] corpus_bytes=22818890
+[ab] control_hash=8ed5ee0b523991a5
+[ab] control_ms=17.478
+[ab] parse_total_ms=118.831
+[ab] parse_hosts_ms=13.223 n=3
+[ab] parse_adblock_ms=95.924 n=12
+[ab] parse_plain_ms=9.684 n=1
+[ab] add_ms=105.072
+[ab] build_ms=22.496
+[ab] compile_total_ms=246.398
+[ab] parsed_active=963396 parsed_url=719 parsed_inactive=38
+[ab] parse_errors=1
+[ab] compiled_rules=616086
+[ab] compiled_url_rules=719
+[ab] compiled_heap_bytes=20607748
+[ab] peak_window_open
+[ab] done
+[ab] peak_working_set_bytes=126251008
+=== iter=7 arm=before mode=phases ===
+[ab] mode=phases
+[ab] lists=16
+[ab] corpus_bytes=22818890
+[ab] control_hash=8ed5ee0b523991a5
+[ab] control_ms=18.239
+[ab] parse_total_ms=129.102
+[ab] parse_hosts_ms=14.639 n=3
+[ab] parse_adblock_ms=101.169 n=12
+[ab] parse_plain_ms=13.294 n=1
+[ab] add_ms=109.199
+[ab] build_ms=18.956
+[ab] compile_total_ms=257.257
+[ab] parsed_active=963396 parsed_url=719 parsed_inactive=38
+[ab] parse_errors=13
+[ab] compiled_rules=616086
+[ab] compiled_url_rules=719
+[ab] compiled_heap_bytes=20607748
+[ab] peak_window_open
+[ab] done
+[ab] peak_working_set_bytes=126832640
+=== iter=7 arm=after mode=phases ===
+[ab] mode=phases
+[ab] lists=16
+[ab] corpus_bytes=22818890
+[ab] control_hash=8ed5ee0b523991a5
+[ab] control_ms=17.434
+[ab] parse_total_ms=123.868
+[ab] parse_hosts_ms=13.215 n=3
+[ab] parse_adblock_ms=99.922 n=12
+[ab] parse_plain_ms=10.731 n=1
+[ab] add_ms=116.793
+[ab] build_ms=21.014
+[ab] compile_total_ms=261.676
+[ab] parsed_active=963396 parsed_url=719 parsed_inactive=38
+[ab] parse_errors=1
+[ab] compiled_rules=616086
+[ab] compiled_url_rules=719
+[ab] compiled_heap_bytes=20607748
+[ab] peak_window_open
+[ab] done
+[ab] peak_working_set_bytes=126746624

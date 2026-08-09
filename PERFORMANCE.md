@@ -215,6 +215,19 @@ Four traps, each of which has already produced a wrong number:
   `fah-http/benches/proxy.rs`, which hosts client, proxy and origin in one
   multi-threaded runtime — pinned, a 32.6 µs arm read `[423 µs 7.49 ms 16.1 ms]`.
   Run those unpinned and take the range across several runs.
+- **A steady background load produces reproducible wrong numbers, not noisy
+  ones.** With a video playing, `matcher_lookup` read −8 % across two mirrored
+  passes with CIs under 3 %, on a path the change did not touch; on an idle box
+  it is flat. Mirrored ordering and narrow intervals do not detect a confounder
+  that is constant across every arm. Bench an idle machine, and treat a delta on
+  untouched code as proof the session is invalid
+  ([p1-01](docs/code-review/p1-01-review.md) §Two wrong numbers).
+- **Code placement alone moves this suite by more than most real changes.**
+  Adding one never-called `pub fn` to `fah-rules` — identical behaviour — moved
+  `startup_phases/3_build_matcher` **+7.9 %**, `blocked_query` +11.7 % and
+  `forwarded_query_overhead` +15.0 %, while `2_parse_rule_list` and
+  `startup_from_cached_lists` held inside ±1.2 %. Build that third arm before
+  believing any single-digit delta on the µs benches or on `3_build_matcher`.
 
 Throughput is the other exception: restrict it to four cores
 (`ProcessorAffinity = 15` / `taskset -c 0-3`) so the figure is shaped like the
@@ -223,6 +236,12 @@ RB5009's quad-core budget.
 A **control arm** — one the change cannot possibly affect, run in the same
 session — is the cheapest noise detector available, and the only thing that
 separates "the code got faster" from "the box was in a different state".
+
+Put it **inside the crate under test**, not in the harness. A control that lives
+in the probe reports only on the machine; it cannot see a codegen or placement
+effect in the crate being changed, and it read a reassuring −1.4 % through the
+session that produced both wrong numbers above. The control that works for that
+is the third build: same commit, one semantically null edit.
 
 ### Measuring on the RB5009
 

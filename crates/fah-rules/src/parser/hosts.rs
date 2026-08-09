@@ -4,7 +4,7 @@
 //! hosts-file syntax (multiple aliases per line allowed).
 
 use crate::domain::normalize_domain;
-use crate::format::{looks_like_ip, RuleFormat};
+use crate::format::{is_ignorable, looks_like_ip, RuleFormat};
 use crate::rule::{DomainRule, ParsedRule, RuleAction, RuleKind};
 use crate::rule_list::{ParseErrorLog, ParsedRuleList};
 
@@ -39,7 +39,7 @@ pub(crate) fn parse(text: &str) -> ParsedRuleList {
 
     for (index, line) in text.lines().enumerate() {
         let line = line.trim();
-        if line.is_empty() || line.starts_with('#') {
+        if is_ignorable(line) {
             continue;
         }
 
@@ -139,6 +139,15 @@ mod tests {
         );
         // Only the real ad domain becomes a rule; the loopback preamble is
         // understood and skipped, not counted as an error.
+        assert_eq!(result.active_count(), 1);
+        assert_eq!(result.parse_errors, 0);
+    }
+
+    /// Every parser shares one comment test, so a hosts file carrying adblock
+    /// comment or header lines skips them instead of counting parse errors.
+    #[test]
+    fn adblock_comment_and_header_lines_are_skipped_too() {
+        let result = parse("! header\n[Adblock Plus 2.0]\n0.0.0.0 ads.example.com\n");
         assert_eq!(result.active_count(), 1);
         assert_eq!(result.parse_errors, 0);
     }

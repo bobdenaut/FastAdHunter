@@ -1647,12 +1647,12 @@ mod tests {
 
     #[test]
     fn an_adversarial_list_body_cannot_inflate_the_dedup_allocation() {
-        // The real attack path end-to-end: a list body of single-char,
+        // The real attack path end-to-end: a hosts body of single-char,
         // space-separated tokens is a valid `rule_upper_bound` input that parses
-        // to ~nothing, yet its token ceiling is enormous. `with_capacity` must
-        // size the transient index from the clamp, never from that ceiling —
-        // this is what stops a 64 MiB hostile list from forcing a ~268 MB alloc.
-        let garbage = "a ".repeat(5_000_000); // ~5M tokens, above the 4M clamp
+        // to ~nothing, yet its token ceiling is enormous — hosts is the format
+        // whose bound is a token count. `with_capacity` must size the transient
+        // index from the clamp, which stops a 64 MiB list forcing a ~268 MB alloc.
+        let garbage = format!("0.0.0.0 {}", "a ".repeat(5_000_000)); // above the 4M clamp
         let ceiling = crate::parser::rule_upper_bound(&garbage);
         assert!(
             ceiling > MAX_PREALLOC_RULES,

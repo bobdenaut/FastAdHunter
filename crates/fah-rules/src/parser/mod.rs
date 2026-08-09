@@ -5,7 +5,7 @@ mod adblock;
 mod domain_list;
 mod hosts;
 
-use crate::format::{detect_format, RuleFormat};
+use crate::format::{detect_format, is_ignorable, RuleFormat};
 use crate::rule_list::ParsedRuleList;
 
 pub(crate) fn parse(text: &str) -> ParsedRuleList {
@@ -21,20 +21,23 @@ pub(crate) fn parse(text: &str) -> ParsedRuleList {
 /// its transient dedup index from, in one allocation, before the first list
 /// is parsed.
 ///
-/// Every parser emits at most one rule per whitespace-separated token on a
-/// content line: adblock and plain-domain lists produce one rule per *line*,
-/// and a hosts line produces one per host token after the address. Blank and
-/// comment lines produce none. This is deliberately a ceiling and not an
-/// estimate — overshooting costs 4 unused bytes per slot, while undershooting
-/// would push the dedup table past its load factor.
+/// Adblock and plain-domain lists emit at most one rule per content line, so
+/// their bound is a line count. Only a hosts line can emit several — one per
+/// host token after the address — and only that format pays to tokenize the
+/// text. Blank and comment lines emit none. Deliberately a ceiling and not an
+/// estimate: overshooting costs 4 unused bytes per slot, undershooting costs
+/// the one rehash the pre-allocation exists to avoid.
 pub(crate) fn rule_upper_bound(text: &str) -> usize {
+    let hosts = detect_format(text) == RuleFormat::Hosts;
     text.lines()
         .map(|line| {
             let line = line.trim_start();
-            if line.is_empty() || line.starts_with('#') || line.starts_with('!') {
+            if is_ignorable(line) {
                 0
-            } else {
+            } else if hosts {
                 line.split_whitespace().count()
+            } else {
+                1
             }
         })
         .sum()
@@ -69,6 +72,18 @@ mod tests {
             "! title\n||ads.example.com^\n@@||cdn.example.com^\n||x.example^$dnstype=A\n",
         );
         assert_bounds("");
+    }
+
+    /// Hosts is the only format whose bound is a token count; the other two
+    /// bound by content line and never tokenize the text.
+    #[test]
+    fn only_the_hosts_format_pays_for_tokens() {
+        assert_eq!(
+            rule_upper_bound("0.0.0.0 a.example.com b.example.com\n0.0.0.0 c.example\n"),
+            5
+        );
+        assert_eq!(rule_upper_bound("! title\n||a.example^\n||b.example^\n"), 2);
+        assert_eq!(rule_upper_bound("a.example.com\nb.example.com\n"), 2);
     }
 
     #[test]
