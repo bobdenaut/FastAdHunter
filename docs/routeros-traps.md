@@ -178,3 +178,42 @@ other. **Re-read the live config before changing anything here.**
 
 Pattern behind all of it: globals from an expired DIGI delegation hardcoded in
 several places. Prefer link-local or pool-derived addresses on this router.
+
+**The delegation rotates, so no rule may hardcode a global v6 prefix.** Four
+distinct `/56`s observed inside a week, one of them a change during a single
+working session: `2a02:2f04:5100:e700`, `…5303:6800`, `…520a:3d00`,
+`…540c:7900`. The WAN address moves with it, and DIGI advertises both with a
+`never` (infinite) lifetime while replacing them — which is what leaves clients
+holding addresses from prefixes that no longer route.
+
+- The BRIDGE address is `::1/64` `from-pool=ipv6-pool` — offset pinned, prefix
+  followed. A prefix pinned in the address goes `I` invalid at the next
+  rotation and the LAN silently loses its global.
+- A firewall rule that needs the LAN prefix takes it from an address list the
+  DHCPv6 client maintains (`/ipv6/dhcp-client set prefix-address-lists=…`),
+  never a literal. A stale literal in a *skip* rule fails dangerously: the skip
+  stops matching and the rule below it acts on traffic it was written to leave
+  alone.
+- Global IPv6 reachability is not implied by a bound client and an active
+  default route. Measured 2026-08-09: `/ping 2606:4700:4700::1111` from the
+  router, 100 % loss, with both present. Test it, do not infer it.
+
+## Logging — what is instrumented, and three traps
+
+`/log print` reads the **memory** buffer only. A topic routed to a disk action
+is invisible there and looks like it is not logging at all.
+
+Topics go to a `netlog` action on the Kingston (`kingston/net-log.*.txt`,
+8 × 5000 lines) rather than to memory or internal flash: memory is 500 lines
+shared with the `[CONTAINER]` topic that carries FastAdHunter's own output, and
+internal flash means wear.
+
+- **`topics=dhcp` matches `dhcp,debug,packet` too**, and one LAN client's lease
+  renewal is ~20 lines of option dumps. The rule is `dhcp,!debug,!packet`;
+  without the negations the DHCPv6 prefix events are buried within hours.
+- `warning` is logged twice on purpose — once to `netlog` for retention, once to
+  `memory` so `/log print where message~"…"` works.
+- Netwatch (`v6-global`, `v4-global`) fires its scripts on **transition only**;
+  verified by an entry sitting `down` across probe intervals without emitting a
+  second line. The disk action can drop an identical message repeated inside the
+  same second, so treat that file as detection, not as a complete audit trail.
