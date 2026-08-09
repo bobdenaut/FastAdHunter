@@ -208,6 +208,28 @@ Topics go to a `netlog` action on the Kingston (`kingston/net-log.*.txt`,
 shared with the `[CONTAINER]` topic that carries FastAdHunter's own output, and
 internal flash means wear.
 
+### What to search for
+
+Only `warning`, `error`, `critical` and `container` reach memory, so these are
+the whole of what `/log print` can answer:
+
+| Query | Returns |
+| --- | --- |
+| `/log print where message~"IPv6 global"` | v6 reachability, `UP` / `DOWN`, on transition |
+| `/log print where message~"IPv4 global"` | v4 reachability, same |
+| `/log print where message~"WAN change"` | `[old] => [new]` for `v4=` public address, `v6=` WAN global, `pd=` delegated prefix |
+| `/log print where topics~"script"` | all of the above together — netwatch and `log-wan-ip` |
+| `/log print where topics~"container"` | FastAdHunter's own output |
+
+`dhcp`, `route`, `interface` and `pppoe` are **disk-only** and return nothing
+from `/log print`. Read them with:
+
+```routeros
+:put [/file get [find name="kingston/net-log.0.txt"] contents]
+```
+
+Prefixes `[DHCP]`, `[ROUTE]`, `[LINK]`, `[PPPOE]` tag those lines in the file.
+
 - **`topics=dhcp` matches `dhcp,debug,packet` too**, and one LAN client's lease
   renewal is ~20 lines of option dumps. The rule is `dhcp,!debug,!packet`;
   without the negations the DHCPv6 prefix events are buried within hours.
