@@ -187,17 +187,24 @@ What no router config can fix: clients hold global addresses from the delegated
 prefix, so a rotation kills their established connections regardless. The short
 RA lifetimes above are the only mitigation available.
 
-**The delegation rotates, so no rule may hardcode a global v6 prefix.** Five
-distinct `/56`s observed inside a week, three of them in one working session:
-`2a02:2f04:5100:e700`, `…5303:6800`, `…520a:3d00`, `…540c:7900`, `…5407:c600`.
+**The delegation rotates, so no rule may hardcode a global v6 prefix.** Eight
+distinct `/56`s observed, three of them in one working session:
+`2a02:2f04:5100:e700`, `…5303:6800`, `…520a:3d00`, `…540c:7900`, `…5407:c600`,
+`…5204:a100`, `…5300:3500`, `…5204:500`.
 
-**The cause is a PPPoE redial**, not DHCPv6 lease policy. Public IPv4, WAN IPv6
-and the delegation all turn over together on each redial — measured 2026-08-09,
-IPv4 at 11:36:21 and the two v6 values at 11:36:25, IPCP first on the fresh
-session with DHCPv6 four seconds behind, session uptime `2m27s` shortly after.
-The `never` (infinite) DHCPv6 lifetimes are therefore not self-contradictory:
-the lease is not expiring, the session under it is. Diagnose a rotation by
-`/interface/pppoe-client/monitor` uptime, not by the DHCPv6 client.
+**The cause is a PPPoE redial**, not DHCPv6 lease policy. The `never` (infinite)
+DHCPv6 lifetimes are therefore not self-contradictory: the lease is not
+expiring, the session under it is. Diagnose a rotation by
+`/interface/pppoe-client/monitor` uptime — not by the DHCPv6 client, and **not
+by the public IPv4**.
+
+**The WAN IPv6 address and the delegated prefix rotate together; the public IPv4
+is independent of both.** Two redials, opposite outcomes: 2026-08-09 11:36
+turned over all three (IPv4 at 11:36:21, the v6 pair at 11:36:25 — IPCP first on
+the fresh session, DHCPv6 four seconds behind, session uptime `2m27s` shortly
+after), while 2026-08-10 11:36 returned the **same** IPv4 `5.12.68.56` beside a
+new WAN v6 and a new `…5204:500::/56`. An unchanged public IPv4 is no evidence
+that the prefix held.
 
 - The BRIDGE address is `::1/64` `from-pool=ipv6-pool` — offset pinned, prefix
   followed. A prefix pinned in the address goes `I` invalid at the next
@@ -236,6 +243,19 @@ internal flash means wear.
 
 Prefixes `[DHCP]`, `[ROUTE]`, `[LINK]`, `[PPPOE]`, `[PPP]` tag those lines in the
 file on disk.
+
+**`- administrator request` on a `terminating…` line is what separates your own
+redial from the ISP dropping the session.** Without it a burst of reconnects
+reads as upstream instability. Measured 2026-08-10 over a 24.8 h window: five
+session establishments, every disconnect administrator-requested, none
+ISP-initiated.
+
+**The memory buffer and the disk file do not retain the same span**, so a
+question older than the buffer needs the file. The disk actions filter
+`!debug,!packet`; the memory buffer does not, and `pppoe,ppp` packet lines flood
+it. Measured in the same window: the buffer reached back to 11:43 while the file
+still held 10:53 — and the evicted 50 minutes were exactly the `terminating…`
+lines that answered the question.
 
 ### Reading the file needs `scp`, not `/file get`
 
