@@ -1,6 +1,6 @@
 //! RouterOS REST, read-only.
 //!
-//! **Only GETs are issued, and only these two.** The router is the household's
+//! **Only GETs are issued, and only these four.** The router is the household's
 //! live gateway (root CLAUDE.md §The router is off limits); this monitor
 //! displays it and never writes to it.
 
@@ -9,7 +9,7 @@ use std::time::Duration;
 use serde::de::DeserializeOwned;
 
 use crate::config::RouterOsConfig;
-use crate::models::routeros::{Container, OneOrMany, SystemResource};
+use crate::models::routeros::{Container, DhcpLease, Neighbor, OneOrMany, SystemResource};
 
 pub struct RouterOsClient {
     http: reqwest::Client,
@@ -52,6 +52,16 @@ impl RouterOsClient {
         Ok(containers
             .into_iter()
             .find(|entry| entry.name.as_deref() == Some(self.container.as_str())))
+    }
+
+    /// The neighbour-discovery cache: address to MAC, for neighbours the router
+    /// currently holds. Bounded by that table, not by uptime.
+    pub async fn ipv6_neighbors(&self) -> Result<Vec<Neighbor>, String> {
+        self.get("/ipv6/neighbor").await
+    }
+
+    pub async fn dhcp_leases(&self) -> Result<Vec<DhcpLease>, String> {
+        self.get("/ip/dhcp-server/lease").await
     }
 
     async fn get<T: DeserializeOwned>(&self, path: &str) -> Result<T, String> {

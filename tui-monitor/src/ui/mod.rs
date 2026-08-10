@@ -61,7 +61,7 @@ pub fn draw(
         .unwrap_or(0);
 
     if let Some(item) = ui.popup.as_ref() {
-        popup::render(frame, screen, item);
+        popup::render(frame, screen, item, &state.lan_names);
     }
 
     // Clamped against what was actually laid out, so a scrollbar cannot run

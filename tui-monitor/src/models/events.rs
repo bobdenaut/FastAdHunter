@@ -3,10 +3,11 @@
 //! The envelope is an adjacently-tagged enum, so one `from_str` decides both
 //! the frame kind and its payload.
 
-use std::borrow::Cow;
 use std::net::IpAddr;
 
 use serde::Deserialize;
+
+use crate::models::lan::LanNames;
 
 /// One `{ "type": …, "data": … }` frame this monitor renders.
 #[derive(Debug, Clone, Deserialize)]
@@ -82,12 +83,26 @@ pub struct QueryItem {
 }
 
 impl QueryItem {
-    /// The assigned name if the client has one, else its address. Borrowed for
-    /// a named client: this runs for every row of the feed, every frame.
-    pub fn client_label(&self) -> Cow<'_, str> {
-        match &self.client_name {
-            Some(name) => Cow::Borrowed(name),
-            None => Cow::Owned(self.client.to_string()),
+    /// The appliance's name for the client, else one a provider resolved for
+    /// its address. `None` when neither knows it, which is what tells the
+    /// caller to fall back to the address.
+    ///
+    /// The appliance wins because its names are curated; `names` only covers
+    /// what it cannot see, which is every IPv6 client. Borrowed either way:
+    /// this runs for every row of the feed, every frame.
+    pub fn resolved_name<'a>(&'a self, names: &'a LanNames) -> Option<&'a str> {
+        self.client_name
+            .as_deref()
+            .or_else(|| names.get(&self.client))
+    }
+
+    /// Which family the client reached the appliance on. Worth showing beside a
+    /// *name*, where it is otherwise invisible — an address says it already.
+    pub fn family(&self) -> &'static str {
+        if self.client.is_ipv6() {
+            " - ipv6"
+        } else {
+            " - ipv4"
         }
     }
 
@@ -171,9 +186,48 @@ mod tests {
         };
 
         assert_eq!(item.verdict, Verdict::Pass);
-        assert_eq!(item.client_label(), "liviu-phone");
+        assert_eq!(
+            item.resolved_name(&LanNames::default()),
+            Some("liviu-phone")
+        );
         assert_eq!(item.type_label(), "A");
         assert!(item.cached);
+    }
+
+    /// The two name sources in priority order, plus the gap that means "show
+    /// the address".
+    #[test]
+    fn a_resolved_name_fills_the_gap_the_appliance_leaves_and_never_overrides_it() {
+        let Decoded::Event(ServerEvent::Query(named)) = decode(fixtures::EVENTS_QUERY) else {
+            panic!("expected a query frame");
+        };
+        let mut anonymous = named.clone();
+        anonymous.client_name = None;
+
+        let mut names = LanNames::default();
+        names.replace(std::collections::HashMap::from([(
+            anonymous.client,
+            std::sync::Arc::from("from-the-router"),
+        )]));
+
+        assert_eq!(
+            named.resolved_name(&names),
+            Some("liviu-phone"),
+            "the appliance's own name wins"
+        );
+        assert_eq!(anonymous.resolved_name(&names), Some("from-the-router"));
+        assert_eq!(anonymous.resolved_name(&LanNames::default()), None);
+    }
+
+    #[test]
+    fn the_family_suffix_follows_the_address_the_client_arrived_on() {
+        let Decoded::Event(ServerEvent::Query(mut item)) = decode(fixtures::EVENTS_QUERY) else {
+            panic!("expected a query frame");
+        };
+        item.client = "192.168.10.10".parse().unwrap();
+        assert_eq!(item.family(), " - ipv4");
+        item.client = "fd6c:7f32:8e91::1".parse().unwrap();
+        assert_eq!(item.family(), " - ipv6");
     }
 
     #[test]

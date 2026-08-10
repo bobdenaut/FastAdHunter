@@ -12,6 +12,7 @@ use std::sync::{Arc, RwLock, RwLockReadGuard};
 use crate::config::Limits;
 use crate::models::events::{QueryItem, StatsPush};
 use crate::models::history::HistorySummary;
+use crate::models::lan::LanNames;
 use crate::models::telemetry::Telemetry;
 use crate::util::format::percent;
 
@@ -83,6 +84,10 @@ pub struct AppState {
     pub rss_stride: u64,
 
     pub router: RouterStatus,
+
+    /// Labels for addresses the appliance has no name for. Empty unless a
+    /// provider fills it — the UI reads it the same either way.
+    pub lan_names: LanNames,
 }
 
 impl AppState {

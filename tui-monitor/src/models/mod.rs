@@ -6,6 +6,7 @@
 
 pub mod events;
 pub mod history;
+pub mod lan;
 pub mod routeros;
 pub mod telemetry;
 

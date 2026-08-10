@@ -42,6 +42,32 @@ pub struct SystemResource {
     pub uptime: Option<String>,
 }
 
+/// One `/rest/ipv6/neighbor` row — the ND cache, which is the only place the
+/// mapping from a v6 address to a device exists at all.
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct Neighbor {
+    #[serde(default)]
+    pub address: Option<String>,
+    #[serde(rename = "mac-address", default)]
+    pub mac_address: Option<String>,
+}
+
+/// One `/rest/ip/dhcp-server/lease` row — the bridge from a MAC to the IPv4
+/// address the appliance already knows by name.
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct DhcpLease {
+    #[serde(default)]
+    pub address: Option<String>,
+    #[serde(rename = "mac-address", default)]
+    pub mac_address: Option<String>,
+    /// Fallbacks when the appliance has no name for the lease's address, worst
+    /// last: a router comment is chosen by a human, a host-name by the device.
+    #[serde(default)]
+    pub comment: Option<String>,
+    #[serde(rename = "host-name", default)]
+    pub host_name: Option<String>,
+}
+
 #[derive(Debug, Clone, Default, Deserialize)]
 pub struct Container {
     #[serde(default)]

@@ -7,6 +7,7 @@ use serde::de::DeserializeOwned;
 
 use crate::config::{Config, TimeoutConfig};
 use crate::models::history::{HistoryPerf, HistorySummary};
+use crate::models::lan::ClientList;
 use crate::models::telemetry::Telemetry;
 
 /// The paths this monitor reads, as API.md documents them.
@@ -15,6 +16,7 @@ pub mod paths {
     pub const HISTORY_SUMMARY: &str = "/api/v1/history/summary";
     pub const HISTORY_PERF: &str = "/api/v1/history/perf";
     pub const EVENTS: &str = "/api/v1/events";
+    pub const CLIENTS: &str = "/api/v1/clients";
 }
 
 /// The `max_points` asked of `/history/perf`, meaning "do not decimate": the
@@ -95,6 +97,13 @@ impl ApiClient {
 
     pub async fn history_perf(&self) -> Result<HistoryPerf, Error> {
         self.get(&perf_query(), self.timeout.history()).await
+    }
+
+    /// Every observed client and the name it carries — the source the router
+    /// lookup resolves *to*, so a device shows the label already curated here
+    /// rather than a DHCP host-name.
+    pub async fn clients(&self) -> Result<ClientList, Error> {
+        self.get(paths::CLIENTS, self.timeout.telemetry()).await
     }
 
     async fn get<T: DeserializeOwned>(&self, path: &str, timeout: Duration) -> Result<T, Error> {

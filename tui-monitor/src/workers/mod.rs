@@ -29,7 +29,7 @@ pub fn spawn(clients: Clients, config: &Config, state: SharedState) {
         config.poll,
         state.clone(),
     ));
-    tokio::spawn(history::run_perf(api, config.poll, state.clone()));
+    tokio::spawn(history::run_perf(api.clone(), config.poll, state.clone()));
     tokio::spawn(events::run(
         events,
         config.timeout.reconnect(),
@@ -38,6 +38,12 @@ pub fn spawn(clients: Clients, config: &Config, state: SharedState) {
     ));
 
     if let Some(client) = routeros {
-        tokio::spawn(routeros::run(client, config.poll, state));
+        tokio::spawn(routeros::run(
+            client,
+            api,
+            config.routeros.auto_name,
+            config.poll,
+            state,
+        ));
     }
 }

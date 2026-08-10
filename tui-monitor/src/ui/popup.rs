@@ -6,6 +6,7 @@ use ratatui::widgets::{Block, Borders, Clear, Paragraph, Wrap};
 use ratatui::Frame;
 
 use crate::models::events::QueryItem;
+use crate::models::lan::LanNames;
 use crate::util::format::{bytes, millis};
 
 use super::{layout, theme};
@@ -19,13 +20,13 @@ pub fn area(screen: Rect) -> Rect {
     layout::centered(WIDTH_PERCENT, HEIGHT_PERCENT, screen)
 }
 
-pub fn render(frame: &mut Frame, screen: Rect, item: &QueryItem) {
+pub fn render(frame: &mut Frame, screen: Rect, item: &QueryItem, names: &LanNames) {
     let area = area(screen);
     frame.render_widget(Clear, area);
 
     let colour = theme::verdict(item.verdict);
     frame.render_widget(
-        Paragraph::new(detail_lines(item))
+        Paragraph::new(detail_lines(item, names))
             .block(
                 Block::default()
                     .borders(Borders::ALL)
@@ -37,14 +38,11 @@ pub fn render(frame: &mut Frame, screen: Rect, item: &QueryItem) {
     );
 }
 
-fn detail_lines<'a>(item: &QueryItem) -> Vec<Line<'a>> {
+fn detail_lines<'a>(item: &QueryItem, names: &LanNames) -> Vec<Line<'a>> {
     let colour = theme::verdict(item.verdict);
     let mut lines = vec![
         field("Client", item.client.to_string()),
-        field(
-            "Name",
-            item.client_name.clone().unwrap_or_else(|| "—".to_string()),
-        ),
+        field("Name", item.resolved_name(names).unwrap_or("—").to_string()),
         Line::from(vec![
             Span::styled(format!("{:<11}", "Host"), theme::label()),
             Span::styled(item.domain.clone(), theme::strong(theme::ACCENT)),
@@ -137,11 +135,14 @@ mod tests {
 
     #[test]
     fn a_dns_item_shows_the_record_type_and_the_cache_flag() {
-        let rendered = text(&detail_lines(&QueryItem {
-            qtype: Some("AAAA".to_string()),
-            cached: true,
-            ..item("dns")
-        }));
+        let rendered = text(&detail_lines(
+            &QueryItem {
+                qtype: Some("AAAA".to_string()),
+                cached: true,
+                ..item("dns")
+            },
+            &LanNames::default(),
+        ));
 
         assert!(rendered.contains("AAAA"), "{rendered}");
         assert!(rendered.contains("Cached"), "{rendered}");
@@ -150,13 +151,16 @@ mod tests {
 
     #[test]
     fn an_http_item_shows_the_request_fields() {
-        let rendered = text(&detail_lines(&QueryItem {
-            method: Some("GET".to_string()),
-            path: Some("/pixel.gif?id=7".to_string()),
-            status: Some(200),
-            bytes: Some(0),
-            ..item("http")
-        }));
+        let rendered = text(&detail_lines(
+            &QueryItem {
+                method: Some("GET".to_string()),
+                path: Some("/pixel.gif?id=7".to_string()),
+                status: Some(200),
+                bytes: Some(0),
+                ..item("http")
+            },
+            &LanNames::default(),
+        ));
 
         assert!(rendered.contains("GET"), "{rendered}");
         assert!(rendered.contains("/pixel.gif?id=7"), "{rendered}");
@@ -168,12 +172,15 @@ mod tests {
     /// payload field hid every HTTP detail the moment one arrived set.
     #[test]
     fn an_http_item_carrying_a_qtype_still_shows_its_http_fields() {
-        let rendered = text(&detail_lines(&QueryItem {
-            qtype: Some("A".to_string()),
-            method: Some("POST".to_string()),
-            status: Some(403),
-            ..item("http")
-        }));
+        let rendered = text(&detail_lines(
+            &QueryItem {
+                qtype: Some("A".to_string()),
+                method: Some("POST".to_string()),
+                status: Some(403),
+                ..item("http")
+            },
+            &LanNames::default(),
+        ));
 
         assert!(rendered.contains("POST"), "{rendered}");
         assert!(rendered.contains("403"), "{rendered}");
@@ -183,9 +190,30 @@ mod tests {
     /// is a dash, not a reason to drop the field.
     #[test]
     fn a_dns_item_without_a_qtype_prints_a_dash() {
-        let rendered = text(&detail_lines(&item("dns")));
+        let rendered = text(&detail_lines(&item("dns"), &LanNames::default()));
 
         assert!(rendered.contains("Type"), "{rendered}");
         assert!(rendered.contains('—'), "{rendered}");
+    }
+
+    /// The panel that exists to answer "who was this" must use the same two
+    /// name sources the feed does, not `client_name` alone. No family suffix
+    /// here — the address is printed in full one line above.
+    #[test]
+    fn a_resolved_name_reaches_the_details_panel() {
+        let mut unnamed = item("dns");
+        unnamed.client = "fd6c:7f32:8e91::1".parse().unwrap();
+        unnamed.client_name = None;
+
+        let bare = text(&detail_lines(&unnamed, &LanNames::default()));
+        assert!(!bare.contains(" - ipv6"), "{bare}");
+
+        let mut names = LanNames::default();
+        names.replace(std::collections::HashMap::from([(
+            unnamed.client,
+            std::sync::Arc::from("Alina's Note 10"),
+        )]));
+        let resolved = text(&detail_lines(&unnamed, &names));
+        assert!(resolved.contains("Alina's Note 10"), "{resolved}");
     }
 }

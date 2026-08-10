@@ -2,12 +2,14 @@
 
 use ratatui::layout::{Constraint, Rect};
 use ratatui::style::{Modifier, Style};
+use ratatui::text::{Line, Span};
 use ratatui::widgets::{
     Block, Borders, Cell, Row, Scrollbar, ScrollbarOrientation, ScrollbarState, Table, TableState,
 };
 use ratatui::Frame;
 
 use crate::models::events::QueryItem;
+use crate::models::lan::LanNames;
 use crate::state::AppState;
 use crate::util::format::millis;
 
@@ -40,7 +42,10 @@ pub fn render(
         return;
     }
 
-    let rows = state.queries.iter().map(|item| row(item, slow_ms));
+    let rows = state
+        .queries
+        .iter()
+        .map(|item| row(item, &state.lan_names, slow_ms));
 
     let header = Row::new(COLUMNS.map(|(title, _)| Cell::from(title))).style(
         Style::default()
@@ -74,9 +79,9 @@ pub fn render(
 
 /// Borrows every field it can: only the client label and the duration are
 /// built per row.
-fn row(item: &QueryItem, slow_ms: f64) -> Row<'_> {
+fn row<'a>(item: &'a QueryItem, names: &'a LanNames, slow_ms: f64) -> Row<'a> {
     Row::new(vec![
-        Cell::from(item.client_label()),
+        Cell::from(client_cell(item, names)),
         Cell::from(item.domain.as_str()),
         Cell::from(item.type_label()),
         Cell::from(item.verdict.as_str()),
@@ -84,6 +89,22 @@ fn row(item: &QueryItem, slow_ms: f64) -> Row<'_> {
         time_cell(item.duration_ms, slow_ms),
     ])
     .style(Style::default().fg(theme::verdict(item.verdict)))
+}
+
+/// A name plus a dimmed family, or the bare address. Two spans rather than one
+/// formatted string: the name is borrowed and the suffix is `&'static`, so a
+/// row still costs no allocation.
+///
+/// The suffix is omitted on the address, where it would say what the text
+/// already says and push a 39-character v6 address past the column.
+fn client_cell<'a>(item: &'a QueryItem, names: &'a LanNames) -> Line<'a> {
+    match item.resolved_name(names) {
+        Some(name) => Line::from(vec![
+            Span::raw(name),
+            Span::styled(item.family(), Style::default().fg(theme::MUTED)),
+        ]),
+        None => Line::from(item.client.to_string()),
+    }
 }
 
 /// Amber past `slow_ms` (`[ui] slow_query_ms`). The style overrides the row's

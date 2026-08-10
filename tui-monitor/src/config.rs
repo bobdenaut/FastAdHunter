@@ -279,6 +279,11 @@ pub struct RouterOsConfig {
     pub password: Option<String>,
     /// Name of the container whose `memory-current` the footer reports.
     pub container: String,
+    /// Resolve client addresses the appliance has no name for by asking the
+    /// router who owns them. Costs two extra GETs per router tick and is the
+    /// only way to label an IPv6 client: the appliance sees dst-natted traffic,
+    /// so the source MAC reaching it is the router's, never the client's.
+    pub auto_name: bool,
 }
 
 /// Hand-written rather than derived: `#[serde(default = "…")]` on a field only
@@ -291,6 +296,7 @@ impl Default for RouterOsConfig {
             user: "monitor".to_string(),
             password: None,
             container: "fastadhunter".to_string(),
+            auto_name: true,
         }
     }
 }
