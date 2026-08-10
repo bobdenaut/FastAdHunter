@@ -91,9 +91,12 @@ fn row<'a>(item: &'a QueryItem, names: &'a LanNames, slow_ms: f64) -> Row<'a> {
     .style(Style::default().fg(theme::verdict(item.verdict)))
 }
 
-/// A name plus a dimmed family, or the bare address. Two spans rather than one
-/// formatted string: the name is borrowed and the suffix is `&'static`, so a
-/// row still costs no allocation.
+/// A name plus a dimmed family, or the bare address.
+///
+/// Costs one two-element `Vec` per named row, against the six-element one
+/// [`Row::new`] already builds for the same row — the two texts carry different
+/// styles, so a single span cannot express them and `format!` would allocate a
+/// `String` instead without keeping the dimming. Both texts are borrowed.
 ///
 /// The suffix is omitted on the address, where it would say what the text
 /// already says and push a 39-character v6 address past the column.
