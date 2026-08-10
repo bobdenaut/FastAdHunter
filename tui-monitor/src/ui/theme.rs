@@ -10,6 +10,9 @@ pub const OK: Color = Color::Green;
 pub const WARN: Color = Color::Yellow;
 pub const BLOCKED: Color = Color::Red;
 pub const MUTED: Color = Color::DarkGray;
+/// A fact about the row that is not a judgement on it — carried at full
+/// contrast so it survives the verdict colour the row is painted with.
+pub const NEUTRAL: Color = Color::White;
 /// The unfilled part of a gauge — dim enough to read as a track rather than as
 /// data.
 pub const TRACK: Color = Color::Rgb(45, 50, 60);

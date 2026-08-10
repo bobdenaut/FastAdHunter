@@ -6,7 +6,7 @@
 
 host = "172.17.0.2"
 port = 8443
-token = "cb2ca37f848dec457473f4ffe74e089a09eab0c9a1b074dd37f7fa64246fd46a"
+token = "361f8ec891c2077e8e9001fcda5c1c7ebf736f58e786fd31893332d5b88d68d6"
 
 # The appliance's certificate is generated at first boot and trusted by no
 # root store.
@@ -49,3 +49,7 @@ base_url = "https://192.168.10.1:8443/rest"
 user = "monitor"
 # password = "…"   # falls back to $MP
 container = "fastadhunter"
+# Label clients the appliance has no name for by asking the router who owns the
+# address. The only way to name an IPv6 client: the appliance sees dst-natted
+# traffic, so the source MAC reaching it is the router's, never the client's.
+auto_name = true

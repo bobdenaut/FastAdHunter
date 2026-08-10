@@ -96,13 +96,14 @@ impl QueryItem {
             .or_else(|| names.get(&self.client))
     }
 
-    /// Which family the client reached the appliance on. Worth showing beside a
-    /// *name*, where it is otherwise invisible — an address says it already.
+    /// Which family the client reached the appliance on. Its own column in the
+    /// feed: a name does not say it, and scanning one is faster than reading a
+    /// suffix on each row.
     pub fn family(&self) -> &'static str {
         if self.client.is_ipv6() {
-            " - ipv6"
+            "v6"
         } else {
-            " - ipv4"
+            "v4"
         }
     }
 
@@ -225,9 +226,9 @@ mod tests {
             panic!("expected a query frame");
         };
         item.client = "192.168.10.10".parse().unwrap();
-        assert_eq!(item.family(), " - ipv4");
+        assert_eq!(item.family(), "v4");
         item.client = "fd6c:7f32:8e91::1".parse().unwrap();
-        assert_eq!(item.family(), " - ipv6");
+        assert_eq!(item.family(), "v6");
     }
 
     #[test]

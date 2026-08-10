@@ -1,8 +1,9 @@
 //! The live query feed.
 
+use std::borrow::Cow;
+
 use ratatui::layout::{Constraint, Rect};
 use ratatui::style::{Modifier, Style};
-use ratatui::text::{Line, Span};
 use ratatui::widgets::{
     Block, Borders, Cell, Row, Scrollbar, ScrollbarOrientation, ScrollbarState, Table, TableState,
 };
@@ -19,7 +20,10 @@ use super::theme;
 /// mouse click into a row index.
 const ROWS_ABOVE_DATA: u16 = 2;
 
-const COLUMNS: [(&str, Constraint); 6] = [
+const COLUMNS: [(&str, Constraint); 7] = [
+    // Untitled: the two values name themselves, and a heading here would sit
+    // wider than the column it labels.
+    ("", Constraint::Length(2)),
     ("Client", Constraint::Length(38)),
     ("Domain", Constraint::Min(20)),
     ("Type", Constraint::Length(6)),
@@ -81,6 +85,9 @@ pub fn render(
 /// built per row.
 fn row<'a>(item: &'a QueryItem, names: &'a LanNames, slow_ms: f64) -> Row<'a> {
     Row::new(vec![
+        // Explicitly styled, so the row's verdict colour does not repaint a
+        // fact that has nothing to do with the verdict.
+        Cell::from(item.family()).style(Style::default().fg(theme::NEUTRAL)),
         Cell::from(client_cell(item, names)),
         Cell::from(item.domain.as_str()),
         Cell::from(item.type_label()),
@@ -91,22 +98,12 @@ fn row<'a>(item: &'a QueryItem, names: &'a LanNames, slow_ms: f64) -> Row<'a> {
     .style(Style::default().fg(theme::verdict(item.verdict)))
 }
 
-/// A name plus a dimmed family, or the bare address.
-///
-/// Costs one two-element `Vec` per named row, against the six-element one
-/// [`Row::new`] already builds for the same row — the two texts carry different
-/// styles, so a single span cannot express them and `format!` would allocate a
-/// `String` instead without keeping the dimming. Both texts are borrowed.
-///
-/// The suffix is omitted on the address, where it would say what the text
-/// already says and push a 39-character v6 address past the column.
-fn client_cell<'a>(item: &'a QueryItem, names: &'a LanNames) -> Line<'a> {
+/// A resolved name, else the bare address. Borrowed for a named client, which
+/// is every row once the router answers — only the address case allocates.
+fn client_cell<'a>(item: &'a QueryItem, names: &'a LanNames) -> Cow<'a, str> {
     match item.resolved_name(names) {
-        Some(name) => Line::from(vec![
-            Span::raw(name),
-            Span::styled(item.family(), Style::default().fg(theme::MUTED)),
-        ]),
-        None => Line::from(item.client.to_string()),
+        Some(name) => Cow::Borrowed(name),
+        None => Cow::Owned(item.client.to_string()),
     }
 }
 
