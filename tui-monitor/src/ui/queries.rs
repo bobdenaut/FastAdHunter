@@ -92,7 +92,7 @@ fn row<'a>(item: &'a QueryItem, names: &'a LanNames, slow_ms: f64) -> Row<'a> {
         Cell::from(item.domain.as_str()),
         Cell::from(item.type_label()),
         Cell::from(item.verdict.as_str()),
-        Cell::from(if item.cached { "Yes" } else { "No" }),
+        Cell::from(item.cache_label()),
         time_cell(item.duration_ms, slow_ms),
     ])
     .style(Style::default().fg(theme::verdict(item.verdict)))

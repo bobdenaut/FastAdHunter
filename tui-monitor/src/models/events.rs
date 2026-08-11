@@ -60,11 +60,18 @@ struct Envelope {
     kind: String,
 }
 
+#[derive(Debug, Deserialize, Clone, Copy, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum EventType {
+    Dns,
+    Http,
+}
+
 /// One entry of the live feed.
 #[derive(Debug, Clone, Deserialize)]
 pub struct QueryItem {
     /// `dns` | `http`.
-    pub kind: String,
+    pub kind: EventType,
     pub ts: String,
     pub client: IpAddr,
     pub client_name: Option<String>,
@@ -82,7 +89,29 @@ pub struct QueryItem {
     pub bytes: Option<u64>,
 }
 
+impl std::fmt::Display for EventType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            EventType::Dns => write!(f, "dns"),
+            EventType::Http => write!(f, "http"),
+        }
+    }
+}
+
 impl QueryItem {
+    /// Used to render the cache column in the feed. The appliance does not know the cache status of HTTP requests, so it is always `-` for them.
+    /// DNS queries are either a cache hit or miss, and the appliance knows which.
+    const CACHE_HIT: &str = "HIT";
+    const CACHE_MISS: &str = "MISS";
+    const CACHE_NA: &str = "-";
+
+    pub fn cache_label(&self) -> &'static str {
+        match (self.kind, self.cached) {
+            (EventType::Dns, true) => Self::CACHE_HIT,
+            (EventType::Dns, false) => Self::CACHE_MISS,
+            (EventType::Http, _) => Self::CACHE_NA,
+        }
+    }
     /// The appliance's name for the client, else one a provider resolved for
     /// its address. `None` when neither knows it, which is what tells the
     /// caller to fall back to the address.
@@ -129,7 +158,7 @@ pub enum Verdict {
 }
 
 impl Verdict {
-    pub fn as_str(&self) -> &'static str {
+    pub fn as_str(self) -> &'static str {
         match self {
             Self::Allow => "allow",
             Self::Block => "block",

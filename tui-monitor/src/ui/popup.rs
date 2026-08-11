@@ -6,6 +6,7 @@ use ratatui::widgets::{Block, Borders, Clear, Paragraph, Wrap};
 use ratatui::Frame;
 
 use crate::models::events::QueryItem;
+use crate::models::events::EventType;
 use crate::models::lan::LanNames;
 use crate::util::format::{bytes, millis};
 
@@ -47,7 +48,7 @@ fn detail_lines<'a>(item: &QueryItem, names: &LanNames) -> Vec<Line<'a>> {
             Span::styled(format!("{:<11}", "Host"), theme::label()),
             Span::styled(item.domain.clone(), theme::strong(theme::ACCENT)),
         ]),
-        field("Kind", item.kind.clone()),
+        field("Kind", item.kind.to_string()),
         Line::from(vec![
             Span::styled(format!("{:<11}", "Verdict"), theme::label()),
             Span::styled(item.verdict.as_str(), theme::strong(colour)),
@@ -64,7 +65,7 @@ fn detail_lines<'a>(item: &QueryItem, names: &LanNames) -> Vec<Line<'a>> {
     // Keyed on `kind`, which API.md §Events names as the discriminator — not on
     // whether `qtype` happens to be set, which hides every HTTP field the
     // moment a request carries one.
-    if item.kind == "http" {
+    if item.kind == EventType::Http {
         for (label, value) in [
             ("Method", item.method.clone()),
             ("Path", item.path.clone()),
@@ -80,18 +81,15 @@ fn detail_lines<'a>(item: &QueryItem, names: &LanNames) -> Vec<Line<'a>> {
             "Type",
             item.qtype.clone().unwrap_or_else(|| "—".to_string()),
         ));
-        lines.push(field(
-            "Cached",
-            if item.cached { "yes" } else { "no" }.to_string(),
-        ));
+        lines.push(field("Cache", item.cache_label()));
     }
     lines
 }
 
-fn field<'a>(label: &str, value: String) -> Line<'a> {
+fn field<'a>(label: &str, value: impl Into<Span<'a>>) -> Line<'a> {
     Line::from(vec![
         Span::styled(format!("{label:<11}"), theme::label()),
-        Span::raw(value),
+        value.into(),
     ])
 }
 
@@ -113,9 +111,9 @@ mod tests {
             .join("\n")
     }
 
-    fn item(kind: &str) -> QueryItem {
+    fn item(event_type: EventType) -> QueryItem {
         QueryItem {
-            kind: kind.to_string(),
+            kind: event_type,
             ts: "2026-07-17T10:41:03.610Z".to_string(),
             client: std::net::IpAddr::from([192, 168, 10, 15]),
             client_name: None,
@@ -134,18 +132,34 @@ mod tests {
     }
 
     #[test]
+    fn a_dns_cache_miss_is_rendered() {
+        let rendered = text(&detail_lines(
+            &QueryItem {
+                qtype: Some("A".to_string()),
+                cached: false,
+                ..item(EventType::Dns)
+            },
+            &LanNames::default(),
+        ));
+
+        assert!(rendered.contains("Cache"), "{rendered}");
+        assert!(rendered.contains("MISS"), "{rendered}");
+    }
+    
+    #[test]
     fn a_dns_item_shows_the_record_type_and_the_cache_flag() {
         let rendered = text(&detail_lines(
             &QueryItem {
                 qtype: Some("AAAA".to_string()),
                 cached: true,
-                ..item("dns")
+                ..item(EventType::Dns)
             },
             &LanNames::default(),
         ));
 
         assert!(rendered.contains("AAAA"), "{rendered}");
-        assert!(rendered.contains("Cached"), "{rendered}");
+        assert!(rendered.contains("Cache"), "{rendered}");
+        assert!(rendered.contains("HIT"), "{rendered}");
         assert!(!rendered.contains("Method"), "{rendered}");
     }
 
@@ -157,7 +171,7 @@ mod tests {
                 path: Some("/pixel.gif?id=7".to_string()),
                 status: Some(200),
                 bytes: Some(0),
-                ..item("http")
+                ..item(EventType::Http)
             },
             &LanNames::default(),
         ));
@@ -165,7 +179,7 @@ mod tests {
         assert!(rendered.contains("GET"), "{rendered}");
         assert!(rendered.contains("/pixel.gif?id=7"), "{rendered}");
         assert!(rendered.contains("200"), "{rendered}");
-        assert!(!rendered.contains("Cached"), "{rendered}");
+        assert!(!rendered.contains("Cache"), "{rendered}");
     }
 
     /// The reason `kind` is the discriminator and `qtype` is not: keying on the
@@ -177,7 +191,7 @@ mod tests {
                 qtype: Some("A".to_string()),
                 method: Some("POST".to_string()),
                 status: Some(403),
-                ..item("http")
+                ..item(EventType::Http)
             },
             &LanNames::default(),
         ));
@@ -190,7 +204,7 @@ mod tests {
     /// is a dash, not a reason to drop the field.
     #[test]
     fn a_dns_item_without_a_qtype_prints_a_dash() {
-        let rendered = text(&detail_lines(&item("dns"), &LanNames::default()));
+        let rendered = text(&detail_lines(&item(EventType::Dns), &LanNames::default()));
 
         assert!(rendered.contains("Type"), "{rendered}");
         assert!(rendered.contains('—'), "{rendered}");
@@ -201,7 +215,7 @@ mod tests {
     /// here — the address is printed in full one line above.
     #[test]
     fn a_resolved_name_reaches_the_details_panel() {
-        let mut unnamed = item("dns");
+        let mut unnamed = item(EventType::Dns);
         unnamed.client = "fd6c:7f32:8e91::1".parse().unwrap();
         unnamed.client_name = None;
 
