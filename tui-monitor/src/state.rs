@@ -410,8 +410,9 @@ mod tests {
     }
 
     fn query(index: usize) -> QueryItem {
+        use crate::models::events::EventType;
         QueryItem {
-            kind: "dns".to_string(),
+            kind: EventType::Dns,
             ts: String::new(),
             client: std::net::IpAddr::from([10, 0, 0, 1]),
             client_name: None,
