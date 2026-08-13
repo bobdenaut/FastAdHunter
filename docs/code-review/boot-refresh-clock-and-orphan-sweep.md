@@ -204,3 +204,96 @@ whose `[[rules.lists]]` entry is gone — the distinction the two near-miss guar
   hardcoded to zero (wired up in 0.2.8: **2.317 s**, ~2.2 µs per *parsed* rule,
   1 047 409 parsed → 702 178 compiled) and recorded that a restart no longer
   compiles twice.
+
+## 8. Follow-up: the two clocks, both wrong for a manual refresh
+
+Found in the 0.2.15 72 h soak — see
+[soak-0.2.15-72h/report.md](soak-0.2.15-72h/report.md) §T1 → T2 for the
+snapshots. Both defects live in the seam §2 opened: `last_attempted` is the
+scheduler's clock, `ListStatus::last_refreshed` is the API's, and nothing kept
+them honest with each other.
+
+### A. A manual refresh did not move the next due time
+
+`last_attempted` was written in exactly two places: `seed_last_attempted_from_cache`
+at boot, and `refresh_due_lists`. `refresh_all` (`POST /api/v1/lists/refresh`)
+and `refresh_list` (`POST /api/v1/lists/{id}/refresh`) wrote only
+`last_refreshed`, through `record_status(…, true)`. So the scheduler's due-check
+never saw a manual refresh at all.
+
+Observed on the RB5009:
+
+```text
+2026-08-12T10:12:23Z  refreshed all lists lists=17 refreshed=17 failed=0 rules=661055   ← manual
+2026-08-13T05:26:21Z  17× list refreshed …                                              ← scheduled
+```
+
+The scheduled pass fired 48 h + 24 s after the *original* 2026-08-11T05:25:57Z
+fetch, not 48 h after the manual one. Cost per occurrence: 17 redundant
+downloads, one full compile (2.42 s of ARM CPU) and the peak-RSS transient to
+164.65 MiB. Same class of waste as §1, reached by a different route.
+
+**Fix.** The write moves into `fetch_and_commit` — the shared fetch+commit
+helper every refreshing path already funnels through — and comes out of
+`refresh_due_lists`. One site instead of two, and no path can fetch without
+recording it. It stays *before* the fetch, which is what keeps a dead source
+waiting out its interval instead of being retried on every pass.
+
+One deliberate change of shape: the scheduler used to stamp a whole batch with
+the pass's single `now`, and now each list carries its own attempt instant. Over
+a batch of 17 sequential fetches that is more accurate, not less, and the
+due-check is per list anyway.
+
+### B. `last_refresh` did not survive a restart
+
+At T0 three lists carried a real `last_refresh`; after the router rebooted the
+container all 17 read `null` while `last_status` stayed `ok` — the incoherent
+pair §2 left open under "Considered and rejected", now observed in production
+rather than reasoned about.
+
+**Fix, and why the earlier objection does not apply.** §2 rejected filling
+`last_refreshed` from the mtime because `ListStatus`'s own doc says
+"boot-from-cache does not count — a load, not a refresh". That rule is intact.
+Seeding does not claim a refresh happened at boot: it reports the mtime, which
+is the wall-clock time of the fetch that wrote the file. Boot's own clock never
+enters the value. What the API stops doing is claiming a list has *never*
+refreshed when a copy on disk proves otherwise.
+
+`seed_last_attempted_from_cache` becomes `seed_refresh_clocks_from_cache` and
+seeds both from the one mtime it already reads, under deliberately different
+conditions:
+
+| Clock | Seeded when | Why the difference |
+| ----- | ----------- | ------------------ |
+| `last_attempted` | `age < interval` | a looser rule could delay a due refresh |
+| `last_refreshed` | any readable mtime | an overdue list still has a real last-refresh time; `null` for it is simply wrong |
+
+`last_refreshed` is set only where it is still `None`, so a refresh that beat
+boot to `compile_lock` is never overwritten — the same guard the surrounding
+`last_result` fill already uses.
+
+### Tests
+
+3 new, all red-checked (verified: each fails with its fix removed).
+
+| Test | What it pins |
+| ---- | ------------ |
+| `a_manual_refresh_all_moves_the_next_due_time` | A, batch path — not due 1 h in, due at 3 h |
+| `a_manual_single_list_refresh_moves_the_next_due_time` | A, per-list path |
+| `boot_reports_the_last_refresh_of_a_copy_older_than_its_interval` | B, and that a stale copy is still reported |
+
+`boot_compiles_from_data_cache_without_network` changes with B: it asserted
+`last_refreshed == None` after boot-from-cache, and now asserts the mtime is
+reported and that it is not boot's own clock. Removing A's fix also fails
+`scheduler_skips_a_list_until_its_interval_elapses`, which is the correct
+signal — the write moved, so nothing else records the scheduler's clock.
+
+Gates green: `fmt`, `clippy -D warnings`, `test --workspace` (903 tests, 41
+binaries). No bench — both paths run at boot or per refresh, never on the hot
+path.
+
+### Not fixed here
+
+`GET /api/v1/lists` still exposes no *next* refresh time, so "is this list about
+to refresh" cannot be answered from the API — the redundant 2026-08-13 pass was
+invisible until the router log was read. Tracked in the soak report's TODOs.

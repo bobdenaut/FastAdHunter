@@ -1,0 +1,19 @@
+[bobdenaut@bobdenaut-router] > /system/resource/print 
+                   uptime: 22h39m1s           
+                  version: 7.21.5 (long-term) 
+               build-time: 2026-07-03 10:23:40
+         factory-software: 7.8                
+              free-memory: 775.2MiB           
+             total-memory: 1024.0MiB          
+                      cpu: ARM64              
+                cpu-count: 4                  
+            cpu-frequency: 700MHz             
+                 cpu-load: 2%                 
+           free-hdd-space: 959.8MiB           
+          total-hdd-space: 1024.0MiB          
+  write-sect-since-reboot: 1769               
+         write-sect-total: 398853             
+               bad-blocks: 0%                 
+        architecture-name: arm64              
+               board-name: RB5009UG+S+        
+                 platform: MikroTik  

@@ -1,0 +1,15 @@
+{
+  "ruleset_bytes": 22041820,
+  "cache_estimated_bytes": 4438848,
+  "stats_aggregates_bytes": 596101,
+  "stats_clients_bytes": 264761,
+  "accounted_bytes": 27341530,
+  "residual_bytes": 40746278,
+  "cache_entries": 3119,
+  "process_rss": 68087808,
+  "process_peak_rss": 124997632,
+  "major_page_faults": 13,
+  "minor_page_faults": 193041,
+  "allocator_committed_bytes": 271777792,
+  "allocator_committed_peak_bytes": 271777792
+}

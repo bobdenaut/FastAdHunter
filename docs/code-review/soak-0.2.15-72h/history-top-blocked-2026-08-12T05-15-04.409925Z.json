@@ -1,0 +1,47 @@
+{
+  "kind": "blocked",
+  "from": "2026-08-05T05:11:30.51304864Z",
+  "to": "2026-08-12T05:11:30.51304864Z",
+  "items": [
+    {
+      "domain": "self.events.data.microsoft.com",
+      "count": 134047
+    },
+    {
+      "domain": "sessions.bugsnag.com",
+      "count": 46355
+    },
+    {
+      "domain": "mobile.events.data.microsoft.com",
+      "count": 41300
+    },
+    {
+      "domain": "www.bing.com",
+      "count": 13856
+    },
+    {
+      "domain": "beacons-wbd.mediamelon.com",
+      "count": 13506
+    },
+    {
+      "domain": "telemetry.sdk.inmobi.com",
+      "count": 13213
+    },
+    {
+      "domain": "www.googletagmanager.com",
+      "count": 9313
+    },
+    {
+      "domain": "perseus-productanalytics.deliveryhero.net",
+      "count": 7275
+    },
+    {
+      "domain": "telegraph.prd.api.hbomax.com",
+      "count": 5781
+    },
+    {
+      "domain": "mobile.pipe.aria.microsoft.com",
+      "count": 5338
+    }
+  ]
+}

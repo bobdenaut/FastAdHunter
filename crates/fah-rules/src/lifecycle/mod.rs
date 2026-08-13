@@ -161,8 +161,10 @@ pub struct ListRefreshOutcome {
 #[derive(Debug, Clone, PartialEq)]
 pub struct ListStatus {
     /// When this list last *successfully* refreshed. `None` until the first
-    /// success (boot-from-cache does not count — RULE_ENGINE.md's "compile
-    /// from `/data`" is a load, not a refresh).
+    /// success. A restart recovers it from the cached copy's mtime — the fetch
+    /// that wrote that file is the refresh being reported, so the timestamp is
+    /// the fetch's, never boot's. Loading `/data` is still not a refresh
+    /// (RULE_ENGINE.md), and a list with no cached copy stays `None`.
     pub last_refreshed: Option<SystemTime>,
     pub last_result: RefreshResult,
     /// What this list contributes to the ruleset that is *currently serving*,
@@ -433,7 +435,7 @@ impl ListManager {
         let (matcher, stats) = self.compile().await;
         self.swap_in(matcher, &stats);
 
-        self.seed_last_attempted_from_cache().await;
+        self.seed_refresh_clocks_from_cache().await;
         self.remove_orphaned_copies().await;
 
         let mut status = self.status.lock().unwrap();
@@ -447,8 +449,9 @@ impl ListManager {
         }
     }
 
-    /// Recovers the refresh clock from the `/data` cache files' mtimes, so a
-    /// restart does not refetch and recompile everything it just loaded.
+    /// Recovers both refresh clocks from the `/data` cache files' mtimes, so a
+    /// restart neither refetches everything it just loaded nor forgets when it
+    /// last refreshed.
     ///
     /// [`Self::last_attempted`] holds `tokio::time::Instant`s — monotonic and
     /// process-relative, so the map starts empty on every start and every list
@@ -465,13 +468,19 @@ impl ListManager {
     /// on-disk state, no schema to migrate, and nothing that can fall out of
     /// sync with the copy it describes.
     ///
-    /// Only lists whose cached copy is *younger* than their interval are
-    /// seeded. Everything else — no cache file, a copy already older than the
-    /// interval, an unreadable or future mtime (see [`cache::age`]), or an age
-    /// that predates the monotonic clock's own origin — is left unseeded and
-    /// stays due, which is precisely the behaviour this replaces. The fix
-    /// therefore cannot make a list refresh *less* often than before; it can
-    /// only remove a redundant fetch.
+    /// Only lists whose cached copy is *younger* than their interval have
+    /// [`Self::last_attempted`] seeded. Everything else — no cache file, a copy
+    /// already older than the interval, an unreadable or future mtime (see
+    /// [`cache::age`]), or an age that predates the monotonic clock's own
+    /// origin — stays due. Seeding therefore cannot make a list refresh *less*
+    /// often; it can only remove a redundant fetch.
+    ///
+    /// [`ListStatus::last_refreshed`] is seeded from the same mtime under a
+    /// looser condition — **any** readable mtime, stale copy included, because
+    /// a list overdue for a refresh still has a real last-refresh time and
+    /// reporting `null` for it is simply wrong. It is set only where the field
+    /// is still `None`, so a refresh that beat boot to `compile_lock` is never
+    /// overwritten.
     ///
     /// One deliberate behaviour change: the mtime records the last *success*,
     /// while `last_attempted` records attempts. A list whose source is down
@@ -479,7 +488,7 @@ impl ListManager {
     /// instead of waiting out its interval. That is one extra attempt, not a
     /// loop — the retry writes `last_attempted` and the in-memory clock takes
     /// over from there.
-    async fn seed_last_attempted_from_cache(&self) {
+    async fn seed_refresh_clocks_from_cache(&self) {
         let wall_now = SystemTime::now();
         let now = Instant::now();
         // Clone the handles out first: `cache::age` awaits, and a `std` lock
@@ -497,6 +506,13 @@ impl ListManager {
             let Some(age) = cache::age(&self.data_dir, &entry.id, wall_now).await else {
                 continue;
             };
+            if let Some(refreshed_at) = wall_now.checked_sub(age) {
+                let mut status = self.status.lock().unwrap();
+                let list_status = status.entry(Arc::clone(&entry.id)).or_default();
+                if list_status.last_refreshed.is_none() {
+                    list_status.last_refreshed = Some(refreshed_at);
+                }
+            }
             if age >= entry.interval(self.default_refresh_hours) {
                 continue;
             }
@@ -620,6 +636,14 @@ impl ListManager {
     /// cached copy is untouched (RULE_ENGINE.md failure policy).
     async fn fetch_and_commit(&self, entry: &ListEntry) -> Result<(), LifecycleError> {
         let _list_guard = entry.refresh_lock.lock().await;
+        // Every path that fetches records the attempt here, so a manual refresh
+        // moves the next due time exactly as a scheduled one does. Before the
+        // fetch, not after: a failing source waits out its interval instead of
+        // being retried on every scheduler pass.
+        self.last_attempted
+            .lock()
+            .unwrap()
+            .insert(Arc::clone(&entry.id), Instant::now());
         let text = entry
             .source
             .fetch(&self.http, self.fetch_timeout, MAX_LIST_BYTES)
@@ -962,10 +986,9 @@ impl ListManager {
             return;
         }
 
-        // Fetch + persist every due list first, recording the attempt as we go
-        // so a list that fails is not retried until its next interval. One dead
-        // source never aborts the batch: its last-good cached copy keeps serving
-        // (RULE_ENGINE.md failure policy).
+        // Fetch + persist every due list first — `fetch_and_commit` records
+        // each attempt as it goes. One dead source never aborts the batch: its
+        // last-good cached copy keeps serving (RULE_ENGINE.md failure policy).
         //
         // Failures are recorded here rather than after the compile below,
         // because the compile is conditional and a skipped one must not swallow
@@ -974,10 +997,6 @@ impl ListManager {
         // has parsed the new text.
         let mut committed: Vec<Arc<str>> = Vec::with_capacity(due.len());
         for entry in &due {
-            self.last_attempted
-                .lock()
-                .unwrap()
-                .insert(entry.id.clone(), now);
             match self.fetch_and_commit(entry).await {
                 Ok(()) => committed.push(entry.id.clone()),
                 Err(err) => {
@@ -1334,11 +1353,43 @@ mod tests {
             MatchDecision::Block(_)
         ));
         let status = manager.status("oisd-basic").unwrap();
-        assert_eq!(
-            status.last_refreshed, None,
-            "loaded from cache, not refreshed"
+        let refreshed = status
+            .last_refreshed
+            .expect("a cached copy carries the time of the fetch that wrote it");
+        assert!(
+            refreshed <= SystemTime::now(),
+            "the mtime of the cached copy, never boot's own clock"
         );
         assert!(matches!(status.last_result, RefreshResult::Ok(_)));
+    }
+
+    /// A copy older than its interval is still a copy someone fetched. The
+    /// list is due — that is `last_attempted`'s business — but the API must
+    /// report *when* it last refreshed rather than `null`.
+    #[tokio::test]
+    async fn boot_reports_the_last_refresh_of_a_copy_older_than_its_interval() {
+        let data_dir = tempfile::tempdir().unwrap();
+        cache::write(data_dir.path(), "oisd-basic", "||ads.example.com^\n")
+            .await
+            .unwrap();
+        let two_days_ago = SystemTime::now() - Duration::from_secs(48 * 3600);
+        cache::set_modified(data_dir.path(), "oisd-basic", two_days_ago);
+        // 24 h interval, so the copy is a day past due.
+        let config = config_with(vec![list("oisd-basic", "https://unreachable.invalid")]);
+        let manager = ListManager::new(&config, data_dir.path().to_path_buf()).unwrap();
+
+        manager.boot().await;
+
+        let refreshed = manager
+            .status("oisd-basic")
+            .unwrap()
+            .last_refreshed
+            .expect("a stale copy still has a real last-refresh time");
+        let reported_age = SystemTime::now().duration_since(refreshed).unwrap();
+        assert!(
+            reported_age.abs_diff(Duration::from_secs(48 * 3600)) < Duration::from_secs(5),
+            "expected ~48 h, got {reported_age:?}"
+        );
     }
 
     #[tokio::test]
@@ -2272,6 +2323,67 @@ mod tests {
         assert!(
             manager.status("a").unwrap().last_refreshed.unwrap() > first,
             "3h into a 2h interval must refresh"
+        );
+    }
+
+    /// A manual refresh is a refresh: it must reset the scheduler's clock, or
+    /// the next scheduled pass refetches and recompiles what was just fetched.
+    #[tokio::test(start_paused = true)]
+    async fn a_manual_refresh_all_moves_the_next_due_time() {
+        let data_dir = tempfile::tempdir().unwrap();
+        tokio::fs::write(data_dir.path().join("a.txt"), "block.example.net\n")
+            .await
+            .unwrap();
+        let config = config_with(vec![RuleListConfig {
+            id: "a".to_string(),
+            url: "a.txt".to_string(),
+            enabled: true,
+            refresh_hours: Some(2),
+        }]);
+        let manager = Arc::new(ListManager::new(&config, data_dir.path().to_path_buf()).unwrap());
+
+        manager.refresh_all().await;
+        let manual = manager.status("a").unwrap().last_refreshed.unwrap();
+
+        tokio::time::advance(Duration::from_secs(3600)).await;
+        manager.refresh_due_lists().await;
+        assert_eq!(
+            manager.status("a").unwrap().last_refreshed.unwrap(),
+            manual,
+            "1h after a manual refresh-all, a 2h interval is not due"
+        );
+
+        tokio::time::advance(Duration::from_secs(2 * 3600)).await;
+        manager.refresh_due_lists().await;
+        assert!(
+            manager.status("a").unwrap().last_refreshed.unwrap() > manual,
+            "3h after it, the interval has elapsed and the list is due again"
+        );
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_manual_single_list_refresh_moves_the_next_due_time() {
+        let data_dir = tempfile::tempdir().unwrap();
+        tokio::fs::write(data_dir.path().join("a.txt"), "block.example.net\n")
+            .await
+            .unwrap();
+        let config = config_with(vec![RuleListConfig {
+            id: "a".to_string(),
+            url: "a.txt".to_string(),
+            enabled: true,
+            refresh_hours: Some(2),
+        }]);
+        let manager = Arc::new(ListManager::new(&config, data_dir.path().to_path_buf()).unwrap());
+
+        manager.refresh_list("a").await.unwrap();
+        let manual = manager.status("a").unwrap().last_refreshed.unwrap();
+
+        tokio::time::advance(Duration::from_secs(3600)).await;
+        manager.refresh_due_lists().await;
+        assert_eq!(
+            manager.status("a").unwrap().last_refreshed.unwrap(),
+            manual,
+            "1h after a manual per-list refresh, a 2h interval is not due"
         );
     }
 

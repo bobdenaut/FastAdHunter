@@ -1,0 +1,112 @@
+{
+  "process": {
+    "version": "0.2.15",
+    "uptime_seconds": 81143
+  },
+  "ruleset": {
+    "rules": 662141,
+    "duplicates_removed": 457214,
+    "compile_duration_seconds": 2.508938
+  },
+  "counters": {
+    "dns": {
+      "pass": 28002,
+      "allow": 9,
+      "block": 32826,
+      "cache_hits": 24677,
+      "cache_misses": 3334,
+      "cache_stale": 13656
+    },
+    "http": {
+      "pass": 5767,
+      "allow": 0,
+      "block": 0,
+      "response_bytes": 20263582487
+    },
+    "events_dropped": 0,
+    "swr": {
+      "enqueued": 13020,
+      "deduplicated": 636,
+      "dropped": 0,
+      "completed": 13020,
+      "failed": 0
+    },
+    "cache_cleanup": {
+      "runs": 225,
+      "entries_removed": 0,
+      "bytes_freed": 0,
+      "last_duration_micros": 395
+    }
+  },
+  "latency": {
+    "dns": {
+      "block": {
+        "count": 32826,
+        "sum_seconds": 1.4692966
+      },
+      "cache_hit": {
+        "count": 24677,
+        "sum_seconds": 1.24930716
+      },
+      "forward": {
+        "count": 3334,
+        "sum_seconds": 73.56977556
+      }
+    },
+    "http": {
+      "block": {
+        "count": 0,
+        "sum_seconds": 0.0
+      },
+      "forward": {
+        "count": 5767,
+        "sum_seconds": 888.48949008
+      }
+    }
+  },
+  "upstreams": [
+    {
+      "address": "1.1.1.1",
+      "protocol": "udp",
+      "attempts": 28408,
+      "failures": 8,
+      "consecutive_failures": 0,
+      "tls_handshakes": 0
+    },
+    {
+      "address": "9.9.9.9",
+      "protocol": "udp",
+      "attempts": 8,
+      "failures": 1,
+      "consecutive_failures": 0,
+      "tls_handshakes": 0
+    }
+  ],
+  "cache": {
+    "entries": 3133,
+    "capacity": 50000,
+    "fresh": 315,
+    "stale": 2818,
+    "expired": 0,
+    "hits": 24677,
+    "misses": 3334,
+    "evictions": 0,
+    "bytes": 2858624,
+    "max_bytes": 67108864,
+    "load_percent": 6.27,
+    "byte_load_percent": 4.26
+  },
+  "memory": {
+    "ruleset_bytes": 22041820,
+    "cache_estimated_bytes": 4455184,
+    "stats_aggregates_bytes": 605005,
+    "stats_clients_bytes": 264761,
+    "accounted_bytes": 27366770,
+    "residual_bytes": 35125902,
+    "cache_entries": 3133,
+    "process_rss": 62492672,
+    "process_peak_rss": 124997632,
+    "major_page_faults": 13,
+    "minor_page_faults": 193605
+  }
+}

@@ -1,0 +1,311 @@
+{
+  "resolution": "hour",
+  "from": "2026-08-11T05:11:05.51414304Z",
+  "to": "2026-08-12T05:11:05.51414304Z",
+  "stride": 1,
+  "items": [
+    {
+      "ts": "2026-08-11T06:00:00Z",
+      "queries": 3164,
+      "blocked": 1452,
+      "blocked_percent": 45.89,
+      "cache_hits": 1230,
+      "per_type": {
+        "A": 1893,
+        "AAAA": 1096,
+        "HTTPS": 62,
+        "NS": 4,
+        "SOA": 5,
+        "SRV": 104
+      }
+    },
+    {
+      "ts": "2026-08-11T07:00:00Z",
+      "queries": 2267,
+      "blocked": 1265,
+      "blocked_percent": 55.8,
+      "cache_hits": 771,
+      "per_type": {
+        "A": 1195,
+        "AAAA": 1002,
+        "HTTPS": 56,
+        "NS": 4,
+        "SOA": 8,
+        "SRV": 2
+      }
+    },
+    {
+      "ts": "2026-08-11T08:00:00Z",
+      "queries": 1860,
+      "blocked": 312,
+      "blocked_percent": 16.77,
+      "cache_hits": 852,
+      "per_type": {
+        "A": 841,
+        "AAAA": 607,
+        "HTTPS": 394,
+        "NS": 4,
+        "SOA": 8,
+        "SRV": 6
+      }
+    },
+    {
+      "ts": "2026-08-11T09:00:00Z",
+      "queries": 830,
+      "blocked": 191,
+      "blocked_percent": 23.01,
+      "cache_hits": 552,
+      "per_type": {
+        "A": 489,
+        "AAAA": 265,
+        "HTTPS": 62,
+        "NS": 4,
+        "SOA": 8,
+        "SRV": 2
+      }
+    },
+    {
+      "ts": "2026-08-11T10:00:00Z",
+      "queries": 1414,
+      "blocked": 380,
+      "blocked_percent": 26.87,
+      "cache_hits": 918,
+      "per_type": {
+        "A": 735,
+        "AAAA": 523,
+        "HTTPS": 139,
+        "NS": 4,
+        "SOA": 8,
+        "SRV": 5
+      }
+    },
+    {
+      "ts": "2026-08-11T11:00:00Z",
+      "queries": 1194,
+      "blocked": 257,
+      "blocked_percent": 21.52,
+      "cache_hits": 858,
+      "per_type": {
+        "A": 636,
+        "AAAA": 418,
+        "HTTPS": 126,
+        "NS": 4,
+        "SOA": 8,
+        "SRV": 2
+      }
+    },
+    {
+      "ts": "2026-08-11T12:00:00Z",
+      "queries": 1828,
+      "blocked": 534,
+      "blocked_percent": 29.21,
+      "cache_hits": 1035,
+      "per_type": {
+        "A": 866,
+        "AAAA": 628,
+        "HTTPS": 318,
+        "NS": 4,
+        "SOA": 8,
+        "SRV": 4
+      }
+    },
+    {
+      "ts": "2026-08-11T13:00:00Z",
+      "queries": 1715,
+      "blocked": 464,
+      "blocked_percent": 27.06,
+      "cache_hits": 871,
+      "per_type": {
+        "A": 896,
+        "AAAA": 664,
+        "HTTPS": 141,
+        "NS": 4,
+        "SOA": 8,
+        "SRV": 2
+      }
+    },
+    {
+      "ts": "2026-08-11T14:00:00Z",
+      "queries": 998,
+      "blocked": 243,
+      "blocked_percent": 24.35,
+      "cache_hits": 679,
+      "per_type": {
+        "A": 532,
+        "AAAA": 339,
+        "HTTPS": 103,
+        "NS": 3,
+        "SOA": 6,
+        "SRV": 15
+      }
+    },
+    {
+      "ts": "2026-08-11T15:00:00Z",
+      "queries": 520,
+      "blocked": 205,
+      "blocked_percent": 39.42,
+      "cache_hits": 300,
+      "per_type": {
+        "A": 285,
+        "AAAA": 205,
+        "HTTPS": 30
+      }
+    },
+    {
+      "ts": "2026-08-11T16:00:00Z",
+      "queries": 2985,
+      "blocked": 976,
+      "blocked_percent": 32.7,
+      "cache_hits": 1765,
+      "per_type": {
+        "A": 1241,
+        "AAAA": 1259,
+        "HTTPS": 485
+      }
+    },
+    {
+      "ts": "2026-08-11T17:00:00Z",
+      "queries": 5088,
+      "blocked": 2217,
+      "blocked_percent": 43.57,
+      "cache_hits": 2666,
+      "per_type": {
+        "A": 2103,
+        "AAAA": 2105,
+        "HTTPS": 880
+      }
+    },
+    {
+      "ts": "2026-08-11T18:00:00Z",
+      "queries": 3550,
+      "blocked": 1919,
+      "blocked_percent": 54.06,
+      "cache_hits": 1371,
+      "per_type": {
+        "A": 1711,
+        "AAAA": 1633,
+        "HTTPS": 206
+      }
+    },
+    {
+      "ts": "2026-08-11T19:00:00Z",
+      "queries": 3606,
+      "blocked": 2264,
+      "blocked_percent": 62.78,
+      "cache_hits": 1318,
+      "per_type": {
+        "A": 1771,
+        "AAAA": 1601,
+        "HTTPS": 234
+      }
+    },
+    {
+      "ts": "2026-08-11T20:00:00Z",
+      "queries": 3387,
+      "blocked": 2257,
+      "blocked_percent": 66.64,
+      "cache_hits": 1065,
+      "per_type": {
+        "A": 1655,
+        "AAAA": 1497,
+        "HTTPS": 235
+      }
+    },
+    {
+      "ts": "2026-08-11T21:00:00Z",
+      "queries": 3169,
+      "blocked": 2298,
+      "blocked_percent": 72.51,
+      "cache_hits": 861,
+      "per_type": {
+        "A": 1608,
+        "AAAA": 1493,
+        "HTTPS": 68
+      }
+    },
+    {
+      "ts": "2026-08-11T22:00:00Z",
+      "queries": 3483,
+      "blocked": 2348,
+      "blocked_percent": 67.41,
+      "cache_hits": 1114,
+      "per_type": {
+        "A": 1757,
+        "AAAA": 1576,
+        "HTTPS": 150
+      }
+    },
+    {
+      "ts": "2026-08-11T23:00:00Z",
+      "queries": 2893,
+      "blocked": 2117,
+      "blocked_percent": 73.18,
+      "cache_hits": 732,
+      "per_type": {
+        "A": 1524,
+        "AAAA": 1332,
+        "HTTPS": 37
+      }
+    },
+    {
+      "ts": "2026-08-12T00:00:00Z",
+      "queries": 3698,
+      "blocked": 2597,
+      "blocked_percent": 70.23,
+      "cache_hits": 1066,
+      "per_type": {
+        "A": 1893,
+        "AAAA": 1703,
+        "HTTPS": 102
+      }
+    },
+    {
+      "ts": "2026-08-12T01:00:00Z",
+      "queries": 3546,
+      "blocked": 2187,
+      "blocked_percent": 61.68,
+      "cache_hits": 1272,
+      "per_type": {
+        "A": 1726,
+        "AAAA": 1652,
+        "HTTPS": 168
+      }
+    },
+    {
+      "ts": "2026-08-12T02:00:00Z",
+      "queries": 3809,
+      "blocked": 2323,
+      "blocked_percent": 60.99,
+      "cache_hits": 1420,
+      "per_type": {
+        "A": 1830,
+        "AAAA": 1760,
+        "HTTPS": 219
+      }
+    },
+    {
+      "ts": "2026-08-12T03:00:00Z",
+      "queries": 3241,
+      "blocked": 2127,
+      "blocked_percent": 65.63,
+      "cache_hits": 1094,
+      "per_type": {
+        "A": 1583,
+        "AAAA": 1521,
+        "HTTPS": 137
+      }
+    },
+    {
+      "ts": "2026-08-12T04:00:00Z",
+      "queries": 3895,
+      "blocked": 2495,
+      "blocked_percent": 64.06,
+      "cache_hits": 1335,
+      "per_type": {
+        "A": 1867,
+        "AAAA": 1816,
+        "HTTPS": 212
+      }
+    }
+  ]
+}
