@@ -157,6 +157,21 @@ pub struct MemoryBreakdown {
     /// Process resident set size, or `None` where it cannot be read (no
     /// `/proc/self/status` off Linux). The residual is then not computable.
     pub rss: Option<u64>,
+    /// `RssAnon:` — the heap-and-stacks part of `rss`, from the same read.
+    ///
+    /// **This is what decides what the residual is made of.** The residual is
+    /// `rss − accounted`, and it moves for two unrelated reasons: memory the
+    /// allocator holds but has not returned, or file-backed pages the kernel
+    /// charges to this process for reading `/data`. Only these two fields tell
+    /// them apart, and the allocator's own counters cannot — `current_commit`
+    /// is monotone (see [`AllocatorStats::current_commit`]), so it can never
+    /// show a release.
+    ///
+    /// `None` on a kernel that reports `VmRSS:` without the split.
+    pub rss_anon: Option<u64>,
+    /// `RssFile:` — the file-backed part of `rss`, from the same read.
+    /// `rss - rss_anon - rss_file` is shared memory, the third bucket.
+    pub rss_file: Option<u64>,
     /// Kernel readings, or `None` off Unix. Independent of `allocator` on
     /// purpose — see [`ProcessStats`].
     pub process: Option<ProcessStats>,
@@ -221,6 +236,8 @@ mod tests {
         MemoryBreakdown {
             components: components(),
             rss,
+            rss_anon: None,
+            rss_file: None,
             process: None,
             allocator: None,
         }

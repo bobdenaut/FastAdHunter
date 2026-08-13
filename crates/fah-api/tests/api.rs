@@ -247,6 +247,8 @@ impl HistorySource for FakeHistory {
                     },
                 },
                 minor_page_faults: 4_211_337,
+                rss_anon_bytes: 38_000_000,
+                rss_file_bytes: 19_000_000,
                 upstreams: vec![],
             }],
             stride: 1,
@@ -765,6 +767,25 @@ async fn every_latency_stage_carries_count_and_sum_but_no_average() {
     assert_eq!(latency["http"]["block"]["sum_seconds"], 0.031);
 }
 
+/// The residual is `process_rss - accounted`, and it moves for two unrelated
+/// reasons: memory the allocator holds, or file-backed pages charged for
+/// reading `/data`. These two keys are the only thing that separates them, so
+/// they must be on the stable surface rather than behind `/debug`. Served as
+/// `null` where the kernel does not report the split — never as 0, which would
+/// chart as a process with no heap.
+#[tokio::test]
+async fn the_memory_block_splits_rss_into_anon_and_file() {
+    let harness = start().await;
+    let memory = harness.get_json("/api/v1/telemetry").await["memory"].clone();
+
+    for key in ["process_rss_anon", "process_rss_file"] {
+        assert!(
+            memory.get(key).is_some(),
+            "{key} must be present, null or not"
+        );
+    }
+}
+
 /// The producer boundary, asserted structurally: `/debug/memory` is the
 /// telemetry memory block **plus exactly the two allocator figures**. If a
 /// future allocator field lands on the stable surface, this fails.
@@ -986,7 +1007,14 @@ async fn history_perf_rejects_an_unknown_field_and_lists_the_accepted_set() {
     assert_eq!(response.status(), 400);
     let body: Value = response.json().await.unwrap();
     let message = body["error"]["message"].as_str().expect("message");
-    for name in ["rss_bytes", "peak_rss", "memory", "minor_page_faults"] {
+    for name in [
+        "rss_bytes",
+        "peak_rss",
+        "memory",
+        "minor_page_faults",
+        "rss_anon_bytes",
+        "rss_file_bytes",
+    ] {
         assert!(message.contains(name), "{message:?} must list {name}");
     }
 }
@@ -1005,6 +1033,10 @@ async fn history_perf_derives_the_residual_from_each_row() {
     assert_eq!(memory["residual_bytes"], 25_500_000u64);
     assert!(memory.get("process_rss").is_none());
     assert_eq!(body["items"][0]["minor_page_faults"], 4_211_337u64);
+    // The split is what says whether the residual above is heap the
+    // allocator holds or page cache charged for reading /data.
+    assert_eq!(body["items"][0]["rss_anon_bytes"], 38_000_000u64);
+    assert_eq!(body["items"][0]["rss_file_bytes"], 19_000_000u64);
 
     // Both are selectable, and selecting one does not drag the other in.
     let body = harness.get_json("/api/v1/history/perf?fields=memory").await;

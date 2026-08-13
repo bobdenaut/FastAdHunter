@@ -50,6 +50,21 @@ pub struct PerfSample {
     /// Outside `memory` so `accounted()` cannot pick up a kernel counter.
     #[serde(default)]
     pub minor_page_faults: u64,
+    /// `RssAnon:` at capture — the heap-and-stacks part of `rss_bytes`, 0 where
+    /// unavailable.
+    ///
+    /// Persisted because it is the one series that says what the residual is
+    /// made of. `rss_bytes − accounted` moves for two unrelated reasons —
+    /// memory the allocator holds, or file-backed pages charged for reading
+    /// `/data` — and nothing else here separates them. The allocator's commit
+    /// counter cannot: it is monotone, so it can show a rise and never a
+    /// release. Outside `memory` for the same reason as `minor_page_faults`.
+    #[serde(default)]
+    pub rss_anon_bytes: u64,
+    /// `RssFile:` at capture — the file-backed part of `rss_bytes`, 0 where
+    /// unavailable. `rss_bytes - the two` is shared memory, not a rounding gap.
+    #[serde(default)]
+    pub rss_file_bytes: u64,
 }
 
 /// A range of [`PerfSample`]s plus the decimation applied to fit the caller's
@@ -166,6 +181,8 @@ mod tests {
                 },
             },
             minor_page_faults: 4_211_337,
+            rss_anon_bytes: 30_000_000,
+            rss_file_bytes: 19_942_528,
             upstreams: vec![UpstreamSample {
                 address: "1.1.1.1".to_string(),
                 protocol: crate::Protocol::Dot,
@@ -237,5 +254,10 @@ mod tests {
         assert_eq!(sample.rss_bytes, 49_942_528);
         assert_eq!(sample.memory.ruleset, 27_064_396);
         assert_eq!(sample.minor_page_faults, 37_188);
+        assert_eq!(
+            (sample.rss_anon_bytes, sample.rss_file_bytes),
+            (0, 0),
+            "a row predating the RSS split reads as absent, not as a real zero-heap process"
+        );
     }
 }

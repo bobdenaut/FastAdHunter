@@ -69,6 +69,10 @@ const SAMPLE_MEMORY: fah_model::MemoryComponents = fah_model::MemoryComponents {
     },
 };
 const SAMPLE_MINOR_FAULTS: u64 = 4_211_337;
+/// The two halves of `SAMPLE_RSS_BYTES`, so a row that loses the split
+/// cannot pass by accident.
+const SAMPLE_RSS_ANON: u64 = 38_000_000;
+const SAMPLE_RSS_FILE: u64 = 19_213_952;
 
 fn at_hour(hour_epoch: u64) -> SystemTime {
     UNIX_EPOCH + Duration::from_secs(hour_epoch * SECS_PER_HOUR)
@@ -195,6 +199,8 @@ async fn history_is_written_to_disk_and_served_over_http() {
         SAMPLE_RSS_BYTES - 29_500_000
     );
     assert_eq!(sample["minor_page_faults"], SAMPLE_MINOR_FAULTS);
+    assert_eq!(sample["rss_anon_bytes"], SAMPLE_RSS_ANON);
+    assert_eq!(sample["rss_file_bytes"], SAMPLE_RSS_FILE);
     assert!(
         sample["memory"].get("rss_bytes").is_none(),
         "the persisted breakdown must not carry a second copy of the RSS"
@@ -332,6 +338,8 @@ fn perf_sample(ts: u64) -> PerfSample {
         },
         memory: SAMPLE_MEMORY,
         minor_page_faults: SAMPLE_MINOR_FAULTS,
+        rss_anon_bytes: SAMPLE_RSS_ANON,
+        rss_file_bytes: SAMPLE_RSS_FILE,
         upstreams: vec![],
     }
 }

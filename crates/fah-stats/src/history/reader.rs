@@ -446,6 +446,8 @@ mod tests {
             },
             memory: fah_model::MemoryComponents::default(),
             minor_page_faults: 0,
+            rss_anon_bytes: 0,
+            rss_file_bytes: 0,
             upstreams: vec![],
         }
     }

@@ -369,6 +369,10 @@ pub struct PerfSampleResponse {
     pub memory: Option<MemoryComponentsResponse>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub minor_page_faults: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub rss_anon_bytes: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub rss_file_bytes: Option<u64>,
 }
 
 /// Which [`PerfSampleResponse`] keys `?fields=` kept. Names match the response
@@ -388,6 +392,8 @@ pub struct PerfFields {
     pub upstreams: bool,
     pub memory: bool,
     pub minor_page_faults: bool,
+    pub rss_anon_bytes: bool,
+    pub rss_file_bytes: bool,
 }
 
 impl PerfFields {
@@ -404,6 +410,8 @@ impl PerfFields {
         upstreams: true,
         memory: true,
         minor_page_faults: true,
+        rss_anon_bytes: true,
+        rss_file_bytes: true,
     };
 
     pub const NONE: Self = Self {
@@ -418,11 +426,13 @@ impl PerfFields {
         upstreams: false,
         memory: false,
         minor_page_faults: false,
+        rss_anon_bytes: false,
+        rss_file_bytes: false,
     };
 
     /// The accepted `?fields=` names, in response order — also what a rejection
     /// message lists back.
-    pub const NAMES: [&'static str; 11] = [
+    pub const NAMES: [&'static str; 13] = [
         "rss_bytes",
         "peak_rss",
         "qps",
@@ -434,6 +444,8 @@ impl PerfFields {
         "upstreams",
         "memory",
         "minor_page_faults",
+        "rss_anon_bytes",
+        "rss_file_bytes",
     ];
 
     /// Turns one `?fields=` name on; `false` for a name that is not a key.
@@ -450,6 +462,8 @@ impl PerfFields {
             "upstreams" => self.upstreams = true,
             "memory" => self.memory = true,
             "minor_page_faults" => self.minor_page_faults = true,
+            "rss_anon_bytes" => self.rss_anon_bytes = true,
+            "rss_file_bytes" => self.rss_file_bytes = true,
             _ => return false,
         }
         true
@@ -481,11 +495,15 @@ impl HistoryPerfResponse {
                         MemoryComponentsResponse::of(&fah_model::MemoryBreakdown {
                             components: sample.memory,
                             rss: Some(sample.rss_bytes),
+                            rss_anon: None,
+                            rss_file: None,
                             process: None,
                             allocator: None,
                         })
                     }),
                     minor_page_faults: fields.minor_page_faults.then_some(sample.minor_page_faults),
+                    rss_anon_bytes: fields.rss_anon_bytes.then_some(sample.rss_anon_bytes),
+                    rss_file_bytes: fields.rss_file_bytes.then_some(sample.rss_file_bytes),
                     upstreams: fields.upstreams.then_some(sample.upstreams),
                 })
                 .collect(),
@@ -1000,6 +1018,14 @@ pub struct MemoryResponse {
     /// reuse. Read as a rate against query volume, not as an absolute. `null`
     /// off Unix, where `getrusage` does not exist.
     pub minor_page_faults: Option<u64>,
+    /// `RssAnon:` — the heap-and-stacks part of `process_rss`, from the same
+    /// read. With `process_rss_file` it says what the residual is made of:
+    /// memory the allocator holds, or page cache charged for reading `/data`.
+    /// `null` on a kernel that reports `VmRSS:` without the split.
+    pub process_rss_anon: Option<u64>,
+    /// `RssFile:` — the file-backed part of `process_rss`. What the two do not
+    /// cover is shared memory, derivable rather than served as a fourth key.
+    pub process_rss_file: Option<u64>,
 }
 
 impl MemoryResponse {
@@ -1016,6 +1042,8 @@ impl MemoryResponse {
             process_peak_rss: memory.process.map(|p| p.peak_rss),
             major_page_faults: memory.process.map(|p| p.major_page_faults),
             minor_page_faults: memory.process.map(|p| p.minor_page_faults),
+            process_rss_anon: memory.rss_anon,
+            process_rss_file: memory.rss_file,
         }
     }
 }

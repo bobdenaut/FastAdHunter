@@ -70,7 +70,6 @@ pub struct Metrics {
     pub(crate) cleanup: ArcSwap<CleanupSnapshot>,
     pub(crate) upstreams: ArcSwap<Vec<UpstreamSample>>,
     pub(crate) ruleset: ArcSwap<RulesetSnapshot>,
-    pub(crate) memory: ArcSwap<fah_model::MemoryBreakdown>,
 }
 
 impl Default for Metrics {
@@ -102,7 +101,6 @@ impl Metrics {
             cleanup: ArcSwap::new(Arc::new(CleanupSnapshot::default())),
             upstreams: ArcSwap::new(Arc::new(Vec::new())),
             ruleset: ArcSwap::new(Arc::new(RulesetSnapshot::default())),
-            memory: ArcSwap::new(Arc::new(fah_model::MemoryBreakdown::default())),
         }
     }
 
@@ -200,21 +198,6 @@ impl Metrics {
 
     pub fn set_ruleset(&self, snapshot: RulesetSnapshot) {
         self.ruleset.store(Arc::new(snapshot));
-    }
-
-    /// Where the process's memory is, as measured by the binary in one pass
-    /// (p2-07). This crate never reads the structures itself — it is an L3
-    /// sibling of the crates that own them.
-    pub fn set_memory(&self, snapshot: fah_model::MemoryBreakdown) {
-        self.memory.store(Arc::new(snapshot));
-    }
-
-    /// The last published breakdown, for the perf sampler to persist (p2-07).
-    /// Reading it here rather than re-collecting is what keeps a row's
-    /// components and its RSS on one instant — and off a second pass costing
-    /// up to 4.9 ms on-device.
-    pub fn memory(&self) -> fah_model::MemoryBreakdown {
-        **self.memory.load()
     }
 
     /// The engine's operational state for `GET /api/v1/telemetry`, as the L1

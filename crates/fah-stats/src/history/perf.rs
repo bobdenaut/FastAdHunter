@@ -171,6 +171,8 @@ mod tests {
                 stats: fah_model::StatsHeap::default(),
             },
             minor_page_faults: 231_655,
+            rss_anon_bytes: 35_000_000,
+            rss_file_bytes: 20_000_000,
             upstreams: vec![UpstreamSample {
                 address: "1.1.1.1".to_string(),
                 protocol: fah_model::Protocol::Udp,

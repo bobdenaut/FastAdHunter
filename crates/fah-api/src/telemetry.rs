@@ -64,6 +64,9 @@ impl MemorySnapshot {
     /// of once per endpoint.
     pub fn collect(state: &Arc<AppState>) -> Self {
         let cache = state.cache.stats();
+        // One read for the total and its parts — separate reads would put a
+        // skew between `rss` and the split that partitions it.
+        let resident = fah_common::process::resident();
         Self {
             memory: fah_model::MemoryBreakdown {
                 components: fah_model::MemoryComponents {
@@ -71,7 +74,9 @@ impl MemorySnapshot {
                     cache: cache.estimated_bytes,
                     stats: state.stats.heap(),
                 },
-                rss: fah_common::process::resident_bytes(),
+                rss: resident.map(|resident| resident.total),
+                rss_anon: resident.and_then(|resident| resident.anon),
+                rss_file: resident.and_then(|resident| resident.file),
                 // Both through the port, so this crate never learns which
                 // allocator is installed (`crates/fastadhunter/src/allocator.rs`).
                 process: state.telemetry.process(),

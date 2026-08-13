@@ -402,6 +402,7 @@ impl Engine {
                 Arc::clone(&stats),
                 Arc::clone(&metrics),
                 Arc::clone(&pipeline),
+                Arc::clone(&rules),
                 perf_sample_interval_seconds,
             ),
             spawn_telemetry_poll(
@@ -409,7 +410,6 @@ impl Engine {
                 Arc::clone(&rules),
                 Arc::clone(&pipeline),
                 upstreams,
-                Arc::clone(&stats),
             ),
             spawn_policy_ticker(policy_state, rules, Arc::clone(&stats)),
         ];
@@ -563,14 +563,17 @@ fn spawn_event_fanout(
 }
 
 /// Refreshes the metrics that are read rather than pushed: the pipeline's
-/// channel-drop counter, per-upstream health, the compiled ruleset's size, and
-/// the p2-07 memory breakdown.
+/// channel-drop counter, per-upstream health and the compiled ruleset's size.
+///
+/// The p2-07 memory breakdown is **not** here. It has exactly one consumer, the
+/// perf sampler, so collecting it on this 10 s tick discarded 35 of every 36
+/// passes at up to 4.86 ms each. `/telemetry` and `/debug/memory` collect their
+/// own on demand and never read a stored one.
 fn spawn_telemetry_poll(
     metrics: Arc<fah_metrics::Metrics>,
     rules: Arc<fah_rules::ListManager>,
     pipeline: Arc<fah_dns::Pipeline<fah_dns::UpstreamPool>>,
     upstreams: fah_dns::UpstreamPool,
-    stats: Arc<fah_stats::Stats>,
 ) -> tokio::task::JoinHandle<()> {
     tokio::spawn(async move {
         let mut ticker = tokio::time::interval(TELEMETRY_POLL);
@@ -613,72 +616,11 @@ fn spawn_telemetry_poll(
                     .collect(),
             );
 
-            // Memory breakdown (p2-07), gathered in ONE pass so
-            // `Σ(components) + residual == rss` holds within this snapshot.
-            // Reading RSS at a different instant from the components would
-            // push the skew into the residual, which is precisely the signal
-            // this exists to keep clean.
-            //
-            // This is also the only layer allowed to see all three sources:
-            // fah-rules, fah-dns and fah-stats are L3 siblings that never
-            // import each other, and fah-metrics never learns what any of
-            // them is — it just receives the finished snapshot.
-            // **On the blocking pool, not a DNS worker.** Every read below is
-            // synchronous, and on the RB5009 the pass has been measured between
-            // 495 µs and 4.86 ms — a 10× spread that tracks cache occupancy.
-            // Inline on a `tokio::spawn`ed task that was up to ~5 ms of one of
-            // four workers not answering queries, every 10 s: an unbounded tail
-            // on the query path, which golden rule 8 (PERFORMANCE.md) exists to
-            // forbid. `spawn_blocking` makes the duration irrelevant to latency
-            // however far it drifts — the same treatment, for the same reason,
-            // that `ListManager::compile` already gets.
-            //
-            // The whole breakdown is built inside the closure so the "every
-            // field sampled at the same instant" invariant above still holds:
-            // moving the pass must not smear it across the two schedulers.
-            let matcher = rules.matcher();
-            let memory = {
-                let pipeline = Arc::clone(&pipeline);
-                let stats = Arc::clone(&stats);
-                let matcher = Arc::clone(&matcher);
-                tokio::task::spawn_blocking(move || fah_model::MemoryBreakdown {
-                    components: fah_model::MemoryComponents {
-                        ruleset: matcher.heap_bytes() as u64,
-                        cache: pipeline.cache_stats().bytes,
-                        stats: stats.heap(),
-                    },
-                    // `None` where RSS cannot be read (a non-Linux dev box, or
-                    // an unreadable /proc/self/status), so the residual reports
-                    // as absent rather than as a fabricated RSS of zero.
-                    rss: fah_common::process::resident_bytes(),
-                    // Same instant as the components above: `minor_page_faults`
-                    // is read as a rate against the query counters sampled in
-                    // this pass, and skew would land in that rate.
-                    process: process::stats(),
-                    allocator: allocator::stats(),
-                })
-                .await
-                .expect("memory accounting task panicked")
-            };
-            if memory.over_accounted() {
-                // Impossible in reality: components cannot hold more than the
-                // process resides. Means a `heap_bytes` double-counts, or
-                // counts something not resident. Logged rather than silently
-                // floored at zero, because a wrong instrument is worse than
-                // no instrument.
-                tracing::warn!(
-                    accounted = memory.accounted(),
-                    rss = ?memory.rss,
-                    "memory accounting exceeds RSS — a component heap_bytes is over-reporting",
-                );
-            }
-            metrics.set_memory(memory);
-
             // `len` and `duplicates_removed` are field reads. The ruleset's
-            // *size* is deliberately not read here: it is already in the
-            // breakdown above, sampled inside the `spawn_blocking`, and a second
-            // `heap_bytes()` walk on this runtime worker is precisely the tail
-            // the comment above moved off it.
+            // *size* is deliberately not read here: `heap_bytes()` is a walk,
+            // and this is a runtime worker. The perf sampler reads it on the
+            // blocking pool, where its duration cannot reach query latency.
+            let matcher = rules.matcher();
             metrics.set_ruleset(fah_metrics::RulesetSnapshot {
                 rules: matcher.len(),
                 duplicates_removed: matcher.duplicates_removed(),
@@ -722,15 +664,89 @@ fn spawn_policy_ticker(
     })
 }
 
+/// Where the process's memory is, gathered in **one pass** so
+/// `Σ(components) + residual == rss` holds within the snapshot. Reading RSS at a
+/// different instant from the components would push the skew into the residual,
+/// which is precisely the signal this exists to keep clean.
+///
+/// This is also the only layer allowed to see all three sources: `fah-rules`,
+/// `fah-dns` and `fah-stats` are L3 siblings that never import each other.
+///
+/// **On the blocking pool, not a runtime worker.** Every read is synchronous and
+/// the pass measures 495 µs – 4.86 ms on the RB5009, a 10× spread tracking cache
+/// occupancy. `spawn_blocking` makes that duration irrelevant to query latency
+/// however far it drifts — the same treatment `ListManager::compile` gets, for
+/// the same reason (PERFORMANCE.md golden rule 8).
+///
+/// Returns the cache read alongside the breakdown because the caller needs both
+/// and the walk is the expensive half. Reading it twice would put a second
+/// bounded walk on a runtime worker *and* let a row's `cache.bytes` disagree
+/// with its own `memory.cache`.
+/// Takes the matcher itself rather than the `ListManager` that owns it: sizing
+/// a ruleset needs one `heap_bytes()` walk, not the lifecycle around it. The
+/// caller loads the live matcher — an atomic refcount bump — and hands it over,
+/// which also pins *which* ruleset the row describes when a refresh swaps one
+/// in mid-pass.
+async fn collect_memory(
+    matcher: Arc<fah_rules::Matcher>,
+    pipeline: &Arc<fah_dns::Pipeline<fah_dns::UpstreamPool>>,
+    stats: &Arc<fah_stats::Stats>,
+) -> (fah_model::MemoryBreakdown, fah_dns::CacheStats) {
+    let pipeline = Arc::clone(pipeline);
+    let stats = Arc::clone(stats);
+    let (memory, cache) = tokio::task::spawn_blocking(move || {
+        // One read for the total and its parts, so the split cannot skew
+        // against the total it partitions.
+        let resident = fah_common::process::resident();
+        let cache = pipeline.cache_stats();
+        let memory = fah_model::MemoryBreakdown {
+            components: fah_model::MemoryComponents {
+                ruleset: matcher.heap_bytes() as u64,
+                cache: cache.bytes,
+                stats: stats.heap(),
+            },
+            // `None` where RSS cannot be read (a non-Linux dev box, or an
+            // unreadable /proc/self/status), so the residual reports as absent
+            // rather than as a fabricated RSS of zero.
+            rss: resident.map(|resident| resident.total),
+            rss_anon: resident.and_then(|resident| resident.anon),
+            rss_file: resident.and_then(|resident| resident.file),
+            // Same instant as the components above: `minor_page_faults` is read
+            // as a rate against the query counters sampled in this pass, and
+            // skew would land in that rate.
+            process: process::stats(),
+            allocator: allocator::stats(),
+        };
+        (memory, cache)
+    })
+    .await
+    .expect("memory accounting task panicked");
+
+    if memory.over_accounted() {
+        // Impossible in reality: components cannot hold more than the process
+        // resides. Means a `heap_bytes` double-counts, or counts something not
+        // resident. Logged rather than silently floored at zero, because a
+        // wrong instrument is worse than no instrument.
+        tracing::warn!(
+            accounted = memory.accounted(),
+            rss = ?memory.rss,
+            "memory accounting exceeds RSS — a component heap_bytes is over-reporting",
+        );
+    }
+    (memory, cache)
+}
+
 /// Samples the live perf/system/cache figures on [`PERF_SAMPLE_INTERVAL`] and
 /// hands each [`fah_model::PerfSample`] to `fah-stats` to persist. Reads only
-/// snapshots — RSS, [`fah_metrics::Metrics::snapshot`], the cache port — never
-/// the per-query path (hard rule 3). Keeps the previous metrics snapshot so
-/// lifetime-cumulative counters become per-interval rates and percentiles.
+/// snapshots — the memory breakdown, [`fah_metrics::Metrics::snapshot`], the
+/// cache port — never the per-query path (hard rule 3). Keeps the previous
+/// metrics snapshot so lifetime-cumulative counters become per-interval rates
+/// and percentiles.
 fn spawn_perf_sampler(
     stats: Arc<fah_stats::Stats>,
     metrics: Arc<fah_metrics::Metrics>,
     pipeline: Arc<fah_dns::Pipeline<fah_dns::UpstreamPool>>,
+    rules: Arc<fah_rules::ListManager>,
     sample_interval_seconds: u32,
 ) -> tokio::task::JoinHandle<()> {
     // Boot-class: the ticker is built once here. `history.retention_days` and
@@ -750,18 +766,18 @@ fn spawn_perf_sampler(
                 continue;
             }
             let current = metrics.snapshot();
-            let cache = pipeline.cache_stats();
-            // The telemetry poll's breakdown, not a second collection (p2-07):
-            // it costs up to 4.9 ms on-device, and its own RSS is preferred so
-            // `rss_bytes - accounted` stays a single-instant residual. Falls
-            // back to a fresh read before the first poll publishes, and off
-            // Linux where both are 0.
-            let memory = metrics.memory();
-            let rss = memory.rss.or_else(fah_common::process::resident_bytes);
+            // Collected here, once per persisted row, because this is the only
+            // thing that reads it (p2-07). One walk serves both the row's cache
+            // block and the breakdown's cache component, so they cannot
+            // disagree inside a single sample.
+            //
+            // The matcher is loaded per tick, not captured once: a refresh
+            // swaps in a new ruleset and the row must size the one serving now.
+            let (memory, cache) = collect_memory(rules.matcher(), &pipeline, &stats).await;
             // `PerfSample::rss_bytes` is a plain `u64`, so an unreadable RSS
             // persists as 0 — which the history reader already charts as "not
             // recorded" rather than as a real measurement.
-            let rss = rss.unwrap_or(0);
+            let rss = memory.rss.unwrap_or(0);
             let sample =
                 build_perf_sample(&current, prev.as_ref(), &cache, rss, &memory, interval_secs);
             stats.persist_perf_sample(sample).await;
@@ -827,6 +843,8 @@ fn build_perf_sample(
         },
         memory: memory.components,
         minor_page_faults: memory.process.map_or(0, |p| p.minor_page_faults),
+        rss_anon_bytes: memory.rss_anon.unwrap_or(0),
+        rss_file_bytes: memory.rss_file.unwrap_or(0),
         latency: latency_summary(current, prev),
         // One type end to end (`fah_model::UpstreamSample`), so this is a clone
         // rather than a field-by-field remap into a structurally identical
@@ -970,6 +988,8 @@ mod tests {
                 },
             },
             rss: Some(1000),
+            rss_anon: Some(700),
+            rss_file: Some(300),
             process: Some(fah_model::ProcessStats {
                 minor_page_faults: 7,
                 peak_rss: 3000,
