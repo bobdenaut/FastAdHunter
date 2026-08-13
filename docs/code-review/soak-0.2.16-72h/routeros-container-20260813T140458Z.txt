@@ -1,0 +1,27 @@
+[bobdenaut@bobdenaut-router] > /container/config/print
+    registry-url: https://registry-1.docker.io
+        username:                             
+       layer-dir:                             
+          tmpdir: /kingston/pull              
+     memory-high: unlimited                   
+  memory-current: 104.2MiB                    
+
+
+[bobdenaut@bobdenaut-router] > /container/print detail
+Flags: 
+S - stopped, N - starting, R - running, T - stopping, E - downloading/extracting, D - deleting, F - download/extract failed
+ 0 R ;;; fastadhunter
+     file=kingston/fastadhunter-rosready-0.2.16.tar remote-image="" 
+     check-certificate=yes name="fastadhunter-rosready-0.2.16" 
+     tag="docker.io/library/fastadhunter:0.2.16" os="linux" arch="arm64" 
+     interface=veth1 env="" envlists=fah-env cmd="" entrypoint="" 
+     stop-signal=15-SIGTERM stop-time=10s 
+     root-dir=/kingston/fastadhunter/root layer-dir="" mount="" tmpfs="" 
+     mountlists=fah-config,fah-data shm-size=64.0MiB dns="" hostname="" 
+     domain-name="" workdir="/home/nonroot" logging=yes start-on-boot=yes 
+     auto-restart-interval=none cpu-list=cpu0,cpu1,cpu2,cpu3 
+     memory-high=unlimited memory-current=103.5MiB cpu-usage=0.2 devices="" 
+     passed-devs="" image-id="5e73563746f17231ae806cada9e7dbedd5da4fa39cd6cf122
+         3133f9af4b8939c" 
+     layers=root hosts="" 
+
