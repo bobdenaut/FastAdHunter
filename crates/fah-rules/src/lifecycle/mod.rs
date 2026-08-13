@@ -516,10 +516,10 @@ impl ListManager {
             if age >= entry.interval(self.default_refresh_hours) {
                 continue;
             }
-            // `checked_sub`, not `-`: the monotonic clock counts from system
-            // boot, so a router that rebooted minutes ago cannot represent an
-            // instant hours in the past. `None` there means "fall back to
-            // treating the list as due", not "panic".
+            // `checked_sub`, not `-`: an age wider than the monotonic clock's
+            // own range underflows. `None` means "fall back to treating the
+            // list as due", not "panic". A clock younger than the age is fine
+            // — an instant before boot is representable and compares correctly.
             let Some(attempted_at) = now.checked_sub(age) else {
                 continue;
             };

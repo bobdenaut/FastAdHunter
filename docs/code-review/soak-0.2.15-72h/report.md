@@ -10,25 +10,37 @@ Workload: live household DNS, no synthetic load.
 | --- | --- | --- | --- |
 | Container start (boot #1) | 2026-08-11 05:25:50Z | — | — |
 | T0 | 2026-08-11 05:31:57Z | 327 s | `20260811T053157Z` |
-| **Router reboot** | 2026-08-11 ≈ 06:36Z | — | — |
-| Container start (boot #2) | 2026-08-11 ≈ 06:42:30Z | — | — |
+| **Router reboot** | 2026-08-11 ≈ 06:38:08Z | — | — |
+| Container start (boot #2) | 2026-08-11 06:42:14Z | — | — |
 | T1 | 2026-08-12 05:15:04Z | 81 143 s (22.5 h) | `2026-08-12T05-15-04.409925Z` |
 | T2 | 2026-08-13 12:07:26Z | 192 312 s (53.4 h) | `20260813T120726Z` |
-| T3 | ≈ 2026-08-14 06:45Z | ≈ 259 200 s | pending |
+| T2.5 — run closed | 2026-08-13 12:44:53Z | 194 559 s (54.0 h) | `20260813T124453Z` |
+
+The run ends at T2.5, short of 72 h: 0.2.16 carries the p1-01 **M4** fix, which
+0.2.15 does not, and reflashing to measure it forfeits the third diurnal cycle.
+What T3 was for — `allocator_committed`'s trend and whether the residual band
+keeps narrowing — carries over to `soak-0.2.16-72h`.
 
 **The soak clock is boot #2, not T0.** `process_peak_rss` falls 137.05 → 119.21
-MiB across T0 → T1, which no single process can do; uptime at T1 and T2 both
-resolve the start to 2026-08-11 06:42:30Z ±30 s. The T1 snapshot's own
-`routeros-resource` gives the cause — router `uptime: 22h39m1s`, i.e. RouterOS
-booted 06:36Z and took the container with it. T0 therefore measures a process
-that no longer exists; it is kept as a boot measurement, not as this run's
-baseline. The 72 h endpoint moves with it.
+MiB across T0 → T1, which no single process can do; uptime at T1, T2 and T2.5
+all resolve the start to 2026-08-11 06:42:14Z. The cause is a router reboot:
+read at the same instant as T2.5, RouterOS `uptime` exceeds the container's by
+4 m 6 s, putting the reboot at ≈ 06:38:08Z with ~4 min for RouterOS to bring the
+container back up. T0 therefore measures a process that no longer exists; it is
+kept as a boot measurement, not as this run's baseline. The 72 h endpoint moves
+with it.
+
+The T1 snapshot's `routeros-resource` (`uptime: 22h39m1s`) reads ≈ 06:36Z for
+the reboot. That figure is superseded: its capture time relative to the API pull
+was never recorded, and it places the reboot *after* the container start, which
+cannot be.
 
 T2 was sampled at 12:07Z against T0/T1's ≈ 05:15Z — roughly 7 h further into the
 diurnal cycle. Any two-point memory delta between them carries that offset.
 
-No RouterOS snapshot accompanies T2: the router's SSH port is closed from the
-dev box, so `routeros-resource`/`routeros-container` for that stamp are absent.
+T2 has no RouterOS pair; T2.5 does. The router's SSH listens on **port 2202**
+under the `bobdenaut` host alias, not on 22 — a probe of the default port
+reports `Connection refused`, which is not evidence that SSH is unavailable.
 
 Snapshots live beside this file. Predecessor run:
 [../soak-0.2.15/report.md](../soak-0.2.15/report.md).
@@ -112,55 +124,87 @@ inside the window, which is what confounded the predecessor run (its step landed
 T0 is a different process (see the points table); it is in the table for
 continuity, not as a term in any delta.
 
-| Field | T0 (boot #1) | T1 | T2 |
-| --- | --- | --- | --- |
-| uptime | 327 s | 81 143 s | 192 312 s |
-| rules / duplicates_removed | 662 141 / 457 214 | 662 141 / 457 214 | 661 832 / 456 117 |
-| compile_duration | 2.504 s | 2.509 s | 2.419 s |
-| ruleset_bytes | 21.02 MiB | 21.02 MiB | 21.00 MiB |
-| process_rss | 51.02 MiB | 59.60 MiB | 71.22 MiB |
-| process_peak_rss | 137.05 MiB | 119.21 MiB | 164.65 MiB |
-| accounted_bytes | 22.04 MiB | 26.10 MiB | 26.70 MiB |
-| residual_bytes | 28.98 MiB | 33.50 MiB | 44.52 MiB |
-| allocator_committed (= peak) | 254.81 MiB | 259.19 MiB | 385.38 MiB |
-| cache entries / bytes | 146 / 184.8 KiB | 3 133 / 2.73 MiB | 3 761 / 3.16 MiB |
-| cache evictions | 0 | 0 | 0 |
-| stale served / swr completed | 0 / 0 | 13 656 / 13 020 | 36 708 / 35 594 |
-| swr failed | 0 | 0 | 0 |
-| DNS queries (cumulative) | 378 | 60 828 | 142 833 |
-| upstream failures (1.1.1.1) | 0 / 213 | 8 / 28 408 | 15 / 60 532 |
-| block mean latency | 49.1 µs | 44.8 µs | 44.9 µs |
-| cache-hit mean latency | 48.6 µs | 50.6 µs | 50.9 µs |
-| forward mean latency | 36.7 ms | 22.1 ms | 30.1 ms |
-| minor page faults | 84 877 | 193 605 | 512 027 |
+| Field | T0 (boot #1) | T1 | T2 | T2.5 |
+| --- | --- | --- | --- | --- |
+| uptime | 327 s | 81 143 s | 192 312 s | 194 559 s |
+| rules / duplicates_removed | 662 141 / 457 214 | 662 141 / 457 214 | 661 832 / 456 117 | 661 832 / 456 117 |
+| compile_duration | 2.504 s | 2.509 s | 2.419 s | 2.419 s |
+| ruleset_bytes | 21.02 MiB | 21.02 MiB | 21.00 MiB | 21.00 MiB |
+| process_rss | 51.02 MiB | 59.60 MiB | 71.22 MiB | 61.34 MiB |
+| process_peak_rss | 137.05 MiB | 119.21 MiB | 164.65 MiB | 164.65 MiB |
+| accounted_bytes | 22.04 MiB | 26.10 MiB | 26.70 MiB | 26.68 MiB |
+| residual_bytes | 28.98 MiB | 33.50 MiB | 44.52 MiB | 34.67 MiB |
+| allocator_committed (= peak) | 254.81 MiB | 259.19 MiB | 385.38 MiB | 385.38 MiB |
+| cgroup `memory-current` | 87.72 MiB | 104.40 MiB | — | 119.70 MiB |
+| cache entries / bytes | 146 / 184.8 KiB | 3 133 / 2.73 MiB | 3 761 / 3.16 MiB | 3 766 / 3.15 MiB |
+| cache evictions | 0 | 0 | 0 | 0 |
+| stale served / swr completed | 0 / 0 | 13 656 / 13 020 | 36 708 / 35 594 | 37 290 / 36 169 |
+| swr failed / dropped | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| DNS queries (cumulative) | 378 | 60 828 | 142 833 | 149 433 |
+| upstream failures (1.1.1.1) | 0 / 213 | 8 / 28 408 | 15 / 60 532 | 15 / 61 175 |
+| block mean latency | 49.1 µs | 44.8 µs | 44.9 µs | 44.5 µs |
+| cache-hit mean latency | 48.6 µs | 50.6 µs | 50.9 µs | 50.9 µs |
+| forward mean latency | 36.7 ms | 22.1 ms | 30.1 ms | 30.1 ms |
+| minor page faults | 84 877 | 193 605 | 512 027 | 517 122 |
 
-### Residual is a sawtooth, not a ramp
+T2 → T2.5 is 37 minutes and settles two things. `process_peak_rss` does not move
+off 164.65 MiB, so the 2026-08-13T05:26Z refresh compile set that high-water and
+nothing since approached it — that is the clean **M4** reference for 0.2.16, not
+an ambiguous one. And RSS falls 71.22 → 61.34 MiB with residual 44.52 → 34.67
+MiB in those same 37 minutes, which is the sawtooth's descending edge, not a
+trend.
 
-A point sample of `residual_bytes` is unusable on its own — the envelope from
-`history/perf` is the reading that means something:
+The cgroup's `memory-current` (119.70 MiB) runs roughly double the process RSS
+(61.34 MiB). The difference is page cache and container accounting, not FAH's
+heap; `memory-high=unlimited`, so nothing is under pressure.
 
-| Window (24 h, 240 points) | residual min / max / last | rss min / max |
-| --- | --- | --- |
-| T0 → T1 | 20.1 / 82.6 / 39.8 MiB | 37.0 / 106.7 MiB |
-| T1 → T2 | 35.6 / 72.3 / 48.2 MiB | 59.9 / 96.8 MiB |
+### RSS steps up overnight and is released — retention, not growth
 
-The floor rises (20.1 → 35.6 MiB) while the ceiling falls (82.6 → 72.3 MiB) —
-the band narrows rather than translating upward, which monotonic growth cannot
-do. Two windows still cannot separate a load-correlated floor from a slow leak;
-the third diurnal cycle is what settles it.
+A point sample of `process_rss` is unusable on its own: T0 → T2.5 reads
+51.02 → 59.60 → 71.22 → 61.34 MiB, which looks like a ramp only because each
+point sits at a different phase of a cycle. The hourly series (724 points,
+three `history/perf` pulls merged and deduplicated) shows the shape:
 
-`accounted_bytes` moves +0.60 MiB across the 31 h between T1 and T2, so the
-+11.02 MiB of residual and the +126.19 MiB of `allocator_committed` are arena
-retention, not tracked structures. `allocator_committed` is the figure to watch
-at T3: +126 MiB in one day is the largest single-window move this run has shown.
+| Hour (UTC) | rss med | residual med | qps med | cache entries |
+| --- | --- | --- | --- | --- |
+| 08-12 19–21Z | 63.8–64.7 MiB | 39.5–40.4 MiB | 0.46–0.56 | ~2 780 |
+| 08-12 22Z | 73.0 MiB | 48.7 MiB | 0.17 | 2 805 |
+| 08-13 01–05Z | 75.1–76.5 MiB | 51.0–52.3 MiB | 0.11–1.00 | 2 670–2 814 |
+| 08-13 06Z | 61.8 MiB | 37.6 MiB | 1.01 | 2 879 |
+| 08-13 09–12Z | 61.7–62.4 MiB | 36.9–37.6 MiB | 0.83–2.79 | 3 502–3 761 |
+
+A +11 MiB step up, held ~8 h, released in one sample. Cache entries are flat
+across the step, so the cache is not what moves.
+
+**Residual is anti-correlated with query rate** — highest (52.3 MiB) at the
+quietest hour (0.12 qps), lowest (36.9 MiB) at the busiest (2.79). Load does not
+drive it. The release lands immediately after the 2026-08-13T05:26Z refresh
+compile, which churns allocator arenas hard.
+
+This answers the predecessor run's open question: its "~10 MiB overnight RSS
+drift" is **retention**, same magnitude, and it comes back.
+
+`accounted_bytes` goes 22.7 → 25.0 MiB across the 54 h, and all +2.3 MiB of it
+is the DNS cache filling from cold (0.85 → 3.16 MiB) — the same number. That is
+warm-up against a bound it is nowhere near: 7.5 % of `max_entries`, 4.9 % of
+`max_bytes`, zero evictions. `ruleset_bytes` and both stats figures are flat.
+
+**Not demonstrated.** mimalloc arena retention is the leading hypothesis for the
+residual swing, not a proven mechanism. `history/perf`'s `memory` block carries
+six fields and `allocator_committed` is not among them, so the hypothesis cannot
+be tested from the series. `allocator_committed` did step 259.19 → 385.38 MiB at
+the refresh compile and hold — but committed is not resident, and residual
+*fell* after that same compile, so the two do not track each other. Sampling
+`allocator_committed` into `PerfSample` is what would settle it.
 
 ### Load and cache
 
 Blocked share falls 53.8 % → 45.4 % over the two 24 h stats windows on nearly
 identical volume (63 085 → 62 594 queries), and cache-hit rises 40.6 % → 50.8 %.
-Both track which clients were awake, not a matcher change. Cache is at 7.5 % of
-`max_entries` and 4.9 % of `max_bytes` with **zero evictions** across 53 h —
-the cache bound has never been the binding constraint in this run.
+Both track which clients were awake, not a matcher change — the ruleset is
+byte-stable except for the one refresh. Cache is at 7.5 % of `max_entries` and
+4.9 % of `max_bytes` with **zero evictions** across 54 h; the cache bound has
+never been the binding constraint in this run.
 
 SWR: 35 594 enqueued and completed, 0 failed, 0 dropped, 1 113 deduplicated.
 
@@ -197,11 +241,18 @@ run's binary — the figures here are all `0.2.15` as deployed.
 
 ## Remaining TODOs
 
-- T3 at ≈ 2026-08-14 06:45Z (72 h from boot #2), with the RouterOS pair — needs
-  SSH from the router console or a paste, the dev box cannot reach port 22.
-- Answer at T3: does `allocator_committed` keep climbing after the +126.19 MiB
-  T1 → T2 step, or settle; does the `residual_bytes` band keep narrowing across
-  the third diurnal cycle.
+- Carried to `soak-0.2.16-72h`: does the overnight +11 MiB step recur on a third
+  diurnal cycle and get released each time, or does its floor ratchet; does
+  `allocator_committed` keep climbing after the +126.19 MiB step, or settle.
+  This run ends at 54.0 h and cannot answer either.
+- **Add `allocator_committed_bytes` to `PerfSample`.** The residual swing's
+  leading explanation is arena retention and the series cannot test it — the
+  figure exists only in `GET /api/v1/telemetry` and `/debug/memory`, which are
+  point reads. One `u64` per 360 s sample.
+- Carried: **M4 on-device**. References from this run, same ~662k-rule corpus —
+  boot-from-cache compile peak 119.21 MiB (T1), refresh-all compile peak 164.65
+  MiB (T2/T2.5). 0.2.16 is the first build carrying M4; expect ≈ −12 MiB on
+  each if the Windows/x86 figure transfers.
 - Expose list refresh schedule (next-refresh time) so a soak window can be
   placed against it. The T2 finding sharpens this: `last_refresh` alone cannot
   answer "when does this list refresh next", which is why the redundant

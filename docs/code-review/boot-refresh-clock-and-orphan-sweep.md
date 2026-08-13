@@ -69,11 +69,24 @@ due:
 | `age >= interval` | genuinely stale | due |
 | mtime unreadable | platform will not report it | due |
 | **mtime in the future** | the RB5009 has no battery-backed RTC, so a container can start before NTP syncs and see a clock behind its own files | due |
-| `Instant::checked_sub` returns `None` | the monotonic clock counts from *system* boot, so a router that rebooted minutes ago cannot represent an instant hours in the past | due |
+| `Instant::checked_sub` returns `None` | i64 underflow of the monotonic timespec | due |
 
-That last row is worth naming: **after a router reboot the fix silently does not
-apply** and the double compile still happens. That is deliberate. Refetching
-once too often is free; skipping refreshes is not.
+**Retracted — this row does not fire after a router reboot.** It was written as
+"the monotonic clock counts from system boot, so a router that rebooted minutes
+ago cannot represent an instant hours in the past", and named as the case where
+the fix silently does not apply. On Linux it does apply. `Timespec::tv_sec` is
+an `i64` and `checked_sub_duration` fails only on i64 underflow
+(`library/std/src/sys/pal/unix/time.rs`), so an instant *before* boot is
+representable and compares correctly. The guard is real but only against
+arithmetic overflow, not against a young clock.
+
+Observed twice, both after genuine router reboots with the container starting
+under a monotonic clock younger than the cache files:
+
+| Date | Router uptime at container start | Cache age | Result |
+| ---- | -------------------------------- | --------- | ------ |
+| 2026-08-11 06:42Z (0.2.15) | ~4 min | ~1 h 17 m | seeded; no refresh for the next 22.5 h |
+| 2026-08-13 13:15Z (0.2.16) | 51 s | ~7 h 49 m | `refresh schedule restored … lists=17`, no refresh |
 
 ### The one behaviour change
 
