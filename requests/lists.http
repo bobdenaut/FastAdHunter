@@ -134,7 +134,7 @@ Content-Type: application/json
 
 {
   "enabled": true,
-  "refresh_hours": 6
+  "refresh_hours": 48
 }
 
 ### Clear the per-list override — explicit null, not omission. The list falls

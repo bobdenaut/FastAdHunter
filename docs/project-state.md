@@ -176,6 +176,14 @@ not merely address churn.
   without adding the field.
 - **`tui-monitor/config.toml` is tracked and holds a bearer token**, while
   `.gitignore` excludes `.vscode/` for exactly that reason.
+- **A name makes a client immune to eviction** — `ClientRegistry` drops the
+  least-recently-seen *unnamed* entry first (`client_registry.rs:81-85`). On an
+  IPv6 privacy address that pins an identity which expires within days. Name
+  only stable addresses: IPv4, or an EUI-64 ULA once the device has privacy
+  extensions off — the ULA prefix never rotates, so that one holds. The registry
+  caps at 4096, so this is data hygiene, not a memory bound. Corollary:
+  `$client=<name>` reaches only the address families that carry the name, which
+  is why `p2-14` tested with a CIDR term instead.
 
 ## Known-good gate note
 

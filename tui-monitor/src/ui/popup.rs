@@ -5,8 +5,8 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Clear, Paragraph, Wrap};
 use ratatui::Frame;
 
-use crate::models::events::QueryItem;
 use crate::models::events::EventType;
+use crate::models::events::QueryItem;
 use crate::models::lan::LanNames;
 use crate::util::format::{bytes, millis};
 
@@ -145,7 +145,7 @@ mod tests {
         assert!(rendered.contains("Cache"), "{rendered}");
         assert!(rendered.contains("MISS"), "{rendered}");
     }
-    
+
     #[test]
     fn a_dns_item_shows_the_record_type_and_the_cache_flag() {
         let rendered = text(&detail_lines(
