@@ -64,6 +64,29 @@ use crate::url_matcher::{UrlDecision, UrlIndex, UrlIndexBuilder};
 
 pub(crate) const EMPTY: u32 = u32::MAX;
 
+/// Slot layout: a domain-hash tag, then the record index. The tag is a
+/// rejection filter — a probe passing a foreign entry skips it without pulling
+/// that record and its arena bytes in from DRAM.
+const INDEX_BITS: u32 = 24;
+const INDEX_MASK: u32 = (1 << INDEX_BITS) - 1;
+
+/// One below what 24 bits address, so the largest packing is `u32::MAX - 1` and
+/// a tagged slot can never collide with [`EMPTY`].
+const MAX_RECORDS: usize = INDEX_MASK as usize;
+
+/// The low byte, which `fastrange` discards: it derives the bucket from the
+/// high bits, so a tag taken from there would be implied by the bucket and
+/// reject nothing.
+#[inline]
+fn tag_of(hash: u64) -> u32 {
+    (hash & 0xFF) as u32
+}
+
+#[inline]
+fn pack_slot(tag: u32, index: u32) -> u32 {
+    (tag << INDEX_BITS) | index
+}
+
 // Record flag bits.
 const FLAG_ALLOW: u8 = 1 << 0;
 const FLAG_SUBDOMAINS: u8 = 1 << 1;
@@ -529,7 +552,13 @@ impl MatcherBuilder {
         };
 
         let dom_off = u32::try_from(self.arena.len()).expect("arena within 4 GiB");
-        let rec_idx = u32::try_from(self.records.len()).expect("at most u32::MAX rules");
+        // The slot table packs this index into 24 bits alongside a hash tag, so
+        // the ceiling is checked here rather than truncated there.
+        assert!(
+            self.records.len() < MAX_RECORDS,
+            "at most {MAX_RECORDS} compiled rules"
+        );
+        let rec_idx = self.records.len() as u32;
         // One test for the rule that carries no option, which is nearly every
         // rule; the side maps still take the `Arc` by refcount, not by copy.
         if let Some(opts) = &rule.opts {
@@ -693,14 +722,15 @@ impl MatcherBuilder {
         for (idx, rec) in self.records.iter().enumerate() {
             let domain =
                 &self.arena[rec.dom_off as usize..rec.dom_off as usize + rec.dom_len as usize];
-            let mut slot = fastrange(hash_domain(domain), cap);
+            let hash = hash_domain(domain);
+            let mut slot = fastrange(hash, cap);
             while slots[slot] != EMPTY {
                 slot += 1;
                 if slot == cap {
                     slot = 0;
                 }
             }
-            slots[slot] = idx as u32;
+            slots[slot] = pack_slot(tag_of(hash), idx as u32);
         }
 
         // A mask array is only worth its bytes once some rule is invisible to
@@ -873,10 +903,13 @@ impl Matcher {
             let suffix = &query[start..];
             let is_subdomain_level = suffix.len() != query.len();
 
-            let mut slot = fastrange(hash_domain(suffix), self.slot_cap);
+            let hash = hash_domain(suffix);
+            let tag = tag_of(hash);
+            let mut slot = fastrange(hash, self.slot_cap);
             while self.slots[slot] != EMPTY {
-                let idx = self.slots[slot];
-                if self.domain_of(idx).eq_ignore_ascii_case(suffix) {
+                let packed = self.slots[slot];
+                let idx = packed & INDEX_MASK;
+                if packed >> INDEX_BITS == tag && self.domain_of(idx).eq_ignore_ascii_case(suffix) {
                     let rec = &self.records[idx as usize];
                     let type_applies = !rec.has_dnstype()
                         || qbit.is_some_and(|bit| self.dnstype[&idx].0 & bit != 0);
