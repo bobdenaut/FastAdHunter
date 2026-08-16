@@ -1083,24 +1083,28 @@ impl Matcher {
         text.push_str("||");
         text.push_str(domain);
         text.push('^');
-        // AdGuard option syntax: one `$`, further options comma-separated.
+        // AdGuard option syntax: one `$`, further options comma-separated. The
+        // flags gate the side maps, as they do in `lookup_domain`: a record
+        // carries the entry exactly when it carries the flag, so hashing a key
+        // the flag already answered for costs the rules that have no option.
         let mut sep = '$';
-        if let Some((_, raw)) = self.dnstype.get(&index) {
+        if rec.has_dnstype() {
+            let (_, raw) = &self.dnstype[&index];
             text.push(sep);
             text.push_str("dnstype=");
             text.push_str(raw);
             sep = ',';
         }
-        if let Some(raw) = self.rewrite.get(&index) {
+        if rec.has_rewrite() {
             text.push(sep);
             text.push_str("dnsrewrite=");
-            text.push_str(raw);
+            text.push_str(&self.rewrite[&index]);
             sep = ',';
         }
-        if let Some(scope) = self.clients.get(&index) {
+        if rec.has_client() {
             text.push(sep);
             text.push_str("client=");
-            text.push_str(&scope.raw);
+            text.push_str(&self.clients[&index].raw);
         }
         DecisiveRule::new(self.lists[rec.list_id as usize].clone(), text)
     }

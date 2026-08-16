@@ -40,6 +40,12 @@ tokio = { workspace = true, features = ["io-util", "macros", "net", "rt-multi-th
 name = "matcher"
 harness = false
 
+# What a block costs after the walk: `decisive_rule` and `id_of` separated from
+# the lookup, over a corpus whose option side maps are non-empty (p3-03).
+[[bench]]
+name = "decisive"
+harness = false
+
 # Lookup on two overlapping lists — what deduplication does to the slot table
 # and its probe chains, not just to resident bytes (p1.5-05).
 [[bench]]
