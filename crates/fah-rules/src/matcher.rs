@@ -64,6 +64,14 @@ use crate::url_matcher::{UrlDecision, UrlIndex, UrlIndexBuilder};
 
 pub(crate) const EMPTY: u32 = u32::MAX;
 
+/// Longest text an option-free rule reconstructs to: `@@` + `||` + the arena's
+/// longest possible domain + `^`.
+const PLAIN_RULE_MAX: usize = 2 + 2 + u8::MAX as usize + 1;
+
+/// Room a reconstructed rule's options usually need past its domain, so the
+/// `String` an option-bearing rule builds does not grow mid-assembly.
+const OPTION_TEXT_HEADROOM: usize = 32;
+
 /// Slot layout: a domain-hash tag, then the record index. The tag is a
 /// rejection filter — a probe passing a foreign entry skips it without pulling
 /// that record and its arena bytes in from DRAM.
@@ -1076,13 +1084,28 @@ impl Matcher {
         }
         let rec = &self.records[index as usize];
         let domain = std::str::from_utf8(self.domain_of(index)).unwrap_or("");
-        let mut text = String::with_capacity(domain.len() + 6);
-        if rec.is_allow() {
-            text.push_str("@@");
+        // The part every rule has, on the stack: bounded by the arena's `u8`
+        // domain length. An option-free rule — nearly every rule — reaches
+        // `Arc<str>` straight from here, in one allocation rather than via a
+        // `String`, and an option-bearing one starts its `String` from the same
+        // bytes instead of pushing them a field at a time.
+        let mut buffer = [0u8; PLAIN_RULE_MAX];
+        let mut len = 0;
+        for part in [
+            if rec.is_allow() { &b"@@"[..] } else { b"" },
+            b"||",
+            domain.as_bytes(),
+            b"^",
+        ] {
+            buffer[len..len + part.len()].copy_from_slice(part);
+            len += part.len();
         }
-        text.push_str("||");
-        text.push_str(domain);
-        text.push('^');
+        let head = std::str::from_utf8(&buffer[..len]).unwrap_or("");
+        if rec.flags & (FLAG_DNSTYPE | FLAG_REWRITE | FLAG_CLIENT) == 0 {
+            return DecisiveRule::new(self.lists[rec.list_id as usize].clone(), head);
+        }
+        let mut text = String::with_capacity(head.len() + OPTION_TEXT_HEADROOM);
+        text.push_str(head);
         // AdGuard option syntax: one `$`, further options comma-separated. The
         // flags gate the side maps, as they do in `lookup_domain`: a record
         // carries the entry exactly when it carries the flag, so hashing a key
