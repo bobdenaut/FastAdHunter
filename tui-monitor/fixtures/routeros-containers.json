@@ -1,4 +1,9 @@
 [
-  { "name": "fastadhunter", "status": "running", "memory-current": "89346048" },
+  {
+    "name": "fastadhunter-rosready-0.2.16",
+    "comment": "fastadhunter",
+    "running": "true",
+    "memory-current": "89346048"
+  },
   { "name": "probe", "status": "stopped", "memory-current": false }
 ]

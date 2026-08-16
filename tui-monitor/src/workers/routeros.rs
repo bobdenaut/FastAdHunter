@@ -8,7 +8,7 @@ use std::sync::Arc;
 use crate::client::{ApiClient, RouterOsClient};
 use crate::config::PollConfig;
 use crate::models::lan::ClientEntry;
-use crate::models::routeros::{DhcpLease, Neighbor};
+use crate::models::routeros::{Container, DhcpLease, Neighbor};
 use crate::state::{LinkStatus, SharedState};
 
 pub async fn run(
@@ -44,8 +44,10 @@ pub async fn run(
                 router.uptime = resource.uptime;
             }
             if let Ok(container) = container {
+                // `memory_current` is `Copy`, so it reads through the borrow
+                // and the label consumes what is about to be dropped.
                 router.container_memory = container.as_ref().and_then(|c| c.memory_current);
-                router.container_status = container.and_then(|c| c.status);
+                router.container_status = container.and_then(Container::status_label);
             }
         });
 

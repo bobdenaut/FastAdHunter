@@ -46,12 +46,12 @@ impl RouterOsClient {
             .ok_or_else(|| "empty /system/resource".to_string())
     }
 
-    /// The configured container, if the router is running one by that name.
+    /// The configured container, if the router holds one by that name.
     pub async fn container(&self) -> Result<Option<Container>, String> {
         let containers: Vec<Container> = self.get("/container").await?;
         Ok(containers
             .into_iter()
-            .find(|entry| entry.name.as_deref() == Some(self.container.as_str())))
+            .find(|entry| entry.is_named(&self.container)))
     }
 
     /// The neighbour-discovery cache: address to MAC, for neighbours the router
