@@ -30,6 +30,8 @@ pub const UPSTREAM_IP: Ipv4Addr = Ipv4Addr::new(93, 184, 216, 34);
 /// just released. Three losses in a row is a machine problem, not a race.
 const BOOT_ATTEMPTS: u32 = 3;
 
+const DNS_PORT_DRAWS: u32 = 512;
+
 /// Kills the spawned binary when the test ends, however it ends.
 pub struct Guard(pub Child);
 
@@ -405,16 +407,22 @@ pub fn insecure_client_config() -> rustls::ClientConfig {
 
 // ─── ports ──────────────────────────────────────────────────────────────
 
-/// Asks the OS for a free port by binding and releasing it. Inherently racy —
-/// but the alternative is hard-coding ports, which collides with whatever the
-/// developer is already running (an AdGuard Home on 53, say). The window is
-/// microseconds and the test fails loudly rather than silently if it loses.
+/// Draws a port free on both UDP and TCP — what the DNS listener binds.
+/// Windows keeps separate excluded-port ranges per protocol, so a port the OS
+/// hands out for UDP can still be TCP-reserved; failed draws are held so the
+/// allocator advances past a whole reserved block. Hard-coding instead would
+/// collide with whatever the developer already runs (an AdGuard Home on 53).
 pub fn free_udp_port() -> u16 {
-    std::net::UdpSocket::bind("127.0.0.1:0")
-        .expect("bind an ephemeral UDP port")
-        .local_addr()
-        .expect("local addr")
-        .port()
+    let mut rejected = Vec::new();
+    for _ in 0..DNS_PORT_DRAWS {
+        let udp = std::net::UdpSocket::bind("127.0.0.1:0").expect("bind an ephemeral UDP port");
+        let port = udp.local_addr().expect("local addr").port();
+        if std::net::TcpListener::bind((Ipv4Addr::LOCALHOST, port)).is_ok() {
+            return port;
+        }
+        rejected.push(udp);
+    }
+    panic!("no ephemeral port was bindable on both UDP and TCP in {DNS_PORT_DRAWS} draws")
 }
 
 pub fn free_tcp_port() -> u16 {
@@ -423,4 +431,23 @@ pub fn free_tcp_port() -> u16 {
         .local_addr()
         .expect("local addr")
         .port()
+}
+
+#[test]
+fn free_udp_port_is_bindable_on_both_protocols() {
+    for _ in 0..32 {
+        let port = free_udp_port();
+        let udp = std::net::UdpSocket::bind((Ipv4Addr::LOCALHOST, port));
+        let tcp = std::net::TcpListener::bind((Ipv4Addr::LOCALHOST, port));
+        assert!(
+            udp.is_ok(),
+            "port {port} must be bindable on UDP: {:?}",
+            udp.err()
+        );
+        assert!(
+            tcp.is_ok(),
+            "port {port} must be bindable on TCP: {:?}",
+            tcp.err()
+        );
+    }
 }
