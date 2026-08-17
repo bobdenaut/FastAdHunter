@@ -54,13 +54,13 @@ task must pick one **before** writing the block-response code:
 
 Recommendation: (1). The property in (2) that gets lost is the one the p1.5
 metrics work existed to establish. Record the choice here and in
-`docs/code-review/p2-04-review.md`.
+`docs/code-review/phase2/p2-04-review.md`.
 
 ## Inherited from the p2-03 review — build `HttpRequest` correctly
 
 Two requirements land on this task because it is the first code to construct a
 `fah_model::HttpRequest`. Both were found by review, not by a failing test, and
-both fail *silently* — see `docs/code-review/p2-03-review.md` §"Raised, not
+both fail *silently* — see `docs/code-review/phase2/p2-03-review.md` §"Raised, not
 fixed".
 
 1. **Strip the port from `host` and `document_host`.** The field docs say
@@ -105,5 +105,5 @@ Policies/per-client (p2-06), HTML content rewriting (Phase 4).
 
 > Read plan/wip/phase2/p2-04-http-filtering-pipeline.md, RULE_ENGINE.md §HTTP
 > matching, ARCHITECTURE.md wiring rules, and the "Raised, not fixed" section of
-> docs/code-review/p2-03-review.md. Wire verdicts into the proxy with type-aware
+> docs/code-review/phase2/p2-03-review.md. Wire verdicts into the proxy with type-aware
 > block responses, RequestEvent flow, doc updates, and tests.

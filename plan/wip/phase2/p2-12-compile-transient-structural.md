@@ -38,8 +38,8 @@ scheduled refresh at 13:16:35Z) and reproduced structurally on the dev box:
 | Exact peak point | `MatcherBuilder::add_parsed_list_masked` for `big.oisd.nl` |
 
 **The attribution is complete** —
-[`docs/code-review/p2-12-compile-transient-attribution.md`](../../../docs/code-review/p2-12-compile-transient-attribution.md),
-instrument and raw output in `docs/code-review/p2-12-attribution/`. Measured
+[`docs/code-review/phase2/p2-12-compile-transient-attribution.md`](../../../docs/code-review/phase2/p2-12-compile-transient-attribution.md),
+instrument and raw output in `docs/code-review/phase2/p2-12-attribution/`. Measured
 with a counting `GlobalAlloc` over mimalloc v3.3.2 (the container's allocator
 and version) against the real 26.26 MiB corpus; reproduces to the byte.
 
@@ -104,7 +104,7 @@ inventing new ones.
    sampling a sample lands inside one 0.76 % of the time.
 2. **Dev box:** counting `GlobalAlloc` over `fah-rules`' public API against the
    pinned corpus — the instrument is saved at
-   `docs/code-review/p2-12-attribution/szprobe.rs`, so re-deriving costs a build
+   `docs/code-review/phase2/p2-12-attribution/szprobe.rs`, so re-deriving costs a build
    and not a rewrite. Gives logical live-heap attribution independent of the
    device's allocator/OS RSS behaviour — the one thing the dev box *can*
    measure here, since `process_rss` returns `None` on Windows. It records
@@ -170,7 +170,7 @@ guard for this peak.
       p2-11 demonstrated — the deliverable is knowing where the memory goes.
       **Done 2026-08-08, zero repo changes** — 106.61 of 125.69 MB measured
       exactly, 19.08 MB allocator/OS bounded but not explained
-      (`docs/code-review/p2-12-compile-transient-attribution.md`).
+      (`docs/code-review/phase2/p2-12-compile-transient-attribution.md`).
 - [ ] Compile CPU measured before and after, on ARM64. Streaming removes
       436 k `Vec` pushes and a realloc chain, so it should be neutral or
       better — **unmeasured, and must not be assumed.** Current on-device

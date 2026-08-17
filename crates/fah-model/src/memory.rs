@@ -94,7 +94,7 @@ pub struct AllocatorStats {
     /// kernel reading.
     ///
     /// **Treat this as a high-water mark, not a live figure.** Measured on the
-    /// RB5009 under mimalloc v3 (0.2.7, `docs/code-review/`
+    /// RB5009 under mimalloc v3 (0.2.7, `docs/code-review/phase2/`
     /// `0.2.7-router-memory-and-throughput.md` §5.2): the counter is monotone
     /// non-decreasing, because v3 does not decrement it when a purge returns
     /// pages to the OS. `current_commit == peak_commit` at every reading taken

@@ -23,7 +23,7 @@ growth to a component instead of only reporting RSS. Then proof.
 **Validated by `p2-03` — the interface held as written.** `lookup_http` was
 added as a second typed entry point over the same compiled ruleset, with no
 trait object and no second matcher. Two things the note left open were decided
-in implementation and are recorded in `docs/code-review/p2-03-review.md`:
+in implementation and are recorded in `docs/code-review/phase2/p2-03-review.md`:
 
 1. **A request consults both tiers**, under one precedence order. The note only
    said the domain index would be *reused* by the non-intercepted HTTPS path;
@@ -93,7 +93,7 @@ later phases".
 
 1. *Classification* was broken until `p2-00`: real EasyList was misdetected
    entirely, and 389 path-qualified rules were misfiled as whole-domain DNS
-   rules. Fixed — see `docs/code-review/p2-00-review.md`.
+   rules. Fixed — see `docs/code-review/phase2/p2-00-review.md`.
 2. *Storage* never existed. `RuleKind::Inactive(InactiveReason)` is a bare
    `Copy` enum with no payload; `ParsedRule` deliberately drops the line text.
    Nothing of `||paypal.com^*/pixel.gif` survives parsing except one
@@ -135,7 +135,7 @@ renumbering `p2-09`.
 ## Follow-ups from the mimalloc review (not yet tasks)
 
 Both surfaced while reviewing `fah-rules` during the allocator work
-(`docs/code-review/mimalloc-and-todos-review.md` §2–§3). Small, independent, and
+(`docs/code-review/phase2/mimalloc-and-todos-review.md` §2–§3). Small, independent, and
 neither blocks anything.
 
 1. **Bound `pending_cache` in aggregate.** A persistently unwritable `/data`
@@ -157,14 +157,14 @@ neither blocks anything.
 EasyList + EasyPrivacy target corpus on the RB5009. It has been built and
 verified on-device: `unindexed` is 0 on both corpora and 8 KiB fell
 5,335.7 → 553.8 µs (p99 569.5), inside budget at every measured length.**
-Report: `docs/code-review/p2-10-url-substring-index.md`. The measurement that
+Report: `docs/code-review/phase2/p2-10-url-substring-index.md`. The measurement that
 motivated it is below, kept because the two corpora are still the argument for
 scoping any claim about this tier.
 
 Measured on-device by a throwaway probe container; production served DNS
 throughout. Report and raw evidence:
-[`docs/code-review/p2-08-url-lookup-arm.md`](../../../docs/code-review/p2-08-url-lookup-arm.md)
-+ `docs/code-review/p2-08-arm/`.
+[`docs/code-review/phase2/p2-08-url-lookup-arm.md`](../../../docs/code-review/phase2/p2-08-url-lookup-arm.md)
++ `docs/code-review/phase2/p2-08-arm/`.
 
 | Corpus | URL rules | Unindexed | 8 KiB URL, RB5009 | vs 1 ms |
 | --- | --- | --- | --- | --- |
@@ -209,21 +209,134 @@ heap.
 
 | # | Task file | Outcome | MODEL | STATUS |
 |---|-----------|---------|-------|--------|
-| 0 | `p2-00-adblock-parser-correctness.md` | Sample-based format detection; `\|\|d^*/path` → URL pattern, `\|\|d^\|` → exact-host DNS rule; `degraded` list status. Verified against the reference ruleset: 0 exceptions lost, 0 new blocks (`docs/code-review/p2-00-review.md`) | Opus | DONE |
-| 1 | `p2-01-http-scaffold.md` | `fah-http` (L3) binds `[http]` only when `engine.mode` names http; dual-stack bind shared via `fah_common::listen`; ARCHITECTURE/CONTEXT/CONFIGURATION/PERFORMANCE + diagrams (`docs/code-review/p2-01-review.md`) | Sonnet | DONE |
-| 2 | `p2-02-http-proxy-core.md` | Transparent streaming proxy; `HostResolver` port moved to L1 and shared; default-deny egress guard at L1 judging the **resolved** address (shared with Phase 3); connection handler generic over the stream, proven over `DuplexStream`; pass-through +35 µs in-process vs a 1 ms budget (`docs/code-review/p2-02-review.md`) | Opus | DONE |
-| 3 | `p2-03-url-rules-activation.md` | URL tier live: retention (+3.3 ms parse, measured against the real pre-change parser), 16 B records + exact/prefix/suffix token index, `lookup_http` over both tiers, no regex; 18,778 EasyList+EasyPrivacy rules in **1.06 MiB**, verdict **3.09 µs** (real corpus, pinned, post-review), allocation-free. **Reviewed 2026-08-01: 6 defects fixed** — an unbounded matcher (one request measured at 313 ms), `$dnsrewrite` deciding HTTP requests, type-restricted exceptions over-blocking on `Unknown`, `$domain=example.*` never firing, a fail-open `$domain=` payload, and over-long payloads dropped while counted active (`docs/code-review/p2-03-review.md`) | Opus | DONE |
-| 4 | `p2-04-http-filtering-pipeline.md` | Verdicts wired into the proxy on the **head**, before resolve — a block costs no DNS lookup and no upstream connection (asserted against a connection-counting origin). Type-aware block responses; one widened event channel (`fah_model::Event`) so the shed figure stays one number; `kind=dns\|http` through the query log and API. Port stripping + resource-type inference landed as p2-03's review required. Added latency **32.4 µs** vs p2-02's 33.6 µs, of which FastAdHunter's own work is **≈5 µs — 80 % of it the verdict** (`docs/code-review/p2-04-review.md`) | Opus | DONE |
-| 5 | `p2-05-policy-model.md` | Policy/Schedule/Assignment + `$client` active. **The phase's memory risk is closed**: all policies share one compiled ruleset with a 16-bit per-rule visibility mask, so N policies cost **+2.03 MiB flat** at deployed scale instead of ~+17 MiB each (measured 12.099 MiB per-policy vs 6.839 MiB shared, over four lists) — and a deployment with no policies allocates nothing. Schedules are POSIX TZ, DST-correct, no tzdb dependency. Found and fixed an accidental parser invariant that would have compiled `\|\|d^$client` into an **unrestricted** domain block (`docs/code-review/p2-05-review.md`) | Opus | DONE |
-| 6 | `p2-06-per-client-enforcement.md` | Both pipelines resolve the client's policy per request via one precomputed snapshot (schedules evaluated and names resolved on a 20 s tick in the **binary** — `fah-rules` stays a pure library). Policy CRUD + `/clients/{ip}/policy`; only mask-affecting edits recompile. Per-policy stats, `?policy=` log filter, `rules/test` policy context. **Two defects fixed**: a p2-05 mask-drop that let a policy enabling no compiled list see *everything*, and an uncanonicalized v4-mapped peer that broke HTTP assignments. Zero-config cost measured at **+8.5 ns/query**, documented rather than claimed as free (`docs/code-review/p2-06-review.md`) | Opus | DONE |
-| 7 | `p2-07-historical-memory-breakdown.md` | **Feature complete 2026-08-02, gates green.** `MemoryComponents` split out of `MemoryBreakdown` and persisted into `PerfSample` with `minor_page_faults`, both `#[serde(default)]`; the sampler reuses the telemetry poll's breakdown (and its RSS, so a row's residual is single-instant) instead of collecting twice; `/history/perf` serves `memory` + `minor_page_faults` with the residual derived per row through the same `residual()` the live path uses; `fastadhunter_memory_collection_seconds` removed. ~6.9 MB/30 days at 60 s, hot path untouched (`docs/code-review/p2-07-review.md` §11). **Closed on-device 2026-08-06** (§12): residual on all 4,657 rows of two independent windows (61.3 h @ 60 s, 36.2 h @ 360 s), slopes **+0.082 / +0.027 MiB/h** whole-window and **+0.174 / −0.057 MiB/h** over the final thirds — signs disagree, means agree to 0.4 %, so no drift. Live and persisted RSS 0.02 % apart across a 32 s gap. Residual **57–58 % of RSS** is the mimalloc-era baseline; §1's 45 % is not the number it improves on. One criterion failed — **five container starts**, cause external to FAH (ISP IPv6 outage, owner rebooting the router); the pre-reboot window satisfies the rest alone and the post-reboot window reproduces it | Opus | DONE |
-| 8 | `p2-08-phase2-verification.md` | **Dev-box work complete 2026-08-02, gates green (779 tests).** Opaque-body bench added beside the head-path arm: over four runs the proxy adds **+33 to +43 µs** on the head path and **+34 to +37 µs** at 8 KiB, rising to +0.6–1.4 ms at 8 MiB — consistent with work that scales with transfer size, though the bench does not attribute it. The 1 MiB arm is **not quoted**: it swung 2.7× and twice reported proxied as faster than direct. Pinning must not be used on these benches (§Measuring reliably is for CPU-bound microbenches). `http_e2e` boots the real binary in `dns+http` (page relayed, ad script blocked empty, second client blocked by `$client`, all three on the events socket and as `kind=http`); boot machinery extracted to `tests/common`. PERFORMANCE.md rows replace the placeholders with target separated from measurement, and record the **123.74 MiB boot peak vs the 128 MB budget** plus the deferred streaming-parse lever. 0.2.10 built, deployed, dst-nat live; T0 captured (`docs/code-review/0.2.10-soak-baseline.md`). **Found: HTTP interception is IPv4-only** — mirror rules written, deliberately deferred to after the window. Earlier out-of-order criterion (long-URL sweep) still stands; do not re-run it. **Closed on-device 2026-08-06** (`docs/code-review/p2-08-review.md`): an in-tree probe container (`crates/fah-http/examples/httpbench.rs` + `Dockerfile.httpprobe`) measured the proxy on the RB5009 over 4 runs — added latency **+161 µs (min) / +344 µs (p50)** vs 1 ms, opaque throughput **271 / 208 MiB/s** vs 100 MiB/s, and a **blocked request 48–55 % cheaper than a forwarded one**. Three findings: the dev box was optimistic by 4.4×, the **~9× factor does not convert HTTP work** (4.55–10.09× spread), and the verdict's on-device cost is **unresolvable** (sign flips across runs). Concurrency remains unmeasured | Opus | DONE |
-| 9 | `p2-09-api-telemetry-consolidation.md` | **Rewritten 2026-08-06, replacing the former "Query Log Reader" task entirely** (that task made the persisted segments searchable through `GET /queries`; this one *removes* that endpoint — `[query_log] enabled = false` in deployment and the websocket is the live view). One `GET /api/v1/telemetry` serving the whole engine state as JSON, so a dashboard stops polling three endpoints and parsing Prometheus text for the rule count, latency totals and upstream counters — the 23 `/metrics` families with no JSON equivalent anywhere. Metrics placed by **producer**: application + kernel → `/telemetry` (stable contract), allocator internals → `/debug/*` (free to change). Gathered in one `TelemetrySnapshot::collect()` for bounded skew, not atomicity. Also folds the two duplicate `/proc/self/status` parsers into one. **Shipped 2026-08-07 as `9273604`** — `/metrics` and `[api] metrics_public` removed (31 of 33 families duplicated `/telemetry` or `/debug/memory`; the two that did not were raw histogram buckets, whose percentiles `/history/perf` already serves), `GET /api/v1/queries` and the whole `[query_log]` subsystem removed, `/health` the only unauthenticated route. `tui-monitor` rewritten as 28 modules behind a strict HTTP → client → typed models → workers → AppState → ui layering. **Verified on-device**: 0.2.12 ran a 15.6 h soak with `/telemetry` as the only snapshot surface (`docs/code-review/soak-0.2.12/`), invariants coherent — `hits + misses == pass + allow` and the stale identity both hold at absolute *and* delta level across two captures | Opus | DONE |
-| 10 | *(no task file — done directly)* | URL substring index: literal-run n-gram tier so every rule is indexed (`unindexed` 77 → 0), plus SIMD (`memchr`) for the unanchored first-byte scan and the `*`-widening retry. On-device 8 KiB **5,335.7 → 553.8 µs**, 11.6× on x86, +2,372 bytes heap; retracts two claims from the p2-08 measurement (`docs/code-review/p2-10-url-substring-index.md`) | Opus | DONE |
-| 11 | `p2-11-compile-peak-rss.md` | **Answered with zero code.** The peak is a *ratchet across compiles*, not one compile's cost: 131.5 → 209.9 → 228.7 MiB over boot + two refreshes, saturating ~230 MiB, driven by mimalloc's deferred purge. `MIMALLOC_PURGE_DELAY` 100 → **0** cut peak **230.7 → 181.4 MiB** and steady RSS **58.13 → 46.6 MiB**, and removed a 7.4–9.9 s plateau of dead memory held *after* the ruleset was swapped in. Retracts the 0.2.8 "regression" framing (boot is 122–131 MiB across three boots) and PERFORMANCE.md's streaming-parse lever (raw text was never the dominant term). Left open: `delay=0` unmeasured above ~0.5 qps, and ~59 MiB of ratchet survives (suspect `arena_reserve`=1 GiB) (`docs/code-review/p2-11-compile-transient.md`) | Opus | DONE |
-| 12 | `p2-12-compile-transient-structural.md` | Takes the three terms `p2-11` did not test. **Attribution done 2026-08-08, zero repo changes** (`docs/code-review/p2-12-compile-transient-attribution.md`, instrument in `docs/code-review/p2-12-attribution/`): 106.61 of the 125.69 MB device transient measured exactly under the container's own allocator and version, 19.08 MB allocator/OS bounded but not explained. Dominant term is the **parsed form** — `big.oisd.nl`'s `ParsedRuleList` at 56.51 MB, 135.8 B/rule for data the arena keeps at 33.9. Killed two hypotheses: moving reallocs are +2.12 MB not ~20, and `heap_bytes()` is accurate to 0.15 %. Size-class rounding is +10.20 MB but an upper bound on RSS, not a measurement of it. Found: **list order is worth ±19.92 MB** and the deployment sits at the best case by accident, but sorting changes the compiled ruleset. Item 3's lever corrected 2× down to ≈3.7 MB. **Closed with zero code, as `p2-11` was** — the levers are sized and not taken, so the criteria gating a code change do not apply; the allocator term on musl/ARM64 stays an open question, not an acceptance criterion | Opus | DONE |
+| 0 | `p2-00-adblock-parser-correctness.md` | Sample-based format detection; `\|\|d^*/path` → URL pattern, `\|\|d^\|` → exact-host DNS rule; `degraded` list status. Verified against the reference ruleset: 0 exceptions lost, 0 new blocks (`docs/code-review/phase2/p2-00-review.md`) | Opus | DONE |
+| 1 | `p2-01-http-scaffold.md` | `fah-http` (L3) binds `[http]` only when `engine.mode` names http; dual-stack bind shared via `fah_common::listen`; ARCHITECTURE/CONTEXT/CONFIGURATION/PERFORMANCE + diagrams (`docs/code-review/phase2/p2-01-review.md`) | Sonnet | DONE |
+| 2 | `p2-02-http-proxy-core.md` | Transparent streaming proxy; `HostResolver` port moved to L1 and shared; default-deny egress guard at L1 judging the **resolved** address (shared with Phase 3); connection handler generic over the stream, proven over `DuplexStream`; pass-through +35 µs in-process vs a 1 ms budget (`docs/code-review/phase2/p2-02-review.md`) | Opus | DONE |
+| 3 | `p2-03-url-rules-activation.md` | URL tier live: retention (+3.3 ms parse, measured against the real pre-change parser), 16 B records + exact/prefix/suffix token index, `lookup_http` over both tiers, no regex; 18,778 EasyList+EasyPrivacy rules in **1.06 MiB**, verdict **3.09 µs** (real corpus, pinned, post-review), allocation-free. **Reviewed 2026-08-01: 6 defects fixed** — an unbounded matcher (one request measured at 313 ms), `$dnsrewrite` deciding HTTP requests, type-restricted exceptions over-blocking on `Unknown`, `$domain=example.*` never firing, a fail-open `$domain=` payload, and over-long payloads dropped while counted active (`docs/code-review/phase2/p2-03-review.md`) | Opus | DONE |
+| 4 | `p2-04-http-filtering-pipeline.md` | Verdicts wired into the proxy on the **head**, before resolve — a block costs no DNS lookup and no upstream connection (asserted against a connection-counting origin). Type-aware block responses; one widened event channel (`fah_model::Event`) so the shed figure stays one number; `kind=dns\|http` through the query log and API. Port stripping + resource-type inference landed as p2-03's review required. Added latency **32.4 µs** vs p2-02's 33.6 µs, of which FastAdHunter's own work is **≈5 µs — 80 % of it the verdict** (`docs/code-review/phase2/p2-04-review.md`) | Opus | DONE |
+| 5 | `p2-05-policy-model.md` | Policy/Schedule/Assignment + `$client` active. **The phase's memory risk is closed**: all policies share one compiled ruleset with a 16-bit per-rule visibility mask, so N policies cost **+2.03 MiB flat** at deployed scale instead of ~+17 MiB each (measured 12.099 MiB per-policy vs 6.839 MiB shared, over four lists) — and a deployment with no policies allocates nothing. Schedules are POSIX TZ, DST-correct, no tzdb dependency. Found and fixed an accidental parser invariant that would have compiled `\|\|d^$client` into an **unrestricted** domain block (`docs/code-review/phase2/p2-05-review.md`) | Opus | DONE |
+| 6 | `p2-06-per-client-enforcement.md` | Both pipelines resolve the client's policy per request via one precomputed snapshot (schedules evaluated and names resolved on a 20 s tick in the **binary** — `fah-rules` stays a pure library). Policy CRUD + `/clients/{ip}/policy`; only mask-affecting edits recompile. Per-policy stats, `?policy=` log filter, `rules/test` policy context. **Two defects fixed**: a p2-05 mask-drop that let a policy enabling no compiled list see *everything*, and an uncanonicalized v4-mapped peer that broke HTTP assignments. Zero-config cost measured at **+8.5 ns/query**, documented rather than claimed as free (`docs/code-review/phase2/p2-06-review.md`) | Opus | DONE |
+| 7 | `p2-07-historical-memory-breakdown.md` | **Feature complete 2026-08-02, gates green.** `MemoryComponents` split out of `MemoryBreakdown` and persisted into `PerfSample` with `minor_page_faults`, both `#[serde(default)]`; the sampler reuses the telemetry poll's breakdown (and its RSS, so a row's residual is single-instant) instead of collecting twice; `/history/perf` serves `memory` + `minor_page_faults` with the residual derived per row through the same `residual()` the live path uses; `fastadhunter_memory_collection_seconds` removed. ~6.9 MB/30 days at 60 s, hot path untouched (`docs/code-review/phase2/p2-07-review.md` §11). **Closed on-device 2026-08-06** (§12): residual on all 4,657 rows of two independent windows (61.3 h @ 60 s, 36.2 h @ 360 s), slopes **+0.082 / +0.027 MiB/h** whole-window and **+0.174 / −0.057 MiB/h** over the final thirds — signs disagree, means agree to 0.4 %, so no drift. Live and persisted RSS 0.02 % apart across a 32 s gap. Residual **57–58 % of RSS** is the mimalloc-era baseline; §1's 45 % is not the number it improves on. One criterion failed — **five container starts**, cause external to FAH (ISP IPv6 outage, owner rebooting the router); the pre-reboot window satisfies the rest alone and the post-reboot window reproduces it | Opus | DONE |
+| 8 | `p2-08-phase2-verification.md` | **Dev-box work complete 2026-08-02, gates green (779 tests).** Opaque-body bench added beside the head-path arm: over four runs the proxy adds **+33 to +43 µs** on the head path and **+34 to +37 µs** at 8 KiB, rising to +0.6–1.4 ms at 8 MiB — consistent with work that scales with transfer size, though the bench does not attribute it. The 1 MiB arm is **not quoted**: it swung 2.7× and twice reported proxied as faster than direct. Pinning must not be used on these benches (§Measuring reliably is for CPU-bound microbenches). `http_e2e` boots the real binary in `dns+http` (page relayed, ad script blocked empty, second client blocked by `$client`, all three on the events socket and as `kind=http`); boot machinery extracted to `tests/common`. PERFORMANCE.md rows replace the placeholders with target separated from measurement, and record the **123.74 MiB boot peak vs the 128 MB budget** plus the deferred streaming-parse lever. 0.2.10 built, deployed, dst-nat live; T0 captured (`docs/code-review/phase2/0.2.10-soak-baseline.md`). **Found: HTTP interception is IPv4-only** — mirror rules written, deliberately deferred to after the window. Earlier out-of-order criterion (long-URL sweep) still stands; do not re-run it. **Closed on-device 2026-08-06** (`docs/code-review/phase2/p2-08-review.md`): an in-tree probe container (`crates/fah-http/examples/httpbench.rs` + `Dockerfile.httpprobe`) measured the proxy on the RB5009 over 4 runs — added latency **+161 µs (min) / +344 µs (p50)** vs 1 ms, opaque throughput **271 / 208 MiB/s** vs 100 MiB/s, and a **blocked request 48–55 % cheaper than a forwarded one**. Three findings: the dev box was optimistic by 4.4×, the **~9× factor does not convert HTTP work** (4.55–10.09× spread), and the verdict's on-device cost is **unresolvable** (sign flips across runs). Concurrency remains unmeasured | Opus | DONE |
+| 9 | `p2-09-api-telemetry-consolidation.md` | **Rewritten 2026-08-06, replacing the former "Query Log Reader" task entirely** (that task made the persisted segments searchable through `GET /queries`; this one *removes* that endpoint — `[query_log] enabled = false` in deployment and the websocket is the live view). One `GET /api/v1/telemetry` serving the whole engine state as JSON, so a dashboard stops polling three endpoints and parsing Prometheus text for the rule count, latency totals and upstream counters — the 23 `/metrics` families with no JSON equivalent anywhere. Metrics placed by **producer**: application + kernel → `/telemetry` (stable contract), allocator internals → `/debug/*` (free to change). Gathered in one `TelemetrySnapshot::collect()` for bounded skew, not atomicity. Also folds the two duplicate `/proc/self/status` parsers into one. **Shipped 2026-08-07 as `9273604`** — `/metrics` and `[api] metrics_public` removed (31 of 33 families duplicated `/telemetry` or `/debug/memory`; the two that did not were raw histogram buckets, whose percentiles `/history/perf` already serves), `GET /api/v1/queries` and the whole `[query_log]` subsystem removed, `/health` the only unauthenticated route. `tui-monitor` rewritten as 28 modules behind a strict HTTP → client → typed models → workers → AppState → ui layering. **Verified on-device**: 0.2.12 ran a 15.6 h soak with `/telemetry` as the only snapshot surface (`docs/code-review/phase2/soak-0.2.12/`), invariants coherent — `hits + misses == pass + allow` and the stale identity both hold at absolute *and* delta level across two captures | Opus | DONE |
+| 10 | *(no task file — done directly)* | URL substring index: literal-run n-gram tier so every rule is indexed (`unindexed` 77 → 0), plus SIMD (`memchr`) for the unanchored first-byte scan and the `*`-widening retry. On-device 8 KiB **5,335.7 → 553.8 µs**, 11.6× on x86, +2,372 bytes heap; retracts two claims from the p2-08 measurement (`docs/code-review/phase2/p2-10-url-substring-index.md`) | Opus | DONE |
+| 11 | `p2-11-compile-peak-rss.md` | **Answered with zero code.** The peak is a *ratchet across compiles*, not one compile's cost: 131.5 → 209.9 → 228.7 MiB over boot + two refreshes, saturating ~230 MiB, driven by mimalloc's deferred purge. `MIMALLOC_PURGE_DELAY` 100 → **0** cut peak **230.7 → 181.4 MiB** and steady RSS **58.13 → 46.6 MiB**, and removed a 7.4–9.9 s plateau of dead memory held *after* the ruleset was swapped in. Retracts the 0.2.8 "regression" framing (boot is 122–131 MiB across three boots) and PERFORMANCE.md's streaming-parse lever (raw text was never the dominant term). Left open: `delay=0` unmeasured above ~0.5 qps, and ~59 MiB of ratchet survives (suspect `arena_reserve`=1 GiB) (`docs/code-review/phase2/p2-11-compile-transient.md`) | Opus | DONE |
+| 12 | `p2-12-compile-transient-structural.md` | Takes the three terms `p2-11` did not test. **Attribution done 2026-08-08, zero repo changes** (`docs/code-review/phase2/p2-12-compile-transient-attribution.md`, instrument in `docs/code-review/phase2/p2-12-attribution/`): 106.61 of the 125.69 MB device transient measured exactly under the container's own allocator and version, 19.08 MB allocator/OS bounded but not explained. Dominant term is the **parsed form** — `big.oisd.nl`'s `ParsedRuleList` at 56.51 MB, 135.8 B/rule for data the arena keeps at 33.9. Killed two hypotheses: moving reallocs are +2.12 MB not ~20, and `heap_bytes()` is accurate to 0.15 %. Size-class rounding is +10.20 MB but an upper bound on RSS, not a measurement of it. Found: **list order is worth ±19.92 MB** and the deployment sits at the best case by accident, but sorting changes the compiled ruleset. Item 3's lever corrected 2× down to ≈3.7 MB. **Closed with zero code, as `p2-11` was** — the levers are sized and not taken, so the criteria gating a code change do not apply; the allocator term on musl/ARM64 stays an open question, not an acceptance criterion | Opus | DONE |
 | 13 | `p2-13-peak-rss-in-history.md` | Makes the compile peak observable instead of optimising it: `PerfSample` gains `peak_rss`, served through `/history/perf` and `?fields=`. Cheap because `getrusage(ru_maxrss)` is a **monotone high-water mark** — a 360 s sampler records the step without having to land inside the 2.75 s compile, which is what `p2-12` showed is otherwise impossible. No new syscall (`build_perf_sample` already holds the `MemoryBreakdown`) and no storage format change. **Explicitly carries no compile optimisation** — `p2-12`'s levers stay untaken; this is the guard `p2-11` found missing. **Closed on-device 2026-08-09 on `0.2.14`**: `/history/perf` carries **117.73 MiB**, the same figure `/debug/memory` reports live, and the **241 rows written by `0.2.13` read back intact** — the criterion with the only silent failure mode, since without `#[serde(default)]` the whole retained series would have been orphaned at the deploy. Monotonicity is structural (`ru_maxrss`) and observed for the first post-deploy sample; the next scheduled refresh should raise it 117.73 → ~180 MiB and leave it there, which is the first time that number appears in a series without anyone watching for it | Opus | DONE |
-| 14 | `p2-14-ipv6-http-interception.md` | Phase 2's last functional gap: a client reaching a dual-stack origin over IPv6 bypasses the proxy (`0.2.10-soak-baseline.md` §Known gap measured it). Expected to be **verification, not code** — the listener is already dual-stack (`address = "::"`, `IPV6_V6ONLY` off) and the missing piece is two `/ipv6/firewall/nat` rules that are written and unapplied, which **the owner runs**. The v6 path has never been exercised end to end, so "no code needed" is the hypothesis under test; the fallbacks are client-identity canonicalisation, the egress guard and bracketed-literal `Host` parsing. **Blocked on the ISP**: global IPv6 does not route (2026-08-09, `/ping 2606:4700:4700::1111` from the router is 100 % loss with an active default route), so the acceptance table cannot separate "bypassed" from "v6 is down". `p2-08`'s draft rules are also **stale and unsafe** — they name a delegated prefix that has since rotated four times, and a skip rule that stops matching redirects LAN-to-LAN v6 into the proxy; the task now takes the prefix from a `prefix-address-lists`-maintained list and uses `in-interface-list=LAN` to match the live v4 rule. **Closed on-device 2026-08-09 with zero code — the hypothesis held**: the listener was already dual-stack and the whole gap was four RouterOS rules (`docs/code-review/p2-14-review.md`). A dual-stack origin over IPv6 reaches the proxy, a blocked URL returns **403/630 B** against the origin's 404/162 B, and the per-client test is the strongest of the set — *one machine, one URL, one moment, only the address family differing*: `$client=<lan>/64` gave **403 over IPv6, 404 over IPv4**. LAN-to-LAN is proven skipped by the rule's own packet counter (5 accepted vs 43 redirected), not by an absent response. One criterion carried rather than met: the lag between a *live* delegation change and `fah-lan6` is unmeasured, since the only rotation observed was a deliberate reboot | Opus | DONE |
+| 14 | `p2-14-ipv6-http-interception.md` | Phase 2's last functional gap: a client reaching a dual-stack origin over IPv6 bypasses the proxy (`0.2.10-soak-baseline.md` §Known gap measured it). Expected to be **verification, not code** — the listener is already dual-stack (`address = "::"`, `IPV6_V6ONLY` off) and the missing piece is two `/ipv6/firewall/nat` rules that are written and unapplied, which **the owner runs**. The v6 path has never been exercised end to end, so "no code needed" is the hypothesis under test; the fallbacks are client-identity canonicalisation, the egress guard and bracketed-literal `Host` parsing. **Blocked on the ISP**: global IPv6 does not route (2026-08-09, `/ping 2606:4700:4700::1111` from the router is 100 % loss with an active default route), so the acceptance table cannot separate "bypassed" from "v6 is down". `p2-08`'s draft rules are also **stale and unsafe** — they name a delegated prefix that has since rotated four times, and a skip rule that stops matching redirects LAN-to-LAN v6 into the proxy; the task now takes the prefix from a `prefix-address-lists`-maintained list and uses `in-interface-list=LAN` to match the live v4 rule. **Closed on-device 2026-08-09 with zero code — the hypothesis held**: the listener was already dual-stack and the whole gap was four RouterOS rules (`docs/code-review/phase2/p2-14-review.md`). A dual-stack origin over IPv6 reaches the proxy, a blocked URL returns **403/630 B** against the origin's 404/162 B, and the per-client test is the strongest of the set — *one machine, one URL, one moment, only the address family differing*: `$client=<lan>/64` gave **403 over IPv6, 404 over IPv4**. LAN-to-LAN is proven skipped by the rule's own packet counter (5 accepted vs 43 redirected), not by an absent response. One criterion carried rather than met: the lag between a *live* delegation change and `fah-lan6` is unmeasured, since the only rotation observed was a deliberate reboot | Opus | DONE |
+
+## TASK START / PHASE CONTEXT
+
+Before starting a task:
+
+1. Read the current task file completely.
+2. Read the current phase status/table.
+3. Read the **Implementation Summary** from the code-review files of previously completed tasks in the same phase that are relevant to the current task.
+4. If the current task declares an explicit dependency (`Depends on: pY-XX`), always read that dependency's Implementation Summary.
+5. Read full code-review findings only when the current task depends on a finding, deferred item, constraint, or decision that is not fully captured by the Implementation Summary.
+6. Read any explicitly referenced architecture, security, API, configuration, or known-debt documents.
+
+Do not read unrelated completed tasks or full review files merely because they belong to the same phase.
+
+Do not re-litigate decisions already settled by previous tasks or reviews unless new evidence directly conflicts with them.
+
+## TASK COMPLETION / REVIEW HANDOFF
+
+When a task implementation is complete:
+
+1. Do not summarize or describe the implementation in the chat.
+2. Do not list changed files, implementation details, design decisions, benchmarks, tests, or findings in the chat.
+3. Create the required code-review file immediately:
+   `docs/code-review/phaseN/<task-name>-review.md`
+4. At the beginning of that review file, include a concise **Implementation Summary** describing:
+   + what was implemented;
+   + the relevant files/modules changed;
+   + important design decisions;
+   + tests/benchmarks run, if any;
+   + any known limitations or deferred items.
+5. The Implementation Summary may be based on the implementation and test results, but do not perform or document code-review findings yet.
+6. Then stop. Do not perform the code review yet.
+7. The only chat response after completing the task should be:
+
+   `Task done. Report written to docs/code-review/phaseN/<task-name>-review.md. Awaiting "start code review".`
+
+8. Do not start the code review, add findings, or modify the findings section until the user explicitly says:
+   `start code review`
+
+When `start code review` is received, perform the CODE REVIEW procedure defined below and update the same review file.
+
+**Do not implement, modify, revert, refactor, or otherwise change any code, configuration, tests, documentation, or architecture findings identified during the review without the user's explicit approval.**
+
+The review phase is analysis and reporting only. After the review, stop and wait for explicit instructions before applying any fixes.
+
+## CODE REVIEW
+
+Every task must have a corresponding `*-review.md` file.
+The file must be saved under `docs/code-review/phaseN/`.
+
+Before marking a task `DONE`, review the implementation as a senior Rust reviewer with standards comparable to Servo/Tokio review.
+
+Focus on:
+
++ ownership, borrowing, and lifetime correctness
++ API design and public interfaces
++ unnecessary allocations and copies
++ Rust best practices
++ performance where relevant
++ duplicated code or duplicated logic
++ functions or logic that should be consolidated
++ long-term maintainability
++ concurrency and synchronization correctness where relevant
++ error handling and failure modes where relevant
++ security implications where relevant
+
+Ignore formatting, naming, and purely stylistic preferences unless they affect correctness, performance, maintainability, or API quality.
+
+Do not propose architectural rewrites, new frameworks, or additional abstractions unless there is a clear, measurable technical benefit. Prefer minimal, targeted improvements over broad refactors.
+
+Prioritize findings by severity:
+
++ Critical
++ Major
++ Minor
++ Nitpick
+
+For every finding:
+
+1. explain the technical rationale;
+2. explain the impact if left unchanged;
+3. state whether it should be fixed before the current task is marked `DONE` or explicitly deferred;
+4. distinguish measured evidence from inference or recommendation.
+
+A review is not complete until:
+
++ the findings are recorded in the task's review file;
++ addressed findings are verified;
++ deferred findings are explicitly documented;
++ the review concludes with a clear status: `PASS`, `PASS WITH DEFERRED FINDINGS`, or `BLOCKED`.
+
+The review must not manufacture problems merely to produce findings. A clean review with no findings is valid.
+
+**DO NOT PRESENT THE FINDINGS IN CHAT** - the user will read the review file!
+
+## APPROVED FIXES / REVIEW FOLLOW-UP
+
+When the user explicitly approves fixes from the code review:
+
+1. Implement only the approved fixes.
+2. Update the same code-review file with:
+   + fixes applied;
+   + verification results;
+   + updated finding status.
+3. Run the required gates.
+4. Do not summarize or describe the fixes in the chat.
+5. The only chat response after applying approved fixes should be:
+
+   `Fixes applied. Review updated: docs/code-review/phaseN/<task-name>-review.md. Gates green.`
+
+6. Then stop and wait for further instructions.
+
+Do not proactively report individual fixes, changed files, test counts, implementation details, or review findings in chat after an approved-fix cycle. That information belongs in the review file.
 
 **Definition of done:** router dst-nats port 80 to the container; a plain-HTTP
 page loads through the proxy with ad requests blocked at URL level; a "kids"

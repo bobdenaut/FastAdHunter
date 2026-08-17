@@ -14,7 +14,7 @@ benches against PERFORMANCE.md budgets and the on-device soak.
 
 | # | Task file | Outcome | MODEL | STATUS |
 |---|-----------|---------|-------|--------|
-| 1 | `p1-01-rule-parsers.md` | 4 formats parsed + classified (DNS-active vs inactive). **Reviewed 2026-08-09** — the last Phase-1 task to get one: 4 Major, 6 Minor, 5 Nitpick, seven fixed, boot ≈ −27 % on the deployed corpus on x86 ([`p1-01-review.md`](../../../docs/code-review/p1-01-review.md)) | Sonnet | DONE |
+| 1 | `p1-01-rule-parsers.md` | 4 formats parsed + classified (DNS-active vs inactive). **Reviewed 2026-08-09** — the last Phase-1 task to get one: 4 Major, 6 Minor, 5 Nitpick, seven fixed, boot ≈ −27 % on the deployed corpus on x86 ([`p1-01-review.md`](../../../docs/code-review/phase1/p1-01-review.md)) | Sonnet | DONE |
 | 2 | `p1-02-compiled-matcher.md` | Verdict lookup: allow > block, subdomains, <1ms, 1M domains ≤40MB | Opus | DONE |
 | 3 | `p1-03-list-lifecycle.md` | Download, validate, atomic swap, /data cache, refresh, user rules | Sonnet | DONE |
 | 4 | `p1-04-dns-pipeline.md` | UDP/TCP listeners, EDNS(0), verdict → blocked-response synthesis | Sonnet | DONE |
@@ -30,7 +30,7 @@ benches against PERFORMANCE.md budgets and the on-device soak.
 the live RB5009 — container runs, blocking works, and every measured budget
 passes at 1.19M rules (49.6 MB RSS, 37.7 MB ruleset, 0.042 ms blocked p99,
 12 MB image). Six defects found on-device, recorded in
-[docs/code-review/p1-11-review.md](../../../docs/code-review/p1-11-review.md).
+[docs/code-review/phase1/p1-11-review.md](../../../docs/code-review/phase1/p1-11-review.md).
 
 **All six defects are now fixed** (`64c3e32`) and verified on-device across
 several boots: port 53 bound via start-as-root then drop to uid 65532
@@ -74,7 +74,7 @@ RB5009 (`process_resident_memory_bytes` scraped every 5 min, 1061 samples,
 worst-case generator: 50 workers, no inter-query sleep, 7 query types over
 1M then 10k unique domains, hitting both `192.168.10.1` and
 `2a02:2f04:5008:bb00::11`. Full evidence:
-[docs/code-review/p1-11-soak.md](../../../docs/code-review/p1-11-soak.md).
+[docs/code-review/phase1/p1-11-soak.md](../../../docs/code-review/phase1/p1-11-soak.md).
 
 - **No leak — memory is bounded (hard rule #4 holds).** Every *continuous*
   run (no restart) fills its cache and then holds dead-flat for hours: real
@@ -122,6 +122,119 @@ the O(1) cache eviction (`e5f5b8a`) and the IPv6 dual-stack listener
 above) all 11 tasks are `DONE` — **phase moved `wip` → `closed` 2026-07-23.**
 Deferred to `phase1.5` (pre-phase2 observability base): byte-aware cache cap
 and sustained-throughput measurement.
+
+## TASK START / PHASE CONTEXT
+
+Before starting a task:
+
+1. Read the current task file completely.
+2. Read the current phase status/table.
+3. Read the **Implementation Summary** from the code-review files of previously completed tasks in the same phase that are relevant to the current task.
+4. If the current task declares an explicit dependency (`Depends on: pY-XX`), always read that dependency's Implementation Summary.
+5. Read full code-review findings only when the current task depends on a finding, deferred item, constraint, or decision that is not fully captured by the Implementation Summary.
+6. Read any explicitly referenced architecture, security, API, configuration, or known-debt documents.
+
+Do not read unrelated completed tasks or full review files merely because they belong to the same phase.
+
+Do not re-litigate decisions already settled by previous tasks or reviews unless new evidence directly conflicts with them.
+
+## TASK COMPLETION / REVIEW HANDOFF
+
+When a task implementation is complete:
+
+1. Do not summarize or describe the implementation in the chat.
+2. Do not list changed files, implementation details, design decisions, benchmarks, tests, or findings in the chat.
+3. Create the required code-review file immediately:
+   `docs/code-review/phaseN/<task-name>-review.md`
+4. At the beginning of that review file, include a concise **Implementation Summary** describing:
+   - what was implemented;
+   - the relevant files/modules changed;
+   - important design decisions;
+   - tests/benchmarks run, if any;
+   - any known limitations or deferred items.
+5. The Implementation Summary may be based on the implementation and test results, but do not perform or document code-review findings yet.
+6. Then stop. Do not perform the code review yet.
+7. The only chat response after completing the task should be:
+
+   `Task done. Report written to docs/code-review/phaseN/<task-name>-review.md. Awaiting "start code review".`
+
+8. Do not start the code review, add findings, or modify the findings section until the user explicitly says:
+   `start code review`
+
+When `start code review` is received, perform the CODE REVIEW procedure defined below and update the same review file.
+
+**Do not implement, modify, revert, refactor, or otherwise change any code, configuration, tests, documentation, or architecture findings identified during the review without the user's explicit approval.**
+
+The review phase is analysis and reporting only. After the review, stop and wait for explicit instructions before applying any fixes.
+
+## CODE REVIEW
+
+Every task must have a corresponding `*-review.md` file.
+The file must be saved under `docs/code-review/phaseN/`.
+
+Before marking a task `DONE`, review the implementation as a senior Rust reviewer with standards comparable to Servo/Tokio review.
+
+Focus on:
+
+- ownership, borrowing, and lifetime correctness
+- API design and public interfaces
+- unnecessary allocations and copies
+- Rust best practices
+- performance where relevant
+- duplicated code or duplicated logic
+- functions or logic that should be consolidated
+- long-term maintainability
+- concurrency and synchronization correctness where relevant
+- error handling and failure modes where relevant
+- security implications where relevant
+
+Ignore formatting, naming, and purely stylistic preferences unless they affect correctness, performance, maintainability, or API quality.
+
+Do not propose architectural rewrites, new frameworks, or additional abstractions unless there is a clear, measurable technical benefit. Prefer minimal, targeted improvements over broad refactors.
+
+Prioritize findings by severity:
+
+- Critical
+- Major
+- Minor
+- Nitpick
+
+For every finding:
+
+1. explain the technical rationale;
+2. explain the impact if left unchanged;
+3. state whether it should be fixed before the current task is marked `DONE` or explicitly deferred;
+4. distinguish measured evidence from inference or recommendation.
+
+A review is not complete until:
+
+- the findings are recorded in the task's review file;
+- addressed findings are verified;
+- deferred findings are explicitly documented;
+- the review concludes with a clear status: `PASS`, `PASS WITH DEFERRED FINDINGS`, or `BLOCKED`.
+
+The review must not manufacture problems merely to produce findings. A clean review with no findings is valid.
+
+**DO NOT PRESENT THE FINDINGS IN CHAT** - the user will read the review file!
+
+## APPROVED FIXES / REVIEW FOLLOW-UP
+
+When the user explicitly approves fixes from the code review:
+
+1. Implement only the approved fixes.
+2. Update the same code-review file with:
+   - fixes applied;
+   - verification results;
+   - updated finding status.
+3. Run the required gates.
+4. Do not summarize or describe the fixes in the chat.
+5. The only chat response after applying approved fixes should be:
+
+   `Fixes applied. Review updated: docs/code-review/phaseN/<task-name>-review.md. Gates green.`
+
+6. Then stop and wait for further instructions.
+
+Do not proactively report individual fixes, changed files, test counts, implementation details, or review findings in chat after an approved-fix cycle. That information belongs in the review file.
 
 **Definition of done:** a phone pointed at the container's IP browses with ads
 blocked; `GET /api/v1/stats` shows real counters; benches meet PERFORMANCE.md

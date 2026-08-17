@@ -28,7 +28,7 @@
 //! for removing the dominant cost on the forward path.
 //!
 //! **Two bounds, one eviction order (p1.5-05).** Entry count alone does not
-//! bound memory: the ~91h soak (docs/code-review/p1-11-soak.md) filled an
+//! bound memory: the ~91h soak (docs/code-review/phase1/p1-11-soak.md) filled an
 //! entry-bounded cache with large TXT/SOA/NXDOMAIN answers and plateaued at
 //! ~230 MiB — 80% over PERFORMANCE.md's 128 MB budget — while real traffic
 //! sat at ~55 MiB. Each shard therefore also carries a byte budget

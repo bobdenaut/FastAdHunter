@@ -30,7 +30,7 @@ CONFIGURATION.md (`[[policies]]`), RULE_ENGINE.md (`$client` active).
   **This is Phase 2's real memory risk — measure it before building it out.**
   The ruleset is 21.9 MiB against ~24 MiB of headroom, so *one* unshared copy
   overruns the 128 MB budget on its own. By contrast the URL matcher p2-03 was
-  warned about costs ~1 MiB (`docs/code-review/p2-03-headroom-and-parser-findings.md`).
+  warned about costs ~1 MiB (`docs/code-review/phase2/p2-03-headroom-and-parser-findings.md`).
   Take an early measurement of two policies over overlapping lists and report
   the absolute heap before the model hardens; if sharing cannot hold the line,
   that is a decision for the user, not a silent overrun.

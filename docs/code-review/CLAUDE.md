@@ -1,5 +1,13 @@
 # Documentation Rules
 
+## Placement
+
+One folder per phase — `phase0/` … `phase4/`. A review goes in the folder of the
+phase that produced it (example: `p2-00-review.md` in `phase2/`); soaks and non-task
+reviews follow the phase they were captured during.
+
+## Style
+
 Documentation is an index, **not a book**.
 Document only information that cannot be learned by reading the code.
 

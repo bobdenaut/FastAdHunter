@@ -54,7 +54,7 @@
 //! pattern is retried at every URL offset whose first byte could match. The
 //! router's own lists carry three such rules and stayed inside budget at
 //! 377 µs, which is why the boundary is the *unindexed-rule* count and not the
-//! URL-rule count (`docs/code-review/p2-08-url-lookup-arm.md`).
+//! URL-rule count (`docs/code-review/phase2/p2-08-url-lookup-arm.md`).
 //!
 //! So they are filed under a fourth key kind — [`KeyKind::Ngram`], the first
 //! [`MIN_TOKEN_LEN`] bytes of their token — and a lookup slides a window of

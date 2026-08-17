@@ -53,7 +53,7 @@ to Phase 4.
 - Cosmetic rules (`##`) stay inactive (Phase 4) — counters keep reporting.
 - **Memory headroom: measured, and it is not the constraint.** The question was
   answered ahead of this task
-  (`docs/code-review/p2-03-headroom-and-parser-findings.md`): the compiled URL
+  (`docs/code-review/phase2/p2-03-headroom-and-parser-findings.md`): the compiled URL
   tier for EasyList + EasyPrivacy models to **~1.03 MiB**, and enabling both
   lists costs **≈4.0 MiB** all-in once their DNS-active halves are counted
   (1.52 + 1.42 MiB, measured with the real `Matcher`). Against the ~24 MiB of

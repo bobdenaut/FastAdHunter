@@ -79,6 +79,6 @@ preamble (`127.0.0.1 localhost`, `::1 ip6-localhost`, …) so those never become
 block rules, while `127.0.0.1 <real-ad-domain>` still blocks.
 
 **Post-completion review:** see
-[docs/code-review/p1-02-review.md](../../../docs/code-review/p1-02-review.md)
+[docs/code-review/phase1/p1-02-review.md](../../../docs/code-review/phase1/p1-02-review.md)
 — 4 fixes applied (hot-path allocation for `Other` qtypes, `$dnstype=~`
 negation, decisive-rule option separator, `heap_bytes` payload accounting).

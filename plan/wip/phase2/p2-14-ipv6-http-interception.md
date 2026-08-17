@@ -40,7 +40,7 @@ was bypassed" from "IPv6 does not work"**, so a run of it proves nothing.
 
 ## What is already known
 
-Measured in `docs/code-review/0.2.10-soak-baseline.md` §Known gap, when IPv6 was
+Measured in `docs/code-review/phase2/0.2.10-soak-baseline.md` §Known gap, when IPv6 was
 still working:
 
 | Request | Connected to | Reached the proxy |
@@ -176,7 +176,7 @@ address, confirmed against `/interface/veth/print`.
 ## Criteria
 
 **All met 2026-08-09, with zero code changed** — the hypothesis held. Evidence in
-[`p2-14-review.md`](../../../docs/code-review/p2-14-review.md).
+[`p2-14-review.md`](../../../docs/code-review/phase2/p2-14-review.md).
 
 - [x] A dual-stack origin reached over IPv6 is proxied, and a blocked URL over
       IPv6 returns the type-aware block response rather than the origin's body.
@@ -212,7 +212,7 @@ Both gates cleared 2026-08-09:
 1. **DIGI's IPv6 is fixed** — `IPv6 global UP` logged at 21:10:07;
    `traceroute6` now completes in 7 hops where it previously died at the third.
 2. **The 0.2.13 soak has ended**, verified in
-   [`soak-0.2.13-report.md`](../../../docs/code-review/soak-0.2.13-report.md).
+   [`soak-0.2.13-report.md`](../../../docs/code-review/phase2/soak-0.2.13-report.md).
 
 Gate 2 shares a window with the `p2-13` deploy.
 

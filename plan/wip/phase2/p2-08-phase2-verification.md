@@ -42,7 +42,7 @@ port 80 → container).
   contradicts it — either outcome gets recorded.
   Note the ~104 MiB figure this row used to cite was **0.2.3**; measured on
   0.2.4 the steady RSS is **~41.7 MiB** after 10 h of household traffic
-  (`docs/code-review/p1.5-09-soak-baseline.md`), so the headroom is far larger
+  (`docs/code-review/phase1/p1.5-09-soak-baseline.md`), so the headroom is far larger
   than the task originally assumed. Re-measure rather than inheriting either
   number.
 - **Report the soak in components, not just RSS** (`p2-07`). A soak that only
@@ -67,7 +67,7 @@ port 80 → container).
 - Soak: 24h dns+http; RAM/latency/QPS recorded vs updated budgets.
 - ~~**Long-URL verdict latency on-device — this task owns the p2-03
   deferral.**~~ **MEASURED 2026-08-01 —
-  [`docs/code-review/p2-08-url-lookup-arm.md`](../../../docs/code-review/p2-08-url-lookup-arm.md).**
+  [`docs/code-review/phase2/p2-08-url-lookup-arm.md`](../../../docs/code-review/phase2/p2-08-url-lookup-arm.md).**
   Run ahead of the rest of this task, because the answer decides whether a
   substring index belongs in the phase at all.
 
@@ -76,7 +76,7 @@ port 80 → container).
   EasyList + EasyPrivacy at 5,336 µs, 5.3× over budget, while the corpus this
   router runs cost 377 µs. `p2-10` closed that: every URL rule is now indexed
   and 8 KiB is **553.8 µs** (p99 569.5), inside budget at every measured length
-  (`docs/code-review/p2-10-url-substring-index.md`).
+  (`docs/code-review/phase2/p2-10-url-substring-index.md`).
 
   The rest of this task's on-device work (dst-nat, `dns+http` browsing, soak)
   is **not** done and remains as written below.
@@ -90,8 +90,8 @@ port 80 → container).
   `long_url_*` sweep (64 B / 1 KiB / 4 KiB / 8 KiB) ran on-device against both
   corpora via a throwaway probe container; production was never stopped. Numbers
   and raw evidence in
-  [`docs/code-review/p2-08-url-lookup-arm.md`](../../../docs/code-review/p2-08-url-lookup-arm.md)
-  + `docs/code-review/p2-08-arm/`.
+  [`docs/code-review/phase2/p2-08-url-lookup-arm.md`](../../../docs/code-review/phase2/p2-08-url-lookup-arm.md)
+  + `docs/code-review/phase2/p2-08-arm/`.
 
   8 KiB did **not** leave comfortable headroom at target-corpus scale, which
   re-opened the deferred substring-index work. That is now `p2-10`, DONE and
@@ -101,7 +101,7 @@ port 80 → container).
   **The x86 → ARM ratio came out FLAT: 8.25–10.0× across twelve arms spanning
   three orders of magnitude and two corpora (median ~9.05×).** Per this
   criterion's own rubric that is the first branch — the gap is plain CPU
-  throughput, so the x86 profile in `docs/code-review/p2-04-review.md` transfers
+  throughput, so the x86 profile in `docs/code-review/phase2/p2-04-review.md` transfers
   directly, and the ~9× is usable as a planning constant rather than only a
   diagnostic. Memory bandwidth is *not* the binding constraint on device.
 

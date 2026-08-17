@@ -115,6 +115,6 @@ real accessor when the exporter needs it), prefetch/optimistic refresh
 swapping the `Arc`; losing cache contents on a cache-config change is
 acceptable).
 
-**Code review:** docs/code-review/p1-05-review.md — 9 findings, fixes
+**Code review:** docs/code-review/phase1/p1-05-review.md — 9 findings, fixes
 applied same day (truncated-reply caching, SERVFAIL serve-stale, SOA replay,
 hot-path allocations, eviction preference).

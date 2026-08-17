@@ -25,7 +25,7 @@ is correct and complete**, so a later phase knows precisely which rules belong
 to it and never has to re-derive that. What it did not buy is free activation.
 A phase that turns on a variant must reintroduce retention for it and pay the
 memory — measured at ~1 MiB for EasyList + EasyPrivacy URL patterns
-(`docs/code-review/p2-03-headroom-and-parser-findings.md`).
+(`docs/code-review/phase2/p2-03-headroom-and-parser-findings.md`).
 
 Read "Phases 2–4 activate already-parsed rules" as *already-classified* rules.
 The distinction is worth keeping straight: it went unnoticed until `p2-00`, by
@@ -35,7 +35,7 @@ which point the optimistic reading had been copied into two task files.
 paid the bill: **+3.32 ms** of parse across EasyList + EasyPrivacy (+16.7 %,
 ≈177 ns per retained rule) and **1.06 MiB** compiled for 18,778 rules — close
 to the ~1 MiB predicted above. Both figures are measured, the parse delta
-against the real pre-change parser (`docs/code-review/p2-03-review.md`).
+against the real pre-change parser (`docs/code-review/phase2/p2-03-review.md`).
 
 The correction's practical consequence is now visible in the type itself:
 `InactiveReason` carries only variants that genuinely stay inactive, and a

@@ -8,7 +8,7 @@ not privileged there at all.
 
 RouterOS does not set that sysctl and exposes no `cap-add`. On the RB5009 the
 process honours `USER nonroot`, compiles its ruleset, then dies binding 53 with
-`EACCES` (p1-11, [code-review](../code-review/p1-11-review.md) defect 4). This
+`EACCES` (p1-11, [code-review](../code-review/phase1/p1-11-review.md) defect 4). This
 affects every RouterOS deployment. Falling back to a high port plus a dst-nat
 redirect works, but closes the simplest topology — give the container a LAN IP
 and hand it out over DHCP — for everyone, while the obvious competitor

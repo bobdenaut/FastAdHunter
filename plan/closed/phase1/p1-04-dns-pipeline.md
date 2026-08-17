@@ -105,7 +105,7 @@ fah-model, fah-config` edges (a valid downward L3→L2/L1 dependency).
 being constructed but not yet wired into `fastadhunter`'s `main.rs`).
 
 **Post-completion review:** chief-architect pass same day —
-[docs/code-review/p1-04-review.md](../../../docs/code-review/p1-04-review.md).
+[docs/code-review/phase1/p1-04-review.md](../../../docs/code-review/phase1/p1-04-review.md).
 Six findings fixed: upstream replies now validated (ID + response-type check,
 mismatches discarded until timeout), forwarder receive buffer raised to
 65535, TCP connections gained a 10 s idle timeout and RFC 7766 reuse

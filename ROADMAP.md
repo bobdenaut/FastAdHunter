@@ -99,13 +99,13 @@ in-RAM-only and lost everything on restart. See `plan/closed/phase1.5/`.
 - [ ] ~~SO_REUSEPORT multi-socket ingest~~ — **measured and deferred.** The
       RB5009's ~15–16k QPS ceiling is FAH-handling-bound, not ingest-bound
       (`fastadhunter` 65.8 % CPU via `/tool profile`); UDP recv and conntrack
-      were ruled out. See `docs/code-review/p1.5-06-review.md`.
+      were ruled out. See `docs/code-review/phase1/p1.5-06-review.md`.
 
 ## Phase 2 — HTTP 🚧 **IN PROGRESS** (`plan/wip/phase2/`)
 
 - [x] **p2-00** parser correctness — sample-based format detection;
       `||domain^*/path` no longer compiles to a whole-domain DNS block
-      (`docs/code-review/p2-00-review.md`). Not HTTP work: a `fah-rules`
+      (`docs/code-review/phase2/p2-00-review.md`). Not HTTP work: a `fah-rules`
       foundation fix Phase 2 turned out to depend on.
 - HTTP proxy engine for unencrypted traffic (streaming, pass-through fast path)
 - URL-path rules and HTTP `$options` activate in the Rule Engine

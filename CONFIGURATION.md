@@ -326,7 +326,7 @@ leak — but a real reason not to run near the floor, and the arithmetic to use 
 the formula above, not "a bit over".
 
 Two related things the cap does **not** cover, both measured on the RB5009
-(`docs/code-review/p1.5-05-final-review.md`):
+(`docs/code-review/phase1/p1.5-05-final-review.md`):
 
 - The figure it enforces is the *answers'* heap. The hash-table slab and the
   eviction queue sit outside it and measured **+55 %** on top at 50 000 entries —

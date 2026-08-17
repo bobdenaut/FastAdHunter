@@ -68,7 +68,7 @@ Every hardware-independent budget is met. RSS needs `/proc`, so the 128 MB row
 is deliberately left to the on-device run in p1-11 rather than faked.
 
 ¹ Re-measured 2026-07-21 after the RC review
-([p1-10-review.md](../../../docs/code-review/p1-10-review.md)) found both
+([p1-10-review.md](../../../docs/code-review/phase1/p1-10-review.md)) found both
 benches measuring the wrong workload: the original 2.44 µs "forwarded" figure
 was cache hits (4096 domains vs a 10 000-entry cache), and the 611 000 QPS
 mix had a "fresh third" that was fresh for exactly one wave. Honest

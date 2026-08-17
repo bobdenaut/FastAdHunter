@@ -277,7 +277,7 @@ against this document.
   loops, the kernel load-balancing datagrams across cores. Measured on-device it
   is not the ceiling (all cores share evenly with ~80% idle under a synthetic
   hammer), so it stays a ready recipe rather than shipped code — see
-  `plan/wip/phase1.5/p1.5-06-reuseport-multisocket-ingest.md`.
+  `plan/closed/phase1.5/p1.5-06-reuseport-multisocket-ingest.md`.
 - Shared state (compiled ruleset, config, cache shards) is reached through
   lock-free reads: **atomic swap** for ruleset/config, sharding for the cache.
   No global lock on the hot path.

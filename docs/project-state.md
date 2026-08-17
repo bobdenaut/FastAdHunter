@@ -32,7 +32,7 @@ what is true today.
 `peak_rss` is in `/history/perf`, verified on `0.2.14`: 117.73 MiB in the series,
 the same figure `/debug/memory` reports live, and 241 rows written by `0.2.13`
 read back intact. Report:
-[`p2-13-review.md`](code-review/p2-13-review.md).
+[`p2-13-review.md`](code-review/phase2/p2-13-review.md).
 
 **The refresh peak has not appeared yet.** `refresh_hours = 48`, so the first one
 lands up to two days after deploy and should raise the series 117.73 → ~180 MiB.
@@ -44,7 +44,7 @@ mark, not an average.
 
 IPv6 HTTP interception. The listener was already dual-stack, so the whole gap
 was four RouterOS rules; the "no code needed" hypothesis held. Report:
-[`p2-14-review.md`](code-review/p2-14-review.md).
+[`p2-14-review.md`](code-review/phase2/p2-14-review.md).
 
 The ISP's IPv6 came back the same evening — `IPv6 global UP` at 21:10:07, and
 `traceroute6` now completes where it died at the third hop.
@@ -63,7 +63,7 @@ proxied, not a loss of filtering.
 
 Phase 1's only task that never got a code review. Seven of fifteen findings are
 fixed; report and instrument:
-[`p1-01-review.md`](code-review/p1-01-review.md), [`p1-01-ab/`](code-review/p1-01-ab/).
+[`p1-01-review.md`](code-review/phase1/p1-01-review.md), [`p1-01-ab/`](code-review/phase1/p1-01-ab/).
 
 On Windows/x86 over the 16 deployed lists refetched 2026-08-09 (22.8 MB;
 3 hosts, 12 adblock, 1 plain-domain), boot measured **398.7 → 290.6 ms, ≈ −27 %**,
@@ -83,10 +83,10 @@ Still open from the review: **M4** (`ParsedRule` is 80 B, 48 of them unused on
 compiled rules, boot peak 117.73 MiB. It adds `peak_rss` to the history and
 changes nothing else; **no config key moved**, so the `deny_unknown_fields`
 ordering trap below did not apply to this release. T0 captures in
-`code-review/soak-0.2.14/`.
+`code-review/phase2/soak-0.2.14/`.
 
 Its predecessor **0.2.13** was verified over 18.5 h —
-[`soak-0.2.13-report.md`](code-review/soak-0.2.13-report.md), and the findings
+[`soak-0.2.13-report.md`](code-review/phase2/soak-0.2.13-report.md), and the findings
 still describe the running system:
 
 | | |

@@ -11,7 +11,7 @@ pub struct DnsCacheConfig {
     /// Byte ceiling on what the cached answers themselves hold, enforced by
     /// the same FIFO eviction as `max_entries` — whichever bound binds first
     /// evicts. Entry count alone cannot bound memory: the ~91h soak
-    /// (docs/code-review/p1-11-soak.md) filled a bounded cache with
+    /// (docs/code-review/phase1/p1-11-soak.md) filled a bounded cache with
     /// large TXT/SOA/NXDOMAIN answers and reached ~230 MiB, 80% over the
     /// 128 MB budget, while real traffic sat at ~55 MiB.
     #[serde(default = "default_max_bytes")]

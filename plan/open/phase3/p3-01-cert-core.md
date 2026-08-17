@@ -27,7 +27,7 @@ down.
 p2-01 hit the same shape with socket binding — `fah-dns` and `fah-http` both
 needed the dual-stack bind — and resolved it by moving the behaviour to
 `fah_common::listen` (L1), deleting the original from `fah-dns`. See
-`docs/code-review/p2-01-review.md` §2 for the admission test used: *does
+`docs/code-review/phase2/p2-01-review.md` §2 for the admission test used: *does
 divergence between the two siblings produce a silent bug?* For certificates it
 plainly does — two crates disagreeing about validity, SAN construction or key
 permissions is a security defect, not a style difference.

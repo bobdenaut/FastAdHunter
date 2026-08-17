@@ -292,7 +292,7 @@ reported 260 MiB of "retention" in a process with 70 MiB resident — impossible
 for anything resident — because mimalloc v3 never decrements its commit counter
 when a purge returns pages, so the minuend only ever rises. The residual is the
 only split; nothing subdivides it. See
-`docs/code-review/0.2.7-router-memory-and-throughput.md` §5.2, §6.1.
+`docs/code-review/phase2/0.2.7-router-memory-and-throughput.md` §5.2, §6.1.
 
 **Committed** is what the allocator has committed by its own accounting — not a
 kernel reading, not the same as resident, and **not a live figure**: it

@@ -17,7 +17,7 @@ wildcard never compiles into a whole-domain DNS verdict.
 ## Context
 
 Full findings, measurements and reproduction:
-[docs/code-review/p2-03-headroom-and-parser-findings.md](../../../docs/code-review/p2-03-headroom-and-parser-findings.md).
+[docs/code-review/phase2/p2-03-headroom-and-parser-findings.md](../../../docs/code-review/phase2/p2-03-headroom-and-parser-findings.md).
 
 Two defects, discovered while measuring `p2-03`'s headroom against the real
 lists Phase 2 exists to support.
@@ -121,7 +121,7 @@ if it ever matters.
 
 ## Suggested prompt
 
-> Read RULE_ENGINE.md, docs/code-review/p2-03-headroom-and-parser-findings.md,
+> Read RULE_ENGINE.md, docs/code-review/phase2/p2-03-headroom-and-parser-findings.md,
 > and plan/wip/phase2/p2-00-adblock-parser-correctness.md. Fix U2 first
 > (`^|` stays active with include_subdomains:false; `^<path>` becomes
 > UrlPattern), then U1 (sample-based format detection + a distinguishable

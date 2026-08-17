@@ -10,7 +10,7 @@
 ## Status — code complete 2026-08-02, `AWAITING SOAK`
 
 **Everything this file asks for has shipped except its two on-device criteria.**
-Commit `0cfa317`, report `docs/code-review/p2-07-review.md` §11.
+Commit `0cfa317`, report `docs/code-review/phase2/p2-07-review.md` §11.
 
 | Asked for | State |
 | --------- | ----- |
@@ -39,7 +39,7 @@ whether the router's memory climb was a leak. **That specific question is now
 closed:** the climb was cgroup v2 charging page cache, reconciled against
 on-disk data to within 0.06 %, and confirmed independently by a container
 restart dropping `memory-current` from 595.0 to 60.1 MiB. See
-`docs/code-review/0.2.7-router-memory-and-throughput.md` §5–§6.
+`docs/code-review/phase2/0.2.7-router-memory-and-throughput.md` §5–§6.
 
 So the urgency is gone, and the honest framing changes with it: this is no
 longer an investigation, it is a **safety net**. What it catches is a leak of a
@@ -125,7 +125,7 @@ that pass are load-bearing and must survive this change:
   keys/slot) and `ClientRegistry` (≤4,096) keep being walked — their eviction is
   multi-step, which is where a running total drifts. Any running total needs a
   test asserting it equals a full walk after eviction. (See
-  `docs/code-review/p2-07-review.md` §5.)
+  `docs/code-review/phase2/p2-07-review.md` §5.)
 - **Each `heap_bytes()` documents what it excludes.** `p1-02-review.md` §4 found
   `heap_bytes` counting `Arc` control blocks but not their payload strings — an
   undercount in the very number feeding a budget claim. An unstated exclusion

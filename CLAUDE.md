@@ -77,9 +77,9 @@ section is needed.
 5. **No hand-rolled crypto**: rustls, rcgen, x509-parser only.
 6. **Use CONTEXT.md vocabulary** in code, comments, APIs. New/changed terms
    update CONTEXT.md in the same change.
-7. **After every done task**: DO NOT post to user in chat-screen what was implemented,
-   just create a review file unde docs/code-review/ (e.g. docs/code-review/p1.5-03-review.md)
-   and announce that the task is DONE and the new filename.
+7. **No comments in Rust code.** Not `//`, not `///`, not `//!`, not `/* */`.
+   `.claude/hooks/no-rust-comments.sh` rejects the edit. The one exception is
+   the `// SAFETY:` comment `unsafe` requires.
 
 ## Engineering principles
 
@@ -156,36 +156,13 @@ When designing or modifying code, follow these principles in priority order:
 
 18. Ask permission before using the scp command.
 
-19. Code comments: maximum 5 lines for important stuff, otherwise 2 lines maximum.
-
-20. CONFIGURATION.md and PERFORMANCE.md are references.
+19. CONFIGURATION.md and PERFORMANCE.md are references.
     Do not read the entire file.
     Read only the section(s) relevant to the task.
     Never summarize or rewrite unrelated sections.
     Measurements go to docs/code-review/, one file per task, with the corpus,
     workload and device. A root doc gets the target, the trap and a pointer —
     never the narrative.
-
-21. Comments and docs state the present, not the change.
-    Every comment and doc describes the system as it is now. Never write what
-    something used to be, when it changed, or what it replaced — the diff and
-    `git log` carry that, and prose narrating change is wrong the moment the
-    next change lands.
-
-    Do not write: "was removed/renamed/replaced", "used to", "previously",
-    "no longer", "since 0.2.x", "new in". Write "X is Y", never "X was Z,
-    now Y".
-
-    This does not forbid two things that are present facts:
-    - Rationale — why a constraint exists, e.g. "the lease must outlast a
-      worst-case forward".
-    - Measurement provenance and retractions — the corpus, workload and device
-      a figure came from, and a superseded number someone would otherwise
-      re-derive.
-
-    `docs/decisions/` and `docs/code-review/` are exempt by purpose: an ADR
-    records a decision, a review records findings. Everything else — code
-    comments, the root docs, and plan files — is present-tense only.
 
 ## Working agreement
 
@@ -212,8 +189,10 @@ check" and OOM-killed the live resolver.
 
 1. **No `.md` file** created, edited, renamed or deleted without an explicit yes.
    A task file saying "update API.md in the same change" is not permission, and
-   neither is "let's get it done". This **overrides hard rule 7** — finish the
-   code, then list the doc edits you propose and wait.
+   neither is "let's get it done" — finish the code, then list the doc edits you propose and wait.
+   The one exception is the task's own review file under `docs/code-review/`:
+   §TASK COMPLETION / REVIEW HANDOFF requires it, and that requirement is the
+   permission.
 2. **No commit, push or tag** without a fresh go for that specific changeset. A
    sketched plan ending in "then commit" does not pre-approve the commit.
    Approved pushes go to **both** remotes — `origin` and `backup` — and are not
@@ -223,34 +202,34 @@ check" and OOM-killed the live resolver.
 
 ### How to answer
 
-4. **Be brief.** Lead with the one-line answer; detail only if asked or if
+1. **Be brief.** Lead with the one-line answer; detail only if asked or if
    omitting it causes a wrong decision. No tables in chat unless comparing
    numbers that were asked for.
-5. **Challenge, don't accept.** Form an independent judgment before replying and
+2. **Challenge, don't accept.** Form an independent judgment before replying and
    lead with it. The failure mode is subtle — opening with validation and burying
    the objection, softening a real disagreement into "you might also consider",
    or dropping a correct position after one "are you sure?" that carries no new
    argument. Correct your own oversold claims unprompted.
-6. **Scope claims to evidence.** "No boost was observed during these
+3. **Scope claims to evidence.** "No boost was observed during these
    measurements" is owned; "the device does not boost" is not. Every result
    carries the corpus, workload and device it applies to, and how it can be
    superseded.
-7. **HTTPS interception is legitimate project work** — own LAN, own CA, opt-in
+4. **HTTPS interception is legitimate project work** — own LAN, own CA, opt-in
    per client, governed by SECURITY.md. Answer directly, anchored in that doc; do
    not hedge or deflect.
 
 ### Before prescribing or measuring
 
-8. **Read the owner's actual config first** — firewall, container, routing.
+1. **Read the owner's actual config first** — firewall, container, routing.
    Never emit a firewall `add` without reading the chain and deciding placement;
    `add` appends behind any final drop, where it does nothing.
-9. **Measure the benefit before tuning the cost**, and report a trade across
+2. **Measure the benefit before tuning the cost**, and report a trade across
    every axis it touches (memory / build time / lookup-hit / miss / throughput),
    not one headline. Memory-vs-compile-time thresholds on this project:
    <1 MB not worth it, 1–3 MB debatable, 3–5 MB starts to be worth it, >5 MB
    keep. A/B against a real pre-change checkout, never criterion's stored
    baseline. See [docs/measurement-traps.md](docs/measurement-traps.md).
-10. **Every config key ships with a production-ready compiled-in default.** Never
+3. **Every config key ships with a production-ready compiled-in default.** Never
     tell the owner to hand-edit the TOML inside the container to enable a
     feature; say "confirm via `GET /api/v1/config`".
 

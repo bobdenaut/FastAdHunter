@@ -74,7 +74,7 @@ releases. `QueryEvent.stale` now names the path — `StaleServe::FromSwr` for th
 serve this ADR introduces, `StaleServe::AfterForwardFailure` for the RFC 8767
 §4 fallback that still lives past the forwarder — and only the second is timed
 as a forward. Measured impact on the RB5009 and the corrected figures:
-[`docs/code-review/0.2.13-stale-serve-metrics.md`](../code-review/0.2.13-stale-serve-metrics.md).
+[`docs/code-review/phase2/0.2.13-stale-serve-metrics.md`](../code-review/phase2/0.2.13-stale-serve-metrics.md).
 
 ## On "lower priority than serving"
 

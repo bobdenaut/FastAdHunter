@@ -2,7 +2,7 @@
 //! (allocation-freedom is asserted separately, in
 //! `tests/url_lookup_alloc.rs`), and the compiled URL matcher's heap recorded
 //! as an absolute number against the ~1.03 MiB the headroom model predicted
-//! (`docs/code-review/p2-03-headroom-and-parser-findings.md`).
+//! (`docs/code-review/phase2/p2-03-headroom-and-parser-findings.md`).
 //!
 //! **Corpus.** Real EasyList cannot live in the repo — it is 2 MB, GPLv3, and
 //! changes daily — so the default corpus is synthetic and shaped like it. Point

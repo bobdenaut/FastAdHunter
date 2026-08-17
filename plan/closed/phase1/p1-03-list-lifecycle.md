@@ -110,7 +110,7 @@ yet). If the Docker build fails on `aws-lc-sys`, either add
 **Gates:** fmt/clippy/test all green on the full workspace.
 
 **Post-completion review:** chief-architect review in
-[docs/code-review/p1-03-review.md](../../../docs/code-review/p1-03-review.md)
+[docs/code-review/phase1/p1-03-review.md](../../../docs/code-review/phase1/p1-03-review.md)
 found 10 issues; 1–9 fixed same day (10 deferred to p1-09). Where this note
 conflicts with the review's "Fixes applied" section, the review is current:
 fetches are size-capped at 64 MiB (streamed, never buffered past the cap);

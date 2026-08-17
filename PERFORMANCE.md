@@ -77,7 +77,7 @@ without knowing which one it came from:
 
 Figures do not cross the 0.2.13 boundary; earlier `forward` numbers are pooled
 with cache reads and unusable
-([`0.2.13-stale-serve-metrics.md`](docs/code-review/0.2.13-stale-serve-metrics.md)).
+([`0.2.13-stale-serve-metrics.md`](docs/code-review/phase2/0.2.13-stale-serve-metrics.md)).
 
 ### Reading a memory figure
 
@@ -97,7 +97,7 @@ with cache reads and unusable
 - Reducing the refresh transient is
   [`p2-12`](plan/wip/phase2/p2-12-compile-transient-structural.md);
   the structural decomposition is
-  [`p2-11`](docs/code-review/p2-11-compile-transient.md).
+  [`p2-11`](docs/code-review/phase2/p2-11-compile-transient.md).
 
 ### Converting dev-box numbers
 
@@ -117,7 +117,7 @@ probe container.
 **It converts CPU-bound work only.** p2-08's HTTP arms — syscall- and copy-bound,
 across two OS network stacks — came out **4.55–10.09×**. Anything dominated by
 socket I/O needs a probe container, not a conversion
-([p2-08](docs/code-review/p2-08-review.md) §Findings).
+([p2-08](docs/code-review/phase2/p2-08-review.md) §Findings).
 
 Whether all-cores load behaves differently is **untested**.
 
@@ -221,7 +221,7 @@ Four traps, each of which has already produced a wrong number:
   it is flat. Mirrored ordering and narrow intervals do not detect a confounder
   that is constant across every arm. Bench an idle machine, and treat a delta on
   untouched code as proof the session is invalid
-  ([p1-01](docs/code-review/p1-01-review.md) §Two wrong numbers).
+  ([p1-01](docs/code-review/phase1/p1-01-review.md) §Two wrong numbers).
 - **Code placement alone moves this suite by more than most real changes.**
   Adding one never-called `pub fn` to `fah-rules` — identical behaviour — moved
   `startup_phases/3_build_matcher` **+7.9 %**, `blocked_query` +11.7 % and

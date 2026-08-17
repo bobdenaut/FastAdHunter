@@ -698,7 +698,7 @@ The rules live in `/ip/firewall/nat`. A client reaching a host over IPv6
 bypasses the proxy entirely — verified: `httpforever.com` connects over
 `2606:4700:…` and is absent from the log, while the same host forced to IPv4 is
 intercepted. The mirror rules live in
-[`docs/code-review/0.2.10-soak-baseline.md`](code-review/0.2.10-soak-baseline.md)
+[`docs/code-review/phase2/0.2.10-soak-baseline.md`](code-review/phase2/0.2.10-soak-baseline.md)
 §Known gap, along with the two open points (`to-ports` support on IPv6 dstnat,
 and IPv6-only origins being unreachable from a ULA-only container).
 
