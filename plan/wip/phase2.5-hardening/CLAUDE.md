@@ -23,15 +23,15 @@ recommended). The SWR lease check, hygiene, and verification close the phase.
 
 | # | Task file | Outcome | MODEL | STATUS |
 |---|-----------|---------|-------|--------|
-| 1 | `p2.5-01-listener-resilience.md` | DNS listener loops survive transient socket errors; healthcheck exercises port 53 | Fable | WAITING |
-| 2 | `p2.5-02-list-refresh-integrity.md` | A fetched body is validated before it can replace the last-good `/data` copy; `parse_errors` reaches the API | Fable | WAITING |
-| 3 | `p2.5-03-encrypted-reconnect.md` | A timeout invalidates the pooled DoT/DoH connection; next exchange reconnects (S1.15 becomes true) | Fable | WAITING |
-| 4 | `p2.5-04-transport-error-kinds.md` | `io::ErrorKind` fidelity through encrypted transports; RCODE-is-not-a-failure pinned by test | Fable | WAITING |
-| 5 | `p2.5-05-outcome-telemetry.md` | Client-visible failure (SERVFAIL served) counted; per-query endpoint attribution on events | Fable | WAITING |
-| 6 | `p2.5-06-failure-runlength.md` | Per-endpoint failure run-length distribution observable via `/telemetry` (gate S1-G4 data source) | Fable | WAITING |
-| 7 | `p2.5-07-swr-lease-check.md` | SWR refresh claim lease provably exceeds the worst-case upstream walk | Fable | WAITING |
-| 8 | `p2.5-08-hygiene.md` | Tracked bearer token gone; layering guard covers the whole workspace; stale docs reconciled | Fable | WAITING |
-| 9 | `p2.5-09-phase-verification.md` | Gates green, deployed, listener-death drill passed, S1-G4 collection running | Fable | WAITING |
+| 1 | `p2.5-01-listener-resilience.md` | DNS listener loops survive transient socket errors; healthcheck exercises port 53 | Opus | WAITING |
+| 2 | `p2.5-02-list-refresh-integrity.md` | A fetched body is validated before it can replace the last-good `/data` copy; `parse_errors` reaches the API | Opus | WAITING |
+| 3 | `p2.5-03-encrypted-reconnect.md` | A timeout invalidates the pooled DoT/DoH connection; next exchange reconnects (S1.15 becomes true) | Opus | WAITING |
+| 4 | `p2.5-04-transport-error-kinds.md` | `io::ErrorKind` fidelity through encrypted transports; RCODE-is-not-a-failure pinned by test | Opus | WAITING |
+| 5 | `p2.5-05-outcome-telemetry.md` | Client-visible failure (SERVFAIL served) counted; per-query endpoint attribution on events | Opus | WAITING |
+| 6 | `p2.5-06-failure-runlength.md` | Per-endpoint failure run-length distribution observable via `/telemetry` (gate S1-G4 data source) | Opus | WAITING |
+| 7 | `p2.5-07-swr-lease-check.md` | SWR refresh claim lease provably exceeds the worst-case upstream walk | Opus | WAITING |
+| 8 | `p2.5-08-hygiene.md` | Tracked bearer token gone; layering guard covers the whole workspace; stale docs reconciled | Opus | WAITING |
+| 9 | `p2.5-09-phase-verification.md` | Gates green, deployed, listener-death drill passed, S1-G4 collection running | Opus | WAITING |
 
 ## TASK START / PHASE CONTEXT
 
