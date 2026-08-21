@@ -240,18 +240,11 @@ No refactoring, renaming, style or perf changes there.
 ## Quality gates (local — there is no CI)
 
 ```sh
-sh scripts/gates.sh   # fmt + clippy -D warnings + test --workspace
+cargo fmt --all -- --check
+cargo clippy --workspace --all-targets --message-format=short -- -D warnings
+cargo test --all-features --workspace
 cargo bench           # when a hot path is touched; >10% regression needs justification
 ```
-
-**Run the script, not the three commands.** It prints one line per gate — four
-lines when green, where the raw commands print ~1,000 — and on failure prints
-`file:line:col: error: …` for each real diagnostic.
-
-**Nothing is lost.** Every gate's complete output always goes to
-`target/gates.log` (gitignored), and the line numbers in the failure summary are
-offsets into it. When the summary is not enough, read that file — never re-run
-the build for detail you already paid for.
 
 Conventional Commits (`feat:`, `fix:`, `perf:`, …), trunk-based, short-lived
 branches. `unsafe` requires a `// SAFETY:` comment.

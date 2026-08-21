@@ -617,13 +617,13 @@ if the decision is being reversed.
 No CI service — deliberately. Gates run locally before every commit:
 
 ```sh
-sh scripts/gates.sh   # fmt + clippy -D warnings + test --workspace
-cargo bench           # when a hot path is touched
+cargo fmt --all -- --check
+cargo clippy --workspace --all-targets --message-format=short -- -D warnings
+cargo test --all-features --workspace
 ```
 
-One line per gate instead of the ~1 000 the raw commands print; full output
-always lands in `target/gates.log`. A >10 % regression on a hot-path bench needs
-an explicit justification. See [CONTRIBUTING.md](CONTRIBUTING.md).
+A >10 % regression on a hot-path bench needs an explicit justification.
+See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ---
 
