@@ -1,6 +1,6 @@
 # P1-04 — DNS Listeners and Pipeline
 
-**Phase:** 1 · **Depends on:** p1-02 · **Model:** Sonnet
+**Phase:** 1 · **Depends on:** p1-02 · **Model:** Opus
 
 ## Goal
 

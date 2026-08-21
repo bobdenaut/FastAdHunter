@@ -1,6 +1,6 @@
 # P3-03 — SNI Filtering
 
-**Phase:** 3 · **Depends on:** phase2 · **Model:** Sonnet
+**Phase:** 3 · **Depends on:** phase2 · **Model:** Opus
 
 ## Goal
 

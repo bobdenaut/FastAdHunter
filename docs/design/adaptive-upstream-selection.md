@@ -633,7 +633,7 @@ All must hold; none is a measurement.
 
 | # | Gate |
 | --- | --- |
-| 1 | `sh scripts/gates.sh` green — fmt, clippy `-D warnings`, `test --workspace` |
+| 1 | gates green — fmt, clippy `-D warnings`, `test --workspace` |
 | 2 | `crates/fastadhunter/tests/layering.rs` passes unchanged |
 | 3 | `const _: () = assert!(size_of::<Health>() == 64)` compiles |
 | 4 | Every existing upstream test passes **unmodified** under `strategy = "fallback"` |

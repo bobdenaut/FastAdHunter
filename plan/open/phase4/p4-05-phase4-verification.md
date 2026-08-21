@@ -1,6 +1,6 @@
 # P4-05 — Phase 4 Verification
 
-**Phase:** 4 · **Depends on:** p4-04 · **Model:** Sonnet
+**Phase:** 4 · **Depends on:** p4-04 · **Model:** Opus
 
 ## Goal
 

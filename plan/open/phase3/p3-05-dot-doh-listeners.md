@@ -1,6 +1,6 @@
 # P3-05 — DoT and DoH Listeners
 
-**Phase:** 3 · **Depends on:** p3-01 · **Model:** Sonnet
+**Phase:** 3 · **Depends on:** p3-01 · **Model:** Opus
 
 ## Goal
 

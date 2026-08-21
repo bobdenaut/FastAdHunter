@@ -1,6 +1,6 @@
 # P0-04 — Config Loading
 
-**Phase:** 0 · **Depends on:** p0-02, p0-03 · **Model:** Sonnet
+**Phase:** 0 · **Depends on:** p0-02, p0-03 · **Model:** Opus
 
 ## Goal
 

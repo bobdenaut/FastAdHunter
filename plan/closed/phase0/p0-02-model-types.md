@@ -1,6 +1,6 @@
 # P0-02 — Domain Model Types
 
-**Phase:** 0 · **Depends on:** p0-01 · **Model:** Sonnet
+**Phase:** 0 · **Depends on:** p0-01 · **Model:** Opus
 
 ## Goal
 

@@ -1,6 +1,6 @@
 # P1-01 — Rule Parsers
 
-**Phase:** 1 · **Depends on:** phase0 · **Model:** Sonnet
+**Phase:** 1 · **Depends on:** phase0 · **Model:** Opus
 
 ## Goal
 

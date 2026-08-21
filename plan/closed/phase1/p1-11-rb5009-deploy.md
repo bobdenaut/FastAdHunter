@@ -1,6 +1,6 @@
 # P1-11 — RB5009 Deployment and Soak
 
-**Phase:** 1 · **Depends on:** p1-10 · **Model:** Sonnet
+**Phase:** 1 · **Depends on:** p1-10 · **Model:** Opus
 
 ## Goal
 

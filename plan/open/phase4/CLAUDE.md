@@ -18,11 +18,11 @@ and stats together, then proof against budgets.
 
 | # | Task file | Outcome | MODEL | STATUS |
 |---|-----------|---------|-------|--------|
-| 1 | `p4-01-html-scaffold.md` | `[html]` config + gating + doc/diagram updates; rewrite hook stub | Sonnet | WAITING |
+| 1 | `p4-01-html-scaffold.md` | `[html]` config + gating + doc/diagram updates; rewrite hook stub | Opus | WAITING |
 | 2 | `p4-02-cosmetic-rules-activation.md` | Cosmetic rules compile into per-hostname selector sets (heavy) | Opus | WAITING |
 | 3 | `p4-03-streaming-rewriter.md` | lol_html streaming rewriter: bounded, charset/encoding-aware (heavy) | Opus | WAITING |
 | 4 | `p4-04-pipeline-integration.md` | Selective application in HTTP/HTTPS pipeline; policies, events, stats | Opus | WAITING |
-| 5 | `p4-05-phase4-verification.md` | Rewrite budgets in PERFORMANCE.md, benches, e2e, RB5009 validation | Sonnet | WAITING |
+| 5 | `p4-05-phase4-verification.md` | Rewrite budgets in PERFORMANCE.md, benches, e2e, RB5009 validation | Opus | WAITING |
 
 ## TASK START / PHASE CONTEXT
 

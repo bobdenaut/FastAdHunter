@@ -1,6 +1,6 @@
 # P1-06 — Upstream Resolvers
 
-**Phase:** 1 · **Depends on:** p1-05 · **Model:** Sonnet
+**Phase:** 1 · **Depends on:** p1-05 · **Model:** Opus
 
 ## Goal
 

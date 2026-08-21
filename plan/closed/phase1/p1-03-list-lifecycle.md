@@ -1,6 +1,6 @@
 # P1-03 — List Lifecycle
 
-**Phase:** 1 · **Depends on:** p1-02 · **Model:** Sonnet
+**Phase:** 1 · **Depends on:** p1-02 · **Model:** Opus
 
 ## Goal
 

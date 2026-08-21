@@ -1,6 +1,6 @@
 # P1-07 — Statistics and Query Log
 
-**Phase:** 1 · **Depends on:** p1-04 · **Model:** Sonnet
+**Phase:** 1 · **Depends on:** p1-04 · **Model:** Opus
 
 ## Goal
 

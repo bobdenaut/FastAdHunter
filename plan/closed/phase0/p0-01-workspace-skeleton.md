@@ -1,6 +1,6 @@
 # P0-01 — Workspace Skeleton
 
-**Phase:** 0 · **Depends on:** — · **Model:** Sonnet
+**Phase:** 0 · **Depends on:** — · **Model:** Opus
 
 ## Goal
 

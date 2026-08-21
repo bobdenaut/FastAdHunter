@@ -1,6 +1,6 @@
 # P0-03 — Common Errors and Logging
 
-**Phase:** 0 · **Depends on:** p0-01 · **Model:** Sonnet
+**Phase:** 0 · **Depends on:** p0-01 · **Model:** Opus
 
 ## Goal
 

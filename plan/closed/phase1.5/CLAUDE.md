@@ -47,13 +47,13 @@ per-client history from the raw log has to build that reader first.
 
 | # | Task file | Outcome | MODEL | STATUS |
 |---|-----------|---------|-------|--------|
-| 1 | `p1.5-01-history-rollups.md` | Hourly→daily aggregate rollup store in `fah-stats`; `HourRollup`/`DailyTopN` PODs; boot/load/prune | Sonnet | DONE |
+| 1 | `p1.5-01-history-rollups.md` | Hourly→daily aggregate rollup store in `fah-stats`; `HourRollup`/`DailyTopN` PODs; boot/load/prune | Opus | DONE |
 | 2 | `p1.5-02-perf-sample-series.md` | `Metrics::snapshot()` + histogram percentiles; binary sampler (RSS + cache port + upstream); `PerfSample` persisted via `fah-stats` | Opus | DONE |
-| 3 | `p1.5-03-history-retention-config.md` | `[history]` config + REST-live-settable retention (30/60/90); CONFIGURATION.md | Sonnet | DONE |
-| 4 | `p1.5-04-history-query-api.md` | `GET /api/v1/history/{summary,perf,top}`; API.md | Sonnet | DONE |
+| 3 | `p1.5-03-history-retention-config.md` | `[history]` config + REST-live-settable retention (30/60/90); CONFIGURATION.md | Opus | DONE |
+| 4 | `p1.5-04-history-query-api.md` | `GET /api/v1/history/{summary,perf,top}`; API.md | Opus | DONE |
 | 5 | `p1.5-05-cache-byte-cap.md` | Byte-aware cache cap so the ceiling respects the 128 MB budget under adversarial input + sustained-throughput measurement | Opus | DONE |
 | 6 | `p1.5-06-reuseport-multisocket-ingest.md` | MEASURED — ingest ruled out as limiter; reconfirmed under CPU saturation (hot-set hammer: `fastadhunter` 65.8% of box via `/tool profile`, 4 cores even ~85%, ~15-16k QPS, conntrack 1.6% of max); deferred, recipe retained (`docs/code-review/phase1/p1.5-06-review.md`) | Opus | DONE |
-| 7 | `p1.5-07-verification.md` | Unit tests (rollup math, prune, sampler), e2e (populate→query history), on-device soak proving disk- and memory-bounded — soak PASSED (RSS plateau 104.5 MiB, 6.5h slope negative); found + fixed a `/metrics` cache-outcome bug (`docs/code-review/phase1/p1.5-07-review.md`), then verified the whole phase on-device on 0.2.4 (`docs/code-review/phase1/p1.5-08-0.2.4-deploy-verification.md`) | Sonnet | DONE |
+| 7 | `p1.5-07-verification.md` | Unit tests (rollup math, prune, sampler), e2e (populate→query history), on-device soak proving disk- and memory-bounded — soak PASSED (RSS plateau 104.5 MiB, 6.5h slope negative); found + fixed a `/metrics` cache-outcome bug (`docs/code-review/phase1/p1.5-07-review.md`), then verified the whole phase on-device on 0.2.4 (`docs/code-review/phase1/p1.5-08-0.2.4-deploy-verification.md`) | Opus | DONE |
 
 ## TASK START / PHASE CONTEXT
 

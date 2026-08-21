@@ -1,6 +1,6 @@
 # P0-05 — Binary Bootstrap
 
-**Phase:** 0 · **Depends on:** p0-03, p0-04 · **Model:** Sonnet
+**Phase:** 0 · **Depends on:** p0-03, p0-04 · **Model:** Opus
 
 ## Goal
 

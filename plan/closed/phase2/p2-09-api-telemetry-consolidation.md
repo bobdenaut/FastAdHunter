@@ -211,7 +211,7 @@ code is green, propose:
 - E2E: boot the real binary, drive traffic, assert `/telemetry` reflects it —
   `counters.dns.block` rises after a blocked query, `upstreams[]` is non-empty,
   `latency.dns.forward.count` moves.
-- Gates green: `sh scripts/gates.sh`.
+- Gates green.
 
 **On-device check** (`p2-08` was HTTP-scoped and does not cover this): after
 deploy, `GET /api/v1/telemetry` against the running container — confirm every

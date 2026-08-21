@@ -1,6 +1,6 @@
 # P2-01 — HTTP Crate Scaffold and Doc Updates
 
-**Phase:** 2 · **Depends on:** phase1 · **Model:** Sonnet
+**Phase:** 2 · **Depends on:** phase1 · **Model:** Opus
 
 ## Goal
 

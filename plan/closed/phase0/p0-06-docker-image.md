@@ -1,6 +1,6 @@
 # P0-06 — Docker Image
 
-**Phase:** 0 · **Depends on:** p0-05 · **Model:** Sonnet
+**Phase:** 0 · **Depends on:** p0-05 · **Model:** Opus
 
 ## Goal
 

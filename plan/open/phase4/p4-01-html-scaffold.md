@@ -1,6 +1,6 @@
 # P4-01 — HTML Filtering Scaffold and Doc Updates
 
-**Phase:** 4 · **Depends on:** phase3 · **Model:** Sonnet
+**Phase:** 4 · **Depends on:** phase3 · **Model:** Opus
 
 ## Goal
 

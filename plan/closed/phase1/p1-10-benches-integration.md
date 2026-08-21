@@ -1,6 +1,6 @@
 # P1-10 — Benches and End-to-End Integration
 
-**Phase:** 1 · **Depends on:** p1-06, p1-09 · **Model:** Sonnet
+**Phase:** 1 · **Depends on:** p1-06, p1-09 · **Model:** Opus
 
 ## Goal
 
