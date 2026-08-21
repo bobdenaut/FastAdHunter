@@ -7,15 +7,20 @@
 //! client can't hold a task and file descriptor forever (CLAUDE.md: bounded
 //! everything).
 
+use std::future::Future;
+use std::io;
+use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
 
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::time::timeout;
 use tracing::{debug, warn};
 
+use crate::backoff::{RetryDecision, RetryPolicy};
 use crate::pipeline::{Pipeline, Transport};
+use crate::server::ListenerDied;
 use crate::upstream::Forwarder;
 
 /// How long a connection may sit without delivering a complete request
@@ -24,17 +29,40 @@ use crate::upstream::Forwarder;
 /// connections can't accumulate on the RB5009.
 const TCP_IDLE_TIMEOUT: Duration = Duration::from_secs(10);
 
-/// Runs the TCP accept loop until the listener errors unrecoverably. Each
-/// connection is its own task — one slow/malicious client can't stall
-/// another's query (ARCHITECTURE.md §Runtime Model: no central dispatcher).
-pub async fn run<F: Forwarder>(listener: TcpListener, pipeline: Arc<Pipeline<F>>) {
+pub trait Accept: Send + Sync + 'static {
+    type Stream: AsyncRead + AsyncWrite + Unpin + Send + 'static;
+
+    fn accept(&self) -> impl Future<Output = io::Result<(Self::Stream, SocketAddr)>> + Send;
+}
+
+impl Accept for TcpListener {
+    type Stream = TcpStream;
+
+    fn accept(&self) -> impl Future<Output = io::Result<(TcpStream, SocketAddr)>> + Send {
+        TcpListener::accept(self)
+    }
+}
+
+pub async fn run<L: Accept, F: Forwarder>(listener: L, pipeline: Arc<Pipeline<F>>) -> ListenerDied {
+    let mut policy = RetryPolicy::new();
     loop {
         let (stream, client) = match listener.accept().await {
-            Ok(pair) => pair,
-            Err(err) => {
-                warn!(error = %err, "TCP listener accept failed; stopping listener");
-                return;
+            Ok(pair) => {
+                policy.on_success();
+                pair
             }
+            Err(err) => match policy.on_error() {
+                RetryDecision::Sleep(delay) => {
+                    warn!(
+                        error = %err,
+                        retry_in_ms = delay.as_millis(),
+                        "TCP listener accept failed; retrying"
+                    );
+                    tokio::time::sleep(delay).await;
+                    continue;
+                }
+                RetryDecision::Fatal => return ListenerDied { last_error: err },
+            },
         };
         let pipeline = Arc::clone(&pipeline);
         tokio::spawn(async move {
@@ -60,8 +88,8 @@ pub async fn run<F: Forwarder>(listener: TcpListener, pipeline: Arc<Pipeline<F>>
 /// timeout fires, or it sends something malformed (RFC 7766 §6.2.4 permits
 /// closing on protocol errors; a client that framed garbage can't be trusted
 /// to frame the next message either).
-async fn handle_connection<F: Forwarder>(
-    mut stream: TcpStream,
+async fn handle_connection<S: AsyncRead + AsyncWrite + Unpin, F: Forwarder>(
+    mut stream: S,
     pipeline: &Pipeline<F>,
     client_ip: std::net::IpAddr,
 ) -> std::io::Result<()> {
@@ -106,4 +134,67 @@ fn is_client_disconnect(err: &std::io::Error) -> bool {
         err.kind(),
         BrokenPipe | ConnectionReset | ConnectionAborted | UnexpectedEof
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use std::net::Ipv4Addr;
+    use std::sync::atomic::{AtomicU32, Ordering};
+
+    use tokio::io::DuplexStream;
+
+    use super::*;
+    use crate::backoff::FATAL_CONSECUTIVE_ERRORS;
+    use crate::testkit;
+
+    struct FlakyListener {
+        errors_before_first_success: u32,
+        errors: Arc<AtomicU32>,
+        accepted: Arc<AtomicU32>,
+    }
+
+    impl Accept for FlakyListener {
+        type Stream = DuplexStream;
+
+        async fn accept(&self) -> io::Result<(DuplexStream, SocketAddr)> {
+            if self.errors.load(Ordering::Relaxed) == self.errors_before_first_success
+                && self.accepted.load(Ordering::Relaxed) == 0
+            {
+                self.accepted.fetch_add(1, Ordering::Relaxed);
+                let (server, client) = tokio::io::duplex(64);
+                drop(client);
+                return Ok((server, SocketAddr::from((Ipv4Addr::LOCALHOST, 5353))));
+            }
+            self.errors.fetch_add(1, Ordering::Relaxed);
+            Err(io::Error::other("induced accept failure"))
+        }
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_transient_accept_error_retries_and_an_accept_resets_the_escalation() {
+        let (pipeline, _data_dir) = testkit::pipeline();
+        let errors = Arc::new(AtomicU32::new(0));
+        let accepted = Arc::new(AtomicU32::new(0));
+        let listener = FlakyListener {
+            errors_before_first_success: FATAL_CONSECUTIVE_ERRORS - 1,
+            errors: Arc::clone(&errors),
+            accepted: Arc::clone(&accepted),
+        };
+
+        let died = run(listener, pipeline).await;
+
+        assert!(
+            died.last_error
+                .to_string()
+                .contains("induced accept failure"),
+            "got: {}",
+            died.last_error
+        );
+        assert_eq!(accepted.load(Ordering::Relaxed), 1);
+        assert_eq!(
+            errors.load(Ordering::Relaxed),
+            2 * FATAL_CONSECUTIVE_ERRORS - 1,
+            "the successful accept must reset the consecutive-error count"
+        );
+    }
 }

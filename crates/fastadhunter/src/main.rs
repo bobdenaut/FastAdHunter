@@ -13,6 +13,8 @@ mod allocator;
 mod privilege;
 mod process;
 
+use std::io;
+use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr, UdpSocket};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use std::sync::Arc;
@@ -39,6 +41,8 @@ const POLICY_TICK: Duration = Duration::from_secs(20);
 /// per-upstream counters, compiled-ruleset size. Cheap reads, but no reason
 /// to do them per query.
 const TELEMETRY_POLL: std::time::Duration = std::time::Duration::from_secs(10);
+
+const HEALTHCHECK_PROBE_TIMEOUT: Duration = Duration::from_secs(2);
 
 const USAGE: &str = "\
 fastadhunter — network-wide ad blocker (DNS filtering)
@@ -129,19 +133,7 @@ fn main() -> ExitCode {
         // to disable verification — turning the healthcheck into a second,
         // weaker path to the admin surface. Liveness of the process is what
         // Docker needs; `GET /health` is for operators and dashboards.
-        return match Config::load_readonly(&args.config_path) {
-            Ok(_) => {
-                println!(
-                    "fastadhunter: healthcheck ok ({})",
-                    args.config_path.display()
-                );
-                ExitCode::SUCCESS
-            }
-            Err(err) => {
-                eprintln!("fastadhunter: healthcheck failed: {err}");
-                ExitCode::FAILURE
-            }
-        };
+        return healthcheck(&args.config_path);
     }
 
     let config = match Config::load(&args.config_path) {
@@ -153,6 +145,85 @@ fn main() -> ExitCode {
     };
 
     run(config, &args.config_path, &args.data_dir)
+}
+
+fn healthcheck(config_path: &Path) -> ExitCode {
+    let config = match Config::load_readonly(config_path) {
+        Ok(config) => config,
+        Err(err) => {
+            eprintln!("fastadhunter: healthcheck failed: config: {err}");
+            return ExitCode::FAILURE;
+        }
+    };
+
+    let listen = match fah_common::listen::listen_addr(
+        &config.dns.listen.address,
+        config.dns.listen.port,
+        "dns.listen",
+    ) {
+        Ok(addr) => addr,
+        Err(err) => {
+            eprintln!("fastadhunter: healthcheck failed: config: {err}");
+            return ExitCode::FAILURE;
+        }
+    };
+
+    if let Err(err) = probe_dns(probe_target(listen)) {
+        eprintln!(
+            "fastadhunter: healthcheck failed: dns-probe: {err} — [dns.listen] is a boot \
+             setting, so an address or port persisted since the last start applies only \
+             after a restart"
+        );
+        return ExitCode::FAILURE;
+    }
+
+    println!("fastadhunter: healthcheck ok ({})", config_path.display());
+    ExitCode::SUCCESS
+}
+
+fn probe_target(listen: SocketAddr) -> SocketAddr {
+    if listen.ip().is_unspecified() {
+        SocketAddr::from((Ipv4Addr::LOCALHOST, listen.port()))
+    } else {
+        listen
+    }
+}
+
+fn probe_dns(target: SocketAddr) -> io::Result<()> {
+    let mut probe = hickory_proto::op::Message::query();
+    probe.metadata.op_code = hickory_proto::op::OpCode::Status;
+    let id = probe.metadata.id;
+    let request = probe
+        .to_vec()
+        .map_err(|err| io::Error::new(io::ErrorKind::InvalidData, err))?;
+
+    let local = if target.is_ipv6() {
+        SocketAddr::from((Ipv6Addr::UNSPECIFIED, 0))
+    } else {
+        SocketAddr::from((Ipv4Addr::UNSPECIFIED, 0))
+    };
+    let socket = UdpSocket::bind(local)?;
+    socket.set_read_timeout(Some(HEALTHCHECK_PROBE_TIMEOUT))?;
+    socket.send_to(&request, target)?;
+
+    let mut buf = [0u8; 512];
+    let (len, _from) = socket
+        .recv_from(&mut buf)
+        .map_err(|err| io::Error::new(err.kind(), format!("no reply from {target}: {err}")))?;
+
+    if len < 12 {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!("reply from {target} is {len} bytes, not a DNS message"),
+        ));
+    }
+    if u16::from_be_bytes([buf[0], buf[1]]) != id {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!("reply from {target} carries another query's id"),
+        ));
+    }
+    Ok(())
 }
 
 fn run(config: Config, config_path: &Path, data_dir: &Path) -> ExitCode {
@@ -180,20 +251,35 @@ fn run(config: Config, config_path: &Path, data_dir: &Path) -> ExitCode {
     };
 
     let result = runtime.block_on(async {
-        let engine = Engine::start(config, config_path, data_dir).await?;
-        await_shutdown().await;
+        let mut engine = Engine::start(config, config_path, data_dir).await?;
+        let died = tokio::select! {
+            () = await_shutdown() => None,
+            died = engine.dns.fatal() => Some(died),
+        };
         engine.shutdown();
-        Ok::<_, Box<dyn std::error::Error>>(())
+        Ok::<_, Box<dyn std::error::Error>>(died)
     });
 
-    if let Err(err) = result {
-        tracing::error!(error = %err, "fastadhunter failed to start");
-        eprintln!("fastadhunter: {err}");
-        return ExitCode::FAILURE;
+    match result {
+        Err(err) => {
+            tracing::error!(error = %err, "fastadhunter failed to start");
+            eprintln!("fastadhunter: {err}");
+            ExitCode::FAILURE
+        }
+        Ok(Some(died)) => {
+            tracing::error!(
+                error = %died.last_error,
+                "a DNS listener gave up after repeated socket errors — exiting so the \
+                 process is restarted rather than serving nothing"
+            );
+            eprintln!("fastadhunter: DNS listener died: {}", died.last_error);
+            ExitCode::FAILURE
+        }
+        Ok(None) => {
+            tracing::info!("fastadhunter shutting down");
+            ExitCode::SUCCESS
+        }
     }
-
-    tracing::info!("fastadhunter shutting down");
-    ExitCode::SUCCESS
 }
 
 /// Everything running, kept together so shutdown can stop it all.
@@ -1068,6 +1154,62 @@ mod tests {
         );
         assert_eq!(sample.peak_rss, 0);
         assert_eq!(sample.minor_page_faults, 0);
+    }
+
+    fn responder(mutate: fn(&[u8]) -> Vec<u8>) -> SocketAddr {
+        let server = UdpSocket::bind(SocketAddr::from((Ipv4Addr::LOCALHOST, 0))).unwrap();
+        let target = server.local_addr().unwrap();
+        std::thread::spawn(move || {
+            let mut buf = [0u8; 512];
+            if let Ok((len, from)) = server.recv_from(&mut buf) {
+                let _ = server.send_to(&mutate(&buf[..len]), from);
+            }
+        });
+        target
+    }
+
+    #[test]
+    fn a_wildcard_bind_is_probed_on_loopback() {
+        for address in ["0.0.0.0", "::"] {
+            let listen = fah_common::listen::listen_addr(address, 5300, "dns.listen").unwrap();
+            assert_eq!(
+                probe_target(listen),
+                SocketAddr::from((Ipv4Addr::LOCALHOST, 5300)),
+                "{address} must be probed on loopback"
+            );
+        }
+    }
+
+    #[test]
+    fn a_concrete_bind_is_probed_at_its_own_address() {
+        for address in ["192.168.88.2", "::1", "127.0.0.1"] {
+            let listen = fah_common::listen::listen_addr(address, 5300, "dns.listen").unwrap();
+            assert_eq!(
+                probe_target(listen),
+                listen,
+                "{address} serves only itself, so only itself can be probed"
+            );
+        }
+    }
+
+    #[test]
+    fn the_probe_rejects_a_reply_too_short_to_be_a_dns_message() {
+        let err = probe_dns(responder(|_| vec![0u8; 4])).unwrap_err();
+        assert_eq!(err.kind(), io::ErrorKind::InvalidData);
+        assert!(err.to_string().contains("not a DNS message"), "got: {err}");
+    }
+
+    #[test]
+    fn the_probe_rejects_a_reply_carrying_another_querys_id() {
+        let err = probe_dns(responder(|request| {
+            let mut reply = request.to_vec();
+            reply[0] ^= 0xff;
+            reply[1] ^= 0xff;
+            reply
+        }))
+        .unwrap_err();
+        assert_eq!(err.kind(), io::ErrorKind::InvalidData);
+        assert!(err.to_string().contains("another query's id"), "got: {err}");
     }
 
     #[test]

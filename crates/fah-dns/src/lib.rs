@@ -3,6 +3,7 @@
 //! ([`upstream::UpstreamPool`]: plain UDP with TCP truncation retry, DoT,
 //! DoH, ordered fallback).
 
+mod backoff;
 mod cache;
 mod pipeline;
 mod qtype;
@@ -11,11 +12,13 @@ mod rewrite;
 mod server;
 mod swr;
 mod tcp;
+#[cfg(test)]
+mod testkit;
 mod udp;
 mod upstream;
 
 pub use cache::{CacheClean, CacheCleanupStats, CacheStats};
 pub use pipeline::{Pipeline, Transport};
-pub use server::Server;
+pub use server::{ListenerDied, Server};
 pub use swr::SwrStats;
 pub use upstream::{Forwarder, UpstreamPool, UpstreamStatus};

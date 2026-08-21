@@ -8,6 +8,7 @@ use std::sync::Arc;
 use fah_common::listen::{bind_error, bind_tcp, bind_udp, listen_addr};
 use fah_config::DnsListenConfig;
 use tokio::net::{TcpListener, UdpSocket};
+use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
 
 /// Named in bind failures so the operator is sent to the right setting.
@@ -27,6 +28,8 @@ pub struct Server {
     /// Bound, not yet accepting — taken by [`Server::serve`].
     sockets: Option<(UdpSocket, TcpListener)>,
     handles: Vec<JoinHandle<()>>,
+    fatal_tx: mpsc::Sender<ListenerDied>,
+    fatal_rx: mpsc::Receiver<ListenerDied>,
 }
 
 impl Server {
@@ -52,11 +55,15 @@ impl Server {
         let udp_addr = udp_socket.local_addr()?;
         let tcp_addr = tcp_listener.local_addr()?;
 
+        let (fatal_tx, fatal_rx) = mpsc::channel(1);
+
         Ok(Self {
             udp_addr,
             tcp_addr,
             sockets: Some((udp_socket, tcp_listener)),
             handles: Vec::new(),
+            fatal_tx,
+            fatal_rx,
         })
     }
 
@@ -66,10 +73,25 @@ impl Server {
         let Some((udp_socket, tcp_listener)) = self.sockets.take() else {
             return;
         };
-        self.handles
-            .push(tokio::spawn(udp::run(udp_socket, Arc::clone(&pipeline))));
-        self.handles
-            .push(tokio::spawn(tcp::run(tcp_listener, pipeline)));
+        let udp_fatal = self.fatal_tx.clone();
+        let udp_pipeline = Arc::clone(&pipeline);
+        self.handles.push(tokio::spawn(async move {
+            let died = udp::run(udp_socket, udp_pipeline).await;
+            let _ = udp_fatal.try_send(died);
+        }));
+
+        let tcp_fatal = self.fatal_tx.clone();
+        self.handles.push(tokio::spawn(async move {
+            let died = tcp::run(tcp_listener, pipeline).await;
+            let _ = tcp_fatal.try_send(died);
+        }));
+    }
+
+    pub async fn fatal(&mut self) -> ListenerDied {
+        match self.fatal_rx.recv().await {
+            Some(died) => died,
+            None => std::future::pending().await,
+        }
     }
 
     pub fn udp_addr(&self) -> SocketAddr {
@@ -85,6 +107,11 @@ impl Server {
             handle.abort();
         }
     }
+}
+
+#[derive(Debug)]
+pub struct ListenerDied {
+    pub last_error: io::Error,
 }
 
 #[cfg(test)]

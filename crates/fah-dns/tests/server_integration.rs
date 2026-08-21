@@ -336,6 +336,47 @@ async fn full_pipeline_forwards_via_upstream_pool_and_caches_the_answer() {
 }
 
 #[tokio::test]
+async fn a_serving_listener_never_reports_itself_fatal() {
+    let (mut server, _calls, _data_dir) = start_server("").await;
+
+    let reply = udp_roundtrip(server.udp_addr(), &encode_a_query("example.com.")).await;
+    assert_eq!(
+        Message::from_vec(&reply).unwrap().metadata.response_code,
+        ResponseCode::NoError
+    );
+    assert!(
+        timeout(Duration::from_millis(200), server.fatal())
+            .await
+            .is_err(),
+        "a healthy listener must not signal a fatal error"
+    );
+
+    server.shutdown();
+}
+
+#[tokio::test]
+async fn a_status_opcode_probe_is_answered_with_notimp_and_the_probe_id() {
+    let (server, calls, _data_dir) = start_server("").await;
+
+    let mut probe = Message::query();
+    probe.metadata.op_code = hickory_proto::op::OpCode::Status;
+    let id = probe.metadata.id;
+
+    let reply = udp_roundtrip(server.udp_addr(), &probe.to_vec().unwrap()).await;
+    let decoded = Message::from_vec(&reply).unwrap();
+
+    assert_eq!(decoded.metadata.id, id);
+    assert_eq!(decoded.metadata.response_code, ResponseCode::NotImp);
+    assert_eq!(
+        calls.load(Ordering::Relaxed),
+        0,
+        "the healthcheck probe must never reach an upstream"
+    );
+
+    server.shutdown();
+}
+
+#[tokio::test]
 async fn udp_and_tcp_listeners_bind_independently() {
     let (server, _calls, _data_dir) = start_server("").await;
     let udp_ip: IpAddr = server.udp_addr().ip();

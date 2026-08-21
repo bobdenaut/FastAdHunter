@@ -27,6 +27,11 @@ fah-metrics = { path = "../fah-metrics" }
 fah-model = { path = "../fah-model" }
 fah-rules = { path = "../fah-rules" }
 fah-stats = { path = "../fah-stats" }
+# The `--healthcheck` DNS probe encodes one opcode-STATUS query itself: the
+# probe runs before the Tokio runtime and must not construct the engine, so
+# it cannot borrow fah-dns' encoder. Already in-tree via fah-dns, so this
+# links no new code into the binary.
+hickory-proto.workspace = true
 tokio.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
@@ -44,10 +49,6 @@ libc = "0.2"
 
 [dev-dependencies]
 criterion = { workspace = true }
-# Crafting DNS wire messages for the benches and the end-to-end test's mock
-# upstream. Not a runtime dependency: the binary never speaks wire format
-# itself, it delegates to fah-dns.
-hickory-proto = { workspace = true }
 reqwest = { workspace = true, features = ["json"] }
 # The end-to-end test speaks to the appliance's self-signed certificate;
 # tungstenite needs an explicit rustls config to accept it.
