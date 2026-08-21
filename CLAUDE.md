@@ -255,7 +255,8 @@ branches. `unsafe` requires a `// SAFETY:` comment.
 crates/        # 11 crates (see ARCHITECTURE.md for responsibilities)
 tests/         # workspace integration tests
 benches/       # criterion benches vs PERFORMANCE.md budgets
-docs/          # images/, diagrams/, decisions/ (ADRs)
+docs/          # images/, diagrams/, decisions/ (ADRs); solutions/ = documented
+               # learnings (bugs, patterns; YAML frontmatter: module, tags, problem_type)
 dashboard/     # empty until the dashboard phase — do not scaffold
 plan/          # task orchestration — open/ wip/ closed/ phases
 ```
