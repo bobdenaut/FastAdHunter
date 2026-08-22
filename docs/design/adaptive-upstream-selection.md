@@ -620,6 +620,28 @@ Not exposed, and not to be added "while we are in there":
   documented in S1.4.
 - No new `unsafe`, no new crypto, no new dependency.
 
+## S1.17 Connection establishment vs. health
+
+Origin: p2.5-03 review finding F2
+([review](../code-review/phase2.5/p2.5-03-encrypted-reconnect-review.md)).
+
+- Selection must skip a Penalized endpoint **before** connection
+  establishment: no query may wait on a per-endpoint connect for an endpoint
+  already known unhealthy.
+- Connection creation itself stays **single-flight**: one handshake per
+  endpoint at a time; concurrent queries adopt the connection it produces,
+  never duplicate it.
+- The current `ExchangeConn` slot lock (held across `connect()`) already
+  satisfies the single-flight half and is kept. Stage 1 supplies the skip;
+  it must not replace the lock with connect-outside-lock or connect-ahead.
+
+Tests (Stage 1 acceptance):
+
+| Scenario | Assertion |
+| --- | --- |
+| N concurrent queries against `[penalized-dead, live]` | all answer within one `attempt_timeout` of the live endpoint; the dead endpoint's `tls_handshakes` stays unchanged after penalization |
+| N concurrent first queries against one live endpoint | exactly 1 handshake |
+
 ---
 
 # Stage 1 acceptance gates

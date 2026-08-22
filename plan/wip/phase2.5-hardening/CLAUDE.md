@@ -25,7 +25,7 @@ recommended). The SWR lease check, hygiene, and verification close the phase.
 |---|-----------|---------|-------|--------|
 | 1 | `p2.5-01-listener-resilience.md` | DNS listener loops survive transient socket errors; healthcheck exercises port 53 | Opus | DONE |
 | 2 | `p2.5-02-list-refresh-integrity.md` | A fetched body is validated before it can replace the last-good `/data` copy; `parse_errors` reaches the API | Opus | DONE |
-| 3 | `p2.5-03-encrypted-reconnect.md` | A timeout invalidates the pooled DoT/DoH connection; next exchange reconnects (S1.15 becomes true) | Opus | WAITING |
+| 3 | `p2.5-03-encrypted-reconnect.md` | A timeout invalidates the pooled DoT/DoH connection; next exchange reconnects (S1.15 becomes true) | Opus | DONE |
 | 4 | `p2.5-04-transport-error-kinds.md` | `io::ErrorKind` fidelity through encrypted transports; RCODE-is-not-a-failure pinned by test | Opus | WAITING |
 | 5 | `p2.5-05-outcome-telemetry.md` | Client-visible failure (SERVFAIL served) counted; per-query endpoint attribution on events | Opus | WAITING |
 | 6 | `p2.5-06-failure-runlength.md` | Per-endpoint failure run-length distribution observable via `/telemetry` (gate S1-G4 data source) | Opus | WAITING |

@@ -41,11 +41,30 @@ pub(super) struct ExchangeConn {
     /// The live connection; `None` until the first query needs it. The lock
     /// is held across the connect on purpose: concurrent first queries share
     /// one handshake instead of stampeding.
-    slot: Mutex<Option<DnsExchange<TokioRuntimeProvider>>>,
+    slot: Mutex<Slot>,
     /// Owns the JoinSet the exchanges' background I/O tasks spawn into —
     /// it must live as long as this upstream, or the tasks are aborted.
     provider: TokioRuntimeProvider,
     handshakes: AtomicU64,
+}
+
+#[derive(Default)]
+struct Slot {
+    generation: u64,
+    exchange: Option<DnsExchange<TokioRuntimeProvider>>,
+}
+
+impl Slot {
+    fn store(&mut self, exchange: DnsExchange<TokioRuntimeProvider>) {
+        self.generation += 1;
+        self.exchange = Some(exchange);
+    }
+}
+
+struct Held {
+    exchange: DnsExchange<TokioRuntimeProvider>,
+    generation: u64,
+    fresh: bool,
 }
 
 impl ExchangeConn {
@@ -53,7 +72,7 @@ impl ExchangeConn {
         Self {
             target,
             tls,
-            slot: Mutex::new(None),
+            slot: Mutex::new(Slot::default()),
             provider: TokioRuntimeProvider::new(),
             handshakes: AtomicU64::new(0),
         }
@@ -80,43 +99,50 @@ impl ExchangeConn {
         // per-attempt rather than up-front so the common single-send path
         // deep-copies the message exactly once.
         let as_request = || DnsRequest::new(request.clone(), DnsRequestOptions::default());
-        let (exchange, fresh) = self.connected(attempt_timeout).await?;
-        match send_once(&exchange, as_request(), attempt_timeout).await {
+        let held = self.acquire(attempt_timeout, None).await?;
+        let err = match send_once(&held.exchange, as_request(), attempt_timeout).await {
+            Ok(response) => return Ok(response),
+            Err(err) => err,
+        };
+        if held.fresh || err.kind() == io::ErrorKind::TimedOut {
+            self.invalidate_if_current(held.generation).await;
+            return Err(err);
+        }
+        let held = self.acquire(attempt_timeout, Some(held.generation)).await?;
+        match send_once(&held.exchange, as_request(), attempt_timeout).await {
             Ok(response) => Ok(response),
-            // A fresh connection that immediately errored, or a timeout (the
-            // connection is likely fine and the upstream slow): surface it —
-            // the pool falls back within the one-extra-window budget.
-            Err(err) if fresh || err.kind() == io::ErrorKind::TimedOut => Err(err),
-            // A pooled connection the upstream closed while it sat idle —
-            // the routine shape after quiet hours. Reconnect once, retry.
-            Err(_) => {
-                let exchange = self.reconnect(attempt_timeout).await?;
-                send_once(&exchange, as_request(), attempt_timeout).await
+            Err(err) => {
+                self.invalidate_if_current(held.generation).await;
+                Err(err)
             }
         }
     }
 
-    async fn connected(
-        &self,
-        attempt_timeout: Duration,
-    ) -> io::Result<(DnsExchange<TokioRuntimeProvider>, bool)> {
+    async fn acquire(&self, attempt_timeout: Duration, stale: Option<u64>) -> io::Result<Held> {
         let mut slot = self.slot.lock().await;
-        if let Some(exchange) = slot.as_ref() {
-            return Ok((exchange.clone(), false));
+        if stale != Some(slot.generation) {
+            if let Some(exchange) = slot.exchange.as_ref() {
+                return Ok(Held {
+                    exchange: exchange.clone(),
+                    generation: slot.generation,
+                    fresh: false,
+                });
+            }
         }
         let exchange = self.connect(attempt_timeout).await?;
-        *slot = Some(exchange.clone());
-        Ok((exchange, true))
+        slot.store(exchange.clone());
+        Ok(Held {
+            exchange,
+            generation: slot.generation,
+            fresh: true,
+        })
     }
 
-    async fn reconnect(
-        &self,
-        attempt_timeout: Duration,
-    ) -> io::Result<DnsExchange<TokioRuntimeProvider>> {
+    async fn invalidate_if_current(&self, generation: u64) {
         let mut slot = self.slot.lock().await;
-        let exchange = self.connect(attempt_timeout).await?;
-        *slot = Some(exchange.clone());
-        Ok(exchange)
+        if slot.generation == generation {
+            slot.exchange = None;
+        }
     }
 
     async fn connect(
@@ -124,10 +150,6 @@ impl ExchangeConn {
         attempt_timeout: Duration,
     ) -> io::Result<DnsExchange<TokioRuntimeProvider>> {
         self.handshakes.fetch_add(1, Ordering::Relaxed);
-        // The multiplexer's internal per-request timeout is deliberately set
-        // above `attempt_timeout` so `send_once`'s own timeout always fires
-        // first — a slow answer must classify as "upstream slow" (fall back,
-        // keep the connection), never as "connection dead" (reconnect).
         let mux_timeout = attempt_timeout * 2;
         let connecting = async {
             match &self.target {
@@ -195,6 +217,8 @@ async fn send_once(
 mod tests {
     use std::net::Ipv4Addr;
     use std::str::FromStr;
+    use std::sync::atomic::AtomicBool;
+    use std::time::Instant;
 
     use fah_config::{
         DnsUpstreamsConfig, UpstreamProtocol, UpstreamServerConfig, UpstreamStrategy,
@@ -231,13 +255,18 @@ mod tests {
         response
     }
 
+    struct DotServer {
+        addr: SocketAddr,
+        accepts: Arc<AtomicU64>,
+        cert: CertificateDer<'static>,
+        blackhole: Arc<AtomicBool>,
+    }
+
     /// A minimal DoT server on an ephemeral port: rcgen self-signed cert for
     /// "localhost", counting accepted connections. `queries_per_connection`
     /// simulates an upstream's idle-close policy: `None` serves a connection
     /// forever, `Some(n)` closes it after `n` answers.
-    async fn dot_server(
-        queries_per_connection: Option<usize>,
-    ) -> (SocketAddr, Arc<AtomicU64>, CertificateDer<'static>) {
+    async fn dot_server(queries_per_connection: Option<usize>) -> DotServer {
         let signed = rcgen::generate_simple_self_signed(vec!["localhost".to_string()]).unwrap();
         let cert = signed.cert.der().clone();
         let key = PrivateKeyDer::from(PrivatePkcs8KeyDer::from(signed.signing_key.serialize_der()));
@@ -251,6 +280,8 @@ mod tests {
         let addr = listener.local_addr().unwrap();
         let accepts = Arc::new(AtomicU64::new(0));
         let accepts_counter = Arc::clone(&accepts);
+        let blackhole = Arc::new(AtomicBool::new(false));
+        let connection_blackhole = Arc::clone(&blackhole);
         tokio::spawn(async move {
             loop {
                 let Ok((stream, _)) = listener.accept().await else {
@@ -258,6 +289,7 @@ mod tests {
                 };
                 accepts_counter.fetch_add(1, Ordering::Relaxed);
                 let acceptor = acceptor.clone();
+                let blackhole = Arc::clone(&connection_blackhole);
                 tokio::spawn(async move {
                     let Ok(mut tls) = acceptor.accept(stream).await else {
                         return;
@@ -271,6 +303,9 @@ mod tests {
                         let mut request_buf = vec![0u8; u16::from_be_bytes(len_buf) as usize];
                         if tls.read_exact(&mut request_buf).await.is_err() {
                             return;
+                        }
+                        if blackhole.load(Ordering::Relaxed) {
+                            continue;
                         }
                         let request = Message::from_vec(&request_buf).unwrap();
                         let reply = answer_for(&request).to_vec().unwrap();
@@ -288,36 +323,55 @@ mod tests {
                 });
             }
         });
-        (addr, accepts, cert)
+        DotServer {
+            addr,
+            accepts,
+            cert,
+            blackhole,
+        }
     }
 
-    fn dot_pool(addr: SocketAddr, root: &CertificateDer<'static>) -> UpstreamPool {
-        let mut roots = rustls::RootCertStore::empty();
-        roots.add(root.clone()).unwrap();
-        let tls = Arc::new(
+    fn client_tls(roots: &[&CertificateDer<'static>]) -> Arc<ClientConfig> {
+        let mut store = rustls::RootCertStore::empty();
+        for root in roots {
+            store.add((*root).clone()).unwrap();
+        }
+        Arc::new(
             rustls::ClientConfig::builder()
-                .with_root_certificates(roots)
+                .with_root_certificates(store)
                 .with_no_client_auth(),
-        );
+        )
+    }
+
+    fn dot_pool_of(servers: &[&DotServer], timeout_ms: u32) -> UpstreamPool {
+        let roots: Vec<&CertificateDer<'static>> =
+            servers.iter().map(|server| &server.cert).collect();
         UpstreamPool::with_tls_config(
             &DnsUpstreamsConfig {
                 strategy: UpstreamStrategy::Fallback,
-                timeout_ms: 2000,
-                servers: vec![UpstreamServerConfig {
-                    address: addr.to_string(),
-                    protocol: UpstreamProtocol::Dot,
-                    hostname: Some("localhost".to_string()),
-                }],
+                timeout_ms,
+                servers: servers
+                    .iter()
+                    .map(|server| UpstreamServerConfig {
+                        address: server.addr.to_string(),
+                        protocol: UpstreamProtocol::Dot,
+                        hostname: Some("localhost".to_string()),
+                    })
+                    .collect(),
             },
-            tls,
+            client_tls(&roots),
         )
         .unwrap()
     }
 
+    fn dot_pool(server: &DotServer) -> UpstreamPool {
+        dot_pool_of(&[server], 2000)
+    }
+
     #[tokio::test]
     async fn dot_answers_and_reuses_one_connection_across_queries() {
-        let (addr, accepts, cert) = dot_server(None).await;
-        let pool = dot_pool(addr, &cert);
+        let server = dot_server(None).await;
+        let pool = dot_pool(&server);
 
         for _ in 0..3 {
             let response = pool.forward(&a_query()).await.unwrap();
@@ -327,7 +381,7 @@ mod tests {
 
         // The acceptance criterion, asserted from both ends: one TCP accept
         // server-side, one handshake in our own counter.
-        assert_eq!(accepts.load(Ordering::Relaxed), 1);
+        assert_eq!(server.accepts.load(Ordering::Relaxed), 1);
         let status = pool.status();
         assert_eq!(status[0].tls_handshakes, 1);
         assert_eq!(status[0].attempts, 3);
@@ -338,15 +392,15 @@ mod tests {
     async fn dot_reconnects_after_the_upstream_closes_an_idle_connection() {
         // Upstream closes after every answer — each later query finds a dead
         // pooled connection and must transparently reconnect + retry.
-        let (addr, accepts, cert) = dot_server(Some(1)).await;
-        let pool = dot_pool(addr, &cert);
+        let server = dot_server(Some(1)).await;
+        let pool = dot_pool(&server);
 
         for _ in 0..2 {
             let response = pool.forward(&a_query()).await.unwrap();
             assert_eq!(response.metadata.response_code, ResponseCode::NoError);
         }
 
-        assert_eq!(accepts.load(Ordering::Relaxed), 2);
+        assert_eq!(server.accepts.load(Ordering::Relaxed), 2);
         assert_eq!(
             pool.status()[0].failures,
             0,
@@ -356,7 +410,7 @@ mod tests {
 
     #[tokio::test]
     async fn dot_fails_closed_when_the_certificate_is_untrusted() {
-        let (addr, _accepts, _cert) = dot_server(None).await;
+        let server = dot_server(None).await;
         // Trust store deliberately empty: the handshake must fail — an
         // encrypted upstream never silently downgrades.
         let tls = Arc::new(
@@ -369,7 +423,7 @@ mod tests {
                 strategy: UpstreamStrategy::Fallback,
                 timeout_ms: 1000,
                 servers: vec![UpstreamServerConfig {
-                    address: addr.to_string(),
+                    address: server.addr.to_string(),
                     protocol: UpstreamProtocol::Dot,
                     hostname: Some("localhost".to_string()),
                 }],
@@ -378,6 +432,140 @@ mod tests {
         )
         .unwrap();
         assert!(pool.forward(&a_query()).await.is_err());
+    }
+
+    const BLACKHOLE_TIMEOUT_MS: u32 = 400;
+
+    #[tokio::test]
+    async fn dot_timeout_invalidates_the_pooled_connection_so_the_next_query_reconnects() {
+        let server = dot_server(None).await;
+        let pool = dot_pool_of(&[&server], BLACKHOLE_TIMEOUT_MS);
+
+        assert!(pool.forward(&a_query()).await.is_ok());
+        assert_eq!(pool.status()[0].tls_handshakes, 1);
+
+        server.blackhole.store(true, Ordering::Relaxed);
+        let started = Instant::now();
+        let err = pool.forward(&a_query()).await.unwrap_err();
+        let elapsed = started.elapsed();
+        assert_eq!(err.kind(), io::ErrorKind::TimedOut);
+        assert!(
+            elapsed < Duration::from_millis(u64::from(BLACKHOLE_TIMEOUT_MS) * 2),
+            "a timeout must not retry inside the same query (took {elapsed:?})"
+        );
+
+        server.blackhole.store(false, Ordering::Relaxed);
+        let response = pool.forward(&a_query()).await.unwrap();
+        assert_eq!(response.metadata.response_code, ResponseCode::NoError);
+        assert_eq!(
+            pool.status()[0].tls_handshakes,
+            2,
+            "the blackholed connection must be replaced, not reused"
+        );
+        assert_eq!(server.accepts.load(Ordering::Relaxed), 2);
+    }
+
+    #[tokio::test]
+    async fn dot_timeout_on_a_fresh_connection_leaves_nothing_pooled() {
+        let server = dot_server(None).await;
+        server.blackhole.store(true, Ordering::Relaxed);
+        let pool = dot_pool_of(&[&server], BLACKHOLE_TIMEOUT_MS);
+
+        for _ in 0..2 {
+            let err = pool.forward(&a_query()).await.unwrap_err();
+            assert_eq!(err.kind(), io::ErrorKind::TimedOut);
+        }
+
+        assert_eq!(
+            pool.status()[0].tls_handshakes,
+            2,
+            "a connection that timed out on its first use must not be pooled"
+        );
+        assert_eq!(server.accepts.load(Ordering::Relaxed), 2);
+    }
+
+    #[tokio::test]
+    async fn a_timed_out_upstream_falls_back_within_one_extra_window() {
+        let dead = dot_server(None).await;
+        dead.blackhole.store(true, Ordering::Relaxed);
+        let live = dot_server(None).await;
+        let pool = dot_pool_of(&[&dead, &live], BLACKHOLE_TIMEOUT_MS);
+
+        let started = Instant::now();
+        let response = pool.forward(&a_query()).await.unwrap();
+        let elapsed = started.elapsed();
+
+        assert_eq!(response.metadata.response_code, ResponseCode::NoError);
+        assert!(
+            elapsed < Duration::from_millis(u64::from(BLACKHOLE_TIMEOUT_MS) * 2),
+            "fallback must cost one extra window, not two (took {elapsed:?})"
+        );
+        let status = pool.status();
+        assert_eq!(status[0].failures, 1);
+        assert_eq!(status[0].consecutive_failures, 1);
+        assert_eq!(status[1].failures, 0);
+    }
+
+    #[tokio::test]
+    async fn invalidation_only_clears_the_generation_that_timed_out() {
+        let server = dot_server(None).await;
+        let conn = ExchangeConn::new(
+            ConnectTarget::Dot {
+                addr: server.addr,
+                server_name: ServerName::try_from("localhost").unwrap(),
+            },
+            client_tls(&[&server.cert]),
+        );
+        let attempt_timeout = Duration::from_secs(2);
+
+        let stale = conn.acquire(attempt_timeout, None).await.unwrap();
+        assert!(stale.fresh);
+        let current = conn
+            .acquire(attempt_timeout, Some(stale.generation))
+            .await
+            .unwrap();
+        assert!(current.fresh);
+        assert!(current.generation > stale.generation);
+
+        conn.invalidate_if_current(stale.generation).await;
+        assert!(
+            conn.slot.lock().await.exchange.is_some(),
+            "a stale timeout must never drop a newer connection"
+        );
+
+        conn.invalidate_if_current(current.generation).await;
+        assert!(conn.slot.lock().await.exchange.is_none());
+    }
+
+    #[tokio::test]
+    async fn reconnecting_adopts_a_connection_another_query_already_installed() {
+        let server = dot_server(None).await;
+        let conn = ExchangeConn::new(
+            ConnectTarget::Dot {
+                addr: server.addr,
+                server_name: ServerName::try_from("localhost").unwrap(),
+            },
+            client_tls(&[&server.cert]),
+        );
+        let attempt_timeout = Duration::from_secs(2);
+
+        let stale = conn.acquire(attempt_timeout, None).await.unwrap();
+        let replaced = conn
+            .acquire(attempt_timeout, Some(stale.generation))
+            .await
+            .unwrap();
+        let adopted = conn
+            .acquire(attempt_timeout, Some(stale.generation))
+            .await
+            .unwrap();
+
+        assert!(
+            !adopted.fresh,
+            "a second query on the same stale connection must not handshake again"
+        );
+        assert_eq!(adopted.generation, replaced.generation);
+        assert_eq!(conn.handshakes(), 2);
+        assert_eq!(server.accepts.load(Ordering::Relaxed), 2);
     }
 
     /// Network smoke tests (`cargo test -- --ignored`): real public
