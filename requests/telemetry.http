@@ -39,6 +39,23 @@ GET {{base}}/telemetry
 # blocked query never reaches the cache (ADR-0001). Divide a hit ratio by the
 # resolved queries, not by every query, or the ratio falls as the blocker
 # improves.
+#
+# counters.dns.answers counts what the CLIENT saw, on its own axis:
+#   servfail_synthesized  every upstream failed and no stale entry covered it,
+#                         so FastAdHunter minted the SERVFAIL itself
+#   servfail_relayed      an upstream answered SERVFAIL; passed through
+#   refused_relayed       an upstream answered REFUSED; passed through
+# A PARALLEL AXIS, NOT A PARTITION: each of those queries is also counted under
+# pass/allow and under cache_misses, so the identity above still holds. Adding
+# the three to pass+allow+block double-counts.
+#
+# A stale serve that masked an upstream failure is NOT here — the client got
+# records, so it is counted by cache_stale. Reading these three as "outage
+# minutes" therefore understates the outage and overstates the harm: that is
+# the point of the split.
+#
+# Per-interval history of the same three figures is history.http's
+# `fields=answers_delta`; there is no per-query outcome on any endpoint.
 
 # ─── The producer boundary ─────────────────────────────────────────────
 #

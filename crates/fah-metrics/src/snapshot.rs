@@ -23,6 +23,9 @@ pub struct MetricsSnapshot {
     pub cache_hits: u64,
     pub cache_misses: u64,
     pub cache_stale: u64,
+    pub answers_servfail_synthesized: u64,
+    pub answers_servfail_relayed: u64,
+    pub answers_refused_relayed: u64,
     pub dropped_events: u64,
     /// HTTP request counters (p2-04), kept apart from the DNS ones because
     /// `queries_*` has meant "DNS questions" since p1-08.

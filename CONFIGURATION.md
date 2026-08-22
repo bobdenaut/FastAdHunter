@@ -106,6 +106,10 @@ protocol = "udp"              # boot    — "udp" | "dot" | "doh"
 address = "9.9.9.9"
 protocol = "udp"
 
+# At least one server is required, and at most 255: an answering upstream is
+# attributed per query by its index in this list (CONTEXT.md §Answering
+# Endpoint), which is a u8. A longer list is rejected at load, not truncated.
+
 # DoT example:  address = "1.1.1.1", protocol = "dot", hostname = "cloudflare-dns.com"
 # DoH example:  address = "https://cloudflare-dns.com/dns-query", protocol = "doh"
 #   (doh cert name comes from the URL host; hostname optionally overrides it,

@@ -901,6 +901,20 @@ fn build_perf_sample(
         ),
         None => (0, 0, 0),
     };
+    let answers_delta = match prev {
+        Some(prev) => fah_model::AnswerCounters {
+            servfail_synthesized: current
+                .answers_servfail_synthesized
+                .saturating_sub(prev.answers_servfail_synthesized),
+            servfail_relayed: current
+                .answers_servfail_relayed
+                .saturating_sub(prev.answers_servfail_relayed),
+            refused_relayed: current
+                .answers_refused_relayed
+                .saturating_sub(prev.answers_refused_relayed),
+        },
+        None => fah_model::AnswerCounters::default(),
+    };
     let qps = if interval_secs > 0.0 {
         queries_delta as f64 / interval_secs
     } else {
@@ -931,6 +945,7 @@ fn build_perf_sample(
         minor_page_faults: memory.process.map_or(0, |p| p.minor_page_faults),
         rss_anon_bytes: memory.rss_anon.unwrap_or(0),
         rss_file_bytes: memory.rss_file.unwrap_or(0),
+        answers_delta,
         latency: latency_summary(current, prev),
         // One type end to end (`fah_model::UpstreamSample`), so this is a clone
         // rather than a field-by-field remap into a structurally identical
@@ -1031,6 +1046,9 @@ mod tests {
             cache_hits: 0,
             cache_misses: 0,
             cache_stale: 0,
+            answers_servfail_synthesized: 0,
+            answers_servfail_relayed: 0,
+            answers_refused_relayed: 0,
             dropped_events: 0,
             requests_pass: 0,
             requests_allow: 0,

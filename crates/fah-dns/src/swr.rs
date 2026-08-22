@@ -197,7 +197,7 @@ impl SwrPool {
     async fn refresh<F: Forwarder>(&self, cache: &DnsCache, forwarder: &F, key: &CacheKey) {
         let request = refresh_query(key);
         let stored = match forwarder.forward(&request).await {
-            Ok(response) => cache.store(key, &response),
+            Ok(outcome) => cache.store(key, &outcome.message),
             Err(err) => {
                 tracing::trace!(error = %err, "stale-while-refresh forward failed");
                 false
@@ -243,6 +243,7 @@ mod tests {
 
     use super::*;
     use crate::cache::Lookup;
+    use crate::upstream::ForwardOutcome;
 
     /// A forwarder that counts calls and replays a scripted outcome, so a test
     /// can assert "exactly one refresh happened" rather than infer it.
@@ -260,7 +261,7 @@ mod tests {
     }
 
     impl Forwarder for CountingForwarder {
-        async fn forward(&self, query: &Message) -> std::io::Result<Message> {
+        async fn forward(&self, query: &Message) -> std::io::Result<ForwardOutcome> {
             self.calls.fetch_add(1, Ordering::Relaxed);
             match self.outcome {
                 Outcome::Error => Err(std::io::Error::other("upstream down")),
@@ -268,7 +269,7 @@ mod tests {
                     let mut response = Message::response(query.metadata.id, OpCode::Query);
                     response.queries = query.queries.clone();
                     response.metadata.response_code = ResponseCode::ServFail;
-                    Ok(response)
+                    Ok(ForwardOutcome::new(response, 0))
                 }
                 Outcome::Answer => {
                     let mut response = Message::response(query.metadata.id, OpCode::Query);
@@ -278,7 +279,7 @@ mod tests {
                         300,
                         RData::A(A(Ipv4Addr::new(10, 0, 0, 1))),
                     ));
-                    Ok(response)
+                    Ok(ForwardOutcome::new(response, 0))
                 }
             }
         }

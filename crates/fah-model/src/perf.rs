@@ -65,6 +65,8 @@ pub struct PerfSample {
     /// unavailable. `rss_bytes - the two` is shared memory, not a rounding gap.
     #[serde(default)]
     pub rss_file_bytes: u64,
+    #[serde(default)]
+    pub answers_delta: crate::engine::AnswerCounters,
 }
 
 /// A range of [`PerfSample`]s plus the decimation applied to fit the caller's
@@ -146,6 +148,7 @@ mod tests {
     fn perf_sample_serde_roundtrip() {
         let sample = PerfSample {
             ts: 1_695_600_000,
+            answers_delta: crate::engine::AnswerCounters::default(),
             rss_bytes: 55_000_000,
             peak_rss: 123_539_456,
             qps: 12.5,

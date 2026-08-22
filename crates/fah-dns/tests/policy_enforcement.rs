@@ -9,7 +9,7 @@ use std::str::FromStr;
 use std::sync::Arc;
 
 use fah_config::{AssignmentConfig, DnsCacheConfig, PolicyConfig, RulesConfig};
-use fah_dns::{Forwarder, Pipeline, Transport};
+use fah_dns::{ForwardOutcome, Forwarder, Pipeline, Transport};
 use fah_rules::{ListManager, PolicySet, PolicyState};
 use hickory_proto::op::{Message, Query as WireQuery, ResponseCode};
 use hickory_proto::rr::{Name, RecordType};
@@ -21,10 +21,10 @@ use tokio::sync::mpsc;
 struct StubForwarder;
 
 impl Forwarder for StubForwarder {
-    async fn forward(&self, request: &Message) -> std::io::Result<Message> {
+    async fn forward(&self, request: &Message) -> std::io::Result<ForwardOutcome> {
         let mut response = Message::response(request.metadata.id, request.metadata.op_code);
         response.metadata.response_code = ResponseCode::NoError;
-        Ok(response)
+        Ok(ForwardOutcome::new(response, 0))
     }
 }
 

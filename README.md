@@ -29,14 +29,21 @@ numbers below are measured on the target hardware, not estimated.
 | 0 | Foundations, workspace, layering | ✅ done | `v0.1.0-phase0` |
 | 1 | DNS + REST API + Docker | ✅ done | `v0.2.0-phase1` |
 | 1.5 | Observability persistence | ✅ done | `v0.3.0-phase1.5` |
-| 2 | HTTP engine + Policies | 🚧 shipped, one task open | — |
+| 2 | HTTP engine + Policies | ✅ done | `v0.2.17-phase2` |
+| 2.5 | Pre-Adaptive hardening | 🚧 in progress | — |
 | 3 | HTTPS interception | ⬜ not started | — |
 | 4 | HTML filtering | ⬜ not started | — |
 
 Running in production on a MikroTik RB5009 as the household's only resolver, in
 `dns+http` mode. Phase 2's engine work is deployed — the transparent HTTP proxy,
-URL-path rules, per-client Policies and the single JSON telemetry surface. What
-remains open is a memory-transient investigation, not a feature.
+URL-path rules, per-client Policies and the single JSON telemetry surface.
+
+Phase 2.5 is hardening, not features: the live-resolver defects an architecture
+review found (a DNS listener that could die silently, a 200-OK garbage list body
+that could replace a good ruleset), the encrypted-transport fixes adaptive
+upstream selection will depend on, and the outcome telemetry that makes it
+judgeable — a served SERVFAIL is now countable, and a forwarded query's event
+names which upstream answered it.
 
 ### Measured, on the RB5009
 
@@ -76,9 +83,17 @@ with all four cores sharing evenly — reception is not the bottleneck, so
 ruleset briefly holds the outgoing matcher, the freshly fetched list bodies and
 the new arena at the same time, peaking around 172 MiB before falling back to
 ~52 MiB. It is bounded and it does not ratchet — steady RSS returning after every
-refresh is the evidence — but it is real, and reducing it is the one Phase 2 task
-still open. Structural accounting:
-[`p2-12`](plan/wip/phase2/p2-12-compile-transient-structural.md).
+refresh is the evidence — but it is real.
+
+It was accounted for rather than optimised away: 106.61 MB of the 125.69 MB
+device transient is explained exactly, the dominant term being the *parsed* form
+of a list rather than the compiled arena it becomes. The levers are sized and
+deliberately **not taken** — the largest, list ordering, is worth ±19.92 MB but
+changes the compiled ruleset, and the deployment already sits at the best case.
+Phase 2 closed with zero code on this, and the peak is instead **observable**:
+`getrusage`'s high-water mark rides `/history/perf`, so a refresh step appears in
+the series without anyone having to watch for it.
+[Attribution](docs/code-review/phase2/p2-12-compile-transient-attribution.md).
 
 Memory is otherwise **bounded, not merely small**, and the instrument that proves
 it runs continuously: `RSS − Σ(components) = residual` is exported on every
@@ -535,7 +550,8 @@ FastAdHunter/
 ├── tests/                # workspace integration tests
 ├── benches/              # criterion benches vs PERFORMANCE.md budgets
 ├── plan/                 # task orchestration: open / wip / closed phases
-├── docs/                 # images/, diagrams/, decisions/, code-review/
+├── docs/                 # decisions/, design/, diagrams/, images/,
+│                         # code-review/, solutions/
 └── dashboard/            # empty until the dashboard phase
 ```
 
@@ -577,7 +593,8 @@ firewall · a replacement for a good browser extension.
 | ----- | -------- |
 | **1** ✅ | DNS filtering, REST API, Docker image, on-device soak |
 | **1.5** ✅ | Persisted history, perf series, byte-bounded cache |
-| **2** 🚧 | HTTP proxy ✅, URL-path rules ✅, Policies ✅, telemetry consolidation ✅ — refresh-transient memory open |
+| **2** ✅ | HTTP proxy, URL-path rules, Policies, telemetry consolidation, compile-transient attribution |
+| **2.5** 🚧 | Listener resilience, list-refresh integrity, encrypted-transport fixes, outcome telemetry — hardening before adaptive upstream selection |
 | **3** | HTTPS interception, certificate management, DoT/DoH listeners |
 | **4** | HTML filtering with `lol_html`, cosmetic rules |
 
@@ -604,8 +621,11 @@ if the decision is being reversed.
 │
 └── docs/
     ├── decisions/            ADRs 0001–0005
+    ├── design/               accepted designs not yet built
     ├── diagrams/             architecture SVG + HTML
     ├── code-review/          per-task review notes with measured results
+    ├── solutions/            documented learnings — patterns and bugs worth
+    │                         carrying forward, with YAML frontmatter
     ├── deploy-rb5009.md      end-to-end deployment + soak procedure
     ├── routeros-traps.md     what bites you on RouterOS, and why
     ├── measurement-traps.md  how to read a bench, soak or memory figure

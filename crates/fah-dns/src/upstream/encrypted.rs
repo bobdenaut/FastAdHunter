@@ -424,7 +424,7 @@ mod tests {
         let pool = dot_pool(&server);
 
         for _ in 0..3 {
-            let response = pool.forward(&a_query()).await.unwrap();
+            let response = pool.forward(&a_query()).await.unwrap().message;
             assert_eq!(response.metadata.response_code, ResponseCode::NoError);
             assert_eq!(response.answers.len(), 1);
         }
@@ -446,7 +446,7 @@ mod tests {
         let pool = dot_pool(&server);
 
         for _ in 0..2 {
-            let response = pool.forward(&a_query()).await.unwrap();
+            let response = pool.forward(&a_query()).await.unwrap().message;
             assert_eq!(response.metadata.response_code, ResponseCode::NoError);
         }
 
@@ -531,7 +531,7 @@ mod tests {
         );
 
         server.blackhole.store(false, Ordering::Relaxed);
-        let response = pool.forward(&a_query()).await.unwrap();
+        let response = pool.forward(&a_query()).await.unwrap().message;
         assert_eq!(response.metadata.response_code, ResponseCode::NoError);
         assert_eq!(
             pool.status()[0].tls_handshakes,
@@ -568,7 +568,7 @@ mod tests {
         let pool = dot_pool_of(&[&dead, &live], BLACKHOLE_TIMEOUT_MS);
 
         let started = Instant::now();
-        let response = pool.forward(&a_query()).await.unwrap();
+        let response = pool.forward(&a_query()).await.unwrap().message;
         let elapsed = started.elapsed();
 
         assert_eq!(response.metadata.response_code, ResponseCode::NoError);
@@ -659,7 +659,7 @@ mod tests {
             }],
         })
         .unwrap();
-        let response = pool.forward(&a_query()).await.unwrap();
+        let response = pool.forward(&a_query()).await.unwrap().message;
         assert_eq!(response.metadata.response_code, ResponseCode::NoError);
         assert_eq!(pool.status()[0].tls_handshakes, 1);
     }
@@ -678,7 +678,7 @@ mod tests {
         })
         .unwrap();
         for _ in 0..2 {
-            let response = pool.forward(&a_query()).await.unwrap();
+            let response = pool.forward(&a_query()).await.unwrap().message;
             assert_eq!(response.metadata.response_code, ResponseCode::NoError);
         }
         assert_eq!(

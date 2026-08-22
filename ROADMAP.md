@@ -12,7 +12,8 @@ RB5009, not merely written.
 | 0 — foundations | ✅ done | `v0.1.0-phase0` |
 | 1 — DNS + API + Docker | ✅ done | `v0.2.0-phase1` |
 | 1.5 — observability persistence | ✅ done | `v0.3.0-phase1.5` |
-| 2 — HTTP | 🚧 in progress | — |
+| 2 — HTTP | ✅ done | `v0.2.17-phase2` |
+| 2.5 — pre-Adaptive hardening | 🚧 in progress | — |
 | 3 — HTTPS | ⬜ not started | — |
 | 4 — HTML filtering | ⬜ not started | — |
 
@@ -101,18 +102,72 @@ in-RAM-only and lost everything on restart. See `plan/closed/phase1.5/`.
       (`fastadhunter` 65.8 % CPU via `/tool profile`); UDP recv and conntrack
       were ruled out. See `docs/code-review/phase1/p1.5-06-review.md`.
 
-## Phase 2 — HTTP 🚧 **IN PROGRESS** (`plan/wip/phase2/`)
+## Phase 2 — HTTP ✅ **DONE** (`v0.2.17-phase2`)
+
+Shipped and verified on-device; see `plan/closed/phase2/`.
 
 - [x] **p2-00** parser correctness — sample-based format detection;
       `||domain^*/path` no longer compiles to a whole-domain DNS block
       (`docs/code-review/phase2/p2-00-review.md`). Not HTTP work: a `fah-rules`
       foundation fix Phase 2 turned out to depend on.
-- HTTP proxy engine for unencrypted traffic (streaming, pass-through fast path)
-- URL-path rules and HTTP `$options` activate in the Rule Engine
-- **Policy** concept lands: named bundle of rule lists + settings, assignable
-  to clients and schedules (parental-control style); `$client` rules activate
-- Per-client statistics grow into per-client policy reporting
-- Operating mode `dns+http`
+- [x] HTTP proxy engine for unencrypted traffic (streaming, pass-through fast
+      path); the verdict is taken on the **head**, so a block costs no DNS
+      lookup and no upstream connection
+- [x] Default-deny egress guard judging the **resolved** address, shared with
+      Phase 3
+- [x] URL-path rules and HTTP `$options` active in the Rule Engine; a
+      literal-run n-gram tier took the unindexed rule count to **0**
+- [x] **Policy** — named bundle of rule lists + settings, assignable to clients
+      and schedules; `$client` active. All policies share one compiled ruleset
+      behind a 16-bit per-rule visibility mask, so N policies cost **+2.03 MiB
+      flat** rather than a ruleset each
+- [x] Per-client enforcement off one precomputed snapshot, schedules evaluated
+      on a tick in the binary
+- [x] Operating mode `dns+http`
+- [x] Telemetry consolidation — one JSON snapshot at `/api/v1/telemetry`; **no
+      Prometheus endpoint and no query-log reader** (`p2-09`, on-device verified)
+- [x] Memory breakdown persisted into the perf series, and the compile peak made
+      observable via `getrusage`'s high-water mark on `/history/perf` (`p2-13`)
+- [x] IPv6 HTTP interception — the last functional gap, a dual-stack origin
+      reached over IPv6 no longer bypasses the proxy
+- [ ] ~~Reduce the list-refresh memory transient~~ — **accounted for, not
+      optimised.** 106.61 of the 125.69 MB device transient explained exactly,
+      the dominant term being the *parsed* list form rather than the compiled
+      arena. Levers sized and deliberately not taken: the largest, list
+      ordering, is worth ±19.92 MB but changes the compiled ruleset, and the
+      deployment already sits at the best case. `p2-11` and `p2-12` both closed
+      with zero code (`docs/code-review/phase2/p2-12-compile-transient-attribution.md`).
+
+## Phase 2.5 — Pre-Adaptive hardening 🚧 **IN PROGRESS** (`plan/wip/phase2.5-hardening/`)
+
+Unplanned phase, inserted after Phase 2 shipped. Closes the operational risks
+and the Adaptive DNS Stage 1 ship-gates a global architecture review raised.
+**Adaptive upstream selection itself is not in this phase** — see
+`docs/design/adaptive-upstream-selection.md`.
+
+- [x] **p2.5-01** listener resilience — DNS listener loops survive transient
+      socket errors instead of dying silently; the healthcheck exercises port 53
+- [x] **p2.5-02** list-refresh integrity — a fetched body is validated before it
+      can replace the last-good `/data` copy; `parse_errors` reaches the API
+- [x] **p2.5-03** encrypted reconnect — a timeout invalidates the pooled DoT/DoH
+      connection, so the next exchange reconnects
+- [x] **p2.5-04** transport error kinds — `io::ErrorKind` fidelity through the
+      encrypted transports; RCODE-is-not-a-failure pinned by test
+- [x] **p2.5-05** outcome telemetry — a served SERVFAIL is countable
+      (synthesized vs relayed vs refused) and a forwarded query's event names
+      the endpoint that answered
+- [ ] **p2.5-06** per-endpoint failure run-length distribution on `/telemetry`
+      (the data source for Stage 1's gate S1-G4)
+- [ ] **p2.5-07** SWR refresh-claim lease provably exceeds the worst-case
+      upstream walk
+- [ ] **p2.5-08** hygiene — tracked bearer token gone and rotated, layering
+      guard covers the whole workspace, stale docs reconciled
+- [ ] **p2.5-09** phase verification — gates green, deployed, listener-death
+      drill passed, S1-G4 collection running
+
+A mid-phase deploy after `p2.5-06` is recommended: the failure counters and the
+run-length distribution want **deployment time**, since every day they run
+before Stage 1 lands is measurement data for judging it.
 
 ## Phase 3 — HTTPS
 
@@ -186,11 +241,12 @@ parameters, never supply JavaScript.
 ## Backlog (no phase committed)
 
 - Local DNSSEC validation (off by default)
-- Upstream health and load-balancing: use `consecutive_failures` for selection
-  instead of only reporting it — a dead server at index 0 costs `timeout_ms` on
-  every query until the config is edited. Prerequisite for latency-based and
-  round-robin strategies, and what makes a second-family (IPv6) upstream safe to
-  add; the sockets and config already accept one.
+- ~~Upstream health and load-balancing~~ — **promoted out of the backlog.**
+  Using `consecutive_failures` for *selection* rather than only reporting it is
+  now Adaptive DNS Stage 1, accepted as a specification:
+  `docs/design/adaptive-upstream-selection.md`. Phase 2.5 is its prerequisite
+  hardening; Stages 2 and 3 stay candidate designs behind explicit benchmark
+  gates. Still the thing that makes a second-family (IPv6) upstream safe to add.
 - Per-client blocked-response modes (NXDOMAIN, REFUSED, custom IP)
 - Dashboard (`dashboard/`) — separate deliverable, API-only consumer
 - List-file management endpoints (upload/edit local lists via API)

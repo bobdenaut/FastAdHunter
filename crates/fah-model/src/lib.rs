@@ -16,8 +16,8 @@ mod verdict;
 
 pub use client::Client;
 pub use engine::{
-    CacheCleanupCounters, DnsCounters, DnsLatency, EngineCounters, EngineTelemetry, HttpCounters,
-    HttpLatency, LatencyTotals, RulesetInfo, StageTotals, SwrCounters,
+    AnswerCounters, CacheCleanupCounters, DnsCounters, DnsLatency, EngineCounters, EngineTelemetry,
+    HttpCounters, HttpLatency, LatencyTotals, RulesetInfo, StageTotals, SwrCounters,
 };
 pub use history::{
     ClientHits, DailyTopN, DomainHits, HistoryPoint, HistoryRange, HistoryResolution,
@@ -30,6 +30,6 @@ pub use perf::{CacheStatsSample, LatencySummary, PerfSample, PerfSeries, Upstrea
 pub use policy::{Assignment, ClientSelector, Policy, PolicyId, Schedule};
 pub use protocol::Protocol;
 pub use query::{Query, QueryType};
-pub use query_event::{QueryEvent, StaleServe};
+pub use query_event::{AnswerOutcome, QueryEvent, StaleServe};
 pub use request_event::{Event, EventKind, Request, RequestEvent};
 pub use verdict::{DecisiveRule, Verdict};

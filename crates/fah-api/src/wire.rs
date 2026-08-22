@@ -8,8 +8,8 @@ use std::net::IpAddr;
 use std::time::{Duration, SystemTime};
 
 use fah_model::{
-    CacheStatsSample, HistorySeries, LatencySummary, PerfSeries, QueryType, TopItems,
-    UpstreamSample,
+    AnswerCounters, CacheStatsSample, HistorySeries, LatencySummary, PerfSeries, QueryType,
+    TopItems, UpstreamSample,
 };
 use serde::{Deserialize, Serialize};
 
@@ -373,6 +373,8 @@ pub struct PerfSampleResponse {
     pub rss_anon_bytes: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub rss_file_bytes: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub answers_delta: Option<AnswerCounters>,
 }
 
 /// Which [`PerfSampleResponse`] keys `?fields=` kept. Names match the response
@@ -394,6 +396,7 @@ pub struct PerfFields {
     pub minor_page_faults: bool,
     pub rss_anon_bytes: bool,
     pub rss_file_bytes: bool,
+    pub answers_delta: bool,
 }
 
 impl PerfFields {
@@ -412,6 +415,7 @@ impl PerfFields {
         minor_page_faults: true,
         rss_anon_bytes: true,
         rss_file_bytes: true,
+        answers_delta: true,
     };
 
     pub const NONE: Self = Self {
@@ -428,11 +432,12 @@ impl PerfFields {
         minor_page_faults: false,
         rss_anon_bytes: false,
         rss_file_bytes: false,
+        answers_delta: false,
     };
 
     /// The accepted `?fields=` names, in response order — also what a rejection
     /// message lists back.
-    pub const NAMES: [&'static str; 13] = [
+    pub const NAMES: [&'static str; 14] = [
         "rss_bytes",
         "peak_rss",
         "qps",
@@ -446,6 +451,7 @@ impl PerfFields {
         "minor_page_faults",
         "rss_anon_bytes",
         "rss_file_bytes",
+        "answers_delta",
     ];
 
     /// Turns one `?fields=` name on; `false` for a name that is not a key.
@@ -464,6 +470,7 @@ impl PerfFields {
             "minor_page_faults" => self.minor_page_faults = true,
             "rss_anon_bytes" => self.rss_anon_bytes = true,
             "rss_file_bytes" => self.rss_file_bytes = true,
+            "answers_delta" => self.answers_delta = true,
             _ => return false,
         }
         true
@@ -504,6 +511,7 @@ impl HistoryPerfResponse {
                     minor_page_faults: fields.minor_page_faults.then_some(sample.minor_page_faults),
                     rss_anon_bytes: fields.rss_anon_bytes.then_some(sample.rss_anon_bytes),
                     rss_file_bytes: fields.rss_file_bytes.then_some(sample.rss_file_bytes),
+                    answers_delta: fields.answers_delta.then_some(sample.answers_delta),
                     upstreams: fields.upstreams.then_some(sample.upstreams),
                 })
                 .collect(),

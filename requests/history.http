@@ -43,6 +43,13 @@ GET {{base}}/history/perf?fields=peak_rss
 GET {{base}}/history/perf?fields=latency,cache
 {{auth}}
 
+### Client-visible failures per interval: the persisted half of /telemetry's
+### `counters.dns.answers`, deltaed rather than cumulative, so "how many clients
+### saw an error during that outage" survives a restart. Rows written before it
+### shipped read back as three zeros — "not recorded", not "no failures".
+GET {{base}}/history/perf?fields=answers_delta
+{{auth}}
+
 ### Top blocked domains over the last week (both defaults).
 GET {{base}}/history/top
 {{auth}}

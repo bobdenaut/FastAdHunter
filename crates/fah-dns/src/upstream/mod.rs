@@ -34,7 +34,19 @@ pub trait Forwarder: Clone + Send + Sync + 'static {
     fn forward(
         &self,
         query: &Message,
-    ) -> impl std::future::Future<Output = io::Result<Message>> + Send;
+    ) -> impl std::future::Future<Output = io::Result<ForwardOutcome>> + Send;
+}
+
+#[derive(Debug)]
+pub struct ForwardOutcome {
+    pub message: Message,
+    pub endpoint: u8,
+}
+
+impl ForwardOutcome {
+    pub fn new(message: Message, endpoint: u8) -> Self {
+        Self { message, endpoint }
+    }
 }
 
 /// The real end of the pipeline: ordered fallback over the configured
@@ -146,7 +158,7 @@ impl UpstreamPool {
         query.add_query(WireQuery::query(name.clone(), record_type));
         query.metadata.recursion_desired = true;
 
-        let response = self.forward(&query).await?;
+        let response = self.forward(&query).await?.message;
         Ok(response
             .answers
             .iter()
@@ -179,9 +191,9 @@ impl UpstreamPool {
 }
 
 impl Forwarder for UpstreamPool {
-    async fn forward(&self, query: &Message) -> io::Result<Message> {
+    async fn forward(&self, query: &Message) -> io::Result<ForwardOutcome> {
         let mut last_err = None;
-        for server in self.servers.iter() {
+        for (index, server) in self.servers.iter().enumerate() {
             server.attempts.fetch_add(1, Ordering::Relaxed);
             match server.query(query, self.timeout).await {
                 Ok(response) => {
@@ -192,7 +204,10 @@ impl Forwarder for UpstreamPool {
                             "upstreams recovered — answering from the network again"
                         );
                     }
-                    return Ok(response);
+                    return Ok(ForwardOutcome::new(
+                        response,
+                        u8::try_from(index).unwrap_or(u8::MAX),
+                    ));
                 }
                 Err(err) => {
                     debug!(upstream = %server.address, error = %err, "upstream attempt failed");
@@ -465,7 +480,7 @@ mod tests {
                 .consecutive_failures
                 .store(7, Ordering::Relaxed);
 
-            let response = pool.forward(&a_query()).await.unwrap();
+            let response = pool.forward(&a_query()).await.unwrap().message;
 
             assert_eq!(response.metadata.response_code, code);
             assert_eq!(pool.servers[0].attempts.load(Ordering::Relaxed), 1);
@@ -572,7 +587,7 @@ mod tests {
     async fn first_upstream_answers() {
         let addr = answering_udp_server(1).await;
         let pool = pool_of(vec![udp_server_config(addr)], 2000);
-        let response = pool.forward(&a_query()).await.unwrap();
+        let response = pool.forward(&a_query()).await.unwrap().message;
         assert_eq!(response.metadata.response_code, ResponseCode::NoError);
         assert_eq!(response.answers.len(), 1);
     }
@@ -590,9 +605,14 @@ mod tests {
         );
 
         let started = Instant::now();
-        let response = pool.forward(&a_query()).await.unwrap();
+        let outcome = pool.forward(&a_query()).await.unwrap();
         let elapsed = started.elapsed();
+        let response = outcome.message;
 
+        assert_eq!(
+            outcome.endpoint, 1,
+            "the second configured server answered, so the walk index must say so"
+        );
         assert_eq!(response.metadata.response_code, ResponseCode::NoError);
         assert!(
             elapsed < Duration::from_millis(1500),
@@ -685,7 +705,7 @@ mod tests {
         });
 
         let pool = pool_of(vec![udp_server_config(addr)], 2000);
-        let response = pool.forward(&a_query()).await.unwrap();
+        let response = pool.forward(&a_query()).await.unwrap().message;
         assert!(!response.metadata.truncation);
         assert_eq!(
             response.answers.len(),
@@ -738,7 +758,7 @@ mod tests {
             .set_dnssec_ok(true);
 
         let pool = pool_of(vec![udp_server_config(addr)], 2000);
-        let response = pool.forward(&query).await.unwrap();
+        let response = pool.forward(&query).await.unwrap().message;
         let rrsig = response
             .answers
             .iter()
@@ -806,7 +826,7 @@ mod tests {
         });
 
         let pool = pool_of(vec![udp_server_config(addr)], 2000);
-        let response = pool.forward(&a_query()).await.unwrap();
+        let response = pool.forward(&a_query()).await.unwrap().message;
         assert_eq!(response.metadata.response_code, ResponseCode::NoError);
     }
 

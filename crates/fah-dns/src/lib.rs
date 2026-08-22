@@ -21,4 +21,4 @@ pub use cache::{CacheClean, CacheCleanupStats, CacheStats};
 pub use pipeline::{Pipeline, Transport};
 pub use server::{ListenerDied, Server};
 pub use swr::SwrStats;
-pub use upstream::{Forwarder, UpstreamPool, UpstreamStatus};
+pub use upstream::{ForwardOutcome, Forwarder, UpstreamPool, UpstreamStatus};

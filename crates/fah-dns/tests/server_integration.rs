@@ -14,7 +14,7 @@ use fah_config::{
     DnsCacheConfig, DnsListenConfig, DnsUpstreamsConfig, RulesConfig, UpstreamProtocol,
     UpstreamServerConfig, UpstreamStrategy,
 };
-use fah_dns::{Forwarder, Pipeline, Server, UpstreamPool};
+use fah_dns::{ForwardOutcome, Forwarder, Pipeline, Server, UpstreamPool};
 use fah_rules::ListManager;
 use hickory_proto::op::{Message, Query as WireQuery, ResponseCode};
 use hickory_proto::rr::rdata::A;
@@ -28,11 +28,11 @@ struct SpyForwarder {
 }
 
 impl Forwarder for SpyForwarder {
-    async fn forward(&self, request: &Message) -> std::io::Result<Message> {
+    async fn forward(&self, request: &Message) -> std::io::Result<ForwardOutcome> {
         self.calls.fetch_add(1, Ordering::Relaxed);
         let mut response = Message::response(request.metadata.id, request.metadata.op_code);
         response.metadata.response_code = ResponseCode::NoError;
-        Ok(response)
+        Ok(ForwardOutcome::new(response, 0))
     }
 }
 

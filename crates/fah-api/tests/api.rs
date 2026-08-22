@@ -210,6 +210,11 @@ impl HistorySource for FakeHistory {
         Ok(PerfSeries {
             samples: vec![PerfSample {
                 ts: 3_600,
+                answers_delta: fah_model::AnswerCounters {
+                    servfail_synthesized: 9,
+                    servfail_relayed: 4,
+                    refused_relayed: 1,
+                },
                 rss_bytes: 55_000_000,
                 peak_rss: 123_539_456,
                 qps: 12.5,
@@ -358,6 +363,11 @@ impl TelemetrySource for FakeTelemetry {
                     cache_hits: 640_119,
                     cache_misses: 269_446,
                     cache_stale: 3_187,
+                    answers: fah_model::AnswerCounters {
+                        servfail_synthesized: 1_204,
+                        servfail_relayed: 88,
+                        refused_relayed: 17,
+                    },
                 },
                 http: fah_model::HttpCounters {
                     pass: 4_412,
@@ -727,6 +737,12 @@ async fn telemetry_matches_the_documented_shape() {
 
     assert_eq!(body["counters"]["dns"]["block"], 96_318);
     assert_eq!(body["counters"]["dns"]["cache_stale"], 3_187);
+    assert_eq!(
+        body["counters"]["dns"]["answers"]["servfail_synthesized"],
+        1_204
+    );
+    assert_eq!(body["counters"]["dns"]["answers"]["servfail_relayed"], 88);
+    assert_eq!(body["counters"]["dns"]["answers"]["refused_relayed"], 17);
     assert_eq!(body["counters"]["http"]["response_bytes"], 148_223_904);
     assert_eq!(body["counters"]["events_dropped"], 7);
     assert_eq!(body["counters"]["swr"]["failed"], 31);
@@ -974,6 +990,9 @@ async fn history_perf_serves_the_sample_series_and_fields_trim_it() {
     assert_eq!(item["cache"]["entries"], 10_000);
     assert_eq!(item["latency"]["forward_p99"], 0.05);
     assert!(item["upstreams"].is_array());
+    assert_eq!(item["answers_delta"]["servfail_synthesized"], 9);
+    assert_eq!(item["answers_delta"]["servfail_relayed"], 4);
+    assert_eq!(item["answers_delta"]["refused_relayed"], 1);
 
     // `fields` drops the keys it did not name — absent, not null.
     let body = harness
@@ -993,6 +1012,15 @@ async fn history_perf_serves_the_sample_series_and_fields_trim_it() {
     let mut keys: Vec<&str> = item.keys().map(String::as_str).collect();
     keys.sort_unstable();
     assert_eq!(keys, ["peak_rss", "ts"]);
+
+    let body = harness
+        .get_json("/api/v1/history/perf?fields=answers_delta")
+        .await;
+    let item = body["items"][0].as_object().unwrap();
+    let mut keys: Vec<&str> = item.keys().map(String::as_str).collect();
+    keys.sort_unstable();
+    assert_eq!(keys, ["answers_delta", "ts"]);
+    assert_eq!(item["answers_delta"]["servfail_synthesized"], 9);
 }
 
 /// A typo must name every accepted key back, or the caller cannot discover the
@@ -1014,6 +1042,7 @@ async fn history_perf_rejects_an_unknown_field_and_lists_the_accepted_set() {
         "minor_page_faults",
         "rss_anon_bytes",
         "rss_file_bytes",
+        "answers_delta",
     ] {
         assert!(message.contains(name), "{message:?} must list {name}");
     }

@@ -15,7 +15,7 @@ use std::sync::Arc;
 
 use criterion::{criterion_group, criterion_main, Criterion};
 use fah_config::{DnsCacheConfig, RulesConfig};
-use fah_dns::{Forwarder, Pipeline, Transport};
+use fah_dns::{ForwardOutcome, Forwarder, Pipeline, Transport};
 use fah_rules::ListManager;
 use hickory_proto::op::{Message, Query as WireQuery, ResponseCode};
 use hickory_proto::rr::rdata::A;
@@ -29,7 +29,7 @@ struct OnceForwarder {
 }
 
 impl Forwarder for OnceForwarder {
-    async fn forward(&self, request: &Message) -> std::io::Result<Message> {
+    async fn forward(&self, request: &Message) -> std::io::Result<ForwardOutcome> {
         self.calls.fetch_add(1, Ordering::Relaxed);
         let mut response = Message::response(request.metadata.id, request.metadata.op_code);
         response.metadata.response_code = ResponseCode::NoError;
@@ -38,7 +38,7 @@ impl Forwarder for OnceForwarder {
             300,
             RData::A(A(Ipv4Addr::new(93, 184, 216, 34))),
         ));
-        Ok(response)
+        Ok(ForwardOutcome::new(response, 0))
     }
 }
 

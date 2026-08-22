@@ -89,7 +89,9 @@ Top-level blocks: `process`, `ruleset`, `counters`, `latency`, `upstreams`,
                "compile_duration_seconds": 7.412 },
   "counters": {
     "dns":  { "pass": 812044, "allow": 1201, "block": 96318,
-              "cache_hits": 640119, "cache_misses": 269446, "cache_stale": 3187 },
+              "cache_hits": 640119, "cache_misses": 269446, "cache_stale": 3187,
+              "answers": { "servfail_synthesized": 1204, "servfail_relayed": 88,
+                           "refused_relayed": 17 } },
     "http": { "pass": 4412, "allow": 0, "block": 918, "response_bytes": 148223904 },
     "events_dropped": 0,
     "swr": { "enqueued": 12044, "deduplicated": 3311, "dropped": 0,
@@ -126,6 +128,14 @@ Reading it correctly:
 - `counters.dns.cache_hits + cache_misses` equals `pass + allow`, never
   `+ block` — a blocked query never reaches the cache (ADR-0001). A hit ratio
   divides by resolved queries, not by every query.
+- **`counters.dns.answers` counts what the *client* saw, on its own axis.**
+  `servfail_synthesized` is a failure FastAdHunter minted itself because every
+  upstream failed and no stale entry could cover it; `servfail_relayed` and
+  `refused_relayed` are an upstream's own RCODE passed through. The three are a
+  parallel axis, not a partition: each of those queries is *also* counted under
+  `pass`/`allow` and under `cache_misses`, so the identity above still holds.
+  A stale serve that masked an upstream failure is **not** here — that is
+  `cache_stale`, because the client got an answer.
 - No `ruleset.heap_bytes`: that is `memory.ruleset_bytes`, so the number has one
   home.
 - `ruleset`, `upstreams`, `counters.swr` and `counters.cache_cleanup` are pushed
@@ -224,7 +234,8 @@ single day is 1440 samples, so this is the endpoint `stride` usually applies to.
 `fields` takes a comma-separated subset of the response keys —
 `rss_bytes`, `peak_rss`, `qps`, `queries_delta`, `blocked_delta`,
 `allowed_delta`, `cache`, `latency`, `upstreams`, `memory`,
-`minor_page_faults` — and drops the rest
+`minor_page_faults`, `rss_anon_bytes`, `rss_file_bytes`,
+`answers_delta` — and drops the rest
 (**absent**, not null). `ts` is always present. An unknown name is a `400`
 rather than being ignored, so a typo cannot silently remove the series a chart
 wanted. `fields` trims the response, not the read.
@@ -260,6 +271,8 @@ wanted. `fields` trims the response, not the read.
         "accounted_bytes": 29500000, "residual_bytes": 25500000
       },
       "minor_page_faults": 4211337,
+      "answers_delta": { "servfail_synthesized": 9, "servfail_relayed": 4,
+                         "refused_relayed": 1 },
       "upstreams": [
         { "address": "1.1.1.1", "protocol": "dot",
           "attempts": 12000, "failures": 3,
@@ -277,6 +290,12 @@ per-interval; the `cache` counters `hits`/`misses`/`evictions` are
 process-lifetime totals, the rest of `cache` — `bytes` against `max_bytes`
 included — is point-in-time. Rows written before the byte cap existed carry
 neither field and read back as `0`.
+
+`answers_delta` is per-interval like `queries_delta`, and is the persisted half
+of `/telemetry`'s `counters.dns.answers` — the same three figures, deltaed
+rather than cumulative, so "how many clients saw an error during that outage"
+survives a restart. Rows written before it shipped read back as three zeros,
+which charts as "not recorded" rather than "no failures".
 
 `peak_rss` is the process high-water RSS (`getrusage`'s `ru_maxrss`), **monotone
 within one container lifetime** — a drop in the series is a restart, never a
@@ -788,6 +807,14 @@ Every key is always **present**, so a client never has to tell "absent" from
 "not applicable": a DNS event leaves the HTTP-only fields `null` (`method`,
 `path`, `resource_type`, `status`, `bytes`), and an HTTP event leaves `qtype`
 `null` and `cached` `false`.
+
+`upstream` is still always `null` here, and there is no per-query
+answer-outcome key. Since p2.5-05 the engine *does* record which endpoint
+answered and whether the client got an answer or a failure, but only in
+aggregate — `/telemetry`'s `counters.dns.answers` and `/history/perf`'s
+`answers_delta`. Surfacing either per query on this feed is a separate change:
+`upstream` would need the address string that attribution deliberately does not
+carry per query, and the outcome would be a new key on this shape.
 
 `status` is what the client actually received — a synthesized block's status as
 much as an origin's — and `bytes` is the body relayed downstream, so a block

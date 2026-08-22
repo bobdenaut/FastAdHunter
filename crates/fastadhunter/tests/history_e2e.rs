@@ -310,6 +310,7 @@ fn block(domain: &str) -> Verdict {
 fn perf_sample(ts: u64) -> PerfSample {
     PerfSample {
         ts,
+        answers_delta: Default::default(),
         rss_bytes: SAMPLE_RSS_BYTES,
         peak_rss: SAMPLE_PEAK_RSS,
         qps: 12.0,

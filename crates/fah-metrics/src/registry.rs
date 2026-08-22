@@ -14,7 +14,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 
 use arc_swap::ArcSwap;
-use fah_model::{QueryEvent, RequestEvent, StaleServe, Verdict};
+use fah_model::{AnswerOutcome, QueryEvent, RequestEvent, StaleServe, Verdict};
 
 use crate::histogram::Histogram;
 use crate::ruleset::RulesetSnapshot;
@@ -28,6 +28,9 @@ pub struct Metrics {
     pub(crate) cache_hits: AtomicU64,
     pub(crate) cache_misses: AtomicU64,
     pub(crate) cache_stale: AtomicU64,
+    pub(crate) answers_servfail_synthesized: AtomicU64,
+    pub(crate) answers_servfail_relayed: AtomicU64,
+    pub(crate) answers_refused_relayed: AtomicU64,
     /// Total in-pipeline latency, bucketed by the path that answered the
     /// query. `block` and `cache_hit` compare directly against
     /// PERFORMANCE.md's <1 ms p99 rows — `cache_hit` covers every serve that
@@ -87,6 +90,9 @@ impl Metrics {
             cache_hits: AtomicU64::new(0),
             cache_misses: AtomicU64::new(0),
             cache_stale: AtomicU64::new(0),
+            answers_servfail_synthesized: AtomicU64::new(0),
+            answers_servfail_relayed: AtomicU64::new(0),
+            answers_refused_relayed: AtomicU64::new(0),
             duration_block: Histogram::new(),
             duration_cache_hit: Histogram::new(),
             duration_forward: Histogram::new(),
@@ -140,6 +146,21 @@ impl Metrics {
                 }
             } else {
                 self.cache_misses.fetch_add(1, Ordering::Relaxed);
+            }
+        }
+
+        match event.answer {
+            AnswerOutcome::Answered => {}
+            AnswerOutcome::ServfailSynthesized => {
+                self.answers_servfail_synthesized
+                    .fetch_add(1, Ordering::Relaxed);
+            }
+            AnswerOutcome::ServfailRelayed => {
+                self.answers_servfail_relayed
+                    .fetch_add(1, Ordering::Relaxed);
+            }
+            AnswerOutcome::RefusedRelayed => {
+                self.answers_refused_relayed.fetch_add(1, Ordering::Relaxed);
             }
         }
 
@@ -226,6 +247,13 @@ impl Metrics {
                     cache_hits: self.cache_hits.load(Ordering::Relaxed),
                     cache_misses: self.cache_misses.load(Ordering::Relaxed),
                     cache_stale: self.cache_stale.load(Ordering::Relaxed),
+                    answers: fah_model::AnswerCounters {
+                        servfail_synthesized: self
+                            .answers_servfail_synthesized
+                            .load(Ordering::Relaxed),
+                        servfail_relayed: self.answers_servfail_relayed.load(Ordering::Relaxed),
+                        refused_relayed: self.answers_refused_relayed.load(Ordering::Relaxed),
+                    },
                 },
                 http: fah_model::HttpCounters {
                     pass: self.requests_pass.load(Ordering::Relaxed),
@@ -275,6 +303,9 @@ impl Metrics {
             cache_hits: self.cache_hits.load(Ordering::Relaxed),
             cache_misses: self.cache_misses.load(Ordering::Relaxed),
             cache_stale: self.cache_stale.load(Ordering::Relaxed),
+            answers_servfail_synthesized: self.answers_servfail_synthesized.load(Ordering::Relaxed),
+            answers_servfail_relayed: self.answers_servfail_relayed.load(Ordering::Relaxed),
+            answers_refused_relayed: self.answers_refused_relayed.load(Ordering::Relaxed),
             dropped_events: self.dropped_events.load(Ordering::Relaxed),
             requests_pass: self.requests_pass.load(Ordering::Relaxed),
             requests_allow: self.requests_allow.load(Ordering::Relaxed),
@@ -592,5 +623,71 @@ mod tests {
             duplicates_removed: 7,
         });
         assert_eq!(metrics.ruleset.load().rules, 100);
+    }
+
+    #[test]
+    fn answer_outcomes_are_counted_on_their_own_axis() {
+        let metrics = Metrics::new();
+        metrics.record(
+            &event(Verdict::Pass, false, false, None)
+                .with_outcome(AnswerOutcome::ServfailSynthesized, None),
+        );
+        metrics.record(
+            &event(Verdict::Pass, false, true, None)
+                .with_outcome(AnswerOutcome::ServfailRelayed, Some(0)),
+        );
+        metrics.record(
+            &event(Verdict::Pass, false, true, None)
+                .with_outcome(AnswerOutcome::RefusedRelayed, Some(1)),
+        );
+        metrics.record(&event(Verdict::Pass, true, false, None));
+        metrics.record(&event(
+            Verdict::Block(DecisiveRule::new("oisd", "||ads.example.com^")),
+            false,
+            false,
+            None,
+        ));
+
+        let counters = metrics.engine_telemetry().counters.dns;
+        assert_eq!(counters.answers.servfail_synthesized, 1);
+        assert_eq!(counters.answers.servfail_relayed, 1);
+        assert_eq!(counters.answers.refused_relayed, 1);
+        assert_eq!(
+            counters.cache_hits + counters.cache_misses,
+            counters.pass + counters.allow,
+            "the new counters must not re-route a single query off the cache axis"
+        );
+        assert_eq!(counters.pass, 4);
+        assert_eq!(counters.block, 1);
+        assert_eq!(counters.cache_hits, 1);
+        assert_eq!(counters.cache_misses, 3);
+
+        let snap = metrics.snapshot();
+        assert_eq!(snap.answers_servfail_synthesized, 1);
+        assert_eq!(snap.answers_servfail_relayed, 1);
+        assert_eq!(snap.answers_refused_relayed, 1);
+    }
+
+    #[test]
+    fn a_synthesized_servfail_still_counts_as_a_pass_a_miss_and_a_forward() {
+        let metrics = Metrics::new();
+        let before = metrics.engine_telemetry();
+        metrics.record(
+            &event(Verdict::Pass, false, false, None)
+                .with_outcome(AnswerOutcome::ServfailSynthesized, None),
+        );
+        let after = metrics.engine_telemetry();
+
+        assert_eq!(after.counters.dns.pass, before.counters.dns.pass + 1);
+        assert_eq!(
+            after.counters.dns.cache_misses,
+            before.counters.dns.cache_misses + 1
+        );
+        assert_eq!(
+            after.latency.dns.forward.count,
+            before.latency.dns.forward.count + 1
+        );
+        assert_eq!(after.latency.dns.cache_hit.count, 0);
+        assert_eq!(after.latency.dns.block.count, 0);
     }
 }

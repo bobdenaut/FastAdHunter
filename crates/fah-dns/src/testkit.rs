@@ -5,14 +5,17 @@ use fah_rules::ListManager;
 use hickory_proto::op::Message;
 
 use crate::pipeline::Pipeline;
-use crate::upstream::Forwarder;
+use crate::upstream::{ForwardOutcome, Forwarder};
 
 #[derive(Clone)]
 pub(crate) struct NullForwarder;
 
 impl Forwarder for NullForwarder {
-    async fn forward(&self, query: &Message) -> std::io::Result<Message> {
-        Ok(Message::response(query.metadata.id, query.metadata.op_code))
+    async fn forward(&self, query: &Message) -> std::io::Result<ForwardOutcome> {
+        Ok(ForwardOutcome::new(
+            Message::response(query.metadata.id, query.metadata.op_code),
+            0,
+        ))
     }
 }
 

@@ -418,6 +418,7 @@ mod tests {
     fn sample(ts: u64) -> PerfSample {
         PerfSample {
             ts,
+            answers_delta: Default::default(),
             rss_bytes: 55_000_000,
             peak_rss: 123_539_456,
             qps: 1.0,

@@ -14,7 +14,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use fah_config::DnsCacheConfig;
-use fah_model::{Event, Query as FahQuery, QueryEvent, StaleServe, Verdict};
+use fah_model::{AnswerOutcome, Event, Query as FahQuery, QueryEvent, StaleServe, Verdict};
 use fah_rules::{ListManager, MatchDecision, PolicyState};
 use hickory_proto::op::{Message, MessageType, OpCode, Query as WireQuery, ResponseCode};
 use tokio::sync::mpsc;
@@ -33,6 +33,61 @@ use crate::upstream::Forwarder;
 pub enum Transport {
     Udp,
     Tcp,
+}
+
+struct Resolved {
+    response: Message,
+    cache_hit: bool,
+    upstream_used: bool,
+    stale: Option<StaleServe>,
+    outcome: AnswerOutcome,
+    endpoint: Option<u8>,
+}
+
+impl Resolved {
+    fn blocked(response: Message) -> Self {
+        Self {
+            response,
+            cache_hit: false,
+            upstream_used: false,
+            stale: None,
+            outcome: AnswerOutcome::Answered,
+            endpoint: None,
+        }
+    }
+
+    fn from_cache(response: Message, stale: Option<StaleServe>) -> Self {
+        Self {
+            response,
+            cache_hit: true,
+            upstream_used: false,
+            stale,
+            outcome: AnswerOutcome::Answered,
+            endpoint: None,
+        }
+    }
+
+    fn forwarded(response: Message, outcome: AnswerOutcome, endpoint: u8) -> Self {
+        Self {
+            response,
+            cache_hit: false,
+            upstream_used: true,
+            stale: None,
+            outcome,
+            endpoint: Some(endpoint),
+        }
+    }
+
+    fn synthesized_servfail(response: Message) -> Self {
+        Self {
+            response,
+            cache_hit: false,
+            upstream_used: false,
+            stale: None,
+            outcome: AnswerOutcome::ServfailSynthesized,
+            endpoint: None,
+        }
+    }
 }
 
 #[derive(Clone)]
@@ -295,8 +350,8 @@ impl<F: Forwarder> Pipeline<F> {
         drop(active);
         drop(matcher);
 
-        let (response_message, cache_hit, upstream_used, stale) = match local_response {
-            Some(blocked) => (blocked, false, false, None),
+        let resolved = match local_response {
+            Some(blocked) => Resolved::blocked(blocked),
             None => {
                 let resolved = self
                     .resolve(
@@ -309,7 +364,7 @@ impl<F: Forwarder> Pipeline<F> {
                     .await;
                 // Blocked queries never reach the cache, so only resolves
                 // count toward the admin cache stats' hit/miss figures.
-                self.cache.note_lookup(resolved.1);
+                self.cache.note_lookup(resolved.cache_hit);
                 resolved
             }
         };
@@ -318,13 +373,11 @@ impl<F: Forwarder> Pipeline<F> {
             FahQuery::new(domain, fah_qtype, client_ip, std::time::SystemTime::now()),
             verdict,
             started.elapsed(),
-            cache_hit,
-            upstream_used,
-            stale,
+            &resolved,
             policy,
         );
 
-        Some(response::encode_for_transport(&response_message, budget))
+        Some(response::encode_for_transport(&resolved.response, budget))
     }
 
     /// The Allow/Pass path: cache first (ADR-0001 — the verdict already ran
@@ -332,8 +385,7 @@ impl<F: Forwarder> Pipeline<F> {
     /// then the forwarder on a miss, then serve-stale when resolution fails —
     /// a transport error *or* the upstream answering `SERVFAIL` (RFC 8767's
     /// "failure" covers both; a reachable-but-broken recursive is the common
-    /// outage shape). Returns `(reply, cache_hit, upstream_used, stale)` for
-    /// the caller's `QueryEvent`.
+    /// outage shape). Returns a [`Resolved`] for the caller's `QueryEvent`.
     ///
     /// **A stale hit does not reach the forwarder at all** when
     /// stale-while-refresh is on (ADR-0005): it is answered from cache at
@@ -350,7 +402,7 @@ impl<F: Forwarder> Pipeline<F> {
         domain: &str,
         qtype: hickory_proto::rr::RecordType,
         qclass: hickory_proto::rr::DNSClass,
-    ) -> (Message, bool, bool, Option<StaleServe>) {
+    ) -> Resolved {
         let key = self.cache.key(domain, qtype, qclass);
         // One lookup serves both paths. It claims the refresh only when there
         // is a pool to consume it, so a disabled pool takes no claim and leaves
@@ -362,7 +414,7 @@ impl<F: Forwarder> Pipeline<F> {
         match cached {
             Lookup::Fresh(answer, remaining_ttl) => {
                 let response = response::from_cache(request, query, &answer, remaining_ttl);
-                return (response, true, false, None);
+                return Resolved::from_cache(response, None);
             }
             Lookup::Stale {
                 answer,
@@ -375,14 +427,16 @@ impl<F: Forwarder> Pipeline<F> {
                         swr.note_deduplicated();
                     }
                     let response = response::from_cache(request, query, &answer, STALE_SERVE_TTL);
-                    return (response, true, false, Some(StaleServe::FromSwr));
+                    return Resolved::from_cache(response, Some(StaleServe::FromSwr));
                 }
             }
             Lookup::Miss => {}
         }
 
         match self.forwarder.forward(request).await {
-            Ok(mut upstream_response) => {
+            Ok(forwarded) => {
+                let endpoint = forwarded.endpoint;
+                let mut upstream_response = forwarded.message;
                 if upstream_response.metadata.response_code == ResponseCode::ServFail {
                     // Non-claiming: this is already returning, so scheduling a
                     // refresh here would enqueue work nobody is waiting for
@@ -390,7 +444,10 @@ impl<F: Forwarder> Pipeline<F> {
                     if let Lookup::Stale { answer, .. } = self.cache.lookup(&key) {
                         let response =
                             response::from_cache(request, query, &answer, STALE_SERVE_TTL);
-                        return (response, true, false, Some(StaleServe::AfterForwardFailure));
+                        return Resolved::from_cache(
+                            response,
+                            Some(StaleServe::AfterForwardFailure),
+                        );
                     }
                     // `REFUSED` and friends are deliberate upstream policy,
                     // not an outage — they relay below without stale fallback.
@@ -400,38 +457,43 @@ impl<F: Forwarder> Pipeline<F> {
                 let _ = self.cache.store(&key, &upstream_response);
                 // Wire ID is per-hop; always answer with the client's own.
                 upstream_response.metadata.id = request.metadata.id;
-                (upstream_response, false, true, None)
+                let outcome = match upstream_response.metadata.response_code {
+                    ResponseCode::ServFail => AnswerOutcome::ServfailRelayed,
+                    ResponseCode::Refused => AnswerOutcome::RefusedRelayed,
+                    _ => AnswerOutcome::Answered,
+                };
+                Resolved::forwarded(upstream_response, outcome, endpoint)
             }
             Err(err) => {
                 trace!(error = %err, "upstream forward failed");
                 // Non-claiming, as above.
                 if let Lookup::Stale { answer, .. } = self.cache.lookup(&key) {
                     let response = response::from_cache(request, query, &answer, STALE_SERVE_TTL);
-                    return (response, true, false, Some(StaleServe::AfterForwardFailure));
+                    return Resolved::from_cache(response, Some(StaleServe::AfterForwardFailure));
                 }
-                (
-                    response::error(request, ResponseCode::ServFail),
-                    false,
-                    false,
-                    None,
-                )
+                Resolved::synthesized_servfail(response::error(request, ResponseCode::ServFail))
             }
         }
     }
 
-    #[allow(clippy::too_many_arguments)]
     fn emit_event(
         &self,
         query: FahQuery,
         verdict: Verdict,
         duration: std::time::Duration,
-        cache_hit: bool,
-        upstream_used: bool,
-        stale: Option<StaleServe>,
+        resolved: &Resolved,
         policy: Option<Arc<str>>,
     ) {
-        let event = QueryEvent::new(query, verdict, duration, cache_hit, upstream_used, stale)
-            .under_policy(policy);
+        let event = QueryEvent::new(
+            query,
+            verdict,
+            duration,
+            resolved.cache_hit,
+            resolved.upstream_used,
+            resolved.stale,
+        )
+        .under_policy(policy)
+        .with_outcome(resolved.outcome, resolved.endpoint);
         // One channel for both pipelines (`fah_model::Event`), so the shed
         // figure stays a single number rather than two that cannot be added.
         if self.events.try_send(Event::dns(event)).is_err() {
@@ -462,6 +524,7 @@ mod tests {
     use hickory_proto::rr::{Name, RData, Record, RecordType};
 
     use super::*;
+    use crate::upstream::ForwardOutcome;
 
     #[derive(Clone)]
     struct SpyForwarder {
@@ -479,14 +542,14 @@ mod tests {
     }
 
     impl Forwarder for SpyForwarder {
-        async fn forward(&self, request: &Message) -> std::io::Result<Message> {
+        async fn forward(&self, request: &Message) -> std::io::Result<ForwardOutcome> {
             self.calls.fetch_add(1, Ordering::Relaxed);
             match self.outcome {
                 ForwarderOutcome::Ok => {
                     let mut response =
                         Message::response(request.metadata.id, request.metadata.op_code);
                     response.metadata.response_code = ResponseCode::NoError;
-                    Ok(response)
+                    Ok(ForwardOutcome::new(response, 0))
                 }
                 ForwarderOutcome::Answer(ttl) => {
                     let mut response =
@@ -498,7 +561,7 @@ mod tests {
                         ttl,
                         RData::A(A(Ipv4Addr::new(203, 0, 113, 1))),
                     ));
-                    Ok(response)
+                    Ok(ForwardOutcome::new(response, 0))
                 }
                 ForwarderOutcome::Err => Err(std::io::Error::other("boom")),
             }
@@ -716,7 +779,7 @@ mod tests {
         #[derive(Clone)]
         struct FatForwarder;
         impl Forwarder for FatForwarder {
-            async fn forward(&self, request: &Message) -> std::io::Result<Message> {
+            async fn forward(&self, request: &Message) -> std::io::Result<ForwardOutcome> {
                 let mut response = Message::response(request.metadata.id, request.metadata.op_code);
                 response.metadata.response_code = ResponseCode::NoError;
                 for i in 0..40 {
@@ -728,7 +791,7 @@ mod tests {
                         ))),
                     ));
                 }
-                Ok(response)
+                Ok(ForwardOutcome::new(response, 0))
             }
         }
 
@@ -766,7 +829,7 @@ mod tests {
     }
 
     impl Forwarder for AnswerOnceForwarder {
-        async fn forward(&self, request: &Message) -> std::io::Result<Message> {
+        async fn forward(&self, request: &Message) -> std::io::Result<ForwardOutcome> {
             self.calls.fetch_add(1, Ordering::Relaxed);
             let mut response = Message::response(request.metadata.id, request.metadata.op_code);
             response.metadata.response_code = ResponseCode::NoError;
@@ -775,7 +838,7 @@ mod tests {
                 300,
                 RData::A(A(Ipv4Addr::new(93, 184, 216, 34))),
             ));
-            Ok(response)
+            Ok(ForwardOutcome::new(response, 0))
         }
     }
 
@@ -847,7 +910,7 @@ mod tests {
     }
 
     impl Forwarder for FailAfterFirstForwarder {
-        async fn forward(&self, request: &Message) -> std::io::Result<Message> {
+        async fn forward(&self, request: &Message) -> std::io::Result<ForwardOutcome> {
             let n = self.calls.fetch_add(1, Ordering::Relaxed);
             if n > 0 {
                 return Err(std::io::Error::other("upstream down"));
@@ -859,7 +922,7 @@ mod tests {
                 1,
                 RData::A(A(Ipv4Addr::new(1, 2, 3, 4))),
             ));
-            Ok(response)
+            Ok(ForwardOutcome::new(response, 0))
         }
     }
 
@@ -910,12 +973,12 @@ mod tests {
     }
 
     impl Forwarder for ServfailAfterFirstForwarder {
-        async fn forward(&self, request: &Message) -> std::io::Result<Message> {
+        async fn forward(&self, request: &Message) -> std::io::Result<ForwardOutcome> {
             let n = self.calls.fetch_add(1, Ordering::Relaxed);
             let mut response = Message::response(request.metadata.id, request.metadata.op_code);
             if n > 0 {
                 response.metadata.response_code = ResponseCode::ServFail;
-                return Ok(response);
+                return Ok(ForwardOutcome::new(response, 0));
             }
             response.metadata.response_code = ResponseCode::NoError;
             response.add_answer(Record::from_rdata(
@@ -923,7 +986,7 @@ mod tests {
                 1,
                 RData::A(A(Ipv4Addr::new(1, 2, 3, 4))),
             ));
-            Ok(response)
+            Ok(ForwardOutcome::new(response, 0))
         }
     }
 
@@ -1451,5 +1514,197 @@ mod tests {
             crate::cache::CacheCleanupStats::default(),
             "no scheduler means no sweeps to count"
         );
+    }
+
+    #[derive(Clone)]
+    struct RcodeForwarder {
+        code: ResponseCode,
+        endpoint: u8,
+    }
+
+    impl Forwarder for RcodeForwarder {
+        async fn forward(&self, request: &Message) -> std::io::Result<ForwardOutcome> {
+            let mut response = Message::response(request.metadata.id, request.metadata.op_code);
+            response.queries = request.queries.clone();
+            response.metadata.response_code = self.code;
+            Ok(ForwardOutcome::new(response, self.endpoint))
+        }
+    }
+
+    #[tokio::test]
+    async fn forward_failure_without_a_stale_entry_is_a_synthesized_servfail() {
+        let (rules, _data_dir) = manager_with_user_rules("").await;
+        let forwarder = SpyForwarder {
+            calls: Arc::new(AtomicU64::new(0)),
+            outcome: ForwarderOutcome::Err,
+        };
+        let (tx, mut rx) = mpsc::channel(8);
+        let pipeline = Pipeline::new(rules, forwarder, 10, &DnsCacheConfig::default(), tx);
+
+        let reply = pipeline
+            .handle(
+                &encode_query("example.com.", RecordType::A),
+                client_ip(),
+                Transport::Tcp,
+            )
+            .await
+            .unwrap();
+        assert_eq!(
+            Message::from_vec(&reply).unwrap().metadata.response_code,
+            ResponseCode::ServFail
+        );
+
+        let event = dns_event(rx.try_recv().unwrap());
+        assert_eq!(event.answer, AnswerOutcome::ServfailSynthesized);
+        assert_eq!(
+            event.endpoint, None,
+            "nothing answered, so no endpoint may be named"
+        );
+        assert_eq!(event.verdict, Verdict::Pass);
+        assert!(!event.cache_hit);
+        assert!(!event.upstream_used);
+    }
+
+    #[tokio::test]
+    async fn a_relayed_servfail_is_distinguishable_and_names_its_endpoint() {
+        let (rules, _data_dir) = manager_with_user_rules("").await;
+        let (tx, mut rx) = mpsc::channel(8);
+        let pipeline = Pipeline::new(
+            rules,
+            RcodeForwarder {
+                code: ResponseCode::ServFail,
+                endpoint: 0,
+            },
+            10,
+            &DnsCacheConfig::default(),
+            tx,
+        );
+
+        let reply = pipeline
+            .handle(
+                &encode_query("example.com.", RecordType::A),
+                client_ip(),
+                Transport::Tcp,
+            )
+            .await
+            .unwrap();
+        assert_eq!(
+            Message::from_vec(&reply).unwrap().metadata.response_code,
+            ResponseCode::ServFail
+        );
+
+        let event = dns_event(rx.try_recv().unwrap());
+        assert_eq!(event.answer, AnswerOutcome::ServfailRelayed);
+        assert_ne!(event.answer, AnswerOutcome::ServfailSynthesized);
+        assert_eq!(event.endpoint, Some(0));
+        assert!(event.upstream_used);
+        assert!(!event.cache_hit);
+    }
+
+    #[tokio::test]
+    async fn a_relayed_refused_is_counted_apart_and_reaches_the_client_unchanged() {
+        let (rules, _data_dir) = manager_with_user_rules("").await;
+        let (tx, mut rx) = mpsc::channel(8);
+        let pipeline = Pipeline::new(
+            rules,
+            RcodeForwarder {
+                code: ResponseCode::Refused,
+                endpoint: 2,
+            },
+            10,
+            &DnsCacheConfig::default(),
+            tx,
+        );
+
+        let reply = pipeline
+            .handle(
+                &encode_query("example.com.", RecordType::A),
+                client_ip(),
+                Transport::Tcp,
+            )
+            .await
+            .unwrap();
+        assert_eq!(
+            Message::from_vec(&reply).unwrap().metadata.response_code,
+            ResponseCode::Refused
+        );
+
+        let event = dns_event(rx.try_recv().unwrap());
+        assert_eq!(event.answer, AnswerOutcome::RefusedRelayed);
+        assert_eq!(event.endpoint, Some(2));
+        assert!(event.upstream_used);
+    }
+
+    #[tokio::test]
+    async fn a_block_and_a_cache_hit_name_no_endpoint() {
+        let (rules, _data_dir) = manager_with_user_rules("||ads.example.com^").await;
+        let forwarder = AnswerOnceForwarder {
+            calls: Arc::new(AtomicU64::new(0)),
+        };
+        let (tx, mut rx) = mpsc::channel(8);
+        let pipeline = Pipeline::new(rules, forwarder, 10, &DnsCacheConfig::default(), tx);
+
+        pipeline
+            .handle(
+                &encode_query("ads.example.com.", RecordType::A),
+                client_ip(),
+                Transport::Tcp,
+            )
+            .await
+            .unwrap();
+        let blocked = dns_event(rx.try_recv().unwrap());
+        assert_eq!(blocked.answer, AnswerOutcome::Answered);
+        assert_eq!(blocked.endpoint, None);
+
+        for _ in 0..2 {
+            pipeline
+                .handle(
+                    &encode_query("example.com.", RecordType::A),
+                    client_ip(),
+                    Transport::Tcp,
+                )
+                .await
+                .unwrap();
+        }
+        let forwarded = dns_event(rx.try_recv().unwrap());
+        assert_eq!(forwarded.answer, AnswerOutcome::Answered);
+        assert_eq!(forwarded.endpoint, Some(0));
+
+        let cached = dns_event(rx.try_recv().unwrap());
+        assert!(cached.cache_hit);
+        assert_eq!(cached.answer, AnswerOutcome::Answered);
+        assert_eq!(
+            cached.endpoint, None,
+            "no upstream was asked, so none may be named"
+        );
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn an_swr_stale_serve_names_no_endpoint() {
+        let (rules, _data_dir) = manager_with_user_rules("").await;
+        let forwarder = SpyForwarder {
+            calls: Arc::new(AtomicU64::new(0)),
+            outcome: ForwarderOutcome::Answer(SWR_TTL),
+        };
+        let (tx, mut rx) = mpsc::channel(8);
+        let pipeline = Pipeline::new(rules, forwarder, 10, &swr_cache_config(3), tx);
+
+        warm_then_age(&pipeline).await;
+        let warmed = dns_event(rx.try_recv().unwrap());
+        assert_eq!(warmed.endpoint, Some(0));
+
+        pipeline
+            .handle(
+                &encode_query("example.com.", RecordType::A),
+                client_ip(),
+                Transport::Tcp,
+            )
+            .await
+            .unwrap();
+
+        let event = dns_event(rx.try_recv().unwrap());
+        assert_eq!(event.stale, Some(StaleServe::FromSwr));
+        assert_eq!(event.answer, AnswerOutcome::Answered);
+        assert_eq!(event.endpoint, None);
     }
 }

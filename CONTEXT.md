@@ -186,6 +186,28 @@ forward has actually failed — the pre-ADR-0005 behaviour, and the one RFC 8767
 An external DNS resolver FastAdHunter forwards unblocked, uncached queries to.
 Speaks plain DNS, DoT, or DoH.
 
+### Answer Outcome
+
+What the client actually received: an answer, a **synthesized** SERVFAIL
+FastAdHunter minted because every Upstream failed and no stale entry could
+cover it, or a SERVFAIL/REFUSED **relayed** from an Upstream that answered.
+Distinct from Verdict, which is what the Rule Engine decided before anything
+went to the network — a Pass query can still end in a failure outcome.
+
+A stale serve that masked an Upstream failure is an *answer*, not a failure:
+the client got records. That case is counted by Stale-while-refresh's own
+figures, so counting it here too would double-count one query as both served
+and failed.
+
+### Answering Endpoint
+
+Which Upstream produced the answer, as its index in configured order. Recorded
+per query only when an Upstream actually answered — a block, a Cache hit, a
+stale serve and a synthesized failure all name none. An index rather than an
+address: the address is an allocation the query path does not make, and
+`/api/v1/telemetry`'s `upstreams` array is published in the same configured
+order for the join.
+
 ### HTTP Engine
 
 The component that filters unencrypted HTTP by **URL**, not just by hostname —

@@ -23,6 +23,22 @@ conclusions:
 The pattern in all three: **a caveat on a weak comparison does not make it safe.
 A control arm does.**
 
+## Interleave the arms — one pair per arm is not an A/B
+
+Pinning removes jitter *within* a run. It does nothing about drift *between*
+runs, and drift on this dev box is ±5 %: two consecutive runs of the **same**
+baseline binary moved `matcher_lookup/miss` by −4.3 % and
+`full_pipeline/sustained_throughput` by −3.9 %.
+
+Run **A/B/A/B**, then compare means and ranges, never a single pair. p2.5-05's
+`forwarded_query_overhead` read **+8 %** on its first base-then-post pair —
+the whole change looked like a regression. Two interleaved pairs put post
+*faster* than base both times; across four runs per arm the means were 0.4 %
+apart with fully overlapping ranges. The +8 % was ordering, not code.
+
+The control arm says how wide the noise band is; interleaving is what keeps the
+measured arms from each sitting in a different part of it.
+
 ## Calibration
 
 | Trap | Reality |

@@ -100,6 +100,15 @@ pub struct DnsCounters {
     /// Hits served past their TTL because the upstream was unreachable
     /// (RFC 8767 serve-stale). A subset of `cache_hits`.
     pub cache_stale: u64,
+    #[serde(default)]
+    pub answers: AnswerCounters,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AnswerCounters {
+    pub servfail_synthesized: u64,
+    pub servfail_relayed: u64,
+    pub refused_relayed: u64,
 }
 
 /// HTTP requests handled, by outcome (p2-04).

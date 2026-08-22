@@ -161,6 +161,9 @@ Content-Type: application/json
 
 ### Upstream servers. ARRAYS REPLACE WHOLESALE — they do not merge, so send
 ### the complete set; a partial array silently drops the entries you left out.
+### At least one, at most 255: an answering upstream is attributed per query by
+### its index in this list, which is a u8. A longer list is REJECTED, not
+### truncated.
 ### (rules.lists is NOT settable here at all — expect 422. Rule lists are owned
 ### by the /lists endpoints, which apply live and persist for you: lists.http.)
 POST {{base}}/config

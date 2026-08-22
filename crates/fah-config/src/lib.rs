@@ -113,6 +113,8 @@ fn write_atomic(path: &Path, text: &str) -> Result<(), ConfigError> {
 /// Floor for `[dns.cache] max_bytes` — see the check in [`validate`].
 const MIN_CACHE_MAX_BYTES: u64 = 1024 * 1024;
 
+pub const MAX_UPSTREAM_SERVERS: usize = u8::MAX as usize;
+
 fn validate(config: &Config) -> Result<(), ConfigError> {
     validate_ip("dns.listen.address", &config.dns.listen.address)?;
     validate_ip("api.address", &config.api.address)?;
@@ -174,6 +176,15 @@ fn validate(config: &Config) -> Result<(), ConfigError> {
         return Err(ConfigError::Validation {
             key: "dns.upstreams.servers",
             message: "at least one upstream server is required".to_string(),
+        });
+    }
+    if config.dns.upstreams.servers.len() > MAX_UPSTREAM_SERVERS {
+        return Err(ConfigError::Validation {
+            key: "dns.upstreams.servers",
+            message: format!(
+                "at most {MAX_UPSTREAM_SERVERS} upstream servers are supported, got {}",
+                config.dns.upstreams.servers.len()
+            ),
         });
     }
     for server in &config.dns.upstreams.servers {
@@ -729,6 +740,28 @@ format = "text"
             err,
             ConfigError::Validation {
                 key: "dns.cache.max_bytes",
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn validation_rejects_more_upstreams_than_an_endpoint_index_can_name() {
+        let mut config = Config::default();
+        let template = config.dns.upstreams.servers[0].clone();
+        config.dns.upstreams.servers = vec![template; MAX_UPSTREAM_SERVERS];
+        validate(&config).expect("the cap itself must still be accepted");
+
+        config
+            .dns
+            .upstreams
+            .servers
+            .push(config.dns.upstreams.servers[0].clone());
+        let err = validate(&config).unwrap_err();
+        assert!(matches!(
+            err,
+            ConfigError::Validation {
+                key: "dns.upstreams.servers",
                 ..
             }
         ));
