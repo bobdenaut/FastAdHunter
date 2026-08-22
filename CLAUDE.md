@@ -237,14 +237,6 @@ check" and OOM-killed the live resolver.
 it except for a genuine bug (correctness, security, build failure, regression).
 No refactoring, renaming, style or perf changes there.
 
-### Code review model map (`ce-code-review`)
-
-The orchestrator inherits the session model. Reviewer subagents get an explicit
-`model` at dispatch; this map overrides the skill's default tiering:
-
-- `opus`: correctness-reviewer, adversarial-reviewer, reliability-reviewer
-- `sonnet`: testing-reviewer, performance-reviewer, project-standards-reviewer,
-  maintainability-reviewer, learnings-researcher
 
 ## Quality gates (local — there is no CI)
 
