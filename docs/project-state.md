@@ -13,8 +13,8 @@ what is true today.
 | Branch | `main`, p2.5-07 committed and pushed to origin and backup |
 | Tree | p2.5-08 in progress (token untracked, guard widened, docs reconciled) |
 | Tests | green — fmt/clippy/test, 979 across 42 binaries |
-| Version | 0.2.17 (workspace) |
-| Deployed | **0.2.17** on the RB5009 (owner-confirmed 2026-08-22; no soak record yet — last recorded soak is `soak-0.2.16-72h`) — carries p2.5-01…07, so `failure_runs` (S1-G4) is collecting since that deploy |
+| Version | 0.2.18 (workspace, bumped in p2.5-09 for the first phase-2.5 deploy) |
+| Deployed | **0.2.17** on the RB5009, built 2026-08-17 from the phase-2 base — it carries **no** phase-2.5 code (verified 2026-08-22: live `/telemetry` has no `counters.dns.answers` and no `failure_runs`). S1-G4 collection starts only at the first on-device deploy of 0.2.18 (p2.5-09 V2); last recorded soak is `soak-0.2.16-72h` |
 | Phase | 2.5 `plan/wip/phase2.5-hardening` — p2.5-01…07 DONE, p2.5-08 in progress, p2.5-09 WAITING |
 | Gate | [Global Architecture Review-Reconciled.md](code-review/Global%20Architecture%20Review-Reconciled.md): PASS WITH REQUIRED CHANGES; §5.1–6 are this phase |
 | **Next** | finish p2.5-08; p2.5-09 — deploy, listener-death drill, S1-G4 collection running |
@@ -46,7 +46,8 @@ package is out of this phase.
   containers, not dev benches.
 - `MIMALLOC_PURGE_DELAY=0` above idle load; cache byte-cap eviction never fired
   on-device.
-- S1-G4 run-length distribution: starts at the first deploy carrying p2.5-06;
+- S1-G4 run-length distribution: starts at the first on-device deploy carrying
+  p2.5-06 (0.2.18, p2.5-09 V2 — not before);
   only closed runs bucketed, concurrent queries can split one outage — lower
   bound on clustering.
 
