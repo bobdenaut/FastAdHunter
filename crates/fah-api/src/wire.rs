@@ -147,6 +147,8 @@ pub struct QueryItemResponse {
     /// used, not which one (`QueryEvent::upstream_used`), and per-query
     /// upstream attribution would cost an allocation on the hot path.
     pub upstream: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub endpoint: Option<u8>,
     /// DNS only. An HTTP request has no cache to hit, so this is `false` for
     /// one rather than pretending it missed.
     pub cached: bool,
@@ -172,13 +174,14 @@ impl From<QueryRecord> for QueryItemResponse {
         let ts = record.event.timestamp();
         let client = record.event.client_ip();
 
-        let (domain, qtype, cached) = match record.as_dns() {
+        let (domain, qtype, cached, endpoint) = match record.as_dns() {
             Some(event) => (
                 display_domain(&event.query.domain),
                 Some(qtype_name(&event.query.qtype)),
                 event.cache_hit,
+                event.endpoint,
             ),
-            None => (String::new(), None, false),
+            None => (String::new(), None, false, None),
         };
         let (domain, method, path, resource_type, status, bytes) = match record.as_http() {
             Some(event) => (
@@ -204,6 +207,7 @@ impl From<QueryRecord> for QueryItemResponse {
             list,
             duration_ms,
             upstream: None,
+            endpoint,
             cached,
             method,
             path,

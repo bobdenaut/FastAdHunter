@@ -214,6 +214,45 @@ mod tests {
         assert_eq!(json["data"]["client_name"], "liviu-phone");
     }
 
+    fn forwarded_event(endpoint: Option<u8>) -> fah_model::QueryEvent {
+        fah_model::QueryEvent::new(
+            Query::new(
+                "www.example.com",
+                QueryType::A,
+                IpAddr::V4(Ipv4Addr::new(192, 168, 1, 10)),
+                SystemTime::UNIX_EPOCH,
+            ),
+            Verdict::Pass,
+            Duration::from_millis(12),
+            endpoint.is_none(),
+            endpoint.is_some(),
+            None,
+        )
+        .with_outcome(fah_model::AnswerOutcome::Answered, endpoint)
+    }
+
+    #[test]
+    fn a_forwarded_query_names_its_answering_endpoint_and_a_cache_hit_does_not() {
+        let forwarded: Value = serde_json::from_str(&encode(Event::Query(Box::new(QueryRecord {
+            event: fah_model::Event::dns(forwarded_event(Some(1))),
+            client_name: None,
+        }))))
+        .unwrap();
+        assert_eq!(forwarded["data"]["endpoint"], 1);
+        assert_eq!(forwarded["data"]["cached"], false);
+
+        let cache_hit: Value = serde_json::from_str(&encode(Event::Query(Box::new(QueryRecord {
+            event: fah_model::Event::dns(forwarded_event(None)),
+            client_name: None,
+        }))))
+        .unwrap();
+        assert_eq!(cache_hit["data"]["cached"], true);
+        assert!(
+            cache_hit["data"].get("endpoint").is_none(),
+            "a cache hit must not carry an endpoint key: {cache_hit}"
+        );
+    }
+
     #[test]
     fn control_events_encode_with_their_documented_payloads() {
         let json: Value = serde_json::from_str(&encode(Event::ConfigChanged {
