@@ -101,13 +101,23 @@ SERVFAIL or a truncated reply — puts the entry into a 30 s cooldown
 upstream would turn every stale hit into a forward, which is worse than the
 behaviour this change replaced.
 
-The claim is a **lease** (`REFRESH_CLAIM_LEASE`, 5 s), not a flag. A worker that
-panics or is aborted at shutdown therefore cannot strand an entry: the claim
-expires and the key becomes refreshable again. The lease must outlast a
-worst-case forward — `[dns.upstreams] timeout_ms` × the number of servers, which
-is 1.6 s at the shipped defaults. A config with six or more upstreams at the
-default timeout narrows that margin, and the failure mode there is one duplicate
-forward, never a wrong answer.
+The claim is a **lease**, not a flag. A worker that panics or is aborted at
+shutdown therefore cannot strand an entry: the claim expires and the key becomes
+refreshable again. The lease is a `DnsCache` constructor parameter; the binary
+derives it as `max(5 s, 2 × worst_case_walk)` from `[dns.upstreams]`
+(p2.5-07). `worst_case_walk = ATTEMPT_LEGS (3) × servers × timeout_ms` is a
+wall-clock bound, not a sum of timed legs: `UpstreamPool` wraps every server
+attempt in an outer `3 × timeout_ms` timeout, so mutex contention inside a
+transport cannot stretch an attempt. Shipped defaults (2 × 800 ms) give a
+9.6 s lease; the 5 s floor keeps small configurations on the earlier value.
+There is no ceiling — a larger config gets a proportionally longer lease, which
+only delays reclaiming an abandoned claim.
+
+Known bound, not changed: the lease clock starts at the claim, the walk starts
+when a worker dequeues the job. A full queue (64 jobs per worker) can hold a
+job past its lease, and a second stale hit then enqueues a duplicate. That
+costs one extra forward, never a wrong answer, and a backlog that deep is the
+`swr_workers` undersizing signal above.
 
 ## Revisit criteria
 

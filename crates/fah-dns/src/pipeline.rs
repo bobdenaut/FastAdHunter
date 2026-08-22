@@ -121,6 +121,7 @@ impl<F: Forwarder> Pipeline<F> {
         forwarder: F,
         blocking_ttl: u32,
         cache_config: &DnsCacheConfig,
+        refresh_claim_lease: Duration,
         events: mpsc::Sender<Event>,
     ) -> Self {
         Self {
@@ -128,7 +129,7 @@ impl<F: Forwarder> Pipeline<F> {
             policies: Arc::new(PolicyState::default()),
             forwarder,
             blocking_ttl,
-            cache: Arc::new(DnsCache::new(cache_config)),
+            cache: Arc::new(DnsCache::new(cache_config, refresh_claim_lease)),
             swr: SwrPool::new(cache_config.swr_workers).map(Arc::new),
             cleanup_interval: match cache_config.cleanup_interval_seconds {
                 0 => None,
@@ -524,6 +525,7 @@ mod tests {
     use hickory_proto::rr::{Name, RData, Record, RecordType};
 
     use super::*;
+    use crate::cache::DEFAULT_REFRESH_CLAIM_LEASE;
     use crate::upstream::ForwardOutcome;
 
     #[derive(Clone)]
@@ -606,7 +608,14 @@ mod tests {
             outcome: ForwarderOutcome::Ok,
         };
         let (tx, _rx) = mpsc::channel(8);
-        let pipeline = Pipeline::new(rules, forwarder, 10, &DnsCacheConfig::default(), tx);
+        let pipeline = Pipeline::new(
+            rules,
+            forwarder,
+            10,
+            &DnsCacheConfig::default(),
+            DEFAULT_REFRESH_CLAIM_LEASE,
+            tx,
+        );
 
         let raw = encode_query("ads.example.com.", RecordType::A);
         let reply = pipeline
@@ -633,7 +642,14 @@ mod tests {
             outcome: ForwarderOutcome::Ok,
         };
         let (tx, mut rx) = mpsc::channel(8);
-        let pipeline = Pipeline::new(rules, forwarder, 10, &DnsCacheConfig::default(), tx);
+        let pipeline = Pipeline::new(
+            rules,
+            forwarder,
+            10,
+            &DnsCacheConfig::default(),
+            DEFAULT_REFRESH_CLAIM_LEASE,
+            tx,
+        );
 
         let raw = encode_query("example.com.", RecordType::A);
         let reply = pipeline
@@ -662,7 +678,14 @@ mod tests {
             outcome: ForwarderOutcome::Ok,
         };
         let (tx, mut rx) = mpsc::channel(8);
-        let pipeline = Pipeline::new(rules, forwarder, 10, &DnsCacheConfig::default(), tx);
+        let pipeline = Pipeline::new(
+            rules,
+            forwarder,
+            10,
+            &DnsCacheConfig::default(),
+            DEFAULT_REFRESH_CLAIM_LEASE,
+            tx,
+        );
 
         let mapped: IpAddr = "::ffff:192.168.10.15".parse().unwrap();
         let raw = encode_query("example.com.", RecordType::A);
@@ -683,7 +706,14 @@ mod tests {
             outcome: ForwarderOutcome::Err,
         };
         let (tx, _rx) = mpsc::channel(8);
-        let pipeline = Pipeline::new(rules, forwarder, 10, &DnsCacheConfig::default(), tx);
+        let pipeline = Pipeline::new(
+            rules,
+            forwarder,
+            10,
+            &DnsCacheConfig::default(),
+            DEFAULT_REFRESH_CLAIM_LEASE,
+            tx,
+        );
 
         let raw = encode_query("example.com.", RecordType::A);
         let reply = pipeline
@@ -702,7 +732,14 @@ mod tests {
             outcome: ForwarderOutcome::Ok,
         };
         let (tx, _rx) = mpsc::channel(8);
-        let pipeline = Pipeline::new(rules, forwarder, 10, &DnsCacheConfig::default(), tx);
+        let pipeline = Pipeline::new(
+            rules,
+            forwarder,
+            10,
+            &DnsCacheConfig::default(),
+            DEFAULT_REFRESH_CLAIM_LEASE,
+            tx,
+        );
 
         for garbage in fuzz_corpus() {
             let result = pipeline.handle(&garbage, client_ip(), Transport::Tcp).await;
@@ -739,7 +776,14 @@ mod tests {
             outcome: ForwarderOutcome::Ok,
         };
         let (tx, _rx) = mpsc::channel(1);
-        let pipeline = Pipeline::new(rules, forwarder, 10, &DnsCacheConfig::default(), tx);
+        let pipeline = Pipeline::new(
+            rules,
+            forwarder,
+            10,
+            &DnsCacheConfig::default(),
+            DEFAULT_REFRESH_CLAIM_LEASE,
+            tx,
+        );
         // _rx is held (not dropped) but never polled: capacity 1 fills, then
         // every subsequent try_send fails until something drains it.
         let raw = encode_query("example.com.", RecordType::A);
@@ -757,7 +801,14 @@ mod tests {
             outcome: ForwarderOutcome::Ok,
         };
         let (tx, _rx) = mpsc::channel(8);
-        let pipeline = Pipeline::new(rules, forwarder, 10, &DnsCacheConfig::default(), tx);
+        let pipeline = Pipeline::new(
+            rules,
+            forwarder,
+            10,
+            &DnsCacheConfig::default(),
+            DEFAULT_REFRESH_CLAIM_LEASE,
+            tx,
+        );
 
         let mut response = Message::response(1, OpCode::Query);
         response.add_query(WireQuery::query(
@@ -797,7 +848,14 @@ mod tests {
 
         let (rules, _data_dir) = manager_with_user_rules("").await;
         let (tx, _rx) = mpsc::channel(8);
-        let pipeline = Pipeline::new(rules, FatForwarder, 10, &DnsCacheConfig::default(), tx);
+        let pipeline = Pipeline::new(
+            rules,
+            FatForwarder,
+            10,
+            &DnsCacheConfig::default(),
+            DEFAULT_REFRESH_CLAIM_LEASE,
+            tx,
+        );
         let raw = encode_query("example.com.", RecordType::A);
 
         let udp_reply = pipeline
@@ -850,7 +908,14 @@ mod tests {
             calls: calls.clone(),
         };
         let (tx, mut rx) = mpsc::channel(8);
-        let pipeline = Pipeline::new(rules, forwarder, 10, &DnsCacheConfig::default(), tx);
+        let pipeline = Pipeline::new(
+            rules,
+            forwarder,
+            10,
+            &DnsCacheConfig::default(),
+            DEFAULT_REFRESH_CLAIM_LEASE,
+            tx,
+        );
 
         let raw = encode_query("example.com.", RecordType::A);
         pipeline
@@ -882,7 +947,14 @@ mod tests {
             calls: Arc::new(AtomicU64::new(0)),
         };
         let (tx, _rx) = mpsc::channel(8);
-        let pipeline = Pipeline::new(rules, forwarder, 10, &DnsCacheConfig::default(), tx);
+        let pipeline = Pipeline::new(
+            rules,
+            forwarder,
+            10,
+            &DnsCacheConfig::default(),
+            DEFAULT_REFRESH_CLAIM_LEASE,
+            tx,
+        );
 
         // Blocked: never touches the cache, counts neither hit nor miss.
         let blocked = encode_query("ads.example.com.", RecordType::A);
@@ -935,7 +1007,14 @@ mod tests {
         let (tx, mut rx) = mpsc::channel(8);
         // Pool off, or the stale entry is served by SWR before the forwarder is
         // ever asked — which is not the path this test is named for.
-        let pipeline = Pipeline::new(rules, forwarder, 10, &swr_cache_config(0), tx);
+        let pipeline = Pipeline::new(
+            rules,
+            forwarder,
+            10,
+            &swr_cache_config(0),
+            DEFAULT_REFRESH_CLAIM_LEASE,
+            tx,
+        );
 
         let raw = encode_query("example.com.", RecordType::A);
         pipeline
@@ -998,7 +1077,14 @@ mod tests {
         };
         let (tx, mut rx) = mpsc::channel(8);
         // Pool off, as above: the SERVFAIL fallback lives past the forward.
-        let pipeline = Pipeline::new(rules, forwarder, 10, &swr_cache_config(0), tx);
+        let pipeline = Pipeline::new(
+            rules,
+            forwarder,
+            10,
+            &swr_cache_config(0),
+            DEFAULT_REFRESH_CLAIM_LEASE,
+            tx,
+        );
 
         let raw = encode_query("example.com.", RecordType::A);
         pipeline
@@ -1035,7 +1121,14 @@ mod tests {
             calls: calls.clone(),
         };
         let (tx, mut rx) = mpsc::channel(8);
-        let pipeline = Pipeline::new(rules, forwarder, 10, &DnsCacheConfig::default(), tx);
+        let pipeline = Pipeline::new(
+            rules,
+            forwarder,
+            10,
+            &DnsCacheConfig::default(),
+            DEFAULT_REFRESH_CLAIM_LEASE,
+            tx,
+        );
 
         pipeline
             .handle(
@@ -1098,7 +1191,14 @@ mod tests {
             outcome: ForwarderOutcome::Answer(SWR_TTL),
         };
         let (tx, mut rx) = mpsc::channel(8);
-        let pipeline = Pipeline::new(rules, forwarder, 10, &swr_cache_config(3), tx);
+        let pipeline = Pipeline::new(
+            rules,
+            forwarder,
+            10,
+            &swr_cache_config(3),
+            DEFAULT_REFRESH_CLAIM_LEASE,
+            tx,
+        );
 
         warm_then_age(&pipeline).await;
         let _warm_event = dns_event(rx.try_recv().unwrap());
@@ -1155,7 +1255,14 @@ mod tests {
             outcome: ForwarderOutcome::Answer(SWR_TTL),
         };
         let (tx, _rx) = mpsc::channel(256);
-        let pipeline = Pipeline::new(rules, forwarder, 10, &swr_cache_config(3), tx);
+        let pipeline = Pipeline::new(
+            rules,
+            forwarder,
+            10,
+            &swr_cache_config(3),
+            DEFAULT_REFRESH_CLAIM_LEASE,
+            tx,
+        );
 
         warm_then_age(&pipeline).await;
 
@@ -1192,7 +1299,14 @@ mod tests {
             outcome: ForwarderOutcome::Answer(SWR_TTL),
         };
         let (tx, mut rx) = mpsc::channel(8);
-        let pipeline = Pipeline::new(rules, forwarder, 10, &swr_cache_config(0), tx);
+        let pipeline = Pipeline::new(
+            rules,
+            forwarder,
+            10,
+            &swr_cache_config(0),
+            DEFAULT_REFRESH_CLAIM_LEASE,
+            tx,
+        );
 
         warm_then_age(&pipeline).await;
         let _warm_event = dns_event(rx.try_recv().unwrap());
@@ -1233,7 +1347,14 @@ mod tests {
             outcome: ForwarderOutcome::Answer(SWR_TTL),
         };
         let (tx, mut rx) = mpsc::channel(8);
-        let mut pipeline = Pipeline::new(rules, forwarder, 10, &swr_cache_config(0), tx);
+        let mut pipeline = Pipeline::new(
+            rules,
+            forwarder,
+            10,
+            &swr_cache_config(0),
+            DEFAULT_REFRESH_CLAIM_LEASE,
+            tx,
+        );
 
         warm_then_age(&pipeline).await;
         let _warm_event = dns_event(rx.try_recv().unwrap());
@@ -1260,6 +1381,90 @@ mod tests {
 
     /// A refresh that reaches a worker replaces the entry, and the next query is
     /// a plain fresh hit — the loop closing without the client ever waiting.
+    #[derive(Clone)]
+    struct StallAfterFirstForwarder {
+        inner: SpyForwarder,
+        started: Arc<AtomicU64>,
+        stall: Duration,
+    }
+
+    impl Forwarder for StallAfterFirstForwarder {
+        async fn forward(&self, request: &Message) -> std::io::Result<ForwardOutcome> {
+            if self.started.fetch_add(1, Ordering::Relaxed) > 0 {
+                tokio::time::sleep(self.stall).await;
+            }
+            self.inner.forward(request).await
+        }
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_refresh_walk_longer_than_the_default_lease_is_covered_by_a_derived_one() {
+        let (rules, _data_dir) = manager_with_user_rules("").await;
+        let calls = Arc::new(AtomicU64::new(0));
+        let started = Arc::new(AtomicU64::new(0));
+        let forwarder = StallAfterFirstForwarder {
+            inner: SpyForwarder {
+                calls: calls.clone(),
+                outcome: ForwarderOutcome::Answer(SWR_TTL),
+            },
+            started: started.clone(),
+            stall: Duration::from_secs(30),
+        };
+        let lease = Duration::from_secs(10);
+        assert!(lease > DEFAULT_REFRESH_CLAIM_LEASE);
+        let (tx, _rx) = mpsc::channel(16);
+        let pipeline = Pipeline::new(rules, forwarder, 10, &swr_cache_config(1), lease, tx);
+        let workers = pipeline.spawn_swr_workers();
+
+        warm_then_age(&pipeline).await;
+        let query = encode_query("example.com.", RecordType::A);
+        pipeline
+            .handle(&query, client_ip(), Transport::Tcp)
+            .await
+            .unwrap();
+        while started.load(Ordering::Relaxed) < 2 {
+            tokio::task::yield_now().await;
+        }
+        assert_eq!(pipeline.swr_stats().enqueued, 1);
+
+        tokio::time::advance(DEFAULT_REFRESH_CLAIM_LEASE + Duration::from_secs(1)).await;
+        for _ in 0..3 {
+            pipeline
+                .handle(&query, client_ip(), Transport::Tcp)
+                .await
+                .unwrap();
+        }
+        let stats = pipeline.swr_stats();
+        assert_eq!(
+            (stats.enqueued, stats.deduplicated),
+            (1, 3),
+            "past the 5 s default but inside the derived lease, the walk in flight still owns the claim"
+        );
+
+        tokio::time::advance(lease).await;
+        pipeline
+            .handle(&query, client_ip(), Transport::Tcp)
+            .await
+            .unwrap();
+        assert_eq!(
+            pipeline.swr_stats().enqueued,
+            2,
+            "once the derived lease lapses the claim is reclaimable again"
+        );
+        assert_eq!(
+            (
+                started.load(Ordering::Relaxed),
+                calls.load(Ordering::Relaxed)
+            ),
+            (2, 1),
+            "the single worker is still inside the first walk; the second job waits in the queue"
+        );
+
+        for worker in workers {
+            worker.abort();
+        }
+    }
+
     #[tokio::test(start_paused = true)]
     async fn a_queued_refresh_is_consumed_and_makes_the_entry_fresh_again() {
         let (rules, _data_dir) = manager_with_user_rules("").await;
@@ -1269,7 +1474,14 @@ mod tests {
             outcome: ForwarderOutcome::Answer(SWR_TTL),
         };
         let (tx, _rx) = mpsc::channel(8);
-        let pipeline = Pipeline::new(rules, forwarder, 10, &swr_cache_config(1), tx);
+        let pipeline = Pipeline::new(
+            rules,
+            forwarder,
+            10,
+            &swr_cache_config(1),
+            DEFAULT_REFRESH_CLAIM_LEASE,
+            tx,
+        );
         let workers = pipeline.spawn_swr_workers();
         assert_eq!(workers.len(), 1);
 
@@ -1358,7 +1570,14 @@ mod tests {
             outcome: ForwarderOutcome::Answer(SWR_TTL),
         };
         let (tx, _rx) = mpsc::channel(256);
-        let pipeline = Pipeline::new(rules, forwarder, 10, &cleanup_cache_config(60), tx);
+        let pipeline = Pipeline::new(
+            rules,
+            forwarder,
+            10,
+            &cleanup_cache_config(60),
+            DEFAULT_REFRESH_CLAIM_LEASE,
+            tx,
+        );
 
         warm_then_age(&pipeline).await;
         assert_eq!(pipeline.cache_stats().entries, 1);
@@ -1397,7 +1616,14 @@ mod tests {
             outcome: ForwarderOutcome::Answer(SWR_TTL),
         };
         let (tx, mut rx) = mpsc::channel(256);
-        let mut pipeline = Pipeline::new(rules, forwarder, 10, &cleanup_cache_config(60), tx);
+        let mut pipeline = Pipeline::new(
+            rules,
+            forwarder,
+            10,
+            &cleanup_cache_config(60),
+            DEFAULT_REFRESH_CLAIM_LEASE,
+            tx,
+        );
 
         // Expired but inside the stale window, and left there.
         warm_then_age(&pipeline).await;
@@ -1458,7 +1684,14 @@ mod tests {
             cleanup_interval_seconds: 60,
             ..DnsCacheConfig::default()
         };
-        let pipeline = Pipeline::new(rules, forwarder, 10, &config, tx);
+        let pipeline = Pipeline::new(
+            rules,
+            forwarder,
+            10,
+            &config,
+            DEFAULT_REFRESH_CLAIM_LEASE,
+            tx,
+        );
         let workers = pipeline.spawn_swr_workers();
         let cleanup = pipeline
             .spawn_cache_cleanup()
@@ -1506,7 +1739,14 @@ mod tests {
             outcome: ForwarderOutcome::Answer(SWR_TTL),
         };
         let (tx, _rx) = mpsc::channel(8);
-        let pipeline = Pipeline::new(rules, forwarder, 10, &cleanup_cache_config(0), tx);
+        let pipeline = Pipeline::new(
+            rules,
+            forwarder,
+            10,
+            &cleanup_cache_config(0),
+            DEFAULT_REFRESH_CLAIM_LEASE,
+            tx,
+        );
 
         assert!(pipeline.spawn_cache_cleanup().is_none());
         assert_eq!(
@@ -1539,7 +1779,14 @@ mod tests {
             outcome: ForwarderOutcome::Err,
         };
         let (tx, mut rx) = mpsc::channel(8);
-        let pipeline = Pipeline::new(rules, forwarder, 10, &DnsCacheConfig::default(), tx);
+        let pipeline = Pipeline::new(
+            rules,
+            forwarder,
+            10,
+            &DnsCacheConfig::default(),
+            DEFAULT_REFRESH_CLAIM_LEASE,
+            tx,
+        );
 
         let reply = pipeline
             .handle(
@@ -1577,6 +1824,7 @@ mod tests {
             },
             10,
             &DnsCacheConfig::default(),
+            DEFAULT_REFRESH_CLAIM_LEASE,
             tx,
         );
 
@@ -1613,6 +1861,7 @@ mod tests {
             },
             10,
             &DnsCacheConfig::default(),
+            DEFAULT_REFRESH_CLAIM_LEASE,
             tx,
         );
 
@@ -1642,7 +1891,14 @@ mod tests {
             calls: Arc::new(AtomicU64::new(0)),
         };
         let (tx, mut rx) = mpsc::channel(8);
-        let pipeline = Pipeline::new(rules, forwarder, 10, &DnsCacheConfig::default(), tx);
+        let pipeline = Pipeline::new(
+            rules,
+            forwarder,
+            10,
+            &DnsCacheConfig::default(),
+            DEFAULT_REFRESH_CLAIM_LEASE,
+            tx,
+        );
 
         pipeline
             .handle(
@@ -1687,7 +1943,14 @@ mod tests {
             outcome: ForwarderOutcome::Answer(SWR_TTL),
         };
         let (tx, mut rx) = mpsc::channel(8);
-        let pipeline = Pipeline::new(rules, forwarder, 10, &swr_cache_config(3), tx);
+        let pipeline = Pipeline::new(
+            rules,
+            forwarder,
+            10,
+            &swr_cache_config(3),
+            DEFAULT_REFRESH_CLAIM_LEASE,
+            tx,
+        );
 
         warm_then_age(&pipeline).await;
         let warmed = dns_event(rx.try_recv().unwrap());

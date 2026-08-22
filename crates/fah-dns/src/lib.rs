@@ -17,8 +17,10 @@ mod testkit;
 mod udp;
 mod upstream;
 
-pub use cache::{CacheClean, CacheCleanupStats, CacheStats};
+pub use cache::{CacheClean, CacheCleanupStats, CacheStats, DEFAULT_REFRESH_CLAIM_LEASE};
 pub use pipeline::{Pipeline, Transport};
 pub use server::{ListenerDied, Server};
 pub use swr::SwrStats;
-pub use upstream::{ForwardOutcome, Forwarder, UpstreamPool, UpstreamStatus};
+pub use upstream::{
+    worst_case_walk, ForwardOutcome, Forwarder, UpstreamPool, UpstreamStatus, ATTEMPT_LEGS,
+};

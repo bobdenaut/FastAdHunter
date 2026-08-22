@@ -33,3 +33,9 @@ tokio-rustls = "0.26"
 [[bench]]
 name = "cache"
 harness = false
+
+# Upstream attempt path: the outer per-attempt timeout (p2.5-07 U2) must be
+# free on an answered or fast-failing forward.
+[[bench]]
+name = "upstream"
+harness = false

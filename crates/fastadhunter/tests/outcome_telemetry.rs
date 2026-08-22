@@ -66,6 +66,7 @@ async fn telemetry_after_one_query(answer: Answer, endpoint: u8) -> fah_model::E
         ScriptedForwarder { answer, endpoint },
         10,
         &DnsCacheConfig::default(),
+        fah_dns::DEFAULT_REFRESH_CLAIM_LEASE,
         tx,
     );
 

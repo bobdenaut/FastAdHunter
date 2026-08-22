@@ -243,6 +243,7 @@ mod tests {
 
     use super::*;
     use crate::cache::Lookup;
+    use crate::cache::DEFAULT_REFRESH_CLAIM_LEASE;
     use crate::upstream::ForwardOutcome;
 
     /// A forwarder that counts calls and replays a scripted outcome, so a test
@@ -306,7 +307,10 @@ mod tests {
     async fn cache_with_stale_entry() -> (Arc<DnsCache>, CacheKey) {
         const SEED_TTL: u32 = 10;
 
-        let cache = Arc::new(DnsCache::new(&fah_config::DnsCacheConfig::default()));
+        let cache = Arc::new(DnsCache::new(
+            &fah_config::DnsCacheConfig::default(),
+            DEFAULT_REFRESH_CLAIM_LEASE,
+        ));
         let key = cache.key("swr.example.", RecordType::A, DNSClass::IN);
 
         let mut seed = Message::response(0, OpCode::Query);
@@ -459,7 +463,10 @@ mod tests {
 
     #[test]
     fn the_refresh_query_reproduces_the_cached_question() {
-        let cache = DnsCache::new(&fah_config::DnsCacheConfig::default());
+        let cache = DnsCache::new(
+            &fah_config::DnsCacheConfig::default(),
+            DEFAULT_REFRESH_CLAIM_LEASE,
+        );
         let key = cache.key("swr.example.", RecordType::AAAA, DNSClass::CH);
 
         let request = refresh_query(&key);

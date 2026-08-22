@@ -50,7 +50,7 @@ pub(super) struct ExchangeConn {
 }
 
 #[derive(Default)]
-struct Slot {
+pub(super) struct Slot {
     generation: u64,
     exchange: Option<DnsExchange<TokioRuntimeProvider>>,
 }
@@ -88,6 +88,11 @@ impl ExchangeConn {
     #[cfg(test)]
     pub(super) fn target(&self) -> &ConnectTarget {
         &self.target
+    }
+
+    #[cfg(test)]
+    pub(super) async fn hold_slot(&self) -> tokio::sync::MutexGuard<'_, Slot> {
+        self.slot.lock().await
     }
 
     pub(super) async fn query(

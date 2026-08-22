@@ -4,6 +4,7 @@ use fah_config::{DnsCacheConfig, RulesConfig};
 use fah_rules::ListManager;
 use hickory_proto::op::Message;
 
+use crate::cache::DEFAULT_REFRESH_CLAIM_LEASE;
 use crate::pipeline::Pipeline;
 use crate::upstream::{ForwardOutcome, Forwarder};
 
@@ -37,6 +38,7 @@ pub(crate) fn pipeline() -> (Arc<Pipeline<NullForwarder>>, tempfile::TempDir) {
         NullForwarder,
         10,
         &DnsCacheConfig::default(),
+        DEFAULT_REFRESH_CLAIM_LEASE,
         events,
     ));
     (pipeline, data_dir)

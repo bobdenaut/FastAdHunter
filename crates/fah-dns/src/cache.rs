@@ -66,18 +66,7 @@ pub(crate) const MAX_STALE: Duration = Duration::from_secs(24 * 60 * 60);
 /// pin the stale data client-side for a normal TTL's worth of time.
 pub(crate) const STALE_SERVE_TTL: u32 = 30;
 
-/// How long a claimed stale entry stays claimed before the claim is treated as
-/// abandoned (ADR-0005). The lease must outlast a worst-case forward, which is
-/// `[dns.upstreams] timeout_ms` × the number of servers: at the shipped
-/// defaults (800 ms, two servers) that is 1.6 s, so this is ~3× headroom.
-///
-/// It goes tight only for a config with six or more upstreams at the default
-/// timeout, and the failure mode there is benign — an expired lease lets a
-/// second query claim while the first refresh is still in flight, costing one
-/// duplicate forward, never a wrong answer or an entry that can never refresh
-/// again. Deliberately *not* derived from `[dns.upstreams]`: the cache does not
-/// know about upstream configuration and should not start to.
-const REFRESH_CLAIM_LEASE: Duration = Duration::from_secs(5);
+pub const DEFAULT_REFRESH_CLAIM_LEASE: Duration = Duration::from_secs(5);
 
 /// How long a *failed* refresh suppresses further attempts for that entry.
 /// Matches [`STALE_SERVE_TTL`], so a client retrying on the TTL we just handed
@@ -146,7 +135,7 @@ struct Entry {
     /// deadline (ADR-0005). One field serves two purposes:
     ///
     /// - **Claim.** [`DnsCache::lookup_and_claim_refresh`] sets it to
-    ///   `now + REFRESH_CLAIM_LEASE` while a worker refreshes the entry, so
+    ///   `now + refresh_claim_lease` while a worker refreshes the entry, so
     ///   simultaneous queries for the same stale key enqueue exactly one job.
     /// - **Cooldown.** A failed refresh sets it to
     ///   `now + REFRESH_FAILURE_COOLDOWN`, so a dead upstream cannot turn every
@@ -407,6 +396,7 @@ pub(crate) struct DnsCache {
     max_ttl: u32,
     negative_ttl_max: u32,
     serve_stale: bool,
+    refresh_claim_lease: Duration,
     /// Resolve-path outcomes ([`DnsCache::note_lookup`]) and capacity
     /// evictions, for [`DnsCache::stats`]. Relaxed atomics — admin-plane
     /// reporting, not synchronization.
@@ -440,7 +430,7 @@ pub struct CacheCleanupStats {
 }
 
 impl DnsCache {
-    pub(crate) fn new(config: &DnsCacheConfig) -> Self {
+    pub(crate) fn new(config: &DnsCacheConfig, refresh_claim_lease: Duration) -> Self {
         // At least 1 per shard: a misconfigured `max_entries` smaller than
         // `SHARD_COUNT` still yields a working (just very small) cache
         // instead of a shard that can never hold anything.
@@ -472,6 +462,7 @@ impl DnsCache {
             max_ttl: config.max_ttl_seconds.max(config.min_ttl_seconds),
             negative_ttl_max: config.negative_ttl_max_seconds,
             serve_stale: config.serve_stale,
+            refresh_claim_lease,
             hits: AtomicU64::new(0),
             misses: AtomicU64::new(0),
             evictions: AtomicU64::new(0),
@@ -542,7 +533,7 @@ impl DnsCache {
                 .is_some_and(|until| now < until);
             let claimed_refresh = claim_refresh && !suppressed;
             if claimed_refresh {
-                entry.refresh_suppressed_until = Some(now + REFRESH_CLAIM_LEASE);
+                entry.refresh_suppressed_until = Some(now + self.refresh_claim_lease);
             }
             Lookup::Stale {
                 answer: Arc::clone(&entry.answer),
@@ -925,7 +916,7 @@ mod tests {
 
     #[tokio::test(start_paused = true)]
     async fn fresh_entry_is_returned_with_remaining_ttl() {
-        let cache = DnsCache::new(&config(100));
+        let cache = DnsCache::new(&config(100), DEFAULT_REFRESH_CLAIM_LEASE);
         cache.store(&a_key(&cache, "example.com."), &positive_response(100));
 
         tokio::time::advance(Duration::from_secs(40)).await;
@@ -941,7 +932,7 @@ mod tests {
 
     #[tokio::test(start_paused = true)]
     async fn entry_past_ttl_but_within_stale_window_is_reported_stale() {
-        let cache = DnsCache::new(&config(100));
+        let cache = DnsCache::new(&config(100), DEFAULT_REFRESH_CLAIM_LEASE);
         cache.store(&a_key(&cache, "example.com."), &positive_response(10));
 
         tokio::time::advance(Duration::from_secs(11)).await;
@@ -954,8 +945,8 @@ mod tests {
 
     /// Seeds one entry and ages it into the stale window — the only state the
     /// refresh claim applies to.
-    async fn cache_with_stale_entry() -> (DnsCache, CacheKey) {
-        let cache = DnsCache::new(&config(100));
+    async fn cache_with_stale_entry(lease: Duration) -> (DnsCache, CacheKey) {
+        let cache = DnsCache::new(&config(100), lease);
         let key = a_key(&cache, "example.com.");
         cache.store(&key, &positive_response(10));
         tokio::time::advance(Duration::from_secs(11)).await;
@@ -984,7 +975,7 @@ mod tests {
     /// a popular expiring name.
     #[tokio::test(start_paused = true)]
     async fn only_the_first_of_many_stale_hits_claims_the_refresh() {
-        let (cache, key) = cache_with_stale_entry().await;
+        let (cache, key) = cache_with_stale_entry(DEFAULT_REFRESH_CLAIM_LEASE).await;
 
         assert!(claimed(cache.lookup_and_claim_refresh(&key)));
         for _ in 0..64 {
@@ -1000,7 +991,7 @@ mod tests {
     /// suppress the *next* real refresh for a whole lease.
     #[tokio::test(start_paused = true)]
     async fn a_plain_lookup_never_takes_the_claim() {
-        let (cache, key) = cache_with_stale_entry().await;
+        let (cache, key) = cache_with_stale_entry(DEFAULT_REFRESH_CLAIM_LEASE).await;
 
         for _ in 0..8 {
             assert!(!claimed(cache.lookup(&key)));
@@ -1013,19 +1004,21 @@ mod tests {
 
     /// A worker that panics or is aborted mid-refresh must not strand its
     /// entry: the claim is a lease, so it expires and the key becomes
-    /// refreshable again.
+    /// refreshable again. The lease is whatever the constructor was handed,
+    /// not a constant — 50 ms here, so a re-claim is refused at 10 ms and
+    /// granted at 60 ms.
     #[tokio::test(start_paused = true)]
     async fn a_claim_that_outlives_its_lease_can_be_taken_again() {
-        let (cache, key) = cache_with_stale_entry().await;
+        let (cache, key) = cache_with_stale_entry(Duration::from_millis(50)).await;
         assert!(claimed(cache.lookup_and_claim_refresh(&key)));
 
-        tokio::time::advance(REFRESH_CLAIM_LEASE - Duration::from_secs(1)).await;
+        tokio::time::advance(Duration::from_millis(10)).await;
         assert!(
             !claimed(cache.lookup_and_claim_refresh(&key)),
             "still inside the lease"
         );
 
-        tokio::time::advance(Duration::from_secs(2)).await;
+        tokio::time::advance(Duration::from_millis(50)).await;
         assert!(
             claimed(cache.lookup_and_claim_refresh(&key)),
             "an abandoned claim must not disable refreshes for this key forever"
@@ -1036,14 +1029,14 @@ mod tests {
     /// failed refresh would put another doomed query on the wire.
     #[tokio::test(start_paused = true)]
     async fn a_failed_refresh_suppresses_the_next_one_for_the_cooldown() {
-        let (cache, key) = cache_with_stale_entry().await;
+        let (cache, key) = cache_with_stale_entry(DEFAULT_REFRESH_CLAIM_LEASE).await;
         assert!(claimed(cache.lookup_and_claim_refresh(&key)));
 
         cache.suppress_refresh(&key, REFRESH_FAILURE_COOLDOWN);
 
         // The cooldown outlasts the lease it replaces, so an expiring lease
         // cannot be what lets the next attempt through.
-        tokio::time::advance(REFRESH_CLAIM_LEASE + Duration::from_secs(1)).await;
+        tokio::time::advance(DEFAULT_REFRESH_CLAIM_LEASE + Duration::from_secs(1)).await;
         assert!(
             !claimed(cache.lookup_and_claim_refresh(&key)),
             "a cooled-down entry must not be re-claimed once the lease lapses"
@@ -1058,7 +1051,7 @@ mod tests {
 
     #[tokio::test(start_paused = true)]
     async fn a_released_claim_is_immediately_available_again() {
-        let (cache, key) = cache_with_stale_entry().await;
+        let (cache, key) = cache_with_stale_entry(DEFAULT_REFRESH_CLAIM_LEASE).await;
         assert!(claimed(cache.lookup_and_claim_refresh(&key)));
         assert!(!claimed(cache.lookup_and_claim_refresh(&key)));
 
@@ -1074,7 +1067,7 @@ mod tests {
     /// claim — there is no separate unclaim step that could be forgotten.
     #[tokio::test(start_paused = true)]
     async fn a_successful_refresh_clears_the_claim_by_replacing_the_entry() {
-        let (cache, key) = cache_with_stale_entry().await;
+        let (cache, key) = cache_with_stale_entry(DEFAULT_REFRESH_CLAIM_LEASE).await;
         assert!(claimed(cache.lookup_and_claim_refresh(&key)));
 
         assert!(cache.store(&key, &positive_response(10)));
@@ -1095,7 +1088,7 @@ mod tests {
     /// refresh has to take the cooldown instead of quietly declaring success.
     #[tokio::test(start_paused = true)]
     async fn store_reports_whether_the_answer_was_cacheable() {
-        let cache = DnsCache::new(&config(100));
+        let cache = DnsCache::new(&config(100), DEFAULT_REFRESH_CLAIM_LEASE);
         let key = a_key(&cache, "example.com.");
 
         assert!(cache.store(&key, &positive_response(10)));
@@ -1114,7 +1107,7 @@ mod tests {
 
     #[tokio::test(start_paused = true)]
     async fn entry_past_the_stale_window_is_a_miss() {
-        let cache = DnsCache::new(&config(100));
+        let cache = DnsCache::new(&config(100), DEFAULT_REFRESH_CLAIM_LEASE);
         cache.store(&a_key(&cache, "example.com."), &positive_response(10));
 
         tokio::time::advance(Duration::from_secs(10) + MAX_STALE + Duration::from_secs(1)).await;
@@ -1129,7 +1122,7 @@ mod tests {
     async fn serve_stale_disabled_misses_immediately_on_expiry() {
         let mut cfg = config(100);
         cfg.serve_stale = false;
-        let cache = DnsCache::new(&cfg);
+        let cache = DnsCache::new(&cfg, DEFAULT_REFRESH_CLAIM_LEASE);
         cache.store(&a_key(&cache, "example.com."), &positive_response(10));
 
         tokio::time::advance(Duration::from_secs(11)).await;
@@ -1145,7 +1138,7 @@ mod tests {
         let mut cfg = config(100);
         cfg.min_ttl_seconds = 30;
         cfg.max_ttl_seconds = 300;
-        let cache = DnsCache::new(&cfg);
+        let cache = DnsCache::new(&cfg, DEFAULT_REFRESH_CLAIM_LEASE);
 
         cache.store(&a_key(&cache, "short.example."), &positive_response(5));
         cache.store(&a_key(&cache, "long.example."), &positive_response(10_000));
@@ -1166,7 +1159,7 @@ mod tests {
 
     #[tokio::test(start_paused = true)]
     async fn nxdomain_is_cached_as_negative_with_soa_minimum_ttl() {
-        let cache = DnsCache::new(&config(100));
+        let cache = DnsCache::new(&config(100), DEFAULT_REFRESH_CLAIM_LEASE);
         let mut response = Message::query();
         response.metadata.response_code = ResponseCode::NXDomain;
         response.add_authority(soa_authority(45));
@@ -1190,7 +1183,7 @@ mod tests {
 
     #[tokio::test(start_paused = true)]
     async fn negative_ttl_is_capped_even_when_soa_minimum_is_higher() {
-        let cache = DnsCache::new(&config(100));
+        let cache = DnsCache::new(&config(100), DEFAULT_REFRESH_CLAIM_LEASE);
         let mut response = Message::query();
         response.metadata.response_code = ResponseCode::NoError; // NODATA case
         response.add_authority(soa_authority(999_999));
@@ -1206,7 +1199,7 @@ mod tests {
 
     #[tokio::test]
     async fn servfail_is_never_cached() {
-        let cache = DnsCache::new(&config(100));
+        let cache = DnsCache::new(&config(100), DEFAULT_REFRESH_CLAIM_LEASE);
         let mut response = Message::query();
         response.metadata.response_code = ResponseCode::ServFail;
 
@@ -1223,7 +1216,7 @@ mod tests {
         // A TC reply's usual shape — NOERROR, empty answer section — would
         // otherwise be cached as a negative entry, turning "retry over TCP"
         // into a served NODATA for the negative TTL's duration.
-        let cache = DnsCache::new(&config(100));
+        let cache = DnsCache::new(&config(100), DEFAULT_REFRESH_CLAIM_LEASE);
         let mut response = positive_response(3600);
         response.answers.clear();
         response.metadata.truncation = true;
@@ -1248,7 +1241,7 @@ mod tests {
     async fn filling_past_capacity_evicts_and_never_grows_unbounded() {
         // 32 total capacity (2 per shard) — insert many more than that and
         // assert the total never exceeds it.
-        let cache = DnsCache::new(&config(32));
+        let cache = DnsCache::new(&config(32), DEFAULT_REFRESH_CLAIM_LEASE);
         for i in 0..500 {
             cache.store(
                 &a_key(&cache, &format!("host{i}.example.com.")),
@@ -1298,7 +1291,7 @@ mod tests {
         // the one that must bind, and it must bind *before* the entry bound.
         let mut cfg = config(16_000);
         cfg.max_bytes = 16 * 64 * 1024; // 64 KiB per shard
-        let cache = DnsCache::new(&cfg);
+        let cache = DnsCache::new(&cfg, DEFAULT_REFRESH_CLAIM_LEASE);
 
         for i in 0..2_000 {
             cache.store(
@@ -1330,7 +1323,7 @@ mod tests {
 
     #[tokio::test]
     async fn refreshing_a_key_with_a_smaller_answer_releases_its_bytes() {
-        let cache = DnsCache::new(&config(100));
+        let cache = DnsCache::new(&config(100), DEFAULT_REFRESH_CLAIM_LEASE);
         let key = a_key(&cache, "example.com.");
 
         cache.store(&key, &large_response(50));
@@ -1353,7 +1346,7 @@ mod tests {
         // cache that re-evicts whatever it just stored.
         let mut cfg = config(1_000);
         cfg.max_bytes = 1024 * 1024;
-        let cache = DnsCache::new(&cfg);
+        let cache = DnsCache::new(&cfg, DEFAULT_REFRESH_CLAIM_LEASE);
 
         for i in 0..50 {
             cache.store(
@@ -1380,7 +1373,7 @@ mod tests {
     async fn the_byte_cap_leaves_lookup_semantics_untouched() {
         let mut cfg = config(1_000);
         cfg.max_bytes = 16 * 64 * 1024;
-        let cache = DnsCache::new(&cfg);
+        let cache = DnsCache::new(&cfg, DEFAULT_REFRESH_CLAIM_LEASE);
         let key = a_key(&cache, "example.com.");
 
         cache.store(&key, &positive_response(10));
@@ -1431,7 +1424,7 @@ mod tests {
 
     #[tokio::test]
     async fn eviction_removes_the_oldest_inserted_entry() {
-        let cache = DnsCache::new(&config(100));
+        let cache = DnsCache::new(&config(100), DEFAULT_REFRESH_CLAIM_LEASE);
         let first = a_key(&cache, "first.example.");
         let second = a_key(&cache, "second.example.");
 
@@ -1445,7 +1438,7 @@ mod tests {
 
     #[tokio::test]
     async fn a_refreshed_entry_is_not_evicted_through_its_ghost_node() {
-        let cache = DnsCache::new(&config(100));
+        let cache = DnsCache::new(&config(100), DEFAULT_REFRESH_CLAIM_LEASE);
         let hot = a_key(&cache, "hot.example.");
         let cold = a_key(&cache, "cold.example.");
 
@@ -1469,7 +1462,7 @@ mod tests {
     async fn refresh_churn_keeps_the_eviction_queue_bounded() {
         // Re-inserting the same key leaves a ghost node per refresh; compact
         // must sweep them so the queue never outgrows 2× the shard bound.
-        let cache = DnsCache::new(&config(32)); // 2 per shard
+        let cache = DnsCache::new(&config(32), DEFAULT_REFRESH_CLAIM_LEASE); // 2 per shard
         let key = a_key(&cache, "refreshed.example.com.");
         for _ in 0..100 {
             cache.store(&key, &positive_response(3600));
@@ -1484,7 +1477,7 @@ mod tests {
 
     #[tokio::test(start_paused = true)]
     async fn stats_classifies_entries_by_lifetime_stage() {
-        let cache = DnsCache::new(&config(100));
+        let cache = DnsCache::new(&config(100), DEFAULT_REFRESH_CLAIM_LEASE);
         cache.store(&a_key(&cache, "fresh.example."), &positive_response(3600));
         cache.store(&a_key(&cache, "stale.example."), &positive_response(10));
         cache.store(&a_key(&cache, "dead.example."), &positive_response(1));
@@ -1516,7 +1509,7 @@ mod tests {
         // still be fresh once another is past its 24h stale window.
         let mut cfg = config(100);
         cfg.max_ttl_seconds = 200_000;
-        let cache = DnsCache::new(&cfg);
+        let cache = DnsCache::new(&cfg, DEFAULT_REFRESH_CLAIM_LEASE);
         cache.store(
             &a_key(&cache, "fresh.example."),
             &positive_response(172_800),
@@ -1545,7 +1538,7 @@ mod tests {
 
     #[tokio::test(start_paused = true)]
     async fn clean_with_purge_stale_drops_the_stale_window_too() {
-        let cache = DnsCache::new(&config(100));
+        let cache = DnsCache::new(&config(100), DEFAULT_REFRESH_CLAIM_LEASE);
         cache.store(&a_key(&cache, "fresh.example."), &positive_response(3600));
         cache.store(&a_key(&cache, "stale.example."), &positive_response(10));
 
@@ -1565,7 +1558,7 @@ mod tests {
     async fn clean_without_serve_stale_treats_expiry_as_dead() {
         let mut cfg = config(100);
         cfg.serve_stale = false;
-        let cache = DnsCache::new(&cfg);
+        let cache = DnsCache::new(&cfg, DEFAULT_REFRESH_CLAIM_LEASE);
         cache.store(&a_key(&cache, "gone.example."), &positive_response(10));
 
         tokio::time::advance(Duration::from_secs(11)).await;
@@ -1583,7 +1576,7 @@ mod tests {
     /// never be collected.
     #[tokio::test(start_paused = true)]
     async fn clean_leaves_no_ghost_queue_nodes_behind() {
-        let cache = DnsCache::new(&config(1000));
+        let cache = DnsCache::new(&config(1000), DEFAULT_REFRESH_CLAIM_LEASE);
         for i in 0..50 {
             cache.store(
                 &a_key(&cache, &format!("dead{i}.example.")),
@@ -1612,7 +1605,7 @@ mod tests {
     /// pinning an exact figure would encode today's non-shrinking as a promise.
     #[tokio::test(start_paused = true)]
     async fn clean_lowers_the_reported_heap_by_entries_and_their_queue_nodes() {
-        let cache = DnsCache::new(&config(1000));
+        let cache = DnsCache::new(&config(1000), DEFAULT_REFRESH_CLAIM_LEASE);
         for i in 0..50 {
             cache.store(
                 &a_key(&cache, &format!("dead{i}.example.")),
@@ -1645,7 +1638,7 @@ mod tests {
     /// something that did not happen to the cache.
     #[tokio::test(start_paused = true)]
     async fn cleanup_counters_track_every_sweep_whatever_triggered_it() {
-        let cache = DnsCache::new(&config(100));
+        let cache = DnsCache::new(&config(100), DEFAULT_REFRESH_CLAIM_LEASE);
         assert_eq!(cache.cleanup_stats(), CacheCleanupStats::default());
 
         // A sweep that finds nothing still counts as a run — that is what
@@ -1681,7 +1674,7 @@ mod tests {
     /// it could drift.
     #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
     async fn sweeping_while_lookups_run_disturbs_neither() {
-        let cache = Arc::new(DnsCache::new(&config(1000)));
+        let cache = Arc::new(DnsCache::new(&config(1000), DEFAULT_REFRESH_CLAIM_LEASE));
         for i in 0..200 {
             cache.store(
                 &a_key(&cache, &format!("live{i}.example.")),
@@ -1742,7 +1735,7 @@ mod tests {
     /// `entries_removed` is "what left the cache", not "what expired".
     #[tokio::test(start_paused = true)]
     async fn cleanup_counters_include_an_admin_stale_purge() {
-        let cache = DnsCache::new(&config(100));
+        let cache = DnsCache::new(&config(100), DEFAULT_REFRESH_CLAIM_LEASE);
         cache.store(&a_key(&cache, "stale.example."), &positive_response(10));
         tokio::time::advance(Duration::from_secs(11)).await;
 
@@ -1753,7 +1746,7 @@ mod tests {
 
     #[tokio::test(start_paused = true)]
     async fn byte_estimate_counts_the_table_slab_not_just_occupied_entries() {
-        let cache = DnsCache::new(&config(1000));
+        let cache = DnsCache::new(&config(1000), DEFAULT_REFRESH_CLAIM_LEASE);
         assert_eq!(
             cache.stats().estimated_bytes,
             0,
@@ -1795,7 +1788,7 @@ mod tests {
 
     #[tokio::test]
     async fn lookup_outcomes_and_evictions_are_counted() {
-        let cache = DnsCache::new(&config(32));
+        let cache = DnsCache::new(&config(32), DEFAULT_REFRESH_CLAIM_LEASE);
         cache.note_lookup(true);
         cache.note_lookup(true);
         cache.note_lookup(false);
@@ -1819,7 +1812,7 @@ mod tests {
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
     async fn concurrent_hammering_never_exceeds_capacity() {
-        let cache = Arc::new(DnsCache::new(&config(64)));
+        let cache = Arc::new(DnsCache::new(&config(64), DEFAULT_REFRESH_CLAIM_LEASE));
         let mut handles = Vec::new();
         for worker in 0..8 {
             let cache = Arc::clone(&cache);

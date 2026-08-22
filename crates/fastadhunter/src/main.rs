@@ -364,6 +364,7 @@ impl Engine {
                 upstreams.clone(),
                 config.dns.blocking.ttl_seconds,
                 &config.dns.cache,
+                refresh_claim_lease(&config.dns.upstreams),
                 events_tx.clone(),
             )
             .with_policies(Arc::clone(&policy_state)),
@@ -1018,6 +1019,10 @@ fn log_format(format: ConfigLogFormat) -> LogFormat {
     }
 }
 
+fn refresh_claim_lease(upstreams: &fah_config::DnsUpstreamsConfig) -> Duration {
+    (fah_dns::worst_case_walk(upstreams) * 2).max(Duration::from_secs(5))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1029,6 +1034,44 @@ mod tests {
         assert!(!http_enabled(fah_config::EngineMode::Dns));
         assert!(http_enabled(fah_config::EngineMode::DnsHttp));
         assert!(http_enabled(fah_config::EngineMode::DnsHttpHttps));
+    }
+
+    fn upstreams(servers: usize, timeout_ms: u32) -> fah_config::DnsUpstreamsConfig {
+        fah_config::DnsUpstreamsConfig {
+            timeout_ms,
+            servers: (0..servers)
+                .map(|index| fah_config::UpstreamServerConfig {
+                    address: format!("10.0.0.{index}"),
+                    protocol: fah_config::UpstreamProtocol::Udp,
+                    hostname: None,
+                })
+                .collect(),
+            ..fah_config::DnsUpstreamsConfig::default()
+        }
+    }
+
+    #[test]
+    fn the_lease_doubles_the_worst_case_walk_above_a_five_second_floor() {
+        assert_eq!(
+            fah_dns::worst_case_walk(&upstreams(2, 800)),
+            Duration::from_millis(4_800)
+        );
+        assert_eq!(
+            refresh_claim_lease(&upstreams(2, 800)),
+            Duration::from_millis(9_600)
+        );
+        assert_eq!(
+            refresh_claim_lease(&upstreams(0, 800)),
+            Duration::from_secs(5)
+        );
+        assert_eq!(
+            refresh_claim_lease(&upstreams(8, 800)),
+            Duration::from_millis(38_400)
+        );
+        assert_eq!(
+            refresh_claim_lease(&upstreams(1, 100)),
+            Duration::from_secs(5)
+        );
     }
 
     fn empty_stage() -> fah_metrics::StageHistogram {

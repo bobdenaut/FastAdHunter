@@ -72,6 +72,7 @@ async fn start_server_on(
         forwarder,
         10,
         &DnsCacheConfig::default(),
+        fah_dns::DEFAULT_REFRESH_CLAIM_LEASE,
         tx,
     ));
     let listen = DnsListenConfig {
@@ -310,6 +311,7 @@ async fn full_pipeline_forwards_via_upstream_pool_and_caches_the_answer() {
         pool.clone(),
         10,
         &DnsCacheConfig::default(),
+        fah_dns::DEFAULT_REFRESH_CLAIM_LEASE,
         tx,
     ));
     let listen = DnsListenConfig {

@@ -27,6 +27,14 @@ use tracing::{debug, info, warn};
 use alarm::FailureAlarm;
 use encrypted::{ConnectTarget, ExchangeConn};
 
+pub const ATTEMPT_LEGS: u32 = 3;
+
+pub fn worst_case_walk(upstreams: &DnsUpstreamsConfig) -> Duration {
+    Duration::from_millis(u64::from(upstreams.timeout_ms))
+        * ATTEMPT_LEGS
+        * u32::try_from(upstreams.servers.len()).unwrap_or(u32::MAX)
+}
+
 /// Resolves an Allow/Pass query. Implementors run off the block path
 /// entirely — [`crate::pipeline::Pipeline`] never calls this for a `Block`
 /// verdict (ARCHITECTURE.md: "Blocked queries never touch the network").
@@ -361,10 +369,20 @@ impl UpstreamServer {
     }
 
     async fn query(&self, request: &Message, attempt_timeout: Duration) -> io::Result<Message> {
-        match &self.transport {
-            Transport::Udp { addr } => plain::query(*addr, request, attempt_timeout).await,
-            Transport::Encrypted(conn) => conn.query(request, attempt_timeout).await,
-        }
+        let attempt = async {
+            match &self.transport {
+                Transport::Udp { addr } => plain::query(*addr, request, attempt_timeout).await,
+                Transport::Encrypted(conn) => conn.query(request, attempt_timeout).await,
+            }
+        };
+        tokio::time::timeout(attempt_timeout * ATTEMPT_LEGS, attempt)
+            .await
+            .map_err(|_| {
+                io::Error::new(
+                    io::ErrorKind::TimedOut,
+                    "upstream attempt exceeded its wall-clock bound",
+                )
+            })?
     }
 }
 
@@ -996,6 +1014,101 @@ mod tests {
             "[::1]:853".parse().unwrap()
         );
         assert!(socket_addr("not-an-ip", 53).is_err());
+    }
+
+    fn empty_tls() -> Arc<ClientConfig> {
+        Arc::new(
+            rustls::ClientConfig::builder()
+                .with_root_certificates(rustls::RootCertStore::empty())
+                .with_no_client_auth(),
+        )
+    }
+
+    fn dot_server_config(address: &str) -> UpstreamServerConfig {
+        UpstreamServerConfig {
+            address: address.to_string(),
+            protocol: UpstreamProtocol::Dot,
+            hostname: Some("dns.example".to_string()),
+        }
+    }
+
+    fn held_slot(server: &UpstreamServer) -> &ExchangeConn {
+        let Transport::Encrypted(conn) = &server.transport else {
+            panic!("dot must build an encrypted transport");
+        };
+        conn
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_server_attempt_is_bounded_even_while_the_slot_is_held() {
+        let attempt_timeout = Duration::from_millis(100);
+        let server =
+            UpstreamServer::new(&dot_server_config("127.0.0.1:853"), &empty_tls()).unwrap();
+        let _guard = held_slot(&server).hold_slot().await;
+
+        let start = tokio::time::Instant::now();
+        let err = server.query(&a_query(), attempt_timeout).await.unwrap_err();
+
+        assert_eq!(err.kind(), io::ErrorKind::TimedOut);
+        assert_eq!(start.elapsed(), attempt_timeout * ATTEMPT_LEGS);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_walk_over_held_servers_is_bounded_by_the_per_server_bound_times_n() {
+        let timeout_ms = 100;
+        let pool = UpstreamPool::with_tls_config(
+            &DnsUpstreamsConfig {
+                strategy: UpstreamStrategy::Fallback,
+                timeout_ms,
+                servers: vec![
+                    dot_server_config("127.0.0.1:853"),
+                    dot_server_config("127.0.0.2:853"),
+                ],
+            },
+            empty_tls(),
+        )
+        .unwrap();
+        let _first = held_slot(&pool.servers[0]).hold_slot().await;
+        let _second = held_slot(&pool.servers[1]).hold_slot().await;
+
+        let start = tokio::time::Instant::now();
+        let err = pool.forward(&a_query()).await.unwrap_err();
+
+        assert_eq!(err.kind(), io::ErrorKind::TimedOut);
+        assert_eq!(
+            start.elapsed(),
+            worst_case_walk(&DnsUpstreamsConfig {
+                strategy: UpstreamStrategy::Fallback,
+                timeout_ms,
+                servers: vec![dot_server_config("a"), dot_server_config("b")],
+            })
+        );
+        for server in pool.servers.iter() {
+            assert_eq!(server.attempts.load(Ordering::Relaxed), 1);
+            assert_eq!(server.failures.load(Ordering::Relaxed), 1);
+            assert_eq!(server.consecutive_failures.load(Ordering::Relaxed), 1);
+        }
+    }
+
+    #[tokio::test]
+    async fn an_uncontended_attempt_still_fails_on_its_inner_timeout() {
+        let attempt_timeout = Duration::from_millis(200);
+        let silent = UdpSocket::bind("127.0.0.1:0").await.unwrap();
+        let pool = pool_of(
+            vec![udp_server_config(silent.local_addr().unwrap())],
+            u32::try_from(attempt_timeout.as_millis()).unwrap(),
+        );
+
+        let start = Instant::now();
+        let err = pool.forward(&a_query()).await.unwrap_err();
+        let elapsed = start.elapsed();
+
+        assert_eq!(err.kind(), io::ErrorKind::TimedOut);
+        assert_eq!(err.to_string(), "upstream timed out");
+        assert!(
+            elapsed < attempt_timeout * ATTEMPT_LEGS,
+            "the inner timeout must fire first, took {elapsed:?}"
+        );
     }
 
     #[test]

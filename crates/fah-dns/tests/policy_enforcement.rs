@@ -130,6 +130,7 @@ async fn two_clients_on_two_policies_get_different_verdicts_for_one_domain() {
         StubForwarder,
         10,
         &DnsCacheConfig::default(),
+        fah_dns::DEFAULT_REFRESH_CLAIM_LEASE,
         tx,
     )
     .with_policies(Arc::clone(&state));
@@ -207,6 +208,7 @@ async fn a_schedule_boundary_flips_the_verdict_without_a_restart() {
         StubForwarder,
         10,
         &DnsCacheConfig::default(),
+        fah_dns::DEFAULT_REFRESH_CLAIM_LEASE,
         tx,
     )
     .with_policies(Arc::clone(&state));
@@ -263,6 +265,7 @@ async fn a_client_scheduled_onto_a_permissive_policy_is_unblocked_only_in_the_wi
         StubForwarder,
         10,
         &DnsCacheConfig::default(),
+        fah_dns::DEFAULT_REFRESH_CLAIM_LEASE,
         tx,
     )
     .with_policies(Arc::clone(&state));
@@ -307,6 +310,7 @@ async fn a_client_scoped_rule_only_blocks_that_client() {
         StubForwarder,
         10,
         &DnsCacheConfig::default(),
+        fah_dns::DEFAULT_REFRESH_CLAIM_LEASE,
         tx,
     );
 
@@ -355,6 +359,7 @@ async fn a_name_scoped_rule_follows_the_named_client() {
         StubForwarder,
         10,
         &DnsCacheConfig::default(),
+        fah_dns::DEFAULT_REFRESH_CLAIM_LEASE,
         tx,
     )
     .with_policies(Arc::clone(&state));

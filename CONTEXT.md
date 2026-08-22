@@ -172,7 +172,12 @@ Two terms belong to that pool and mean nothing outside it:
 - **Claim** — the right to refresh one stale entry, held for a short lease and
   taken under the cache shard lock the lookup already holds. Exactly one query
   per lease gets it, which is what makes many simultaneous hits on one expiring
-  name produce **one** refresh rather than one each.
+  name produce **one** refresh rather than one each. The **lease** is
+  `max(5 s, 2 × worst-case walk)`, derived by the binary from `[dns.upstreams]`
+  (ADR-0005): a **walk** is one ordered pass over the configured upstreams,
+  an **attempt** is one server's share of it, and every attempt is wall-clock
+  bounded at `ATTEMPT_LEGS (3) × timeout_ms`, so the worst-case walk is
+  `3 × servers × timeout_ms` (`fah_dns::worst_case_walk`).
 - **Cooldown** — the longer suppression a *failed* refresh leaves behind, so a
   dead upstream cannot turn every stale hit into a forward.
 

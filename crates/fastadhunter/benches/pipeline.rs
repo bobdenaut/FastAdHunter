@@ -31,7 +31,7 @@ use std::time::{Duration, Instant};
 
 use criterion::{criterion_group, criterion_main, Criterion, Throughput};
 use fah_config::{DnsCacheConfig, RuleListConfig, RulesConfig};
-use fah_dns::{ForwardOutcome, Forwarder, Pipeline, Transport};
+use fah_dns::{ForwardOutcome, Forwarder, Pipeline, Transport, DEFAULT_REFRESH_CLAIM_LEASE};
 use fah_rules::ListManager;
 use hickory_proto::op::{Message, Query as WireQuery, ResponseCode};
 use hickory_proto::rr::rdata::A;
@@ -196,7 +196,14 @@ fn build_pipeline(
 ) -> Pipeline<InstantForwarder> {
     let (tx, mut rx) = tokio::sync::mpsc::channel(4096);
     tokio::spawn(async move { while rx.recv().await.is_some() {} });
-    Pipeline::new(manager, forwarder, 10, &DnsCacheConfig::default(), tx)
+    Pipeline::new(
+        manager,
+        forwarder,
+        10,
+        &DnsCacheConfig::default(),
+        DEFAULT_REFRESH_CLAIM_LEASE,
+        tx,
+    )
 }
 
 /// PERFORMANCE.md: "Blocked query, in-engine p99 < 1 ms". The whole path —
