@@ -59,10 +59,6 @@ const MAX_LIST_BYTES: usize = 64 * 1024 * 1024;
 /// on the RB5009's single 1 GB of RAM.
 const SCHEDULER_TICK: Duration = Duration::from_secs(60);
 
-/// Failure modes for a single list operation. Fetch/read I/O and an
-/// oversized payload are the only ones possible — a bad *parse* never fails
-/// (RULE_ENGINE.md: unparseable lines are skipped and counted, never reject
-/// a list).
 #[derive(Debug, thiserror::Error)]
 pub enum LifecycleError {
     #[error("unknown list id: {0}")]
@@ -87,6 +83,16 @@ pub enum LifecycleError {
     },
     #[error("list {origin} exceeds the size limit of {limit} bytes")]
     TooLarge { origin: String, limit: usize },
+    #[error("fetched content rejected: {0}")]
+    RejectedContent(String),
+    #[error("list {0} was removed while its refresh was in flight")]
+    ListRemoved(String),
+    #[error("delete cached copy of list {id}: {source}")]
+    CacheRemove {
+        id: String,
+        #[source]
+        source: std::io::Error,
+    },
 }
 
 /// Rule counts from a successful parse of one list — what
@@ -121,6 +127,10 @@ impl From<&ParsedRuleList> for RefreshStats {
 /// not line noise.
 const MISPARSE_ERROR_FLOOR: u32 = 100;
 
+const COLLAPSE_MIN_BASELINE: usize = 1000;
+
+const COLLAPSE_FACTOR: usize = 10;
+
 impl RefreshStats {
     /// True when the parse looks like the **list** was misread, not like a few
     /// lines were malformed — more failures than rules, past a floor.
@@ -145,15 +155,75 @@ pub enum RefreshResult {
     NeverAttempted,
     Ok(RefreshStats),
     Failed(String),
+    Rejected(String),
 }
 
-/// One list's result from [`ListManager::refresh_all`]: its stats on success,
-/// or the fetch error chain on failure. Emitted in configuration order so a
-/// caller can report exactly which lists refreshed and which did not.
+impl RefreshResult {
+    pub fn failure_message(&self) -> Option<String> {
+        match self {
+            Self::Failed(error) => Some(error.clone()),
+            Self::Rejected(reason) => Some(format!("rejected: {reason}")),
+            Self::NeverAttempted | Self::Ok(_) => None,
+        }
+    }
+
+    pub fn from_error(err: &LifecycleError) -> Self {
+        match err {
+            LifecycleError::RejectedContent(reason) => Self::Rejected(reason.clone()),
+            other => Self::Failed(fah_common::error_chain(other)),
+        }
+    }
+}
+
+fn looks_like_html_document(text: &str) -> bool {
+    let head: String = text
+        .trim_start_matches('\u{feff}')
+        .trim_start()
+        .chars()
+        .take(9)
+        .collect::<String>()
+        .to_ascii_lowercase();
+    head.starts_with("<!doctype") || head.starts_with("<html")
+}
+
+fn rejection_reason(
+    text: &str,
+    baseline: Option<&RefreshStats>,
+    stats: &RefreshStats,
+) -> Option<String> {
+    if looks_like_html_document(text) {
+        return Some("html document".to_string());
+    }
+    if stats.looks_misparsed() {
+        return Some(format!(
+            "misparse: {} errors, {} rules",
+            stats.parse_errors,
+            stats.active + stats.url + stats.inactive
+        ));
+    }
+    let baseline = baseline?;
+    if baseline.active == 0 {
+        return None;
+    }
+    if stats.active == 0 {
+        return Some(format!(
+            "collapse: 0 dns rules vs baseline {}",
+            baseline.active
+        ));
+    }
+    let baseline_rules = baseline.active + baseline.url;
+    if baseline_rules < COLLAPSE_MIN_BASELINE {
+        return None;
+    }
+    let fetched = stats.active + stats.url;
+    (fetched < baseline_rules / COLLAPSE_FACTOR)
+        .then(|| format!("collapse: {fetched} rules vs baseline {baseline_rules}"))
+}
+
 #[derive(Debug, Clone)]
 pub struct ListRefreshOutcome {
     pub id: Arc<str>,
-    pub result: Result<RefreshStats, String>,
+    pub result: RefreshResult,
 }
 
 /// Per-list status, surfaced to the API (p1-09) via
@@ -541,13 +611,6 @@ impl ListManager {
     /// Deletes `/data` cached copies that no configured list claims any more,
     /// naming each one in the log as it goes.
     ///
-    /// `DELETE /api/v1/lists/{id}` already deletes its own copy, so the only
-    /// way to strand one is to edit `[[rules.lists]]` while FAH is stopped —
-    /// or to lose the race [`Self::remove_list`] documents. Nothing reads a
-    /// stranded copy ([`Self::compile`] iterates configured entries and looks
-    /// each id up, never the directory), so it is disk cost only: up to
-    /// `MAX_LIST_BYTES` each, on a volume shared with the history series.
-    ///
     /// **Boot only, and deliberately.** Here the scheduler has not spawned and
     /// no API listener is bound, so nothing else can be writing to `lists/`.
     /// A periodic sweep would race [`Self::commit_raw`] — it would have to
@@ -581,11 +644,6 @@ impl ListManager {
         }
     }
 
-    /// Downloads/reads one configured list, and on success recompiles and
-    /// atomically swaps in the new combined ruleset. On failure — the only
-    /// failure mode is I/O, never parsing — the previous ruleset keeps
-    /// serving untouched (RULE_ENGINE.md failure policy) and the failure is
-    /// recorded in [`Self::status`].
     pub async fn refresh_list(&self, id: &str) -> Result<RefreshStats, LifecycleError> {
         let entry = self
             .find(id)
@@ -603,11 +661,7 @@ impl ListManager {
         // cannot tell a DNS failure from a refused connection or a rejected
         // certificate.
         if let Err(err) = self.fetch_and_commit(&entry).await {
-            self.record_status(
-                id,
-                RefreshResult::Failed(fah_common::error_chain(&err)),
-                false,
-            );
+            self.record_status(id, RefreshResult::from_error(&err), false);
             return Err(err);
         }
 
@@ -625,15 +679,6 @@ impl ListManager {
         Ok(list_stats)
     }
 
-    /// Fetches one list and commits its raw text to the `/data` cache — the
-    /// fetch+commit half of a refresh, shared by [`Self::refresh_list`] and
-    /// [`Self::refresh_all`]. Holds the list's `refresh_lock` across the whole
-    /// fetch+commit so a stale fetch can never commit over a newer one (that
-    /// serialization is the lock's only job — the compile is deliberately left
-    /// out of it), and takes `compile_lock` just for the commit. It does **not**
-    /// recompile: the caller chooses when — immediately for a single refresh, or
-    /// once for a whole [`Self::refresh_all`] batch. On failure the previous
-    /// cached copy is untouched (RULE_ENGINE.md failure policy).
     async fn fetch_and_commit(&self, entry: &ListEntry) -> Result<(), LifecycleError> {
         let _list_guard = entry.refresh_lock.lock().await;
         // Every path that fetches records the attempt here, so a manual refresh
@@ -644,11 +689,29 @@ impl ListManager {
             .lock()
             .unwrap()
             .insert(Arc::clone(&entry.id), Instant::now());
+        let baseline = self.status(&entry.id).and_then(|status| status.compiled);
         let text = entry
             .source
             .fetch(&self.http, self.fetch_timeout, MAX_LIST_BYTES)
             .await?;
         let _guard = self.compile_lock.lock().await;
+        let still_registered = self
+            .find(&entry.id)
+            .is_some_and(|live| std::ptr::eq(Arc::as_ptr(&live), entry));
+        if !still_registered {
+            return Err(LifecycleError::ListRemoved(entry.id.to_string()));
+        }
+        let (text, stats) = tokio::task::spawn_blocking(move || {
+            let stats = RefreshStats::from(&crate::parse_rule_list(&text));
+            (text, stats)
+        })
+        .await
+        .expect("list validation parse task panicked");
+        let baseline =
+            baseline.or_else(|| self.status(&entry.id).and_then(|status| status.compiled));
+        if let Some(reason) = rejection_reason(&text, baseline.as_ref(), &stats) {
+            return Err(LifecycleError::RejectedContent(reason));
+        }
         self.commit_raw(&entry.id, text).await;
         Ok(())
     }
@@ -687,12 +750,13 @@ impl ListManager {
         // expensive compile is deferred to one pass after the whole batch is on
         // disk. `Ok(())` marks a committed list, `Err` a failed fetch whose old
         // cached copy keeps serving.
-        let mut committed: Vec<(Arc<str>, Result<(), String>)> = Vec::with_capacity(entries.len());
+        let mut committed: Vec<(Arc<str>, Result<(), RefreshResult>)> =
+            Vec::with_capacity(entries.len());
         for entry in &entries {
             let outcome = self
                 .fetch_and_commit(entry)
                 .await
-                .map_err(|err| fah_common::error_chain(&err));
+                .map_err(|err| RefreshResult::from_error(&err));
             committed.push((entry.id.clone(), outcome));
         }
 
@@ -721,11 +785,11 @@ impl ListManager {
                             "list refreshed"
                         );
                         self.record_status(&id, RefreshResult::Ok(list_stats.clone()), true);
-                        Ok(list_stats)
+                        RefreshResult::Ok(list_stats)
                     }
-                    Err(error) => {
-                        self.record_status(&id, RefreshResult::Failed(error.clone()), false);
-                        Err(error)
+                    Err(result) => {
+                        self.record_status(&id, result.clone(), false);
+                        result
                     }
                 };
                 ListRefreshOutcome { id, result }
@@ -805,13 +869,17 @@ impl ListManager {
         Ok(view)
     }
 
-    /// Removes a list and recompiles without it (`DELETE /api/v1/lists/{id}`).
-    /// The entry drops out of the ruleset first, then its `/data` copy is
-    /// deleted — a refresh already in flight holds its own `Arc` and may
-    /// still write a cache file afterwards, but `compile` only reads
-    /// configured lists, so the re-created copy is inert until
-    /// [`Self::remove_orphaned_copies`] sweeps it on the next boot.
     pub async fn remove_list(&self, id: &str) -> Result<(), LifecycleError> {
+        if self.find(id).is_none() {
+            return Err(LifecycleError::UnknownList(id.to_string()));
+        }
+        let _guard = self.compile_lock.lock().await;
+        cache::remove(&self.data_dir, id)
+            .await
+            .map_err(|source| LifecycleError::CacheRemove {
+                id: id.to_string(),
+                source,
+            })?;
         {
             let mut entries = self.entries.write().unwrap();
             let before = entries.len();
@@ -824,13 +892,8 @@ impl ListManager {
         self.last_attempted.lock().unwrap().remove(id);
         self.pending_cache.lock().unwrap().remove(id);
 
-        let _guard = self.compile_lock.lock().await;
         let (matcher, stats) = self.compile().await;
         self.swap_in(matcher, &stats);
-
-        if let Err(err) = cache::remove(&self.data_dir, id).await {
-            tracing::warn!(list = id, error = %err, "failed to delete cached list copy");
-        }
         Ok(())
     }
 
@@ -1000,9 +1063,10 @@ impl ListManager {
             match self.fetch_and_commit(entry).await {
                 Ok(()) => committed.push(entry.id.clone()),
                 Err(err) => {
-                    let error = fah_common::error_chain(&err);
+                    let result = RefreshResult::from_error(&err);
+                    let error = result.failure_message().unwrap_or_default();
                     tracing::warn!(list = %entry.id, %error, "scheduled list refresh failed");
-                    self.record_status(&entry.id, RefreshResult::Failed(error), false);
+                    self.record_status(&entry.id, result, false);
                 }
             }
         }
@@ -1211,7 +1275,9 @@ impl ListManager {
 
     fn record_status(&self, id: &str, result: RefreshResult, refreshed_now: bool) {
         let mut status = self.status.lock().unwrap();
-        let entry = status.entry(Arc::from(id)).or_default();
+        let Some(entry) = status.get_mut(id) else {
+            return;
+        };
         if refreshed_now {
             entry.last_refreshed = Some(SystemTime::now());
         }
@@ -1289,10 +1355,17 @@ mod tests {
     /// the full response body text (as a rule list would return it) or `None`
     /// to close the connection immediately (simulating an unreachable/broken
     /// upstream without needing real internet access).
-    async fn serve_once(listener: TcpListener, body: &'static str) {
+    async fn serve_once(
+        listener: TcpListener,
+        body: String,
+        gate: Option<Arc<tokio::sync::Notify>>,
+    ) {
         let (mut stream, _) = listener.accept().await.unwrap();
         let mut buf = [0u8; 1024];
         let _ = stream.read(&mut buf).await; // drain the request line/headers
+        if let Some(gate) = gate {
+            gate.notified().await;
+        }
         let response = format!(
             "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
             body.len(),
@@ -1302,11 +1375,47 @@ mod tests {
         stream.shutdown().await.unwrap();
     }
 
-    async fn local_server(body: &'static str) -> String {
+    async fn local_server(body: impl Into<String>) -> String {
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let addr: SocketAddr = listener.local_addr().unwrap();
-        tokio::spawn(serve_once(listener, body));
+        tokio::spawn(serve_once(listener, body.into(), None));
         format!("http://{addr}/")
+    }
+
+    async fn gated_local_server(body: String, gate: Arc<tokio::sync::Notify>) -> String {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr: SocketAddr = listener.local_addr().unwrap();
+        tokio::spawn(serve_once(listener, body, Some(gate)));
+        format!("http://{addr}/")
+    }
+
+    fn domain_rules(count: usize) -> String {
+        (0..count)
+            .map(|i| format!("||a{i}.example.com^\n"))
+            .collect()
+    }
+
+    fn binary_body(lines: usize) -> String {
+        (0..lines)
+            .map(|i| format!("\u{1}\u{2}\u{7f}%%{i}%%\u{5}\n"))
+            .collect()
+    }
+
+    fn html_error_page(lines: usize) -> String {
+        let mut page = String::from(
+            "<!DOCTYPE html>\n<html>\n<head><title>403 Forbidden</title></head>\n<body>\n",
+        );
+        for _ in 0..lines {
+            page.push_str("<div class=\"error\">Access denied by the network filter</div>\n");
+        }
+        page.push_str("</body>\n</html>\n");
+        page
+    }
+
+    fn url_only_garbage(lines: usize) -> String {
+        (0..lines)
+            .map(|i| format!("/banner/{i}.js$script\n"))
+            .collect()
     }
 
     /// Binds a listener then drops it immediately, freeing the port while
@@ -1455,6 +1564,560 @@ mod tests {
             "the refused connection must be named, not hidden behind reqwest's \
              generic outer message; got: {message}"
         );
+    }
+
+    #[tokio::test]
+    async fn a_200_ok_binary_body_cannot_replace_the_last_good_copy() {
+        let data_dir = tempfile::tempdir().unwrap();
+        cache::write(data_dir.path(), "oisd-basic", "||ads.example.com^\n")
+            .await
+            .unwrap();
+        let url = local_server(binary_body(150)).await;
+        let config = config_with(vec![list("oisd-basic", &url)]);
+        let manager = ListManager::new(&config, data_dir.path().to_path_buf()).unwrap();
+        manager.boot().await;
+        let rules_before = manager.matcher().len();
+        let compiles_before = manager.compile_count();
+
+        let err = manager.refresh_list("oisd-basic").await.unwrap_err();
+
+        let LifecycleError::RejectedContent(reason) = &err else {
+            panic!("expected a rejected body, got {err:?}");
+        };
+        assert!(
+            reason.starts_with("misparse:"),
+            "the misparse rule must be the one that fired; got: {reason}"
+        );
+        assert_eq!(
+            cache::read(data_dir.path(), "oisd-basic").await.as_deref(),
+            Some("||ads.example.com^\n"),
+            "the last-good /data copy must be byte-identical"
+        );
+        assert_eq!(manager.compile_count(), compiles_before);
+        assert_eq!(manager.matcher().len(), rules_before);
+        assert!(matches!(
+            manager.matcher().lookup("ads.example.com", &QueryType::A),
+            MatchDecision::Block(_)
+        ));
+        let status = manager.status("oisd-basic").unwrap();
+        let RefreshResult::Rejected(recorded) = &status.last_result else {
+            panic!("expected a rejected refresh, got {:?}", status.last_result);
+        };
+        assert_eq!(recorded, reason);
+    }
+
+    #[tokio::test]
+    async fn a_200_ok_html_error_page_is_refused_as_a_document() {
+        let data_dir = tempfile::tempdir().unwrap();
+        cache::write(data_dir.path(), "oisd-basic", &domain_rules(2000))
+            .await
+            .unwrap();
+        let url = local_server(html_error_page(150)).await;
+        let config = config_with(vec![list("oisd-basic", &url)]);
+        let manager = ListManager::new(&config, data_dir.path().to_path_buf()).unwrap();
+        manager.boot().await;
+        let rules_before = manager.matcher().len();
+        let compiles_before = manager.compile_count();
+
+        let err = manager.refresh_list("oisd-basic").await.unwrap_err();
+
+        let LifecycleError::RejectedContent(reason) = &err else {
+            panic!("expected a rejected body, got {err:?}");
+        };
+        assert_eq!(
+            reason, "html document",
+            "an error page parses as adblock URL patterns with no parse errors, \
+             so only the document sniff names it for what it is; got: {reason}"
+        );
+        assert_eq!(
+            cache::read(data_dir.path(), "oisd-basic").await.as_deref(),
+            Some(domain_rules(2000).as_str()),
+            "the last-good /data copy must be byte-identical"
+        );
+        assert_eq!(manager.compile_count(), compiles_before);
+        assert_eq!(manager.matcher().len(), rules_before);
+        assert!(matches!(
+            manager.matcher().lookup("a1999.example.com", &QueryType::A),
+            MatchDecision::Block(_)
+        ));
+    }
+
+    #[tokio::test]
+    async fn an_html_document_is_refused_without_any_baseline() {
+        let data_dir = tempfile::tempdir().unwrap();
+        let url = local_server(html_error_page(50)).await;
+        let config = config_with(vec![list("oisd-basic", &url)]);
+        let manager = ListManager::new(&config, data_dir.path().to_path_buf()).unwrap();
+        manager.boot().await;
+        assert_eq!(manager.status("oisd-basic").unwrap().compiled, None);
+
+        let err = manager.refresh_list("oisd-basic").await.unwrap_err();
+
+        assert!(
+            matches!(&err, LifecycleError::RejectedContent(reason) if reason == "html document"),
+            "a captive portal on a first fetch must not become a URL-only baseline; got {err:?}"
+        );
+        assert!(cache::read(data_dir.path(), "oisd-basic").await.is_none());
+    }
+
+    #[test]
+    fn the_document_sniff_reads_only_the_leading_markup() {
+        assert!(looks_like_html_document("<!DOCTYPE html>\n<html>"));
+        assert!(looks_like_html_document("\u{feff}\n  <HTML lang=\"en\">"));
+        assert!(!looks_like_html_document(
+            "! Title: EasyList\n||ads.example^\n"
+        ));
+        assert!(!looks_like_html_document("# hosts\n0.0.0.0 ads.example\n"));
+        assert!(!looks_like_html_document("ads.example.com\n<html>\n"));
+        assert!(!looks_like_html_document(""));
+    }
+
+    #[tokio::test]
+    async fn a_refresh_in_flight_across_delete_and_re_add_never_commits_or_stamps() {
+        let data_dir = tempfile::tempdir().unwrap();
+        cache::write(data_dir.path(), "l0", &domain_rules(90))
+            .await
+            .unwrap();
+        let gate = Arc::new(tokio::sync::Notify::new());
+        let url = gated_local_server(domain_rules(2000), Arc::clone(&gate)).await;
+        let config = config_with(vec![list("l0", &url)]);
+        let manager = Arc::new(ListManager::new(&config, data_dir.path().to_path_buf()).unwrap());
+        manager.boot().await;
+
+        let refresh = tokio::spawn({
+            let manager = Arc::clone(&manager);
+            async move { manager.refresh_list("l0").await }
+        });
+        for _ in 0..10 {
+            tokio::task::yield_now().await;
+        }
+        manager.remove_list("l0").await.unwrap();
+        assert!(manager.status("l0").is_none());
+        gate.notify_one();
+
+        let err = refresh.await.unwrap().unwrap_err();
+        assert!(
+            matches!(err, LifecycleError::ListRemoved(_)),
+            "a stale fetch must not commit over a DELETE; got {err:?}"
+        );
+        assert!(
+            cache::read(data_dir.path(), "l0").await.is_none(),
+            "a 204 means the cached copy is gone and stays gone"
+        );
+        assert!(
+            manager.status("l0").is_none(),
+            "a stale refresh must not resurrect the status of a deleted list"
+        );
+
+        manager.add_list(&list("l0", &url)).unwrap();
+        assert_eq!(manager.status("l0").unwrap().compiled, None);
+        assert_eq!(
+            manager.status("l0").unwrap().last_result,
+            RefreshResult::NeverAttempted
+        );
+    }
+
+    #[tokio::test]
+    async fn an_empty_body_cannot_collapse_a_large_list() {
+        let data_dir = tempfile::tempdir().unwrap();
+        cache::write(data_dir.path(), "oisd-basic", &domain_rules(1200))
+            .await
+            .unwrap();
+        let url = local_server("").await;
+        let config = config_with(vec![list("oisd-basic", &url)]);
+        let manager = ListManager::new(&config, data_dir.path().to_path_buf()).unwrap();
+        manager.boot().await;
+        let rules_before = manager.matcher().len();
+        let compiles_before = manager.compile_count();
+
+        let err = manager.refresh_list("oisd-basic").await.unwrap_err();
+
+        let LifecycleError::RejectedContent(reason) = &err else {
+            panic!("expected a rejected body, got {err:?}");
+        };
+        assert!(
+            reason.starts_with("collapse:"),
+            "an empty body has no parse errors, so the collapse rule is the \
+             only one that can catch it; got: {reason}"
+        );
+        assert_eq!(manager.matcher().len(), rules_before);
+        assert_eq!(manager.compile_count(), compiles_before);
+        assert_eq!(
+            cache::read(data_dir.path(), "oisd-basic").await.as_deref(),
+            Some(domain_rules(1200).as_str()),
+            "the last-good /data copy must be byte-identical"
+        );
+    }
+
+    #[tokio::test]
+    async fn the_collapse_gate_pins_its_boundary_at_a_tenth_of_the_baseline() {
+        for (fetched, accepted) in [(99usize, false), (100usize, true), (101usize, true)] {
+            let data_dir = tempfile::tempdir().unwrap();
+            cache::write(data_dir.path(), "oisd-basic", &domain_rules(1000))
+                .await
+                .unwrap();
+            let url = local_server(domain_rules(fetched)).await;
+            let config = config_with(vec![list("oisd-basic", &url)]);
+            let manager = ListManager::new(&config, data_dir.path().to_path_buf()).unwrap();
+            manager.boot().await;
+
+            let outcome = manager.refresh_list("oisd-basic").await;
+
+            assert_eq!(
+                outcome.is_ok(),
+                accepted,
+                "{fetched} rules against a baseline of 1000 must be \
+                 {}; got {outcome:?}",
+                if accepted { "accepted" } else { "rejected" }
+            );
+            if let Err(err) = &outcome {
+                let LifecycleError::RejectedContent(reason) = err else {
+                    panic!("expected a rejected body, got {err:?}");
+                };
+                assert_eq!(
+                    reason,
+                    &format!("collapse: {fetched} rules vs baseline 1000"),
+                    "the ratio rule, not the zero-DNS rule, must be the one that fired"
+                );
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn a_baseline_compiled_during_the_fetch_still_arms_the_gate() {
+        let data_dir = tempfile::tempdir().unwrap();
+        cache::write(data_dir.path(), "oisd-basic", &domain_rules(90))
+            .await
+            .unwrap();
+        let gate = Arc::new(tokio::sync::Notify::new());
+        let url = gated_local_server(url_only_garbage(150), Arc::clone(&gate)).await;
+        let config = config_with(vec![list("oisd-basic", &url)]);
+        let manager = Arc::new(ListManager::new(&config, data_dir.path().to_path_buf()).unwrap());
+        assert_eq!(manager.status("oisd-basic").unwrap().compiled, None);
+
+        let refresh = tokio::spawn({
+            let manager = Arc::clone(&manager);
+            async move { manager.refresh_list("oisd-basic").await }
+        });
+        for _ in 0..10 {
+            tokio::task::yield_now().await;
+        }
+        manager.recompile().await;
+        assert_eq!(
+            manager
+                .status("oisd-basic")
+                .unwrap()
+                .compiled
+                .map(|stats| stats.active),
+            Some(90)
+        );
+        gate.notify_one();
+
+        let err = refresh.await.unwrap().unwrap_err();
+        assert!(
+            matches!(err, LifecycleError::RejectedContent(_)),
+            "a baseline that appears while the fetch is in flight must still \
+             gate the body; got {err:?}"
+        );
+        assert_eq!(
+            cache::read(data_dir.path(), "oisd-basic").await.as_deref(),
+            Some(domain_rules(90).as_str())
+        );
+    }
+
+    #[tokio::test]
+    async fn a_first_fetch_with_no_cached_copy_is_guarded_only_by_the_misparse_rule() {
+        let data_dir = tempfile::tempdir().unwrap();
+        let url = local_server(url_only_garbage(50)).await;
+        let config = config_with(vec![list("oisd-basic", &url)]);
+        let manager = ListManager::new(&config, data_dir.path().to_path_buf()).unwrap();
+        manager.boot().await;
+
+        manager
+            .refresh_list("oisd-basic")
+            .await
+            .expect("no last-good copy exists, so there is nothing to protect");
+
+        assert!(
+            cache::read(data_dir.path(), "oisd-basic").await.is_some(),
+            "a first fetch under the misparse floor still commits"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_body_with_no_dns_rules_cannot_replace_a_small_dns_list() {
+        let data_dir = tempfile::tempdir().unwrap();
+        cache::write(data_dir.path(), "oisd-basic", &domain_rules(90))
+            .await
+            .unwrap();
+        let url = local_server(url_only_garbage(150)).await;
+        let config = config_with(vec![list("oisd-basic", &url)]);
+        let manager = ListManager::new(&config, data_dir.path().to_path_buf()).unwrap();
+        manager.boot().await;
+        let compiles_before = manager.compile_count();
+
+        let err = manager.refresh_list("oisd-basic").await.unwrap_err();
+
+        let LifecycleError::RejectedContent(reason) = &err else {
+            panic!("expected a rejected body, got {err:?}");
+        };
+        assert!(
+            reason.starts_with("collapse: 0 dns rules"),
+            "a DNS list that comes back with zero DNS rules is rejected at any \
+             size, not only past the 1000-rule floor; got: {reason}"
+        );
+        assert_eq!(manager.compile_count(), compiles_before);
+        assert_eq!(
+            cache::read(data_dir.path(), "oisd-basic").await.as_deref(),
+            Some(domain_rules(90).as_str())
+        );
+        assert!(matches!(
+            manager.matcher().lookup("a89.example.com", &QueryType::A),
+            MatchDecision::Block(_)
+        ));
+    }
+
+    #[tokio::test]
+    async fn a_poisoned_url_only_baseline_does_not_lock_out_the_real_list() {
+        let data_dir = tempfile::tempdir().unwrap();
+        let src = data_dir.path().join("srcs");
+        std::fs::create_dir_all(&src).unwrap();
+        std::fs::write(src.join("l0.txt"), url_only_garbage(1200)).unwrap();
+        let config = config_with(vec![list("l0", "srcs/l0.txt")]);
+        let manager = ListManager::new(&config, data_dir.path().to_path_buf()).unwrap();
+        manager.boot().await;
+
+        manager
+            .refresh_list("l0")
+            .await
+            .expect("nothing to protect on a first fetch");
+        let poisoned = manager.status("l0").unwrap().compiled.unwrap();
+        assert_eq!(poisoned.active, 0);
+        assert!(poisoned.url >= COLLAPSE_MIN_BASELINE);
+
+        std::fs::write(src.join("l0.txt"), domain_rules(90)).unwrap();
+        manager
+            .refresh_list("l0")
+            .await
+            .expect("a URL-only baseline must not arm the collapse rule");
+
+        assert!(matches!(
+            manager.matcher().lookup("a89.example.com", &QueryType::A),
+            MatchDecision::Block(_)
+        ));
+    }
+
+    #[tokio::test]
+    async fn delete_and_re_add_is_the_way_out_of_a_rejected_baseline() {
+        let data_dir = tempfile::tempdir().unwrap();
+        let src = data_dir.path().join("srcs");
+        std::fs::create_dir_all(&src).unwrap();
+        std::fs::write(src.join("l0.txt"), url_only_garbage(150)).unwrap();
+        cache::write(data_dir.path(), "l0", &domain_rules(90))
+            .await
+            .unwrap();
+        let config = config_with(vec![list("l0", "srcs/l0.txt")]);
+        let manager = ListManager::new(&config, data_dir.path().to_path_buf()).unwrap();
+        manager.boot().await;
+
+        let err = manager.refresh_list("l0").await.unwrap_err();
+        assert!(matches!(err, LifecycleError::RejectedContent(_)));
+        let err = manager.refresh_list("l0").await.unwrap_err();
+        assert!(
+            matches!(err, LifecycleError::RejectedContent(_)),
+            "a restructured source stays rejected on every attempt; got {err:?}"
+        );
+
+        manager.remove_list("l0").await.unwrap();
+        assert!(cache::read(data_dir.path(), "l0").await.is_none());
+        manager.add_list(&list("l0", "srcs/l0.txt")).unwrap();
+        assert_eq!(manager.status("l0").unwrap().compiled, None);
+
+        let stats = manager
+            .refresh_list("l0")
+            .await
+            .expect("a re-added list has no baseline, so the new shape commits");
+
+        assert_eq!(stats.active, 0);
+        assert_eq!(
+            cache::read(data_dir.path(), "l0").await.as_deref(),
+            Some(url_only_garbage(150).as_str())
+        );
+        assert!(matches!(
+            manager.matcher().lookup("a89.example.com", &QueryType::A),
+            MatchDecision::Pass
+        ));
+    }
+
+    #[tokio::test]
+    async fn a_delete_that_cannot_remove_the_cached_copy_fails_and_keeps_the_list() {
+        let data_dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(data_dir.path().join("lists").join("l0.raw")).unwrap();
+        let config = config_with(vec![list("l0", "srcs/l0.txt")]);
+        let manager = ListManager::new(&config, data_dir.path().to_path_buf()).unwrap();
+        manager.boot().await;
+
+        let err = manager.remove_list("l0").await.unwrap_err();
+
+        assert!(
+            matches!(err, LifecycleError::CacheRemove { .. }),
+            "a copy that survives on disk would re-arm the baseline on re-add; got {err:?}"
+        );
+        assert_eq!(manager.lists().len(), 1);
+        assert!(manager.status("l0").is_some());
+    }
+
+    #[tokio::test]
+    async fn a_rejection_holds_across_a_restart() {
+        let data_dir = tempfile::tempdir().unwrap();
+        let src = data_dir.path().join("srcs");
+        std::fs::create_dir_all(&src).unwrap();
+        std::fs::write(src.join("l0.txt"), url_only_garbage(150)).unwrap();
+        cache::write(data_dir.path(), "l0", &domain_rules(90))
+            .await
+            .unwrap();
+        let config = config_with(vec![list("l0", "srcs/l0.txt")]);
+
+        let first = ListManager::new(&config, data_dir.path().to_path_buf()).unwrap();
+        first.boot().await;
+        assert!(matches!(
+            first.refresh_list("l0").await,
+            Err(LifecycleError::RejectedContent(_))
+        ));
+        drop(first);
+
+        let restarted = ListManager::new(&config, data_dir.path().to_path_buf()).unwrap();
+        restarted.boot().await;
+        let err = restarted.refresh_list("l0").await.unwrap_err();
+
+        assert!(
+            matches!(err, LifecycleError::RejectedContent(_)),
+            "the boot compile from the cached copy re-arms the baseline; got {err:?}"
+        );
+        assert_eq!(
+            cache::read(data_dir.path(), "l0").await.as_deref(),
+            Some(domain_rules(90).as_str())
+        );
+        assert!(matches!(
+            restarted.matcher().lookup("a89.example.com", &QueryType::A),
+            MatchDecision::Block(_)
+        ));
+    }
+
+    #[tokio::test]
+    async fn a_scheduled_refresh_records_a_rejection_without_recompiling() {
+        let data_dir = tempfile::tempdir().unwrap();
+        let src = data_dir.path().join("srcs");
+        std::fs::create_dir_all(&src).unwrap();
+        std::fs::write(src.join("l0.txt"), url_only_garbage(150)).unwrap();
+        cache::write(data_dir.path(), "l0", &domain_rules(90))
+            .await
+            .unwrap();
+        cache::set_modified(
+            data_dir.path(),
+            "l0",
+            SystemTime::now() - Duration::from_secs(48 * 3600),
+        );
+        let config = config_with(vec![list("l0", "srcs/l0.txt")]);
+        let manager = ListManager::new(&config, data_dir.path().to_path_buf()).unwrap();
+        manager.boot().await;
+        let compiles_before = manager.compile_count();
+
+        manager.refresh_due_lists().await;
+
+        assert_eq!(manager.compile_count(), compiles_before);
+        let status = manager.status("l0").unwrap();
+        assert!(
+            matches!(status.last_result, RefreshResult::Rejected(_)),
+            "got {:?}",
+            status.last_result
+        );
+        assert_eq!(
+            status.compiled.as_ref().map(|stats| stats.active),
+            Some(90),
+            "a rejection must leave the baseline in place"
+        );
+        assert_eq!(
+            cache::read(data_dir.path(), "l0").await.as_deref(),
+            Some(domain_rules(90).as_str())
+        );
+        assert!(matches!(
+            manager.matcher().lookup("a89.example.com", &QueryType::A),
+            MatchDecision::Block(_)
+        ));
+    }
+
+    #[tokio::test]
+    async fn a_refresh_all_reports_a_rejected_list_and_keeps_serving_its_copy() {
+        let data_dir = tempfile::tempdir().unwrap();
+        let mut configured = local_lists(data_dir.path(), 1);
+        std::fs::write(
+            data_dir.path().join("srcs").join("bad.txt"),
+            url_only_garbage(150),
+        )
+        .unwrap();
+        configured.push(list("bad", "srcs/bad.txt"));
+        cache::write(data_dir.path(), "bad", &domain_rules(90))
+            .await
+            .unwrap();
+        let manager =
+            ListManager::new(&config_with(configured), data_dir.path().to_path_buf()).unwrap();
+        manager.boot().await;
+        let compiles_before = manager.compile_count();
+
+        let outcomes = manager.refresh_all().await;
+
+        let bad = outcomes.iter().find(|o| o.id.as_ref() == "bad").unwrap();
+        assert!(
+            matches!(bad.result, RefreshResult::Rejected(_)),
+            "got {:?}",
+            bad.result
+        );
+        let good = outcomes.iter().find(|o| o.id.as_ref() == "l0").unwrap();
+        assert!(matches!(good.result, RefreshResult::Ok(_)));
+        assert_eq!(manager.compile_count() - compiles_before, 1);
+        assert!(matches!(
+            manager.status("bad").unwrap().last_result,
+            RefreshResult::Rejected(_)
+        ));
+        assert_eq!(
+            cache::read(data_dir.path(), "bad").await.as_deref(),
+            Some(domain_rules(90).as_str())
+        );
+        assert!(matches!(
+            manager.matcher().lookup("a89.example.com", &QueryType::A),
+            MatchDecision::Block(_)
+        ));
+        assert!(matches!(
+            manager.matcher().lookup("ads0.example.com", &QueryType::A),
+            MatchDecision::Block(_)
+        ));
+    }
+
+    #[tokio::test]
+    async fn a_legitimate_update_still_commits_and_compiles() {
+        let data_dir = tempfile::tempdir().unwrap();
+        cache::write(data_dir.path(), "oisd-basic", &domain_rules(1000))
+            .await
+            .unwrap();
+        let url = local_server(domain_rules(1005)).await;
+        let config = config_with(vec![list("oisd-basic", &url)]);
+        let manager = ListManager::new(&config, data_dir.path().to_path_buf()).unwrap();
+        manager.boot().await;
+        let compiles_before = manager.compile_count();
+
+        let stats = manager.refresh_list("oisd-basic").await.unwrap();
+
+        assert_eq!(stats.active, 1005);
+        assert_eq!(manager.compile_count() - compiles_before, 1);
+        assert!(matches!(
+            manager.matcher().lookup("a1004.example.com", &QueryType::A),
+            MatchDecision::Block(_)
+        ));
+        assert!(matches!(
+            manager.status("oisd-basic").unwrap().last_result,
+            RefreshResult::Ok(_)
+        ));
     }
 
     /// Sets up `count` lists backed by local files, so a scheduler pass needs no
@@ -1957,6 +2620,10 @@ mod tests {
             ListManager::new(&config_with(vec![]), data_dir.path().to_path_buf()).unwrap();
         let err = manager.refresh_list("does-not-exist").await.unwrap_err();
         assert!(matches!(err, LifecycleError::UnknownList(_)));
+        assert!(
+            manager.status("does-not-exist").is_none(),
+            "a failed attempt on an unknown id must not conjure a status for it"
+        );
     }
 
     #[tokio::test]
@@ -2055,7 +2722,7 @@ mod tests {
         let data_dir = tempfile::tempdir().unwrap();
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let port = listener.local_addr().unwrap().port();
-        tokio::spawn(serve_once(listener, "||ads.invalid^\n"));
+        tokio::spawn(serve_once(listener, "||ads.invalid^\n".to_string(), None));
 
         // `.invalid` is reserved as never-resolvable (RFC 2606), so the system
         // resolver cannot reach this — only LoopbackResolver can.

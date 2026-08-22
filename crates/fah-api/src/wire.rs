@@ -643,7 +643,6 @@ pub struct ListResponse {
     pub refresh_hours: u32,
     #[serde(serialize_with = "timestamp::serialize_option")]
     pub last_refresh: Option<std::time::SystemTime>,
-    /// `ok` | `failed` | `never`.
     pub last_status: &'static str,
     pub rules_total: usize,
     pub rules_active_dns: usize,
@@ -656,6 +655,9 @@ pub struct ListResponse {
     /// Rules no tier answers yet: cosmetic (Phase 4), `$client` (p2-05), and
     /// patterns no supported syntax expresses.
     pub rules_inactive: usize,
+    pub parse_errors: u32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub last_error: Option<String>,
 }
 
 /// `POST /api/v1/lists/refresh` — one pass over every list. Best-effort:
@@ -672,13 +674,10 @@ pub struct RefreshAllResponse {
 #[derive(Debug, Serialize)]
 pub struct ListRefreshResult {
     pub id: String,
-    /// `ok` | `failed`.
     pub status: &'static str,
     /// Present on success: the list's active DNS rules after this refresh.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub rules_active_dns: Option<usize>,
-    /// Present on failure: the fetch error chain (the only failure mode is I/O,
-    /// never parsing — RULE_ENGINE.md).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
 }

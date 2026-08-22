@@ -65,7 +65,8 @@ judged once a request exists), and `||ads.example.com^*/pixel.gif` is a request
 rule because it names a path.
 
 Unparseable lines are skipped and counted (`parse_errors` per list) — one bad
-line never rejects a list.
+line never rejects a list. A list-wide misread does: see the content gate under
+§List lifecycle.
 
 ## Verdicts
 
@@ -309,6 +310,30 @@ cache raw copy in /data
   download), and so do user rules, which are authored rather than downloaded.
 - Failure policy: a failed download or a list that fails validation **never**
   degrades protection — the previous compiled set keeps serving.
+- Content gate (`p2.5-02`): a fetched body is parsed **before** it can replace
+  the cached copy, and is **rejected** — `/data` copy untouched, no compile,
+  `last_status: "rejected"` with the reason in `last_error` (API.md) — when
+  any rule fires:
+
+  | Rule | Fires when | Armed |
+  | ---- | ---------- | ----- |
+  | document | the first non-blank text is `<!doctype` or `<html` (any case) | always |
+  | misparse | 100 or more parse errors **and** more errors than rules | always |
+  | zero-DNS | the body has no DNS rule | serving copy has DNS rules |
+  | collapse | DNS + URL rules under a tenth of the serving copy's | serving copy has DNS rules and 1000 or more DNS + URL rules |
+
+  The baseline is what the list contributes to the serving ruleset, restored
+  by the boot compile from the cached copy, so a rejection holds across
+  restarts. A list with no cached copy has no baseline and is guarded by the
+  document and misparse rules alone. A source that legitimately restructures
+  below those lines is recovered by `DELETE` + re-add, never by waiting;
+  `DELETE` removes the cached copy first and fails, list kept, if it cannot,
+  and a refresh in flight for the deleted id is discarded, never committed.
+  A URL-only serving copy (no DNS rules) is guarded by the document and
+  misparse rules only: a rule-count floor on URL patterns would let a
+  poisoned first fetch lock the real list out. The validation
+  parse is a second full parse of the body, on the blocking pool, under the
+  list's refresh lock only.
 - The hot path never takes a lock; readers follow the current ruleset pointer.
 
 ## Sources

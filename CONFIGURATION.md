@@ -276,7 +276,10 @@ runtime API.
 
 Editing `[[rules.lists]]` here by hand still works; it takes effect at the next
 start, like any boot value. Arrays replace wholesale rather than merging, which
-is another reason not to hand-edit a set the API is also maintaining.
+is another reason not to hand-edit a set the API is also maintaining. The
+cached copy under `/data/lists/` and the content-gate baseline it restores
+belong to the `id`, not the `url` — point a new source at a new id, or
+`DELETE` + re-add (API.md `GET /api/v1/lists`).
 
 ## Per-query data
 

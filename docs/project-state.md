@@ -4,22 +4,21 @@ Where the work is right now. **Rewrite this file — never append.** History
 belongs in `git log`, `docs/code-review/` and the phase tables; this file is only
 what is true today.
 
-**Last updated:** 2026-08-09
+**Last updated:** 2026-08-22
 
 ## Now
 
 | | |
 | --- | --- |
-| Branch | `main`, pushed to **origin and backup** |
-| Tree | clean |
-| Tests | green — `fmt`/`clippy`/`test`, 886 across 41 binaries |
+| Branch | `main` at `8868fec`, pushed to **origin and backup** |
+| Tree | dirty — `p2.5-02` code + docs, reviewed, uncommitted |
+| Tests | green — `fmt`/`clippy`/`test`, 941 across 31 binaries |
 | Deployed | **0.2.14** on the RB5009 since 2026-08-09T10:33Z — **does not contain the p1-01 fixes below** |
-| Phase | 2 (`plan/wip/phase2`) — **every task DONE** |
-| **Next** | deploy the p1-01 parser fixes and verify them on-device |
+| Phase | 2.5 (`plan/wip/phase2.5-hardening`) — `p2.5-01` DONE, `p2.5-02` code complete ([review](code-review/phase2.5/p2.5-02-list-refresh-integrity-review.md)), `p2.5-03` … `p2.5-09` WAITING |
+| **Next** | commit `p2.5-02` to both remotes and mark it DONE; the p1-01 on-device verification below is still open |
 
 `feat/phase2-http-pipeline` is fully merged into `main` and not deleted.
-
-**Every phase-2 task is DONE.** The `wip` → `closed` move is the owner's to make.
+Phase 2 is closed (`plan/closed/phase2`).
 
 ## Phase 2 status
 
@@ -170,10 +169,6 @@ not merely address churn.
   than fix.
 - A comment in `crates/fah-rules/src/lifecycle/mod.rs` narrates what the
   scheduler "used to emit", against root CLAUDE.md rule 21.
-- **`parse_errors` is counted per list and exposed nowhere.** `ListEntryView`
-  and `/api/v1/lists` omit it, and `looks_misparsed` only logs when errors
-  outnumber rules — so p1-01's 13 → 1 improvement cannot be confirmed on-device
-  without adding the field.
 - **`tui-monitor/config.toml` is tracked and holds a bearer token**, while
   `.gitignore` excludes `.vscode/` for exactly that reason.
 - **A name makes a client immune to eviction** — `ClientRegistry` drops the

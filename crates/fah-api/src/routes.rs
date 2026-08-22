@@ -408,21 +408,16 @@ fn list_response(
     // failed to parse — the signature of a format misdetection. It reports as
     // its own status because `ok` hid exactly this: a list yielding 83 rules
     // and 69,514 errors used to be indistinguishable from a healthy one.
-    let last_status = match &status.last_result {
-        RefreshResult::Ok(stats) if stats.looks_misparsed() => "degraded",
-        RefreshResult::Ok(_) => "ok",
-        RefreshResult::Failed(_) => "failed",
-        RefreshResult::NeverAttempted => "never",
-    };
+    let last_status = status_label(&status.last_result);
     // Counts describe the ruleset that is *serving*, not the last refresh
     // attempt. A failed refresh keeps the previous ruleset live
     // (RULE_ENGINE.md failure policy), so `last_status: "failed"` alongside a
     // non-zero `rules_total` is the correct — and operationally important —
     // report: the fetch broke, protection did not.
-    let (active, url_active, inactive) = status
-        .compiled
-        .as_ref()
-        .map_or((0, 0, 0), |stats| (stats.active, stats.url, stats.inactive));
+    let (active, url_active, inactive, parse_errors) =
+        status.compiled.as_ref().map_or((0, 0, 0, 0), |stats| {
+            (stats.active, stats.url, stats.inactive, stats.parse_errors)
+        });
     ListResponse {
         id: entry.id,
         url: entry.url,
@@ -435,6 +430,18 @@ fn list_response(
         rules_active_dns: active,
         rules_active_url: url_active,
         rules_inactive: inactive,
+        parse_errors,
+        last_error: status.last_result.failure_message(),
+    }
+}
+
+fn status_label(result: &RefreshResult) -> &'static str {
+    match result {
+        RefreshResult::Ok(stats) if stats.looks_misparsed() => "degraded",
+        RefreshResult::Ok(_) => "ok",
+        RefreshResult::Failed(_) => "failed",
+        RefreshResult::Rejected(_) => "rejected",
+        RefreshResult::NeverAttempted => "never",
     }
 }
 
@@ -701,13 +708,14 @@ async fn refresh_list(
     let events = state.events.clone();
     tokio::spawn(async move {
         let status = match rules.refresh_list(&id).await {
-            Ok(_) => "ok",
+            Ok(stats) => status_label(&RefreshResult::Ok(stats)),
             Err(err) => {
                 // A manual refresh is what an operator reaches for when a list
                 // is failing, so this line has to name the actual cause.
-                let error = fah_common::error_chain(&err);
+                let result = RefreshResult::from_error(&err);
+                let error = result.failure_message().unwrap_or_default();
                 tracing::warn!(list = %id, %error, "manual list refresh failed");
-                "failed"
+                status_label(&result)
             }
         };
         events.publish(Event::ListRefreshed { id, status });
@@ -732,30 +740,28 @@ async fn refresh_all_lists(State(state): State<Arc<AppState>>) -> Json<RefreshAl
         .into_iter()
         .map(|outcome| {
             let id = outcome.id.to_string();
+            let status = status_label(&outcome.result);
+            state.events.publish(Event::ListRefreshed {
+                id: id.clone(),
+                status,
+            });
             match outcome.result {
-                Ok(stats) => {
+                RefreshResult::Ok(stats) => {
                     refreshed += 1;
-                    state.events.publish(Event::ListRefreshed {
-                        id: id.clone(),
-                        status: "ok",
-                    });
                     ListRefreshResult {
                         id,
-                        status: "ok",
+                        status,
                         rules_active_dns: Some(stats.active),
                         error: None,
                     }
                 }
-                Err(error) => {
+                result => {
                     failed += 1;
+                    let error = result.failure_message().unwrap_or_default();
                     tracing::warn!(list = %id, %error, "list refresh failed in refresh-all");
-                    state.events.publish(Event::ListRefreshed {
-                        id: id.clone(),
-                        status: "failed",
-                    });
                     ListRefreshResult {
                         id,
-                        status: "failed",
+                        status,
                         rules_active_dns: None,
                         error: Some(error),
                     }
@@ -1447,6 +1453,43 @@ mod tests {
         assert_eq!(response.rules_active_url, 9_181);
         assert_eq!(response.rules_inactive, 15_501);
         assert_eq!(response.format, "auto");
+        assert_eq!(response.parse_errors, 0);
+        assert_eq!(response.last_error, None);
+    }
+
+    #[test]
+    fn a_rejected_body_reports_its_reason_and_the_rules_that_keep_serving() {
+        let entry = fah_rules::ListEntryView {
+            id: "hosts".to_string(),
+            url: "https://example.org/hosts".to_string(),
+            enabled: true,
+            refresh_hours: None,
+        };
+        let status = ListStatus {
+            last_refreshed: None,
+            last_result: RefreshResult::Rejected("misparse: 69514 errors, 83 rules".to_string()),
+            compiled: Some(fah_rules::RefreshStats {
+                active: 55_866,
+                url: 0,
+                inactive: 0,
+                parse_errors: 7,
+            }),
+        };
+
+        let response = list_response(entry, &status, 24);
+        assert_eq!(response.last_status, "rejected");
+        assert_eq!(
+            response.last_error.as_deref(),
+            Some("rejected: misparse: 69514 errors, 83 rules")
+        );
+        assert_eq!(
+            response.parse_errors, 7,
+            "parse_errors describes the copy that is serving, not the refused body"
+        );
+        assert_eq!(
+            response.rules_total, 55_866,
+            "a refused body leaves the last-good ruleset in place"
+        );
     }
 
     #[test]
@@ -1476,6 +1519,11 @@ mod tests {
             response.rules_total, 55_866,
             "but those rules are still blocking — reporting 0 would say the \
              list is not protecting anything, which is false"
+        );
+        assert_eq!(
+            response.last_error.as_deref(),
+            Some("dns error: EAI_AGAIN"),
+            "the cause has to reach the API, not only the log"
         );
     }
 

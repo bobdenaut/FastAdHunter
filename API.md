@@ -433,7 +433,8 @@ to RSS is explainable — not an allocator audit.
       "rules_total": 223182,
       "rules_active_dns": 198500,
       "rules_active_url": 9181,
-      "rules_inactive": 15501
+      "rules_inactive": 15501,
+      "parse_errors": 0
     }
   ],
   "compiled_rules": 512883,
@@ -476,8 +477,8 @@ sum(items[].rules_active_dns) + user_rules_active - compiled_rules
 A single user rule that duplicates a list rule is enough to make the
 `items`-only arithmetic look off by one.
 
-`last_status` (`ok` | `degraded` | `failed` | `never`) reports the last
-*refresh attempt*;
+`last_status` (`ok` | `degraded` | `failed` | `rejected` | `never`) reports the
+last *refresh attempt*;
 the `rules_*` counts report what the list contributes to the ruleset that is
 **currently serving**. They are deliberately independent: a failed refresh
 leaves the previous ruleset in place (RULE_ENGINE.md §Failure policy), so
@@ -493,6 +494,40 @@ than it should; check its syntax against RULE_ENGINE.md §Supported formats. It
 is reported separately from `ok` because it used to be indistinguishable from
 it: a misdetected EasyList yielding 83 rules and 69,514 errors still read as
 `"last_status": "ok"`.
+
+`rejected` means the fetch (or local file read) succeeded but the body failed
+the content gate (RULE_ENGINE.md §List lifecycle), so the last-good `/data`
+copy and the serving ruleset are untouched — exactly as for a failed fetch. A
+body is refused when it is an HTML document (its first non-blank text is
+`<!doctype` or `<html`, any case), when it looks misparsed (100 or more parse
+errors and more errors than rules), and — only while the serving copy has DNS
+rules — when it has zero DNS rules, or when its DNS + URL rule count is under
+a tenth of a serving copy of 1000 or more rules. A source that legitimately
+restructures below those lines stays `rejected` on every attempt, across
+restarts. **The recovery contract is `DELETE /api/v1/lists/{id}` followed by
+re-adding the list**: a list with no cached copy has no baseline, so its first
+fetch is guarded by the document and misparse rules alone. `DELETE` removes
+the cached copy before it drops the list and answers `500` with the list kept
+if it cannot, so a `204` means the baseline is gone — a refresh still in
+flight for that id cannot write it back. Disabling and re-enabling does not clear it — the
+cached copy is the baseline. The copy and the baseline belong to the `id`, not
+the `url`: pointing an existing id at a new source keeps the old source's copy
+as the baseline, so use a new id or `DELETE` + re-add.
+
+`last_error` is present only when `last_status` is `failed` or `rejected`, and
+absent otherwise. It carries the fetch error chain, or one of
+`rejected: html document`,
+`rejected: misparse: <N> errors, <M> rules`,
+`rejected: collapse: 0 dns rules vs baseline <B>`,
+`rejected: collapse: <M> rules vs baseline <B>`.
+
+`parse_errors`, like the `rules_*` counts, describes the copy that is
+**currently serving** — the unparseable lines the last compile skipped. It
+never describes a refused body: after a rejection it still reports the
+last-good copy, and the refused body's counts exist only inside `last_error`.
+It is `0` when the list contributes nothing — read it beside `enabled` and
+`rules_total`, as for the `rules_*` counts, to tell a clean copy from an absent
+one.
 
 `last_refresh` is `null` until the first successful refresh *in this process*;
 a boot-from-cache is a load, not a refresh.
@@ -525,8 +560,9 @@ added through the API survives a restart. A failed write is a `500` and the
 mutation does not happen — the file and the running engine never disagree.
 
 Downloaded list *content* is cached separately under `/data/lists/`. That cache
-is keyed by list id and only read for lists the config declares, so a `.raw`
-file whose entry has been deleted is inert.
+is keyed by list id and only read for lists the config declares. `DELETE`
+removes the id's `.raw` file, and a refresh in flight for a deleted id is
+discarded rather than committed, so re-declaring the id starts from no copy.
 
 ### `POST /api/v1/lists/{id}/refresh`
 
@@ -542,14 +578,22 @@ outcome — and **best-effort**: a list whose fetch fails is reported and skippe
 
 ```json
 {
-  "refreshed": 14,
-  "failed": 1,
+  "refreshed": 13,
+  "failed": 2,
   "results": [
     { "id": "oisd-basic", "status": "ok", "rules_active_dns": 51234 },
-    { "id": "hagezi-pro", "status": "failed", "error": "fetch https://… failed: …" }
+    { "id": "hagezi-pro", "status": "failed", "error": "fetch https://… failed: …" },
+    { "id": "adaway", "status": "rejected", "error": "rejected: collapse: 0 dns rules vs baseline 6710" }
   ]
 }
 ```
+
+`status` is `ok` | `failed` | `rejected` — the words `GET /api/v1/lists` uses
+for `last_status`, and `error` is the same text it reports as `last_error`.
+`degraded` does not occur on a refresh result, because the content gate refuses
+a misparsed body before it can commit; `never` describes a list, not an
+attempt. `failed` counts every list that did not refresh, rejected ones
+included, so `refreshed + failed` is the number of `results`.
 
 Each list also emits a `list_refreshed` event, the same as a single refresh.
 
@@ -711,6 +755,10 @@ Server → client messages:
 { "type": "config_changed", "data": { "restart_required": false } }
 { "type": "list_refreshed", "data": { "id": "oisd-basic", "status": "ok" } }
 ```
+
+`list_refreshed.status` is `ok` | `failed` | `rejected`, the vocabulary of
+`POST /api/v1/lists/refresh`. The event carries no reason — it is a nudge to
+re-read `GET /api/v1/lists`, where `last_error` has it.
 
 A `query` event carries both pipelines (p2-04), tagged by `kind`:
 
