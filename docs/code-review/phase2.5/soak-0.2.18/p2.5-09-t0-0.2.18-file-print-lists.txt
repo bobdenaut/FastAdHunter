@@ -1,0 +1,38 @@
+Columns: NAME, TYPE, SIZE, LAST-MODIFIED
+ # NAME                              TYPE       SIZE       LAST-MODIFIED      
+ 0 kingston/fastadhunter/data/lists  directory             2026-08-22 18:38:50
+ 1 kingston/fastadhunter/data/lists  .raw file  4151.2KiB  2026-08-21 14:01:51
+   /filter_1.raw                                                              
+ 2 kingston/fastadhunter/data/lists  .raw file  1137.4KiB  2026-08-21 14:01:52
+   /filter_30.raw                                                             
+ 3 kingston/fastadhunter/data/lists  .raw file  4797.2KiB  2026-08-21 14:01:52
+   /filter_48.raw                                                             
+ 4 kingston/fastadhunter/data/lists  .raw file  61.0KiB    2026-08-21 14:01:52
+   /filter_50.raw                                                             
+ 5 kingston/fastadhunter/data/lists  .raw file  57.1KiB    2026-08-21 14:01:52
+   /filter_59.raw                                                             
+ 6 kingston/fastadhunter/data/lists  .raw file  3632.8KiB  2026-08-22 18:37:51
+   /tif-mini.raw                                                              
+ 7 kingston/fastadhunter/data/lists  .raw file  67.5KiB    2026-08-21 14:01:51
+   /filter_3.raw                                                              
+ 8 kingston/fastadhunter/data/lists  .raw file  12         2026-08-10 11:41:15
+   /user-rules.raw                                                            
+ 9 kingston/fastadhunter/data/lists  .raw file  5.9MiB     2026-08-21 14:01:51
+   /big.oisd.nl.raw                                                           
+10 kingston/fastadhunter/data/lists  .raw file  237.4KiB   2026-08-21 14:01:51
+   /filter_2.raw                                                              
+11 kingston/fastadhunter/data/lists  .raw file  24.1KiB    2026-08-21 14:01:53
+   /dyndns.raw                                                                
+12 kingston/fastadhunter/data/lists  .raw file  3404       2026-08-21 14:01:52
+   /filter_43.raw                                                             
+13 kingston/fastadhunter/data/lists  .raw file  339.7KiB   2026-08-21 14:01:53
+   /doh-vpn-proxy-bypass.raw                                                  
+14 kingston/fastadhunter/data/lists  .raw file  13.3KiB    2026-08-21 14:01:52
+   /filter_63.raw                                                             
+15 kingston/fastadhunter/data/lists  .raw file  3591.7KiB  2026-08-22 18:38:50
+   /phishdestroy.raw                                                          
+16 kingston/fastadhunter/data/lists  .raw file  141.4KiB   2026-08-21 14:01:51
+   /filter_11.raw                                                             
+17 kingston/fastadhunter/data/lists  .raw file  3176.9KiB  2026-08-21 14:01:52
+   /filter_18.raw                                                             
+

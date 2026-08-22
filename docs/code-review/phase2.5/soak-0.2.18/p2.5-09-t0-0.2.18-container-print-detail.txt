@@ -1,0 +1,17 @@
+Flags: 
+S - stopped, N - starting, R - running, T - stopping, E - downloading/extracting, D - deleting, F - download/extract failed
+ 0 R ;;; fastadhunter
+     file=kingston/fastadhunter-rosready-0.2.18.tar remote-image="" 
+     check-certificate=yes name="fastadhunter-rosready-0.2.18" 
+     tag="docker.io/library/fastadhunter:0.2.18" os="linux" arch="arm64" 
+     interface=veth1 env="" envlists=fah-env cmd="" entrypoint="" 
+     stop-signal=15-SIGTERM stop-time=10s 
+     root-dir=/kingston/fastadhunter/root layer-dir="" mount="" tmpfs="" 
+     mountlists=fah-config,fah-data shm-size=64.0MiB dns="" hostname="" 
+     domain-name="" workdir="/home/nonroot" logging=yes start-on-boot=yes 
+     auto-restart-interval=none cpu-list="" memory-high=unlimited 
+     memory-current=86.8MiB cpu-usage=0.1 devices="" passed-devs="" 
+     image-id="7140f8d801a77a17cf6559814967f1b836b8d4c3317239bc67c10dc9a27f4ff9
+         " 
+     layers=root hosts="" 
+
