@@ -415,8 +415,17 @@ mod tests {
         response
     }
 
-    /// Serves `count` UDP requests with [`answer_for`].
-    async fn answering_udp_server(count: usize) -> SocketAddr {
+    fn rcode_response(request: &Message, code: ResponseCode) -> Message {
+        let mut response = Message::response(request.metadata.id, OpCode::Query);
+        response.metadata.response_code = code;
+        response.queries = request.queries.clone();
+        response
+    }
+
+    async fn udp_server_with(
+        count: usize,
+        reply: impl Fn(&Message) -> Message + Send + 'static,
+    ) -> SocketAddr {
         let socket = UdpSocket::bind("127.0.0.1:0").await.unwrap();
         let addr = socket.local_addr().unwrap();
         tokio::spawn(async move {
@@ -424,15 +433,60 @@ mod tests {
                 let mut buf = [0u8; 4096];
                 let (len, client) = socket.recv_from(&mut buf).await.unwrap();
                 let request = Message::from_vec(&buf[..len]).unwrap();
-                let reply = answer_for(&request).to_vec().unwrap();
-                socket.send_to(&reply, client).await.unwrap();
+                let bytes = reply(&request).to_vec().unwrap();
+                socket.send_to(&bytes, client).await.unwrap();
             }
         });
         addr
     }
 
-    /// An address nothing listens on (bound then released — the port stays
-    /// free long enough for the test's immediate use).
+    async fn answering_udp_server(count: usize) -> SocketAddr {
+        udp_server_with(count, answer_for).await
+    }
+
+    async fn rcode_udp_server(count: usize, code: ResponseCode) -> SocketAddr {
+        udp_server_with(count, move |request| rcode_response(request, code)).await
+    }
+
+    #[tokio::test]
+    async fn a_decoded_rcode_is_not_an_upstream_failure() {
+        for code in [
+            ResponseCode::ServFail,
+            ResponseCode::NXDomain,
+            ResponseCode::Refused,
+        ] {
+            let primary = rcode_udp_server(1, code).await;
+            let secondary = answering_udp_server(1).await;
+            let pool = pool_of(
+                vec![udp_server_config(primary), udp_server_config(secondary)],
+                2000,
+            );
+            pool.servers[0]
+                .consecutive_failures
+                .store(7, Ordering::Relaxed);
+
+            let response = pool.forward(&a_query()).await.unwrap();
+
+            assert_eq!(response.metadata.response_code, code);
+            assert_eq!(pool.servers[0].attempts.load(Ordering::Relaxed), 1);
+            assert_eq!(
+                pool.servers[0].failures.load(Ordering::Relaxed),
+                0,
+                "{code} must not move the failure counter"
+            );
+            assert_eq!(
+                pool.servers[0].consecutive_failures.load(Ordering::Relaxed),
+                0,
+                "{code} is a successful exchange and resets the streak"
+            );
+            assert_eq!(
+                pool.servers[1].attempts.load(Ordering::Relaxed),
+                0,
+                "{code} must not continue the upstream walk"
+            );
+        }
+    }
+
     async fn dead_addr() -> SocketAddr {
         let socket = UdpSocket::bind("127.0.0.1:0").await.unwrap();
         let addr = socket.local_addr().unwrap();

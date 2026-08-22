@@ -14,6 +14,7 @@ use hickory_net::h2::HttpsClientStream;
 use hickory_net::runtime::TokioRuntimeProvider;
 use hickory_net::tls::tls_exchange;
 use hickory_net::xfer::{DnsExchange, DnsHandle, FirstAnswer};
+use hickory_net::NetError;
 use hickory_proto::op::{DnsRequest, DnsRequestOptions, Message};
 use rustls::pki_types::ServerName;
 use rustls::ClientConfig;
@@ -162,7 +163,7 @@ impl ExchangeConn {
                     self.provider.clone(),
                 )
                 .await
-                .map_err(io::Error::other),
+                .map_err(transport_error),
                 ConnectTarget::Doh {
                     host,
                     port,
@@ -173,7 +174,7 @@ impl ExchangeConn {
                     HttpsClientStream::builder(Arc::clone(&self.tls), self.provider.clone())
                         .exchange(addr, Arc::clone(server_name), Arc::clone(path))
                         .await
-                        .map_err(io::Error::other)
+                        .map_err(transport_error)
                 }
             }
         };
@@ -209,8 +210,38 @@ async fn send_once(
     let response = timeout(attempt_timeout, exchange.send(request).first_answer())
         .await
         .map_err(|_| io::Error::new(io::ErrorKind::TimedOut, "upstream timed out"))?
-        .map_err(io::Error::other)?;
+        .map_err(transport_error)?;
     Ok(response.into_message())
+}
+
+fn transport_error(err: NetError) -> io::Error {
+    io::Error::new(transport_error_kind(&err), fah_common::error_chain(&err))
+}
+
+fn transport_error_kind(err: &NetError) -> io::ErrorKind {
+    match err {
+        NetError::Io(io_err) => return io_err.kind(),
+        NetError::H2(h2_err) => {
+            if let Some(io_err) = h2_err.get_io() {
+                return io_err.kind();
+            }
+        }
+        _ => {}
+    }
+    let mut tls = false;
+    let mut next = std::error::Error::source(err);
+    while let Some(cause) = next {
+        if let Some(io_err) = cause.downcast_ref::<io::Error>() {
+            return io_err.kind();
+        }
+        tls |= cause.is::<rustls::Error>();
+        next = cause.source();
+    }
+    if tls {
+        io::ErrorKind::InvalidData
+    } else {
+        io::ErrorKind::Other
+    }
 }
 
 #[cfg(test)]
@@ -343,29 +374,48 @@ mod tests {
         )
     }
 
-    fn dot_pool_of(servers: &[&DotServer], timeout_ms: u32) -> UpstreamPool {
-        let roots: Vec<&CertificateDer<'static>> =
-            servers.iter().map(|server| &server.cert).collect();
+    fn dot_pool_from(
+        addresses: Vec<String>,
+        tls: Arc<ClientConfig>,
+        timeout_ms: u32,
+    ) -> UpstreamPool {
         UpstreamPool::with_tls_config(
             &DnsUpstreamsConfig {
                 strategy: UpstreamStrategy::Fallback,
                 timeout_ms,
-                servers: servers
-                    .iter()
-                    .map(|server| UpstreamServerConfig {
-                        address: server.addr.to_string(),
+                servers: addresses
+                    .into_iter()
+                    .map(|address| UpstreamServerConfig {
+                        address,
                         protocol: UpstreamProtocol::Dot,
                         hostname: Some("localhost".to_string()),
                     })
                     .collect(),
             },
-            client_tls(&roots),
+            tls,
         )
         .unwrap()
     }
 
+    fn dot_pool_of(servers: &[&DotServer], timeout_ms: u32) -> UpstreamPool {
+        let roots: Vec<&CertificateDer<'static>> =
+            servers.iter().map(|server| &server.cert).collect();
+        let addresses = servers
+            .iter()
+            .map(|server| server.addr.to_string())
+            .collect();
+        dot_pool_from(addresses, client_tls(&roots), timeout_ms)
+    }
+
     fn dot_pool(server: &DotServer) -> UpstreamPool {
         dot_pool_of(&[server], 2000)
+    }
+
+    async fn closed_tcp_addr() -> SocketAddr {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        drop(listener);
+        addr
     }
 
     #[tokio::test]
@@ -413,25 +463,51 @@ mod tests {
         let server = dot_server(None).await;
         // Trust store deliberately empty: the handshake must fail — an
         // encrypted upstream never silently downgrades.
-        let tls = Arc::new(
-            rustls::ClientConfig::builder()
-                .with_root_certificates(rustls::RootCertStore::empty())
-                .with_no_client_auth(),
+        let pool = dot_pool_from(vec![server.addr.to_string()], client_tls(&[]), 1000);
+        let err = pool.forward(&a_query()).await.unwrap_err();
+        assert_eq!(
+            err.kind(),
+            io::ErrorKind::InvalidData,
+            "a rejected certificate is a TLS path failure, not an opaque one"
         );
-        let pool = UpstreamPool::with_tls_config(
-            &DnsUpstreamsConfig {
-                strategy: UpstreamStrategy::Fallback,
-                timeout_ms: 1000,
-                servers: vec![UpstreamServerConfig {
-                    address: server.addr.to_string(),
-                    protocol: UpstreamProtocol::Dot,
-                    hostname: Some("localhost".to_string()),
-                }],
-            },
-            tls,
-        )
-        .unwrap();
-        assert!(pool.forward(&a_query()).await.is_err());
+    }
+
+    #[tokio::test]
+    async fn dot_connect_to_a_dead_port_reports_connection_refused() {
+        let pool = dot_pool_from(
+            vec![closed_tcp_addr().await.to_string()],
+            client_tls(&[]),
+            10_000,
+        );
+
+        let err = pool.forward(&a_query()).await.unwrap_err();
+        assert_eq!(err.kind(), io::ErrorKind::ConnectionRefused, "{err}");
+    }
+
+    #[test]
+    fn transport_error_donates_the_wrapped_io_kind() {
+        for kind in [
+            io::ErrorKind::NetworkUnreachable,
+            io::ErrorKind::HostUnreachable,
+            io::ErrorKind::ConnectionReset,
+        ] {
+            let err = transport_error(NetError::from(io::Error::new(kind, "synthetic")));
+            assert_eq!(err.kind(), kind);
+            assert!(err.to_string().contains("synthetic"));
+        }
+    }
+
+    #[test]
+    fn transport_error_classifies_a_rustls_failure_as_invalid_data() {
+        let err = transport_error(NetError::from(rustls::Error::DecryptError));
+        assert_eq!(err.kind(), io::ErrorKind::InvalidData);
+    }
+
+    #[test]
+    fn transport_error_leaves_a_wire_decode_failure_opaque() {
+        let err = transport_error(NetError::Message("malformed answer"));
+        assert_eq!(err.kind(), io::ErrorKind::Other);
+        assert_eq!(err.to_string(), "malformed answer");
     }
 
     const BLACKHOLE_TIMEOUT_MS: u32 = 400;
