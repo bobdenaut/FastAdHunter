@@ -694,16 +694,14 @@ curl -sk -H "Authorization: Bearer $FAH_KEY" \
 
 ### IPv6 is not covered by the rules above
 
-The rules live in `/ip/firewall/nat`. A client reaching a host over IPv6
-bypasses the proxy entirely — verified: `httpforever.com` connects over
-`2606:4700:…` and is absent from the log, while the same host forced to IPv4 is
-intercepted. The mirror rules live in
-[`docs/code-review/phase2/0.2.10-soak-baseline.md`](code-review/phase2/0.2.10-soak-baseline.md)
-§Known gap, along with the two open points (`to-ports` support on IPv6 dstnat,
-and IPv6-only origins being unreachable from a ULA-only container).
+Covered since p2-14: four rules in `/ipv6/firewall` (address-lists
+`fah-http-skip6`, `fah-lan6` fed by the DHCPv6 delegation, two dstnat accepts,
+then the dst-nat to :8080) mirror the v4 steering above. Rules, evidence and
+the one carried criterion (how far `fah-lan6` lags a live delegation change)
+are in [`p2-14-review.md`](code-review/phase2/p2-14-review.md).
 
-The proxy fetches origins over **IPv4 regardless** — `resolve_host` returns A
-before AAAA deliberately — so this is a steering gap, not an egress one.
+The proxy still fetches origins over **IPv4 regardless** — `resolve_host`
+returns A before AAAA deliberately.
 
 ### Rollback
 

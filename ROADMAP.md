@@ -61,8 +61,9 @@ Shipped and verified on-device; see `plan/closed/phase1/`.
 
 - [x] `fah-stats`: in-RAM aggregates (24h rolling buckets, bounded top-N),
       bounded per-client registry, periodic `/data` snapshots
-- [x] `fah-metrics`: Prometheus export — QPS, latency histograms, cache hit
-      ratio, memory, per-verdict counters
+- [x] `fah-metrics`: QPS, latency histograms, cache hit ratio, memory,
+      per-verdict counters — served via `/api/v1/telemetry`; Prometheus export
+      removed (`p2-09`)
 
 ### API (`fah-api`)
 

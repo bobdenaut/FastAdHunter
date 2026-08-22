@@ -1,12 +1,14 @@
-# FastAdHunter TUI monitor.
+# FastAdHunter TUI monitor — example configuration.
 #
-# Only host/port/token are required; every other key below is shown at its
-# compiled-in default and can be deleted. The token may instead come from
-# $FAH_TOKEN, which overrides this file.
+# Copy to `config.toml` beside this file (git-ignored: it holds the live bearer
+# token) and replace every PASTE-… placeholder. Only host/port/token are
+# required; every other key below is shown at its compiled-in default and can
+# be deleted. The token may instead come from $FAH_TOKEN, which overrides this
+# file.
 
 host = "172.17.0.2"
 port = 8443
-token = "522df78d43d47e8453a98c77a454cd29f025a60fbf555abee253d9701c92ceef"
+token = "PASTE-API-KEY-HERE"
 
 # The appliance's certificate is generated at first boot and trusted by no
 # root store.
@@ -45,8 +47,8 @@ slow_query_ms = 50.0
 
 # Read-only. Omit base_url to drop the router figures from the footer.
 [routeros]
-base_url = "https://192.168.10.1:8443/rest"
-user = "monitor"
+base_url = "https://PASTE-ROUTER-ADDRESS:8443/rest"
+user = "PASTE-ROUTEROS-USER"
 # password = "…"   # falls back to $MP
 container = "fastadhunter"
 # Label clients the appliance has no name for by asking the router who owns the

@@ -13,3 +13,6 @@
 # the throwaway image built from them. Rebuild via Dockerfile.probe.
 /.probe-corpus/
 fah-urlbench-*.tar
+
+# tui-monitor: holds the live bearer token. Copy config.example.toml instead.
+tui-monitor/config.toml

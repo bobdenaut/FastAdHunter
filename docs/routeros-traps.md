@@ -21,7 +21,17 @@ Verified against the device 2026-08-02 (`/interface/veth/print detail`,
 | `veth3` | `172.17.0.4` | `test` — the scratch interface for trying a temporary FAH build beside the live one; currently disabled, no container attached |
 
 Gateway is `172.17.0.1`; each veth also carries an IPv6 in
-`fd6c:7f32:8e91:1::/64`.
+`fd6c:7f32:8e91:1::/64` (static ULA) plus a global address by SLAAC:
+`CONTAINERS` holds `::1/64 from-pool=ipv6-pool` with `advertise=yes` and an
+`/ipv6/nd` entry (`advertise-dns=no`), so the container derives
+`<prefix>:6c29:acff:fed8:a1f1` itself and follows every delegation rotation
+without a restart (verified 2026-08-22: ping 0.5 ms, neighbor entry with the
+container MAC; prefix lifetimes `valid 10m / preferred 5m`).
+`/interface/veth address=` cannot take a pool address — never hardcode a
+global there; an `/ipv6/address` on `veth1` itself lands on the bridge (slave
+port) and never reaches the container. `srcnat masquerade
+fd6c:7f32:8e91:1::/64 → DIGI` stays for ULA-sourced flows (and the ≤10 min
+gap after a rotation); global-sourced traffic leaves un-NATed.
 
 **Another container shares the box.** `postgres` runs `start-on-boot=yes` with
 `memory-high=unlimited` and holds ~49 MiB. It is not FAH's, but it is on the same
@@ -149,7 +159,7 @@ it is compared against were core-pinned.
 ## API access
 
 - Auth is `Authorization: Bearer <key>` — **not** `X-API-Key`.
-- `/health` and `/metrics` are at the **root**; everything else under `/api/v1/`.
+- `/health` is at the **root**; everything else under `/api/v1/`.
 - The config file is `/config/fastadhunter.toml`, **not** `config.toml`.
 - `/api/v1/history/perf` returns **`items`**, not `samples`, and needs explicit
   `from`/`to` to return anything useful.

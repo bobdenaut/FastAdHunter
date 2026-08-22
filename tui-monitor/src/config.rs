@@ -468,7 +468,7 @@ mod tests {
     /// already been cleared.
     #[test]
     fn the_shipped_config_file_parses_against_this_build() {
-        let config: Config = toml::from_str(include_str!("../config.toml")).unwrap();
+        let config: Config = toml::from_str(include_str!("../config.example.toml")).unwrap();
 
         assert_eq!(config.timeout.events_idle(), Duration::from_secs(30));
         assert_eq!(config.ui.limits().rss_points, DAY_OF_SAMPLES);

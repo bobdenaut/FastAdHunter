@@ -1,7 +1,3 @@
-//! Ops telemetry: Prometheus counters and histograms (ARCHITECTURE.md L3;
-//! CONTEXT.md distinguishes Metrics — operational, for operators — from
-//! Statistics — product data, for users, `fah-stats`).
-//!
 //! [`Metrics`] is the one registry instance. The binary's event fan-out —
 //! the single consumer of the pipeline's `QueryEvent` channel, shared with
 //! `fah-stats` and the WS hub — calls [`Metrics::record`] per event (query
