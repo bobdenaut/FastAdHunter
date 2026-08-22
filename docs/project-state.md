@@ -10,12 +10,12 @@ what is true today.
 
 | | |
 | --- | --- |
-| Branch | `main` at `94ef059`, pushed to **origin and backup** |
+| Branch | `main` at `cad5cb5`, pushed to **origin and backup** |
 | Tree | clean |
-| Tests | green — `fmt`/`clippy`/`test`, 944 across 31 binaries |
-| Deployed | **0.2.14** on the RB5009 since 2026-08-09T10:33Z — **does not contain the p1-01 fixes below, nor `p2.5-01`/`p2.5-02`** |
-| Phase | 2.5 (`plan/wip/phase2.5-hardening`) — `p2.5-01`, `p2.5-02` DONE ([review](code-review/phase2.5/p2.5-02-list-refresh-integrity-review.md), PASS; hot path A/B neutral within a ≥10 % dev-box noise floor), `p2.5-03` … `p2.5-09` WAITING |
-| **Next** | `p2.5-03-encrypted-reconnect`; after deploy, read the refresh-peak RSS with the validation parse off `/history/perf` (unmeasured); the p1-01 on-device verification below is still open |
+| Tests | green — `fmt`/`clippy`/`test`, 954 across 41 binaries |
+| Deployed | **0.2.14** on the RB5009 since 2026-08-09T10:33Z — **does not contain the p1-01 fixes below, nor `p2.5-01` … `p2.5-04`** |
+| Phase | 2.5 (`plan/wip/phase2.5-hardening`) — `p2.5-01` … `p2.5-04` DONE ([p2.5-04 review](code-review/phase2.5/p2.5-04-transport-error-kinds-review.md), PASS; error kinds only, no pool or hot-path change), `p2.5-05` … `p2.5-09` WAITING |
+| **Next** | `p2.5-05-outcome-telemetry`; after deploy, read the refresh-peak RSS with the validation parse off `/history/perf` (unmeasured); the p1-01 on-device verification below is still open |
 
 `feat/phase2-http-pipeline` is fully merged into `main` and not deleted.
 Phase 2 is closed (`plan/closed/phase2`).
