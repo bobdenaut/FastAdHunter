@@ -80,6 +80,7 @@ pub struct UpstreamStatus {
     /// TLS handshakes attempted (always 0 for plain UDP). Staying flat while
     /// `attempts` grows is the connection-reuse proof (p1-06 acceptance).
     pub tls_handshakes: u64,
+    pub failure_runs: [u64; 4],
 }
 
 impl UpstreamPool {
@@ -185,6 +186,9 @@ impl UpstreamPool {
                     Transport::Udp { .. } => 0,
                     Transport::Encrypted(conn) => conn.handshakes(),
                 },
+                failure_runs: std::array::from_fn(|bucket| {
+                    server.run_buckets[bucket].load(Ordering::Relaxed)
+                }),
             })
             .collect()
     }
@@ -197,7 +201,12 @@ impl Forwarder for UpstreamPool {
             server.attempts.fetch_add(1, Ordering::Relaxed);
             match server.query(query, self.timeout).await {
                 Ok(response) => {
-                    server.consecutive_failures.store(0, Ordering::Relaxed);
+                    if server.consecutive_failures.load(Ordering::Relaxed) != 0 {
+                        let run = server.consecutive_failures.swap(0, Ordering::Relaxed);
+                        if run != 0 {
+                            server.run_buckets[run_bucket(run)].fetch_add(1, Ordering::Relaxed);
+                        }
+                    }
                     if self.alarm.clear() {
                         info!(
                             upstreams = self.servers.len(),
@@ -248,6 +257,7 @@ struct UpstreamServer {
     attempts: AtomicU64,
     failures: AtomicU64,
     consecutive_failures: AtomicU64,
+    run_buckets: [AtomicU64; 4],
 }
 
 enum Transport {
@@ -346,6 +356,7 @@ impl UpstreamServer {
             attempts: AtomicU64::new(0),
             failures: AtomicU64::new(0),
             consecutive_failures: AtomicU64::new(0),
+            run_buckets: std::array::from_fn(|_| AtomicU64::new(0)),
         })
     }
 
@@ -371,6 +382,10 @@ fn socket_addr(address: &str, default_port: u16) -> io::Result<SocketAddr> {
                 "invalid upstream address {address:?} (expected IP or IP:port)"
             ))
         })
+}
+
+fn run_bucket(length: u64) -> usize {
+    (length.clamp(1, 4) - 1) as usize
 }
 
 fn invalid(message: String) -> io::Error {
@@ -498,6 +513,136 @@ mod tests {
                 pool.servers[1].attempts.load(Ordering::Relaxed),
                 0,
                 "{code} must not continue the upstream walk"
+            );
+        }
+    }
+
+    const RUN_TIMEOUT_MS: u32 = 200;
+
+    async fn scripted_udp_server(script: Vec<bool>) -> SocketAddr {
+        let socket = UdpSocket::bind("127.0.0.1:0").await.unwrap();
+        let addr = socket.local_addr().unwrap();
+        tokio::spawn(async move {
+            let mut buf = [0u8; 4096];
+            let mut script = script.into_iter();
+            loop {
+                let (len, client) = socket.recv_from(&mut buf).await.unwrap();
+                if !script.next().unwrap_or(true) {
+                    continue;
+                }
+                let request = Message::from_vec(&buf[..len]).unwrap();
+                let reply = answer_for(&request).to_vec().unwrap();
+                socket.send_to(&reply, client).await.unwrap();
+            }
+        });
+        addr
+    }
+
+    async fn failing_then_answering_udp_server(failures: usize) -> SocketAddr {
+        scripted_udp_server(vec![false; failures]).await
+    }
+
+    async fn closed_run_lands_in(failures: usize, expected: [u64; 4]) {
+        let addr = failing_then_answering_udp_server(failures).await;
+        let pool = pool_of(vec![udp_server_config(addr)], RUN_TIMEOUT_MS);
+        for _ in 0..failures {
+            assert!(pool.forward(&a_query()).await.is_err());
+        }
+        assert_eq!(
+            pool.status()[0].failure_runs,
+            [0, 0, 0, 0],
+            "an open run is not bucketed until a success closes it"
+        );
+
+        pool.forward(&a_query()).await.unwrap();
+
+        let status = pool.status();
+        assert_eq!(status[0].failure_runs, expected, "run of {failures}");
+        assert_eq!(
+            status[0].failures, failures as u64,
+            "a closed run of L consumes exactly L failures"
+        );
+        assert_eq!(status[0].consecutive_failures, 0);
+    }
+
+    #[test]
+    fn run_lengths_map_to_four_bounded_buckets() {
+        assert_eq!(run_bucket(1), 0);
+        assert_eq!(run_bucket(2), 1);
+        assert_eq!(run_bucket(3), 2);
+        assert_eq!(run_bucket(4), 3);
+        assert_eq!(run_bucket(9_000), 3);
+        assert_eq!(run_bucket(u64::MAX), 3);
+    }
+
+    #[tokio::test]
+    async fn a_closed_failure_run_lands_in_the_bucket_for_its_length() {
+        tokio::join!(
+            closed_run_lands_in(0, [0, 0, 0, 0]),
+            closed_run_lands_in(1, [1, 0, 0, 0]),
+            closed_run_lands_in(2, [0, 1, 0, 0]),
+            closed_run_lands_in(3, [0, 0, 1, 0]),
+            closed_run_lands_in(5, [0, 0, 0, 1]),
+        );
+    }
+
+    #[tokio::test]
+    async fn interleaved_endpoints_do_not_cross_contaminate() {
+        let primary = failing_then_answering_udp_server(2).await;
+        let secondary = answering_udp_server(2).await;
+        let pool = pool_of(
+            vec![udp_server_config(primary), udp_server_config(secondary)],
+            RUN_TIMEOUT_MS,
+        );
+
+        for _ in 0..2 {
+            pool.forward(&a_query()).await.unwrap();
+        }
+        assert_eq!(pool.status()[0].consecutive_failures, 2);
+
+        pool.forward(&a_query()).await.unwrap();
+
+        let status = pool.status();
+        assert_eq!(status[0].failure_runs, [0, 1, 0, 0]);
+        assert_eq!(status[0].consecutive_failures, 0);
+        assert_eq!(status[1].failure_runs, [0, 0, 0, 0]);
+        assert_eq!(status[1].failures, 0);
+        assert_eq!(status[1].consecutive_failures, 0);
+    }
+
+    #[tokio::test]
+    async fn an_rcode_closes_an_open_failure_run() {
+        let primary = rcode_udp_server(1, ResponseCode::ServFail).await;
+        let pool = pool_of(vec![udp_server_config(primary)], 2000);
+        pool.servers[0]
+            .consecutive_failures
+            .store(2, Ordering::Relaxed);
+
+        pool.forward(&a_query()).await.unwrap();
+
+        assert_eq!(pool.status()[0].failure_runs, [0, 1, 0, 0]);
+    }
+
+    #[tokio::test]
+    async fn failure_run_buckets_are_monotonic_across_snapshots() {
+        let addr = scripted_udp_server(vec![false, false, true, false]).await;
+        let pool = pool_of(vec![udp_server_config(addr)], RUN_TIMEOUT_MS);
+        for _ in 0..2 {
+            assert!(pool.forward(&a_query()).await.is_err());
+        }
+        pool.forward(&a_query()).await.unwrap();
+        let first = pool.status()[0].failure_runs;
+        assert_eq!(first, [0, 1, 0, 0]);
+
+        assert!(pool.forward(&a_query()).await.is_err());
+        pool.forward(&a_query()).await.unwrap();
+        let second = pool.status()[0].failure_runs;
+
+        assert_eq!(second, [1, 1, 0, 0], "the second run adds, never replaces");
+        for bucket in 0..4 {
+            assert!(
+                second[bucket] >= first[bucket],
+                "bucket {bucket} moved backwards"
             );
         }
     }

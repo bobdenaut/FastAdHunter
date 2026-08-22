@@ -10,12 +10,12 @@ what is true today.
 
 | | |
 | --- | --- |
-| Branch | `main` at `cad5cb5`, pushed to **origin and backup** |
+| Branch | `main`, p2.5-06 committed and pushed to **origin and backup** (`git log -1` for the hash) |
 | Tree | clean |
-| Tests | green — `fmt`/`clippy`/`test`, 954 across 41 binaries |
-| Deployed | **0.2.14** on the RB5009 since 2026-08-09T10:33Z — **does not contain the p1-01 fixes below, nor `p2.5-01` … `p2.5-04`** |
-| Phase | 2.5 (`plan/wip/phase2.5-hardening`) — `p2.5-01` … `p2.5-04` DONE ([p2.5-04 review](code-review/phase2.5/p2.5-04-transport-error-kinds-review.md), PASS; error kinds only, no pool or hot-path change), `p2.5-05` … `p2.5-09` WAITING |
-| **Next** | `p2.5-05-outcome-telemetry`; after deploy, read the refresh-peak RSS with the validation parse off `/history/perf` (unmeasured); the p1-01 on-device verification below is still open |
+| Tests | green — `fmt`/`clippy`/`test`, 974 across 41 binaries |
+| Deployed | **0.2.14** on the RB5009 since 2026-08-09T10:33Z — **does not contain the p1-01 fixes below, nor `p2.5-01` … `p2.5-06`** |
+| Phase | 2.5 (`plan/wip/phase2.5-hardening`) — `p2.5-01` … `p2.5-06` DONE ([p2.5-06 review](code-review/phase2.5/p2.5-06-failure-runlength-review.md), PASS; M1/N1/N2/N3 fixed, M2 recorded as an S1-G4 caveat, M3 doc edits applied), `p2.5-07` … `p2.5-09` WAITING |
+| **Next** | **deploy this build** — the mid-phase release the phase recommends: `p2.5-06`'s `failure_runs` buckets only accumulate on-device, and the S1-G4 observation window starts at that deploy. Then `p2.5-07-swr-lease-check`. Also open: read the refresh-peak RSS with the validation parse off `/history/perf` (unmeasured); the p1-01 on-device verification below |
 
 `feat/phase2-http-pipeline` is fully merged into `main` and not deleted.
 Phase 2 is closed (`plan/closed/phase2`).
@@ -133,6 +133,12 @@ not merely address churn.
 
 ## Open items
 
+- **The S1-G4 run-length window starts at the deploy of the build carrying
+  `p2.5-06`**, not before — no earlier telemetry has `failure_runs`. Two caveats
+  the gate analysis must carry: only *closed* runs are bucketed, and concurrent
+  in-flight queries can split one outage into two shorter runs, so the
+  distribution is a lower bound on clustering (conservative for
+  `penalty_failures = 2`).
 - **HTTP concurrency is unmeasured.** Every p2-08 figure is one connection at a
   time, while `[http] max_connections` defaults to 1024. The DNS side has 20 k+
   QPS of on-device evidence; the HTTP side has none, and Phase 3 multiplies the

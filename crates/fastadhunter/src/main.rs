@@ -698,6 +698,7 @@ fn spawn_telemetry_poll(
                         failures: status.failures,
                         consecutive_failures: status.consecutive_failures,
                         tls_handshakes: status.tls_handshakes,
+                        failure_runs: status.failure_runs,
                     })
                     .collect(),
             );

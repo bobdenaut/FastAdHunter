@@ -329,6 +329,7 @@ mod tests {
                 failures: 12,
                 consecutive_failures: 0,
                 tls_handshakes: 41,
+                failure_runs: [5, 2, 0, 1],
             }],
         };
 

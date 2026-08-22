@@ -76,7 +76,7 @@ traffic only; no synthetic load — synthetic queries swamp the household sample
 | Metric | Derived from |
 | --- | --- |
 | Per-endpoint transport-failure base rate | `failures / attempts`, differenced between samples |
-| Distribution of failure *runs* | Consecutive samples in which `consecutive_failures` rose without an intervening reset |
+| Distribution of failure *runs* | `failure_runs` per endpoint (p2.5-06), differenced between samples: bucket `[len 1, len 2, len 3, len >= 4]` of runs **closed** in the interval. Cumulative and monotonic, so no cadence can miss a run |
 | **Partial-failure intervals** | Any interval where one endpoint's `failures` rose while another's did not, and queries still succeeded |
 | Total-failure intervals | Intervals where every endpoint's `failures` rose together |
 
@@ -118,7 +118,8 @@ Not pass/fail. The output feeds gates S1-G4 and S1-G5 directly.
 
 A non-zero count of **partial-failure intervals** — **already satisfied** by
 sample 1 — *and* evidence that at least some failures arrive in runs of ≥ 2.
-The second half is the one still open.
+The second half is still open, and is now read straight off `failure_runs`
+buckets 2-4 rather than inferred.
 
 ### T — what justifies rejecting Stage 1
 
@@ -136,14 +137,27 @@ Note the asymmetry: total outages are *also* improved slightly (a penalized
 endpoint is probed rather than dialled every query), but the client is on
 serve-stale either way, so the gain is not worth the code on its own.
 
-### T — known instrumentation limit
+### T — instrumentation limit, and what closed it
 
-The current build cannot report run length: `consecutive_failures` is reset by
-the next success, and at an 800 ms attempt timeout no cadence catches a run
-mid-flight. The differenced series can **bound** clustering — by whether the
-failures arrive spread across intervals or bunched into a few — but cannot
-measure the distribution. If the window closes without resolving it, see the
-`max_consecutive_failures` candidate in the design document. Not implemented.
+Builds before p2.5-06 could not report run length: `consecutive_failures` is
+reset by the next success, and at an 800 ms attempt timeout no cadence catches a
+run mid-flight — the differenced series could only **bound** clustering.
+
+p2.5-06 adds `upstreams[].failure_runs`, so the distribution is read directly
+and the sampling cadence no longer matters for it. The window for this metric
+starts at the deploy of the first build carrying it; earlier samples have no
+`failure_runs` field (and perf rows read back as four zeros). Two residual
+limits the analysis must state:
+
+- Only **closed** runs are counted — a run in progress at sample time, or open
+  when the process exits, is absent.
+- Concurrent in-flight queries can split one outage into two shorter runs,
+  biasing the distribution toward short runs. That bias works *against*
+  `penalty_failures = 2`, so a distribution dominated by runs of ≥ 2 is a
+  conservative result.
+
+The `max_consecutive_failures` candidate in the design document is superseded
+and not needed.
 
 ---
 

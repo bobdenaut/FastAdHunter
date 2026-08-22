@@ -181,6 +181,7 @@ mod tests {
                 failures: 0,
                 consecutive_failures: 0,
                 tls_handshakes: 0,
+                failure_runs: [0, 0, 0, 0],
             }],
         }
     }

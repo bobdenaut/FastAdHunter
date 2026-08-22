@@ -107,7 +107,8 @@ Top-level blocks: `process`, `ruleset`, `counters`, `latency`, `upstreams`,
               "forward": { "count": 4412, "sum_seconds": 12.884 } }
   },
   "upstreams": [ { "address": "1.1.1.1:853", "protocol": "dot", "attempts": 201883,
-                   "failures": 12, "consecutive_failures": 0, "tls_handshakes": 41 } ]
+                   "failures": 12, "consecutive_failures": 0, "tls_handshakes": 41,
+                   "failure_runs": [5, 2, 0, 1] } ]
 }
 ```
 
@@ -136,6 +137,14 @@ Reading it correctly:
   `pass`/`allow` and under `cache_misses`, so the identity above still holds.
   A stale serve that masked an upstream failure is **not** here — that is
   `cache_stale`, because the client got an answer.
+- **`upstreams[].failure_runs` is a histogram of *closed* failure runs**,
+  `[len 1, len 2, len 3, len >= 4]`. A run is consecutive transport failures on
+  one endpoint, closed by that endpoint's next transport success — an RCODE
+  (SERVFAIL, NXDOMAIN, REFUSED) is a success, so it closes a run. A run still
+  open is not in here; it is `consecutive_failures`. Each bucket is cumulative
+  and monotonic, so two reads delta into a window. Concurrent in-flight queries
+  can split one outage into two shorter runs, which biases the distribution
+  toward short runs — read it as a lower bound on clustering.
 - No `ruleset.heap_bytes`: that is `memory.ruleset_bytes`, so the number has one
   home.
 - `ruleset`, `upstreams`, `counters.swr` and `counters.cache_cleanup` are pushed
@@ -276,7 +285,8 @@ wanted. `fields` trims the response, not the read.
       "upstreams": [
         { "address": "1.1.1.1", "protocol": "dot",
           "attempts": 12000, "failures": 3,
-          "consecutive_failures": 0, "tls_handshakes": 4 }
+          "consecutive_failures": 0, "tls_handshakes": 4,
+          "failure_runs": [2, 1, 0, 0] }
       ]
     }
   ]
@@ -296,6 +306,11 @@ of `/telemetry`'s `counters.dns.answers` — the same three figures, deltaed
 rather than cumulative, so "how many clients saw an error during that outage"
 survives a restart. Rows written before it shipped read back as three zeros,
 which charts as "not recorded" rather than "no failures".
+
+`upstreams[].failure_runs` carries the same closed-run histogram `/telemetry`
+publishes, cumulative rather than per-interval — deltaing two rows gives the
+run-length distribution for that window. Rows written before it shipped read
+back as four zeros.
 
 `peak_rss` is the process high-water RSS (`getrusage`'s `ru_maxrss`), **monotone
 within one container lifetime** — a drop in the series is a restart, never a

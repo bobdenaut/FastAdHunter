@@ -588,6 +588,7 @@ mod tests {
             failures: 1,
             consecutive_failures: 0,
             tls_handshakes: 0,
+            failure_runs: [3, 1, 0, 0],
         }]);
 
         let snap = metrics.snapshot();

@@ -138,6 +138,8 @@ pub struct UpstreamSample {
     /// non-zero streak can be hours old. Read it beside `attempts`.
     pub consecutive_failures: u64,
     pub tls_handshakes: u64,
+    #[serde(default)]
+    pub failure_runs: [u64; 4],
 }
 
 #[cfg(test)]
@@ -193,6 +195,7 @@ mod tests {
                 failures: 3,
                 consecutive_failures: 0,
                 tls_handshakes: 4,
+                failure_runs: [2, 1, 0, 0],
             }],
         };
         let json = serde_json::to_string(&sample).unwrap();
@@ -216,6 +219,15 @@ mod tests {
         assert_eq!(sample.cache.entries, 1);
         assert_eq!(sample.cache.bytes, 0);
         assert_eq!(sample.cache.max_bytes, 0);
+    }
+
+    #[test]
+    fn an_upstream_row_written_before_the_run_buckets_reads_back_zeroed() {
+        let legacy = r#"{"address":"1.1.1.1","protocol":"udp","attempts":10,
+            "failures":2,"consecutive_failures":0,"tls_handshakes":0}"#;
+        let sample: UpstreamSample = serde_json::from_str(legacy).unwrap();
+        assert_eq!(sample.failure_runs, [0, 0, 0, 0]);
+        assert_eq!(sample.failures, 2);
     }
 
     #[test]

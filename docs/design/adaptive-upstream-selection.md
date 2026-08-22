@@ -124,25 +124,41 @@ Stage 3 constant.
 
 | Quantity | Blocks | How to close |
 | --- | --- | --- |
-| **Failure clustering / run-length distribution** | Justifying `penalty_failures = 2` — gate S1-G4 | See below; **not obtainable from the current build** |
+| **Failure clustering / run-length distribution** | Justifying `penalty_failures = 2` — gate S1-G4 | See below; **collected since p2.5-06** as `upstreams[].failure_runs` — needs deploy time, not new code |
 | Stability of the traffic composition above | S1.8, S1.9, S1-G2 framing | Suite T differenced series |
 | Whether total failures land only on SWR refreshes | How urgent Stage 1 is for *clients* | Suite T: do `swr.failed` and the secondary's `failures` move together? |
 | DNS-level `srtt` / `rttvar` per endpoint | Any Stage 2 or Stage 3 constant | Requires Stage 2 instrumentation |
 
 #### Failure clustering — the blocking open measurement
 
-The current build cannot report run length. `consecutive_failures` is reset by
-the next success, and at an 800 ms attempt timeout no polling cadence catches a
-run mid-flight. Suite T's differenced series can **bound** clustering — by
-whether failures arrive spread across sampling intervals or bunched into a few —
-but cannot measure the distribution directly.
+Builds before p2.5-06 could not report run length: `consecutive_failures` is
+reset by the next success, and at an 800 ms attempt timeout no polling cadence
+catches a run mid-flight. Suite T's differenced series can **bound** clustering
+— by whether failures arrive spread across sampling intervals or bunched into a
+few — but cannot measure the distribution directly.
 
-If the observation window closes without resolving it, the candidate remedy is a
-`max_consecutive_failures` high-water mark in Stage 1's telemetry. That is an
-eighth `AtomicU64` and would break the 64 B assertion in S1.2, so it would
-require shrinking `timestamp_ms` from 50 to 42 bits (42 bits of ms ≈ 139 years,
-ample) to free 8 bits. **Not adopted, not implemented** — revisit only if the
-window fails to produce the answer by other means.
+**p2.5-06 closes it in the build.** Every endpoint carries four cumulative
+counters, `upstreams[].failure_runs` = `[len 1, len 2, len 3, len >= 4]`,
+published live on `/telemetry` and persisted per 60 s perf sample, so
+`/history/perf` deltas give the distribution for any window without a polling
+race. A run is consecutive transport failures on one endpoint closed by that
+endpoint's next transport success; an RCODE is a success (S1.4, pinned by
+p2.5-04). Two properties the S1-G4 analysis must carry:
+
+- **Open runs are absent.** A run is bucketed only when it closes, so a run
+  still in progress (and one open at process exit) is not counted. In-flight it
+  is visible as `consecutive_failures`.
+- **Concurrency splits runs.** `forward` runs concurrently; a success dispatched
+  before an outage but returning after k failures were counted resets the
+  counter mid-run, so one outage of n can appear as runs of k and n−k. The bias
+  is toward *shorter* runs — conservative for S1-G4, since it works against
+  `penalty_failures = 2`. If runs of ≥ 2 still dominate the measured
+  distribution, they dominate in reality too.
+
+Gate S1-G4 therefore needs deploy time, not new code. The earlier candidate
+remedy — a `max_consecutive_failures` high-water mark, an eighth `AtomicU64`
+that would break the 64 B assertion in S1.2 and force `timestamp_ms` down from
+50 to 42 bits — is **superseded and not needed**.
 
 ---
 
@@ -339,7 +355,8 @@ Path failures penalize at 1 regardless (S1.4).
 now measured — 0.072 % on the primary, suite T sample 1 — but the base rate is
 **not the quantity this constant depends on**. `penalty_failures = 2` fires only
 on runs of two or more consecutive failures, so what settles it is the
-**run-length distribution**, which the current build cannot report (see
+**run-length distribution**, which the build collects since p2.5-06 as
+`upstreams[].failure_runs` and which needs deploy time to accumulate (see
 [Failure clustering](#failure-clustering--the-blocking-open-measurement)).
 
 The value stays provisional until the observation window closes.
@@ -771,13 +788,15 @@ gate.
 | --- | --- | --- |
 | Base rate documented | **Done** — 0.072 % primary, suite T sample 1 | Confirmed over the full window, not one snapshot |
 | Partial-failure population exists | **Done** — 27 events / 45.7 h | — |
-| **Run-length distribution** | **Open — blocking** | Whether the observed failures are isolated losses or sustained runs. This, not the base rate, is what `penalty_failures` depends on |
+| **Run-length distribution** | **Open — blocking, now collecting** | Whether the observed failures are isolated losses or sustained runs. This, not the base rate, is what `penalty_failures` depends on. Source: `upstreams[].failure_runs` (p2.5-06), read as a delta over the window; the analysis states the concurrency-splitting caveat |
 | `penalty_failures` chosen from the run-length data | Open | Not from the illustrative table in S1.6 |
 | False-penalty rate on a healthy link | Open | Measured and stated. No pre-set threshold is imposed, because none is justified by evidence |
 
-If the window closes without resolving the run-length distribution, the choice
-is between shipping `penalty_failures` as an admitted guess or adding the
-`max_consecutive_failures` high-water mark first. Prefer the latter.
+The instrumentation gap that used to threaten this gate is closed (p2.5-06), so
+the `max_consecutive_failures` high-water mark is no longer a candidate. What
+remains is deploy time: if the window closes with too few closed runs to read,
+the choice is between shipping `penalty_failures` as an admitted guess and
+extending the window. Prefer extending it.
 
 ## S1-G5 Rejection
 
@@ -913,7 +932,7 @@ are ever written.
 | --- | --- | --- | --- |
 | 1 | Household transport-failure base rate per endpoint | S1-G4 | **Answered** — 0.072 % primary, suite T sample 1. Confirm over the full window |
 | 2 | Frequency of partial upstream failure | S1-G5 | **Answered** — 27 events / 45.7 h. Rejection route 1 closed |
-| 3 | **Failure clustering / run-length distribution** | **S1-G4, and whether Stage 1 ships at all** | **Open, blocking.** Not obtainable from the current build — see S1.6 and the clustering note above |
+| 3 | **Failure clustering / run-length distribution** | **S1-G4, and whether Stage 1 ships at all** | **Open, blocking — but collecting.** `upstreams[].failure_runs` since p2.5-06; the window starts at that build's deploy. See S1.6 and the clustering note above |
 | 4 | Is the traffic composition (69 % SWR / 20 % `resolve_host` / 10 % client) stable? | S1.8, S1.9, S1-G2 framing | Open — suite T differenced series |
 | 5 | Do total failures land only on SWR refreshes? | How urgent Stage 1 is for *clients* | Open — `swr.failed` was 3 and the secondary's `failures` was 3 in sample 1; test whether they move together |
 | 6 | Harness noise band **N** for the live timing gate | Freezing S1-G2 tier 3 | Open — suite S1-N, runs before S1-L |
