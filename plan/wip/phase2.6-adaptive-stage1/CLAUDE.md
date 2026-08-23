@@ -10,9 +10,7 @@ deployment/default-flip gates on the RB5009. Stage 2 (RTT/EWMA) and Stage 3
 (hedging) are candidate designs only and are **not** in this phase.
 
 **Prerequisites:** Phase 2.5 closed; the S1-G4 run-length window
-(`upstreams[].failure_runs`, p2.5-06) collecting on-device. The spec's
-"return to the last clean Phase 2 state" sequencing decision is taken before
-this phase is moved to `wip`, not inside it.
+(`upstreams[].failure_runs`, p2.5-06) collecting on-device. Both hold.
 
 **Why this order:** config surface and the pure health core first — they are
 independent and the core is the riskiest logic (packed word, CAS loop, the

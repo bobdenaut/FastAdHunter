@@ -4,10 +4,11 @@ Status: **accepted as the Stage 1 specification.** Stages 2 and 3 are candidate
 designs only and are not accepted; each carries an explicit benchmark gate that
 must pass before it may be specified in detail.
 
-Sequencing this document assumes, decided separately: return to the last clean
-Phase 2 state → implement Stage 1 → benchmark and close Stage 1 → decide Stage 2
-and Stage 3 from that data → close Adaptive DNS → restart Phase 3 from the clean
-Phase 2 + proven Adaptive baseline.
+Sequencing, settled before this document was written: Phase 3 had been opened
+once and was cancelled back to a clean `phase3`, and phases 2.5 and 2.6 were
+inserted ahead of it. Nothing remains to revert. From that baseline: implement
+Stage 1 → benchmark and close Stage 1 → decide Stage 2 and Stage 3 from that
+data → close Adaptive DNS → restart Phase 3.
 
 Benchmarks: [adaptive-upstream-selection-benchmarks.md](adaptive-upstream-selection-benchmarks.md).
 

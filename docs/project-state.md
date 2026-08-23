@@ -40,11 +40,14 @@ what is true today.
 - Owner decisions already taken: 8-endpoint cap; `attempts`/`failures` stay
   on `Health`, `run_buckets` on the cold struct; `resolve_host` attempts stay
   uncounted under `adaptive`; `timeout_ms` validated `1..=10 000`.
-- **Unrecorded precondition.** The phase file requires the spec's "return to
-  the last clean Phase 2 state" sequencing decision to be taken *before* the
-  `wip` move. No decision exists — no ADR, no entry here, no review. It looks
-  satisfied de facto (tree tagged, gates green, no Phase 3 code, `phase3`
-  never left `plan/open/`), and is recorded as an assumption in `f176f47`.
+- **"Return to the last clean Phase 2 state" is long done — not a pending
+  step.** Phase 3 was opened once, cancelled back to a clean `phase3`, and
+  phases 2.5 and 2.6 were inserted ahead of it. The cancellation predates any
+  commit, so `git log` carries no trace of Phase 3 work; **do not read that
+  silence as the decision never having been taken.** `7609075` restated the
+  spec's "decided separately" as a gate on the 2.6 `wip` move, which sent this
+  question round once already; the phase file and spec now say it plainly.
+  Supersedes the caveat in `f176f47`.
 
 ## Sequencing
 
