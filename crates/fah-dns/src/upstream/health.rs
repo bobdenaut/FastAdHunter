@@ -231,8 +231,77 @@ pub fn record(health: &Health, outcome: Outcome, now_ms: u64, policy: &Policy) -
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Selected {
+    Healthy,
+    Probe,
+    Forced,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Candidate {
+    pub id: u8,
+    pub selected: Selected,
+}
+
+pub fn select(
+    health: &[Health],
+    start: usize,
+    now: impl FnOnce() -> u64,
+    claim: bool,
+) -> Option<Candidate> {
+    let mut clock = Some(now);
+    let mut now_ms: Option<u64> = None;
+    let mut forced: Option<(u8, u64)> = None;
+
+    for (index, endpoint) in health.iter().enumerate().skip(start) {
+        let id = u8::try_from(index).unwrap_or(u8::MAX);
+        let word = endpoint.state.load();
+        let w = unpack(word);
+        match w.state {
+            State::Healthy => {
+                return Some(Candidate {
+                    id,
+                    selected: Selected::Healthy,
+                })
+            }
+            State::Penalized if claim => {
+                let sampled = *now_ms.get_or_insert_with(|| {
+                    clock.take().expect("clock evaluated at most once per pass")()
+                });
+                if w.deadline_passed(sampled) {
+                    let probing = pack(
+                        State::Probing,
+                        w.penalty_round,
+                        w.consecutive_failures,
+                        w.timestamp_ms,
+                    );
+                    if endpoint.state.compare_exchange_weak(word, probing).is_ok() {
+                        return Some(Candidate {
+                            id,
+                            selected: Selected::Probe,
+                        });
+                    }
+                }
+            }
+            State::Penalized => {}
+            State::Probing => {}
+        }
+        if forced.is_none_or(|(_, earliest)| w.timestamp_ms < earliest) {
+            forced = Some((id, w.timestamp_ms));
+        }
+    }
+
+    forced.map(|(id, _)| Candidate {
+        id,
+        selected: Selected::Forced,
+    })
+}
+
 #[cfg(test)]
 mod tests {
+    use std::cell::Cell;
+
     use super::*;
 
     const fn policy(penalty_failures: u8, penalty_base_ms: u64, penalty_max_ms: u64) -> Policy {
@@ -645,5 +714,266 @@ mod tests {
             assert_eq!(after.penalty_round, 15);
             assert_eq!(after.consecutive_failures, 255);
         }
+    }
+
+    fn endpoints<const N: usize>() -> [Health; N] {
+        std::array::from_fn(|_| Health::new())
+    }
+
+    fn snapshot(health: &Health) -> [u64; 7] {
+        [
+            health.state.load(),
+            health.attempts.load(Ordering::Relaxed),
+            health.failures.load(Ordering::Relaxed),
+            health.penalties.load(Ordering::Relaxed),
+            health.probes.load(Ordering::Relaxed),
+            health.probe_successes.load(Ordering::Relaxed),
+            health.penalized_ms_total.load(Ordering::Relaxed),
+        ]
+    }
+
+    fn counted_clock(now_ms: u64, calls: &Cell<u32>) -> impl FnOnce() -> u64 + '_ {
+        move || {
+            calls.set(calls.get() + 1);
+            now_ms
+        }
+    }
+
+    fn healthy(id: u8) -> Option<Candidate> {
+        Some(Candidate {
+            id,
+            selected: Selected::Healthy,
+        })
+    }
+
+    fn probe(id: u8) -> Option<Candidate> {
+        Some(Candidate {
+            id,
+            selected: Selected::Probe,
+        })
+    }
+
+    fn forced(id: u8) -> Option<Candidate> {
+        Some(Candidate {
+            id,
+            selected: Selected::Forced,
+        })
+    }
+
+    #[test]
+    fn boot_selects_the_first_endpoint_and_never_reads_the_clock() {
+        let calls = Cell::new(0);
+        let two: [Health; 2] = endpoints();
+        let eight: [Health; 8] = endpoints();
+        for _ in 0..4 {
+            assert_eq!(
+                select(&two, 0, counted_clock(1_000, &calls), true),
+                healthy(0)
+            );
+            assert_eq!(
+                select(&eight, 0, counted_clock(1_000, &calls), true),
+                healthy(0)
+            );
+        }
+        assert_eq!(calls.get(), 0);
+    }
+
+    #[test]
+    fn first_healthy_behind_penalized_reads_the_clock_once() {
+        let health: [Health; 4] = endpoints();
+        for endpoint in &health[..3] {
+            endpoint.state.store(pack(State::Penalized, 1, 1, 5_000));
+        }
+        let calls = Cell::new(0);
+        assert_eq!(
+            select(&health, 0, counted_clock(100, &calls), true),
+            healthy(3)
+        );
+        assert_eq!(calls.get(), 1);
+    }
+
+    #[test]
+    fn due_endpoint_ahead_of_a_healthy_one_is_probed() {
+        let health: [Health; 2] = endpoints();
+        health[0].state.store(pack(State::Penalized, 3, 7, 100));
+        let before = snapshot(&health[1]);
+        assert_eq!(claim_probe(&health, 100), probe(0));
+        let w = unpack(health[0].state.load());
+        assert_eq!(w.state, State::Probing);
+        assert_eq!(w.penalty_round, 3);
+        assert_eq!(w.consecutive_failures, 7);
+        assert_eq!(w.timestamp_ms, 100);
+        assert_eq!(health[0].probes.load(Ordering::Relaxed), 0);
+        assert_eq!(snapshot(&health[1]), before);
+    }
+
+    #[test]
+    fn due_endpoint_behind_a_healthy_one_is_not_reached() {
+        let health: [Health; 2] = endpoints();
+        health[1].state.store(pack(State::Penalized, 2, 4, 100));
+        let before = snapshot(&health[1]);
+        let calls = Cell::new(0);
+        assert_eq!(
+            select(&health, 0, counted_clock(999, &calls), true),
+            healthy(0)
+        );
+        assert_eq!(calls.get(), 0);
+        assert_eq!(snapshot(&health[1]), before);
+    }
+
+    #[test]
+    fn all_penalized_forces_the_earliest_deadline_and_stores_nothing() {
+        let health: [Health; 3] = endpoints();
+        health[0].state.store(pack(State::Penalized, 2, 3, 900));
+        health[1].state.store(pack(State::Penalized, 1, 1, 400));
+        health[2].state.store(pack(State::Penalized, 4, 9, 700));
+        let before: [[u64; 7]; 3] = std::array::from_fn(|i| snapshot(&health[i]));
+
+        assert_eq!(select(&health, 0, || 100, true), forced(1));
+        for (index, expected) in before.iter().enumerate() {
+            assert_eq!(&snapshot(&health[index]), expected);
+        }
+
+        let p = policy(2, 1_000, 16_000);
+        record(&health[1], Outcome::HardFailure, 100, &p);
+        let w = unpack(health[1].state.load());
+        assert_eq!(w.state, State::Penalized);
+        assert_eq!(w.penalty_round, 1);
+        assert_eq!(w.timestamp_ms, 400);
+        assert_eq!(w.consecutive_failures, 2);
+    }
+
+    #[test]
+    fn forced_candidate_may_be_a_probing_endpoint() {
+        let health: [Health; 2] = endpoints();
+        health[0].state.store(pack(State::Penalized, 1, 1, 900));
+        health[1].state.store(pack(State::Probing, 2, 5, 400));
+        let before: [[u64; 7]; 2] = std::array::from_fn(|i| snapshot(&health[i]));
+        assert_eq!(select(&health, 0, || 100, true), forced(1));
+        for (index, expected) in before.iter().enumerate() {
+            assert_eq!(&snapshot(&health[index]), expected);
+        }
+    }
+
+    #[test]
+    fn exactly_one_thread_claims_the_probe_with_no_other_endpoint() {
+        let health: [Health; 1] = endpoints();
+        let results = race_for_the_claim(&health, pack(State::Penalized, 1, 2, 500), 500);
+        assert_eq!(results.iter().filter(|c| **c == probe(0)).count(), 1);
+        assert_eq!(results.iter().filter(|c| **c == forced(0)).count(), 7);
+        let w = unpack(health[0].state.load());
+        assert_eq!(w.state, State::Probing);
+        assert_eq!(w.penalty_round, 1);
+        assert_eq!(w.consecutive_failures, 2);
+        assert_eq!(w.timestamp_ms, 500);
+    }
+
+    #[test]
+    fn exactly_one_thread_claims_the_probe_ahead_of_a_healthy_endpoint() {
+        let health: [Health; 2] = endpoints();
+        let results = race_for_the_claim(&health, pack(State::Penalized, 1, 2, 500), 500);
+        assert_eq!(results.iter().filter(|c| **c == probe(0)).count(), 1);
+        assert_eq!(results.iter().filter(|c| **c == healthy(1)).count(), 7);
+        assert_eq!(unpack(health[0].state.load()).state, State::Probing);
+    }
+
+    const CLAIM_ROUNDS: u32 = 8;
+
+    fn claim_probe(health: &[Health], now_ms: u64) -> Option<Candidate> {
+        for _ in 0..CLAIM_ROUNDS {
+            let candidate = select(health, 0, || now_ms, true);
+            if candidate.is_some_and(|c| c.selected == Selected::Probe) {
+                return candidate;
+            }
+        }
+        panic!("no probe claimed in {CLAIM_ROUNDS} passes");
+    }
+
+    fn race_for_the_claim(health: &[Health], word: u64, now_ms: u64) -> Vec<Option<Candidate>> {
+        for _ in 0..CLAIM_ROUNDS {
+            health[0].state.store(word);
+            let results = race(health, now_ms);
+            if results.iter().any(|c| *c == probe(0)) {
+                return results;
+            }
+        }
+        panic!("no thread claimed the probe in {CLAIM_ROUNDS} rounds");
+    }
+
+    fn race(health: &[Health], now_ms: u64) -> Vec<Option<Candidate>> {
+        std::thread::scope(|scope| {
+            let handles: Vec<_> = (0..8)
+                .map(|_| scope.spawn(move || select(health, 0, move || now_ms, true)))
+                .collect();
+            handles
+                .into_iter()
+                .map(|handle| handle.join().expect("selector thread panicked"))
+                .collect()
+        })
+    }
+
+    #[test]
+    fn without_claim_a_due_endpoint_is_skipped_and_untouched() {
+        let health: [Health; 2] = endpoints();
+        health[0].state.store(pack(State::Penalized, 3, 7, 100));
+        let before = snapshot(&health[0]);
+        assert_eq!(select(&health, 0, || 100, false), healthy(1));
+        assert_eq!(snapshot(&health[0]), before);
+
+        let lone: [Health; 1] = endpoints();
+        lone[0].state.store(pack(State::Penalized, 3, 7, 100));
+        let before = snapshot(&lone[0]);
+        assert_eq!(select(&lone, 0, || 100, false), forced(0));
+        assert_eq!(snapshot(&lone[0]), before);
+
+        let both: [Health; 2] = endpoints();
+        both[0].state.store(pack(State::Penalized, 1, 1, 300));
+        both[1].state.store(pack(State::Penalized, 1, 1, 200));
+        let before: [[u64; 7]; 2] = std::array::from_fn(|i| snapshot(&both[i]));
+        assert_eq!(select(&both, 0, || 1_000, false), forced(1));
+        for (index, expected) in before.iter().enumerate() {
+            assert_eq!(&snapshot(&both[index]), expected);
+        }
+    }
+
+    #[test]
+    fn a_deadline_equal_to_now_is_due_and_one_millisecond_later_is_not() {
+        let due: [Health; 1] = endpoints();
+        due[0].state.store(pack(State::Penalized, 1, 1, 1_000));
+        assert_eq!(claim_probe(&due, 1_000), probe(0));
+
+        let pending: [Health; 1] = endpoints();
+        pending[0].state.store(pack(State::Penalized, 1, 1, 1_001));
+        let before = snapshot(&pending[0]);
+        assert_eq!(select(&pending, 0, || 1_000, true), forced(0));
+        assert_eq!(snapshot(&pending[0]), before);
+    }
+
+    #[test]
+    fn continuation_starts_after_the_failed_endpoint() {
+        let health: [Health; 2] = endpoints();
+        assert_eq!(select(&health, 1, || 0, true), healthy(1));
+        assert_eq!(select(&health, 2, || 0, true), None);
+        assert_eq!(select(&health, 9, || 0, true), None);
+        let empty: [Health; 0] = endpoints();
+        assert_eq!(select(&empty, 0, || 0, true), None);
+    }
+
+    #[test]
+    fn a_pass_over_pending_and_probing_words_reaches_the_healthy_one() {
+        let health: [Health; 3] = endpoints();
+        health[0].state.store(pack(State::Penalized, 1, 1, 9_000));
+        health[1].state.store(pack(State::Probing, 2, 2, 8_000));
+        let calls = Cell::new(0);
+        assert_eq!(
+            select(&health, 0, counted_clock(100, &calls), true),
+            healthy(2)
+        );
+        assert_eq!(calls.get(), 1);
+
+        let pair: [Health; 2] = endpoints();
+        pair[0].state.store(pack(State::Penalized, 1, 1, 9_000));
+        pair[1].state.store(pack(State::Probing, 2, 2, 8_000));
+        assert_eq!(select(&pair, 0, || 100, true), forced(1));
     }
 }
