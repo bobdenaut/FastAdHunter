@@ -355,7 +355,8 @@ producer is a `rustls::Error` in the chain) and a hard failure on plain
 **Platform note.** `ECONNREFUSED` for a UDP upstream is a Linux property of a
 `connect()`ed socket; Windows reports the same ICMP port-unreachable as
 `ECONNRESET`, a hard failure. The dev box is Windows, so the UDP path-failure
-row is exercised only on Linux — bench B.2's UDP arm and S1-L L.4 — and the
+row is exercised only on Linux — bench B.2's UDP arm (`ECONNREFUSED`) and
+S1-L L.4b (real `EHOSTUNREACH` from an ARP failure on the LAN) — and the
 dev-box path-failure tests use a DoT endpoint on a closed TCP port, which
 yields `ECONNREFUSED` on both platforms.
 
@@ -818,7 +819,7 @@ validation on the new binary. None is known; the default is 800.
 | Scenario | Behaviour |
 | --- | --- |
 | **All endpoints Penalized, no deadline passed** | Earliest-deadline endpoint used anyway, claiming nothing (S1.3 invariant). Never "refuse to send" |
-| Primary dead, secondary healthy | `penalty_failures` queries pay up to `attempt_bound_ms` each; every later query skips the dead endpoint at one relaxed load. When the primary returns, the first Record-mode query after its deadline probes it (S1.5 one pass — the Healthy secondary does not suppress the probe) and it regains primacy |
+| Primary dead, secondary healthy | `penalty_failures` queries pay up to `attempt_bound_ms` each; every later query skips the dead endpoint at one relaxed load — except one probe-carrying query per penalty window, which pays up to `attempt_bound_ms` while the primary stays dead (S1.7 cost). When the primary returns, the first Record-mode query after its deadline probes it (S1.5 one pass — the Healthy secondary does not suppress the probe) and it regains primacy |
 | Primary dead with ICMP unreachable | 1 query pays; the rest skip |
 | `resolve_host` meets a due endpoint | Not probed (Ignore never claims, S1.8); answered by the next Healthy endpoint or the forced candidate |
 | Full WAN outage | Every endpoint penalized; one probe per `PENALTY_BASE` per endpoint; clients live on cache and serve-stale; `FailureAlarm` still fires |
@@ -904,7 +905,7 @@ shipped value changes no test.
 | 2 | `crates/fastadhunter/tests/layering.rs` passes unchanged |
 | 3 | `const _: () = assert!(size_of::<Health>() == 64)` compiles |
 | 4 | Every existing upstream test passes under `strategy = "fallback"` with its assertions and observed behaviour unmodified; the only edit is the `penalty_failures` field added to `DnsUpstreamsConfig` struct literals (S1.14) |
-| 5 | Test: NXDOMAIN, SERVFAIL and REFUSED each leave `state` and `consecutive_failures` unchanged |
+| 5 | Test: NXDOMAIN, SERVFAIL and REFUSED each classify as success (p2.6-04, `classify` over the three `rcode_udp_server` results) **and** leave `state` and `consecutive_failures` unchanged end-to-end under `adaptive` — owned by bench B.6 (p2.6-09, merge tier) |
 | 6 | Test: with every endpoint Penalized and no deadline passed, a query is still sent to the earliest-deadline endpoint; no `Probing` claim, `probes` unchanged; after the forced attempt fails **on the Penalized word**, deadline and `penalty_round` are unchanged and `consecutive_failures` moved. A forced failure landing on a Probing word follows the Probing row (S1.3) and is not asserted here |
 | 7 | Test: `resolve_host` with one family black-holed moves no counter and no state (S1.8) |
 | 8 | Test: concurrent queries against a due endpoint produce exactly one `Probing` claim — with no other endpoint (the rest are forced onto it) **and** with a Healthy endpoint configured behind it (the rest answer from the Healthy one; the due endpoint ahead of it is still probed exactly once — S1.5 one pass) |
@@ -964,12 +965,12 @@ they have no noise floor and no threshold to derive:
 
 | Invariant | Criterion |
 | --- | --- |
-| Penalties applied on a healthy link | 0, or the base rate suite T reports |
-| Upstream attempts per forwarded query | identical between arms (1.000 on a healthy link). Comparable only between L.1 and L.2, which carry no HTTP traffic: under `adaptive` `attempts` excludes `resolve_host` (S1.8) |
-| Allocations added on the forward path | 0 |
-| `state` during the healthy arm | never leaves Healthy |
-| SWR attempts and outcomes | unchanged between arms |
-| RSS slope over the final third of a 24 h soak | < 2 MB (mimalloc's purge band alone is ±6 MB) |
+| Penalties applied on a healthy link | `penalties == 0` on every endpoint in L.1 and L.2 (mock upstreams that never fail). On L.3, with real upstreams, the count is **report-only** — it is S1-G4's false-penalty row, not a pass/fail here |
+| Upstream attempts per forwarded query | `(Σ attempts − (swr.completed + swr.failed)) / cache_misses == 1.000` in both arms, every term a delta over the run. Comparable only between L.1 and L.2, which carry no HTTP traffic: under `adaptive` `attempts` excludes `resolve_host` (S1.8) |
+| Allocations added on the forward path | 0 — measured at S1-M M.9 and `tests/forward_alloc.rs`, where it is exact |
+| `state` during the healthy arm | never leaves Healthy — decided from `penalties` and `probes` deltas == 0, since the 10 s poll cannot see a ≤ `attempt_bound_ms` probe |
+| SWR outcomes | `swr.failed == 0` and `swr.dropped == 0` in both arms; `swr.completed` reported. Exact equality of SWR counts between two runs is not achievable and not a criterion |
+| RSS slope over the final third of a 24 h soak | < 2 MB half-to-half drift ([measurement-traps.md](../measurement-traps.md); mimalloc's purge band alone is ±6 MB) |
 
 A timing wobble with identical counts is the box, not a Stage 1 defect. These
 catch every behavioural regression exactly.
@@ -991,12 +992,14 @@ gate carries no number.
 Freezing rule, once S1-N has run: threshold = **max(2 × N, 5 %)**. The 2× keeps
 a single excursion from failing the gate; the 5 % floor exists because a quieter
 arm on this project already drifted 4.6 %, so claiming finer resolution on a
-noisier one would not be credible. **If N exceeds ~10 %, drop the live timing
-gate entirely** and rest the healthy-path claim on tiers 1 and 2 — that is an
-honest outcome, not a failure.
+noisier one would not be credible. The metric is chosen by a **fixed order,
+not a judgment**: total upstream attempts if its N ≤ 10 %, else `forward` p99
+if its N ≤ 10 %, else **tier 3 is dropped** and the healthy-path claim rests
+on tiers 1 and 2 — an honest outcome, not a failure.
 
-Throughput remains an absolute, unaffected by the above: **≥ 10 000 QPS
-sustained, no worse than `fallback`.**
+Throughput: **≥ 10 000 QPS sustained**, absolute. The relative half — "no
+worse than `fallback`" — uses the S1-N threshold on QPS while tier 3 is alive
+and is dropped with it.
 
 On a healthy link Stage 1 and today's walk are identical by construction, so
 **this gate can only detect a regression — it can never show a gain.** Gains
@@ -1008,11 +1011,11 @@ Measured against `strategy = "fallback"` in the same session.
 
 | Scenario | Criterion |
 | --- | --- |
-| Black-holed endpoint, healthy alternative | With queries issued **sequentially**, ≤ `penalty_failures` queries pay up to `attempt_bound_ms`; every later query answers at the healthy endpoint's RTT. Concurrent queries dispatched before the penalty lands also pay (S1.3) and are outside this count |
-| ICMP-unreachable endpoint | ≤ 1 query pays anything. Decidable for UDP on Linux only (S1.4 platform note); on the dev box the arm is a DoT endpoint on a closed TCP port |
-| Recovery after the endpoint returns | Healthy again within `PENALTY_MAX` + one query interval — with the alternative endpoint Healthy throughout (S1.5 one pass) |
-| Concurrent probe claims | never more than one in flight per endpoint |
-| Flapping endpoint | backoff grows, no probe storm, client p99 no worse than the steady-outage case |
+| Black-holed endpoint, healthy alternative | With queries issued **sequentially**, ≤ `penalty_failures` **non-probe** queries pay up to `attempt_bound_ms`; thereafter only probe-carrying queries pay, one per penalty window while the endpoint stays dead, and they are reported as `failed_probes`, never as the tax. Every other query answers at the healthy endpoint's RTT. The tax-free share is stated **per tested `PENALTY_MAX / PENALTY_BASE` ratio** — it is a function of run length over the backoff schedule, not a constant. Concurrent queries dispatched before the penalty lands also pay (S1.3) and are outside this count |
+| ICMP-unreachable endpoint | Penalized after 1 attempt regardless of `penalty_failures`, and ≤ 1 query pays anything. **A classification check, not a latency win**: a refused endpoint costs ~0 under `fallback` too (immediate error, then the next endpoint), so this scenario contributes nothing to the net-cost rows. Decidable for UDP on Linux only (S1.4 platform note); on the dev box the arm is a DoT endpoint on a closed TCP port |
+| Recovery after the endpoint returns | Healthy again within `PENALTY_MAX` + one query interval of the endpoint's return — the interval is bench B.5's stated cadence (sequential, 20 QPS scaled: 50 ms) — with the alternative endpoint Healthy throughout (S1.5 one pass) |
+| Concurrent probe claims | never more than one in flight per endpoint: the mock's high-water mark of outstanding requests at the endpoint while Penalized/Probing ≤ 1 (B.5); the concurrent claim itself is S1-G1 #8 |
+| Flapping endpoint | `penalty_round` strictly increases across consecutive penalties until the cap; `probes` delta ≤ penalty windows elapsed in the phase (no probe storm); `p99_flapping ≤ 1.1 × p99_black_hole` on the same run |
 | Net timeout cost avoided | reported in two rows, client-visible and SWR — see below |
 
 ### Net timeout cost avoided
@@ -1021,21 +1024,32 @@ Measured against `strategy = "fallback"` in the same session.
 probe and a client timeout alike. Report
 
 ```text
-net_avoided = (fallback_paying − adaptive_paying) × attempt_bound_ms − probe_cost
-probe_cost  = failed_probes × attempt_bound_ms
+adaptive_paying = paying queries that did NOT carry a probe
+failed_probes   = probe-carrying queries whose probe failed (each paid once)
+probe_cost      = failed_probes × attempt_bound_ms
+net_avoided     = (fallback_paying − adaptive_paying) × attempt_bound_ms − probe_cost
 ```
 
-with `attempt_bound_ms` as the cap (S1.6) and the **measured** time paid
-beside it — a plain-UDP black hole costs one leg, so the measured figure is
-the honest one and the bound is the worst case —
+**`adaptive_paying` excludes probe-carrying queries.** A query that paid
+because it carried a failed probe is counted once, in `probe_cost`; counting
+it in `adaptive_paying` as well subtracts it twice and understates the win
+by one attempt bound per probe. With sequential issue the `probes` delta
+around each query identifies the carrier exactly. A successful probe answers
+at the endpoint's RTT and pays nothing.
 
-in **two rows, never one**: client-visible forwards and SWR refreshes. SWR is
-~69 % of attempts (Upstream traffic composition) and a refresh timeout is not
-client latency ([ADR-0005](../decisions/0005-serve-stale-while-refresh.md)),
-so the aggregate overstates the client benefit by up to that share. Interpret
-cache-hit-aware, as Stage 3's amplification figure must be: paying queries are
-a fraction of forwards, which are a fraction of client queries. The raw attempt
-count is not a client-visible benefit.
+State the inputs with `attempt_bound_ms` as the cap (S1.6) and the
+**measured** time paid beside it — a plain-UDP black hole costs one leg, so
+the measured figure is the honest one and the bound is the worst case —
+
+in **two rows, never one**: client-visible forwards (black hole and recovery
+scenarios; the ICMP-unreachable scenario contributes nothing, above) and SWR
+refreshes. SWR is ~69 % of attempts (Upstream traffic composition) and a
+refresh timeout is not client latency
+([ADR-0005](../decisions/0005-serve-stale-while-refresh.md)), so the aggregate
+overstates the client benefit by up to that share. Interpret cache-hit-aware,
+as Stage 3's amplification figure must be: paying queries are a fraction of
+forwards, which are a fraction of client queries. The raw attempt count is not
+a client-visible benefit.
 
 ## S1-G4 Constant derivation
 

@@ -61,10 +61,20 @@ is what makes minute-scale recovery benchable in milliseconds).
 | --- | --- |
 | `latency: Distribution` | fixed, uniform or lognormal delay before answering |
 | `loss: f32` | fraction of requests silently dropped |
-| `refuse: bool` | close the socket so the kernel returns `ECONNREFUSED` |
-| `unreachable: bool` | never bind, so the address is dead |
+| `refuse: bool` | bind, record the port, drop the socket — a closed port. The kernel answers `ECONNREFUSED` on Linux and `ECONNRESET` on Windows (design S1.4 platform note) |
 | `rcode: ResponseCode` | answer SERVFAIL/REFUSED while staying transport-healthy |
 | `script: Vec<Phase>` | timed transitions — recovery needs "dead for 60 s, then alive" |
+
+There is no `unreachable` knob: `ENETUNREACH` / `EHOSTUNREACH` come from
+routing and ARP, which loopback cannot produce — "never bind" is just a closed
+port, the same thing as `refuse`. The `classify` unit tests cover those kinds
+with synthetic `io::Error`s (p2.6-04); real ICMP host-unreachable is exercised
+on-device in S1-L L.4b.
+
+The harness is plain UDP. A DoT endpoint on a closed TCP port needs no TLS
+mock — the connect is refused before any handshake — so
+`UpstreamPool::from_config` with a `dot` entry at a dropped `TcpListener`'s
+address is the whole setup (the `closed_tcp_addr` shape in `encrypted.rs`).
 
 Binds `127.0.0.1:0` or `[::1]:0`, so a dual-stack pair exists on the dev box
 when a later stage needs one.
@@ -187,7 +197,10 @@ quantity and must not be pooled with it.
 ## S1-M. Stage 1 microbenchmarks
 
 `crates/fah-dns/benches/upstream_select.rs`, criterion, `harness = false`,
-pinned to one core. Pure functions over a synthetic `Arc<[Health]>` — no
+pinned to one core — except M.7, pinned to **four**: four threads racing one
+CAS on one core serialize on the scheduler and measure nothing contended. M.7
+is a CAS microbench, not the multi-threaded client/mock/pipeline harness the
+no-pin rule is about. Pure functions over a synthetic `Arc<[Health]>` — no
 sockets, no runtime, no RTT state (none exists in Stage 1).
 
 ### S1-M — workload
@@ -201,7 +214,7 @@ sockets, no runtime, no RTT state (none exists in Stage 1).
 | M.5 `update/success` | Success outcome: relaxed load, compare, early return when already Healthy with `consecutive_failures == 0` |
 | M.6 `transition/penalize` | `compare_exchange_weak` Healthy → Penalized |
 | M.7 `transition/claim_probe` | Contended `Penalized → Probing` claim, 4 threads calling `select(.., claim = true)`, exactly one winner. The claim is advisory by design (a lost CAS continues the scan, it does not retry — design S1.7, `p2.6-03`), so this measures one claim, not a loop |
-| M.8 `forward/udp_answered` | End-to-end `forward` against a loopback UDP mock, both strategies — the existing `crates/fah-dns/benches/upstream.rs` arm with an `adaptive` twin. **This is the `fallback` comparison**: `fallback` has no standalone selector to measure, its "selection" is entering the transport |
+| M.8 `forward/udp_answered` | End-to-end `forward` against a loopback UDP mock, both strategies — the existing `crates/fah-dns/benches/upstream.rs` arm with an `adaptive` twin. **This is the `fallback` comparison**: `fallback` has no standalone selector to measure, its "selection" is entering the transport. It is a **gross check**: the arm is syscall-dominated (bind, connect, send, recv — tens of µs) and cannot see a 100 ns selector change; the precision claim is M.1 against the control |
 | M.9 `forward/allocations` | Counting allocator around one `forward` per strategy; the S1-G2 tier 2 "allocations added = 0" invariant, measured here where it is exact |
 | **Control** | `select/noop` — reads the same memory, returns index 0 |
 
@@ -224,7 +237,7 @@ Wall-clock per operation. For M.7, additionally: winner count must be exactly
 
 | Bench | Criterion |
 | --- | --- |
-| M.1 | At or below the `select/noop` control within the CI — the structural claim, one relaxed load and early exit |
+| M.1 | `M.1 ≤ noop + 10 ns` x86 **and** `< 111 ns` x86 (the M.2–M.4 budget). "At or below the control" is unattainable by construction — `select` does strictly more than a noop read, and at 1–2 ns a 1 % CI is narrower than the decode. The "one relaxed load, early exit" claim is the instruction count, reported from the disassembly (`cargo asm` / `objdump`) or `perf stat`, not from the timing |
 | M.8 | `adaptive` within the CI of `fallback`; > 10 % regression is a blocker (root CLAUDE.md) |
 | M.9 | Counts equal between strategies |
 | M.2, M.3, M.4 | < 111 ns x86 (< 1 µs RB5009-equivalent, 0.1 % of the 1 ms `forward` engine-overhead budget) |
@@ -234,9 +247,9 @@ Wall-clock per operation. For M.7, additionally: winner count must be exactly
 
 ### S1-M — what justifies proceeding
 
-M.1 at or below the control, M.8 within the CI of `fallback`, M.9 equal, and
-M.3 under the RB5009-equivalent 1 µs budget. Then selection is free and the
-design needs no simplification.
+M.1 within 10 ns of the control and under 111 ns, M.8 within the CI of
+`fallback`, M.9 equal, and M.3 under the RB5009-equivalent 1 µs budget. Then
+selection is free and the design needs no simplification.
 
 ### S1-M — what justifies rejecting or simplifying
 
@@ -281,7 +294,10 @@ will actually face. Production container untouched.
 - Sustained QPS per repetition.
 - **Total upstream attempts and attempts-per-forward** per repetition — candidate
   replacement metrics, since `forward` p99 observes only the ~10 % of upstream
-  attempts that are client forwards (suite T sample 1). Comparable across
+  attempts that are client forwards (suite T sample 1). Attempts-per-forward
+  is `(Σ upstreams[].attempts − (swr.completed + swr.failed)) / cache_misses`,
+  every term a delta over the run — SWR refreshes produce attempts without a
+  client forward, so the raw ratio is never 1.000. Comparable across
   strategies only where no `resolve_host` traffic exists — L.1/L.2 in the probe
   container — because `adaptive` does not count `resolve_host` attempts
   (design S1.8).
@@ -302,6 +318,10 @@ single excursion from failing the gate; the 5 % floor exists because a quieter
 arm on this project already drifted 4.6 %, so claiming finer resolution on a
 noisier one would not be credible.
 
+**Metric choice is a fixed order, not a judgment:** total upstream attempts
+(covers client and SWR) if its N ≤ 10 %; else `forward` p99 if its N ≤ 10 %;
+else tier 3 is dropped. "Adequate" means exactly N ≤ 10 % on that metric.
+
 ### S1-N — what justifies proceeding
 
 An N small enough that the resulting threshold would catch a regression worth
@@ -311,7 +331,7 @@ lives in S1-M.
 
 ### S1-N — what justifies dropping the live timing gate
 
-- **N above ~10 % on every candidate metric** → the harness cannot resolve
+- **N > 10 % on both candidate metrics** → the harness cannot resolve
   anything useful. Drop tier 3, rest the healthy-path claim on S1-M and the
   tier 2 invariants, and say so explicitly in the result. This is an honest
   outcome, not a failure.
@@ -324,20 +344,23 @@ The suite that shows the win. Dev box, mock upstreams, tokio test runtime, not
 pinned.
 
 Every arm is run twice in the same session: `strategy = "fallback"` and
-`strategy = "adaptive"`.
+`strategy = "adaptive"`. Assertions about `state`, deadlines, `penalty_round`
+and probes (B.4's deadline rows, B.5, B.7's second pass, B.8's probe counts)
+are `adaptive`-only by nature — no such state exists under `fallback`; the
+`fallback` run of those arms reports attempts and latency and nothing else.
 
 ### S1-B — workload
 
 | Arm | Setup |
 | --- | --- |
-| B.1 Black hole | Endpoint A bound but silent; endpoint B healthy at 5 ms. 10 000 forwarded queries, distinct names, issued **sequentially** — the "≤ `penalty_failures` pay" criterion counts queries dispatched after the penalty landed; in-flight concurrent queries also pay (design S1.3) and would blur the count |
-| B.2 ICMP unreachable | Two arms. **UDP**: endpoint A on a closed UDP port (`ECONNREFUSED`) — Linux only (`cfg(target_os = "linux")`), because Windows reports the same ICMP as `ECONNRESET`, a hard failure (design S1.4 platform note); on-device in L.4. **DoT**: endpoint A on a closed TCP port (`ECONNREFUSED` on both platforms) — the dev-box arm. B healthy at 5 ms in both |
-| B.3 Healthy control | Both endpoints healthy at 5 ms — must show no difference between arms |
-| B.4 All dead | Both endpoints black-holed. Verifies the S1.3 invariant: queries are still sent |
-| B.5 Recovery | Scripted, in units of `PENALTY_MAX` (P): A healthy 0.4 P → black hole 2 P → healthy 0.6 P → flapping 0.1 P up / 0.1 P down for 0.6 P. **B healthy throughout** — A is probed by the first query after its deadline although B is Healthy (design S1.5 one pass). `PENALTY_MAX / PENALTY_BASE` swept {2.5, 12.5, 37.5} — the shipped 300 s / 24 s is 12.5; 60 s and 900 s are the other two |
+| B.1 Black hole | Endpoint A bound but silent; endpoint B healthy at 5 ms. 10 000 forwarded queries, distinct names, issued **sequentially** — the "≤ `penalty_failures` non-probe queries pay" criterion counts queries dispatched after the penalty landed; in-flight concurrent queries also pay (design S1.3) and would blur the count. A stays dead for the whole run, so one probe-carrying query pays per penalty window — those are `failed_probes`, identified by the `probes` delta around each query |
+| B.2 ICMP unreachable | **Classification check, not a win scenario**: a refused endpoint costs ~0 under `fallback` too, so B.2 is excluded from the net-cost rows. Two arms. **UDP**: endpoint A on a closed UDP port (`ECONNREFUSED`) — Linux only (`cfg(target_os = "linux")`), because Windows reports the same ICMP as `ECONNRESET`, a hard failure (design S1.4 platform note); real host-unreachable is L.4b. **DoT**: endpoint A on a closed TCP port (`ECONNREFUSED` on both platforms, no TLS mock needed) — the dev-box arm. B healthy at 5 ms in both |
+| B.3 Healthy control | Both endpoints healthy at 5 ms — decided on **counts**, not timing: an unpinned tokio runtime cannot resolve a timing difference and would reject on noise. Timing is reported; the precision claim is S1-M |
+| B.4 All dead | Both endpoints black-holed, queries sequential. Verifies the S1.3 invariant: queries are still sent |
+| B.5 Recovery | Scripted, in units of `PENALTY_MAX` (P): A healthy 0.4 P → black hole 2 P → healthy 0.6 P → flapping 0.1 P up / 0.1 P down for 0.6 P → **healthy 1.2 P → black hole 0.1 P** (the tail that exercises the round reset: the next penalty must land at `penalty_round == 1`). Queries **sequential at 20 QPS** (scaled; one query interval = 50 ms), so "one query interval" in the recovery criterion is 50 ms and every forced or probe attempt lands on a word no other query is touching. **B healthy throughout** — A is probed by the first query after its deadline although B is Healthy (design S1.5 one pass). `PENALTY_MAX / PENALTY_BASE` swept {2.5, 12.5, 37.5} — the shipped 300 s / 24 s is 12.5; 60 s and 900 s are the other two |
 | B.6 RCODE isolation | A answers SERVFAIL to everything, transport-healthy. 1 000 queries |
-| B.7 `resolve_host` isolation | Single-stack mock: A answers, AAAA silent. 100 `resolve_host` calls, no client queries. Second pass: A pre-penalized with its deadline passed, B healthy — `resolve_host` must not claim the probe (design S1.8) |
-| B.8 SWR interaction | Stale entries expiring against a black-holed endpoint, `swr_workers = 3`. Run twice: with **no client queries** (every probe counted is SWR's) and with client queries only — this is how SWR-vs-client probe attribution is measured, since telemetry does not carry it (design S1.12) |
+| B.7 `resolve_host` isolation | Single-stack mock: A answers, AAAA silent. 100 `resolve_host` calls, no client queries. Second pass (`adaptive` only): A pre-penalized with its deadline passed, B healthy — `resolve_host` must not claim the probe (design S1.8) |
+| B.8 SWR interaction | Stale entries expiring against a black-holed endpoint, `swr_workers = 3`. Run twice: **SWR-only** — stale entries expire, no client queries, every probe counted is SWR's; **client-only** — distinct never-cached names so no stale hit ever enqueues a refresh, every probe counted is a client's. This is how SWR-vs-client probe attribution is measured, since telemetry does not carry it (design S1.12). The SWR path is driven from `tests/` through `Pipeline::new(..)` + `Pipeline::spawn_swr_workers()` (`pipeline.rs:158`, public — the `server_integration.rs` construction shape); `SwrPool::spawn_workers` itself is `pub(crate)` and is not called directly |
 
 ### S1-B — configuration
 
@@ -353,48 +376,78 @@ not exercised by this suite.
 
 - Client-visible p50/p99, and the first 10 queries reported separately.
 - Count of queries that paid (latency ≥ `timeout_ms`) and the **measured** time
-  each paid.
+  each paid, split into **non-probe paying queries** and **probe-carrying
+  paying queries** (`failed_probes`). With sequential issue the `probes`
+  delta around each query identifies the carrier exactly.
 - Time-to-penalize, in queries and wall clock.
 - `state`, `penalty_round`, `penalties`, `probes`, `probe_successes`,
   `penalized_seconds_total` over time.
 - **Net timeout cost avoided** (design S1-G3):
-  `(fallback_paying − adaptive_paying) × attempt_bound_ms − failed_probes × attempt_bound_ms`,
-  and the same over measured paid time; computed **twice** — over client
-  `forward`s (B.1/B.2/B.5) and over SWR refreshes (B.8) — with a cache-hit-aware
-  line using the deployed composition (10 % client forwards, 69 % SWR).
+
+  ```text
+  adaptive_paying = non-probe paying queries          (probe carriers excluded)
+  probe_cost      = failed_probes × attempt_bound_ms
+  net_avoided     = (fallback_paying − adaptive_paying) × attempt_bound_ms − probe_cost
+  ```
+
+  and the same over measured paid time. `adaptive_paying` **excludes** the
+  probe carriers — counting them there and in `probe_cost` subtracts every
+  failed probe twice. Computed **twice** — over client `forward`s (B.1 and
+  B.5; B.2 contributes nothing, its refusal is ~free under `fallback` too)
+  and over SWR refreshes (B.8) — with a cache-hit-aware line using the
+  deployed composition (10 % client forwards, 69 % SWR).
+- **Tax-free share** per arm: queries that paid nothing ÷ queries after the
+  penalty landed, stated **per `PENALTY_MAX / PENALTY_BASE` ratio** — it
+  depends on how many penalty windows the run spans.
+- B.3: `penalties`, `attempts` per endpoint, `state` — the decision inputs;
+  p50/p99 reported, not gated.
 - B.4: count of queries for which no packet was sent — **must be 0**; each
   endpoint's deadline before and after every forced attempt.
+- B.5: `penalty_round` at the first penalty after the 1.2 P healthy tail;
+  the mock's **high-water mark of concurrently outstanding requests at A**
+  while A is Penalized or Probing (the in-flight-probe measurement —
+  trivially ≤ 1 under sequential issue, so the concurrent claim rests on
+  G1 #8); `probes` delta per phase against the number of penalty windows
+  elapsed in that phase; p99 of the flapping phase and of the black-hole
+  phase, separately.
 - B.6: `state` and `consecutive_failures` — **must be unchanged**.
 - B.7: every counter and `state` — **must be unchanged**.
-- B.8: probes in each of the two passes; dropped SWR jobs.
+- B.8: probes in each of the two passes; `swr.enqueued`, `swr.dropped`,
+  `swr.failed` deltas; the number of distinct stale keys the pass created.
 
 ### S1-B — acceptance
 
 | Arm | Criterion |
 | --- | --- |
 | B.1 `fallback` | ~10 000 × one leg (`timeout_ms`) — establishes the tax being removed |
-| B.1 `adaptive` | ≤ `penalty_failures` sequential queries pay one leg (≤ `attempt_bound_ms`); the remainder answer at ~5 ms |
-| B.2 `adaptive` | ≤ 1 query pays anything and the endpoint is Penalized after 1 attempt regardless of `penalty_failures` (UDP arm on Linux; DoT arm everywhere). The UDP arm on Windows is not a result |
-| B.3 | Arms within noise of each other; no penalty ever applied |
-| B.4 | Zero queries with no packet sent; **a forced attempt that lands on a Penalized word leaves that word's deadline and `penalty_round` unchanged** (design S1.3 hard invariant) — a forced attempt landing on a word another query has meanwhile claimed as Probing follows the Probing row and is excluded from this assertion; both endpoints probed at their original deadlines |
-| B.5 | Healthy again within `PENALTY_MAX` + one query interval with B Healthy throughout; never more than one probe in flight; flapping phase shows growing backoff and no probe storm; `penalty_round` does **not** reset during a healthy phase shorter than `PENALTY_MAX` and **does** reset after one at least `PENALTY_MAX` long |
+| B.1 `adaptive` | ≤ `penalty_failures` **non-probe** sequential queries pay one leg (≤ `attempt_bound_ms`); thereafter only probe-carrying queries pay, one per penalty window, reported as `failed_probes`; every other query answers at ~5 ms. Tax-free share stated per ratio — at 12.5 the run spans ~6 windows, at 2.5 ~13 — never as one percentage |
+| B.2 `adaptive` | Endpoint Penalized after 1 attempt regardless of `penalty_failures`, and ≤ 1 query pays anything (UDP arm on Linux; DoT arm everywhere). The UDP arm on Windows is not a result. Not a net-cost input |
+| B.3 | `penalties == 0` on both endpoints, `attempts` equal between arms, `state` Healthy throughout — **count-based**; p50/p99 reported beside it and not gated |
+| B.4 | Zero queries with no packet sent; **a forced attempt that lands on a Penalized word leaves that word's deadline and `penalty_round` unchanged** (design S1.3 hard invariant) — sequential issue keeps every forced attempt on a Penalized word; a forced attempt landing on a word another query has meanwhile claimed as Probing follows the Probing row and is excluded from this assertion; both endpoints probed at their original deadlines |
+| B.5 | Healthy again within `PENALTY_MAX` + 50 ms (one query interval at 20 QPS) of the "healthy 0.6 P" phase start, with B Healthy throughout; the mock's outstanding-request high-water mark at A while Penalized/Probing ≤ 1; flapping phase: `penalty_round` strictly increases across consecutive penalties until the cap, `probes` delta ≤ penalty windows elapsed in the phase (no probe storm), `p99_flapping ≤ 1.1 × p99_black_hole` (scaled legs are 10× the mock RTT, so noise is not the limit); `penalty_round` does **not** reset during the 0.6 P healthy phase and **does** reset after the 1.2 P tail — the penalty in the final 0.1 P lands at `penalty_round == 1` |
 | B.6 | Zero state change, zero counter movement beyond `attempts` |
 | B.7 | Zero state change, zero counter movement, including `attempts`; second pass: the due word byte-for-byte unchanged, `probes` unchanged |
-| B.8 | SWR-only pass: probes > 0; dropped jobs bounded by queue depth; no unbounded refresh retry |
+| B.8 | SWR-only pass: probes > 0. `swr.dropped` reported (a count is not bounded by a depth). No unbounded refresh retry: `swr.enqueued ≤ stale_keys × ceil(pass_duration / REFRESH_FAILURE_COOLDOWN)` — each key re-enqueues at most once per cooldown |
 | Net cost | Reported in two rows with the formula's inputs; the raw aggregate is never presented as client benefit |
 
 ### S1-B — what justifies implementing
 
-B.1 and B.2 showing the one-leg tax removed from ≥ 99.9 % of queries once the
-endpoint is penalized, **with B.3 flat**. Against the measured 5 ms healthy
-path that is a ~160× p99 improvement on the failure scenario at zero cost on the
+B.1 showing the one-leg tax removed from every query after the penalty except
+the one probe carrier per penalty window, **with B.3's counts identical**. The
+tax-free share is reported per ratio — at the shipped 12.5 a ~50 s scaled run
+spans ~6 windows (~99.9 %), at 2.5 ~13 (~99.87 %) — and at production scale
+(300 s windows, 0.68 QPS) it is one carrier per ~200 queries while the
+endpoint stays dead. Against the measured 5 ms healthy path the p99 on the
+failure scenario improves ~160× (one 800 ms leg → 5 ms) at zero cost on the
 healthy one.
 
 ### S1-B — what justifies rejecting or simplifying
 
-- **B.3 showing any difference between arms** → Stage 1 is not free on a healthy
-  link. Fix or reject; there is no acceptable trade here, because the healthy
-  link is ~100 % of normal operation.
+- **B.3 showing any count difference between arms** — a penalty applied, an
+  attempt not made, `state` leaving Healthy → Stage 1 is not free on a
+  healthy link. Fix or reject; there is no acceptable trade here, because the
+  healthy link is ~100 % of normal operation. A timing difference on this
+  unpinned runtime is noise, not a finding; timing is S1-M's.
 - **B.6 or B.7 showing any state change** → the classification or the isolation
   is wrong. Both are correctness failures (gates S1-G1.5 and S1-G1.7), not
   tuning findings.
@@ -404,14 +457,16 @@ healthy one.
   classification is not firing; ICMP errors are being seen as ordinary
   timeouts. The UDP arm on Windows taking `penalty_failures` attempts is the
   platform, not a finding (design S1.4).
-- **B.5 recovery consistently taking the full `PENALTY_MAX` under a household
-  traffic pattern with idle gaps** → on-path probing does not recover promptly
-  enough without traffic to carry the probe. Reconsider the background prober,
-  accepting the extra task and idle traffic.
+- **L.3 (not B.5 — B.5's 20 QPS sequential load has no idle gaps) showing
+  recovery consistently at the full `PENALTY_MAX`**: `probe_successes`
+  landing one full window after the deadline because household idle gaps
+  carried no query to claim the probe → on-path probing does not recover
+  promptly enough without traffic. Reconsider the background prober,
+  accepting the extra task and idle traffic. Report-only in this phase.
 - **The 2.5 ratio (60 s) performing as well as 12.5 (300 s) with no extra probe
   traffic** → a case for `PENALTY_MAX = 60 s`. That is a policy-constant
   change (design S1.6), proposed to the owner as a spec amendment and confirmed
-  on-device in S1-L L.4 before it ships — not applied inside the bench task.
+  on-device in S1-L L.4a before it ships — not applied inside the bench task.
 
 ---
 
@@ -428,15 +483,16 @@ container's own config.
 
 | Arm | Description |
 | --- | --- |
-| L.1 | 10 000 QPS synthetic forward load, 2 healthy mock upstreams on the probe host, 10 min, `adaptive` |
+| L.1 | 10 000 QPS synthetic forward load, 2 healthy mock upstreams, 10 min, `adaptive`. The mocks are whatever served p2.5-09's on-device forward load — the same tool and the same host, named in the results file; if p2.5-09 used real upstreams for that arm, L.1 does too and says so (the tier 2 invariants are counts and do not depend on the mock) |
 | L.2 | Same, `fallback`, same session — the probe container's own config flips the strategy; the production container's env is not touched for this arm |
 | L.3 | **7-day** household-traffic soak, real upstreams, `adaptive` opt-in on the **production** container (design S1.14) — the one arm that is not in the probe container |
-| L.4 | Failure injection against real upstreams: one entry pointed at a dead address, 1 h |
+| L.4a | Failure injection, **WAN black hole**: one entry pointed at a routable address nothing answers on (timeout → hard failure, B.1 shape), 1 h |
+| L.4b | Failure injection, **LAN host-unreachable**: one entry pointed at an unused address inside the LAN prefix — ARP fails and the kernel returns `EHOSTUNREACH` on the connected UDP socket (path failure, penalized after 1 attempt). The only arm in the whole plan where the UDP path-failure row meets real ICMP/ARP, which the Windows dev box cannot produce (design S1.4). 1 h |
 | **Control** | `cache_hit`-only load (all names pre-warmed) in both L.1 and L.2 |
 
 ### S1-L — configuration
 
-Probe container per routeros-traps.md for L.1, L.2, L.4. L.3 is the production
+Probe container per routeros-traps.md for L.1, L.2, L.4a, L.4b. L.3 is the production
 container with `adaptive` enabled through the `FAH_DNS_UPSTREAMS_STRATEGY`
 environment override (never a TOML edit inside the container), binary deployed
 first, opt-in second, confirmed via `GET /api/v1/config`. `penalty_failures` at
@@ -451,28 +507,36 @@ Every router command is proposed to the owner and run by the owner.
 - RSS from the 60 s perf samples (`/history/perf`); slope over the final third
   of a 24 h window inside L.3, for each day of the soak.
 - All Stage 1 telemetry fields (S1.12), daily read-only snapshots.
-- L.3: false-penalty count per healthy endpoint; `state` over time.
+- L.3: **false-penalty** count per endpoint — a `penalties` delta in a 60 s
+  perf sample during which the *other* endpoint's `failures` did not move
+  (the link was up; the penalized endpoint alone failed `penalty_failures`
+  times). `penalties` deltas in samples where every endpoint's `failures`
+  moved are outage penalties, reported separately. `state` over time — with
+  the caveat that a probe (≤ `attempt_bound_ms`) is invisible to the 10 s
+  poll; `probes` is the probe count, `state` is not.
 
 ### S1-L — acceptance
 
 | Metric | Criterion |
 | --- | --- |
-| L.1 vs L.2, chosen timing metric | Within the threshold **S1-N derived**. No number until S1-N has run. If S1-N dropped tier 3, this row is reported without a pass/fail |
-| Tier 2 invariants (design S1-G2) | Counts identical between arms — no threshold needed: penalties on a healthy link (0 or T's base rate), attempts per forward (1.000; L.1 vs L.2 only — L.3's `attempts` excludes `resolve_host` under `adaptive`, design S1.8), `state` never leaving Healthy, SWR attempts and outcomes comparable |
-| L.1 sustained QPS | ≥ 10 000, no worse than L.2 |
+| L.1 vs L.2, chosen timing metric | Within the threshold **S1-N derived**, on the metric S1-N's fixed order chose. No number until S1-N has run. If S1-N dropped tier 3, this row is reported without a pass/fail |
+| Tier 2 invariants (design S1-G2), L.1 vs L.2 | Counts, each a delta over the run: `penalties == 0` on both endpoints in both arms (the mocks never fail); attempts per forward `(Σ attempts − (swr.completed + swr.failed)) / cache_misses == 1.000` in both arms (L.1/L.2 only — L.3's `attempts` excludes `resolve_host` under `adaptive`, design S1.8); `penalties` and `probes` deltas == 0 in the `adaptive` arm (the 10 s poll cannot see a probe, so `state` is decided from the counters); `swr.failed == 0` and `swr.dropped == 0` in both arms, `swr.completed` reported — exact SWR equality between two runs is not a criterion |
+| Tier 2 on L.3 | `penalties` is **report-only** here: real upstreams do fail, and this count is G4 row 5 (false-penalty rate) under its definition above, not a pass/fail |
+| L.1 sustained QPS | ≥ 10 000 absolute. The relative half ("no worse than L.2") uses the S1-N threshold on QPS when tier 3 is alive and is dropped with it otherwise |
 | Control arm | Moves less than the measured arm, or the session is discarded |
 | L.3 RSS slope, final third of each 24 h window | < 2 MB drift (mimalloc's purge band alone is ±6 MB) |
 | L.3 state memory | constant — `penalties` may grow, state size may not |
-| L.3 false penalties | **Measured and reported. No pre-set threshold** — none is currently justified by evidence, and imposing one would smuggle the S1.6 hypothesis back in as a criterion |
+| L.3 false penalties | **Measured and reported, by the definition above. No pre-set threshold** — none is currently justified by evidence, and imposing one would smuggle the S1.6 hypothesis back in as a criterion |
 | L.3 duration | 7 days complete before the default flip is proposed (design S1.14) |
-| L.4 | Matches S1-B's B.1/B.2 shape on real hardware and real upstreams; the `attempt_bound_ms` cap may be exercised here (encrypted endpoints, TC retries) where S1-B's UDP mocks cannot |
+| L.4a | Matches S1-B's B.1 shape on real hardware and real upstreams: `penalty_failures` non-probe queries pay, then one probe carrier per window; the `attempt_bound_ms` cap may be exercised here (encrypted endpoints, TC retries) where S1-B's UDP mocks cannot |
+| L.4b | Penalized after exactly 1 attempt with `failures == 1` on the dead entry — the path-failure row confirmed with a real `EHOSTUNREACH`; if the kernel reports a timeout instead, the results file says so and the row is recorded as unconfirmed on this platform |
 
 ### S1-L — what justifies implementing
 
 L.1 within the S1-N-derived threshold of L.2 with a flat control arm, every
-tier 2 invariant intact, plus L.4 reproducing the behavioural win on the real
-device. That is "costs nothing when nothing is wrong, and pays when something
-is".
+tier 2 invariant intact, plus L.4a reproducing the behavioural win on the real
+device and L.4b confirming the path-failure row. That is "costs nothing when
+nothing is wrong, and pays when something is".
 
 ### S1-L — what justifies rejecting or simplifying
 

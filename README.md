@@ -31,19 +31,30 @@ numbers below are measured on the target hardware, not estimated.
 | 1.5 | Observability persistence | ✅ done | `v0.3.0-phase1.5` |
 | 2 | HTTP engine + Policies | ✅ done | `v0.2.17-phase2` |
 | 2.5 | Pre-Adaptive hardening | 🚧 in progress | — |
+| 2.6 | Adaptive DNS Stage 1 | 📋 planned, spec frozen | — |
 | 3 | HTTPS interception | ⬜ not started | — |
 | 4 | HTML filtering | ⬜ not started | — |
 
 Running in production on a MikroTik RB5009 as the household's only resolver, in
 `dns+http` mode. Phase 2's engine work is deployed — the transparent HTTP proxy,
-URL-path rules, per-client Policies and the single JSON telemetry surface.
+URL-path rules, per-client Policies and the single JSON telemetry surface — and
+the first Phase 2.5 build (0.2.18) has been on the device since 2026-08-23.
 
 Phase 2.5 is hardening, not features: the live-resolver defects an architecture
 review found (a DNS listener that could die silently, a 200-OK garbage list body
 that could replace a good ruleset), the encrypted-transport fixes adaptive
 upstream selection will depend on, and the outcome telemetry that makes it
-judgeable — a served SERVFAIL is now countable, and a forwarded query's event
-names which upstream answered it.
+judgeable — a served SERVFAIL is now countable, a forwarded query's event names
+which upstream answered it, and every endpoint reports the length distribution
+of its failure runs.
+
+Phase 2.6 is the first adaptive step, specified and frozen before a line of it
+is written: an upstream that stops answering is penalized after a few
+consecutive transport failures, skipped at the cost of one relaxed atomic load,
+and probed for recovery on the query path — no background task, no timer, no
+RTT ranking, no hedging. It ships opt-in and earns the default flip on the
+device, or does not: if the failure telemetry collecting since 0.2.18 shows only
+isolated single losses, the honest outcome is to leave it off.
 
 ### Measured, on the RB5009
 
@@ -594,7 +605,8 @@ firewall · a replacement for a good browser extension.
 | **1** ✅ | DNS filtering, REST API, Docker image, on-device soak |
 | **1.5** ✅ | Persisted history, perf series, byte-bounded cache |
 | **2** ✅ | HTTP proxy, URL-path rules, Policies, telemetry consolidation, compile-transient attribution |
-| **2.5** 🚧 | Listener resilience, list-refresh integrity, encrypted-transport fixes, outcome telemetry — hardening before adaptive upstream selection |
+| **2.5** 🚧 | Listener resilience, list-refresh integrity, encrypted-transport fixes, outcome telemetry, failure run-length telemetry — hardening before adaptive upstream selection |
+| **2.6** 📋 | Adaptive DNS Stage 1 — per-endpoint health, penalty and skip on repeated transport failure, on-path recovery probing; opt-in first, default only after a 7-day on-device soak and the gates in `docs/design/` |
 | **3** | HTTPS interception, certificate management, DoT/DoH listeners |
 | **4** | HTML filtering with `lol_html`, cosmetic rules |
 
@@ -621,7 +633,8 @@ if the decision is being reversed.
 │
 └── docs/
     ├── decisions/            ADRs 0001–0005
-    ├── design/               accepted designs not yet built
+    ├── design/               accepted designs not yet built, with their
+    │                         benchmark protocols
     ├── diagrams/             architecture SVG + HTML
     ├── code-review/          per-task review notes with measured results
     ├── solutions/            documented learnings — patterns and bugs worth

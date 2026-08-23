@@ -14,6 +14,7 @@ RB5009, not merely written.
 | 1.5 — observability persistence | ✅ done | `v0.3.0-phase1.5` |
 | 2 — HTTP | ✅ done | `v0.2.17-phase2` |
 | 2.5 — pre-Adaptive hardening | 🚧 in progress | — |
+| 2.6 — Adaptive DNS Stage 1 | 📋 planned, spec frozen | — |
 | 3 — HTTPS | ⬜ not started | — |
 | 4 — HTML filtering | ⬜ not started | — |
 
@@ -157,20 +158,62 @@ and the Adaptive DNS Stage 1 ship-gates a global architecture review raised.
 - [x] **p2.5-05** outcome telemetry — a served SERVFAIL is countable
       (synthesized vs relayed vs refused) and a forwarded query's event names
       the endpoint that answered
-- [ ] **p2.5-06** per-endpoint failure run-length distribution on `/telemetry`
-      (the data source for Stage 1's gate S1-G4)
-- [ ] **p2.5-07** SWR refresh-claim lease provably exceeds the worst-case
+- [x] **p2.5-06** per-endpoint failure run-length distribution on `/telemetry`
+      (the data source for Stage 1's gate S1-G4) — live since the 0.2.18
+      deploy, 2026-08-23
+- [x] **p2.5-07** SWR refresh-claim lease provably exceeds the worst-case
       upstream walk
-- [ ] **p2.5-08** hygiene — tracked bearer token gone and rotated, layering
+- [x] **p2.5-08** hygiene — tracked bearer token gone and rotated, layering
       guard covers the whole workspace, stale docs reconciled
-- [ ] **p2.5-09** phase verification — gates green, deployed, listener-death
-      drill passed, S1-G4 collection running
+- [ ] **p2.5-09** phase verification — gates green, 0.2.18 deployed,
+      listener-death drill passed, S1-G4 collection running; the soak
+      criteria are still being read
+- [ ] **p2.5-10** WS endpoint attribution — `endpoint` reaches the WS `query`
+      event (merged; not yet in a deployed build)
+- [ ] **p2.5-11** refusal log hygiene — egress refusals log at `debug` and are
+      counted on `/telemetry` (merged; not yet in a deployed build)
 
-A mid-phase deploy after `p2.5-06` is recommended: the failure counters and the
+0.2.18 went to the device after `p2.5-08`: the failure counters and the
 run-length distribution want **deployment time**, since every day they run
 before Stage 1 lands is measurement data for judging it.
 
+## Phase 2.6 — Adaptive DNS Stage 1 📋 **PLANNED** (`plan/open/phase2.6-adaptive-stage1/`)
+
+Failure-aware upstream selection, behind `strategy = "adaptive"`, opt-in.
+Specification frozen: [docs/design/adaptive-upstream-selection.md](docs/design/adaptive-upstream-selection.md)
+with its benchmark protocol
+[adaptive-upstream-selection-benchmarks.md](docs/design/adaptive-upstream-selection-benchmarks.md).
+Twelve tasks, each with an implementation plan; validated and frozen for
+implementation on 2026-08-23.
+
+What Stage 1 does: per-endpoint health (64-byte packed word), penalty after
+`penalty_failures` consecutive transport failures, penalized endpoints skipped
+during selection, on-path recovery probing, `resolve_host` isolated from
+health, telemetry (`state`, `penalty_round`, `penalties`, `probes`, …).
+DNS RCODEs never affect health. Nothing from Stage 2 (RTT ordering) or
+Stage 3 (hedging) — both stay candidate designs behind their own benchmark
+gates and are **not scheduled**.
+
+Two tiers of acceptance:
+
+- **Merge tier** (dev box) — `adaptive` ships opt-in: correctness gates
+  S1-G1 #1–#17, the pinned microbench (S1-G2 tier 1) and the injected-failure
+  bench (S1-G3). Fully mechanical.
+- **Deployment tier** (RB5009) — `adaptive` becomes the default and `fallback`
+  is deleted: the null A/B noise band, tier 2 count invariants, the 7-day
+  opt-in soak, and gates S1-G4 / S1-G5 read from the `failure_runs` window
+  collecting since 0.2.18. Two decisions stay the owner's, explicitly:
+  the `penalty_failures` value derived from the observed run-length data, and
+  whether a short window is extended rather than read. If the window shows
+  only isolated single losses, **not shipping the default flip is the
+  correct outcome** — Stage 1 has to earn it.
+
+Starts when Phase 2.5 closes. Phase 3 restarts from the Phase 2 + proven
+Stage 1 baseline afterwards.
+
 ## Phase 3 — HTTPS
+
+After Phase 2.6 closes.
 
 - HTTPS interception for managed environments (opt-in, per-client)
 - Certificate management: generate CA, import PEM/PFX, export CA, status —
@@ -242,12 +285,10 @@ parameters, never supply JavaScript.
 ## Backlog (no phase committed)
 
 - Local DNSSEC validation (off by default)
-- ~~Upstream health and load-balancing~~ — **promoted out of the backlog.**
-  Using `consecutive_failures` for *selection* rather than only reporting it is
-  now Adaptive DNS Stage 1, accepted as a specification:
-  `docs/design/adaptive-upstream-selection.md`. Phase 2.5 is its prerequisite
-  hardening; Stages 2 and 3 stay candidate designs behind explicit benchmark
-  gates. Still the thing that makes a second-family (IPv6) upstream safe to add.
+- ~~Upstream health and load-balancing~~ — **promoted out of the backlog**
+  as Phase 2.6, Adaptive DNS Stage 1 (above). Stages 2 and 3 stay candidate
+  designs behind explicit benchmark gates and are not scheduled. Still the
+  thing that makes a second-family (IPv6) upstream safe to add.
 - Per-client blocked-response modes (NXDOMAIN, REFUSED, custom IP)
 - Dashboard (`dashboard/`) — separate deliverable, API-only consumer
 - List-file management endpoints (upload/edit local lists via API)
