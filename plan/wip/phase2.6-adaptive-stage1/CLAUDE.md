@@ -29,7 +29,7 @@ approved.
 | 1 | `p2.6-01-config-surface.md` | `strategy = "adaptive"` and `penalty_failures` parse, default, validate and override from env; 8-endpoint cap; `timeout_ms` range; the nine `DnsUpstreamsConfig` literals gain the field | Opus | DONE |
 | 2 | `p2.6-02-health-core.md` | `Health` 64 B packed word, policy struct, pure transition function as a saturating CAS loop; S1.3 table pinned by tests | Opus | DONE |
 | 3 | `p2.6-03-selection-probe.md` | One-pass config-order selection with lazy clock, `claim: bool`, hard invariant, single `Probing` claim per endpoint, forced-use recording | Opus | DONE |
-| 4 | `p2.6-04-outcome-classification.md` | Transport outcomes map to `Outcome`; RCODE is success; `Record`/`Ignore` health mode; connection lifecycle never feeds health | Opus | WAITING |
+| 4 | `p2.6-04-outcome-classification.md` | Transport outcomes map to `Outcome`; RCODE is success; `Record`/`Ignore` health mode; connection lifecycle never feeds health | Opus | DONE |
 | 5 | `p2.6-05-pool-integration.md` | `forward` runs Stage 1 under `adaptive` (one probe per query, `Ignore` never claims); `resolve_host` isolated; `fallback` untouched, its test assertions unmodified | Opus | WAITING |
 | 6 | `p2.6-06-telemetry.md` | `state`, `penalty_round`, `penalties`, `penalized_seconds_total`, `probes`, `probe_successes`, `family` on `/telemetry`; `/health` degraded = no endpoint Healthy | Opus | WAITING |
 | 7 | `p2.6-07-docs.md` | CONFIGURATION.md, API.md, measurement-traps.md, CONTEXT.md updated — each edit owner-approved at execution time | Opus | WAITING |
