@@ -53,6 +53,7 @@ pub struct Metrics {
     /// Response bytes relayed downstream — the figure that makes "a blocked
     /// request ships nothing" visible as a trend rather than as an assertion.
     pub(crate) response_bytes: AtomicU64,
+    pub(crate) requests_refused: AtomicU64,
     /// Request latency, bucketed the way the DNS one is: a block never touches
     /// the network, so mixing it with a forward would hide the very budget row
     /// (`< 1 ms` for a synthesized block) it exists to prove.
@@ -100,6 +101,7 @@ impl Metrics {
             requests_allow: AtomicU64::new(0),
             requests_block: AtomicU64::new(0),
             response_bytes: AtomicU64::new(0),
+            requests_refused: AtomicU64::new(0),
             request_duration_block: Histogram::new(),
             request_duration_forward: Histogram::new(),
             dropped_events: AtomicU64::new(0),
@@ -199,6 +201,10 @@ impl Metrics {
         self.dropped_events.store(count, Ordering::Relaxed);
     }
 
+    pub fn set_requests_refused(&self, count: u64) {
+        self.requests_refused.store(count, Ordering::Relaxed);
+    }
+
     /// Stale-while-refresh counters off `fah_dns::Pipeline::swr_stats()`
     /// (ADR-0005) — like `set_dropped_events`, these are monotonic counters
     /// read fresh each poll, so this replaces the last-known value rather than
@@ -260,6 +266,7 @@ impl Metrics {
                     allow: self.requests_allow.load(Ordering::Relaxed),
                     block: self.requests_block.load(Ordering::Relaxed),
                     response_bytes: self.response_bytes.load(Ordering::Relaxed),
+                    refused: self.requests_refused.load(Ordering::Relaxed),
                 },
                 events_dropped: self.dropped_events.load(Ordering::Relaxed),
                 swr: fah_model::SwrCounters {
@@ -667,6 +674,16 @@ mod tests {
         assert_eq!(snap.answers_servfail_synthesized, 1);
         assert_eq!(snap.answers_servfail_relayed, 1);
         assert_eq!(snap.answers_refused_relayed, 1);
+    }
+
+    #[test]
+    fn the_polled_refusal_count_replaces_the_last_value_on_the_http_counters() {
+        let metrics = Metrics::new();
+        assert_eq!(metrics.engine_telemetry().counters.http.refused, 0);
+        metrics.set_requests_refused(138);
+        assert_eq!(metrics.engine_telemetry().counters.http.refused, 138);
+        metrics.set_requests_refused(140);
+        assert_eq!(metrics.engine_telemetry().counters.http.refused, 140);
     }
 
     #[test]

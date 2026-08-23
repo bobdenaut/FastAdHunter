@@ -497,6 +497,7 @@ impl Engine {
                 Arc::clone(&rules),
                 Arc::clone(&pipeline),
                 upstreams,
+                http_proxy.as_ref().map(|proxy| proxy.counters()),
             ),
             spawn_policy_ticker(policy_state, rules, Arc::clone(&stats)),
         ];
@@ -661,6 +662,7 @@ fn spawn_telemetry_poll(
     rules: Arc<fah_rules::ListManager>,
     pipeline: Arc<fah_dns::Pipeline<fah_dns::UpstreamPool>>,
     upstreams: fah_dns::UpstreamPool,
+    proxy_counters: Option<Arc<fah_http::ProxyCounters>>,
 ) -> tokio::task::JoinHandle<()> {
     tokio::spawn(async move {
         let mut ticker = tokio::time::interval(TELEMETRY_POLL);
@@ -669,6 +671,10 @@ fn spawn_telemetry_poll(
             ticker.tick().await;
 
             metrics.set_dropped_events(pipeline.dropped_events());
+            if let Some(counters) = proxy_counters.as_ref() {
+                let proxy = counters.snapshot();
+                metrics.set_requests_refused(proxy.refused_claim + proxy.refused_destination);
+            }
             // Field-by-field rather than a shared type: `fah-dns` and
             // `fah-metrics` are L3 siblings and must not import each other
             // (ARCHITECTURE.md §Dependency Layering), so the binary is the one

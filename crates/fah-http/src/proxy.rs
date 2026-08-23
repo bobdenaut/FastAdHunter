@@ -41,7 +41,7 @@ use hyper_util::rt::{TokioExecutor, TokioIo, TokioTimer};
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::net::TcpStream;
 use tokio::sync::mpsc;
-use tracing::{debug, warn};
+use tracing::debug;
 
 use crate::claim::{destination_of, retarget, ClaimError, Destination};
 
@@ -319,7 +319,7 @@ impl Proxy {
             Ok(claim) => claim,
             Err(err) => {
                 self.counters.refused_claim.fetch_add(1, Ordering::Relaxed);
-                warn!(%peer, reason = err.reason(), "refused: unusable Host");
+                debug!(%peer, reason = err.reason(), "refused: unusable Host");
                 return Ok(refuse(match err {
                     // A destination we will not serve, versus a request we
                     // cannot parse — the client can act on the difference.
@@ -501,7 +501,7 @@ impl Proxy {
                     .refused_destination
                     .fetch_add(1, Ordering::Relaxed);
                 // The signal a LAN device is probing: warn, with who and where.
-                warn!(
+                debug!(
                     %peer,
                     host = %claim.host,
                     port = claim.port,

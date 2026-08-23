@@ -124,6 +124,8 @@ pub struct HttpCounters {
     /// Response bytes relayed downstream — what makes "a blocked request ships
     /// nothing" visible as a trend rather than as an assertion.
     pub response_bytes: u64,
+    #[serde(default)]
+    pub refused: u64,
 }
 
 /// Stale-while-refresh queue counters (ADR-0005).
@@ -228,6 +230,14 @@ fn from_micros<'de, D: Deserializer<'de>>(deserializer: D) -> Result<Duration, D
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn http_counters_written_before_the_refused_field_still_deserialize() {
+        let json = r#"{"pass":4412,"allow":0,"block":918,"response_bytes":148223904}"#;
+        let counters: HttpCounters = serde_json::from_str(json).unwrap();
+        assert_eq!(counters.refused, 0);
+        assert_eq!(counters.block, 918);
+    }
 
     #[test]
     fn an_empty_stage_has_no_mean_rather_than_a_zero_one() {

@@ -374,6 +374,7 @@ impl TelemetrySource for FakeTelemetry {
                     allow: 0,
                     block: 918,
                     response_bytes: 148_223_904,
+                    refused: 3,
                 },
                 events_dropped: 7,
                 swr: fah_model::SwrCounters {
@@ -745,6 +746,7 @@ async fn telemetry_matches_the_documented_shape() {
     assert_eq!(body["counters"]["dns"]["answers"]["servfail_relayed"], 88);
     assert_eq!(body["counters"]["dns"]["answers"]["refused_relayed"], 17);
     assert_eq!(body["counters"]["http"]["response_bytes"], 148_223_904);
+    assert_eq!(body["counters"]["http"]["refused"], 3);
     assert_eq!(body["counters"]["events_dropped"], 7);
     assert_eq!(body["counters"]["swr"]["failed"], 31);
     assert_eq!(
