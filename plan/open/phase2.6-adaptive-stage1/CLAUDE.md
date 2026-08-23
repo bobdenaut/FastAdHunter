@@ -28,12 +28,12 @@ approved.
 
 | # | Task file | Outcome | MODEL | STATUS |
 |---|-----------|---------|-------|--------|
-| 1 | `p2.6-01-config-surface.md` | `strategy = "adaptive"` and `penalty_failures` parse, default, validate and override from env; 8-endpoint cap | Opus | WAITING |
+| 1 | `p2.6-01-config-surface.md` | `strategy = "adaptive"` and `penalty_failures` parse, default, validate and override from env; 8-endpoint cap; `timeout_ms` range; the nine `DnsUpstreamsConfig` literals gain the field | Opus | WAITING |
 | 2 | `p2.6-02-health-core.md` | `Health` 64 B packed word, policy struct, pure transition function as a saturating CAS loop; S1.3 table pinned by tests | Opus | WAITING |
-| 3 | `p2.6-03-selection-probe.md` | Linear selection, hard invariant, single `Probing` claim per endpoint, forced-use recording | Opus | WAITING |
+| 3 | `p2.6-03-selection-probe.md` | One-pass config-order selection with lazy clock, `claim: bool`, hard invariant, single `Probing` claim per endpoint, forced-use recording | Opus | WAITING |
 | 4 | `p2.6-04-outcome-classification.md` | Transport outcomes map to `Outcome`; RCODE is success; `Record`/`Ignore` health mode; connection lifecycle never feeds health | Opus | WAITING |
-| 5 | `p2.6-05-pool-integration.md` | `forward` runs Stage 1 under `adaptive`; `resolve_host` isolated; `fallback` untouched, its tests unmodified | Opus | WAITING |
-| 6 | `p2.6-06-telemetry.md` | `state`, `penalty_round`, `penalties`, `penalized_seconds_total`, `probes`, `probe_successes`, `family` on `/telemetry`; `/health` degraded = every endpoint Penalized | Opus | WAITING |
+| 5 | `p2.6-05-pool-integration.md` | `forward` runs Stage 1 under `adaptive` (one probe per query, `Ignore` never claims); `resolve_host` isolated; `fallback` untouched, its test assertions unmodified | Opus | WAITING |
+| 6 | `p2.6-06-telemetry.md` | `state`, `penalty_round`, `penalties`, `penalized_seconds_total`, `probes`, `probe_successes`, `family` on `/telemetry`; `/health` degraded = no endpoint Healthy | Opus | WAITING |
 | 7 | `p2.6-07-docs.md` | CONFIGURATION.md, API.md, measurement-traps.md, CONTEXT.md updated — each edit owner-approved at execution time | Opus | WAITING |
 | 8 | `p2.6-08-microbench.md` | S1-M: healthy-path selection cost `adaptive` vs `fallback`, pinned, zero allocations — G2 tier 1 | Opus | WAITING |
 | 9 | `p2.6-09-injected-failure-bench.md` | S1-G3 scenarios pass; net timeout cost avoided reported in two rows | Opus | WAITING |
@@ -45,9 +45,16 @@ approved.
 
 Before starting a task:
 
-1. Read the current task file completely.
+1. Read the current task file completely **and its implementation plan**,
+   `p2.6-NN-<slug>-plan.md`, beside it. The plan file carries the exact
+   symbols and line ranges, the resolved contradictions (C1–C7) and the final
+   timing terminology; where the two differ, the plan file wins.
 2. Read the current phase status/table.
 3. Read the spec sections the task file names. Do not read the whole spec.
+   Timing terms are fixed by spec S1.6 and used identically everywhere:
+   `attempt_timeout` = the existing per-leg value (`timeout_ms`);
+   `attempt_bound_ms = ATTEMPT_LEGS × timeout_ms` bounds one attempt;
+   `PENALTY_BASE = 10 × attempt_bound_ms`.
 4. Read the **Implementation Summary** from the code-review files of previously completed tasks in the same phase that are relevant to the current task.
 5. If the current task declares an explicit dependency (`Depends on: pY-XX`), always read that dependency's Implementation Summary.
 6. Read full code-review findings only when the current task depends on a finding, deferred item, constraint, or decision that is not fully captured by the Implementation Summary.
@@ -158,8 +165,10 @@ Do not proactively report individual fixes, changed files, test counts, implemen
 **Definition of done:** under `strategy = "adaptive"` a dead endpoint costs at
 most `penalty_failures` timeouts and is then skipped at one relaxed load; every
 endpoint Penalized still sends a query; a probe is claimed exactly once per
-endpoint per deadline; `resolve_host` moves no health state; `fallback` is
-bit-identical to today and its tests are unmodified; all S1-G1 tests (#1–#15)
+endpoint per deadline, at most once per query, and never by `resolve_host`; a
+recovered endpoint ahead of a Healthy one is probed by the next query that
+reaches it; `resolve_host` moves no health state; `fallback` is bit-identical
+to today and its test assertions are unmodified; all S1-G1 tests (#1–#17)
 pass; S1-G2 tier 1 and S1-G3 pass on the bench; S1-N reports N; `adaptive`
 has run opt-in on the RB5009 through the 7-day soak with G2 tiers 2–3, G4 and
 G5 decided and recorded; the default flip is a separate approved commit;
@@ -170,7 +179,11 @@ gates green throughout.
 forced failure that extends the deadline turns a WAN blip into a resolver
 that never probes (mitigation: test #6 asserts deadline and round unchanged);
 `resolve_host` at 20 % of attempts — one missed `Ignore` and the health
-signal is swamped (mitigation: test #7); the S1-G4 window may close with too
+signal is swamped (mitigation: test #7), and an `Ignore` call that claims a
+probe leaves the word in `Probing` forever (mitigation: `claim = false`, test
+#16); a two-pass "Healthy first, then due" selector never probes a recovered
+primary while the secondary answers (mitigation: one pass, test #8 with a
+Healthy endpoint behind the due one); the S1-G4 window may close with too
 few runs to read — the spec says extend the window, not guess; every `.md`
 edit in `p2.6-07` and `p2.6-12` needs the owner's explicit approval at
 execution time (working agreement) — the tasks list them, they do not

@@ -1,0 +1,238 @@
+Full Adaptive Upstream Pre-Implementation Validation
+
+Perform a full independent re-evaluation / red-team review of the entire Adaptive Upstream Stage 1 implementation package before any Opus implementation starts.
+
+This is a validation pass, not a planning pass and not an implementation pass.
+
+Review all of the following together:
+
+docs/design/adaptive-upstream-selection.md — final Stage 1 specification
+the Adaptive Upstream benchmark specification
+plan/open/phase2.6-adaptive-stage1/CLAUDE.md
+all 12 p2.6-* task plans
+the task dependency graph / execution order
+the actual current code relevant to all 12 tasks
+the previously identified C1–C7 contradictions and their resolutions
+
+Do not assume that the previous review was correct. Re-derive the conclusions independently from the current spec, benchmark, plans, and code.
+
+Primary question
+
+Is this package internally correct, implementable, benchmarkable, and safe to hand to Opus?
+
+I want you to try to break it, not merely confirm it.
+
+1. Spec ↔ code validation
+
+For every normative Stage 1 requirement:
+
+identify the exact current code location;
+verify that the proposed task actually changes the correct boundary;
+check whether existing behavior, especially fallback behavior, is preserved;
+look for assumptions in the spec that are false in the current implementation;
+look for existing code behavior that the spec failed to account for.
+
+Pay particular attention to:
+
+Health 64-byte invariant;
+packed atomic layout;
+CAS-loop semantics;
+saturation / overflow;
+outcome applied to state observed at record time;
+Penalized + success;
+Penalized + failure;
+Probing races;
+forced use when all endpoints are Penalized;
+probe claim uniqueness;
+connection lifecycle vs endpoint health;
+TLS handshake failures;
+TCP retry / TC behavior;
+DoH bootstrap failures;
+reconnect behavior;
+Record vs Ignore;
+SWR behavior;
+fallback compatibility.
+
+Explicitly check that no race can produce an invalid state transition or extend a penalty incorrectly.
+
+2. Policy / state-machine validation
+
+Verify that:
+
+the state machine is value-free;
+all policy values live in the intended plain Copy policy structure;
+no trait/dispatch abstraction has leaked into the hot path;
+penalty_failures, PENALTY_BASE, PENALTY_MAX, and jitter have one coherent source of truth;
+changing the policy values does not require rewriting state-machine tests;
+attempt_timeout retains its existing code meaning;
+attempt_bound_ms = ATTEMPT_LEGS × timeout_ms;
+PENALTY_BASE = 10 × attempt_bound_ms.
+
+Check all timing arithmetic for overflow, unit confusion, and incorrect assumptions about one-leg vs worst-case attempt cost.
+
+3. 64-byte / atomic correctness
+
+Independently reconstruct the packed-word layout.
+
+Verify:
+
+every bit allocation;
+maximum representable value;
+timestamp resolution;
+consecutive-failure saturation;
+penalty-round behavior;
+deadline monotonicity;
+CAS retry behavior;
+no packed-word fetch_add;
+plain counter fetch_add remains valid;
+no ABA-style state reuse;
+concurrent failure/probe/success races cannot corrupt adjacent fields.
+
+Do not accept the 64-byte assertion merely because a test exists; verify that the actual representation and mutation logic justify it.
+
+4. Selection / concurrency red-team
+
+Try to construct concrete races for:
+
+two workers claiming the same probe;
+stale success after penalty;
+stale probe failure after success;
+forced-use failure;
+forced-use success;
+endpoint becoming Penalized while another worker has already selected it;
+endpoint becoming Healthy while another worker is scanning;
+all endpoints Penalized;
+earliest-deadline selection;
+connection reuse while endpoint health changes;
+idle-close/reconnect during an attempt.
+
+For each race, state the expected final state and whether the current plan actually guarantees it.
+
+5. Benchmark validation
+
+Independently review the benchmark design against the implementation plan.
+
+Verify:
+
+S1-M / Tier 1 measures implementation overhead rather than behavioral benefit;
+S1-N produces the null/noise band before Tier 3 thresholds are frozen;
+Tier 2 measures invariants rather than noisy latency claims;
+S1-G3 measures the actual adaptive behavioral benefit;
+client-visible and SWR traffic are separated;
+cache-hit effects are handled correctly;
+failure_runs is interpreted as attempt clustering, not outage duration;
+penalized_seconds_total is correctly interpreted as scheduled/nominal unavailability;
+probe telemetry limitations are respected;
+attempt_timeout, attempt_bound_ms, and penalty windows are never conflated;
+the timeout-cost calculation does not multiply the wrong timeout unit;
+benchmark gates cannot be accidentally passed because of measurement methodology.
+
+Also check whether the benchmark can actually distinguish:
+
+adaptive is beneficial
+
+from
+
+adaptive merely changes where the cost is observed.
+
+6. Task decomposition validation
+
+Review A1–A12 as implementation units.
+
+For every task ask:
+
+Is this a real independently reviewable unit?
+Does it have the correct owner/module?
+Are its dependencies complete?
+Is anything missing?
+Is anything duplicated?
+Does any task contain architecture that belongs in another task?
+Can it be implemented without guessing?
+Can its acceptance criteria actually prove completion?
+
+Verify the critical path and identify any hidden dependency not represented in the graph.
+
+Pay particular attention to A2 and A5.
+
+7. Plan ↔ task ↔ spec coverage
+
+Build a coverage matrix:
+
+spec requirement → task → plan → code location → test/benchmark/gate
+
+Find:
+
+uncovered requirements;
+requirements covered only textually but not tested;
+tests with no corresponding normative requirement;
+benchmark gates with no implementation support;
+implementation work with no acceptance criterion.
+8. Performance / memory / hot-path review
+
+Treat CPU, allocations, contention, and memory as first-class constraints.
+
+Specifically inspect:
+
+selection cost;
+CAS contention;
+atomic retries;
+packed-state manipulation;
+added per-attempt branches;
+allocation on the adaptive path;
+telemetry overhead;
+probe handling;
+cache/SWR interaction;
+impact on the existing fallback path.
+
+Flag anything that could violate the project's established performance or memory constraints.
+
+Do not propose an optimization merely because it is theoretically possible. Only flag concrete risks supported by the code.
+
+9. Scope / architecture audit
+
+Confirm that Stage 1 contains nothing from Stage 2 or Stage 3, including:
+
+RTT/SRTT;
+latency ranking;
+family preference;
+hedging;
+parallel attempts;
+slow-answering optimization;
+inert future config keys.
+
+Confirm that Stage 2 and Stage 3 remain candidate designs whose implementation depends on future benchmark evidence.
+
+10. Final verdict
+
+Give exactly one of:
+
+GO — implementation can start.
+
+GO WITH REQUIRED FIXES — architecture is sound but specific spec/benchmark/plan corrections are required before Opus.
+
+NO-GO — a substantive architectural or correctness problem remains.
+
+If anything is wrong, classify every finding:
+
+BLOCKER — must be fixed before Opus
+HIGH — should be fixed before implementation
+MEDIUM — can be fixed during implementation without architectural risk
+LOW — documentation/cosmetic
+
+For every BLOCKER/HIGH finding provide:
+
+exact file/section/task;
+the contradiction or failure mode;
+why the current solution is insufficient;
+the smallest correct fix;
+whether the spec, benchmark, task decomposition, or individual plan must change.
+
+Do not edit any file during this review.
+
+Do not generate new plans.
+
+Do not implement anything.
+
+Do not silently resolve contradictions.
+
+The goal is to determine whether the current Adaptive Stage 1 package is genuinely ready for Opus implementation.

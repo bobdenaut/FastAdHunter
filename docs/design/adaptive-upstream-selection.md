@@ -155,6 +155,11 @@ p2.5-04). Two properties the S1-G4 analysis must carry:
   is toward *shorter* runs — conservative for S1-G4, since it works against
   `penalty_failures = 2`. If runs of ≥ 2 still dominate the measured
   distribution, they dominate in reality too.
+- **Counters reset on every restart.** `failure_runs` is cumulative per
+  process. The window spans at least two restarts (0.2.16 → 0.2.18 → the
+  2.6 binary deployed under `fallback`), so the distribution is the **sum of
+  per-process deltas** read from `/history/perf`, never `end − start` across a
+  restart — that undercounts by every run closed before the restart.
 
 Gate S1-G4 therefore needs deploy time, not new code. The earlier candidate
 remedy — a `max_consecutive_failures` high-water mark, an eighth `AtomicU64`
@@ -212,9 +217,10 @@ Seven `u64` = 56 B, padded to 64 by the alignment. **An eighth field doubles the
 struct to 128 B**; the assertion exists to make that a compile error rather than
 a silent regression.
 
-Cold array: `address: Arc<str>`, `protocol`, `family` (informational in Stage 1
-— nothing reads it for selection), `transport`. Unchanged from today's
-`UpstreamServer` minus the counters that moved.
+Cold array: `address: String`, `protocol`, `family` (informational in Stage 1
+— nothing reads it for selection; derived once at construction from the
+configured address, `None` for a hostname DoH URL), `transport`. Unchanged
+from today's `UpstreamServer` minus the counters that moved.
 
 **Cap: 8 endpoints**, enforced by `fah-config` validation as it already enforces
 non-empty. `EndpointId` is a `u8` and the selection scan is linear.
@@ -252,7 +258,7 @@ Packed `state: AtomicU64`:
 
 | Bits | Field | Notes |
 | --- | --- | --- |
-| 0–1 | `state` | 0 Healthy · 1 Penalized · 2 Probing |
+| 0–1 | `state` | 0 Healthy · 1 Penalized · 2 Probing · 3 never written — `unpack` maps it to Healthy (fail-open, consistent with the hard invariant) behind a `debug_assert` |
 | 2–5 | `penalty_round` | saturating at 15 |
 | 6–13 | `consecutive_failures` | saturating at 255 |
 | 14–63 | `timestamp_ms` | ms since pool epoch (`Instant`), 50 bits ≈ 35 000 years |
@@ -261,6 +267,13 @@ Packed `state: AtomicU64`:
 atomically in the same word**: while Healthy it is `healthy_since`; while
 Penalized or Probing it is the penalty deadline. This is what lets the
 `penalty_round` reset rule (S1.6) exist without a second word.
+
+Two timing conventions, pinned: a deadline **has passed** when
+`deadline <= now`; and **every subtraction on `timestamp_ms` is saturating**.
+Threads sample `Instant::now()` independently, so a success recorded by another
+thread can carry a `healthy_since` later than this thread's `now` — a plain
+`now - healthy_since` would underflow (a debug-build panic, a spurious
+`penalty_round` reset in release).
 
 ### Transition rule
 
@@ -278,7 +291,7 @@ was dispatched under; the function decides from what it sees.
 | **Penalized** | **success** | **Healthy**, `consecutive_failures = 0`, `healthy_since = now`, `penalty_round` kept — the probe-success rule. An in-flight attempt dispatched before the penalty is valid transport evidence; discarding it would keep a live endpoint out for up to `PENALTY_MAX`. If the success was stale, at worst `penalty_failures` *new* queries pay up to `attempt_bound_ms` once and the endpoint is penalized again at round + 1 |
 | Penalized | any failure | `consecutive_failures += 1` (saturating) **only. Deadline and `penalty_round` unchanged.** This is the forced-use case of the hard invariant below: extending the deadline on every forced failure would push the probe out forever during a total outage |
 | Probing | success | Healthy, as above |
-| Probing | failure | Penalized, `penalty_round += 1`, new deadline (S1.7) |
+| Probing | failure | Penalized, `consecutive_failures += 1` (saturating — the open run extends, S1.12), `penalty_round += 1`, new deadline (S1.7). This is a penalty: `penalties += 1` and `penalized_ms_total` accrues the new nominal duration |
 
 A probe whose endpoint a stale success already moved to Healthy therefore
 lands as an ordinary Healthy-row outcome: a failure counts one and does not
@@ -287,17 +300,24 @@ what the word *is*.
 
 ### Hard invariant
 
-**The selector always returns a candidate while endpoints exist.** If every
-endpoint is Penalized *and no deadline has passed*, the endpoint with the
-earliest deadline is used anyway, without claiming a probe and without altering
+**The selector always returns a candidate while endpoints exist.** If the
+pass selects nothing — every endpoint is Penalized with a future deadline, or
+Probing — the endpoint with the earliest `timestamp_ms` among the Penalized
+and Probing words is used anyway, without claiming a probe and without altering
 its deadline. A transient total blip must never become a self-inflicted outage
 in which FAH refuses to send a packet. This rule overrides the deadline check in
 S1.5 and is the single most dangerous behaviour to get wrong.
 
-The forced attempt is recorded under the Penalized rows of the transition rule:
-`attempts`, `failures` and `consecutive_failures` move, deadline and
-`penalty_round` do not, a success restores Healthy. No `Probing` claim is made
-and `probes` does not move.
+The forced attempt is recorded under the row of the state observed when it
+lands, like every other outcome. Landing on a **Penalized** word: `attempts`,
+`failures` and `consecutive_failures` move, deadline and `penalty_round` do
+not, a success restores Healthy. Landing on a **Probing** word (the forced
+endpoint had a probe in flight, or a probe was claimed after the forced
+attempt was dispatched): the Probing row applies — a failure bumps
+`penalty_round` and sets a new deadline, a success restores Healthy.
+Deadline-and-round invariance is a property of the Penalized row, not of the
+forced attempt; S1-G1 #6 and bench B.4 assert it on that row. No `Probing`
+claim is made by a forced attempt and `probes` does not move.
 
 ## S1.4 Failure classification
 
@@ -316,6 +336,9 @@ transition can be triggered by NXDOMAIN, SERVFAIL or REFUSED.
 | Idle-close → transparent reconnect → answer | Success | `consecutive_failures = 0` |
 | TC → TCP retry succeeds | Success | `consecutive_failures = 0` |
 | Malformed or ID-mismatched datagram | ignored, wait continues | resolves as timeout |
+| `ECONNRESET` on any transport | Hard failure | a mid-connection reset is transient; the encrypted transport reconnects inside the attempt |
+| Local socket error — `EMFILE`, `ENOBUFS`, `EADDRNOTAVAIL`, bind failure | Hard failure | not an endpoint property, but not distinguishable per endpoint without a taxonomy; every endpoint fails together, all get penalized, the hard invariant keeps sending one packet per query |
+| `rustls::Error` after the handshake (record decrypt) on an encrypted transport | Path failure | the transport maps every rustls error to `InvalidData`; handshake and post-handshake are not distinguished |
 
 Path failures penalize at first occurrence because they are unambiguous
 kernel/library signals rather than statistics. "Immediately" applies to an
@@ -323,6 +346,18 @@ endpoint eligible for the transition — Healthy or Probing. A forced attempt
 against an already-Penalized endpoint (S1.3 hard invariant) records the path
 failure in `failures` and `consecutive_failures` like any failure, and leaves
 deadline and `penalty_round` unchanged.
+
+Classification is by `io::ErrorKind` and is **transport-specific** in one
+place: `InvalidData` is a path failure on an encrypted transport (its only
+producer is a `rustls::Error` in the chain) and a hard failure on plain
+(a TCP-leg wire-decode failure).
+
+**Platform note.** `ECONNREFUSED` for a UDP upstream is a Linux property of a
+`connect()`ed socket; Windows reports the same ICMP port-unreachable as
+`ECONNRESET`, a hard failure. The dev box is Windows, so the UDP path-failure
+row is exercised only on Linux — bench B.2's UDP arm and S1-L L.4 — and the
+dev-box path-failure tests use a DoT endpoint on a closed TCP port, which
+yields `ECONNREFUSED` on both platforms.
 
 **Why SERVFAIL must not penalize.** SERVFAIL usually means the *name* is broken
 (DNSSEC failure, dead zone), not the endpoint. Distinguishing "this endpoint
@@ -352,30 +387,56 @@ so it is a known property rather than a surprise.
 
 ## S1.5 Selection algorithm
 
-Linear scan in config order. No sort, no score, no allocation, no lock.
+**One pass** over config order, from the caller's `start` index. No sort, no
+score, no allocation, no lock. Each endpoint is judged where the scan meets
+it:
 
 ```text
-1. First Healthy endpoint in config order            → use it
-2. else first Penalized endpoint whose deadline has passed
-      → CAS Penalized → Probing, use it as a probe   (S1.7)
-3. else endpoint with the earliest deadline          → use it, claim nothing
+for each endpoint from `start`, in config order:
+    Healthy                           → use it, stop
+    Penalized, deadline <= now        → CAS Penalized → Probing,
+                                        use it as a probe (S1.7), stop
+    Penalized, deadline > now         → skip
+    Probing                           → skip
+nothing selected                      → earliest `timestamp_ms` among the
+                                        Penalized and Probing words from
+                                        `start`: use it, claim nothing
+                                        (S1.3 hard invariant)
 ```
+
+The clock is read **lazily, at the first non-Healthy word, at most once per
+call**; a pass that meets a Healthy word first never reads it. The selector
+takes `claim: bool`. With `claim = false` a due endpoint is treated as not due
+— skipped, nothing stored — so the pass falls through to the next Healthy
+endpoint or to the forced candidate. The caller passes `false` in Ignore mode
+(S1.8) and once a probe has already been claimed in the current query.
+
+**Why one pass and not "Healthy first, then due".** A due endpoint ahead of a
+Healthy one is probed by the next query that reaches it — that is what returns
+a recovered primary to primacy, and it is the only way a penalized endpoint is
+ever probed while another endpoint answers. A due endpoint *behind* the first
+Healthy one is reached only when that Healthy endpoint fails on the same query;
+its recovery is lazy and costs nothing, since config order would not select it
+anyway.
 
 On failure of the chosen endpoint, the scan continues from the next endpoint
 under the same rules, exactly as today's walk continues — but skipping
-Penalized endpoints.
+Penalized endpoints. **A query claims at most one probe**: the caller keeps a
+local `probed` flag and passes `claim = false` for the rest of that query once
+a probe has been claimed, so `[due, due, Healthy]` costs one probe leg, not
+two.
 
-**Worst-case attempts per query is therefore ≤ today's**, since Stage 1 tries a
-subset of what the current walk tries plus at most one probe. No new deadline
-key is needed and none is added.
+**Worst-case attempts per query is therefore ≤ today's**, since every call
+returns an index ≥ `start` and Stage 1 tries a subset of what the current walk
+tries plus at most one probe. No new deadline key is needed and none is added.
 
 **Boot behaviour is bit-identical to today**: every endpoint starts Healthy, so
-rule 1 selects the first configured server on the first query and on every query
-thereafter while it answers.
+the pass selects the first configured server on the first query and on every
+query thereafter while it answers.
 
 Cost: ≤ 8 relaxed loads with an early exit on the first Healthy — in the
-steady state, exactly one. Strictly less work than today's loop, which
-re-enters the transport for every server until one answers.
+steady state, exactly one, and no clock read. Strictly less work than today's
+loop, which re-enters the transport for every server until one answers.
 
 ## S1.6 Penalty
 
@@ -449,32 +510,55 @@ never uses that name for the bound.
 | --- | --- |
 | `PENALTY_BASE` | **Derived.** The penalty must exceed one attempt's bound by enough that a retry landing on a still-dead endpoint is negligible against the penalty. Any factor of roughly 5–20 of `attempt_bound_ms` satisfies this; 10 is the round number inside that range (30× the typical one-leg attempt), and the value is not measurement-sensitive |
 | `PENALTY_MAX` | **A policy choice, not a derived value.** It states how long a stale penalty is tolerable with no operator action. 300 s is chosen because an operator restarts the container over anything longer. Nearby existing intervals for scale: `REFRESH_FAILURE_COOLDOWN` 30 s, `FailureAlarm::WARN_INTERVAL` 30 s |
-| Jitter ±25 % | **Arbitrary and admitted.** It only needs to desynchronise simultaneous probes after a link flap. Taken from the low bits of the elapsed-ms counter — deterministic, no RNG, no cryptographic requirement, computed when a penalty is applied (a cold path) |
+| Jitter ±25 % | **Arbitrary and admitted.** Taken from the low 8 bits of `now_ms` when a penalty is applied (a cold path) — deterministic, no RNG, no cryptographic requirement. It desynchronises one endpoint's successive penalty windows; two endpoints penalized in the same millisecond share the jitter and keep synchronised deadlines, which is accepted: every probe is one query's primary attempt and ≤ 8 endpoints cannot storm |
+
+`penalty(round)` is defined for `round ≥ 1` only; `next_round` never yields 0
+(a reset yields 1), and the implementation `debug_assert`s it.
 
 `penalty_round` resets to 0 only when the endpoint has been continuously Healthy
 for `PENALTY_MAX`, checked from `healthy_since` at the moment the *next* penalty
 is applied — so it costs the query path nothing. Without the rule a flapping
 endpoint oscillates forever at `PENALTY_BASE`; without the reset it ratchets to
-`PENALTY_MAX` and stays there.
+`PENALTY_MAX` and stays there. The check is `now.saturating_sub(healthy_since)
+>= PENALTY_MAX` (S1.3, concurrent `now` sampling).
+
+`timeout_ms` is validated to **1..=10 000** (S1.13). At 0 every penalty is
+zero-length and every query probes; above 10 000 `PENALTY_BASE` exceeds
+`PENALTY_MAX` and the backoff disappears. Neither is a configuration this
+design supports.
 
 ## S1.7 Recovery probing
 
 **On-path. No background task, no clock inside `fah-dns`.** Principle 6: the
 library holds pure logic; the binary owns timers.
 
-A probe is a **primary attempt**, not a hedge. A query that finds no Healthy
-endpoint and finds a Penalized endpoint whose deadline has passed claims that
-endpoint (`Penalized → Probing`, one `compare_exchange_weak`, so exactly one
-probe is in flight per endpoint) and sends its query there.
+A probe is a **primary attempt**, not a hedge. A query whose selection pass
+(S1.5) meets a Penalized endpoint whose deadline has passed — before any
+Healthy endpoint — claims that endpoint (`Penalized → Probing`, one
+`compare_exchange_weak`, so exactly one probe is in flight per endpoint) and
+sends its query there. A lost CAS is not retried: the loser continues its pass
+as if the endpoint were Penalized with a future deadline.
 
 - Probe answered → Healthy, `consecutive_failures = 0`, `healthy_since = now`,
   `penalty_round` kept.
-- Probe failed → Penalized, `penalty_round += 1`, new deadline.
+- Probe failed → Penalized, `consecutive_failures += 1`, `penalty_round += 1`,
+  new deadline; counted as a penalty (S1.3).
 
 Both apply to the state observed when the probe lands (S1.3 transition rule).
 A probe is an ordinary attempt for every counter — `attempts`, `failures`,
 `failure_runs` — plus `probes`, incremented at the claim, and
-`probe_successes`, at the answer.
+`probe_successes`, at the answer. Only a Record-mode query claims (S1.8), and
+at most one per query (S1.5).
+
+**Invariant: a Record-mode `forward` future is never dropped before it
+completes.** `Probing` has no timeout; the claim is released only by the
+outcome landing, and a word left in Probing with no probe in flight is skipped
+by every pass and reached only as a forced candidate — the endpoint is out
+until the next restart. Today's Record callers satisfy the invariant: the UDP
+listener spawns one task per datagram and never aborts it, the TCP listener
+awaits the pipeline inline, SWR workers are aborted only at shutdown. A future
+client-side deadline (`select!` or `timeout` around `forward`) must not be
+added without a claim-release path.
 
 On an encrypted endpoint the probe may have to pay a new handshake, because the
 previous connection was idle-closed during the penalty; that handshake failing
@@ -522,9 +606,21 @@ Specification: `forward` takes an internal health mode.
 | SWR workers (S1.9) | Record | Real queries against real endpoints |
 | `resolve_host` → `lookup` | **Ignore** | A deliberately-failing family leg is not endpoint evidence |
 
-In Ignore mode no counter moves and no state transition occurs; selection still
-skips Penalized endpoints, so a bootstrap benefits from health learned
-elsewhere without contributing to it. No new trait and no second pool.
+In Ignore mode no counter moves, no state transition occurs, and **no probe is
+claimed**: the selector runs with `claim = false` (S1.5), so a due endpoint is
+treated as not due and the pass falls through to the next Healthy endpoint or
+to the forced candidate, writing nothing. A claim without a recorded outcome
+would leave the word in Probing with no probe in flight (S1.7 invariant).
+Selection still skips Penalized endpoints, so a bootstrap benefits from health
+learned elsewhere without contributing to it. No new trait and no second pool.
+
+**Consequence for `attempts` and `failures`:** under `adaptive` they exclude
+`resolve_host` traffic — about 20 % of attempts on the measured mix — while
+`fallback` counts it. The two strategies' counters are therefore not
+comparable across the opt-in flip, suite T's `failures / attempts` base rate is
+a `fallback`-window quantity, and p2.6-11 states this beside every `attempts`
+figure. `tls_handshakes` is a connection counter and still moves in Ignore
+mode (S1.17).
 
 ## S1.9 SWR interaction
 
@@ -581,9 +677,11 @@ attempted. A flattening counter is the feature working, not the outage ending.
   and keep `fetch_add`. S1-G1 #11 is the concurrent saturation test.
 - The existing `ExchangeConn::slot` mutex is unchanged and still contended only
   on (re)connect.
-- **No timers are added.** Deadlines are compared against `Instant::now()` when a
-  query already needs the clock. A clock jump cannot affect anything — `Instant`
-  is monotonic.
+- **No timers are added.** `Instant::now()` is read lazily — at the first
+  non-Healthy word a selection pass meets, and once more when an outcome is
+  recorded off the clean-Healthy path (S1.5, S1.11). The all-Healthy steady
+  state reads no clock. A clock jump cannot affect anything — `Instant` is
+  monotonic.
 
 ## S1.11 Hot-path requirements
 
@@ -591,7 +689,8 @@ attempted. A flattening counter is the feature working, not the outage ending.
 | --- | --- | --- | --- | --- |
 | Blocked query | 0 | none | 0 | 0 |
 | Cache hit | 0 | none | 0 | 0 |
-| Forward | **0** | none | 0 | 0 |
+| Forward, all endpoints Healthy | **0** | none | 0 | 0 |
+| Forward, a non-Healthy endpoint met or an outcome recorded off the clean path | **0** | none | ≤ 2 `clock_gettime` (vDSO, no kernel entry) | 0 |
 
 Stage 1 adds no allocation anywhere, and the steady-state selection is one
 relaxed load. It removes work rather than adding it: a penalized endpoint is
@@ -609,13 +708,13 @@ No push path changes.
 
 | Field | New? | Answers |
 | --- | --- | --- |
-| `state` | yes | `healthy` \| `penalized` \| `probing` — **the authoritative liveness signal** |
+| `state` | yes | `healthy` \| `penalized` \| `probing` — **the authoritative liveness signal under `adaptive`**; under `fallback` every endpoint reports `healthy` and the field carries no information |
 | `penalty_round` | yes | how deep the backoff is |
-| `penalties` | yes | how often this endpoint has been penalized |
+| `penalties` | yes | how often this endpoint has been penalized — a failed probe counts (S1.3) |
 | `penalized_seconds_total` | yes | **scheduled** unavailability — see below |
 | `probes`, `probe_successes` | yes | whether recovery works; a probe is an ordinary attempt for every other counter |
-| `family` | yes | informational; nothing selects on it in Stage 1 |
-| `attempts`, `failures` | existing | unchanged meaning, changed *rate* — see S1.9 |
+| `family` | yes | informational; nothing selects on it in Stage 1; `null` for a hostname DoH URL |
+| `attempts`, `failures` | existing | changed *rate* (S1.9) **and changed coverage**: under `adaptive` `resolve_host` attempts are not counted (S1.8) |
 | `failure_runs` | existing (p2.5-06) | run length in **attempts**; under `adaptive` attempts are throttled, so a run is not a duration |
 | `consecutive_failures` | existing | **demoted to a diagnostic** |
 | `tls_handshakes` | existing | unchanged |
@@ -624,8 +723,10 @@ No push path changes.
 
 - A probe counts in `attempts`, `failures` and `failure_runs` like any attempt;
   `probes` moves at the claim, `probe_successes` at the answer. A probe failure
-  therefore extends the open run, and the run definition — closed by that
-  endpoint's next transport success — stays literally true.
+  increments `consecutive_failures` and therefore extends the open run, and the
+  run definition — closed by that endpoint's next transport success — stays
+  literally true. A probe failure is also a penalty: `penalties += 1` and
+  `penalized_seconds_total` accrues the new nominal duration (S1.3).
 - **Under `adaptive`, `failure_runs` measures throttled attempts, not elapsed
   outage time**: a ten-minute outage costing two failures and three failed
   probes is one run of 5. The S1-G4 window is read on the `fallback` build and
@@ -647,8 +748,12 @@ require owner approval per the working agreement):
    says "**Not a liveness signal**", which stays true — but `state` is now the
    signal, and `/health` degraded should be restated from "every server has
    `consecutive_failures > 0`"
-   ([`adapters.rs:259`](../../crates/fastadhunter/src/adapters.rs#L259)) to
-   "every endpoint Penalized", which is what it was trying to express.
+   ([`adapters.rs:234`](../../crates/fastadhunter/src/adapters.rs#L234)) to
+   "**no endpoint Healthy**" — every endpoint Penalized or Probing — which is
+   what it was trying to express. Not "every endpoint Penalized": a probe in
+   flight is not recovery, and the literal reading would flip `/health` back to
+   ok for one attempt bound on every probe during an outage. Under `fallback`
+   the existing rule stays.
 2. [measurement-traps.md](../measurement-traps.md) §Traffic and rates — the
    "Upstream `failures` as client timeouts" entry gains the S1.9 case: counters
    grow more slowly during an outage because penalized endpoints are skipped,
@@ -681,12 +786,19 @@ Not exposed, and not to be added "while we are in there":
 ([`env.rs:79`](../../crates/fah-config/src/env.rs#L79)) and a CONFIGURATION.md
 `[dns.upstreams]` section update — section only, per principle 19.
 
+`timeout_ms`, currently unbounded, gains a validated range of **1..=10 000**
+(S1.6). This is the one change to an existing key: a config above 10 s fails
+validation on the new binary. None is known; the default is 800.
+
 ## S1.14 Backward compatibility
 
 - **`strategy = "fallback"` remains the default and keeps the existing code
   path, untouched.** It is not re-expressed as "adaptive with penalties
   disabled" — a compatibility mode that is a rewrite is not a compatibility
-  mode. Every existing upstream test must pass unmodified.
+  mode. Every existing upstream test keeps its assertions and its observed
+  behaviour. The one permitted edit: the nine `DnsUpstreamsConfig { .. }`
+  struct literals across the workspace gain the `penalty_failures` field,
+  because the type gains it (p2.6-01 lists the sites).
 - **Flipping the default to `adaptive` is a separate, explicitly-approved
   step**, gated on the deployment tier of the acceptance gates below — S1-G2
   tiers 2–3, S1-G4, S1-G5 — plus a 7-day soak. Until then `adaptive` is
@@ -706,8 +818,9 @@ Not exposed, and not to be added "while we are in there":
 | Scenario | Behaviour |
 | --- | --- |
 | **All endpoints Penalized, no deadline passed** | Earliest-deadline endpoint used anyway, claiming nothing (S1.3 invariant). Never "refuse to send" |
-| Primary dead, secondary healthy | `penalty_failures` queries pay up to `attempt_bound_ms` each; every later query skips the dead endpoint at one relaxed load |
+| Primary dead, secondary healthy | `penalty_failures` queries pay up to `attempt_bound_ms` each; every later query skips the dead endpoint at one relaxed load. When the primary returns, the first Record-mode query after its deadline probes it (S1.5 one pass — the Healthy secondary does not suppress the probe) and it regains primacy |
 | Primary dead with ICMP unreachable | 1 query pays; the rest skip |
+| `resolve_host` meets a due endpoint | Not probed (Ignore never claims, S1.8); answered by the next Healthy endpoint or the forced candidate |
 | Full WAN outage | Every endpoint penalized; one probe per `PENALTY_BASE` per endpoint; clients live on cache and serve-stale; `FailureAlarm` still fires |
 | Endpoint flapping | `penalty_round` climbs, backoff reaches `PENALTY_MAX`; reset needs `PENALTY_MAX` of continuous health |
 | Upstream SERVFAILs everything | Keeps primacy — **not solved**, identical to today (S1.4) |
@@ -790,18 +903,20 @@ shipped value changes no test.
 | 1 | gates green — fmt, clippy `-D warnings`, `test --workspace` |
 | 2 | `crates/fastadhunter/tests/layering.rs` passes unchanged |
 | 3 | `const _: () = assert!(size_of::<Health>() == 64)` compiles |
-| 4 | Every existing upstream test passes **unmodified** under `strategy = "fallback"` |
+| 4 | Every existing upstream test passes under `strategy = "fallback"` with its assertions and observed behaviour unmodified; the only edit is the `penalty_failures` field added to `DnsUpstreamsConfig` struct literals (S1.14) |
 | 5 | Test: NXDOMAIN, SERVFAIL and REFUSED each leave `state` and `consecutive_failures` unchanged |
-| 6 | Test: with every endpoint Penalized and no deadline passed, a query is still sent to the earliest-deadline endpoint; no `Probing` claim, `probes` unchanged; after the forced attempt fails, deadline and `penalty_round` are unchanged and `consecutive_failures` moved |
+| 6 | Test: with every endpoint Penalized and no deadline passed, a query is still sent to the earliest-deadline endpoint; no `Probing` claim, `probes` unchanged; after the forced attempt fails **on the Penalized word**, deadline and `penalty_round` are unchanged and `consecutive_failures` moved. A forced failure landing on a Probing word follows the Probing row (S1.3) and is not asserted here |
 | 7 | Test: `resolve_host` with one family black-holed moves no counter and no state (S1.8) |
-| 8 | Test: concurrent queries against a due endpoint produce exactly one `Probing` claim |
-| 9 | Test: a probe failure increments `penalty_round`; a probe success restores Healthy |
-| 10 | Test: `penalty_round` resets only after `PENALTY_MAX` of continuous health |
-| 11 | Test: `consecutive_failures` at 255 and `penalty_round` at 15 under N concurrent failures — both saturate, `timestamp_ms` and the state bits are intact (S1.10) |
+| 8 | Test: concurrent queries against a due endpoint produce exactly one `Probing` claim — with no other endpoint (the rest are forced onto it) **and** with a Healthy endpoint configured behind it (the rest answer from the Healthy one; the due endpoint ahead of it is still probed exactly once — S1.5 one pass) |
+| 9 | Test: a probe failure increments `consecutive_failures` and `penalty_round` and counts a penalty; a probe success restores Healthy |
+| 10 | Test: `penalty_round` resets only after `PENALTY_MAX` of continuous health; `now.saturating_sub(healthy_since)` with `healthy_since > now` does not reset (S1.3) |
+| 11 | Test: `consecutive_failures` at 255 under N concurrent failures saturates with `timestamp_ms` and the state bits intact; `penalty_round` at 15 stays 15 across a sequential claim → probe-failure cycle repeated 16 times (S1.10) |
 | 12 | Test: Penalized + success → Healthy, `consecutive_failures = 0`, `healthy_since = now`, `penalty_round` kept (S1.3) |
 | 13 | Test: a probe landing after a stale success moved the endpoint to Healthy is an ordinary outcome — failure gives `consecutive_failures = 1`, `penalty_round` unchanged (S1.3) |
-| 14 | Test: idle-close, reconnect, answer moves no counter (S1.17) |
+| 14 | Test: idle-close, reconnect, answer moves no counter and leaves `state` unchanged — end-to-end through `forward` under `adaptive` (S1.17) |
 | 15 | Test: `penalized_seconds_total` grows by the nominal `penalty(round)` at application, not at recovery (S1.12) |
+| 16 | Test: Ignore never claims — `[due, Healthy]` and a `resolve_host` call: answered by the Healthy endpoint, the due word byte-for-byte unchanged, `probes` unchanged (S1.8). `[due]` alone: the attempt is sent forced, the word unchanged |
+| 17 | Test: at most one probe per query — `[due, due, Healthy]` with the first probe failing: exactly one `Probing` claim, the second due endpoint skipped, the Healthy one answers (S1.5) |
 
 ## S1-G2 No regression
 
@@ -850,7 +965,7 @@ they have no noise floor and no threshold to derive:
 | Invariant | Criterion |
 | --- | --- |
 | Penalties applied on a healthy link | 0, or the base rate suite T reports |
-| Upstream attempts per forwarded query | identical between arms (1.000 on a healthy link) |
+| Upstream attempts per forwarded query | identical between arms (1.000 on a healthy link). Comparable only between L.1 and L.2, which carry no HTTP traffic: under `adaptive` `attempts` excludes `resolve_host` (S1.8) |
 | Allocations added on the forward path | 0 |
 | `state` during the healthy arm | never leaves Healthy |
 | SWR attempts and outcomes | unchanged between arms |
@@ -893,9 +1008,9 @@ Measured against `strategy = "fallback"` in the same session.
 
 | Scenario | Criterion |
 | --- | --- |
-| Black-holed endpoint, healthy alternative | ≤ `penalty_failures` queries pay up to `attempt_bound_ms`; every later query answers at the healthy endpoint's RTT |
-| ICMP-unreachable endpoint | ≤ 1 query pays anything |
-| Recovery after the endpoint returns | Healthy again within `PENALTY_MAX` + one query interval |
+| Black-holed endpoint, healthy alternative | With queries issued **sequentially**, ≤ `penalty_failures` queries pay up to `attempt_bound_ms`; every later query answers at the healthy endpoint's RTT. Concurrent queries dispatched before the penalty lands also pay (S1.3) and are outside this count |
+| ICMP-unreachable endpoint | ≤ 1 query pays anything. Decidable for UDP on Linux only (S1.4 platform note); on the dev box the arm is a DoT endpoint on a closed TCP port |
+| Recovery after the endpoint returns | Healthy again within `PENALTY_MAX` + one query interval — with the alternative endpoint Healthy throughout (S1.5 one pass) |
 | Concurrent probe claims | never more than one in flight per endpoint |
 | Flapping endpoint | backoff grows, no probe storm, client p99 no worse than the steady-outage case |
 | Net timeout cost avoided | reported in two rows, client-visible and SWR — see below |
@@ -931,7 +1046,7 @@ gate.
 | --- | --- | --- |
 | Base rate documented | **Done** — 0.072 % primary, suite T sample 1 | Confirmed over the full window, not one snapshot |
 | Partial-failure population exists | **Done** — 27 events / 45.7 h | — |
-| **Run-length distribution** | **Open — blocking, now collecting** | Whether the observed failures are isolated losses or sustained runs. This, not the base rate, is what `penalty_failures` depends on. Source: `upstreams[].failure_runs` (p2.5-06), read as a delta over the window; the analysis states the concurrency-splitting caveat |
+| **Run-length distribution** | **Open — blocking, now collecting** | Whether the observed failures are isolated losses or sustained runs. This, not the base rate, is what `penalty_failures` depends on. Source: `upstreams[].failure_runs` (p2.5-06), read as the sum of per-process deltas over the `fallback` window (counters reset on restart); the analysis states the concurrency-splitting caveat |
 | `penalty_failures` chosen from the run-length data | Open | Not from the illustrative table in S1.6 |
 | False-penalty rate on a healthy link | Open | Measured and stated. No pre-set threshold is imposed, because none is justified by evidence |
 
