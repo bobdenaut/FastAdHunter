@@ -1,0 +1,10 @@
+2026-08-23T14:25:11.863783Z  INFO fastadhunter: fastadhunter starting config_path=C:/Users/liviu/AppData/Local/Temp/claude/e--FastAdHunter/7dfe86cd-d01c-4dad-8596-1dc8468a0db5/scratchpad/m1/config/fastadhunter.toml data_dir=C:/Users/liviu/AppData/Local/Temp/claude/e--FastAdHunter/7dfe86cd-d01c-4dad-8596-1dc8468a0db5/scratchpad/m1/data mode=DnsHttp
+2026-08-23T14:25:11.870155Z  INFO fastadhunter: ruleset compiled from cache rules=0 policies=1
+2026-08-23T14:25:11.872172Z  INFO fastadhunter: DNS listeners bound udp=127.0.0.1:15353 tcp=127.0.0.1:15353
+2026-08-23T14:25:11.872238Z  INFO fastadhunter: HTTP listener bound addr=127.0.0.1:18080
+2026-08-23T14:25:11.872374Z  WARN fastadhunter: api.tls is disabled — the API key travels in plaintext; see SECURITY.md
+2026-08-23T14:25:11.873273Z  INFO fastadhunter: API listening url=http://127.0.0.1:18443
+2026-08-23T14:25:11.873425Z  INFO fastadhunter: stale-while-refresh pool started workers=3
+2026-08-23T14:25:11.873444Z  INFO fastadhunter: cache cleanup scheduler started
+2026-08-23T14:25:11.879145Z DEBUG fastadhunter: policy assignments changed active_assignments=0
+2026-08-23T14:25:21.522743Z DEBUG fah_http::proxy: refused: unusable Host peer=127.0.0.1:54285 reason="host_ip_literal"

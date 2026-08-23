@@ -1,0 +1,10 @@
+2026-08-23T14:24:03.101009Z  INFO fastadhunter: fastadhunter starting config_path=C:/Users/liviu/AppData/Local/Temp/claude/e--FastAdHunter/7dfe86cd-d01c-4dad-8596-1dc8468a0db5/scratchpad/m1/config/fastadhunter.toml data_dir=C:/Users/liviu/AppData/Local/Temp/claude/e--FastAdHunter/7dfe86cd-d01c-4dad-8596-1dc8468a0db5/scratchpad/m1/data mode=DnsHttp
+2026-08-23T14:24:03.107954Z  INFO fastadhunter: ruleset compiled from cache rules=0 policies=1
+2026-08-23T14:24:03.109917Z  INFO fastadhunter: DNS listeners bound udp=127.0.0.1:15353 tcp=127.0.0.1:15353
+2026-08-23T14:24:03.110020Z  INFO fastadhunter: HTTP listener bound addr=127.0.0.1:18080
+2026-08-23T14:24:03.110531Z  INFO fastadhunter: generated API key — store it now; it is not shown again api_key=eaea9c523181c624b68c398ebb6a560a5df70c89bb97689edac39fac1389fd43
+2026-08-23T14:24:03.110679Z  WARN fastadhunter: api.tls is disabled — the API key travels in plaintext; see SECURITY.md
+2026-08-23T14:24:03.111669Z  INFO fastadhunter: API listening url=http://127.0.0.1:18443
+2026-08-23T14:24:03.111927Z  INFO fastadhunter: stale-while-refresh pool started workers=3
+2026-08-23T14:24:03.111948Z  INFO fastadhunter: cache cleanup scheduler started
+2026-08-23T14:24:32.176701Z  WARN fah_dns::upstream: all upstreams failed — answers now depend on cached entries upstreams=2 suppressed=0 error=upstream timed out
