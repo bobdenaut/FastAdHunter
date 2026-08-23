@@ -50,6 +50,7 @@ list (`FAH__DNS__LISTEN__PORT`) is likewise unused; the live one is `fah-env`
 | `Auto Restart Interval` | **empty = nothing restarts FAH if it dies**; `Start On Boot` only covers router boot |
 | `Workdir` | `/home/nonroot`, inherited from the `:nonroot` base, harmless (all FAH paths are absolute) |
 | `Entrypoint`/`Cmd` | only real use is `--healthcheck` to debug a bricked config — there is no shell in distroless |
+| image `HEALTHCHECK` | **inert on this device.** RouterOS 7.21.5 has no health field in `/container/print detail`, before or after deploy, and no reaction to an unhealthy container. The image's `HEALTHCHECK` runs for nothing here; the binary's `--healthcheck` only helps when something calls it. Verified p2.5-09 V3b (F3), 2026-08-23 |
 | `memory-high=200M` | **KILLS FAH.** Do not propose it as a "safe falsifiable check"; it took down the live resolver once |
 | `root-dir` | `/kingston/fastadhunter/root`. A path without the `kingston/` prefix is the internal NAND — ~15 MiB per extracted image on a 1 GiB partition shared with RouterOS |
 | `logging=yes` | **not the default.** Without it there is no container log, which is the only debugging channel and the authority on FAH's start time |

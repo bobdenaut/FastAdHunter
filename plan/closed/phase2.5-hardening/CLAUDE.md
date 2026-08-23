@@ -33,7 +33,7 @@ recommended). The SWR lease check, hygiene, and verification close the phase.
 | 8 | `p2.5-08-hygiene.md` | Tracked bearer token gone; layering guard covers the whole workspace; stale docs reconciled | Opus | DONE |
 | 9 | `p2.5-09-phase-verification.md` | Gates green, deployed, listener-death drill passed, S1-G4 collection running | Opus | DONE |
 | 10 | `p2.5-10-ws-endpoint-attribution.md` | `endpoint` reaches the WS `query` event; closes p2.5-09 V5b | Opus | DONE |
-| 11 | `p2.5-11-refusal-log-hygiene.md` | Egress refusals log at `debug` and are counted on `/telemetry` | Opus | WAITING |
+| 11 | `p2.5-11-refusal-log-hygiene.md` | Egress refusals log at `debug` and are counted on `/telemetry` | Opus | DONE |
 
 ## TASK START / PHASE CONTEXT
 
