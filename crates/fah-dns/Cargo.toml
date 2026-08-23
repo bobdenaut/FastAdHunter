@@ -23,6 +23,7 @@ url = { workspace = true }
 
 [dev-dependencies]
 criterion = { workspace = true }
+mimalloc = { workspace = true }
 rcgen = "0.14"
 tempfile = "3"
 tokio = { workspace = true, features = ["io-util", "net", "sync", "time", "test-util", "macros", "rt-multi-thread"] }

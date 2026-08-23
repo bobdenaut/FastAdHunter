@@ -417,6 +417,64 @@ mod tests {
         dot_pool_of(&[server], 2000)
     }
 
+    fn dot_pool_adaptive(server: &DotServer) -> UpstreamPool {
+        let mut pool = dot_pool(server);
+        pool.strategy = UpstreamStrategy::Adaptive;
+        pool
+    }
+
+    async fn concurrent_forwards(pool: &UpstreamPool, queries: usize) {
+        let mut handles = Vec::new();
+        for _ in 0..queries {
+            let pool = pool.clone();
+            handles.push(tokio::spawn(async move {
+                pool.forward(&a_query()).await.is_ok()
+            }));
+        }
+        for handle in handles {
+            assert!(handle.await.unwrap(), "every query must be answered");
+        }
+    }
+
+    #[tokio::test]
+    async fn an_idle_close_and_reconnect_moves_no_health_under_adaptive() {
+        let server = dot_server(Some(1)).await;
+        let pool = dot_pool_adaptive(&server);
+
+        for _ in 0..2 {
+            let response = pool.forward(&a_query()).await.unwrap().message;
+            assert_eq!(response.metadata.response_code, ResponseCode::NoError);
+        }
+
+        let status = pool.status();
+        assert_eq!(status[0].failures, 0);
+        assert_eq!(status[0].consecutive_failures, 0);
+        assert_eq!(
+            status[0].tls_handshakes, 2,
+            "the reconnect is connection lifecycle, never health"
+        );
+        assert_eq!(
+            super::super::health::unpack(pool.health[0].state.load()).state,
+            super::super::health::State::Healthy
+        );
+        assert_eq!(pool.health[0].penalties.load(Ordering::Relaxed), 0);
+    }
+
+    #[tokio::test]
+    async fn concurrent_first_queries_share_one_handshake_under_adaptive() {
+        let server = dot_server(None).await;
+        let pool = dot_pool_adaptive(&server);
+
+        concurrent_forwards(&pool, 8).await;
+
+        assert_eq!(
+            pool.status()[0].tls_handshakes,
+            1,
+            "selection never bypasses the single-flight handshake"
+        );
+        assert_eq!(server.accepts.load(Ordering::Relaxed), 1);
+    }
+
     async fn closed_tcp_addr() -> SocketAddr {
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let addr = listener.local_addr().unwrap();

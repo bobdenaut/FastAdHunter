@@ -97,6 +97,13 @@ cleanup_interval_seconds = 360 # boot   — background sweep of entries past the
 strategy = "fallback"         # boot    — ordered parallel fallback (more modes later)
 timeout_ms = 800              # boot    — per-upstream attempt timeout (fails over
                               #   inside a client's own timeout; above a slow lookup)
+                              #   Under strategy = "adaptive" it also fixes the
+                              #   penalty backoff base: 10 x 3 x timeout_ms,
+                              #   capped at 300000 ms. From timeout_ms = 10000
+                              #   (the validated maximum) the first penalty
+                              #   already sits at the cap, so every round is a
+                              #   flat 5 minutes and the backoff stops
+                              #   escalating.
 
 [[dns.upstreams.servers]]
 address = "1.1.1.1"           # boot

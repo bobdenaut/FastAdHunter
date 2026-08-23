@@ -673,6 +673,7 @@ dependencies = [
  "fah-rules",
  "hickory-net",
  "hickory-proto",
+ "mimalloc",
  "rand 0.9.5",
  "rcgen",
  "rustls",

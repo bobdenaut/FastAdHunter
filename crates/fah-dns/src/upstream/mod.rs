@@ -16,7 +16,7 @@ use std::io;
 use std::net::{IpAddr, SocketAddr};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use fah_config::{DnsUpstreamsConfig, UpstreamProtocol, UpstreamServerConfig, UpstreamStrategy};
 use hickory_proto::op::{Message, Query as WireQuery};
@@ -27,6 +27,10 @@ use tracing::{debug, info, warn};
 
 use alarm::FailureAlarm;
 use encrypted::{ConnectTarget, ExchangeConn};
+use health::{
+    classify, record, select, unpack, Health, HealthMode, Policy, ProbeGuard, Selected, Transition,
+    TransportKind,
+};
 
 pub const ATTEMPT_LEGS: u32 = 3;
 
@@ -65,7 +69,11 @@ impl ForwardOutcome {
 #[derive(Clone)]
 pub struct UpstreamPool {
     servers: Arc<[UpstreamServer]>,
+    health: Arc<[Health]>,
     timeout: Duration,
+    policy: Policy,
+    epoch: Instant,
+    strategy: UpstreamStrategy,
     /// Shared, not cloned: the pool is handed out by cheap `Arc` clone (see
     /// `fastadhunter`'s adapters), and a per-clone alarm would let every holder
     /// warn once for the same outage.
@@ -104,20 +112,33 @@ impl UpstreamPool {
     /// Test seam: DoT/DoH tests hand in a `ClientConfig` trusting their own
     /// throwaway CA instead of the webpki roots `from_config` bakes in.
     fn with_tls_config(config: &DnsUpstreamsConfig, tls: Arc<ClientConfig>) -> io::Result<Self> {
-        match config.strategy {
-            // Single variant today; a future strategy gets wired here.
-            UpstreamStrategy::Fallback | UpstreamStrategy::Adaptive => {}
-        }
         let servers = config
             .servers
             .iter()
             .map(|server| UpstreamServer::new(server, &tls))
             .collect::<io::Result<Vec<_>>>()?;
+        let health = servers.iter().map(|_| Health::new()).collect::<Vec<_>>();
+        let penalty_failures = u8::try_from(config.penalty_failures).unwrap_or(u8::MAX);
         Ok(Self {
             servers: servers.into(),
+            health: health.into(),
             timeout: Duration::from_millis(u64::from(config.timeout_ms)),
+            policy: Policy::from_timeout(u64::from(config.timeout_ms), penalty_failures),
+            epoch: Instant::now(),
+            strategy: config.strategy,
             alarm: Arc::new(FailureAlarm::new()),
         })
+    }
+
+    #[doc(hidden)]
+    pub fn with_policy(config: &DnsUpstreamsConfig, policy: Policy) -> io::Result<Self> {
+        let mut pool = Self::from_config(config)?;
+        pool.policy = policy;
+        Ok(pool)
+    }
+
+    fn elapsed_ms(&self) -> u64 {
+        u64::try_from(self.epoch.elapsed().as_millis()).unwrap_or(u64::MAX)
     }
 
     /// Resolves a hostname to addresses over the configured upstreams — the
@@ -168,7 +189,7 @@ impl UpstreamPool {
         query.add_query(WireQuery::query(name.clone(), record_type));
         query.metadata.recursion_desired = true;
 
-        let response = self.forward(&query).await?.message;
+        let response = self.forward_with(&query, HealthMode::Ignore).await?.message;
         Ok(response
             .answers
             .iter()
@@ -185,12 +206,20 @@ impl UpstreamPool {
     pub fn status(&self) -> Vec<UpstreamStatus> {
         self.servers
             .iter()
-            .map(|server| UpstreamStatus {
+            .zip(self.health.iter())
+            .map(|(server, health)| UpstreamStatus {
                 address: server.address.clone(),
                 protocol: server.protocol,
-                attempts: server.attempts.load(Ordering::Relaxed),
-                failures: server.failures.load(Ordering::Relaxed),
-                consecutive_failures: server.consecutive_failures.load(Ordering::Relaxed),
+                attempts: health.attempts.load(Ordering::Relaxed),
+                failures: health.failures.load(Ordering::Relaxed),
+                consecutive_failures: match self.strategy {
+                    UpstreamStrategy::Fallback => {
+                        server.consecutive_failures.load(Ordering::Relaxed)
+                    }
+                    UpstreamStrategy::Adaptive => {
+                        u64::from(unpack(health.state.load()).consecutive_failures)
+                    }
+                },
                 tls_handshakes: match &server.transport {
                     Transport::Udp { .. } => 0,
                     Transport::Encrypted(conn) => conn.handshakes(),
@@ -205,33 +234,50 @@ impl UpstreamPool {
 
 impl Forwarder for UpstreamPool {
     async fn forward(&self, query: &Message) -> io::Result<ForwardOutcome> {
+        self.forward_with(query, HealthMode::Record).await
+    }
+}
+
+impl UpstreamPool {
+    async fn forward_with(&self, query: &Message, mode: HealthMode) -> io::Result<ForwardOutcome> {
         let mut last_err = None;
-        for (index, server) in self.servers.iter().enumerate() {
-            server.attempts.fetch_add(1, Ordering::Relaxed);
-            match server.query(query, self.timeout).await {
-                Ok(response) => {
-                    if server.consecutive_failures.load(Ordering::Relaxed) != 0 {
-                        let run = server.consecutive_failures.swap(0, Ordering::Relaxed);
-                        if run != 0 {
-                            server.run_buckets[run_bucket(run)].fetch_add(1, Ordering::Relaxed);
+        match self.strategy {
+            UpstreamStrategy::Adaptive => match self.walk_adaptive(query, mode).await {
+                Ok(outcome) => return Ok(outcome),
+                Err(err) => last_err = err,
+            },
+            UpstreamStrategy::Fallback => {
+                for (index, (server, health)) in
+                    self.servers.iter().zip(self.health.iter()).enumerate()
+                {
+                    health.attempts.fetch_add(1, Ordering::Relaxed);
+                    match server.query(query, self.timeout).await {
+                        Ok(response) => {
+                            if server.consecutive_failures.load(Ordering::Relaxed) != 0 {
+                                let run = server.consecutive_failures.swap(0, Ordering::Relaxed);
+                                if run != 0 {
+                                    server.run_buckets[run_bucket(run)]
+                                        .fetch_add(1, Ordering::Relaxed);
+                                }
+                            }
+                            if self.alarm.clear() {
+                                info!(
+                                    upstreams = self.servers.len(),
+                                    "upstreams recovered — answering from the network again"
+                                );
+                            }
+                            return Ok(ForwardOutcome::new(
+                                response,
+                                u8::try_from(index).unwrap_or(u8::MAX),
+                            ));
+                        }
+                        Err(err) => {
+                            debug!(upstream = %server.address, error = %err, "upstream attempt failed");
+                            health.failures.fetch_add(1, Ordering::Relaxed);
+                            server.consecutive_failures.fetch_add(1, Ordering::Relaxed);
+                            last_err = Some(err);
                         }
                     }
-                    if self.alarm.clear() {
-                        info!(
-                            upstreams = self.servers.len(),
-                            "upstreams recovered — answering from the network again"
-                        );
-                    }
-                    return Ok(ForwardOutcome::new(
-                        response,
-                        u8::try_from(index).unwrap_or(u8::MAX),
-                    ));
-                }
-                Err(err) => {
-                    debug!(upstream = %server.address, error = %err, "upstream attempt failed");
-                    server.failures.fetch_add(1, Ordering::Relaxed);
-                    server.consecutive_failures.fetch_add(1, Ordering::Relaxed);
-                    last_err = Some(err);
                 }
             }
         }
@@ -257,14 +303,95 @@ impl Forwarder for UpstreamPool {
         }
         Err(err)
     }
+
+    async fn walk_adaptive(
+        &self,
+        query: &Message,
+        mode: HealthMode,
+    ) -> Result<ForwardOutcome, Option<io::Error>> {
+        let recording = mode == HealthMode::Record;
+        let mut start = 0usize;
+        let mut probed = false;
+        let mut last_err = None;
+
+        while let Some(candidate) = select(
+            &self.health,
+            start,
+            || self.elapsed_ms(),
+            recording && !probed,
+        ) {
+            let index = usize::from(candidate.id);
+            let server = &self.servers[index];
+            let health = &self.health[index];
+            let probe = candidate.selected == Selected::Probe;
+            probed |= probe;
+
+            if recording {
+                health.attempts.fetch_add(1, Ordering::Relaxed);
+                if probe {
+                    health.probes.fetch_add(1, Ordering::Relaxed);
+                }
+            }
+
+            let mut rollback = probe.then(|| ProbeGuard::new(health));
+            let result = server.query(query, self.timeout).await;
+            if let Some(rollback) = rollback.as_mut() {
+                rollback.disarm();
+            }
+
+            if recording {
+                let outcome = classify(server.transport_kind(), &result);
+                if let Transition::Store {
+                    closed_run,
+                    penalty_applied,
+                    ..
+                } = record(health, outcome, || self.elapsed_ms(), &self.policy)
+                {
+                    if let Some(run) = closed_run {
+                        server.run_buckets[run_bucket(u64::from(run))]
+                            .fetch_add(1, Ordering::Relaxed);
+                    }
+                    if let Some(penalized_ms) = penalty_applied {
+                        health.penalties.fetch_add(1, Ordering::Relaxed);
+                        health
+                            .penalized_ms_total
+                            .fetch_add(penalized_ms, Ordering::Relaxed);
+                    }
+                }
+            }
+
+            match result {
+                Ok(response) => {
+                    if recording && probe {
+                        health.probe_successes.fetch_add(1, Ordering::Relaxed);
+                    }
+                    if self.alarm.clear() {
+                        info!(
+                            upstreams = self.servers.len(),
+                            "upstreams recovered — answering from the network again"
+                        );
+                    }
+                    return Ok(ForwardOutcome::new(response, candidate.id));
+                }
+                Err(err) => {
+                    debug!(upstream = %server.address, error = %err, "upstream attempt failed");
+                    if recording {
+                        health.failures.fetch_add(1, Ordering::Relaxed);
+                    }
+                    last_err = Some(err);
+                    start = index + 1;
+                }
+            }
+        }
+
+        Err(last_err)
+    }
 }
 
 struct UpstreamServer {
     address: String,
     protocol: fah_model::Protocol,
     transport: Transport,
-    attempts: AtomicU64,
-    failures: AtomicU64,
     consecutive_failures: AtomicU64,
     run_buckets: [AtomicU64; 4],
 }
@@ -362,11 +489,16 @@ impl UpstreamServer {
             address: config.address.clone(),
             protocol,
             transport,
-            attempts: AtomicU64::new(0),
-            failures: AtomicU64::new(0),
             consecutive_failures: AtomicU64::new(0),
             run_buckets: std::array::from_fn(|_| AtomicU64::new(0)),
         })
+    }
+
+    fn transport_kind(&self) -> TransportKind {
+        match &self.transport {
+            Transport::Udp { .. } => TransportKind::Plain,
+            Transport::Encrypted(_) => TransportKind::Encrypted,
+        }
     }
 
     async fn query(&self, request: &Message, attempt_timeout: Duration) -> io::Result<Message> {
@@ -518,9 +650,9 @@ mod tests {
             let response = pool.forward(&a_query()).await.unwrap().message;
 
             assert_eq!(response.metadata.response_code, code);
-            assert_eq!(pool.servers[0].attempts.load(Ordering::Relaxed), 1);
+            assert_eq!(pool.health[0].attempts.load(Ordering::Relaxed), 1);
             assert_eq!(
-                pool.servers[0].failures.load(Ordering::Relaxed),
+                pool.health[0].failures.load(Ordering::Relaxed),
                 0,
                 "{code} must not move the failure counter"
             );
@@ -530,7 +662,7 @@ mod tests {
                 "{code} is a successful exchange and resets the streak"
             );
             assert_eq!(
-                pool.servers[1].attempts.load(Ordering::Relaxed),
+                pool.health[1].attempts.load(Ordering::Relaxed),
                 0,
                 "{code} must not continue the upstream walk"
             );
@@ -1110,9 +1242,9 @@ mod tests {
                 ..Default::default()
             })
         );
-        for server in pool.servers.iter() {
-            assert_eq!(server.attempts.load(Ordering::Relaxed), 1);
-            assert_eq!(server.failures.load(Ordering::Relaxed), 1);
+        for (server, health) in pool.servers.iter().zip(pool.health.iter()) {
+            assert_eq!(health.attempts.load(Ordering::Relaxed), 1);
+            assert_eq!(health.failures.load(Ordering::Relaxed), 1);
             assert_eq!(server.consecutive_failures.load(Ordering::Relaxed), 1);
         }
     }
@@ -1190,6 +1322,367 @@ mod tests {
                 host.parse::<IpAddr>().is_ok(),
                 "{address}: stored host {host:?} must parse as a bare IP"
             );
+        }
+    }
+
+    mod adaptive {
+        use super::super::health::{pack, State};
+        use super::*;
+
+        fn adaptive_pool(
+            servers: Vec<UpstreamServerConfig>,
+            timeout_ms: u32,
+            policy: Policy,
+        ) -> UpstreamPool {
+            let mut pool = UpstreamPool::with_tls_config(
+                &DnsUpstreamsConfig {
+                    strategy: UpstreamStrategy::Adaptive,
+                    timeout_ms,
+                    penalty_failures: u32::from(policy.penalty_failures),
+                    servers,
+                },
+                empty_tls(),
+            )
+            .unwrap();
+            pool.policy = policy;
+            pool
+        }
+
+        fn policy_of(penalty_failures: u8, penalty_base_ms: u64) -> Policy {
+            Policy {
+                penalty_failures,
+                penalty_base_ms,
+                penalty_max_ms: 300_000,
+            }
+        }
+
+        fn seed_due(health: &Health) {
+            health.state.store(pack(State::Penalized, 1, 1, 0));
+        }
+
+        fn snapshot(health: &Health) -> [u64; 7] {
+            [
+                health.state.load(),
+                health.attempts.load(Ordering::Relaxed),
+                health.failures.load(Ordering::Relaxed),
+                health.penalties.load(Ordering::Relaxed),
+                health.probes.load(Ordering::Relaxed),
+                health.probe_successes.load(Ordering::Relaxed),
+                health.penalized_ms_total.load(Ordering::Relaxed),
+            ]
+        }
+
+        async fn slow_udp_server(count: usize, delay: Duration) -> SocketAddr {
+            let socket = UdpSocket::bind("127.0.0.1:0").await.unwrap();
+            let addr = socket.local_addr().unwrap();
+            tokio::spawn(async move {
+                for _ in 0..count {
+                    let mut buf = [0u8; 4096];
+                    let (len, client) = socket.recv_from(&mut buf).await.unwrap();
+                    let request = Message::from_vec(&buf[..len]).unwrap();
+                    tokio::time::sleep(delay).await;
+                    let bytes = answer_for(&request).to_vec().unwrap();
+                    socket.send_to(&bytes, client).await.unwrap();
+                }
+            });
+            addr
+        }
+
+        async fn closed_tcp_addr() -> SocketAddr {
+            let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let addr = listener.local_addr().unwrap();
+            drop(listener);
+            addr
+        }
+
+        #[tokio::test]
+        async fn every_endpoint_penalized_still_sends_a_packet_and_claims_no_probe() {
+            let pool = adaptive_pool(
+                vec![
+                    udp_server_config(dead_addr().await),
+                    udp_server_config(dead_addr().await),
+                ],
+                100,
+                policy_of(1, 60_000),
+            );
+
+            assert!(pool.forward(&a_query()).await.is_err());
+            let words = [
+                unpack(pool.health[0].state.load()),
+                unpack(pool.health[1].state.load()),
+            ];
+            for word in words {
+                assert_eq!(word.state, State::Penalized, "one failure must penalize");
+            }
+
+            let forced = usize::from(words[1].timestamp_ms < words[0].timestamp_ms);
+            let before = snapshot(&pool.health[forced]);
+
+            assert!(pool.forward(&a_query()).await.is_err());
+
+            let after = unpack(pool.health[forced].state.load());
+            assert_eq!(
+                pool.health[forced].attempts.load(Ordering::Relaxed),
+                before[1] + 1,
+                "the earliest-deadline endpoint must still be attempted"
+            );
+            assert_eq!(
+                pool.health[forced].probes.load(Ordering::Relaxed),
+                0,
+                "a forced attempt is not a probe"
+            );
+            assert_eq!(
+                after.timestamp_ms, words[forced].timestamp_ms,
+                "a forced failure must not extend the deadline"
+            );
+            assert_eq!(
+                after.penalty_round, words[forced].penalty_round,
+                "a forced failure must not deepen the penalty round"
+            );
+        }
+
+        #[tokio::test]
+        async fn resolve_host_with_one_family_black_holed_moves_no_health_state() {
+            let addr = family_aware_udp_server(200, false).await;
+            let pool = adaptive_pool(vec![udp_server_config(addr)], 20, policy_of(2, 60_000));
+            let before = snapshot(&pool.health[0]);
+
+            for _ in 0..100 {
+                pool.resolve_host("lists.example.com").await.unwrap();
+            }
+
+            assert_eq!(
+                snapshot(&pool.health[0]),
+                before,
+                "resolve_host runs in Ignore and moves nothing, attempts included"
+            );
+        }
+
+        #[tokio::test]
+        async fn resolve_host_still_counts_attempts_under_fallback() {
+            let addr = family_aware_udp_server(2, true).await;
+            let pool = pool_of(vec![udp_server_config(addr)], 2000);
+
+            pool.resolve_host("lists.example.com").await.unwrap();
+
+            assert_eq!(
+                pool.status()[0].attempts,
+                2,
+                "HealthMode is an adaptive-only parameter: fallback counts both legs, \
+                 which is what M5 records as the coverage difference between strategies"
+            );
+        }
+
+        #[tokio::test]
+        async fn a_cancelled_probe_returns_the_endpoint_to_penalized() {
+            let due = slow_udp_server(1, Duration::from_millis(2000)).await;
+            let live = answering_udp_server(1).await;
+            let pool = adaptive_pool(
+                vec![udp_server_config(due), udp_server_config(live)],
+                4000,
+                policy_of(2, 60_000),
+            );
+            seed_due(&pool.health[0]);
+            let claimed = pool.health[0].state.load();
+
+            let cancelled =
+                tokio::time::timeout(Duration::from_millis(50), pool.forward(&a_query())).await;
+
+            assert!(cancelled.is_err(), "the forward must be dropped mid-probe");
+            assert_eq!(
+                pool.health[0].state.load(),
+                claimed,
+                "a dropped probe must hand the word back, not strand it in Probing"
+            );
+            assert_eq!(pool.health[0].probes.load(Ordering::Relaxed), 1);
+        }
+
+        #[tokio::test]
+        async fn concurrent_queries_claim_exactly_one_probe() {
+            const QUERIES: usize = 8;
+
+            let due = slow_udp_server(1, Duration::from_millis(150)).await;
+            let live = answering_udp_server(QUERIES).await;
+            let pool = adaptive_pool(
+                vec![udp_server_config(due), udp_server_config(live)],
+                2000,
+                policy_of(2, 60_000),
+            );
+            seed_due(&pool.health[0]);
+
+            let mut handles = Vec::new();
+            for _ in 0..QUERIES {
+                let pool = pool.clone();
+                handles.push(tokio::spawn(async move {
+                    pool.forward(&a_query()).await.is_ok()
+                }));
+            }
+            for handle in handles {
+                assert!(handle.await.unwrap(), "every query must be answered");
+            }
+
+            assert_eq!(
+                pool.health[0].probes.load(Ordering::Relaxed),
+                1,
+                "a Healthy endpoint behind the due one must not suppress the probe, \
+                 and only one query may claim it"
+            );
+            assert_eq!(pool.health[0].probe_successes.load(Ordering::Relaxed), 1);
+            assert_eq!(
+                unpack(pool.health[0].state.load()).state,
+                State::Healthy,
+                "a probe that answers restores the endpoint"
+            );
+        }
+
+        #[tokio::test]
+        async fn resolve_host_never_claims_a_probe_on_a_due_endpoint() {
+            let silent = UdpSocket::bind("127.0.0.1:0").await.unwrap();
+            let due = silent.local_addr().unwrap();
+            let live = family_aware_udp_server(2, true).await;
+            let pool = adaptive_pool(
+                vec![udp_server_config(due), udp_server_config(live)],
+                2000,
+                policy_of(2, 60_000),
+            );
+            seed_due(&pool.health[0]);
+            let before = snapshot(&pool.health[0]);
+
+            let addrs = pool.resolve_host("lists.example.com").await.unwrap();
+
+            assert_eq!(addrs, vec![IpAddr::V4(Ipv4Addr::new(93, 184, 216, 34))]);
+            let mut buf = [0u8; 512];
+            assert_eq!(
+                silent.try_recv(&mut buf).map_err(|err| err.kind()),
+                Err(io::ErrorKind::WouldBlock),
+                "an Ignore pass must not send a packet to the due endpoint"
+            );
+            assert_eq!(
+                snapshot(&pool.health[0]),
+                before,
+                "an Ignore pass leaves the due word byte-for-byte unchanged"
+            );
+        }
+
+        #[tokio::test]
+        async fn one_query_claims_at_most_one_probe_across_two_due_endpoints() {
+            let pool = adaptive_pool(
+                vec![
+                    udp_server_config(dead_addr().await),
+                    udp_server_config(dead_addr().await),
+                    udp_server_config(answering_udp_server(1).await),
+                ],
+                200,
+                policy_of(2, 60_000),
+            );
+            seed_due(&pool.health[0]);
+            seed_due(&pool.health[1]);
+            let second = snapshot(&pool.health[1]);
+
+            let outcome = pool.forward(&a_query()).await.unwrap();
+
+            assert_eq!(outcome.endpoint, 2, "the live endpoint answers the query");
+            let probes: u64 = pool
+                .health
+                .iter()
+                .map(|health| health.probes.load(Ordering::Relaxed))
+                .sum();
+            assert_eq!(probes, 1, "a query claims at most one probe");
+            assert_eq!(
+                snapshot(&pool.health[1]),
+                second,
+                "the second due endpoint is skipped like a not-due one"
+            );
+        }
+
+        #[tokio::test]
+        async fn a_penalized_encrypted_endpoint_is_skipped_before_the_handshake() {
+            const QUERIES: usize = 8;
+            const TIMEOUT_MS: u32 = 200;
+
+            let dead = closed_tcp_addr().await;
+            let live = answering_udp_server(QUERIES + 1).await;
+            let pool = adaptive_pool(
+                vec![
+                    dot_server_config(&dead.to_string()),
+                    udp_server_config(live),
+                ],
+                TIMEOUT_MS,
+                policy_of(1, 60_000),
+            );
+
+            pool.forward(&a_query()).await.unwrap();
+            assert_eq!(
+                unpack(pool.health[0].state.load()).state,
+                State::Penalized,
+                "one refused connection penalizes at penalty_failures = 1"
+            );
+            let handshakes = pool.status()[0].tls_handshakes;
+
+            let start = Instant::now();
+            let mut handles = Vec::new();
+            for _ in 0..QUERIES {
+                let pool = pool.clone();
+                handles.push(tokio::spawn(async move {
+                    pool.forward(&a_query()).await.is_ok()
+                }));
+            }
+            for handle in handles {
+                assert!(handle.await.unwrap());
+            }
+            let elapsed = start.elapsed();
+
+            assert!(
+                elapsed < Duration::from_millis(u64::from(TIMEOUT_MS * ATTEMPT_LEGS)),
+                "skipped endpoints cost no connect: {elapsed:?}"
+            );
+            assert_eq!(
+                pool.status()[0].tls_handshakes,
+                handshakes,
+                "a penalized endpoint is skipped before the slot is touched"
+            );
+        }
+
+        #[tokio::test]
+        async fn a_black_holed_endpoint_is_skipped_then_probed_back_to_primary() {
+            let blackhole = failing_then_answering_udp_server(2).await;
+            let live = answering_udp_server(8).await;
+            let pool = adaptive_pool(
+                vec![udp_server_config(blackhole), udp_server_config(live)],
+                60,
+                policy_of(2, 200),
+            );
+
+            for _ in 0..2 {
+                assert_eq!(pool.forward(&a_query()).await.unwrap().endpoint, 1);
+            }
+            assert_eq!(
+                unpack(pool.health[0].state.load()).state,
+                State::Penalized,
+                "two failures reach penalty_failures"
+            );
+            let attempts = pool.health[0].attempts.load(Ordering::Relaxed);
+
+            assert_eq!(pool.forward(&a_query()).await.unwrap().endpoint, 1);
+            assert_eq!(
+                pool.health[0].attempts.load(Ordering::Relaxed),
+                attempts,
+                "a penalized endpoint inside its deadline is not attempted"
+            );
+            assert_eq!(pool.health[0].probes.load(Ordering::Relaxed), 0);
+            assert_eq!(pool.health[0].penalties.load(Ordering::Relaxed), 1);
+
+            tokio::time::sleep(Duration::from_millis(400)).await;
+
+            assert_eq!(
+                pool.forward(&a_query()).await.unwrap().endpoint,
+                0,
+                "the probe that answers puts the primary back in front"
+            );
+            assert_eq!(pool.health[0].probes.load(Ordering::Relaxed), 1);
+            assert_eq!(pool.health[0].probe_successes.load(Ordering::Relaxed), 1);
+            assert_eq!(unpack(pool.health[0].state.load()).state, State::Healthy);
+            assert!(pool.health[0].penalized_ms_total.load(Ordering::Relaxed) >= 200);
         }
     }
 }

@@ -481,4 +481,36 @@ mod tests {
         );
         assert!(request.metadata.recursion_desired);
     }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_refresh_through_the_real_pool_records_health_under_adaptive() {
+        let (cache, key) = cache_with_stale_entry().await;
+        let socket = tokio::net::UdpSocket::bind("127.0.0.1:0").await.unwrap();
+        let dead = socket.local_addr().unwrap();
+        drop(socket);
+        let upstreams =
+            crate::upstream::UpstreamPool::from_config(&fah_config::DnsUpstreamsConfig {
+                strategy: fah_config::UpstreamStrategy::Adaptive,
+                timeout_ms: 100,
+                servers: vec![fah_config::UpstreamServerConfig {
+                    address: dead.to_string(),
+                    protocol: fah_config::UpstreamProtocol::Udp,
+                    hostname: None,
+                }],
+                ..Default::default()
+            })
+            .unwrap();
+        let pool = Arc::new(SwrPool::new(1).unwrap());
+
+        pool.refresh(&cache, &upstreams, &key).await;
+
+        assert_eq!(pool.stats().failed, 1);
+        let status = upstreams.status();
+        assert_eq!(
+            status[0].attempts, 1,
+            "a refresh is a recorded attempt, not an Ignore pass"
+        );
+        assert_eq!(status[0].failures, 1);
+        assert_eq!(status[0].consecutive_failures, 1);
+    }
 }

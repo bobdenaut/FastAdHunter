@@ -196,7 +196,41 @@ fn penalize(w: Word, consecutive_failures: u8, now_ms: u64, policy: &Policy) -> 
     }
 }
 
+struct LazyNow<F> {
+    clock: Option<F>,
+    sampled: Option<u64>,
+}
+
+impl<F: FnOnce() -> u64> LazyNow<F> {
+    fn new(clock: F) -> Self {
+        Self {
+            clock: Some(clock),
+            sampled: None,
+        }
+    }
+
+    fn get(&mut self) -> u64 {
+        match self.sampled {
+            Some(now_ms) => now_ms,
+            None => {
+                let now_ms = self.clock.take().expect("clock sampled at most once")();
+                self.sampled = Some(now_ms);
+                now_ms
+            }
+        }
+    }
+}
+
 pub fn next_word(word: u64, outcome: Outcome, now_ms: u64, policy: &Policy) -> Transition {
+    next_word_lazy(word, outcome, &mut LazyNow::new(|| now_ms), policy)
+}
+
+fn next_word_lazy<F: FnOnce() -> u64>(
+    word: u64,
+    outcome: Outcome,
+    now: &mut LazyNow<F>,
+    policy: &Policy,
+) -> Transition {
     let w = unpack(word);
     match (w.state, outcome) {
         (State::Healthy, Outcome::Success) => {
@@ -211,14 +245,14 @@ pub fn next_word(word: u64, outcome: Outcome, now_ms: u64, policy: &Policy) -> T
             }
         }
         (State::Penalized | State::Probing, Outcome::Success) => Transition::Store {
-            word: pack(State::Healthy, w.penalty_round, 0, now_ms),
+            word: pack(State::Healthy, w.penalty_round, 0, now.get()),
             closed_run: (w.consecutive_failures > 0).then_some(w.consecutive_failures),
             penalty_applied: None,
         },
         (State::Healthy, Outcome::HardFailure) => {
             let cf = w.consecutive_failures.saturating_add(1);
             if cf >= policy.penalty_failures {
-                penalize(w, cf, now_ms, policy)
+                penalize(w, cf, now.get(), policy)
             } else {
                 Transition::Store {
                     word: pack(State::Healthy, w.penalty_round, cf, w.timestamp_ms),
@@ -227,9 +261,12 @@ pub fn next_word(word: u64, outcome: Outcome, now_ms: u64, policy: &Policy) -> T
                 }
             }
         }
-        (State::Healthy, Outcome::PathFailure) => {
-            penalize(w, w.consecutive_failures.saturating_add(1), now_ms, policy)
-        }
+        (State::Healthy, Outcome::PathFailure) => penalize(
+            w,
+            w.consecutive_failures.saturating_add(1),
+            now.get(),
+            policy,
+        ),
         (State::Penalized, Outcome::HardFailure | Outcome::PathFailure) => {
             let cf = w.consecutive_failures.saturating_add(1);
             if cf == w.consecutive_failures {
@@ -242,16 +279,25 @@ pub fn next_word(word: u64, outcome: Outcome, now_ms: u64, policy: &Policy) -> T
                 }
             }
         }
-        (State::Probing, Outcome::HardFailure | Outcome::PathFailure) => {
-            penalize(w, w.consecutive_failures.saturating_add(1), now_ms, policy)
-        }
+        (State::Probing, Outcome::HardFailure | Outcome::PathFailure) => penalize(
+            w,
+            w.consecutive_failures.saturating_add(1),
+            now.get(),
+            policy,
+        ),
     }
 }
 
-pub fn record(health: &Health, outcome: Outcome, now_ms: u64, policy: &Policy) -> Transition {
+pub fn record<F: FnOnce() -> u64>(
+    health: &Health,
+    outcome: Outcome,
+    now: F,
+    policy: &Policy,
+) -> Transition {
+    let mut now = LazyNow::new(now);
     let mut old = health.state.load();
     loop {
-        let transition = next_word(old, outcome, now_ms, policy);
+        let transition = next_word_lazy(old, outcome, &mut now, policy);
         let Transition::Store { word, .. } = transition else {
             return transition;
         };
@@ -327,6 +373,51 @@ pub fn select(
         id,
         selected: Selected::Forced,
     })
+}
+
+pub(crate) struct ProbeGuard<'a> {
+    health: &'a Health,
+    claimed: u64,
+    armed: bool,
+}
+
+impl<'a> ProbeGuard<'a> {
+    pub(crate) fn new(health: &'a Health) -> Self {
+        Self {
+            health,
+            claimed: health.state.load(),
+            armed: true,
+        }
+    }
+
+    pub(crate) fn disarm(&mut self) {
+        self.armed = false;
+    }
+}
+
+impl Drop for ProbeGuard<'_> {
+    fn drop(&mut self) {
+        if !self.armed {
+            return;
+        }
+        let w = unpack(self.claimed);
+        if w.state != State::Probing {
+            return;
+        }
+        let restored = pack(
+            State::Penalized,
+            w.penalty_round,
+            w.consecutive_failures,
+            w.timestamp_ms,
+        );
+        let mut current = self.claimed;
+        while current == self.claimed {
+            match self.health.state.compare_exchange_weak(current, restored) {
+                Ok(_) => return,
+                Err(actual) => current = actual,
+            }
+        }
+    }
 }
 
 #[cfg(test)]
@@ -447,7 +538,7 @@ mod tests {
             health.state.store(pack(State::Healthy, 3, 0, 77));
             let before = health.state.load();
             assert_eq!(
-                record(&health, Outcome::Success, 42, &p),
+                record(&health, Outcome::Success, || 42, &p),
                 Transition::NoChange
             );
             assert_eq!(health.state.load(), before);
@@ -493,7 +584,7 @@ mod tests {
             let health = Health::new();
             health.state.store(pack(State::Healthy, 0, 1, 0));
             let now = 5_000;
-            let t = record(&health, Outcome::HardFailure, now, &p);
+            let t = record(&health, Outcome::HardFailure, || now, &p);
             let (w, closed_run, penalty_applied) = store(t);
             let Transition::Store { word, .. } = t else {
                 unreachable!()
@@ -669,7 +760,7 @@ mod tests {
             for _ in 0..8 {
                 scope.spawn(|| {
                     for _ in 0..1_000 {
-                        record(&health, Outcome::HardFailure, 99_999, &p);
+                        record(&health, Outcome::HardFailure, || 99_999, &p);
                     }
                 });
             }
@@ -692,8 +783,8 @@ mod tests {
             for _ in 0..THREADS {
                 scope.spawn(|| {
                     for _ in 0..1_000 {
-                        record(&health, Outcome::HardFailure, 99_999, &p);
-                        record(&health, Outcome::Success, 99_999, &p);
+                        record(&health, Outcome::HardFailure, || 99_999, &p);
+                        record(&health, Outcome::Success, || 99_999, &p);
                     }
                 });
             }
@@ -714,7 +805,7 @@ mod tests {
             for _ in 0..8 {
                 scope.spawn(|| {
                     for _ in 0..1_000 {
-                        record(&health, Outcome::HardFailure, 5_000, &p);
+                        record(&health, Outcome::HardFailure, || 5_000, &p);
                     }
                 });
             }
@@ -739,7 +830,7 @@ mod tests {
                 w.consecutive_failures,
                 w.timestamp_ms,
             ));
-            record(&health, Outcome::HardFailure, 1_000, &p);
+            record(&health, Outcome::HardFailure, || 1_000, &p);
             let after = unpack(health.state.load());
             assert_eq!(after.state, State::Penalized);
             assert_eq!(after.penalty_round, 15);
@@ -866,7 +957,7 @@ mod tests {
         }
 
         let p = policy(2, 1_000, 16_000);
-        record(&health[1], Outcome::HardFailure, 100, &p);
+        record(&health[1], Outcome::HardFailure, || 100, &p);
         let w = unpack(health[1].state.load());
         assert_eq!(w.state, State::Penalized);
         assert_eq!(w.penalty_round, 1);

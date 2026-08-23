@@ -9,9 +9,14 @@ use hickory_proto::op::{Message, OpCode, Query as WireQuery, ResponseCode};
 use hickory_proto::rr::{Name, RecordType};
 use tokio::net::UdpSocket;
 
-fn pool_for(addr: SocketAddr) -> UpstreamPool {
+const STRATEGIES: [(UpstreamStrategy, &str); 2] = [
+    (UpstreamStrategy::Fallback, ""),
+    (UpstreamStrategy::Adaptive, "_adaptive"),
+];
+
+fn pool_for(addr: SocketAddr, strategy: UpstreamStrategy) -> UpstreamPool {
     UpstreamPool::from_config(&DnsUpstreamsConfig {
-        strategy: UpstreamStrategy::Fallback,
+        strategy,
         timeout_ms: 2_000,
         servers: vec![UpstreamServerConfig {
             address: addr.to_string(),
@@ -59,33 +64,52 @@ async fn refusing_addr() -> SocketAddr {
 
 fn bench_answered(c: &mut Criterion) {
     let rt = tokio::runtime::Runtime::new().unwrap();
-    let pool = rt.block_on(async { pool_for(answering_server().await) });
+    let addr = rt.block_on(answering_server());
     let query = a_query();
-    rt.block_on(pool.forward(&query)).unwrap();
 
     let mut group = c.benchmark_group("upstream");
-    group.bench_function("forward_udp_answered", |b| {
-        b.iter(|| rt.block_on(pool.forward(black_box(&query))).unwrap());
-    });
+    for (strategy, suffix) in STRATEGIES {
+        let pool = pool_for(addr, strategy);
+        rt.block_on(pool.forward(&query)).unwrap();
+        group.bench_function(format!("forward_udp_answered{suffix}"), |b| {
+            b.iter(|| rt.block_on(pool.forward(black_box(&query))).unwrap());
+        });
+    }
     group.finish();
 }
 
+const REFUSED_ARMS: [(UpstreamStrategy, &str); 2] = [
+    (UpstreamStrategy::Fallback, "forward_udp_refused"),
+    (
+        UpstreamStrategy::Adaptive,
+        "forward_udp_refused_adaptive_penalized_forced",
+    ),
+];
+
+const REFUSED_WARMUPS: usize = 4;
+
 fn bench_refused(c: &mut Criterion) {
     let rt = tokio::runtime::Runtime::new().unwrap();
-    let pool = rt.block_on(async { pool_for(refusing_addr().await) });
+    let addr = rt.block_on(refusing_addr());
     let query = a_query();
-    let probe = rt.block_on(pool.forward(&query)).unwrap_err();
-    if probe.kind() == io::ErrorKind::TimedOut {
-        eprintln!(
-            "skipping forward_udp_refused: this host does not surface ICMP port-unreachable on connected UDP sockets"
-        );
-        return;
-    }
 
     let mut group = c.benchmark_group("upstream");
-    group.bench_function("forward_udp_refused", |b| {
-        b.iter(|| rt.block_on(pool.forward(black_box(&query))).unwrap_err());
-    });
+    for (strategy, name) in REFUSED_ARMS {
+        let pool = pool_for(addr, strategy);
+        let probe = rt.block_on(pool.forward(&query)).unwrap_err();
+        if probe.kind() == io::ErrorKind::TimedOut {
+            eprintln!(
+                "skipping {name}: this host does not surface ICMP port-unreachable on connected UDP sockets"
+            );
+            continue;
+        }
+        for _ in 1..REFUSED_WARMUPS {
+            rt.block_on(pool.forward(&query)).unwrap_err();
+        }
+        group.bench_function(name, |b| {
+            b.iter(|| rt.block_on(pool.forward(black_box(&query))).unwrap_err());
+        });
+    }
     group.finish();
 }
 
