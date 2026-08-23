@@ -251,6 +251,30 @@ mod tests {
             cache_hit["data"].get("endpoint").is_none(),
             "a cache hit must not carry an endpoint key: {cache_hit}"
         );
+
+        let http: Value = serde_json::from_str(&encode(Event::Query(Box::new(QueryRecord {
+            event: fah_model::Event::http(fah_model::RequestEvent::new(
+                fah_model::Request {
+                    host: "ads.example.com".to_string(),
+                    path: "/pixel.gif?id=1".to_string(),
+                    method: "GET".to_string(),
+                    resource_type: fah_model::ResourceType::Image,
+                    client_ip: IpAddr::V4(Ipv4Addr::new(192, 168, 1, 10)),
+                    timestamp: SystemTime::UNIX_EPOCH,
+                },
+                Verdict::Pass,
+                Duration::from_micros(900),
+                200,
+                0,
+            )),
+            client_name: None,
+        }))))
+        .unwrap();
+        assert_eq!(http["data"]["kind"], "http");
+        assert!(
+            http["data"].get("endpoint").is_none(),
+            "an HTTP item must not carry an endpoint key: {http}"
+        );
     }
 
     #[test]

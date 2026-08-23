@@ -143,9 +143,6 @@ pub struct QueryItemResponse {
     pub rule: Option<String>,
     pub list: Option<String>,
     pub duration_ms: f64,
-    /// Always `null` in Phase 1: the pipeline records *that* an upstream was
-    /// used, not which one (`QueryEvent::upstream_used`), and per-query
-    /// upstream attribution would cost an allocation on the hot path.
     pub upstream: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub endpoint: Option<u8>,
