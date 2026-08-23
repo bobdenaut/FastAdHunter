@@ -9,6 +9,34 @@ the **sum of per-process deltas**, so a segment survives only if a capture was
 taken before the process ended. Capture immediately before any deploy, or that
 segment's runs are lost.
 
+## Capturing a segment
+
+Owner says **"capture S1-G4"**. The API key is not in the repo (p2.5-08);
+the owner supplies it.
+
+```sh
+curl -sk -H "Authorization: Bearer <key>" https://172.17.0.2:8443/api/v1/telemetry
+curl -sk https://172.17.0.2:8443/health
+```
+
+`upstreams[].failure_runs` is the only required field. `/health` decides
+which file to write, because **counters are cumulative within one process** —
+only a segment's *latest* capture carries information, so an older capture of
+the same process is superseded, not accumulated.
+
+| `/health` says | Meaning | Action |
+| --- | --- | --- |
+| `uptime_seconds` higher than at the previous capture, same `version` | same process | **replace** the current segment's file |
+| `uptime_seconds` reset, or `version` changed | new process after a restart | **new segment**: `seg03`, `seg04`, … |
+
+Write to this folder as
+`seg<NN>-<version>-<ISO8601 basic UTC>.json`, then update the Segments and
+Running total tables below. One file per segment keeps the folder bounded.
+
+Optional alongside it, useful only at a build boundary:
+`/api/v1/debug/memory`, `/api/v1/stats`,
+`/api/v1/history/perf?from=<T0>&to=<T1>&fields=rss_bytes,peak_rss,memory`.
+
 ## Segments
 
 | # | Build | Captured | Window covered | `1.1.1.1` attempts / failures | `failure_runs` |
