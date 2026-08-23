@@ -22,8 +22,8 @@ pub use pipeline::{Pipeline, Transport};
 pub use server::{ListenerDied, Server};
 pub use swr::SwrStats;
 pub use upstream::health::{
-    next_word, pack, penalty, record, select, unpack, Candidate, Health, Outcome, PackedWord,
-    Policy, Selected, State, Transition, Word,
+    classify, next_word, pack, penalty, record, select, unpack, Candidate, Health, HealthMode,
+    Outcome, PackedWord, Policy, Selected, State, Transition, TransportKind, Word,
 };
 pub use upstream::{
     worst_case_walk, ForwardOutcome, Forwarder, UpstreamPool, UpstreamStatus, ATTEMPT_LEGS,

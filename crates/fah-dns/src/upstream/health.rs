@@ -1,4 +1,7 @@
+use std::io;
 use std::sync::atomic::{AtomicU64, Ordering};
+
+use hickory_proto::op::Message;
 
 use super::ATTEMPT_LEGS;
 
@@ -78,6 +81,34 @@ pub enum Outcome {
     Success,
     HardFailure,
     PathFailure,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum TransportKind {
+    Plain,
+    Encrypted,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum HealthMode {
+    Record,
+    Ignore,
+}
+
+pub fn classify(transport: TransportKind, result: &io::Result<Message>) -> Outcome {
+    let Err(err) = result else {
+        return Outcome::Success;
+    };
+    match err.kind() {
+        io::ErrorKind::ConnectionRefused
+        | io::ErrorKind::NetworkUnreachable
+        | io::ErrorKind::HostUnreachable => Outcome::PathFailure,
+        io::ErrorKind::InvalidData => match transport {
+            TransportKind::Encrypted => Outcome::PathFailure,
+            TransportKind::Plain => Outcome::HardFailure,
+        },
+        _ => Outcome::HardFailure,
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -975,5 +1006,77 @@ mod tests {
         pair[0].state.store(pack(State::Penalized, 1, 1, 9_000));
         pair[1].state.store(pack(State::Probing, 2, 2, 8_000));
         assert_eq!(select(&pair, 0, || 100, true), forced(1));
+    }
+
+    fn answer() -> io::Result<Message> {
+        Ok(Message::query())
+    }
+
+    fn failure(kind: io::ErrorKind) -> io::Result<Message> {
+        Err(io::Error::new(kind, "classification test"))
+    }
+
+    #[test]
+    fn an_answer_is_a_success_on_both_transports() {
+        for transport in [TransportKind::Plain, TransportKind::Encrypted] {
+            assert_eq!(classify(transport, &answer()), Outcome::Success);
+        }
+    }
+
+    #[test]
+    fn unreachable_and_refused_are_path_failures_on_both_transports() {
+        for kind in [
+            io::ErrorKind::ConnectionRefused,
+            io::ErrorKind::NetworkUnreachable,
+            io::ErrorKind::HostUnreachable,
+        ] {
+            for transport in [TransportKind::Plain, TransportKind::Encrypted] {
+                assert_eq!(
+                    classify(transport, &failure(kind)),
+                    Outcome::PathFailure,
+                    "{kind:?} on {transport:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn invalid_data_is_a_path_failure_only_on_the_encrypted_transport() {
+        assert_eq!(
+            classify(
+                TransportKind::Encrypted,
+                &failure(io::ErrorKind::InvalidData)
+            ),
+            Outcome::PathFailure
+        );
+        assert_eq!(
+            classify(TransportKind::Plain, &failure(io::ErrorKind::InvalidData)),
+            Outcome::HardFailure
+        );
+    }
+
+    #[test]
+    fn every_other_kind_is_a_hard_failure_on_both_transports() {
+        for kind in [
+            io::ErrorKind::TimedOut,
+            io::ErrorKind::Other,
+            io::ErrorKind::NotFound,
+            io::ErrorKind::ConnectionReset,
+            io::ErrorKind::BrokenPipe,
+            io::ErrorKind::ConnectionAborted,
+            io::ErrorKind::AddrNotAvailable,
+            io::ErrorKind::InvalidInput,
+            io::ErrorKind::OutOfMemory,
+            io::ErrorKind::PermissionDenied,
+            io::ErrorKind::UnexpectedEof,
+        ] {
+            for transport in [TransportKind::Plain, TransportKind::Encrypted] {
+                assert_eq!(
+                    classify(transport, &failure(kind)),
+                    Outcome::HardFailure,
+                    "{kind:?} on {transport:?}"
+                );
+            }
+        }
     }
 }

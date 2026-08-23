@@ -537,6 +537,29 @@ mod tests {
         }
     }
 
+    #[tokio::test]
+    async fn an_rcode_answer_classifies_as_a_transport_success() {
+        for code in [
+            ResponseCode::ServFail,
+            ResponseCode::NXDomain,
+            ResponseCode::Refused,
+        ] {
+            let addr = rcode_udp_server(1, code).await;
+            let pool = pool_of(vec![udp_server_config(addr)], 2000);
+
+            let result = pool.servers[0]
+                .query(&a_query(), Duration::from_millis(2000))
+                .await;
+
+            assert_eq!(result.as_ref().unwrap().metadata.response_code, code);
+            assert_eq!(
+                health::classify(health::TransportKind::Plain, &result),
+                health::Outcome::Success,
+                "{code} is a transport success"
+            );
+        }
+    }
+
     const RUN_TIMEOUT_MS: u32 = 200;
 
     async fn scripted_udp_server(script: Vec<bool>) -> SocketAddr {
