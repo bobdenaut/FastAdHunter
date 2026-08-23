@@ -180,8 +180,8 @@ u8::try_from(index).unwrap_or(u8::MAX)
 
 That conversion alone leaves the *only* guard on the query path, silently
 saturating. Put the real bound where configuration is checked instead —
-`MAX_UPSTREAM_SERVERS = 255` rejected in `fah_config::validate` — so every
-accepted index is ≤ 254 and `u8::MAX` becomes a sentinel that cannot collide
+`MAX_UPSTREAM_SERVERS = 8` rejected in `fah_config::validate` — so every
+accepted index is ≤ 7 and `u8::MAX` becomes a sentinel that cannot collide
 with a real endpoint. The cast stays as defence-in-depth, not as the contract.
 
 ## Why This Matters

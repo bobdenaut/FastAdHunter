@@ -10,6 +10,8 @@ pub struct DnsUpstreamsConfig {
     pub strategy: UpstreamStrategy,
     #[serde(default = "default_timeout_ms")]
     pub timeout_ms: u32,
+    #[serde(default = "default_penalty_failures")]
+    pub penalty_failures: u32,
     #[serde(default = "default_servers")]
     pub servers: Vec<UpstreamServerConfig>,
 }
@@ -19,6 +21,7 @@ impl Default for DnsUpstreamsConfig {
         Self {
             strategy: default_strategy(),
             timeout_ms: default_timeout_ms(),
+            penalty_failures: default_penalty_failures(),
             servers: default_servers(),
         }
     }
@@ -37,6 +40,10 @@ fn default_timeout_ms() -> u32 {
     // legitimately slow recursive lookup (cold cache, distant TLD, DNSSEC), so
     // a healthy-but-slow answer is not abandoned prematurely.
     800
+}
+
+fn default_penalty_failures() -> u32 {
+    2
 }
 
 fn default_servers() -> Vec<UpstreamServerConfig> {
@@ -60,6 +67,8 @@ fn default_servers() -> Vec<UpstreamServerConfig> {
 pub enum UpstreamStrategy {
     #[serde(rename = "fallback")]
     Fallback,
+    #[serde(rename = "adaptive")]
+    Adaptive,
 }
 
 impl FromStr for UpstreamStrategy {
@@ -68,7 +77,8 @@ impl FromStr for UpstreamStrategy {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
             "fallback" => Ok(UpstreamStrategy::Fallback),
-            _ => Err("fallback"),
+            "adaptive" => Ok(UpstreamStrategy::Adaptive),
+            _ => Err("one of: fallback, adaptive"),
         }
     }
 }

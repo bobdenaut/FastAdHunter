@@ -290,6 +290,7 @@ async fn full_pipeline_forwards_via_upstream_pool_and_caches_the_answer() {
             protocol: UpstreamProtocol::Udp,
             hostname: None,
         }],
+        ..Default::default()
     })
     .unwrap();
 

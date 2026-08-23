@@ -79,6 +79,9 @@ fn apply_one(
         ["dns", "upstreams", "timeout_ms"] => {
             config.dns.upstreams.timeout_ms = coerce_u32(var, path, value)?
         }
+        ["dns", "upstreams", "penalty_failures"] => {
+            config.dns.upstreams.penalty_failures = coerce_u32(var, path, value)?
+        }
 
         ["rules", "refresh_hours_default"] => {
             config.rules.refresh_hours_default = coerce_u32(var, path, value)?

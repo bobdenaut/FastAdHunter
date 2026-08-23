@@ -18,6 +18,7 @@ fn pool_for(addr: SocketAddr) -> UpstreamPool {
             protocol: UpstreamProtocol::Udp,
             hostname: None,
         }],
+        ..Default::default()
     })
     .unwrap()
 }

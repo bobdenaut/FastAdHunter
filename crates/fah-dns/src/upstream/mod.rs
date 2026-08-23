@@ -105,7 +105,7 @@ impl UpstreamPool {
     fn with_tls_config(config: &DnsUpstreamsConfig, tls: Arc<ClientConfig>) -> io::Result<Self> {
         match config.strategy {
             // Single variant today; a future strategy gets wired here.
-            UpstreamStrategy::Fallback => {}
+            UpstreamStrategy::Fallback | UpstreamStrategy::Adaptive => {}
         }
         let servers = config
             .servers
@@ -436,6 +436,7 @@ mod tests {
             strategy: UpstreamStrategy::Fallback,
             timeout_ms,
             servers,
+            ..Default::default()
         })
         .unwrap()
     }
@@ -1064,6 +1065,7 @@ mod tests {
                     dot_server_config("127.0.0.1:853"),
                     dot_server_config("127.0.0.2:853"),
                 ],
+                ..Default::default()
             },
             empty_tls(),
         )
@@ -1081,6 +1083,7 @@ mod tests {
                 strategy: UpstreamStrategy::Fallback,
                 timeout_ms,
                 servers: vec![dot_server_config("a"), dot_server_config("b")],
+                ..Default::default()
             })
         );
         for server in pool.servers.iter() {

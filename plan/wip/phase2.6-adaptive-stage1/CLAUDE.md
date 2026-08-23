@@ -26,7 +26,7 @@ approved.
 
 | # | Task file | Outcome | MODEL | STATUS |
 |---|-----------|---------|-------|--------|
-| 1 | `p2.6-01-config-surface.md` | `strategy = "adaptive"` and `penalty_failures` parse, default, validate and override from env; 8-endpoint cap; `timeout_ms` range; the nine `DnsUpstreamsConfig` literals gain the field | Opus | WAITING |
+| 1 | `p2.6-01-config-surface.md` | `strategy = "adaptive"` and `penalty_failures` parse, default, validate and override from env; 8-endpoint cap; `timeout_ms` range; the nine `DnsUpstreamsConfig` literals gain the field | Opus | DONE |
 | 2 | `p2.6-02-health-core.md` | `Health` 64 B packed word, policy struct, pure transition function as a saturating CAS loop; S1.3 table pinned by tests | Opus | WAITING |
 | 3 | `p2.6-03-selection-probe.md` | One-pass config-order selection with lazy clock, `claim: bool`, hard invariant, single `Probing` claim per endpoint, forced-use recording | Opus | WAITING |
 | 4 | `p2.6-04-outcome-classification.md` | Transport outcomes map to `Outcome`; RCODE is success; `Record`/`Ignore` health mode; connection lifecycle never feeds health | Opus | WAITING |

@@ -113,7 +113,7 @@ fn write_atomic(path: &Path, text: &str) -> Result<(), ConfigError> {
 /// Floor for `[dns.cache] max_bytes` — see the check in [`validate`].
 const MIN_CACHE_MAX_BYTES: u64 = 1024 * 1024;
 
-pub const MAX_UPSTREAM_SERVERS: usize = u8::MAX as usize;
+pub const MAX_UPSTREAM_SERVERS: usize = 8;
 
 fn validate(config: &Config) -> Result<(), ConfigError> {
     validate_ip("dns.listen.address", &config.dns.listen.address)?;
@@ -170,6 +170,19 @@ fn validate(config: &Config) -> Result<(), ConfigError> {
         config.history.sample_interval_seconds,
         1,
         86_400,
+    )?;
+
+    validate_range(
+        "dns.upstreams.timeout_ms",
+        config.dns.upstreams.timeout_ms,
+        1,
+        10_000,
+    )?;
+    validate_range(
+        "dns.upstreams.penalty_failures",
+        config.dns.upstreams.penalty_failures,
+        1,
+        255,
     )?;
 
     if config.dns.upstreams.servers.is_empty() {
@@ -765,6 +778,95 @@ format = "text"
                 ..
             }
         ));
+    }
+
+    #[test]
+    fn upstream_penalty_failures_defaults_and_round_trips() {
+        let config = Config::from_toml_str("[dns.upstreams]\ntimeout_ms = 800\n").unwrap();
+        assert_eq!(config.dns.upstreams.penalty_failures, 2);
+        assert_eq!(config.dns.upstreams.strategy, UpstreamStrategy::Fallback);
+        validate(&config).unwrap();
+
+        let config = Config::from_toml_str(
+            "[dns.upstreams]\nstrategy = \"adaptive\"\npenalty_failures = 3\n",
+        )
+        .unwrap();
+        assert_eq!(config.dns.upstreams.strategy, UpstreamStrategy::Adaptive);
+        assert_eq!(config.dns.upstreams.penalty_failures, 3);
+        validate(&config).unwrap();
+
+        let text = config.to_toml_string().unwrap();
+        let reparsed = Config::from_toml_str(&text).unwrap();
+        assert_eq!(reparsed.dns.upstreams, config.dns.upstreams);
+    }
+
+    #[test]
+    fn validation_rejects_zero_penalty_failures() {
+        let config = Config::from_toml_str("[dns.upstreams]\npenalty_failures = 0\n").unwrap();
+        let err = validate(&config).unwrap_err();
+        assert!(matches!(
+            err,
+            ConfigError::Validation {
+                key: "dns.upstreams.penalty_failures",
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn validation_bounds_upstream_timeout_ms() {
+        for value in ["0", "10001"] {
+            let config =
+                Config::from_toml_str(&format!("[dns.upstreams]\ntimeout_ms = {value}\n")).unwrap();
+            let err = validate(&config).unwrap_err();
+            assert!(matches!(
+                err,
+                ConfigError::Validation {
+                    key: "dns.upstreams.timeout_ms",
+                    ..
+                }
+            ));
+        }
+
+        let config = Config::from_toml_str("[dns.upstreams]\ntimeout_ms = 10000\n").unwrap();
+        validate(&config).unwrap();
+    }
+
+    #[test]
+    fn upstream_env_overrides_apply() {
+        let pairs = vec![
+            (
+                "FAH__DNS__UPSTREAMS__STRATEGY".to_string(),
+                "adaptive".to_string(),
+            ),
+            (
+                "FAH__DNS__UPSTREAMS__PENALTY_FAILURES".to_string(),
+                "3".to_string(),
+            ),
+        ];
+        let config = apply_env_overrides(Config::default(), &pairs).unwrap();
+        assert_eq!(config.dns.upstreams.strategy, UpstreamStrategy::Adaptive);
+        assert_eq!(config.dns.upstreams.penalty_failures, 3);
+    }
+
+    #[test]
+    fn upstream_env_invalid_values_are_rejected() {
+        let pairs = vec![(
+            "FAH__DNS__UPSTREAMS__PENALTY_FAILURES".to_string(),
+            "abc".to_string(),
+        )];
+        let err = apply_env_overrides(Config::default(), &pairs).unwrap_err();
+        assert!(matches!(err, ConfigError::InvalidEnvValue { .. }));
+
+        let pairs = vec![(
+            "FAH__DNS__UPSTREAMS__STRATEGY".to_string(),
+            "nope".to_string(),
+        )];
+        let message = apply_env_overrides(Config::default(), &pairs)
+            .unwrap_err()
+            .to_string();
+        assert!(message.contains("fallback"));
+        assert!(message.contains("adaptive"));
     }
 
     #[test]

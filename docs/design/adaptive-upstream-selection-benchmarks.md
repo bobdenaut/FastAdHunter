@@ -493,7 +493,7 @@ container's own config.
 ### S1-L — configuration
 
 Probe container per routeros-traps.md for L.1, L.2, L.4a, L.4b. L.3 is the production
-container with `adaptive` enabled through the `FAH_DNS_UPSTREAMS_STRATEGY`
+container with `adaptive` enabled through the `FAH__DNS__UPSTREAMS__STRATEGY`
 environment override (never a TOML edit inside the container), binary deployed
 first, opt-in second, confirmed via `GET /api/v1/config`. `penalty_failures` at
 whatever value T produced, or the compiled default if T's window is still open.

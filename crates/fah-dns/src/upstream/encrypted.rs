@@ -396,6 +396,7 @@ mod tests {
                         hostname: Some("localhost".to_string()),
                     })
                     .collect(),
+                ..Default::default()
             },
             tls,
         )
@@ -662,6 +663,7 @@ mod tests {
                 protocol: UpstreamProtocol::Dot,
                 hostname: Some("cloudflare-dns.com".to_string()),
             }],
+            ..Default::default()
         })
         .unwrap();
         let response = pool.forward(&a_query()).await.unwrap().message;
@@ -680,6 +682,7 @@ mod tests {
                 protocol: UpstreamProtocol::Doh,
                 hostname: None,
             }],
+            ..Default::default()
         })
         .unwrap();
         for _ in 0..2 {
