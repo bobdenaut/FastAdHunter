@@ -65,6 +65,11 @@ already reports as JSON.
 channel, so the shed figure stays one number. `counters.http` is kept separate
 from `counters.dns` because "queries" has meant "DNS questions answered" since
 p1-08 and widening it would silently redefine every figure built on it.
+`counters.http.refused` (p2.5-11) is requests the egress policy refused before
+any upstream contact — an unusable `Host` (`[egress] allow_ip_literal_hosts`)
+or a resolved destination outside `[egress]`. It is counted on the proxy, not
+on the event stream, so it is not part of `pass + allow + block`; it is the
+only signal of a LAN client probing, now that refusals log at `debug`.
 
 **Compatibility contract.** New fields may be added; existing fields must not
 change meaning or units. Figures that may change with the implementation live
@@ -92,7 +97,8 @@ Top-level blocks: `process`, `ruleset`, `counters`, `latency`, `upstreams`,
               "cache_hits": 640119, "cache_misses": 269446, "cache_stale": 3187,
               "answers": { "servfail_synthesized": 1204, "servfail_relayed": 88,
                            "refused_relayed": 17 } },
-    "http": { "pass": 4412, "allow": 0, "block": 918, "response_bytes": 148223904 },
+    "http": { "pass": 4412, "allow": 0, "block": 918, "response_bytes": 148223904,
+              "refused": 3 },
     "events_dropped": 0,
     "swr": { "enqueued": 12044, "deduplicated": 3311, "dropped": 0,
              "completed": 8702, "failed": 31 },
@@ -823,13 +829,13 @@ Every key is always **present**, so a client never has to tell "absent" from
 `path`, `resource_type`, `status`, `bytes`), and an HTTP event leaves `qtype`
 `null` and `cached` `false`.
 
-`upstream` is still always `null` here, and there is no per-query
-answer-outcome key. Since p2.5-05 the engine *does* record which endpoint
-answered and whether the client got an answer or a failure, but only in
-aggregate — `/telemetry`'s `counters.dns.answers` and `/history/perf`'s
-`answers_delta`. Surfacing either per query on this feed is a separate change:
-`upstream` would need the address string that attribution deliberately does not
-carry per query, and the outcome would be a new key on this shape.
+One exception (p2.5-10): `endpoint` is **present only** on a DNS item that an
+upstream answered — the index of that server in `[dns.upstreams.servers]`
+(CONTEXT.md §Answering Endpoint), so a fallback past a dead primary reads
+`"endpoint": 1`. Cache hits, blocks and HTTP items carry no `endpoint` key.
+`upstream` stays `null` (the address string is deliberately not carried per
+query), and the per-query answer outcome is aggregate-only — `/telemetry`'s
+`counters.dns.answers`, `/history/perf`'s `answers_delta`.
 
 `status` is what the client actually received — a synthesized block's status as
 much as an origin's — and `bytes` is the body relayed downstream, so a block
