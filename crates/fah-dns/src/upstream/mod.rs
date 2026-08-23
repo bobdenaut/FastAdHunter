@@ -9,6 +9,7 @@
 
 mod alarm;
 mod encrypted;
+pub mod health;
 mod plain;
 
 use std::io;

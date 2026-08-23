@@ -21,6 +21,10 @@ pub use cache::{CacheClean, CacheCleanupStats, CacheStats, DEFAULT_REFRESH_CLAIM
 pub use pipeline::{Pipeline, Transport};
 pub use server::{ListenerDied, Server};
 pub use swr::SwrStats;
+pub use upstream::health::{
+    next_word, pack, penalty, record, unpack, Health, Outcome, PackedWord, Policy, State,
+    Transition, Word,
+};
 pub use upstream::{
     worst_case_walk, ForwardOutcome, Forwarder, UpstreamPool, UpstreamStatus, ATTEMPT_LEGS,
 };
