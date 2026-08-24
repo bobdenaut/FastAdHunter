@@ -124,6 +124,22 @@ pub struct LatencySummary {
     pub forward_p99: f64,
 }
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum UpstreamState {
+    #[default]
+    Healthy,
+    Penalized,
+    Probing,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum AddressFamily {
+    V4,
+    V6,
+}
+
 /// One upstream server's counters at sample time — the persisted mirror of
 /// `fah-metrics`' `UpstreamSnapshot`, and the same rows `GET /api/v1/telemetry`
 /// publishes live.
@@ -133,13 +149,28 @@ pub struct UpstreamSample {
     pub protocol: crate::Protocol,
     pub attempts: u64,
     pub failures: u64,
-    /// Failures since the last success. **Not a liveness signal**: under
-    /// `fallback` a secondary is attempted only when the primary fails, so a
-    /// non-zero streak can be hours old. Read it beside `attempts`.
+    /// Failures since the last success. **Not a liveness signal** — `state`
+    /// is: under `fallback` a secondary is attempted only when the primary
+    /// fails, so a non-zero streak can be hours old, and under `adaptive` this
+    /// freezes while the endpoint is Penalized. Read it beside `attempts`.
     pub consecutive_failures: u64,
     pub tls_handshakes: u64,
     #[serde(default)]
     pub failure_runs: [u64; 4],
+    #[serde(default)]
+    pub state: UpstreamState,
+    #[serde(default)]
+    pub penalty_round: u8,
+    #[serde(default)]
+    pub penalties: u64,
+    #[serde(default)]
+    pub penalized_seconds_total: u64,
+    #[serde(default)]
+    pub probes: u64,
+    #[serde(default)]
+    pub probe_successes: u64,
+    #[serde(default)]
+    pub family: Option<AddressFamily>,
 }
 
 #[cfg(test)]
@@ -196,6 +227,13 @@ mod tests {
                 consecutive_failures: 0,
                 tls_handshakes: 4,
                 failure_runs: [2, 1, 0, 0],
+                state: UpstreamState::Penalized,
+                penalty_round: 2,
+                penalties: 5,
+                penalized_seconds_total: 96,
+                probes: 4,
+                probe_successes: 1,
+                family: Some(AddressFamily::V4),
             }],
         };
         let json = serde_json::to_string(&sample).unwrap();
@@ -228,6 +266,91 @@ mod tests {
         let sample: UpstreamSample = serde_json::from_str(legacy).unwrap();
         assert_eq!(sample.failure_runs, [0, 0, 0, 0]);
         assert_eq!(sample.failures, 2);
+        assert_eq!(sample.state, UpstreamState::Healthy);
+        assert_eq!(sample.penalty_round, 0);
+        assert_eq!(sample.penalties, 0);
+        assert_eq!(sample.penalized_seconds_total, 0);
+        assert_eq!(sample.probes, 0);
+        assert_eq!(sample.probe_successes, 0);
+        assert_eq!(sample.family, None);
+    }
+
+    #[test]
+    fn a_hostname_doh_row_round_trips_through_an_explicit_null_family() {
+        let sample = UpstreamSample {
+            address: "https://cloudflare-dns.com/dns-query".to_string(),
+            protocol: crate::Protocol::Doh,
+            attempts: 5,
+            failures: 0,
+            consecutive_failures: 0,
+            tls_handshakes: 1,
+            failure_runs: [0, 0, 0, 0],
+            state: UpstreamState::Healthy,
+            penalty_round: 0,
+            penalties: 0,
+            penalized_seconds_total: 0,
+            probes: 0,
+            probe_successes: 0,
+            family: None,
+        };
+        let json = serde_json::to_string(&sample).unwrap();
+        assert!(
+            json.contains(r#""family":null"#),
+            "a hostname DoH row writes the key, not an omission: {json}"
+        );
+        assert_eq!(
+            serde_json::from_str::<UpstreamSample>(&json).unwrap(),
+            sample
+        );
+    }
+
+    #[test]
+    fn an_upstream_row_publishes_the_adaptive_fields() {
+        let sample = UpstreamSample {
+            address: "1.1.1.1".to_string(),
+            protocol: crate::Protocol::Udp,
+            attempts: 10,
+            failures: 4,
+            consecutive_failures: 2,
+            tls_handshakes: 0,
+            failure_runs: [1, 0, 0, 0],
+            state: UpstreamState::Probing,
+            penalty_round: 3,
+            penalties: 7,
+            penalized_seconds_total: 192,
+            probes: 6,
+            probe_successes: 2,
+            family: Some(AddressFamily::V6),
+        };
+        let json: serde_json::Value =
+            serde_json::from_str(&serde_json::to_string(&sample).unwrap()).unwrap();
+        assert_eq!(json["state"], "probing");
+        assert_eq!(json["penalty_round"], 3);
+        assert_eq!(json["penalties"], 7);
+        assert_eq!(json["penalized_seconds_total"], 192);
+        assert_eq!(json["probes"], 6);
+        assert_eq!(json["probe_successes"], 2);
+        assert_eq!(json["family"], "v6");
+        assert_eq!(json["attempts"], 10);
+        assert_eq!(json["consecutive_failures"], 2);
+        assert_eq!(json["tls_handshakes"], 0);
+        assert_eq!(json["protocol"], "udp");
+    }
+
+    #[test]
+    fn an_upstream_state_serializes_lowercase() {
+        for (state, spelling) in [
+            (UpstreamState::Healthy, "healthy"),
+            (UpstreamState::Penalized, "penalized"),
+            (UpstreamState::Probing, "probing"),
+        ] {
+            assert_eq!(
+                serde_json::to_string(&state).unwrap(),
+                format!("\"{spelling}\"")
+            );
+        }
+        assert_eq!(serde_json::to_string(&AddressFamily::V4).unwrap(), "\"v4\"");
+        assert_eq!(UpstreamState::default(), UpstreamState::Healthy);
     }
 
     #[test]

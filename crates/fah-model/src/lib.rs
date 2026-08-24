@@ -26,7 +26,10 @@ pub use history::{
 pub use http::{HttpRequest, ResourceType};
 pub use memory::{AllocatorStats, MemoryBreakdown, MemoryComponents, ProcessStats, StatsHeap};
 pub use operating_mode::{OperatingMode, ParseOperatingModeError};
-pub use perf::{CacheStatsSample, LatencySummary, PerfSample, PerfSeries, UpstreamSample};
+pub use perf::{
+    AddressFamily, CacheStatsSample, LatencySummary, PerfSample, PerfSeries, UpstreamSample,
+    UpstreamState,
+};
 pub use policy::{Assignment, ClientSelector, Policy, PolicyId, Schedule};
 pub use protocol::Protocol;
 pub use query::{Query, QueryType};

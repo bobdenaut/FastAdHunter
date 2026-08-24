@@ -694,21 +694,7 @@ fn spawn_telemetry_poll(
                 bytes_freed: cleanup.bytes_freed,
                 last_duration_micros: cleanup.last_duration_micros,
             });
-            metrics.set_upstreams(
-                upstreams
-                    .status()
-                    .into_iter()
-                    .map(|status| fah_model::UpstreamSample {
-                        address: status.address,
-                        protocol: status.protocol,
-                        attempts: status.attempts,
-                        failures: status.failures,
-                        consecutive_failures: status.consecutive_failures,
-                        tls_handshakes: status.tls_handshakes,
-                        failure_runs: status.failure_runs,
-                    })
-                    .collect(),
-            );
+            metrics.set_upstreams(upstreams.status());
 
             // `len` and `duplicates_removed` are field reads. The ruleset's
             // *size* is deliberately not read here: `heap_bytes()` is a walk,

@@ -31,7 +31,7 @@ approved.
 | 3 | `p2.6-03-selection-probe.md` | One-pass config-order selection with lazy clock, `claim: bool`, hard invariant, single `Probing` claim per endpoint, forced-use recording | Opus | DONE |
 | 4 | `p2.6-04-outcome-classification.md` | Transport outcomes map to `Outcome`; RCODE is success; `Record`/`Ignore` health mode; connection lifecycle never feeds health | Opus | DONE |
 | 5 | `p2.6-05-pool-integration.md` | `forward` runs Stage 1 under `adaptive` (one probe per query, `Ignore` never claims); `resolve_host` isolated; `fallback` untouched, its test assertions unmodified | Opus | DONE |
-| 6 | `p2.6-06-telemetry.md` | `state`, `penalty_round`, `penalties`, `penalized_seconds_total`, `probes`, `probe_successes`, `family` on `/telemetry`; `/health` degraded = no endpoint Healthy | Opus | WAITING |
+| 6 | `p2.6-06-telemetry.md` | `state`, `penalty_round`, `penalties`, `penalized_seconds_total`, `probes`, `probe_successes`, `family` on `/telemetry`; `/health` degraded = no endpoint Healthy | Opus | DONE |
 | 7 | `p2.6-07-docs.md` | CONFIGURATION.md, API.md, measurement-traps.md, CONTEXT.md updated — each edit owner-approved at execution time | Opus | WAITING |
 | 8 | `p2.6-08-microbench.md` | S1-M: healthy-path selection cost `adaptive` vs `fallback`, pinned, zero allocations — G2 tier 1 | Opus | WAITING |
 | 9 | `p2.6-09-injected-failure-bench.md` | S1-G3 scenarios pass; net timeout cost avoided reported in two rows | Opus | WAITING |

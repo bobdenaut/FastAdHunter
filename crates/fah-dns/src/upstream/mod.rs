@@ -28,8 +28,8 @@ use tracing::{debug, info, warn};
 use alarm::FailureAlarm;
 use encrypted::{ConnectTarget, ExchangeConn};
 use health::{
-    classify, record, select, unpack, Health, HealthMode, Policy, ProbeGuard, Selected, Transition,
-    TransportKind,
+    classify, record, select, unpack, Health, HealthMode, Policy, ProbeGuard, Selected, State,
+    Transition, TransportKind,
 };
 
 pub const ATTEMPT_LEGS: u32 = 3;
@@ -82,23 +82,7 @@ pub struct UpstreamPool {
 
 /// One upstream's counters — feeds p1-08's metrics and p1-09's `/health`
 /// degraded state.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct UpstreamStatus {
-    /// The `address` exactly as configured — the stable identity for
-    /// metrics labels.
-    pub address: String,
-    pub protocol: fah_model::Protocol,
-    pub attempts: u64,
-    pub failures: u64,
-    /// Failures since the last success. **Not a liveness signal**: `forward`
-    /// walks the list in order and never skips, so a secondary is attempted
-    /// only when the primary fails and its streak can be hours old.
-    pub consecutive_failures: u64,
-    /// TLS handshakes attempted (always 0 for plain UDP). Staying flat while
-    /// `attempts` grows is the connection-reuse proof (p1-06 acceptance).
-    pub tls_handshakes: u64,
-    pub failure_runs: [u64; 4],
-}
+pub type UpstreamStatus = fah_model::UpstreamSample;
 
 impl UpstreamPool {
     pub fn from_config(config: &DnsUpstreamsConfig) -> io::Result<Self> {
@@ -203,30 +187,47 @@ impl UpstreamPool {
             .collect())
     }
 
+    pub fn strategy(&self) -> UpstreamStrategy {
+        self.strategy
+    }
+
     pub fn status(&self) -> Vec<UpstreamStatus> {
         self.servers
             .iter()
             .zip(self.health.iter())
-            .map(|(server, health)| UpstreamStatus {
-                address: server.address.clone(),
-                protocol: server.protocol,
-                attempts: health.attempts.load(Ordering::Relaxed),
-                failures: health.failures.load(Ordering::Relaxed),
-                consecutive_failures: match self.strategy {
-                    UpstreamStrategy::Fallback => {
-                        server.consecutive_failures.load(Ordering::Relaxed)
-                    }
-                    UpstreamStrategy::Adaptive => {
-                        u64::from(unpack(health.state.load()).consecutive_failures)
-                    }
-                },
-                tls_handshakes: match &server.transport {
-                    Transport::Udp { .. } => 0,
-                    Transport::Encrypted(conn) => conn.handshakes(),
-                },
-                failure_runs: std::array::from_fn(|bucket| {
-                    server.run_buckets[bucket].load(Ordering::Relaxed)
-                }),
+            .map(|(server, health)| {
+                let word = unpack(health.state.load());
+                UpstreamStatus {
+                    address: server.address.clone(),
+                    protocol: server.protocol,
+                    attempts: health.attempts.load(Ordering::Relaxed),
+                    failures: health.failures.load(Ordering::Relaxed),
+                    consecutive_failures: match self.strategy {
+                        UpstreamStrategy::Fallback => {
+                            server.consecutive_failures.load(Ordering::Relaxed)
+                        }
+                        UpstreamStrategy::Adaptive => u64::from(word.consecutive_failures),
+                    },
+                    tls_handshakes: match &server.transport {
+                        Transport::Udp { .. } => 0,
+                        Transport::Encrypted(conn) => conn.handshakes(),
+                    },
+                    failure_runs: std::array::from_fn(|bucket| {
+                        server.run_buckets[bucket].load(Ordering::Relaxed)
+                    }),
+                    state: match word.state {
+                        State::Healthy => fah_model::UpstreamState::Healthy,
+                        State::Penalized => fah_model::UpstreamState::Penalized,
+                        State::Probing => fah_model::UpstreamState::Probing,
+                    },
+                    penalty_round: word.penalty_round,
+                    penalties: health.penalties.load(Ordering::Relaxed),
+                    penalized_seconds_total: health.penalized_ms_total.load(Ordering::Relaxed)
+                        / 1_000,
+                    probes: health.probes.load(Ordering::Relaxed),
+                    probe_successes: health.probe_successes.load(Ordering::Relaxed),
+                    family: server.family,
+                }
             })
             .collect()
     }
@@ -394,6 +395,7 @@ struct UpstreamServer {
     transport: Transport,
     consecutive_failures: AtomicU64,
     run_buckets: [AtomicU64; 4],
+    family: Option<fah_model::AddressFamily>,
 }
 
 enum Transport {
@@ -403,13 +405,15 @@ enum Transport {
 
 impl UpstreamServer {
     fn new(config: &UpstreamServerConfig, tls: &Arc<ClientConfig>) -> io::Result<Self> {
-        let (protocol, transport) = match config.protocol {
-            UpstreamProtocol::Udp => (
-                fah_model::Protocol::Udp,
-                Transport::Udp {
-                    addr: socket_addr(&config.address, 53)?,
-                },
-            ),
+        let (protocol, transport, family) = match config.protocol {
+            UpstreamProtocol::Udp => {
+                let addr = socket_addr(&config.address, 53)?;
+                (
+                    fah_model::Protocol::Udp,
+                    Transport::Udp { addr },
+                    Some(family_of(addr.ip())),
+                )
+            }
             UpstreamProtocol::Dot => {
                 // fah-config validation already demands the hostname; the
                 // re-check keeps this constructor safe standalone.
@@ -429,15 +433,14 @@ impl UpstreamServer {
                         config.address
                     ))
                 })?;
+                let addr = socket_addr(&config.address, 853)?;
                 (
                     fah_model::Protocol::Dot,
                     Transport::Encrypted(ExchangeConn::new(
-                        ConnectTarget::Dot {
-                            addr: socket_addr(&config.address, 853)?,
-                            server_name,
-                        },
+                        ConnectTarget::Dot { addr, server_name },
                         Arc::clone(tls),
                     )),
+                    Some(family_of(addr.ip())),
                 )
             }
             UpstreamProtocol::Doh => {
@@ -452,10 +455,15 @@ impl UpstreamServer {
                 // Not `host_str()`: that brackets IPv6 literals ("[::1]"),
                 // which neither the resolver nor rustls's `ServerName`
                 // accepts — take the typed host and render IPs bare.
-                let host: Arc<str> = match url.host() {
-                    Some(url::Host::Domain(domain)) => domain.into(),
-                    Some(url::Host::Ipv4(ip)) => ip.to_string().into(),
-                    Some(url::Host::Ipv6(ip)) => ip.to_string().into(),
+                let (host, family): (Arc<str>, Option<fah_model::AddressFamily>) = match url.host()
+                {
+                    Some(url::Host::Domain(domain)) => (domain.into(), None),
+                    Some(url::Host::Ipv4(ip)) => {
+                        (ip.to_string().into(), Some(fah_model::AddressFamily::V4))
+                    }
+                    Some(url::Host::Ipv6(ip)) => {
+                        (ip.to_string().into(), Some(fah_model::AddressFamily::V6))
+                    }
                     None => {
                         return Err(invalid(format!(
                             "doh upstream {} has no host",
@@ -482,6 +490,7 @@ impl UpstreamServer {
                         },
                         Arc::clone(tls),
                     )),
+                    family,
                 )
             }
         };
@@ -491,6 +500,7 @@ impl UpstreamServer {
             transport,
             consecutive_failures: AtomicU64::new(0),
             run_buckets: std::array::from_fn(|_| AtomicU64::new(0)),
+            family,
         })
     }
 
@@ -533,6 +543,13 @@ fn socket_addr(address: &str, default_port: u16) -> io::Result<SocketAddr> {
                 "invalid upstream address {address:?} (expected IP or IP:port)"
             ))
         })
+}
+
+fn family_of(ip: IpAddr) -> fah_model::AddressFamily {
+    match ip {
+        IpAddr::V4(_) => fah_model::AddressFamily::V4,
+        IpAddr::V6(_) => fah_model::AddressFamily::V6,
+    }
 }
 
 fn run_bucket(length: u64) -> usize {
@@ -1325,6 +1342,57 @@ mod tests {
         }
     }
 
+    #[test]
+    fn the_address_family_is_stored_at_construction() {
+        let tls = empty_tls();
+        let udp = UpstreamServerConfig {
+            address: "1.1.1.1".to_string(),
+            protocol: UpstreamProtocol::Udp,
+            hostname: None,
+        };
+        assert_eq!(
+            UpstreamServer::new(&udp, &tls).unwrap().family,
+            Some(fah_model::AddressFamily::V4)
+        );
+        assert_eq!(
+            UpstreamServer::new(&dot_server_config("[::1]:853"), &tls)
+                .unwrap()
+                .family,
+            Some(fah_model::AddressFamily::V6)
+        );
+
+        let doh_literal = UpstreamServerConfig {
+            address: "https://1.1.1.1/dns-query".to_string(),
+            protocol: UpstreamProtocol::Doh,
+            hostname: Some("cloudflare-dns.com".to_string()),
+        };
+        assert_eq!(
+            UpstreamServer::new(&doh_literal, &tls).unwrap().family,
+            Some(fah_model::AddressFamily::V4)
+        );
+
+        let doh_v6 = UpstreamServerConfig {
+            address: "https://[2606:4700:4700::1111]/dns-query".to_string(),
+            protocol: UpstreamProtocol::Doh,
+            hostname: Some("cloudflare-dns.com".to_string()),
+        };
+        assert_eq!(
+            UpstreamServer::new(&doh_v6, &tls).unwrap().family,
+            Some(fah_model::AddressFamily::V6)
+        );
+
+        let doh_hostname = UpstreamServerConfig {
+            address: "https://cloudflare-dns.com/dns-query".to_string(),
+            protocol: UpstreamProtocol::Doh,
+            hostname: None,
+        };
+        assert_eq!(
+            UpstreamServer::new(&doh_hostname, &tls).unwrap().family,
+            None,
+            "a hostname DoH endpoint gets no boot-time lookup"
+        );
+    }
+
     mod adaptive {
         use super::super::health::{pack, State};
         use super::*;
@@ -1683,6 +1751,126 @@ mod tests {
             assert_eq!(pool.health[0].probe_successes.load(Ordering::Relaxed), 1);
             assert_eq!(unpack(pool.health[0].state.load()).state, State::Healthy);
             assert!(pool.health[0].penalized_ms_total.load(Ordering::Relaxed) >= 200);
+        }
+
+        fn make_due(health: &Health) {
+            let word = unpack(health.state.load());
+            health.state.store(pack(
+                word.state,
+                word.penalty_round,
+                word.consecutive_failures,
+                0,
+            ));
+        }
+
+        #[tokio::test]
+        async fn status_publishes_the_penalty_of_a_black_holed_endpoint() {
+            let pool = adaptive_pool(
+                vec![
+                    udp_server_config(dead_addr().await),
+                    udp_server_config(answering_udp_server(2).await),
+                ],
+                20,
+                policy_of(1, 60_000),
+            );
+
+            assert_eq!(pool.forward(&a_query()).await.unwrap().endpoint, 1);
+
+            let status = pool.status();
+            assert_eq!(status[0].state, fah_model::UpstreamState::Penalized);
+            assert_eq!(status[0].penalty_round, 1);
+            assert_eq!(status[0].penalties, 1);
+            assert_eq!(
+                status[0].penalized_seconds_total, 60,
+                "scheduled unavailability is the nominal penalty, jitter excluded"
+            );
+            assert_eq!(status[0].attempts, 1);
+            assert_eq!(status[0].failures, 1);
+            assert_eq!(status[0].consecutive_failures, 1);
+            assert_eq!(status[0].probes, 0);
+            assert_eq!(status[0].probe_successes, 0);
+            assert_eq!(status[0].family, Some(fah_model::AddressFamily::V4));
+            assert_eq!(status[0].failure_runs, [0, 0, 0, 0]);
+            assert_eq!(status[1].state, fah_model::UpstreamState::Healthy);
+            assert_eq!(status[1].penalty_round, 0);
+            assert_eq!(status[1].penalized_seconds_total, 0);
+        }
+
+        #[tokio::test]
+        async fn status_follows_a_probe_through_failure_and_recovery() {
+            let pool = adaptive_pool(
+                vec![
+                    udp_server_config(failing_then_answering_udp_server(2).await),
+                    udp_server_config(answering_udp_server(4).await),
+                ],
+                20,
+                policy_of(1, 60_000),
+            );
+
+            assert_eq!(pool.forward(&a_query()).await.unwrap().endpoint, 1);
+            make_due(&pool.health[0]);
+
+            assert_eq!(pool.forward(&a_query()).await.unwrap().endpoint, 1);
+            let failed = pool.status();
+            assert_eq!(failed[0].probes, 1, "the claim moves `probes`");
+            assert_eq!(failed[0].attempts, 2, "a probe is an ordinary attempt");
+            assert_eq!(failed[0].failures, 2);
+            assert_eq!(failed[0].consecutive_failures, 2);
+            assert_eq!(failed[0].probe_successes, 0);
+            assert_eq!(failed[0].penalties, 2, "a failed probe is a penalty");
+            assert_eq!(failed[0].penalty_round, 2);
+            assert_eq!(failed[0].penalized_seconds_total, 180);
+            assert_eq!(
+                failed[0].failure_runs,
+                [0, 0, 0, 0],
+                "a failed probe extends the open run, it does not close it"
+            );
+
+            make_due(&pool.health[0]);
+            assert_eq!(
+                pool.forward(&a_query()).await.unwrap().endpoint,
+                0,
+                "the probe that answers puts the primary back in front"
+            );
+
+            let recovered = pool.status();
+            assert_eq!(recovered[0].state, fah_model::UpstreamState::Healthy);
+            assert_eq!(recovered[0].probes, 2);
+            assert_eq!(recovered[0].probe_successes, 1);
+            assert_eq!(recovered[0].attempts, 3);
+            assert_eq!(recovered[0].failures, 2);
+            assert_eq!(recovered[0].consecutive_failures, 0);
+            assert_eq!(recovered[0].penalties, 2);
+            assert_eq!(
+                recovered[0].penalized_seconds_total, 180,
+                "accrual happens on the transition into Penalized, not at recovery"
+            );
+            assert_eq!(
+                recovered[0].failure_runs,
+                [0, 1, 0, 0],
+                "the closing success buckets a run of two failed attempts"
+            );
+        }
+
+        #[tokio::test]
+        async fn a_probing_endpoint_reports_probing() {
+            let pool = adaptive_pool(
+                vec![
+                    udp_server_config(dead_addr().await),
+                    udp_server_config(answering_udp_server(2).await),
+                ],
+                20,
+                policy_of(1, 60_000),
+            );
+            seed_due(&pool.health[0]);
+            assert_eq!(
+                select(&pool.health, 0, || 1, true).unwrap().selected,
+                Selected::Probe
+            );
+
+            let status = pool.status();
+            assert_eq!(status[0].state, fah_model::UpstreamState::Probing);
+            assert_eq!(status[0].penalty_round, 1);
         }
     }
 }

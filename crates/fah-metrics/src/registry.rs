@@ -596,6 +596,13 @@ mod tests {
             consecutive_failures: 0,
             tls_handshakes: 0,
             failure_runs: [3, 1, 0, 0],
+            state: fah_model::UpstreamState::Healthy,
+            penalty_round: 0,
+            penalties: 0,
+            penalized_seconds_total: 0,
+            probes: 0,
+            probe_successes: 0,
+            family: Some(fah_model::AddressFamily::V4),
         }]);
 
         let snap = metrics.snapshot();

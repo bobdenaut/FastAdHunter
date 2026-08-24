@@ -410,6 +410,13 @@ impl TelemetrySource for FakeTelemetry {
                 consecutive_failures: 0,
                 tls_handshakes: 41,
                 failure_runs: [5, 2, 0, 1],
+                state: fah_model::UpstreamState::Penalized,
+                penalty_round: 2,
+                penalties: 9,
+                penalized_seconds_total: 144,
+                probes: 8,
+                probe_successes: 3,
+                family: Some(fah_model::AddressFamily::V4),
             }],
         }
     }
