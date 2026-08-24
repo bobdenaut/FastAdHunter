@@ -1,0 +1,14 @@
+{
+ "offered_qps": 11000,
+ "sent": 6600000,
+ "send_errors": 0,
+ "received": 6579567,
+ "lost": 20433,
+ "elapsed_send_seconds": 600.0,
+ "achieved_send_qps": 11000.0,
+ "achieved_answer_qps": 10965.9,
+ "client_p50_ms": 3.005,
+ "client_p99_ms": 18.999,
+ "client_max_ms": 69.995,
+ "latency_samples": 6579567
+}

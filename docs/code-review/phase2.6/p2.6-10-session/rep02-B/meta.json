@@ -1,0 +1,17 @@
+{
+ "drain_seconds": 30,
+ "elapsed_seconds": 633.1458094120026,
+ "label": "B",
+ "load_command": "python C:/Users/liviu/AppData/Local/Temp/claude/e--FastAdHunter/ca46d503-25e5-4704-9082-fdbce9f7f4e7/scratchpad/p2610/gen.py --server 172.17.0.4 --port 53 --qfile C:/Users/liviu/AppData/Local/Temp/claude/e--FastAdHunter/ca46d503-25e5-4704-9082-fdbce9f7f4e7/scratchpad/p2610/q-r02.txt --ctlfile C:/Users/liviu/AppData/Local/Temp/claude/e--FastAdHunter/ca46d503-25e5-4704-9082-fdbce9f7f4e7/scratchpad/p2610/ctl.txt --qps 10000 --ctl-qps 1000 --seconds 600",
+ "load_returncode": 0,
+ "load_seconds": 603.1024503707886,
+ "load_t0_utc": "2026-08-24T18:30:41Z",
+ "load_t1_utc": "2026-08-24T18:40:44Z",
+ "process_version_t0": "0.2.19",
+ "process_version_t1": "0.2.19",
+ "rep": 2,
+ "t0_utc": "2026-08-24T18:30:41Z",
+ "t1_utc": "2026-08-24T18:41:14Z",
+ "uptime_t0": 4365,
+ "uptime_t1": 4998
+}

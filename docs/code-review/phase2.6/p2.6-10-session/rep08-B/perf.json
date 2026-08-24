@@ -1,0 +1,2232 @@
+{
+ "from": "2026-08-24T19:38:05Z",
+ "items": [
+  {
+   "allowed_delta": 0,
+   "answers_delta": {
+    "refused_relayed": 0,
+    "servfail_relayed": 0,
+    "servfail_synthesized": 0
+   },
+   "blocked_delta": 0,
+   "cache": {
+    "bytes": 4320000,
+    "capacity": 10000,
+    "entries": 10000,
+    "evictions": 54557665,
+    "expired": 0,
+    "fresh": 10000,
+    "hits": 4883455,
+    "max_bytes": 67108864,
+    "misses": 54567668,
+    "stale": 0
+   },
+   "latency": {
+    "block_p50": 0.0,
+    "block_p99": 0.0,
+    "cache_hit_p50": 0.0001,
+    "cache_hit_p99": 0.0001,
+    "forward_p50": 0.0025,
+    "forward_p99": 0.01
+   },
+   "memory": {
+    "accounted_bytes": 4427267,
+    "cache_estimated_bytes": 4320000,
+    "residual_bytes": 24711677,
+    "ruleset_bytes": 68,
+    "stats_aggregates_bytes": 105131,
+    "stats_clients_bytes": 2068
+   },
+   "minor_page_faults": 10805129,
+   "peak_rss": 36552704,
+   "qps": 10979.333333333334,
+   "queries_delta": 329380,
+   "rss_anon_bytes": 21307392,
+   "rss_bytes": 29138944,
+   "rss_file_bytes": 7831552,
+   "ts": "2026-08-24T19:38:25Z",
+   "upstreams": [
+    {
+     "address": "192.168.10.10:5301",
+     "attempts": 54466728,
+     "consecutive_failures": 0,
+     "failure_runs": [
+      7,
+      0,
+      0,
+      0
+     ],
+     "failures": 7,
+     "family": "v4",
+     "penalized_seconds_total": 0,
+     "penalties": 0,
+     "penalty_round": 0,
+     "probe_successes": 0,
+     "probes": 0,
+     "protocol": "udp",
+     "state": "healthy",
+     "tls_handshakes": 0
+    },
+    {
+     "address": "192.168.10.10:5302",
+     "attempts": 7,
+     "consecutive_failures": 0,
+     "failure_runs": [
+      0,
+      0,
+      0,
+      0
+     ],
+     "failures": 0,
+     "family": "v4",
+     "penalized_seconds_total": 0,
+     "penalties": 0,
+     "penalty_round": 0,
+     "probe_successes": 0,
+     "probes": 0,
+     "protocol": "udp",
+     "state": "healthy",
+     "tls_handshakes": 0
+    }
+   ]
+  },
+  {
+   "allowed_delta": 0,
+   "answers_delta": {
+    "refused_relayed": 0,
+    "servfail_relayed": 0,
+    "servfail_synthesized": 0
+   },
+   "blocked_delta": 0,
+   "cache": {
+    "bytes": 4320000,
+    "capacity": 10000,
+    "entries": 10000,
+    "evictions": 54620282,
+    "expired": 0,
+    "fresh": 93,
+    "hits": 4889059,
+    "max_bytes": 67108864,
+    "misses": 54630285,
+    "stale": 9907
+   },
+   "latency": {
+    "block_p50": 0.0,
+    "block_p99": 0.0,
+    "cache_hit_p50": 0.0001,
+    "cache_hit_p99": 0.0001,
+    "forward_p50": 0.0025,
+    "forward_p99": 0.01
+   },
+   "memory": {
+    "accounted_bytes": 4427267,
+    "cache_estimated_bytes": 4320000,
+    "residual_bytes": 24863229,
+    "ruleset_bytes": 68,
+    "stats_aggregates_bytes": 105131,
+    "stats_clients_bytes": 2068
+   },
+   "minor_page_faults": 10817692,
+   "peak_rss": 36552704,
+   "qps": 2274.8333333333335,
+   "queries_delta": 68245,
+   "rss_anon_bytes": 21458944,
+   "rss_bytes": 29290496,
+   "rss_file_bytes": 7831552,
+   "ts": "2026-08-24T19:38:55Z",
+   "upstreams": [
+    {
+     "address": "192.168.10.10:5301",
+     "attempts": 54630285,
+     "consecutive_failures": 0,
+     "failure_runs": [
+      7,
+      0,
+      0,
+      0
+     ],
+     "failures": 7,
+     "family": "v4",
+     "penalized_seconds_total": 0,
+     "penalties": 0,
+     "penalty_round": 0,
+     "probe_successes": 0,
+     "probes": 0,
+     "protocol": "udp",
+     "state": "healthy",
+     "tls_handshakes": 0
+    },
+    {
+     "address": "192.168.10.10:5302",
+     "attempts": 7,
+     "consecutive_failures": 0,
+     "failure_runs": [
+      0,
+      0,
+      0,
+      0
+     ],
+     "failures": 0,
+     "family": "v4",
+     "penalized_seconds_total": 0,
+     "penalties": 0,
+     "penalty_round": 0,
+     "probe_successes": 0,
+     "probes": 0,
+     "protocol": "udp",
+     "state": "healthy",
+     "tls_handshakes": 0
+    }
+   ]
+  },
+  {
+   "allowed_delta": 0,
+   "answers_delta": {
+    "refused_relayed": 0,
+    "servfail_relayed": 0,
+    "servfail_synthesized": 0
+   },
+   "blocked_delta": 0,
+   "cache": {
+    "bytes": 4320000,
+    "capacity": 10000,
+    "entries": 10000,
+    "evictions": 54620282,
+    "expired": 0,
+    "fresh": 93,
+    "hits": 4889059,
+    "max_bytes": 67108864,
+    "misses": 54630285,
+    "stale": 9907
+   },
+   "latency": {
+    "block_p50": 0.0,
+    "block_p99": 0.0,
+    "cache_hit_p50": 0.0,
+    "cache_hit_p99": 0.0,
+    "forward_p50": 0.0,
+    "forward_p99": 0.0
+   },
+   "memory": {
+    "accounted_bytes": 4427267,
+    "cache_estimated_bytes": 4320000,
+    "residual_bytes": 24945149,
+    "ruleset_bytes": 68,
+    "stats_aggregates_bytes": 105131,
+    "stats_clients_bytes": 2068
+   },
+   "minor_page_faults": 10817786,
+   "peak_rss": 36552704,
+   "qps": 0.0,
+   "queries_delta": 0,
+   "rss_anon_bytes": 21540864,
+   "rss_bytes": 29372416,
+   "rss_file_bytes": 7831552,
+   "ts": "2026-08-24T19:39:25Z",
+   "upstreams": [
+    {
+     "address": "192.168.10.10:5301",
+     "attempts": 54630285,
+     "consecutive_failures": 0,
+     "failure_runs": [
+      7,
+      0,
+      0,
+      0
+     ],
+     "failures": 7,
+     "family": "v4",
+     "penalized_seconds_total": 0,
+     "penalties": 0,
+     "penalty_round": 0,
+     "probe_successes": 0,
+     "probes": 0,
+     "protocol": "udp",
+     "state": "healthy",
+     "tls_handshakes": 0
+    },
+    {
+     "address": "192.168.10.10:5302",
+     "attempts": 7,
+     "consecutive_failures": 0,
+     "failure_runs": [
+      0,
+      0,
+      0,
+      0
+     ],
+     "failures": 0,
+     "family": "v4",
+     "penalized_seconds_total": 0,
+     "penalties": 0,
+     "penalty_round": 0,
+     "probe_successes": 0,
+     "probes": 0,
+     "protocol": "udp",
+     "state": "healthy",
+     "tls_handshakes": 0
+    }
+   ]
+  },
+  {
+   "allowed_delta": 0,
+   "answers_delta": {
+    "refused_relayed": 0,
+    "servfail_relayed": 0,
+    "servfail_synthesized": 0
+   },
+   "blocked_delta": 0,
+   "cache": {
+    "bytes": 4320000,
+    "capacity": 10000,
+    "entries": 10000,
+    "evictions": 54620282,
+    "expired": 0,
+    "fresh": 93,
+    "hits": 4889059,
+    "max_bytes": 67108864,
+    "misses": 54630285,
+    "stale": 9907
+   },
+   "latency": {
+    "block_p50": 0.0,
+    "block_p99": 0.0,
+    "cache_hit_p50": 0.0,
+    "cache_hit_p99": 0.0,
+    "forward_p50": 0.0,
+    "forward_p99": 0.0
+   },
+   "memory": {
+    "accounted_bytes": 4427267,
+    "cache_estimated_bytes": 4320000,
+    "residual_bytes": 24941053,
+    "ruleset_bytes": 68,
+    "stats_aggregates_bytes": 105131,
+    "stats_clients_bytes": 2068
+   },
+   "minor_page_faults": 10817801,
+   "peak_rss": 36552704,
+   "qps": 0.0,
+   "queries_delta": 0,
+   "rss_anon_bytes": 21536768,
+   "rss_bytes": 29368320,
+   "rss_file_bytes": 7831552,
+   "ts": "2026-08-24T19:39:55Z",
+   "upstreams": [
+    {
+     "address": "192.168.10.10:5301",
+     "attempts": 54630285,
+     "consecutive_failures": 0,
+     "failure_runs": [
+      7,
+      0,
+      0,
+      0
+     ],
+     "failures": 7,
+     "family": "v4",
+     "penalized_seconds_total": 0,
+     "penalties": 0,
+     "penalty_round": 0,
+     "probe_successes": 0,
+     "probes": 0,
+     "protocol": "udp",
+     "state": "healthy",
+     "tls_handshakes": 0
+    },
+    {
+     "address": "192.168.10.10:5302",
+     "attempts": 7,
+     "consecutive_failures": 0,
+     "failure_runs": [
+      0,
+      0,
+      0,
+      0
+     ],
+     "failures": 0,
+     "family": "v4",
+     "penalized_seconds_total": 0,
+     "penalties": 0,
+     "penalty_round": 0,
+     "probe_successes": 0,
+     "probes": 0,
+     "protocol": "udp",
+     "state": "healthy",
+     "tls_handshakes": 0
+    }
+   ]
+  },
+  {
+   "allowed_delta": 0,
+   "answers_delta": {
+    "refused_relayed": 0,
+    "servfail_relayed": 0,
+    "servfail_synthesized": 0
+   },
+   "blocked_delta": 0,
+   "cache": {
+    "bytes": 4320000,
+    "capacity": 10000,
+    "entries": 10000,
+    "evictions": 54824000,
+    "expired": 0,
+    "fresh": 10000,
+    "hits": 4907266,
+    "max_bytes": 67108864,
+    "misses": 54834003,
+    "stale": 0
+   },
+   "latency": {
+    "block_p50": 0.0,
+    "block_p99": 0.0,
+    "cache_hit_p50": 0.0001,
+    "cache_hit_p99": 0.0001,
+    "forward_p50": 0.005,
+    "forward_p99": 0.025
+   },
+   "memory": {
+    "accounted_bytes": 4427267,
+    "cache_estimated_bytes": 4320000,
+    "residual_bytes": 25321981,
+    "ruleset_bytes": 68,
+    "stats_aggregates_bytes": 105131,
+    "stats_clients_bytes": 2068
+   },
+   "minor_page_faults": 10860450,
+   "peak_rss": 36552704,
+   "qps": 7392.633333333333,
+   "queries_delta": 221779,
+   "rss_anon_bytes": 21917696,
+   "rss_bytes": 29749248,
+   "rss_file_bytes": 7831552,
+   "ts": "2026-08-24T19:40:25Z",
+   "upstreams": [
+    {
+     "address": "192.168.10.10:5301",
+     "attempts": 54733454,
+     "consecutive_failures": 0,
+     "failure_runs": [
+      7,
+      0,
+      0,
+      0
+     ],
+     "failures": 7,
+     "family": "v4",
+     "penalized_seconds_total": 0,
+     "penalties": 0,
+     "penalty_round": 0,
+     "probe_successes": 0,
+     "probes": 0,
+     "protocol": "udp",
+     "state": "healthy",
+     "tls_handshakes": 0
+    },
+    {
+     "address": "192.168.10.10:5302",
+     "attempts": 7,
+     "consecutive_failures": 0,
+     "failure_runs": [
+      0,
+      0,
+      0,
+      0
+     ],
+     "failures": 0,
+     "family": "v4",
+     "penalized_seconds_total": 0,
+     "penalties": 0,
+     "penalty_round": 0,
+     "probe_successes": 0,
+     "probes": 0,
+     "protocol": "udp",
+     "state": "healthy",
+     "tls_handshakes": 0
+    }
+   ]
+  },
+  {
+   "allowed_delta": 0,
+   "answers_delta": {
+    "refused_relayed": 0,
+    "servfail_relayed": 0,
+    "servfail_synthesized": 0
+   },
+   "blocked_delta": 0,
+   "cache": {
+    "bytes": 4320000,
+    "capacity": 10000,
+    "entries": 10000,
+    "evictions": 55125439,
+    "expired": 0,
+    "fresh": 10000,
+    "hits": 4934215,
+    "max_bytes": 67108864,
+    "misses": 55135442,
+    "stale": 0
+   },
+   "latency": {
+    "block_p50": 0.0,
+    "block_p99": 0.0,
+    "cache_hit_p50": 0.0001,
+    "cache_hit_p99": 0.0001,
+    "forward_p50": 0.0025,
+    "forward_p99": 0.025
+   },
+   "memory": {
+    "accounted_bytes": 4427267,
+    "cache_estimated_bytes": 4320000,
+    "residual_bytes": 24777213,
+    "ruleset_bytes": 68,
+    "stats_aggregates_bytes": 105131,
+    "stats_clients_bytes": 2068
+   },
+   "minor_page_faults": 10917989,
+   "peak_rss": 36552704,
+   "qps": 10949.933333333332,
+   "queries_delta": 328498,
+   "rss_anon_bytes": 21372928,
+   "rss_bytes": 29204480,
+   "rss_file_bytes": 7831552,
+   "ts": "2026-08-24T19:40:55Z",
+   "upstreams": [
+    {
+     "address": "192.168.10.10:5301",
+     "attempts": 55034664,
+     "consecutive_failures": 0,
+     "failure_runs": [
+      7,
+      0,
+      0,
+      0
+     ],
+     "failures": 7,
+     "family": "v4",
+     "penalized_seconds_total": 0,
+     "penalties": 0,
+     "penalty_round": 0,
+     "probe_successes": 0,
+     "probes": 0,
+     "protocol": "udp",
+     "state": "healthy",
+     "tls_handshakes": 0
+    },
+    {
+     "address": "192.168.10.10:5302",
+     "attempts": 7,
+     "consecutive_failures": 0,
+     "failure_runs": [
+      0,
+      0,
+      0,
+      0
+     ],
+     "failures": 0,
+     "family": "v4",
+     "penalized_seconds_total": 0,
+     "penalties": 0,
+     "penalty_round": 0,
+     "probe_successes": 0,
+     "probes": 0,
+     "protocol": "udp",
+     "state": "healthy",
+     "tls_handshakes": 0
+    }
+   ]
+  },
+  {
+   "allowed_delta": 0,
+   "answers_delta": {
+    "refused_relayed": 0,
+    "servfail_relayed": 0,
+    "servfail_synthesized": 0
+   },
+   "blocked_delta": 0,
+   "cache": {
+    "bytes": 4320000,
+    "capacity": 10000,
+    "entries": 10000,
+    "evictions": 55427336,
+    "expired": 0,
+    "fresh": 10000,
+    "hits": 4961256,
+    "max_bytes": 67108864,
+    "misses": 55437339,
+    "stale": 0
+   },
+   "latency": {
+    "block_p50": 0.0,
+    "block_p99": 0.0,
+    "cache_hit_p50": 0.0001,
+    "cache_hit_p99": 0.0001,
+    "forward_p50": 0.0025,
+    "forward_p99": 0.025
+   },
+   "memory": {
+    "accounted_bytes": 4427267,
+    "cache_estimated_bytes": 4320000,
+    "residual_bytes": 24809981,
+    "ruleset_bytes": 68,
+    "stats_aggregates_bytes": 105131,
+    "stats_clients_bytes": 2068
+   },
+   "minor_page_faults": 10977592,
+   "peak_rss": 36552704,
+   "qps": 10964.466666666667,
+   "queries_delta": 328934,
+   "rss_anon_bytes": 21405696,
+   "rss_bytes": 29237248,
+   "rss_file_bytes": 7831552,
+   "ts": "2026-08-24T19:41:25Z",
+   "upstreams": [
+    {
+     "address": "192.168.10.10:5301",
+     "attempts": 55336400,
+     "consecutive_failures": 0,
+     "failure_runs": [
+      7,
+      0,
+      0,
+      0
+     ],
+     "failures": 7,
+     "family": "v4",
+     "penalized_seconds_total": 0,
+     "penalties": 0,
+     "penalty_round": 0,
+     "probe_successes": 0,
+     "probes": 0,
+     "protocol": "udp",
+     "state": "healthy",
+     "tls_handshakes": 0
+    },
+    {
+     "address": "192.168.10.10:5302",
+     "attempts": 7,
+     "consecutive_failures": 0,
+     "failure_runs": [
+      0,
+      0,
+      0,
+      0
+     ],
+     "failures": 0,
+     "family": "v4",
+     "penalized_seconds_total": 0,
+     "penalties": 0,
+     "penalty_round": 0,
+     "probe_successes": 0,
+     "probes": 0,
+     "protocol": "udp",
+     "state": "healthy",
+     "tls_handshakes": 0
+    }
+   ]
+  },
+  {
+   "allowed_delta": 0,
+   "answers_delta": {
+    "refused_relayed": 0,
+    "servfail_relayed": 0,
+    "servfail_synthesized": 0
+   },
+   "blocked_delta": 0,
+   "cache": {
+    "bytes": 4320000,
+    "capacity": 10000,
+    "entries": 10000,
+    "evictions": 55730220,
+    "expired": 0,
+    "fresh": 10000,
+    "hits": 4988370,
+    "max_bytes": 67108864,
+    "misses": 55740223,
+    "stale": 0
+   },
+   "latency": {
+    "block_p50": 0.0,
+    "block_p99": 0.0,
+    "cache_hit_p50": 0.0001,
+    "cache_hit_p99": 0.0001,
+    "forward_p50": 0.0025,
+    "forward_p99": 0.01
+   },
+   "memory": {
+    "accounted_bytes": 4427267,
+    "cache_estimated_bytes": 4320000,
+    "residual_bytes": 24605181,
+    "ruleset_bytes": 68,
+    "stats_aggregates_bytes": 105131,
+    "stats_clients_bytes": 2068
+   },
+   "minor_page_faults": 11035088,
+   "peak_rss": 36552704,
+   "qps": 10997.566666666668,
+   "queries_delta": 329927,
+   "rss_anon_bytes": 21200896,
+   "rss_bytes": 29032448,
+   "rss_file_bytes": 7831552,
+   "ts": "2026-08-24T19:41:55Z",
+   "upstreams": [
+    {
+     "address": "192.168.10.10:5301",
+     "attempts": 55639226,
+     "consecutive_failures": 0,
+     "failure_runs": [
+      7,
+      0,
+      0,
+      0
+     ],
+     "failures": 7,
+     "family": "v4",
+     "penalized_seconds_total": 0,
+     "penalties": 0,
+     "penalty_round": 0,
+     "probe_successes": 0,
+     "probes": 0,
+     "protocol": "udp",
+     "state": "healthy",
+     "tls_handshakes": 0
+    },
+    {
+     "address": "192.168.10.10:5302",
+     "attempts": 7,
+     "consecutive_failures": 0,
+     "failure_runs": [
+      0,
+      0,
+      0,
+      0
+     ],
+     "failures": 0,
+     "family": "v4",
+     "penalized_seconds_total": 0,
+     "penalties": 0,
+     "penalty_round": 0,
+     "probe_successes": 0,
+     "probes": 0,
+     "protocol": "udp",
+     "state": "healthy",
+     "tls_handshakes": 0
+    }
+   ]
+  },
+  {
+   "allowed_delta": 0,
+   "answers_delta": {
+    "refused_relayed": 0,
+    "servfail_relayed": 0,
+    "servfail_synthesized": 0
+   },
+   "blocked_delta": 0,
+   "cache": {
+    "bytes": 4320000,
+    "capacity": 10000,
+    "entries": 10000,
+    "evictions": 56033018,
+    "expired": 0,
+    "fresh": 10000,
+    "hits": 5015481,
+    "max_bytes": 67108864,
+    "misses": 56043021,
+    "stale": 0
+   },
+   "latency": {
+    "block_p50": 0.0,
+    "block_p99": 0.0,
+    "cache_hit_p50": 0.0001,
+    "cache_hit_p99": 0.0001,
+    "forward_p50": 0.0025,
+    "forward_p99": 0.005
+   },
+   "memory": {
+    "accounted_bytes": 4427267,
+    "cache_estimated_bytes": 4320000,
+    "residual_bytes": 24715773,
+    "ruleset_bytes": 68,
+    "stats_aggregates_bytes": 105131,
+    "stats_clients_bytes": 2068
+   },
+   "minor_page_faults": 11093515,
+   "peak_rss": 36552704,
+   "qps": 10999.066666666668,
+   "queries_delta": 329972,
+   "rss_anon_bytes": 21311488,
+   "rss_bytes": 29143040,
+   "rss_file_bytes": 7831552,
+   "ts": "2026-08-24T19:42:25Z",
+   "upstreams": [
+    {
+     "address": "192.168.10.10:5301",
+     "attempts": 55942100,
+     "consecutive_failures": 0,
+     "failure_runs": [
+      7,
+      0,
+      0,
+      0
+     ],
+     "failures": 7,
+     "family": "v4",
+     "penalized_seconds_total": 0,
+     "penalties": 0,
+     "penalty_round": 0,
+     "probe_successes": 0,
+     "probes": 0,
+     "protocol": "udp",
+     "state": "healthy",
+     "tls_handshakes": 0
+    },
+    {
+     "address": "192.168.10.10:5302",
+     "attempts": 7,
+     "consecutive_failures": 0,
+     "failure_runs": [
+      0,
+      0,
+      0,
+      0
+     ],
+     "failures": 0,
+     "family": "v4",
+     "penalized_seconds_total": 0,
+     "penalties": 0,
+     "penalty_round": 0,
+     "probe_successes": 0,
+     "probes": 0,
+     "protocol": "udp",
+     "state": "healthy",
+     "tls_handshakes": 0
+    }
+   ]
+  },
+  {
+   "allowed_delta": 0,
+   "answers_delta": {
+    "refused_relayed": 0,
+    "servfail_relayed": 0,
+    "servfail_synthesized": 0
+   },
+   "blocked_delta": 0,
+   "cache": {
+    "bytes": 4320000,
+    "capacity": 10000,
+    "entries": 10000,
+    "evictions": 56335783,
+    "expired": 0,
+    "fresh": 10000,
+    "hits": 5042589,
+    "max_bytes": 67108864,
+    "misses": 56345786,
+    "stale": 0
+   },
+   "latency": {
+    "block_p50": 0.0,
+    "block_p99": 0.0,
+    "cache_hit_p50": 0.0001,
+    "cache_hit_p99": 0.0001,
+    "forward_p50": 0.0025,
+    "forward_p99": 0.025
+   },
+   "memory": {
+    "accounted_bytes": 4427267,
+    "cache_estimated_bytes": 4320000,
+    "residual_bytes": 24814077,
+    "ruleset_bytes": 68,
+    "stats_aggregates_bytes": 105131,
+    "stats_clients_bytes": 2068
+   },
+   "minor_page_faults": 11148364,
+   "peak_rss": 36552704,
+   "qps": 10995.7,
+   "queries_delta": 329871,
+   "rss_anon_bytes": 21409792,
+   "rss_bytes": 29241344,
+   "rss_file_bytes": 7831552,
+   "ts": "2026-08-24T19:42:55Z",
+   "upstreams": [
+    {
+     "address": "192.168.10.10:5301",
+     "attempts": 56244822,
+     "consecutive_failures": 0,
+     "failure_runs": [
+      7,
+      0,
+      0,
+      0
+     ],
+     "failures": 7,
+     "family": "v4",
+     "penalized_seconds_total": 0,
+     "penalties": 0,
+     "penalty_round": 0,
+     "probe_successes": 0,
+     "probes": 0,
+     "protocol": "udp",
+     "state": "healthy",
+     "tls_handshakes": 0
+    },
+    {
+     "address": "192.168.10.10:5302",
+     "attempts": 7,
+     "consecutive_failures": 0,
+     "failure_runs": [
+      0,
+      0,
+      0,
+      0
+     ],
+     "failures": 0,
+     "family": "v4",
+     "penalized_seconds_total": 0,
+     "penalties": 0,
+     "penalty_round": 0,
+     "probe_successes": 0,
+     "probes": 0,
+     "protocol": "udp",
+     "state": "healthy",
+     "tls_handshakes": 0
+    }
+   ]
+  },
+  {
+   "allowed_delta": 0,
+   "answers_delta": {
+    "refused_relayed": 0,
+    "servfail_relayed": 0,
+    "servfail_synthesized": 0
+   },
+   "blocked_delta": 0,
+   "cache": {
+    "bytes": 4320000,
+    "capacity": 10000,
+    "entries": 10000,
+    "evictions": 56637343,
+    "expired": 0,
+    "fresh": 10000,
+    "hits": 5069576,
+    "max_bytes": 67108864,
+    "misses": 56647346,
+    "stale": 0
+   },
+   "latency": {
+    "block_p50": 0.0,
+    "block_p99": 0.0,
+    "cache_hit_p50": 0.0001,
+    "cache_hit_p99": 0.0001,
+    "forward_p50": 0.005,
+    "forward_p99": 0.025
+   },
+   "memory": {
+    "accounted_bytes": 4427267,
+    "cache_estimated_bytes": 4320000,
+    "residual_bytes": 25240061,
+    "ruleset_bytes": 68,
+    "stats_aggregates_bytes": 105131,
+    "stats_clients_bytes": 2068
+   },
+   "minor_page_faults": 11194379,
+   "peak_rss": 36552704,
+   "qps": 10951.533333333333,
+   "queries_delta": 328546,
+   "rss_anon_bytes": 21835776,
+   "rss_bytes": 29667328,
+   "rss_file_bytes": 7831552,
+   "ts": "2026-08-24T19:43:25Z",
+   "upstreams": [
+    {
+     "address": "192.168.10.10:5301",
+     "attempts": 56546673,
+     "consecutive_failures": 0,
+     "failure_runs": [
+      7,
+      0,
+      0,
+      0
+     ],
+     "failures": 7,
+     "family": "v4",
+     "penalized_seconds_total": 0,
+     "penalties": 0,
+     "penalty_round": 0,
+     "probe_successes": 0,
+     "probes": 0,
+     "protocol": "udp",
+     "state": "healthy",
+     "tls_handshakes": 0
+    },
+    {
+     "address": "192.168.10.10:5302",
+     "attempts": 7,
+     "consecutive_failures": 0,
+     "failure_runs": [
+      0,
+      0,
+      0,
+      0
+     ],
+     "failures": 0,
+     "family": "v4",
+     "penalized_seconds_total": 0,
+     "penalties": 0,
+     "penalty_round": 0,
+     "probe_successes": 0,
+     "probes": 0,
+     "protocol": "udp",
+     "state": "healthy",
+     "tls_handshakes": 0
+    }
+   ]
+  },
+  {
+   "allowed_delta": 0,
+   "answers_delta": {
+    "refused_relayed": 0,
+    "servfail_relayed": 0,
+    "servfail_synthesized": 0
+   },
+   "blocked_delta": 0,
+   "cache": {
+    "bytes": 4320000,
+    "capacity": 10000,
+    "entries": 10000,
+    "evictions": 56939809,
+    "expired": 0,
+    "fresh": 10000,
+    "hits": 5096663,
+    "max_bytes": 67108864,
+    "misses": 56949812,
+    "stale": 0
+   },
+   "latency": {
+    "block_p50": 0.0,
+    "block_p99": 0.0,
+    "cache_hit_p50": 0.0001,
+    "cache_hit_p99": 0.0001,
+    "forward_p50": 0.0025,
+    "forward_p99": 0.025
+   },
+   "memory": {
+    "accounted_bytes": 4427267,
+    "cache_estimated_bytes": 4320000,
+    "residual_bytes": 24629757,
+    "ruleset_bytes": 68,
+    "stats_aggregates_bytes": 105131,
+    "stats_clients_bytes": 2068
+   },
+   "minor_page_faults": 11250376,
+   "peak_rss": 36552704,
+   "qps": 10984.966666666667,
+   "queries_delta": 329549,
+   "rss_anon_bytes": 21225472,
+   "rss_bytes": 29057024,
+   "rss_file_bytes": 7831552,
+   "ts": "2026-08-24T19:43:55Z",
+   "upstreams": [
+    {
+     "address": "192.168.10.10:5301",
+     "attempts": 56848834,
+     "consecutive_failures": 0,
+     "failure_runs": [
+      7,
+      0,
+      0,
+      0
+     ],
+     "failures": 7,
+     "family": "v4",
+     "penalized_seconds_total": 0,
+     "penalties": 0,
+     "penalty_round": 0,
+     "probe_successes": 0,
+     "probes": 0,
+     "protocol": "udp",
+     "state": "healthy",
+     "tls_handshakes": 0
+    },
+    {
+     "address": "192.168.10.10:5302",
+     "attempts": 7,
+     "consecutive_failures": 0,
+     "failure_runs": [
+      0,
+      0,
+      0,
+      0
+     ],
+     "failures": 0,
+     "family": "v4",
+     "penalized_seconds_total": 0,
+     "penalties": 0,
+     "penalty_round": 0,
+     "probe_successes": 0,
+     "probes": 0,
+     "protocol": "udp",
+     "state": "healthy",
+     "tls_handshakes": 0
+    }
+   ]
+  },
+  {
+   "allowed_delta": 0,
+   "answers_delta": {
+    "refused_relayed": 0,
+    "servfail_relayed": 0,
+    "servfail_synthesized": 0
+   },
+   "blocked_delta": 0,
+   "cache": {
+    "bytes": 4320000,
+    "capacity": 10000,
+    "entries": 10000,
+    "evictions": 57242570,
+    "expired": 0,
+    "fresh": 10000,
+    "hits": 5123772,
+    "max_bytes": 67108864,
+    "misses": 57252573,
+    "stale": 0
+   },
+   "latency": {
+    "block_p50": 0.0,
+    "block_p99": 0.0,
+    "cache_hit_p50": 0.0001,
+    "cache_hit_p99": 0.0001,
+    "forward_p50": 0.0025,
+    "forward_p99": 0.01
+   },
+   "memory": {
+    "accounted_bytes": 4427267,
+    "cache_estimated_bytes": 4320000,
+    "residual_bytes": 24838653,
+    "ruleset_bytes": 68,
+    "stats_aggregates_bytes": 105131,
+    "stats_clients_bytes": 2068
+   },
+   "minor_page_faults": 11314128,
+   "peak_rss": 36552704,
+   "qps": 10995.666666666666,
+   "queries_delta": 329870,
+   "rss_anon_bytes": 21434368,
+   "rss_bytes": 29265920,
+   "rss_file_bytes": 7831552,
+   "ts": "2026-08-24T19:44:25Z",
+   "upstreams": [
+    {
+     "address": "192.168.10.10:5301",
+     "attempts": 57151635,
+     "consecutive_failures": 0,
+     "failure_runs": [
+      7,
+      0,
+      0,
+      0
+     ],
+     "failures": 7,
+     "family": "v4",
+     "penalized_seconds_total": 0,
+     "penalties": 0,
+     "penalty_round": 0,
+     "probe_successes": 0,
+     "probes": 0,
+     "protocol": "udp",
+     "state": "healthy",
+     "tls_handshakes": 0
+    },
+    {
+     "address": "192.168.10.10:5302",
+     "attempts": 7,
+     "consecutive_failures": 0,
+     "failure_runs": [
+      0,
+      0,
+      0,
+      0
+     ],
+     "failures": 0,
+     "family": "v4",
+     "penalized_seconds_total": 0,
+     "penalties": 0,
+     "penalty_round": 0,
+     "probe_successes": 0,
+     "probes": 0,
+     "protocol": "udp",
+     "state": "healthy",
+     "tls_handshakes": 0
+    }
+   ]
+  },
+  {
+   "allowed_delta": 0,
+   "answers_delta": {
+    "refused_relayed": 0,
+    "servfail_relayed": 0,
+    "servfail_synthesized": 0
+   },
+   "blocked_delta": 0,
+   "cache": {
+    "bytes": 4320000,
+    "capacity": 10000,
+    "entries": 10000,
+    "evictions": 57545449,
+    "expired": 0,
+    "fresh": 10000,
+    "hits": 5150893,
+    "max_bytes": 67108864,
+    "misses": 57555452,
+    "stale": 0
+   },
+   "latency": {
+    "block_p50": 0.0,
+    "block_p99": 0.0,
+    "cache_hit_p50": 0.0001,
+    "cache_hit_p99": 0.0001,
+    "forward_p50": 0.0025,
+    "forward_p99": 0.005
+   },
+   "memory": {
+    "accounted_bytes": 4427267,
+    "cache_estimated_bytes": 4320000,
+    "residual_bytes": 24773117,
+    "ruleset_bytes": 68,
+    "stats_aggregates_bytes": 105131,
+    "stats_clients_bytes": 2068
+   },
+   "minor_page_faults": 11374891,
+   "peak_rss": 36552704,
+   "qps": 11000.0,
+   "queries_delta": 330000,
+   "rss_anon_bytes": 21368832,
+   "rss_bytes": 29200384,
+   "rss_file_bytes": 7831552,
+   "ts": "2026-08-24T19:44:55Z",
+   "upstreams": [
+    {
+     "address": "192.168.10.10:5301",
+     "attempts": 57454496,
+     "consecutive_failures": 0,
+     "failure_runs": [
+      7,
+      0,
+      0,
+      0
+     ],
+     "failures": 7,
+     "family": "v4",
+     "penalized_seconds_total": 0,
+     "penalties": 0,
+     "penalty_round": 0,
+     "probe_successes": 0,
+     "probes": 0,
+     "protocol": "udp",
+     "state": "healthy",
+     "tls_handshakes": 0
+    },
+    {
+     "address": "192.168.10.10:5302",
+     "attempts": 7,
+     "consecutive_failures": 0,
+     "failure_runs": [
+      0,
+      0,
+      0,
+      0
+     ],
+     "failures": 0,
+     "family": "v4",
+     "penalized_seconds_total": 0,
+     "penalties": 0,
+     "penalty_round": 0,
+     "probe_successes": 0,
+     "probes": 0,
+     "protocol": "udp",
+     "state": "healthy",
+     "tls_handshakes": 0
+    }
+   ]
+  },
+  {
+   "allowed_delta": 0,
+   "answers_delta": {
+    "refused_relayed": 0,
+    "servfail_relayed": 0,
+    "servfail_synthesized": 0
+   },
+   "blocked_delta": 0,
+   "cache": {
+    "bytes": 4320000,
+    "capacity": 10000,
+    "entries": 10000,
+    "evictions": 57848290,
+    "expired": 0,
+    "fresh": 10000,
+    "hits": 5178008,
+    "max_bytes": 67108864,
+    "misses": 57858293,
+    "stale": 0
+   },
+   "latency": {
+    "block_p50": 0.0,
+    "block_p99": 0.0,
+    "cache_hit_p50": 0.0001,
+    "cache_hit_p99": 0.0001,
+    "forward_p50": 0.0025,
+    "forward_p99": 0.005
+   },
+   "memory": {
+    "accounted_bytes": 4427267,
+    "cache_estimated_bytes": 4320000,
+    "residual_bytes": 24379901,
+    "ruleset_bytes": 68,
+    "stats_aggregates_bytes": 105131,
+    "stats_clients_bytes": 2068
+   },
+   "minor_page_faults": 11435616,
+   "peak_rss": 36552704,
+   "qps": 10996.833333333334,
+   "queries_delta": 329905,
+   "rss_anon_bytes": 20975616,
+   "rss_bytes": 28807168,
+   "rss_file_bytes": 7831552,
+   "ts": "2026-08-24T19:45:25Z",
+   "upstreams": [
+    {
+     "address": "192.168.10.10:5301",
+     "attempts": 57757348,
+     "consecutive_failures": 0,
+     "failure_runs": [
+      7,
+      0,
+      0,
+      0
+     ],
+     "failures": 7,
+     "family": "v4",
+     "penalized_seconds_total": 0,
+     "penalties": 0,
+     "penalty_round": 0,
+     "probe_successes": 0,
+     "probes": 0,
+     "protocol": "udp",
+     "state": "healthy",
+     "tls_handshakes": 0
+    },
+    {
+     "address": "192.168.10.10:5302",
+     "attempts": 7,
+     "consecutive_failures": 0,
+     "failure_runs": [
+      0,
+      0,
+      0,
+      0
+     ],
+     "failures": 0,
+     "family": "v4",
+     "penalized_seconds_total": 0,
+     "penalties": 0,
+     "penalty_round": 0,
+     "probe_successes": 0,
+     "probes": 0,
+     "protocol": "udp",
+     "state": "healthy",
+     "tls_handshakes": 0
+    }
+   ]
+  },
+  {
+   "allowed_delta": 0,
+   "answers_delta": {
+    "refused_relayed": 0,
+    "servfail_relayed": 0,
+    "servfail_synthesized": 0
+   },
+   "blocked_delta": 0,
+   "cache": {
+    "bytes": 4320000,
+    "capacity": 10000,
+    "entries": 10000,
+    "evictions": 58151103,
+    "expired": 0,
+    "fresh": 10000,
+    "hits": 5205116,
+    "max_bytes": 67108864,
+    "misses": 58161106,
+    "stale": 0
+   },
+   "latency": {
+    "block_p50": 0.0,
+    "block_p99": 0.0,
+    "cache_hit_p50": 0.0001,
+    "cache_hit_p99": 0.0001,
+    "forward_p50": 0.0025,
+    "forward_p99": 0.005
+   },
+   "memory": {
+    "accounted_bytes": 4427267,
+    "cache_estimated_bytes": 4320000,
+    "residual_bytes": 24527357,
+    "ruleset_bytes": 68,
+    "stats_aggregates_bytes": 105131,
+    "stats_clients_bytes": 2068
+   },
+   "minor_page_faults": 11496542,
+   "peak_rss": 36552704,
+   "qps": 11000.9,
+   "queries_delta": 330027,
+   "rss_anon_bytes": 21123072,
+   "rss_bytes": 28954624,
+   "rss_file_bytes": 7831552,
+   "ts": "2026-08-24T19:45:55Z",
+   "upstreams": [
+    {
+     "address": "192.168.10.10:5301",
+     "attempts": 58060160,
+     "consecutive_failures": 0,
+     "failure_runs": [
+      7,
+      0,
+      0,
+      0
+     ],
+     "failures": 7,
+     "family": "v4",
+     "penalized_seconds_total": 0,
+     "penalties": 0,
+     "penalty_round": 0,
+     "probe_successes": 0,
+     "probes": 0,
+     "protocol": "udp",
+     "state": "healthy",
+     "tls_handshakes": 0
+    },
+    {
+     "address": "192.168.10.10:5302",
+     "attempts": 7,
+     "consecutive_failures": 0,
+     "failure_runs": [
+      0,
+      0,
+      0,
+      0
+     ],
+     "failures": 0,
+     "family": "v4",
+     "penalized_seconds_total": 0,
+     "penalties": 0,
+     "penalty_round": 0,
+     "probe_successes": 0,
+     "probes": 0,
+     "protocol": "udp",
+     "state": "healthy",
+     "tls_handshakes": 0
+    }
+   ]
+  },
+  {
+   "allowed_delta": 0,
+   "answers_delta": {
+    "refused_relayed": 0,
+    "servfail_relayed": 0,
+    "servfail_synthesized": 0
+   },
+   "blocked_delta": 0,
+   "cache": {
+    "bytes": 4320000,
+    "capacity": 10000,
+    "entries": 10000,
+    "evictions": 58453460,
+    "expired": 0,
+    "fresh": 10000,
+    "hits": 5232204,
+    "max_bytes": 67108864,
+    "misses": 58463463,
+    "stale": 0
+   },
+   "latency": {
+    "block_p50": 0.0,
+    "block_p99": 0.0,
+    "cache_hit_p50": 0.0001,
+    "cache_hit_p99": 0.0001,
+    "forward_p50": 0.0025,
+    "forward_p99": 0.025
+   },
+   "memory": {
+    "accounted_bytes": 4427267,
+    "cache_estimated_bytes": 4320000,
+    "residual_bytes": 26300925,
+    "ruleset_bytes": 68,
+    "stats_aggregates_bytes": 105131,
+    "stats_clients_bytes": 2068
+   },
+   "minor_page_faults": 11542598,
+   "peak_rss": 36552704,
+   "qps": 10976.733333333334,
+   "queries_delta": 329302,
+   "rss_anon_bytes": 22896640,
+   "rss_bytes": 30728192,
+   "rss_file_bytes": 7831552,
+   "ts": "2026-08-24T19:46:25Z",
+   "upstreams": [
+    {
+     "address": "192.168.10.10:5301",
+     "attempts": 58362796,
+     "consecutive_failures": 0,
+     "failure_runs": [
+      7,
+      0,
+      0,
+      0
+     ],
+     "failures": 7,
+     "family": "v4",
+     "penalized_seconds_total": 0,
+     "penalties": 0,
+     "penalty_round": 0,
+     "probe_successes": 0,
+     "probes": 0,
+     "protocol": "udp",
+     "state": "healthy",
+     "tls_handshakes": 0
+    },
+    {
+     "address": "192.168.10.10:5302",
+     "attempts": 7,
+     "consecutive_failures": 0,
+     "failure_runs": [
+      0,
+      0,
+      0,
+      0
+     ],
+     "failures": 0,
+     "family": "v4",
+     "penalized_seconds_total": 0,
+     "penalties": 0,
+     "penalty_round": 0,
+     "probe_successes": 0,
+     "probes": 0,
+     "protocol": "udp",
+     "state": "healthy",
+     "tls_handshakes": 0
+    }
+   ]
+  },
+  {
+   "allowed_delta": 0,
+   "answers_delta": {
+    "refused_relayed": 0,
+    "servfail_relayed": 0,
+    "servfail_synthesized": 0
+   },
+   "blocked_delta": 0,
+   "cache": {
+    "bytes": 4320000,
+    "capacity": 10000,
+    "entries": 10000,
+    "evictions": 58755389,
+    "expired": 0,
+    "fresh": 10000,
+    "hits": 5259221,
+    "max_bytes": 67108864,
+    "misses": 58765392,
+    "stale": 0
+   },
+   "latency": {
+    "block_p50": 0.0,
+    "block_p99": 0.0,
+    "cache_hit_p50": 0.0001,
+    "cache_hit_p99": 0.0001,
+    "forward_p50": 0.005,
+    "forward_p99": 0.025
+   },
+   "memory": {
+    "accounted_bytes": 4427267,
+    "cache_estimated_bytes": 4320000,
+    "residual_bytes": 25092605,
+    "ruleset_bytes": 68,
+    "stats_aggregates_bytes": 105131,
+    "stats_clients_bytes": 2068
+   },
+   "minor_page_faults": 11584327,
+   "peak_rss": 36552704,
+   "qps": 10967.833333333334,
+   "queries_delta": 329035,
+   "rss_anon_bytes": 21688320,
+   "rss_bytes": 29519872,
+   "rss_file_bytes": 7831552,
+   "ts": "2026-08-24T19:46:55Z",
+   "upstreams": [
+    {
+     "address": "192.168.10.10:5301",
+     "attempts": 58664772,
+     "consecutive_failures": 0,
+     "failure_runs": [
+      7,
+      0,
+      0,
+      0
+     ],
+     "failures": 7,
+     "family": "v4",
+     "penalized_seconds_total": 0,
+     "penalties": 0,
+     "penalty_round": 0,
+     "probe_successes": 0,
+     "probes": 0,
+     "protocol": "udp",
+     "state": "healthy",
+     "tls_handshakes": 0
+    },
+    {
+     "address": "192.168.10.10:5302",
+     "attempts": 7,
+     "consecutive_failures": 0,
+     "failure_runs": [
+      0,
+      0,
+      0,
+      0
+     ],
+     "failures": 0,
+     "family": "v4",
+     "penalized_seconds_total": 0,
+     "penalties": 0,
+     "penalty_round": 0,
+     "probe_successes": 0,
+     "probes": 0,
+     "protocol": "udp",
+     "state": "healthy",
+     "tls_handshakes": 0
+    }
+   ]
+  },
+  {
+   "allowed_delta": 0,
+   "answers_delta": {
+    "refused_relayed": 0,
+    "servfail_relayed": 0,
+    "servfail_synthesized": 0
+   },
+   "blocked_delta": 0,
+   "cache": {
+    "bytes": 4320000,
+    "capacity": 10000,
+    "entries": 10000,
+    "evictions": 59057014,
+    "expired": 0,
+    "fresh": 10000,
+    "hits": 5286229,
+    "max_bytes": 67108864,
+    "misses": 59067017,
+    "stale": 0
+   },
+   "latency": {
+    "block_p50": 0.0,
+    "block_p99": 0.0,
+    "cache_hit_p50": 0.0001,
+    "cache_hit_p99": 0.0001,
+    "forward_p50": 0.005,
+    "forward_p99": 0.025
+   },
+   "memory": {
+    "accounted_bytes": 4427267,
+    "cache_estimated_bytes": 4320000,
+    "residual_bytes": 25051645,
+    "ruleset_bytes": 68,
+    "stats_aggregates_bytes": 105131,
+    "stats_clients_bytes": 2068
+   },
+   "minor_page_faults": 11625937,
+   "peak_rss": 36552704,
+   "qps": 10956.233333333334,
+   "queries_delta": 328687,
+   "rss_anon_bytes": 21647360,
+   "rss_bytes": 29478912,
+   "rss_file_bytes": 7831552,
+   "ts": "2026-08-24T19:47:25Z",
+   "upstreams": [
+    {
+     "address": "192.168.10.10:5301",
+     "attempts": 58966363,
+     "consecutive_failures": 0,
+     "failure_runs": [
+      7,
+      0,
+      0,
+      0
+     ],
+     "failures": 7,
+     "family": "v4",
+     "penalized_seconds_total": 0,
+     "penalties": 0,
+     "penalty_round": 0,
+     "probe_successes": 0,
+     "probes": 0,
+     "protocol": "udp",
+     "state": "healthy",
+     "tls_handshakes": 0
+    },
+    {
+     "address": "192.168.10.10:5302",
+     "attempts": 7,
+     "consecutive_failures": 0,
+     "failure_runs": [
+      0,
+      0,
+      0,
+      0
+     ],
+     "failures": 0,
+     "family": "v4",
+     "penalized_seconds_total": 0,
+     "penalties": 0,
+     "penalty_round": 0,
+     "probe_successes": 0,
+     "probes": 0,
+     "protocol": "udp",
+     "state": "healthy",
+     "tls_handshakes": 0
+    }
+   ]
+  },
+  {
+   "allowed_delta": 0,
+   "answers_delta": {
+    "refused_relayed": 0,
+    "servfail_relayed": 0,
+    "servfail_synthesized": 0
+   },
+   "blocked_delta": 0,
+   "cache": {
+    "bytes": 4320000,
+    "capacity": 10000,
+    "entries": 10000,
+    "evictions": 59359630,
+    "expired": 0,
+    "fresh": 10000,
+    "hits": 5313324,
+    "max_bytes": 67108864,
+    "misses": 59369633,
+    "stale": 0
+   },
+   "latency": {
+    "block_p50": 0.0,
+    "block_p99": 0.0,
+    "cache_hit_p50": 0.0001,
+    "cache_hit_p99": 0.0001,
+    "forward_p50": 0.0025,
+    "forward_p99": 0.025
+   },
+   "memory": {
+    "accounted_bytes": 4427267,
+    "cache_estimated_bytes": 4320000,
+    "residual_bytes": 24613373,
+    "ruleset_bytes": 68,
+    "stats_aggregates_bytes": 105131,
+    "stats_clients_bytes": 2068
+   },
+   "minor_page_faults": 11676676,
+   "peak_rss": 36552704,
+   "qps": 10990.266666666666,
+   "queries_delta": 329708,
+   "rss_anon_bytes": 21209088,
+   "rss_bytes": 29040640,
+   "rss_file_bytes": 7831552,
+   "ts": "2026-08-24T19:47:55Z",
+   "upstreams": [
+    {
+     "address": "192.168.10.10:5301",
+     "attempts": 59268670,
+     "consecutive_failures": 0,
+     "failure_runs": [
+      7,
+      0,
+      0,
+      0
+     ],
+     "failures": 7,
+     "family": "v4",
+     "penalized_seconds_total": 0,
+     "penalties": 0,
+     "penalty_round": 0,
+     "probe_successes": 0,
+     "probes": 0,
+     "protocol": "udp",
+     "state": "healthy",
+     "tls_handshakes": 0
+    },
+    {
+     "address": "192.168.10.10:5302",
+     "attempts": 7,
+     "consecutive_failures": 0,
+     "failure_runs": [
+      0,
+      0,
+      0,
+      0
+     ],
+     "failures": 0,
+     "family": "v4",
+     "penalized_seconds_total": 0,
+     "penalties": 0,
+     "penalty_round": 0,
+     "probe_successes": 0,
+     "probes": 0,
+     "protocol": "udp",
+     "state": "healthy",
+     "tls_handshakes": 0
+    }
+   ]
+  },
+  {
+   "allowed_delta": 0,
+   "answers_delta": {
+    "refused_relayed": 0,
+    "servfail_relayed": 0,
+    "servfail_synthesized": 0
+   },
+   "blocked_delta": 0,
+   "cache": {
+    "bytes": 4320000,
+    "capacity": 10000,
+    "entries": 10000,
+    "evictions": 59662316,
+    "expired": 0,
+    "fresh": 10000,
+    "hits": 5340412,
+    "max_bytes": 67108864,
+    "misses": 59672319,
+    "stale": 0
+   },
+   "latency": {
+    "block_p50": 0.0,
+    "block_p99": 0.0,
+    "cache_hit_p50": 0.0001,
+    "cache_hit_p99": 0.0001,
+    "forward_p50": 0.0025,
+    "forward_p99": 0.01
+   },
+   "memory": {
+    "accounted_bytes": 4427267,
+    "cache_estimated_bytes": 4320000,
+    "residual_bytes": 24564221,
+    "ruleset_bytes": 68,
+    "stats_aggregates_bytes": 105131,
+    "stats_clients_bytes": 2068
+   },
+   "minor_page_faults": 11735685,
+   "peak_rss": 36552704,
+   "qps": 10987.933333333332,
+   "queries_delta": 329638,
+   "rss_anon_bytes": 21159936,
+   "rss_bytes": 28991488,
+   "rss_file_bytes": 7831552,
+   "ts": "2026-08-24T19:48:25Z",
+   "upstreams": [
+    {
+     "address": "192.168.10.10:5301",
+     "attempts": 59571397,
+     "consecutive_failures": 0,
+     "failure_runs": [
+      7,
+      0,
+      0,
+      0
+     ],
+     "failures": 7,
+     "family": "v4",
+     "penalized_seconds_total": 0,
+     "penalties": 0,
+     "penalty_round": 0,
+     "probe_successes": 0,
+     "probes": 0,
+     "protocol": "udp",
+     "state": "healthy",
+     "tls_handshakes": 0
+    },
+    {
+     "address": "192.168.10.10:5302",
+     "attempts": 7,
+     "consecutive_failures": 0,
+     "failure_runs": [
+      0,
+      0,
+      0,
+      0
+     ],
+     "failures": 0,
+     "family": "v4",
+     "penalized_seconds_total": 0,
+     "penalties": 0,
+     "penalty_round": 0,
+     "probe_successes": 0,
+     "probes": 0,
+     "protocol": "udp",
+     "state": "healthy",
+     "tls_handshakes": 0
+    }
+   ]
+  },
+  {
+   "allowed_delta": 0,
+   "answers_delta": {
+    "refused_relayed": 0,
+    "servfail_relayed": 0,
+    "servfail_synthesized": 0
+   },
+   "blocked_delta": 0,
+   "cache": {
+    "bytes": 4320000,
+    "capacity": 10000,
+    "entries": 10000,
+    "evictions": 59963690,
+    "expired": 0,
+    "fresh": 10000,
+    "hits": 5367396,
+    "max_bytes": 67108864,
+    "misses": 59973693,
+    "stale": 0
+   },
+   "latency": {
+    "block_p50": 0.0,
+    "block_p99": 0.0,
+    "cache_hit_p50": 0.0001,
+    "cache_hit_p99": 0.0001,
+    "forward_p50": 0.005,
+    "forward_p99": 0.025
+   },
+   "memory": {
+    "accounted_bytes": 4427267,
+    "cache_estimated_bytes": 4320000,
+    "residual_bytes": 26407421,
+    "ruleset_bytes": 68,
+    "stats_aggregates_bytes": 105131,
+    "stats_clients_bytes": 2068
+   },
+   "minor_page_faults": 11790182,
+   "peak_rss": 36552704,
+   "qps": 10949.9,
+   "queries_delta": 328497,
+   "rss_anon_bytes": 23003136,
+   "rss_bytes": 30834688,
+   "rss_file_bytes": 7831552,
+   "ts": "2026-08-24T19:48:55Z",
+   "upstreams": [
+    {
+     "address": "192.168.10.10:5301",
+     "attempts": 59873555,
+     "consecutive_failures": 0,
+     "failure_runs": [
+      7,
+      0,
+      0,
+      0
+     ],
+     "failures": 7,
+     "family": "v4",
+     "penalized_seconds_total": 0,
+     "penalties": 0,
+     "penalty_round": 0,
+     "probe_successes": 0,
+     "probes": 0,
+     "protocol": "udp",
+     "state": "healthy",
+     "tls_handshakes": 0
+    },
+    {
+     "address": "192.168.10.10:5302",
+     "attempts": 7,
+     "consecutive_failures": 0,
+     "failure_runs": [
+      0,
+      0,
+      0,
+      0
+     ],
+     "failures": 0,
+     "family": "v4",
+     "penalized_seconds_total": 0,
+     "penalties": 0,
+     "penalty_round": 0,
+     "probe_successes": 0,
+     "probes": 0,
+     "protocol": "udp",
+     "state": "healthy",
+     "tls_handshakes": 0
+    }
+   ]
+  },
+  {
+   "allowed_delta": 0,
+   "answers_delta": {
+    "refused_relayed": 0,
+    "servfail_relayed": 0,
+    "servfail_synthesized": 0
+   },
+   "blocked_delta": 0,
+   "cache": {
+    "bytes": 4320000,
+    "capacity": 10000,
+    "entries": 10000,
+    "evictions": 60264497,
+    "expired": 0,
+    "fresh": 10000,
+    "hits": 5394317,
+    "max_bytes": 67108864,
+    "misses": 60274500,
+    "stale": 0
+   },
+   "latency": {
+    "block_p50": 0.0,
+    "block_p99": 0.0,
+    "cache_hit_p50": 0.0001,
+    "cache_hit_p99": 0.0001,
+    "forward_p50": 0.005,
+    "forward_p99": 0.025
+   },
+   "memory": {
+    "accounted_bytes": 4427267,
+    "cache_estimated_bytes": 4320000,
+    "residual_bytes": 25518589,
+    "ruleset_bytes": 68,
+    "stats_aggregates_bytes": 105131,
+    "stats_clients_bytes": 2068
+   },
+   "minor_page_faults": 11838371,
+   "peak_rss": 36552704,
+   "qps": 10924.166666666666,
+   "queries_delta": 327725,
+   "rss_anon_bytes": 22114304,
+   "rss_bytes": 29945856,
+   "rss_file_bytes": 7831552,
+   "ts": "2026-08-24T19:49:25Z",
+   "upstreams": [
+    {
+     "address": "192.168.10.10:5301",
+     "attempts": 60174420,
+     "consecutive_failures": 0,
+     "failure_runs": [
+      7,
+      0,
+      0,
+      0
+     ],
+     "failures": 7,
+     "family": "v4",
+     "penalized_seconds_total": 0,
+     "penalties": 0,
+     "penalty_round": 0,
+     "probe_successes": 0,
+     "probes": 0,
+     "protocol": "udp",
+     "state": "healthy",
+     "tls_handshakes": 0
+    },
+    {
+     "address": "192.168.10.10:5302",
+     "attempts": 7,
+     "consecutive_failures": 0,
+     "failure_runs": [
+      0,
+      0,
+      0,
+      0
+     ],
+     "failures": 0,
+     "family": "v4",
+     "penalized_seconds_total": 0,
+     "penalties": 0,
+     "penalty_round": 0,
+     "probe_successes": 0,
+     "probes": 0,
+     "protocol": "udp",
+     "state": "healthy",
+     "tls_handshakes": 0
+    }
+   ]
+  },
+  {
+   "allowed_delta": 0,
+   "answers_delta": {
+    "refused_relayed": 0,
+    "servfail_relayed": 0,
+    "servfail_synthesized": 0
+   },
+   "blocked_delta": 0,
+   "cache": {
+    "bytes": 4320000,
+    "capacity": 10000,
+    "entries": 10000,
+    "evictions": 60565390,
+    "expired": 0,
+    "fresh": 10000,
+    "hits": 5421227,
+    "max_bytes": 67108864,
+    "misses": 60575393,
+    "stale": 0
+   },
+   "latency": {
+    "block_p50": 0.0,
+    "block_p99": 0.0,
+    "cache_hit_p50": 0.0001,
+    "cache_hit_p99": 0.0001,
+    "forward_p50": 0.005,
+    "forward_p99": 0.025
+   },
+   "memory": {
+    "accounted_bytes": 4427267,
+    "cache_estimated_bytes": 4320000,
+    "residual_bytes": 25547261,
+    "ruleset_bytes": 68,
+    "stats_aggregates_bytes": 105131,
+    "stats_clients_bytes": 2068
+   },
+   "minor_page_faults": 11893316,
+   "peak_rss": 36552704,
+   "qps": 10923.366666666669,
+   "queries_delta": 327701,
+   "rss_anon_bytes": 22142976,
+   "rss_bytes": 29974528,
+   "rss_file_bytes": 7831552,
+   "ts": "2026-08-24T19:49:55Z",
+   "upstreams": [
+    {
+     "address": "192.168.10.10:5301",
+     "attempts": 60474862,
+     "consecutive_failures": 0,
+     "failure_runs": [
+      7,
+      0,
+      0,
+      0
+     ],
+     "failures": 7,
+     "family": "v4",
+     "penalized_seconds_total": 0,
+     "penalties": 0,
+     "penalty_round": 0,
+     "probe_successes": 0,
+     "probes": 0,
+     "protocol": "udp",
+     "state": "healthy",
+     "tls_handshakes": 0
+    },
+    {
+     "address": "192.168.10.10:5302",
+     "attempts": 7,
+     "consecutive_failures": 0,
+     "failure_runs": [
+      0,
+      0,
+      0,
+      0
+     ],
+     "failures": 0,
+     "family": "v4",
+     "penalized_seconds_total": 0,
+     "penalties": 0,
+     "penalty_round": 0,
+     "probe_successes": 0,
+     "probes": 0,
+     "protocol": "udp",
+     "state": "healthy",
+     "tls_handshakes": 0
+    }
+   ]
+  },
+  {
+   "allowed_delta": 0,
+   "answers_delta": {
+    "refused_relayed": 0,
+    "servfail_relayed": 0,
+    "servfail_synthesized": 0
+   },
+   "blocked_delta": 0,
+   "cache": {
+    "bytes": 4320000,
+    "capacity": 10000,
+    "entries": 10000,
+    "evictions": 60662363,
+    "expired": 0,
+    "fresh": 90,
+    "hits": 5429898,
+    "max_bytes": 67108864,
+    "misses": 60672366,
+    "stale": 9910
+   },
+   "latency": {
+    "block_p50": 0.0,
+    "block_p99": 0.0,
+    "cache_hit_p50": 0.0001,
+    "cache_hit_p99": 0.0001,
+    "forward_p50": 0.005,
+    "forward_p99": 0.025
+   },
+   "memory": {
+    "accounted_bytes": 4427267,
+    "cache_estimated_bytes": 4320000,
+    "residual_bytes": 26198525,
+    "ruleset_bytes": 68,
+    "stats_aggregates_bytes": 105131,
+    "stats_clients_bytes": 2068
+   },
+   "minor_page_faults": 11910944,
+   "peak_rss": 36552704,
+   "qps": 3524.9666666666667,
+   "queries_delta": 105749,
+   "rss_anon_bytes": 22794240,
+   "rss_bytes": 30625792,
+   "rss_file_bytes": 7831552,
+   "ts": "2026-08-24T19:50:25Z",
+   "upstreams": [
+    {
+     "address": "192.168.10.10:5301",
+     "attempts": 60672366,
+     "consecutive_failures": 0,
+     "failure_runs": [
+      7,
+      0,
+      0,
+      0
+     ],
+     "failures": 7,
+     "family": "v4",
+     "penalized_seconds_total": 0,
+     "penalties": 0,
+     "penalty_round": 0,
+     "probe_successes": 0,
+     "probes": 0,
+     "protocol": "udp",
+     "state": "healthy",
+     "tls_handshakes": 0
+    },
+    {
+     "address": "192.168.10.10:5302",
+     "attempts": 7,
+     "consecutive_failures": 0,
+     "failure_runs": [
+      0,
+      0,
+      0,
+      0
+     ],
+     "failures": 0,
+     "family": "v4",
+     "penalized_seconds_total": 0,
+     "penalties": 0,
+     "penalty_round": 0,
+     "probe_successes": 0,
+     "probes": 0,
+     "protocol": "udp",
+     "state": "healthy",
+     "tls_handshakes": 0
+    }
+   ]
+  }
+ ],
+ "stride": 1,
+ "to": "2026-08-24T19:52:41Z"
+}
