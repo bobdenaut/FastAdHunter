@@ -191,6 +191,62 @@ forward has actually failed — the pre-ADR-0005 behaviour, and the one RFC 8767
 An external DNS resolver FastAdHunter forwards unblocked, uncached queries to.
 Speaks plain DNS, DoT, or DoH.
 
+### Endpoint
+
+One `[[dns.upstreams.servers]]` entry — an Upstream address plus its protocol —
+and the unit that health, penalties and probing are tracked per. Identified by
+its index in configured order, the same index Answering Endpoint records. Two
+entries pointing at the same resolver are two Endpoints: "Upstream" names the
+resolver, "Endpoint" names the configured row FastAdHunter talks to.
+
+### Endpoint Health
+
+Which of three states an Endpoint is in under `[dns.upstreams] strategy =
+"adaptive"`:
+
+- **Healthy** — selected in configured order like any other.
+- **Penalized** — skipped until its penalty deadline passes. It is still
+  configured, so when every Endpoint is Penalized the query still goes out.
+- **Probing** — claimed by exactly one query as the recovery attempt for the
+  current deadline.
+
+Under `strategy = "fallback"` no Endpoint has health; every one reads Healthy.
+
+### Probe
+
+The single on-path attempt that tests whether a Penalized Endpoint has
+recovered. It is a real client query, never synthetic traffic: the first query
+to reach a Penalized Endpoint past its deadline claims the Probe, moves it to
+Probing and forwards to it. One claim per Endpoint per deadline, at most one
+Probe per query, and never from an internal hostname lookup.
+
+### Penalty
+
+The interval a failing Endpoint is skipped for. Derived from `timeout_ms`,
+never configured: base `10 x 3 x timeout_ms`, doubled per Penalty Round, capped
+at 300 s. The cap bounds that *nominal* value; the deadline then carries ±25 %
+jitter on top, so a capped round skips the Endpoint for 225–375 s and Endpoints
+penalized together do not return in lockstep. `penalty_failures` decides how
+many consecutive transport failures apply one; an unreachable path or a failed
+handshake applies one immediately.
+
+### Penalty Round
+
+The doubling exponent of the last Penalty applied to an Endpoint. It increments
+on each Penalty and saturates at 15. Recovery does not clear it — a Healthy
+Endpoint still carries the round it reached. What the 300 s decides is the round
+the *next* Penalty starts at: 1 only when the Endpoint has been Healthy
+continuously for that long, so a flapping Endpoint resumes its escalated backoff
+instead of restarting cheap.
+
+### Penalty Policy
+
+The constants the Penalty arithmetic reads — `penalty_failures`, the derived
+base and the 300 s cap — built once from config and shared immutably by every
+Endpoint. Distinct from Policy, the parental-control bundle: a Penalty Policy
+never reaches a client or a rule list. It is also not the state machine, which
+is Endpoint Health.
+
 ### Answer Outcome
 
 What the client actually received: an answer, a **synthesized** SERVFAIL

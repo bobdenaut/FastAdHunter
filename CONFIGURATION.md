@@ -94,16 +94,38 @@ cleanup_interval_seconds = 360 # boot   — background sweep of entries past the
 
 # ─── Upstreams ─────────────────────────────────────────────────────────
 [dns.upstreams]
-strategy = "fallback"         # boot    — ordered parallel fallback (more modes later)
-timeout_ms = 800              # boot    — per-upstream attempt timeout (fails over
-                              #   inside a client's own timeout; above a slow lookup)
+strategy = "fallback"         # boot    — "fallback" | "adaptive". "fallback" walks the
+                              #   servers in configured order on every query. "adaptive"
+                              #   is opt-in and the default is unchanged: an endpoint
+                              #   that keeps failing is penalized and skipped until its
+                              #   penalty expires, then one query probes it on the way
+                              #   past. Every endpoint penalized still sends a query.
+penalty_failures = 2          # boot    — consecutive transport failures that penalize a
+                              #   healthy endpoint, 1..=255. Read only under "adaptive".
+                              #   A refused connection, an unreachable network or host
+                              #   and a failed TLS/DoH handshake penalize on the first
+                              #   failure whatever this is set to; a timeout counts
+                              #   toward it. An RCODE (SERVFAIL, NXDOMAIN, REFUSED) is a
+                              #   transport success and clears the streak.
+timeout_ms = 800              # boot    — per-upstream attempt timeout, 1..=10000. It
+                              #   bounds one leg (connect, send, read); one attempt
+                              #   against one endpoint is bounded at 3 x timeout_ms.
+                              #   Fails over inside a client's own timeout; above a
+                              #   slow lookup.
                               #   Under strategy = "adaptive" it also fixes the
-                              #   penalty backoff base: 10 x 3 x timeout_ms,
-                              #   capped at 300000 ms. From timeout_ms = 10000
-                              #   (the validated maximum) the first penalty
-                              #   already sits at the cap, so every round is a
-                              #   flat 5 minutes and the backoff stops
-                              #   escalating.
+                              #   penalty backoff, which is derived and never a
+                              #   key: round n is 10 x 3 x timeout_ms doubled
+                              #   n-1 times, capped at 300000 ms. The cap bounds
+                              #   that nominal value; the deadline then gets
+                              #   +/-25 % jitter on top, so a capped round is
+                              #   skipped for 225000..375000 ms and endpoints
+                              #   penalized together do not return in lockstep.
+                              #   At the default the nominal ladder is 24 s,
+                              #   48 s, 96 s, 192 s, then 300 s a round. From
+                              #   timeout_ms = 10000 (the validated maximum) the
+                              #   first penalty already sits at the cap, so
+                              #   every round is a flat 5 minutes and the
+                              #   backoff stops escalating.
 
 [[dns.upstreams.servers]]
 address = "1.1.1.1"           # boot
@@ -113,9 +135,11 @@ protocol = "udp"              # boot    — "udp" | "dot" | "doh"
 address = "9.9.9.9"
 protocol = "udp"
 
-# At least one server is required, and at most 255: an answering upstream is
+# At least one server is required, and at most 8: an answering upstream is
 # attributed per query by its index in this list (CONTEXT.md §Answering
-# Endpoint), which is a u8. A longer list is rejected at load, not truncated.
+# Endpoint), and under strategy = "adaptive" every entry owns a cache-line of
+# health state walked in one pass per query. A longer list is rejected at load,
+# not truncated.
 
 # DoT example:  address = "1.1.1.1", protocol = "dot", hostname = "cloudflare-dns.com"
 # DoH example:  address = "https://cloudflare-dns.com/dns-query", protocol = "doh"

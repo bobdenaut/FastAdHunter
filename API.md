@@ -49,7 +49,11 @@ Liveness/readiness. No auth (default). Used by the Docker healthcheck
 { "status": "ok", "version": "0.1.0", "uptime_seconds": 86400 }
 ```
 
-`status`: `ok` | `degraded` (e.g. all upstreams failing — serve-stale active).
+`status`: `ok` | `degraded`. Under `[dns.upstreams] strategy = "adaptive"`,
+`degraded` means **no endpoint is `healthy`** — every one is penalized or being
+probed. Under `fallback` it means every endpoint carries a non-zero
+`consecutive_failures`. Neither is "down": cache hits and serve-stale keep
+answering, and a penalized endpoint is still queried when no other is left.
 
 ### `GET /api/v1/telemetry`
 
@@ -114,7 +118,9 @@ Top-level blocks: `process`, `ruleset`, `counters`, `latency`, `upstreams`,
   },
   "upstreams": [ { "address": "1.1.1.1:853", "protocol": "dot", "attempts": 201883,
                    "failures": 12, "consecutive_failures": 0, "tls_handshakes": 41,
-                   "failure_runs": [5, 2, 0, 1] } ]
+                   "failure_runs": [5, 2, 0, 1], "state": "healthy",
+                   "penalty_round": 0, "penalties": 0, "penalized_seconds_total": 0,
+                   "probes": 0, "probe_successes": 0, "family": "v4" } ]
 }
 ```
 
@@ -150,7 +156,58 @@ Reading it correctly:
   open is not in here; it is `consecutive_failures`. Each bucket is cumulative
   and monotonic, so two reads delta into a window. Concurrent in-flight queries
   can split one outage into two shorter runs, which biases the distribution
-  toward short runs — read it as a lower bound on clustering.
+  toward short runs — read it as a lower bound on clustering. Under `adaptive`
+  a run counts *attempts*, and a penalized endpoint is attempted once per
+  penalty round, so run length is never a duration there;
+  `docs/measurement-traps.md` §Traffic and rates does the conversion.
+- **`address` is the row's stable identity** — the metrics label a dashboard
+  joins on, and the rows are published in configured order, so the array index
+  is the same one the query log records (CONTEXT.md §Answering Endpoint).
+- **`tls_handshakes` staying flat while `attempts` grows is the connection-reuse
+  proof** (p1-06 acceptance). It tracks time, not queries: single digits per
+  encrypted server per day is correct, and a `tls_handshakes / attempts` ratio
+  approaching 1 is the bug signature. Always 0 for a `udp` server.
+- **Endpoint health is meaningful under `strategy = "adaptive"` only.** Under
+  `fallback` every row reads `state: "healthy"`, `penalty_round: 0` and zeros for
+  `penalties`, `penalized_seconds_total`, `probes` and `probe_successes` — no
+  health state exists to report, which is not the same as "everything is fine".
+  - `state`: `healthy` | `penalized` | `probing`. This is the liveness signal.
+  - `penalty_round`: the doubling exponent of the **last penalty applied**, not
+    an active state — 0 until the first one, saturating at 15, and never cleared
+    by recovery, so an endpoint healthy for an hour still publishes the round it
+    reached. The 300 s window decides the *next* penalty instead: it restarts at
+    round 1 only when the endpoint has been `healthy` continuously for that
+    long, so a flapping endpoint resumes its escalated backoff.
+  - `penalties`: transitions into `penalized`.
+  - `penalized_seconds_total`: **scheduled** unavailability, not elapsed. It is
+    the nominal penalty for that round, banked at the moment the endpoint enters
+    `penalized` and with the ±25 % deadline jitter excluded. It does **not**
+    advance while the endpoint sits `penalized`, so a figure flat through an
+    outage is not an expired penalty. Real unavailability runs longer when no
+    query arrives to claim the probe once the deadline passes, and shorter when
+    an in-flight answer restores `healthy` early.
+  - `probes` / `probe_successes`: attempts claimed as the recovery probe, and
+    those that answered. A probe is a subset, not a parallel axis — it is also in
+    `attempts`, its failure is also in `failures` and in `failure_runs`, and a
+    failed probe also adds one to `penalties`.
+  - `family`: the family of the configured address — `v4` | `v6` whenever it is
+    an IP literal, a DoH URL with a literal host included, and `null` only for a
+    DoH URL whose host is a domain name resolved at connect time. `udp` and
+    `dot` rows are never `null`: their `address` must parse as an IP or
+    `IP:port` or the config fails to load. It is not a lookup — nothing resolves
+    a name to fill it in.
+- **`consecutive_failures` is a diagnostic, never liveness** — `state` is. Under
+  `adaptive` it comes from the packed health word, so it saturates at 255 and
+  stops advancing while the endpoint is `penalized` — unless every endpoint is
+  penalized, when the forced attempt that still goes out keeps walking it up.
+  Under
+  `fallback` a secondary is attempted only when the primary fails, so a non-zero
+  streak there can be hours old. Read it beside `attempts`.
+- **Under `adaptive`, `attempts` and `failures` exclude `resolve_host` traffic**
+  — the internal hostname lookups the egress guard makes move no health state and
+  bump no counter, so one bad hostname cannot penalize a working endpoint. Under
+  `fallback` those lookups are counted like any other attempt, so an endpoint's
+  `attempts` is not comparable across the two strategies.
 - No `ruleset.heap_bytes`: that is `memory.ruleset_bytes`, so the number has one
   home.
 - `ruleset`, `upstreams`, `counters.swr` and `counters.cache_cleanup` are pushed
@@ -292,7 +349,9 @@ wanted. `fields` trims the response, not the read.
         { "address": "1.1.1.1", "protocol": "dot",
           "attempts": 12000, "failures": 3,
           "consecutive_failures": 0, "tls_handshakes": 4,
-          "failure_runs": [2, 1, 0, 0] }
+          "failure_runs": [2, 1, 0, 0], "state": "healthy",
+          "penalty_round": 0, "penalties": 0, "penalized_seconds_total": 0,
+          "probes": 0, "probe_successes": 0, "family": "v4" }
       ]
     }
   ]
@@ -317,6 +376,11 @@ which charts as "not recorded" rather than "no failures".
 publishes, cumulative rather than per-interval — deltaing two rows gives the
 run-length distribution for that window. Rows written before it shipped read
 back as four zeros.
+
+The rest of the row is `/telemetry`'s upstream sample verbatim, endpoint health
+included — same field names, same meanings, same cumulative counters. Rows
+written before those fields shipped read back as `healthy`, zeros and a `null`
+`family`, which charts as "not recorded" rather than "healthy all along".
 
 `peak_rss` is the process high-water RSS (`getrusage`'s `ru_maxrss`), **monotone
 within one container lifetime** — a drop in the series is a restart, never a
