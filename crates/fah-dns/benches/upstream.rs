@@ -4,7 +4,7 @@ use std::net::SocketAddr;
 
 use criterion::{criterion_group, criterion_main, Criterion};
 use fah_config::{DnsUpstreamsConfig, UpstreamProtocol, UpstreamServerConfig, UpstreamStrategy};
-use fah_dns::{Forwarder, UpstreamPool};
+use fah_dns::{Forwarder, Policy, UpstreamPool};
 use hickory_proto::op::{Message, OpCode, Query as WireQuery, ResponseCode};
 use hickory_proto::rr::{Name, RecordType};
 use tokio::net::UdpSocket;
@@ -14,8 +14,8 @@ const STRATEGIES: [(UpstreamStrategy, &str); 2] = [
     (UpstreamStrategy::Adaptive, "_adaptive"),
 ];
 
-fn pool_for(addr: SocketAddr, strategy: UpstreamStrategy) -> UpstreamPool {
-    UpstreamPool::from_config(&DnsUpstreamsConfig {
+fn config_for(addr: SocketAddr, strategy: UpstreamStrategy) -> DnsUpstreamsConfig {
+    DnsUpstreamsConfig {
         strategy,
         timeout_ms: 2_000,
         servers: vec![UpstreamServerConfig {
@@ -24,8 +24,11 @@ fn pool_for(addr: SocketAddr, strategy: UpstreamStrategy) -> UpstreamPool {
             hostname: None,
         }],
         ..Default::default()
-    })
-    .unwrap()
+    }
+}
+
+fn pool_for(addr: SocketAddr, strategy: UpstreamStrategy) -> UpstreamPool {
+    UpstreamPool::from_config(&config_for(addr, strategy)).unwrap()
 }
 
 fn a_query() -> Message {
@@ -88,6 +91,12 @@ const REFUSED_ARMS: [(UpstreamStrategy, &str); 2] = [
 
 const REFUSED_WARMUPS: usize = 4;
 
+const REFUSED_POLICY: Policy = Policy {
+    penalty_failures: 1,
+    penalty_base_ms: 3_600_000,
+    penalty_max_ms: 3_600_000,
+};
+
 fn bench_refused(c: &mut Criterion) {
     let rt = tokio::runtime::Runtime::new().unwrap();
     let addr = rt.block_on(refusing_addr());
@@ -95,7 +104,7 @@ fn bench_refused(c: &mut Criterion) {
 
     let mut group = c.benchmark_group("upstream");
     for (strategy, name) in REFUSED_ARMS {
-        let pool = pool_for(addr, strategy);
+        let pool = UpstreamPool::with_policy(&config_for(addr, strategy), REFUSED_POLICY).unwrap();
         let probe = rt.block_on(pool.forward(&query)).unwrap_err();
         if probe.kind() == io::ErrorKind::TimedOut {
             eprintln!(

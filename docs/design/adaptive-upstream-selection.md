@@ -517,9 +517,11 @@ never uses that name for the bound.
 `penalty(round)` is defined for `round ≥ 1` only; `next_round` never yields 0
 (a reset yields 1), and the implementation `debug_assert`s it.
 
-`penalty_round` resets to 0 only when the endpoint has been continuously Healthy
-for `PENALTY_MAX`, checked from `healthy_since` at the moment the *next* penalty
-is applied — so it costs the query path nothing. Without the rule a flapping
+`penalty_round` restarts at round 1 only when the endpoint has been continuously
+Healthy for `PENALTY_MAX`, checked from `healthy_since` at the moment the *next*
+penalty is applied — so it costs the query path nothing. The stored round is
+written only when a penalty is applied, so recovery never clears it: 0 is the
+value an endpoint carries until its first penalty, and nothing returns it there. Without the rule a flapping
 endpoint oscillates forever at `PENALTY_BASE`; without the reset it ratchets to
 `PENALTY_MAX` and stays there. The check is `now.saturating_sub(healthy_since)
 >= PENALTY_MAX` (S1.3, concurrent `now` sampling).

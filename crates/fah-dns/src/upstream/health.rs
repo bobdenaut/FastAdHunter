@@ -25,8 +25,14 @@ impl PackedWord {
         self.0.load(Ordering::Relaxed)
     }
 
+    #[doc(hidden)]
     pub fn store(&self, word: u64) {
         self.0.store(word, Ordering::Relaxed);
+    }
+
+    pub fn compare_exchange(&self, current: u64, new: u64) -> Result<u64, u64> {
+        self.0
+            .compare_exchange(current, new, Ordering::Relaxed, Ordering::Relaxed)
     }
 
     pub fn compare_exchange_weak(&self, current: u64, new: u64) -> Result<u64, u64> {
@@ -171,11 +177,14 @@ pub fn penalty(round: u8, now_ms: u64, policy: &Policy) -> u64 {
 }
 
 fn nominal_penalty(round: u8, policy: &Policy) -> u64 {
-    policy
-        .penalty_base_ms
-        .checked_shl(u32::from(round.saturating_sub(1)))
-        .unwrap_or(u64::MAX)
-        .min(policy.penalty_max_ms)
+    let mut nominal = policy.penalty_base_ms;
+    for _ in 1..round {
+        if nominal >= policy.penalty_max_ms {
+            break;
+        }
+        nominal = nominal.saturating_mul(2);
+    }
+    nominal.min(policy.penalty_max_ms)
 }
 
 fn next_round(w: Word, now_ms: u64, policy: &Policy) -> u8 {
@@ -353,7 +362,7 @@ pub fn select(
                         w.consecutive_failures,
                         w.timestamp_ms,
                     );
-                    if endpoint.state.compare_exchange_weak(word, probing).is_ok() {
+                    if endpoint.state.compare_exchange(word, probing).is_ok() {
                         return Some(Candidate {
                             id,
                             selected: Selected::Probe,
@@ -743,6 +752,28 @@ mod tests {
     }
 
     #[test]
+    fn nominal_penalty_never_wraps_past_the_cap() {
+        for base in [1_u64, 1 << 50, 1 << 62, u64::MAX - 1, u64::MAX] {
+            for max in [1_u64, 300_000, u64::MAX] {
+                let p = policy(2, base, max);
+                let mut previous = 0;
+                for round in 1..=ROUND_MAX {
+                    let nominal = nominal_penalty(round, &p);
+                    assert!(
+                        nominal >= previous,
+                        "base {base} max {max} round {round}: {nominal} below {previous}"
+                    );
+                    assert!(
+                        nominal <= max,
+                        "base {base} max {max} round {round}: over cap"
+                    );
+                    previous = nominal;
+                }
+            }
+        }
+    }
+
+    #[test]
     fn penalty_jitter_spans_the_band_from_the_low_bits() {
         let p = policy(2, 1_000, 16_000);
         assert_eq!(penalty(1, 0, &p), 750);
@@ -919,7 +950,7 @@ mod tests {
         let health: [Health; 2] = endpoints();
         health[0].state.store(pack(State::Penalized, 3, 7, 100));
         let before = snapshot(&health[1]);
-        assert_eq!(claim_probe(&health, 100), probe(0));
+        assert_eq!(select(&health, 0, || 100, true), probe(0));
         let w = unpack(health[0].state.load());
         assert_eq!(w.state, State::Probing);
         assert_eq!(w.penalty_round, 3);
@@ -999,27 +1030,9 @@ mod tests {
         assert_eq!(unpack(health[0].state.load()).state, State::Probing);
     }
 
-    const CLAIM_ROUNDS: u32 = 8;
-
-    fn claim_probe(health: &[Health], now_ms: u64) -> Option<Candidate> {
-        for _ in 0..CLAIM_ROUNDS {
-            let candidate = select(health, 0, || now_ms, true);
-            if candidate.is_some_and(|c| c.selected == Selected::Probe) {
-                return candidate;
-            }
-        }
-        panic!("no probe claimed in {CLAIM_ROUNDS} passes");
-    }
-
     fn race_for_the_claim(health: &[Health], word: u64, now_ms: u64) -> Vec<Option<Candidate>> {
-        for _ in 0..CLAIM_ROUNDS {
-            health[0].state.store(word);
-            let results = race(health, now_ms);
-            if results.iter().any(|c| *c == probe(0)) {
-                return results;
-            }
-        }
-        panic!("no thread claimed the probe in {CLAIM_ROUNDS} rounds");
+        health[0].state.store(word);
+        race(health, now_ms)
     }
 
     fn race(health: &[Health], now_ms: u64) -> Vec<Option<Candidate>> {
@@ -1062,7 +1075,7 @@ mod tests {
     fn a_deadline_equal_to_now_is_due_and_one_millisecond_later_is_not() {
         let due: [Health; 1] = endpoints();
         due[0].state.store(pack(State::Penalized, 1, 1, 1_000));
-        assert_eq!(claim_probe(&due, 1_000), probe(0));
+        assert_eq!(select(&due, 0, || 1_000, true), probe(0));
 
         let pending: [Health; 1] = endpoints();
         pending[0].state.store(pack(State::Penalized, 1, 1, 1_001));
