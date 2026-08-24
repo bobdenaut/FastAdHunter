@@ -35,9 +35,22 @@ approved.
 | 7 | `p2.6-07-docs.md` | CONFIGURATION.md, API.md, measurement-traps.md, CONTEXT.md updated — each edit owner-approved at execution time | Opus | DONE |
 | 8 | `p2.6-08-microbench.md` | S1-M: healthy-path selection cost `adaptive` vs `fallback`, pinned, zero allocations — G2 tier 1 | Opus | DONE |
 | 9 | `p2.6-09-injected-failure-bench.md` | S1-G3 scenarios pass; net timeout cost avoided reported in two rows | Opus | DONE |
-| 10 | `p2.6-10-null-ab.md` | Harness noise band N from suite S1-N; G2 tier 3 threshold frozen or dropped | Opus | WAITING |
+| 10 | `p2.6-10-null-ab.md` | Harness noise band N from suite S1-N; G2 tier 3 threshold frozen or dropped. Protocol frozen, dev-box dry run passed, on-device harness available since 13 | Opus | WAITING |
 | 11 | `p2.6-11-optin-deploy-soak.md` | `adaptive` deployed opt-in; G2 tiers 2–3, G4 and G5 decided from on-device evidence | Opus | WAITING |
 | 12 | `p2.6-12-default-flip.md` | `adaptive` is the default; `fallback` path deleted; docs and project state updated | Opus | WAITING |
+| 13 | `p2.6-13-measurement-harness.md` | Probe container, on-device load generator, mock upstreams and veth exist as a repeatable owner-run procedure; one trial repetition completes | Opus | DONE |
+
+**Task 13 ran before 10 and 11**, despite the higher `NN`. It was appended
+rather than inserted because renumbering would break every cross-reference in
+this phase's review files (the same reason p2.5-10, p2.5-11, p2-13 and p2-14
+were appended). It is now `DONE`, so 10 and 11 are unblocked and run in `NN`
+order.
+
+Two items from 13 stay open by design and are **not** work inside 13: the probe
+container is deliberately retained for 10 and 11 and is torn down only after
+both finish, and the harness scripts remain uncommitted pending an owner
+decision. Both are recorded in
+[p2.6-13-measurement-harness-review.md](../../../docs/code-review/phase2.6/p2.6-13-measurement-harness-review.md).
 
 ## TASK START / PHASE CONTEXT
 
