@@ -17,8 +17,7 @@ Verified against the device 2026-08-02 (`/interface/veth/print detail`,
 | Interface | Address | What |
 | --- | --- | --- |
 | `veth1` | `172.17.0.2` | **FastAdHunter**, DNS on 53, API on 8443 |
-| `veth2` | `172.17.0.3` | **postgres** (`postgres:17-alpine`), unrelated to FAH |
-| `veth3` | `172.17.0.4` | `test` — the scratch interface for trying a temporary FAH build beside the live one; currently disabled, no container attached |
+| `veth3` | `172.17.0.4` | `fah-test` — the scratch interface for a probe container beside the live one. **Enabled**; it shows no `R` flag while nothing is attached, so no enable command is needed |
 
 Gateway is `172.17.0.1`; each veth also carries an IPv6 in
 `fd6c:7f32:8e91:1::/64` (static ULA) plus a global address by SLAAC:
@@ -33,12 +32,12 @@ port) and never reaches the container. `srcnat masquerade
 fd6c:7f32:8e91:1::/64 → DIGI` stays for ULA-sourced flows (and the ≤10 min
 gap after a rotation); global-sourced traffic leaves un-NATed.
 
-**Another container shares the box.** `postgres` runs `start-on-boot=yes` with
-`memory-high=unlimited` and holds ~49 MiB. It is not FAH's, but it is on the same
-1 GB budget, so router-wide memory graphs are **not** a FAH measurement —
-attribute per-cgroup with `memory-current` before blaming FAH. A stale `ENV_FAH`
-list (`FAH__DNS__LISTEN__PORT`) is likewise unused; the live one is `fah-env`
-(the `MIMALLOC_*` keys).
+**Router-wide memory graphs are not a FAH measurement.** RouterOS itself and any
+other container share the same 1 GB budget, so attribute per-container with
+`memory-current` before blaming FAH — and check what is actually running rather
+than assuming, since the container set changes. A stale `ENV_FAH` list
+(`FAH__DNS__LISTEN__PORT`) is unused; the live one is `fah-env` (the
+`MIMALLOC_*` keys).
 
 ## Container configuration
 
@@ -153,9 +152,29 @@ and the owner executes them, and read `/container print detail` +
 `/container/mounts print` first, because the mount names, `root-dir` and veth are
 deployment-specific.
 
-Unknown until checked: whether the installed RouterOS can pin container CPU
-affinity. If it cannot, take 3 runs and report the median — the x86 references
-it is compared against were core-pinned.
+**Container CPU affinity exists**: the `cpu-list` field on `/container`
+(verified 7.21.5, 2026-08-24). Empty means *no restriction*, not "no CPUs" —
+threads are schedulable on all four cores and compete with RouterOS's own
+`networking`, `bridging` and `firewall` tasks. Production carries `cpu-list=""`,
+so **do not pin a probe**: it would stop standing in for the thing it measures.
+Where the x86 reference was core-pinned and the comparison needs it, take 3 runs
+and report the median instead.
+
+`/tool/profile cpu=all` attributes CPU per process per core, which `cpu-load`
+alone cannot. It keys on process name, so two containers running the same binary
+are not separated.
+
+**A second container can be added from the same image tar.** RouterOS extracts
+it into the new `root-dir` and auto-suffixes the derived name (`…-0.2.19` →
+`…-0.2.19-2`), so there is no duplicate-name collision. Give it its own
+`root-dir`, its own mount lists, and a `comment` that is **not** `fastadhunter`
+— `[find comment="fastadhunter"]` is exact equality and would match both.
+
+**A mount list can exist while its target directory does not.** Creating
+`/container/mounts` entries does not create the directories they point at; the
+container then starts, silently writes into the container store instead, and
+loses everything on `container/remove`. Create the tree first and confirm real
+content appears under it after boot.
 
 ## API access
 
@@ -167,6 +186,31 @@ it is compared against were core-pinned.
 - Engine counters, latency, upstreams, cache and memory come from one call:
   `/api/v1/telemetry`. There is no per-query HTTP endpoint — individual events
   are only on `WS /api/v1/events`.
+- **Latency percentiles are not on `/telemetry`.** It carries `{count,
+  sum_seconds}` per stage, from which only a mean is derivable. `forward_p50`,
+  `forward_p99`, `cache_hit_*` and `block_*` live only on
+  `/api/v1/history/perf`, per sample interval, and there is no Prometheus
+  surface exposing raw buckets.
+- **`upstreams[].attempts` and `counters.swr.*` lag by up to 10 s** — they are
+  republished by the binary's telemetry poll, not read live, while
+  `latency.*` and `counters.dns.*` are current. Differencing two snapshots taken
+  while traffic is flowing undercounts them. Drain quietly past one poll before
+  the closing snapshot.
+
+## Reaching a container from the LAN
+
+Verified 2026-08-24. `172.17.0.0/24` is a connected route via `CONTAINERS`, and
+`chain=forward` **ends without a final drop**, so LAN → container and
+container → LAN both fall through to the default accept. **No firewall rule is
+needed to drive a probe container from a LAN host** — and none should be added
+speculatively, since `add` appends behind whatever is already there.
+
+Read the chain before concluding this still holds; it is a property of the
+current rule set, not a guarantee.
+
+A generator that uses **one UDP socket** keeps the router at a single conntrack
+entry for the whole stream and gets fastpathed after the first packet. One that
+opens a fresh source port per query pays conntrack setup at the query rate.
 
 ## IPv6 — verify before acting
 
