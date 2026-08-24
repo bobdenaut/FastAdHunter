@@ -219,5 +219,3 @@ moved>
 Get the date from `date +%F`; never invent one. Keep prior findings and their
 IDs intact; a fixed finding is marked in place (`F2 — FIXED (<date>) — …`), it
 is not deleted.
-
-Total document: 100–300 lines.
