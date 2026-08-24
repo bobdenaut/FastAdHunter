@@ -19,3 +19,13 @@ tokio = { workspace = true, features = ["net"] }
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["net", "macros", "rt-multi-thread"] }
+criterion = { workspace = true }
+
+# Session-validity control for cross-checkout A/B benchmarking. Uses no item
+# from this crate and no other workspace crate, so no project change can move
+# it: a delta here means the box, not the code (PERFORMANCE.md §Measuring
+# reliably). Every bench-hosting crate transitively links `fah-model`, so
+# before this target the workspace had no null control.
+[[bench]]
+name = "session_control"
+harness = false

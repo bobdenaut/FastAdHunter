@@ -647,6 +647,7 @@ dependencies = [
 name = "fah-common"
 version = "0.2.19"
 dependencies = [
+ "criterion",
  "socket2",
  "thiserror",
  "tokio",

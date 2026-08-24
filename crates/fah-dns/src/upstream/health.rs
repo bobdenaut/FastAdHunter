@@ -125,8 +125,8 @@ pub struct Policy {
 }
 
 impl Policy {
-    pub fn from_timeout(timeout_ms: u64, penalty_failures: u8) -> Self {
-        let attempt_bound_ms = u64::from(ATTEMPT_LEGS) * timeout_ms;
+    pub const fn from_timeout(timeout_ms: u64, penalty_failures: u8) -> Self {
+        let attempt_bound_ms = ATTEMPT_LEGS as u64 * timeout_ms;
         Self {
             penalty_failures,
             penalty_base_ms: PENALTY_BASE_FACTOR * attempt_bound_ms,

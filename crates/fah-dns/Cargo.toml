@@ -40,3 +40,10 @@ harness = false
 [[bench]]
 name = "upstream"
 harness = false
+
+# Stage 1 selector and state-update cost (p2.6-08 S1-M): pure functions over a
+# synthetic health slice, no sockets, no runtime. Pinned to one core, except
+# transition/claim_probe which needs four.
+[[bench]]
+name = "upstream_select"
+harness = false

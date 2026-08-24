@@ -105,6 +105,11 @@ fn adaptive_forwards_allocate_exactly_as_much_as_fallback_forwards() {
         measured.push(ALLOCATIONS.load(Ordering::Relaxed) - before);
     }
 
+    println!(
+        "forward/allocations over {FORWARDS} forwards: fallback {} adaptive {}",
+        measured[0], measured[1]
+    );
+
     assert_eq!(
         measured[1], measured[0],
         "{FORWARDS} adaptive forwards allocated {} against fallback's {}; \

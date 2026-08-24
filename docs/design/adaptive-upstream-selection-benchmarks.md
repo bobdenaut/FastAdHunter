@@ -238,7 +238,7 @@ Wall-clock per operation. For M.7, additionally: winner count must be exactly
 | Bench | Criterion |
 | --- | --- |
 | M.1 | `M.1 ≤ noop + 10 ns` x86 **and** `< 111 ns` x86 (the M.2–M.4 budget). "At or below the control" is unattainable by construction — `select` does strictly more than a noop read, and at 1–2 ns a 1 % CI is narrower than the decode. The "one relaxed load, early exit" claim is the instruction count, reported from the disassembly (`cargo asm` / `objdump`) or `perf stat`, not from the timing |
-| M.8 | `adaptive` within the CI of `fallback`; > 10 % regression is a blocker (root CLAUDE.md) |
+| M.8 | **K ≥ 6 alternating pairs pre-declared before the session**, both arms measured back to back in the same process; every run reported, none discarded. Per pair, `d_i = (adaptive − fallback) / fallback`. Accept when **all three** hold: (1) the two-sided 95 % t-CI of `mean(d_i)` **contains 0**; (2) that CI's **upper bound < +10 %** — the session must have enough power to see the blocker it claims to enforce; (3) **no individual pair exceeds +10 %** (root CLAUDE.md blocker, per-pair, never averaged away). Criterion's per-pair CIs and the `fallback` arm's own between-run range are **reported as descriptive data**, not as the gate — on a syscall-dominated arm the within-run CI does not contain the between-run variance and rejects identical code |
 | M.9 | Counts equal between strategies |
 | M.2, M.3, M.4 | < 111 ns x86 (< 1 µs RB5009-equivalent, 0.1 % of the 1 ms `forward` engine-overhead budget) |
 | M.5 | < 22 ns x86 (< 200 ns RB5009-equivalent); must perform no store when the word is already Healthy with `consecutive_failures == 0` |
@@ -247,9 +247,9 @@ Wall-clock per operation. For M.7, additionally: winner count must be exactly
 
 ### S1-M — what justifies proceeding
 
-M.1 within 10 ns of the control and under 111 ns, M.8 within the CI of
-`fallback`, M.9 equal, and M.3 under the RB5009-equivalent 1 µs budget. Then
-selection is free and the design needs no simplification.
+M.1 within 10 ns of the control and under 111 ns, M.8 satisfying all three
+clauses of its rule above, M.9 equal, and M.3 under the RB5009-equivalent 1 µs
+budget. Then selection is free and the design needs no simplification.
 
 ### S1-M — what justifies rejecting or simplifying
 
