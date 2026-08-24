@@ -42,7 +42,7 @@ Optional alongside it, useful only at a build boundary:
 | # | Build | Captured | Window covered | `1.1.1.1` attempts / failures | `failure_runs` |
 | --- | --- | --- | --- | --- | --- |
 | 01 | 0.2.18 | 2026-08-23T14:54:35Z | 2026-08-22T22:19:31Z → capture (16.6 h) | 18,780 / 1 | `[1,0,0,0]` |
-| 02 | 0.2.19 | 2026-08-23T15:07:57Z | process start 14:59:52Z → **open** | 169 / 0 | `[0,0,0,0]` |
+| 02 | 0.2.19 | 2026-08-24T08:28:51Z | process start 14:59:52Z → capture (17.5 h), **open** | 12,287 / 1 | `[1,0,0,0]` |
 
 Segment 02 is live and has no end capture yet.
 
@@ -55,9 +55,9 @@ endpoints are unmeasured — Stage 1 cannot penalize or probe what never runs.
 | Metric | Value |
 | --- | --- |
 | Window opened | 2026-08-22T22:19:31Z (p2.5-09 V5d), 0.2.18 deploy |
-| Closed runs, all segments | **1**, of length 1 |
+| Closed runs, all segments | **2**, both of length 1 |
 | Runs of length ≥ 2 | **0** |
-| Primary failure rate | 1 / 18,949 attempts = 0.0053 % |
+| Primary failure rate | 2 / 31,067 attempts = 0.0064 % |
 
 Earlier suite T sample 1 put the base rate at 0.072 % and found 27 partial
 failure events over 45.7 h. This window is an order of magnitude quieter. The
@@ -99,6 +99,6 @@ Spec §S1-G5's narrow rejection route: if the window shows only isolated single
 losses and no run of ≥ 2, Stage 1 at `penalty_failures = 2` never engages on
 this deployment, and not shipping is the correct outcome.
 
-One closed run of length 1 is consistent with that route and equally
+Two closed runs, both of length 1, are consistent with that route and equally
 consistent with far too small a sample. The spec is explicit — too few closed
 runs means **extend the window, do not guess the constant**.
