@@ -34,7 +34,7 @@ approved.
 | 6 | `p2.6-06-telemetry.md` | `state`, `penalty_round`, `penalties`, `penalized_seconds_total`, `probes`, `probe_successes`, `family` on `/telemetry`; `/health` degraded = no endpoint Healthy | Opus | DONE |
 | 7 | `p2.6-07-docs.md` | CONFIGURATION.md, API.md, measurement-traps.md, CONTEXT.md updated — each edit owner-approved at execution time | Opus | DONE |
 | 8 | `p2.6-08-microbench.md` | S1-M: healthy-path selection cost `adaptive` vs `fallback`, pinned, zero allocations — G2 tier 1 | Opus | DONE |
-| 9 | `p2.6-09-injected-failure-bench.md` | S1-G3 scenarios pass; net timeout cost avoided reported in two rows | Opus | WAITING |
+| 9 | `p2.6-09-injected-failure-bench.md` | S1-G3 scenarios pass; net timeout cost avoided reported in two rows | Opus | DONE |
 | 10 | `p2.6-10-null-ab.md` | Harness noise band N from suite S1-N; G2 tier 3 threshold frozen or dropped | Opus | WAITING |
 | 11 | `p2.6-11-optin-deploy-soak.md` | `adaptive` deployed opt-in; G2 tiers 2–3, G4 and G5 decided from on-device evidence | Opus | WAITING |
 | 12 | `p2.6-12-default-flip.md` | `adaptive` is the default; `fallback` path deleted; docs and project state updated | Opus | WAITING |
