@@ -1,0 +1,17 @@
+{
+ "drain_seconds": 30,
+ "elapsed_seconds": 3630.541081428528,
+ "label": "L4A",
+ "load_command": "start /b python C:/Users/liviu/AppData/Local/Temp/claude/e--FastAdHunter/ca46d503-25e5-4704-9082-fdbce9f7f4e7/scratchpad/p2610/poll.py --base https://172.17.0.4:8443 --token <REDACTED> --insecure --interval 0.25 --seconds 60 --out C:/Users/liviu/AppData/Local/Temp/claude/e--FastAdHunter/ca46d503-25e5-4704-9082-fdbce9f7f4e7/scratchpad/p2610/l4-session/l4a/first60.jsonl & python C:/Users/liviu/AppData/Local/Temp/claude/e--FastAdHunter/ca46d503-25e5-4704-9082-fdbce9f7f4e7/scratchpad/p2610/seq.py --server 172.17.0.4 --port 53 --seconds 3600 --prefix l4a --out C:/Users/liviu/AppData/Local/Temp/claude/e--FastAdHunter/ca46d503-25e5-4704-9082-fdbce9f7f4e7/scratchpad/p2610/l4-session/l4a/seq.jsonl",
+ "load_returncode": 0,
+ "load_seconds": 3600.5082154273987,
+ "load_t0_utc": "2026-08-25T16:46:27Z",
+ "load_t1_utc": "2026-08-25T17:46:28Z",
+ "process_version_t0": "0.2.19",
+ "process_version_t1": "0.2.19",
+ "rep": 1,
+ "t0_utc": "2026-08-25T16:46:27Z",
+ "t1_utc": "2026-08-25T17:46:58Z",
+ "uptime_t0": 133,
+ "uptime_t1": 3764
+}

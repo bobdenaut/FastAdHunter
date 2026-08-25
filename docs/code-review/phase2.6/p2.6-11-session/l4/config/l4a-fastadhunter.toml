@@ -1,0 +1,33 @@
+[dns.listen]
+address = "0.0.0.0"
+port = 53
+
+[dns.upstreams]
+strategy = "fallback"
+timeout_ms = 800
+
+[[dns.upstreams.servers]]
+address = "198.51.100.53:53"
+protocol = "udp"
+
+[[dns.upstreams.servers]]
+address = "192.168.10.10:5301"
+protocol = "udp"
+
+[[dns.upstreams.servers]]
+address = "192.168.10.10:5302"
+protocol = "udp"
+
+[history]
+enabled = true
+sample_interval_seconds = 30
+retention_days = 30
+
+[api]
+address = "0.0.0.0"
+port = 8443
+tls = true
+
+[rules]
+lists = []
+

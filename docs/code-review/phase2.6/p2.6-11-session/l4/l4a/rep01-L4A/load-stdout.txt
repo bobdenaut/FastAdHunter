@@ -1,0 +1,15 @@
+{
+ "elapsed_s": 60.09,
+ "errors": 0,
+ "samples": 240
+}
+{
+ "achieved_qps": 934.98,
+ "answered": 3365945,
+ "elapsed_s": 3600.0,
+ "max_ms": 804.616,
+ "p50_ms": 0.996,
+ "p99_ms": 1.788,
+ "sent": 3365945,
+ "timeouts": 0
+}
