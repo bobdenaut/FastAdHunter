@@ -45,7 +45,7 @@ everything learned. Verification closes it against the budgets.
 
 | # | Task file | Outcome | MODEL | STATUS |
 |---|-----------|---------|-------|--------|
-| 1 | `p5-01-static-serving.md` | `fah-api` serves `/web`; multi-stage image; route ordering; boot check | Opus | WAITING |
+| 1 | `p5-01-static-serving.md` | `fah-api` serves `/web`; multi-stage image; route ordering; boot check | Opus | DONE |
 | 2 | `p5-02-cert-browser-spike.md` | Real desktop/phone evidence; SAN decision and code change; regeneration migration | Opus | WAITING |
 | 3 | `p5-03-api-contracts.md` | `/events` subscription protocol, `GET /clients` policy fields, reserved API docs | Opus | WAITING |
 | 4 | `p5-04-auth-session.md` | Argon2id password, session cookie, login/logout, cookie on REST + WS (heavy) | Opus | WAITING |
