@@ -34,4 +34,15 @@ pub mod fixtures {
     pub fn telemetry() -> super::telemetry::Telemetry {
         serde_json::from_str(TELEMETRY).expect("fixtures/telemetry.json")
     }
+
+    pub fn query(index: usize) -> super::events::QueryItem {
+        use super::events::{decode, Decoded, ServerEvent};
+
+        let mut item = match decode(EVENTS_QUERY) {
+            Decoded::Event(ServerEvent::Query(item)) => *item,
+            _ => panic!("fixtures/events-query.json"),
+        };
+        item.domain = format!("d{index}.example");
+        item
+    }
 }
