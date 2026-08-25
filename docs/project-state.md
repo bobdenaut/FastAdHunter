@@ -18,7 +18,7 @@ what is true today.
 | Selector trap | `[find comment="fastadhunter"]` now resolves to the **stopped 0.2.19 rollback container**. Every live-path command targets `[find comment="fah-next"]` until the post-soak cleanup renames it back |
 | Phase | **2.5 closed**, tag `v0.2.19-phase2.5`. **2.6 in `plan/wip/phase2.6-adaptive-stage1`** — 13 tasks, **11 `DONE`**, p2.6-11 in progress |
 | Gate | [Global Architecture Review-Reconciled.md](code-review/Global%20Architecture%20Review-Reconciled.md): §5.1–6 **cleared** — §5.1 p2.5-01, §5.2 p2.5-02, §5.4 p2.5-03, §5.5 p2.5-04, §5.6 p2.5-05 + p2.5-10. §5.7–14 gate Phase 3. **S1-G2 tiers 1, 2 and 3 all met**; **S1-G4 and S1-G5 are not validated and will not be** |
-| **Next** | `p2.6-11` continues — L.4a/L.4b, then the soak closes 2026-09-01 |
+| **Next** | `p2.6-11` continues — L.4a/L.4b done, the soak closes 2026-09-01 |
 
 ## Phase 2.6 — Adaptive DNS Stage 1, in progress
 
@@ -41,7 +41,9 @@ running. Full evidence:
 | L.1s, the SWR arm | PASS — 114 000 refreshes/repetition, zero dropped, zero failed |
 | S1-G4, S1-G5 | **NOT validated** — see below |
 | L.3 soak | running, 2026-08-25T07:57:02Z → 2026-09-01 |
-| L.4a / L.4b | not run |
+| L.4a — WAN black hole, 1 h | PASS — 2 attempts arm the penalty, then **14 probe carriers, one per window**. Exactly **16 of 3 365 945** queries paid the dead endpoint (~804 ms each); p50 0.996 ms |
+| L.4b — LAN host-unreachable, 1 h | **SPLIT.** Window behaviour **PASS** (14 probes, 14 windows, at a second dead address). Path-failure classification **UNCONFIRMED on this platform** — the unused LAN address produced a **timeout, not `EHOSTUNREACH`** (2 attempts × 800 ms). The connected UDP socket rules out ICMP being swallowed; the router drops silently when its ARP fails |
+| `EHOSTUNREACH` → `PathFailure` | **unit-test coverage only** (p2.6-04, synthetic `io::Error`). No on-device coverage exists. **Deferred to topology-specific validation** — a coverage/topology gap, **not** a Stage 1 implementation failure, and it gates nothing else in p2.6-11 |
 
 **S1-G4 closed without an answer, by owner decision.** The `fallback`
 run-length window ended at the opt-in with **three closed runs, all of length 1,
@@ -91,8 +93,9 @@ to rediscover:
   ~10 000 QPS evicts the whole cache about once a second, so no entry survives
   to go stale and SWR is structurally unmeasurable. L.1s works only at a low
   rate over a working set below `max_entries`.
-- Teardown of `fah-probe` is **deliberately deferred** until p2.6-11 finishes;
-  L.4a/L.4b still need it.
+- Teardown of `fah-probe` is **deliberately deferred** until p2.6-11 finishes.
+  L.4a/L.4b are done and the probe is back on its pre-L.4 config, verified
+  byte-identical against both the pre-run pull and the committed p2.6-10 copy.
 
 **S1-G2 tier 3 is frozen at 5.00 %** on total upstream attempts, from
 N = 0.1094 % over a pre-declared K = 8 null A/B on the RB5009
@@ -145,8 +148,8 @@ for it; that was considered and rejected. The metric order is unchanged.
 
 1. **Phase 2.6 — Adaptive Stage 1**: p2.6-01…09 on the dev box **done**;
    p2.6-13 (harness) and p2.6-10 (null A/B) **done**; p2.6-11 **in progress** —
-   deployed and opted in, tiers 2–3, M.8 and L.1s all passed, soak closes
-   2026-09-01, L.4a/L.4b outstanding. Then p2.6-12.
+   deployed and opted in, tiers 2–3, M.8, L.1s, L.4a and L.4b's window
+   behaviour all passed, soak closes 2026-09-01. Then p2.6-12.
    **p2.6-12's precondition is now weaker than the plan assumed.** The default
    flip was gated on every deployment-tier gate passing; S1-G4 and S1-G5 route 2
    closed unvalidated instead. The spec's own narrow rejection route still
@@ -218,7 +221,10 @@ for it; that was considered and rejected. The metric order is unchanged.
 - DoH bootstrap via the container's OS resolver unverified (possible self-loop).
 - Upstream TCP/53 reachability mock-tested only. UDP ICMP path failure
   (`ECONNREFUSED`/`EHOSTUNREACH`) is a Linux-only signal — the Windows dev
-  box reports `ECONNRESET` — so it is exercised only on-device (S1-L L.4b).
+  box reports `ECONNRESET` — and **L.4b did not reach it either**: the RB5009
+  drops silently on ARP failure, so the dead LAN address timed out instead.
+  Still unexercised outside unit tests; needs a topology that returns ICMP
+  unreachable.
 - HTTP path under concurrency unmeasured; 1024-permit ceiling never exercised.
 - TLS on RB5009: handshake, interception CPU+memory, cert-mint, splice — probe
   containers, not dev benches.
