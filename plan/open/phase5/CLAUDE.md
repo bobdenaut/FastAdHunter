@@ -6,11 +6,10 @@ API decides what exists. Every screen is backed by a route that ships or by one
 this phase adds deliberately in `p5-03` — nothing is stubbed, mocked, or invented
 to fill a Pi-hole-shaped hole.
 
-**ROADMAP.md does not yet list a Phase 5.** It carries the dashboard under
-"Backlog (no phase committed)". That is a documentation gap, not a missing
-mandate — the owner committed the phase on 2026-08-25 — and ROADMAP.md is updated
-before this phase moves to `wip`. Until it is, this file does not claim a roadmap
-mandate it cannot point at. The design record is [docs/dashboard/](../../../docs/dashboard/):
+**ROADMAP.md lists Phase 5** — see its §Phase 5 — Web Dashboard entry in
+[ROADMAP.md](../../../ROADMAP.md). The owner committed the phase on 2026-08-25;
+the roadmap was updated to match in `ef76d59`, so the mandate is one this file
+can point at. The design record is [docs/dashboard/](../../../docs/dashboard/):
 [capability-matrix.md](../../../docs/dashboard/capability-matrix.md) is the
 source of truth for what is built,
 [information-architecture.md](../../../docs/dashboard/information-architecture.md)
@@ -61,7 +60,7 @@ everything learned. Verification closes it against the budgets.
 
 | Decision | Record |
 | -------- | ------ |
-| Phase 5 does **not** precede `phase2.6-adaptive-stage1` | 2.6 is the active `wip` phase with the L.3 soak in flight. Phase 5 stays in `plan/open/` until 2.6 closes. |
+| Phase 5 does **not** precede `phase2.6-adaptive-stage1` | 2.6 is the active `wip` phase with the L.3 soak in flight. Phase 5 does not displace it. **Superseded in part on 2026-08-26** — see §Parallel track: implementation runs alongside the soak, but 2.6 keeps `wip` and closes first. |
 | Phase 5 **is** promoted ahead of `phase3` and `phase4` | Owner decision. The dashboard does not wait on HTTPS interception or HTML filtering. |
 | Phase 3 and Phase 4 each trigger a follow-up dashboard review | Not a redesign now, and no Phase 5 screen is built around a speculative feature — but the surfaces below are known to move. |
 
@@ -79,6 +78,25 @@ lowest-numbered phase in `open`, which is `phase3`. The promotion above is a
 decision recorded here, not in the algorithm — the owner performs the
 `open` → `wip` move (root CLAUDE.md §Working agreement 3), so the two cannot
 silently disagree without a human in between.
+
+## Parallel track — decided 2026-08-26
+
+Phase 5 implementation runs **in parallel** with `phase2.6-adaptive-stage1`
+while its L.3 soak completes. The soak runs a deployed artifact on the RB5009
+and is independent of this repository's branch topology; the exact soaking
+commit is tagged `soak-p2.6-11` (`1c430aa`, 0.2.20).
+
+| Rule | Value |
+| ---- | ----- |
+| Phase directory | stays in `plan/open/phase5` — no `open` → `wip` move |
+| `wip` | `phase2.6-adaptive-stage1` keeps it, alone, and closes first |
+| Branch chain | `phase5-NN`, cumulative: `phase5-01` from `main`, `phase5-02` from the completed `phase5-01`, and so on |
+| Merge to `main` | only when the phase is complete, and only the tip branch — it already carries every earlier task's history |
+| Rebase | only when `main` moves under the stack; `rebase.updateRefs = true` is set so the intermediate branch refs follow |
+| P2.6 isolation | Phase 5 commits touch `dashboard/` and `fah-api`. A 2.6 soak fix branches from `main`, never from the chain |
+
+Selection is unaffected — the paragraph above still holds, and the owner names
+each Phase 5 task explicitly.
 
 ## Quality gates for this phase
 

@@ -10,7 +10,7 @@ what is true today.
 
 | | |
 | --- | --- |
-| Branch | `main`, `8924ca0`. Everything is on **both** origin and backup; nothing is local-only. Tag `v0.2.19-phase2.5` pushed; 0.2.20 is **not** tagged |
+| Branch | `main`. Tags `v0.2.19-phase2.5` and `soak-p2.6-11` (`1c430aa`, 0.2.20) are on **both** origin and backup; 0.2.20 itself is **not** tagged. Local-only: the `phase5-NN` chain, until Phase 5 merges |
 | Tree | clean. No runtime code change since p2.5-11 (`6417842`) other than phase-2.6 Stage 1 work through p2.6-09; every commit since is documentation, measurement data or the version bump |
 | Tests | green — fmt/clippy/test at `1c430aa`: **1 056 passed, 0 failed, 8 ignored** |
 | Version | 0.2.20 (workspace). **The version string still does not identify a build** — 0.2.19 named both the phase-2.5 production image and the Stage 1 probe image. 0.2.20 is unambiguous today, but discriminate by container `tag` or by whether `/telemetry`'s upstream entries carry the p2.6-06 fields (`state`, `penalty_round`, `penalties`, `penalized_seconds_total`, `probes`, `probe_successes`, `family`) |
@@ -19,6 +19,7 @@ what is true today.
 | Phase | **2.5 closed**, tag `v0.2.19-phase2.5`. **2.6 in `plan/wip/phase2.6-adaptive-stage1`** — 13 tasks, **11 `DONE`**, p2.6-11 in progress |
 | Gate | [Global Architecture Review-Reconciled.md](code-review/Global%20Architecture%20Review-Reconciled.md): §5.1–6 **cleared** — §5.1 p2.5-01, §5.2 p2.5-02, §5.4 p2.5-03, §5.5 p2.5-04, §5.6 p2.5-05 + p2.5-10. §5.7–14 gate Phase 3. **S1-G2 tiers 1, 2 and 3 all met**; **S1-G4 and S1-G5 are not validated and will not be** |
 | **Next** | `p2.6-11` continues — L.4a/L.4b done, the soak closes 2026-09-01 |
+| Phase 5 track | **parallel, does not touch 2.6.** `plan/open/phase5` stays in `open`; 2.6 keeps `wip`. Work happens on the `phase5-NN` cumulative branch chain off `main` (`phase5-01` created 2026-08-26), nothing merges to `main` until the phase completes. The soak is a deployed artifact, unaffected by branch topology — `soak-p2.6-11` tags the exact commit (`1c430aa`, 0.2.20), pushed to origin and backup. Rules: [plan/open/phase5/CLAUDE.md](../plan/open/phase5/CLAUDE.md) §Parallel track |
 
 ## Phase 2.6 — Adaptive DNS Stage 1, in progress
 

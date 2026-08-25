@@ -214,8 +214,13 @@ Phase 2 + proven Stage 1 baseline.
 
 **Numbered 5, scheduled next.** Execution order is
 2.5 → 2.6 → **5** → 3 → 4: the number follows the capability roadmap, the
-position follows what the household needs (owner decision, 2026-08-25). It
-starts when Phase 2.6 closes — the L.3 soak has to return a verdict first.
+position follows what the household needs (owner decision, 2026-08-25).
+Implementation runs **in parallel** with Phase 2.6's L.3 soak, on the `phase5-NN`
+cumulative branch chain (owner decision, 2026-08-26) — the soak runs a deployed
+artifact on the RB5009 and does not depend on branch topology. Phase 2.6 keeps
+`plan/wip/` and closes first; Phase 5 merges to `main` only when the phase is
+complete. Track and rules: [plan/open/phase5/CLAUDE.md](plan/open/phase5/CLAUDE.md)
+§Parallel track.
 
 A static, API-only web interface served by `fah-api` itself on the existing TLS
 listener. No second container, no Node in the runtime image, no new port. Pi-hole
