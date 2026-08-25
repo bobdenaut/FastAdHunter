@@ -221,6 +221,20 @@ to need tuning against real event rates.
 - **E.4** Verify the appliance renders with no internet reachable. The box may
   be the network's only resolver; a dashboard that needs the internet fails
   exactly when it is needed.
+- **E.5** **Certificate experience, as a deployment concern.** The dashboard
+  inherits the API's TLS listener and its certificate; on a household box that
+  is the box's own, so first visit shows a browser warning — and phone browsers
+  are stricter about it than desktop ones. Record what each household browser
+  shows and what it takes to proceed, then recommend a path (accept once,
+  install the CA on household devices, or a trusted name and certificate) in
+  SECURITY.md and the deployment notes.
+
+  **No HTTP fallback**, under any framing. The session cookie is `Secure` and
+  `__Host-`-prefixed, so it does not exist over plain HTTP; serving the
+  dashboard unencrypted would put a session credential and the whole config
+  surface in clear on the LAN. A certificate warning is a deployment problem
+  with a deployment fix, never a reason to downgrade the transport — and
+  nothing in the UI should be designed to make the warning less visible.
 
 ## What this plan refuses to do
 

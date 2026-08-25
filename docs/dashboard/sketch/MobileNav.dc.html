@@ -1,0 +1,96 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+  <style>
+    body { margin: 0; font-family: 'IBM Plex Sans', system-ui, sans-serif; background: #eef1f5; color: #1f2733; -webkit-font-smoothing: antialiased; width: 390px; position: relative; }
+    a { color: #1f7f96; } a:hover { color: #17616f; }
+    .under { filter: blur(1.5px); opacity: .5; }
+    .top { height: 52px; background: #131a24; color: #fff; display: flex; align-items: center; gap: 10px; }
+    .burger { width: 44px; height: 44px; display: flex; align-items: center; justify-content: center; margin-left: 4px; }
+    .tt { font-size: 15px; font-weight: 600; }
+    .wrap { padding: 12px; display: flex; flex-direction: column; gap: 10px; }
+    .g2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+    .tile { border-radius: 5px; color: #fff; padding: 12px; height: 54px; }
+    .scrim { position: absolute; inset: 0; background: rgba(12,17,23,.55); }
+    .drawer { position: absolute; top: 0; left: 0; bottom: 0; width: 288px; background: #131a24; color: #9fb0c3; box-shadow: 2px 0 14px rgba(0,0,0,.35); display: flex; flex-direction: column; }
+    .brand { height: 52px; display: flex; align-items: center; gap: 10px; padding: 0 14px; background: #0e141c; color: #fff; font-weight: 600; font-size: 15px; }
+    .sec { padding: 16px 16px 5px; font-size: 9.5px; letter-spacing: .14em; text-transform: uppercase; color: #5d6d80; }
+    .it { min-height: 44px; display: flex; align-items: center; gap: 12px; padding: 0 16px; font-size: 14px; }
+    .it.on { background: #1b2635; color: #fff; box-shadow: inset 3px 0 0 #24b3cf; }
+    .sub2 { min-height: 44px; display: flex; align-items: center; padding: 0 16px 0 44px; font-size: 13px; }
+    .foot { margin-top: auto; border-top: 1px solid #1d2734; padding: 12px 16px 16px; font-size: 11.5px; color: #6b7c90; display: flex; flex-direction: column; gap: 9px; }
+    .close { position: absolute; top: 4px; left: 296px; width: 44px; height: 44px; display: flex; align-items: center; justify-content: center; }
+  </style>
+</helmet>
+
+<div class="under">
+  <div class="top">
+    <div class="burger"><svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2"><path d="M4 7h16M4 12h16M4 17h16"></path></svg></div>
+    <div class="tt">Dashboard</div>
+  </div>
+  <div class="wrap">
+    <div class="g2">
+      <div class="tile" style="background: #4bb4dd;"></div>
+      <div class="tile" style="background: #c9504b;"></div>
+      <div class="tile" style="background: #dda02c;"></div>
+      <div class="tile" style="background: #dda02c;"></div>
+    </div>
+    <div style="height: 180px; background: #fff; border: 1px solid #dde3ea; border-radius: 5px;"></div>
+    <div style="height: 120px; background: #fff; border: 1px solid #dde3ea; border-radius: 5px;"></div>
+    <div style="height: 120px; background: #fff; border: 1px solid #dde3ea; border-radius: 5px;"></div>
+  </div>
+</div>
+
+<div class="scrim"></div>
+
+<div class="close"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2"><path d="M6 6l12 12M18 6L6 18"></path></svg></div>
+
+<div class="drawer">
+  <div class="brand">
+    <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="#24b3cf" stroke-width="1.8"><circle cx="12" cy="12" r="8"></circle><path d="M12 1.5v4M12 18.5v4M1.5 12h4M18.5 12h4"></path><circle cx="12" cy="12" r="2.4" fill="#24b3cf" stroke="none"></circle></svg>
+    FastAdHunter
+  </div>
+
+  <div class="sec">Overview</div>
+  <div class="it on">Dashboard</div>
+
+  <div class="sec">Filtering</div>
+  <div class="it">Lists</div>
+  <div class="it">Custom Rules</div>
+  <div class="it">Policies</div>
+  <div class="it">Clients</div>
+  <div class="it">Rule Tester</div>
+
+  <div class="sec">Runtime</div>
+  <div class="it">Cache</div>
+  <div class="it">Performance</div>
+  <div class="it">Upstreams</div>
+
+  <div class="sec">System</div>
+  <div class="it">Settings</div>
+  <div class="it">Diagnostics</div>
+  <div class="sub2">Health</div>
+  <div class="sub2">Memory</div>
+  <div class="sub2">Live Feed</div>
+
+  <div class="foot">
+    <div style="display: flex; align-items: center; gap: 8px;">
+      <span style="width: 7px; height: 7px; border-radius: 50%; background: #3d9a63; display: inline-block;"></span>
+      <span>connected · v0.2.20 · up 4h 31m</span>
+    </div>
+    <div style="display: flex; gap: 16px;">
+      <span>Theme</span>
+      <span>Sign out</span>
+    </div>
+  </div>
+</div>
+</x-dc>
+</body>
+</html>

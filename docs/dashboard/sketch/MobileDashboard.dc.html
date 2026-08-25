@@ -1,0 +1,174 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+  <style>
+    body { margin: 0; font-family: 'IBM Plex Sans', system-ui, sans-serif; background: #eef1f5; color: #1f2733; -webkit-font-smoothing: antialiased; width: 390px; }
+    a { color: #1f7f96; } a:hover { color: #17616f; }
+    .top { height: 52px; background: #131a24; color: #fff; display: flex; align-items: center; gap: 10px; padding: 0 6px 0 0; position: sticky; top: 0; z-index: 5; }
+    .burger { width: 44px; height: 44px; display: flex; align-items: center; justify-content: center; margin-left: 4px; }
+    .tt { font-size: 15px; font-weight: 600; }
+    .tr { margin-left: auto; display: flex; align-items: center; gap: 8px; padding-right: 8px; font-size: 11.5px; color: #9fb0c3; }
+    .wrap { padding: 12px; display: flex; flex-direction: column; gap: 12px; }
+    .g2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+    .tile { border-radius: 5px; color: #fff; overflow: hidden; }
+    .tile .in { padding: 10px 12px 10px; }
+    .tile .lb { font-size: 11.5px; font-weight: 500; opacity: .95; }
+    .tile .n { font-size: 24px; font-weight: 600; line-height: 1.15; font-variant-numeric: tabular-nums; margin-top: 1px; }
+    .tile .ft { background: rgba(0,0,0,.13); padding: 5px 12px; font-size: 10.5px; display: flex; align-items: center; justify-content: space-between; min-height: 22px; }
+    .card { background: #fff; border: 1px solid #dde3ea; border-radius: 5px; }
+    .ch { margin: 0; font-size: 13px; font-weight: 600; padding: 11px 12px; border-bottom: 1px solid #e6ebf1; display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+    .bd { padding: 12px; }
+    .note { font-size: 11px; color: #6b7785; line-height: 1.5; }
+    .mono { font-family: 'IBM Plex Mono', monospace; }
+    .num { font-variant-numeric: tabular-nums; font-family: 'IBM Plex Mono', monospace; }
+    .chips { display: flex; gap: 6px; }
+    .chip { border: 1px solid #cfd8e3; background: #fff; border-radius: 4px; min-height: 44px; min-width: 56px; display: flex; align-items: center; justify-content: center; font-size: 12.5px; color: #47535f; flex: 1; }
+    .chip.on { background: #1f9dbb; border-color: #1f9dbb; color: #fff; }
+    .r { display: flex; align-items: center; gap: 10px; min-height: 44px; border-top: 1px solid #f2f5f8; padding: 0 12px; font-size: 12.5px; }
+    .r:first-child { border-top: none; }
+    .bar { height: 4px; border-radius: 2px; background: #e7edf3; overflow: hidden; flex: 1; }
+    .sw { width: 9px; height: 9px; border-radius: 2px; display: inline-block; }
+    .more { display: flex; align-items: center; justify-content: center; min-height: 44px; border-top: 1px solid #f2f5f8; font-size: 12.5px; color: #1f7f96; }
+    .fold { border-top: 1px dashed #b6bfc9; margin: 4px 0; text-align: right; }
+    .fold span { font-size: 9.5px; color: #b6bfc9; background: #eef1f5; padding: 0 6px; position: relative; top: -7px; }
+  </style>
+</helmet>
+
+<div class="top">
+  <div class="burger"><svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2"><path d="M4 7h16M4 12h16M4 17h16"></path></svg></div>
+  <div class="tt">Dashboard</div>
+  <div class="tr"><span style="width: 7px; height: 7px; border-radius: 50%; background: #3d9a63; display: inline-block;"></span>live</div>
+</div>
+
+<div class="wrap">
+
+  <div class="g2">
+    <div class="tile" style="background: #4bb4dd;">
+      <div class="in"><div class="lb">Total queries</div><div class="n">184,233</div></div>
+      <div class="ft"><span>6 clients</span><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.4"><path d="M5 12h13M13 6l6 6-6 6"></path></svg></div>
+    </div>
+    <div class="tile" style="background: #c9504b;">
+      <div class="in"><div class="lb">Blocked</div><div class="n">23,411</div></div>
+      <div class="ft"><span>live feed</span><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.4"><path d="M5 12h13M13 6l6 6-6 6"></path></svg></div>
+    </div>
+    <div class="tile" style="background: #dda02c;">
+      <div class="in"><div class="lb">Blocked</div><div class="n">12.7%</div></div>
+      <div class="ft"><span>of DNS</span><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.4"><path d="M5 12h13M13 6l6 6-6 6"></path></svg></div>
+    </div>
+    <div class="tile" style="background: #dda02c;">
+      <div class="in"><div class="lb">Cache hit</div><div class="n">89.7%</div></div>
+      <div class="ft"><span>cache</span><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.4"><path d="M5 12h13M13 6l6 6-6 6"></path></svg></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3 class="ch"><span>Queries over time</span></h3>
+    <div class="bd" style="padding: 12px 12px 10px;">
+      <div class="chips" style="margin-bottom: 10px;"><span class="chip on">24 h</span><span class="chip">7 d</span><span class="chip">30 d</span></div>
+      <svg viewBox="0 0 342 130" style="width: 100%; height: 130px; display: block;">
+        <line x1="0" y1="20" x2="342" y2="20" stroke="#eef2f6"></line>
+        <line x1="0" y1="60" x2="342" y2="60" stroke="#eef2f6"></line>
+        <line x1="0" y1="100" x2="342" y2="100" stroke="#eef2f6"></line>
+        <polygon fill="#1f9dbb" fill-opacity="0.22" stroke="#1f9dbb" stroke-width="1.5" points="0,88 30,92 60,96 89,98 119,86 149,66 178,50 208,44 238,40 268,52 297,72 327,86 342,92 342,116 0,116"></polygon>
+        <polygon fill="#d1504b" fill-opacity="0.32" stroke="#d1504b" stroke-width="1.5" points="0,110 30,111 60,112 89,112 119,110 149,106 178,103 208,102 238,101 268,104 297,108 327,110 342,111 342,116 0,116"></polygon>
+        <line x1="0" y1="116" x2="342" y2="116" stroke="#cfd8e3"></line>
+        <text x="0" y="128" font-size="9" fill="#8a95a3" font-family="IBM Plex Mono">10:00</text>
+        <text x="342" y="128" font-size="9" fill="#8a95a3" font-family="IBM Plex Mono" text-anchor="end">10:00</text>
+      </svg>
+      <div style="display: flex; gap: 14px; font-size: 11px; color: #47535f; margin-top: 8px;">
+        <span><span class="sw" style="background: #1f9dbb;"></span> allowed</span>
+        <span><span class="sw" style="background: #d1504b;"></span> blocked</span>
+      </div>
+      <p class="note" style="margin: 8px 0 0;">Pinch to zoom is off — the range chips do the work. One tap, no gesture to discover.</p>
+    </div>
+  </div>
+
+  <div class="fold"><span>844 px viewport fold</span></div>
+
+  <div class="g2">
+    <div class="tile" style="background: #4bb4dd;">
+      <div class="in"><div class="lb">HTTP requests</div><div class="n">4,412</div></div>
+      <div class="ft"><span>proxy</span><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.4"><path d="M5 12h13M13 6l6 6-6 6"></path></svg></div>
+    </div>
+    <div class="tile" style="background: #c9504b;">
+      <div class="in"><div class="lb">HTTP blocked</div><div class="n">918</div></div>
+      <div class="ft"><span>3 refused</span><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.4"><path d="M5 12h13M13 6l6 6-6 6"></path></svg></div>
+    </div>
+    <div class="tile" style="background: #45a05e;">
+      <div class="in"><div class="lb">Compiled rules</div><div class="n">752,585</div></div>
+      <div class="ft"><span>13 lists</span><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.4"><path d="M5 12h13M13 6l6 6-6 6"></path></svg></div>
+    </div>
+    <div class="tile" style="background: #45a05e;">
+      <div class="in"><div class="lb">Uptime</div><div class="n">4h 31m</div></div>
+      <div class="ft"><span>status ok</span><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.4"><path d="M5 12h13M13 6l6 6-6 6"></path></svg></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3 class="ch"><span>Top blocked</span><span class="note">24 h</span></h3>
+    <div class="r"><span class="mono" style="flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">ads.example.com</span><div class="bar" style="max-width: 70px;"><div style="width: 100%; height: 100%; background: #d1504b;"></div></div><span class="num" style="width: 46px; text-align: right;">1,289</span></div>
+    <div class="r"><span class="mono" style="flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">telemetry.example.io</span><div class="bar" style="max-width: 70px;"><div style="width: 81%; height: 100%; background: #d1504b;"></div></div><span class="num" style="width: 46px; text-align: right;">1,044</span></div>
+    <div class="r"><span class="mono" style="flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">metrics.vendor.net</span><div class="bar" style="max-width: 70px;"><div style="width: 63%; height: 100%; background: #d1504b;"></div></div><span class="num" style="width: 46px; text-align: right;">812</span></div>
+    <div class="more">Show all 10</div>
+  </div>
+
+  <div class="card">
+    <h3 class="ch"><span>Top clients</span></h3>
+    <div class="r"><span style="flex: 1;">liviu-phone</span><span class="num" style="width: 56px; text-align: right;">30,122</span><span class="num" style="width: 46px; text-align: right; color: #b03c37;">10.0%</span></div>
+    <div class="r"><span style="flex: 1;">desktop</span><span class="num" style="width: 56px; text-align: right;">24,880</span><span class="num" style="width: 46px; text-align: right; color: #b03c37;">17.7%</span></div>
+    <div class="r"><span style="flex: 1;">tv</span><span class="num" style="width: 56px; text-align: right;">18,204</span><span class="num" style="width: 46px; text-align: right; color: #b03c37;">37.9%</span></div>
+    <div class="more">Open Clients</div>
+  </div>
+
+  <div class="card">
+    <h3 class="ch"><span>Query types</span></h3>
+    <div class="bd" style="display: flex; align-items: center; gap: 16px;">
+      <svg width="104" height="104" viewBox="0 0 104 104" style="flex: 0 0 auto;">
+        <circle cx="52" cy="52" r="38" fill="none" stroke="#eef2f6" stroke-width="17"></circle>
+        <circle cx="52" cy="52" r="38" fill="none" stroke="#1f9dbb" stroke-width="17" stroke-dasharray="148.1 90.7" transform="rotate(-90 52 52)"></circle>
+        <circle cx="52" cy="52" r="38" fill="none" stroke="#3d9a63" stroke-width="17" stroke-dasharray="57.3 181.5" stroke-dashoffset="-148.1" transform="rotate(-90 52 52)"></circle>
+        <circle cx="52" cy="52" r="38" fill="none" stroke="#dd9a2f" stroke-width="17" stroke-dasharray="19.1 219.7" stroke-dashoffset="-205.4" transform="rotate(-90 52 52)"></circle>
+      </svg>
+      <div style="font-size: 12px; display: flex; flex-direction: column; gap: 6px;">
+        <span><span class="sw" style="background: #1f9dbb;"></span> A <span class="note">62 %</span></span>
+        <span><span class="sw" style="background: #3d9a63;"></span> AAAA <span class="note">24 %</span></span>
+        <span><span class="sw" style="background: #dd9a2f;"></span> HTTPS <span class="note">8 %</span></span>
+        <span><span class="sw" style="background: #8a95a3;"></span> other <span class="note">6 %</span></span>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3 class="ch"><span>Cache</span><span class="note num">1,108 / 50,000</span></h3>
+    <div class="bd">
+      <div style="display: flex; height: 22px; border-radius: 3px; overflow: hidden; border: 1px solid #e2e8ee;">
+        <div style="flex: 155; background: #3d9a63;"></div>
+        <div style="flex: 953; background: #dd9a2f;"></div>
+        <div style="flex: 4000; background: #f1f4f7;"></div>
+      </div>
+      <div style="display: flex; gap: 12px; font-size: 11px; color: #47535f; margin-top: 8px; flex-wrap: wrap;">
+        <span><span class="sw" style="background: #3d9a63;"></span> fresh 155</span>
+        <span><span class="sw" style="background: #dd9a2f;"></span> stale 953</span>
+        <span><span class="sw" style="background: #c3ccd6;"></span> expired 0</span>
+      </div>
+    </div>
+    <div class="more">Open Cache</div>
+  </div>
+
+  <p class="note" style="margin: 0; padding: 0 2px 8px;">
+    Upstream health, ruleset detail and the long-range tables are not dropped on
+    a phone — they are one tap away on their own pages. The Dashboard keeps what
+    answers "is it working right now".
+  </p>
+
+</div>
+</x-dc>
+</body>
+</html>

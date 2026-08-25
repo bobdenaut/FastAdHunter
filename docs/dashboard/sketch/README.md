@@ -7,13 +7,30 @@ directory is what the screens should look like, not how they are made.
 
 ## What is in here
 
-Thirteen `.dc.html` files, one per screen, plus `canvas.json` describing how
+Seventeen `.dc.html` files, one per screen, plus `canvas.json` describing how
 they sit on a single pan-and-zoom canvas.
 
 | Row | Artboards |
 | --- | --- |
 | Overview & Filtering | `Main` (Dashboard) · `Lists` · `CustomRules` · `Policies` · `Clients` · `RuleTester` |
 | Runtime & System | `Cache` · `Performance` · `Upstreams` · `Settings` · `Health` · `Memory` · `LiveFeed` |
+| Phone, 390 × 844 | `MobileNav` · `MobileDashboard` · `MobileLiveFeed` · `MobileClients` |
+
+The phone row is **normative for the mobile acceptance criteria** in `p5-04`,
+`p5-05` and `p5-07` — it is not a smaller copy of the desktop layout, and the
+rules it settles are the ones those tasks are checked against:
+
+- 44 px minimum on the smallest axis of every interactive control;
+- the body never scrolls sideways — wide content scrolls inside its own
+  container;
+- the sidebar becomes an overlay drawer below 768 px, dismissible by scrim and
+  by close control;
+- table-heavy views become one card per row, never a horizontal table;
+- the Live Feed holds a smaller ring on a narrow viewport (200 against 500) and
+  stops rendering while the page is hidden.
+
+Phone frames are drawn taller than 844 so a whole page is visible at once;
+`MobileDashboard` marks where the fold actually falls.
 
 Each file is self-contained HTML with inline styles and hand-drawn SVG charts.
 They open in a browser directly. There is no build step, no dependency, and no

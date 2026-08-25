@@ -1,0 +1,146 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+  <style>
+    body { margin: 0; font-family: 'IBM Plex Sans', system-ui, sans-serif; background: #eef1f5; color: #1f2733; -webkit-font-smoothing: antialiased; width: 390px; }
+    a { color: #1f7f96; } a:hover { color: #17616f; }
+    .top { height: 52px; background: #131a24; color: #fff; display: flex; align-items: center; gap: 10px; }
+    .burger { width: 44px; height: 44px; display: flex; align-items: center; justify-content: center; margin-left: 4px; }
+    .tt { font-size: 15px; font-weight: 600; }
+    .tr { margin-left: auto; display: flex; align-items: center; gap: 8px; padding-right: 10px; font-size: 11.5px; color: #9fb0c3; }
+    .wrap { padding: 12px; display: flex; flex-direction: column; gap: 10px; }
+    .search { height: 44px; border: 1px solid #cfd8e3; background: #fff; border-radius: 5px; display: flex; align-items: center; gap: 9px; padding: 0 12px; font-size: 13px; color: #8a95a3; }
+    .cl { background: #fff; border: 1px solid #dde3ea; border-radius: 5px; padding: 11px 12px; display: flex; flex-direction: column; gap: 8px; }
+    .cl.act { border-left: 3px solid #1f9dbb; }
+    .row1 { display: flex; align-items: baseline; gap: 8px; }
+    .nm { font-size: 14px; font-weight: 600; }
+    .nm.un { color: #8a95a3; font-weight: 400; font-style: italic; }
+    .ip { font-size: 11.5px; color: #6b7785; font-family: 'IBM Plex Mono', monospace; margin-left: auto; }
+    .pol { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; }
+    .pchip { border-radius: 4px; padding: 3px 9px; font-size: 11.5px; font-family: 'IBM Plex Mono', monospace; border: 1px solid #d9e4ec; background: #eef4f8; color: #33586e; }
+    .pchip.inh { background: #f6f8fa; border-style: dashed; color: #8a95a3; }
+    .note { font-size: 11px; color: #6b7785; line-height: 1.5; }
+    .num { font-variant-numeric: tabular-nums; font-family: 'IBM Plex Mono', monospace; }
+    .stats { display: flex; align-items: center; gap: 12px; font-size: 12px; }
+    .bar { height: 5px; border-radius: 3px; background: #e7edf3; overflow: hidden; flex: 1; }
+    .acts { display: flex; gap: 8px; border-top: 1px solid #f2f5f8; padding-top: 8px; margin-top: 1px; }
+    .btn { border: 1px solid #cfd8e3; background: #fff; border-radius: 4px; height: 44px; display: flex; align-items: center; justify-content: center; font-size: 12.5px; color: #33414f; flex: 1; }
+    .btn.p { background: #1f9dbb; border-color: #1f9dbb; color: #fff; }
+    .card { background: #fff; border: 1px solid #dde3ea; border-radius: 5px; }
+  </style>
+</helmet>
+
+<div class="top">
+  <div class="burger"><svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2"><path d="M4 7h16M4 12h16M4 17h16"></path></svg></div>
+  <div class="tt">Clients</div>
+  <div class="tr"><span style="width: 7px; height: 7px; border-radius: 50%; background: #3d9a63; display: inline-block;"></span>live</div>
+</div>
+
+<div class="wrap">
+
+  <div class="search">
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#8a95a3" stroke-width="2"><circle cx="10.5" cy="10.5" r="6.5"></circle><path d="M15.5 15.5L20 20"></path></svg>
+    search address or name
+  </div>
+
+  <div class="cl">
+    <div class="row1"><span class="nm">liviu-phone</span><span class="ip">192.168.10.15</span></div>
+    <div class="pol"><span class="pchip inh">default</span><span class="note">inherited · no assignment</span></div>
+    <div class="stats">
+      <span class="num">30,122</span><span class="note">queries</span>
+      <div class="bar"><div style="width: 10%; height: 100%; background: #d1504b;"></div></div>
+      <span class="num" style="color: #b03c37;">10.0%</span>
+    </div>
+    <div class="note">last seen 2 s ago</div>
+  </div>
+
+  <div class="cl act">
+    <div class="row1"><span class="nm">tv</span><span class="ip">192.168.10.50</span></div>
+    <div class="pol"><span class="pchip">kids</span><span class="note">mon–fri 21:00 → 07:00 · in force</span></div>
+    <div class="stats">
+      <span class="num">18,204</span><span class="note">queries</span>
+      <div class="bar"><div style="width: 37.9%; height: 100%; background: #d1504b;"></div></div>
+      <span class="num" style="color: #b03c37;">37.9%</span>
+    </div>
+    <div class="note">last seen 11 s ago</div>
+    <div class="acts">
+      <span class="btn">Rename</span>
+      <span class="btn p">Change policy</span>
+    </div>
+  </div>
+
+  <div class="cl">
+    <div class="row1"><span class="nm">desktop</span><span class="ip">192.168.10.4</span></div>
+    <div class="pol"><span class="pchip inh">default</span><span class="note">inherited · no assignment</span></div>
+    <div class="stats">
+      <span class="num">24,880</span><span class="note">queries</span>
+      <div class="bar"><div style="width: 17.7%; height: 100%; background: #d1504b;"></div></div>
+      <span class="num" style="color: #b03c37;">17.7%</span>
+    </div>
+    <div class="note">last seen 4 s ago</div>
+  </div>
+
+  <div class="cl">
+    <div class="row1"><span class="nm un">unnamed</span><span class="ip">192.168.10.22</span></div>
+    <div class="pol"><span class="pchip">kids</span><span class="note" style="color: #a8761f;">sat–sun · window shut now</span></div>
+    <div class="stats">
+      <span class="num">9,118</span><span class="note">queries</span>
+      <div class="bar"><div style="width: 13.2%; height: 100%; background: #d1504b;"></div></div>
+      <span class="num" style="color: #b03c37;">13.2%</span>
+    </div>
+    <div class="note">last seen 1 m ago</div>
+  </div>
+
+  <div class="cl">
+    <div class="row1"><span class="nm un">unnamed</span><span class="ip">192.168.20.11</span></div>
+    <div class="pol"><span class="pchip inh">guest</span><span class="note">via 192.168.20.0/24</span></div>
+    <div class="stats">
+      <span class="num">1,204</span><span class="note">queries</span>
+      <div class="bar"><div style="width: 32.2%; height: 100%; background: #d1504b;"></div></div>
+      <span class="num" style="color: #b03c37;">32.2%</span>
+    </div>
+    <div class="note">last seen 3 m ago</div>
+  </div>
+
+  <div class="cl">
+    <div class="row1"><span class="nm">printer</span><span class="ip">192.168.10.7</span></div>
+    <div class="pol"><span class="pchip inh">default</span></div>
+    <div class="stats">
+      <span class="num">42</span><span class="note">queries</span>
+      <div class="bar"></div>
+      <span class="num" style="color: #6b7785;">0%</span>
+    </div>
+    <div class="note">last seen 2 h ago</div>
+  </div>
+
+  <div class="card">
+    <div style="padding: 11px 12px; font-size: 11.5px; line-height: 1.55; color: #47535f;">
+      A solid chip is an assignment naming <b>this address</b>. A dashed chip is
+      inherited — from a subnet, a name, or the default policy — and the API says
+      which, so the card never has to guess.
+      <span style="display: block; margin-top: 6px;" class="note">Clients are
+      observed by traffic. A device that has never asked anything does not appear
+      here: there is no ARP table and no DHCP lease list behind this page.</span>
+    </div>
+  </div>
+
+  <div class="card">
+    <div style="padding: 11px 12px; font-size: 11.5px; line-height: 1.55; color: #47535f;">
+      <b>Tapping a card expands its actions</b> rather than opening a separate
+      screen — rename and change-policy are the only two, and both are one round
+      trip. A phone reaching this page is usually answering one question: why is
+      that device blocked, and can it stop.
+    </div>
+  </div>
+
+</div>
+</x-dc>
+</body>
+</html>

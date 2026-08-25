@@ -1,0 +1,175 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+  <style>
+    body { margin: 0; font-family: 'IBM Plex Sans', system-ui, sans-serif; background: #eef1f5; color: #1f2733; -webkit-font-smoothing: antialiased; width: 390px; }
+    a { color: #1f7f96; } a:hover { color: #17616f; }
+    .top { height: 52px; background: #131a24; color: #fff; display: flex; align-items: center; gap: 10px; }
+    .burger { width: 44px; height: 44px; display: flex; align-items: center; justify-content: center; margin-left: 4px; }
+    .tt { font-size: 15px; font-weight: 600; }
+    .tr { margin-left: auto; display: flex; align-items: center; gap: 8px; padding-right: 10px; font-size: 11.5px; color: #9fb0c3; }
+    .wrap { padding: 12px; display: flex; flex-direction: column; gap: 12px; }
+    .card { background: #fff; border: 1px solid #dde3ea; border-radius: 5px; }
+    .note { font-size: 11px; color: #6b7785; line-height: 1.5; }
+    .mono { font-family: 'IBM Plex Mono', monospace; }
+    .num { font-variant-numeric: tabular-nums; font-family: 'IBM Plex Mono', monospace; }
+    .scroller { overflow-x: auto; }
+    .chiprow { display: flex; gap: 6px; padding: 0 12px 0 0; }
+    .chip { border: 1px solid #cfd8e3; background: #fff; border-radius: 4px; height: 44px; padding: 0 14px; display: flex; align-items: center; font-size: 12.5px; color: #47535f; white-space: nowrap; flex: 0 0 auto; }
+    .chip.on { background: #1f9dbb; border-color: #1f9dbb; color: #fff; }
+    .ev { background: #fff; border: 1px solid #dde3ea; border-radius: 5px; padding: 10px 12px; display: flex; flex-direction: column; gap: 5px; }
+    .ev.blk { border-left: 3px solid #d1504b; }
+    .ev.alw { border-left: 3px solid #3d9a63; }
+    .ev.pss { border-left: 3px solid #cfd8e3; }
+    .ev.ref { border-left: 3px solid #6b4a86; }
+    .evtop { display: flex; align-items: center; gap: 8px; }
+    .pill { font-size: 10px; font-weight: 600; letter-spacing: .04em; padding: 2px 7px; border-radius: 3px; }
+    .kind { font-size: 9.5px; font-weight: 600; letter-spacing: .06em; color: #6b7785; border: 1px solid #dde3ea; border-radius: 2px; padding: 1px 5px; }
+    .dom { font-size: 13px; font-family: 'IBM Plex Mono', monospace; word-break: break-all; line-height: 1.35; }
+    .meta { font-size: 11px; color: #6b7785; display: flex; flex-wrap: wrap; gap: 4px 10px; }
+    .bar { height: 44px; display: flex; align-items: center; gap: 8px; }
+    .btn { border: 1px solid #cfd8e3; background: #fff; border-radius: 4px; height: 44px; padding: 0 14px; display: flex; align-items: center; justify-content: center; font-size: 12.5px; color: #33414f; flex: 1; gap: 7px; }
+  </style>
+</helmet>
+
+<div class="top">
+  <div class="burger"><svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2"><path d="M4 7h16M4 12h16M4 17h16"></path></svg></div>
+  <div class="tt">Live Feed</div>
+  <div class="tr"><span style="width: 7px; height: 7px; border-radius: 50%; background: #3d9a63; display: inline-block;"></span>socket</div>
+</div>
+
+<div class="wrap">
+
+  <div style="background: #fff6e6; border: 1px solid #e8cf9a; border-left: 3px solid #dd9a2f; border-radius: 5px; padding: 10px 12px; font-size: 11.5px; line-height: 1.5;">
+    <b>A live tail, not a log.</b> Starts empty, keeps the last <b>200</b> rows on
+    this phone, retains nothing. There is no stored query history to search.
+  </div>
+
+  <div class="scroller">
+    <div class="chiprow">
+      <span class="chip on">all</span><span class="chip">block</span><span class="chip">allow</span><span class="chip">pass</span><span class="chip">dns</span><span class="chip">http</span>
+    </div>
+  </div>
+
+  <div class="bar">
+    <span class="btn"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#33414f" stroke-width="2"><path d="M8 5v14M16 5v14"></path></svg>Pause</span>
+    <span class="btn">Clear</span>
+    <span class="btn">Filter…</span>
+  </div>
+
+  <div class="ev blk">
+    <div class="evtop">
+      <span class="pill" style="background: #fbe9e8; color: #b03c37;">BLOCK</span>
+      <span class="kind">HTTP</span>
+      <span class="num note" style="margin-left: auto;">10:41:03</span>
+    </div>
+    <div class="dom">ads.example.com<span style="color: #8a95a3;">/pixel.gif?id=7</span></div>
+    <div class="meta">
+      <span>liviu-phone</span>
+      <span class="mono">||ads.example.com^</span>
+      <span>easylist</span>
+      <span>GET · image · 0 B</span>
+    </div>
+  </div>
+
+  <div class="ev pss">
+    <div class="evtop">
+      <span class="pill" style="background: #eef2f6; color: #55606d;">PASS</span>
+      <span class="kind">DNS</span>
+      <span class="num note" style="margin-left: auto;">10:41:03</span>
+    </div>
+    <div class="dom">github.com</div>
+    <div class="meta"><span>desktop</span><span>A</span><span>cached</span><span class="num">0.1 ms</span></div>
+  </div>
+
+  <div class="ev blk">
+    <div class="evtop">
+      <span class="pill" style="background: #fbe9e8; color: #b03c37;">BLOCK</span>
+      <span class="kind">DNS</span>
+      <span class="num note" style="margin-left: auto;">10:41:03</span>
+    </div>
+    <div class="dom">telemetry.example.io</div>
+    <div class="meta">
+      <span>tv</span>
+      <span class="mono">||telemetry.example.io^</span>
+      <span>oisd-basic</span>
+      <span>AAAA</span>
+    </div>
+  </div>
+
+  <div class="ev pss">
+    <div class="evtop">
+      <span class="pill" style="background: #eef2f6; color: #55606d;">PASS</span>
+      <span class="kind">DNS</span>
+      <span class="num note" style="margin-left: auto;">10:41:02</span>
+    </div>
+    <div class="dom">time.cloudflare.com</div>
+    <div class="meta"><span>192.168.10.22</span><span>A</span><span>endpoint 0</span><span class="num">18.4 ms</span></div>
+  </div>
+
+  <div class="ev alw">
+    <div class="evtop">
+      <span class="pill" style="background: #e4f3ea; color: #2f7d4e;">ALLOW</span>
+      <span class="kind">DNS</span>
+      <span class="num note" style="margin-left: auto;">10:41:02</span>
+    </div>
+    <div class="dom">goodsite.example.com</div>
+    <div class="meta"><span>desktop</span><span class="mono">@@||goodsite.example.com^</span><span>user rules</span></div>
+  </div>
+
+  <div class="ev blk">
+    <div class="evtop">
+      <span class="pill" style="background: #fbe9e8; color: #b03c37;">BLOCK</span>
+      <span class="kind">DNS</span>
+      <span class="num note" style="margin-left: auto;">10:41:02</span>
+    </div>
+    <div class="dom">metrics.vendor.net</div>
+    <div class="meta">
+      <span>tv</span>
+      <span class="mono">||vendor.net^$third-party</span>
+      <span>hagezi-pro</span>
+      <span>policy kids</span>
+    </div>
+  </div>
+
+  <div class="ev ref">
+    <div class="evtop">
+      <span class="pill" style="background: #f3ecf7; color: #6b4a86;">REFUSED</span>
+      <span class="kind">HTTP</span>
+      <span class="num note" style="margin-left: auto;">10:41:01</span>
+    </div>
+    <div class="dom">203.0.113.9<span style="color: #8a95a3;">/beacon</span></div>
+    <div class="meta"><span>192.168.10.50</span><span>egress policy · IP literal host</span></div>
+  </div>
+
+  <div class="card">
+    <div style="padding: 11px 12px; display: flex; align-items: center; gap: 8px; font-size: 11.5px;">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#6b7785" stroke-width="1.9"><circle cx="12" cy="12" r="9"></circle><path d="M12 6.6V12l3.6 2.2"></path></svg>
+      <span class="num">200 / 200 rows held</span>
+      <span class="note" style="margin-left: auto;">0 shed by engine</span>
+    </div>
+  </div>
+
+  <div class="card">
+    <div style="padding: 11px 12px; font-size: 11.5px; line-height: 1.55; color: #47535f;">
+      <b>Rendering stops when this page is hidden.</b> Switch apps or lock the
+      screen and the feed pauses; it resumes on return, having missed whatever
+      arrived meanwhile. A phone should not burn battery drawing rows nobody is
+      looking at, and there is no stored history to backfill from.
+      <span style="display: block; margin-top: 6px;" class="note">The ring is
+      200 on a narrow viewport against 500 on desktop — same bound, sized to
+      the device.</span>
+    </div>
+  </div>
+
+</div>
+</x-dc>
+</body>
+</html>
