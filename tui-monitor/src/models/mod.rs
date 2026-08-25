@@ -4,6 +4,7 @@
 //! the API already publishes as a Rust type is imported rather than restated
 //! (see [`telemetry::Telemetry`]).
 
+pub mod config;
 pub mod events;
 pub mod history;
 pub mod lan;

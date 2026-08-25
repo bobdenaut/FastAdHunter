@@ -35,19 +35,29 @@ pub fn render(frame: &mut Frame, area: Rect, state: &AppState, scroll: u16) -> u
         return 0;
     }
 
-    let sections: Vec<(&str, Vec<Line>)> = match state.telemetry.as_ref() {
+    let upstreams_title = match state.strategy.as_deref() {
+        Some(strategy) => format!("Upstreams - {strategy}"),
+        None => "Upstreams".to_string(),
+    };
+
+    let sections: Vec<(String, Vec<Line>)> = match state.telemetry.as_ref() {
         Some(telemetry) => vec![
-            ("Upstreams", upstream_lines(telemetry)),
-            ("Memory", memory_lines(telemetry)),
-            ("Cache", cache_lines(telemetry)),
-            ("Engine", engine_lines(telemetry)),
+            (upstreams_title, upstream_lines(telemetry)),
+            ("Memory".to_string(), memory_lines(telemetry)),
+            ("Cache".to_string(), cache_lines(telemetry)),
+            ("Engine".to_string(), engine_lines(telemetry)),
         ],
         // Before the first poll every box still draws, so the column does not
         // appear and disappear as the appliance answers.
-        None => ["Upstreams", "Memory", "Cache", "Engine"]
-            .into_iter()
-            .map(|title| (title, vec![waiting()]))
-            .collect(),
+        None => [
+            upstreams_title,
+            "Memory".to_string(),
+            "Cache".to_string(),
+            "Engine".to_string(),
+        ]
+        .into_iter()
+        .map(|title| (title, vec![waiting()]))
+        .collect(),
     };
 
     // Each box is exactly its content plus a border, and the stack is drawn at
@@ -105,12 +115,12 @@ pub fn render(frame: &mut Frame, area: Rect, state: &AppState, scroll: u16) -> u
 ///
 /// Three spans, not one styled string: the word carries the left panel's
 /// heading style and the rule around it stays border-coloured.
-fn boxed<'a>(title: &str) -> Block<'a> {
+fn boxed<'a>(title: String) -> Block<'a> {
     Block::default()
         .borders(Borders::ALL)
         .title(Line::from(vec![
             Span::raw("─ "),
-            Span::styled(title.to_string(), theme::heading()),
+            Span::styled(title, theme::heading()),
             Span::raw(" "),
         ]))
 }
@@ -362,6 +372,72 @@ mod tests {
             buffer.get(1, 0).style().fg,
             Some(theme::ACCENT),
             "the rule before the title is not part of it"
+        );
+    }
+
+    #[test]
+    fn the_upstreams_title_carries_the_applied_strategy() {
+        use ratatui::backend::TestBackend;
+        use ratatui::Terminal;
+
+        let state = crate::state::SharedState::new(crate::config::UiConfig::default().limits());
+        state.update(|app| {
+            app.telemetry = Some(fixtures::telemetry());
+            app.strategy = Some("adaptive".to_string());
+        });
+
+        let mut terminal = Terminal::new(TestBackend::new(SIDE_WIDTH, 60)).unwrap();
+        terminal
+            .draw(|frame| {
+                render(frame, frame.size(), &state.read(), 0);
+            })
+            .unwrap();
+
+        let drawn: String = terminal
+            .backend()
+            .buffer()
+            .content
+            .iter()
+            .map(|c| c.symbol())
+            .collect();
+
+        assert!(
+            drawn.contains("─ Upstreams - adaptive "),
+            "the strategy is missing from the Upstreams title"
+        );
+        assert!(
+            drawn.contains("─ Memory "),
+            "only the Upstreams title is suffixed"
+        );
+    }
+
+    #[test]
+    fn the_upstreams_title_is_bare_before_the_config_is_read() {
+        use ratatui::backend::TestBackend;
+        use ratatui::Terminal;
+
+        let state = crate::state::SharedState::new(crate::config::UiConfig::default().limits());
+        state.update(|app| app.telemetry = Some(fixtures::telemetry()));
+
+        let mut terminal = Terminal::new(TestBackend::new(SIDE_WIDTH, 60)).unwrap();
+        terminal
+            .draw(|frame| {
+                render(frame, frame.size(), &state.read(), 0);
+            })
+            .unwrap();
+
+        let drawn: String = terminal
+            .backend()
+            .buffer()
+            .content
+            .iter()
+            .map(|c| c.symbol())
+            .collect();
+
+        assert!(drawn.contains("─ Upstreams "), "the title still draws");
+        assert!(
+            !drawn.contains("Upstreams -"),
+            "no separator without a strategy to name"
         );
     }
 

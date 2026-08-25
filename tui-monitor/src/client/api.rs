@@ -6,12 +6,14 @@ use std::time::Duration;
 use serde::de::DeserializeOwned;
 
 use crate::config::{Config, TimeoutConfig};
+use crate::models::config::AppliedConfig;
 use crate::models::history::{HistoryPerf, HistorySummary};
 use crate::models::lan::ClientList;
 use crate::models::telemetry::Telemetry;
 
 /// The paths this monitor reads, as API.md documents them.
 pub mod paths {
+    pub const CONFIG: &str = "/api/v1/config";
     pub const TELEMETRY: &str = "/api/v1/telemetry";
     pub const HISTORY_SUMMARY: &str = "/api/v1/history/summary";
     pub const HISTORY_PERF: &str = "/api/v1/history/perf";
@@ -79,6 +81,10 @@ impl ApiClient {
 
     pub async fn telemetry(&self) -> Result<Telemetry, Error> {
         self.get(paths::TELEMETRY, self.timeout.telemetry()).await
+    }
+
+    pub async fn config(&self) -> Result<AppliedConfig, Error> {
+        self.get(paths::CONFIG, self.timeout.telemetry()).await
     }
 
     /// The endpoint's default window: a **rolling** last-24 h at hour

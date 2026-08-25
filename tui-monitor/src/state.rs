@@ -64,6 +64,7 @@ pub struct AppState {
     /// The last complete engine read. `None` until the first poll returns,
     /// which is a different thing from a genuine zero.
     pub telemetry: Option<Telemetry>,
+    pub strategy: Option<String>,
     /// The ~2 s push riding the events socket.
     pub live: StatsPush,
     /// Newest first.
