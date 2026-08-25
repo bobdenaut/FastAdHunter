@@ -1,0 +1,28 @@
+{
+  "artboards": [
+    { "file": "Main.dc.html", "title": "Dashboard", "x": 0, "y": 0, "w": 1440, "h": 1620 },
+    { "file": "Lists.dc.html", "title": "Lists", "x": 1560, "y": 0, "w": 1440, "h": 1000 },
+    { "file": "CustomRules.dc.html", "title": "Custom Rules", "x": 3120, "y": 0, "w": 1440, "h": 800 },
+    { "file": "Policies.dc.html", "title": "Policies", "x": 4680, "y": 0, "w": 1440, "h": 1100 },
+    { "file": "Clients.dc.html", "title": "Clients", "x": 6240, "y": 0, "w": 1440, "h": 1080 },
+    { "file": "RuleTester.dc.html", "title": "Rule Tester", "x": 7800, "y": 0, "w": 1440, "h": 920 },
+
+    { "file": "Cache.dc.html", "title": "Cache", "x": 0, "y": 1980, "w": 1440, "h": 1200 },
+    { "file": "Performance.dc.html", "title": "Performance", "x": 1560, "y": 1980, "w": 1440, "h": 1260 },
+    { "file": "Upstreams.dc.html", "title": "Upstreams", "x": 3120, "y": 1980, "w": 1440, "h": 1120 },
+    { "file": "Settings.dc.html", "title": "Settings", "x": 4680, "y": 1980, "w": 1440, "h": 1180 },
+    { "file": "Health.dc.html", "title": "Diagnostics · Health", "x": 6240, "y": 1980, "w": 1440, "h": 1140 },
+    { "file": "Memory.dc.html", "title": "Diagnostics · Memory", "x": 7800, "y": 1980, "w": 1440, "h": 1400 },
+    { "file": "LiveFeed.dc.html", "title": "Diagnostics · Live Feed", "x": 9360, "y": 1980, "w": 1440, "h": 1040 }
+  ],
+  "annotations": [
+    { "id": "row-filtering", "x": 0, "y": -300, "w": 700, "text": "ROW 1 — Overview & Filtering\nDashboard · Lists · Custom Rules · Policies · Clients · Rule Tester\n\nSketch: layout and interaction only. Every panel maps to a route in capability-matrix.md — nothing is drawn without an endpoint behind it. Figures are the real box where they exist: 752,585 rules, 89.7 % hit, 1,108/50,000 entries." },
+    { "id": "note-rules", "x": 3120, "y": -300, "w": 640, "text": "Custom Rules is a validated document, not a CRUD table.\n\n/rules/user takes lines in and gives lines out — there is no per-rule identity, so no per-rule delete or toggle is offered. Save is all-or-nothing." },
+    { "id": "note-policies", "x": 4680, "y": -300, "w": 640, "text": "Policies replaces Pi-hole's Groups.\n\nA policy is a list subset plus an optional schedule, and one address carries at most one assignment — no many-to-many matrix to render. Assignment is edited inline on Clients." },
+    { "id": "row-runtime", "x": 0, "y": 1680, "w": 700, "text": "ROW 2 — Runtime & System\nCache · Performance · Upstreams · Settings · Health · Memory · Live Feed\n\nThe Runtime three have no Pi-hole equivalent at all: cache lifetime stages and both bounds, per-stage latency percentiles, endpoint health under the adaptive strategy. Same visual language, FAH's own subject matter." },
+    { "id": "note-upstreams", "x": 3120, "y": 1680, "w": 640, "text": "Health and state, never a share-of-traffic pie.\n\nPer-query upstream attribution is deliberately not carried, so the only honest chart is how each endpoint is behaving. `degraded` is explained in place rather than alarmed." },
+    { "id": "note-settings", "x": 4680, "y": 1680, "w": 640, "text": "Settings is grouped by config section, not Pi-hole's subsystem tabs — FAH's real axis is mutability. Every field is tagged LIVE or RESTART." },
+    { "id": "note-memory", "x": 7800, "y": 1680, "w": 640, "text": "Peak is NOT a slice of the donut — it is a lifetime high-water mark, not part of current RSS. It gets the budget rail instead.\n\nBudgets are drawn as markers, never as walls: nothing enforces memory at runtime, the container runs memory-high=unlimited." }
+  ],
+  "launch": { "view": "canvas" }
+}

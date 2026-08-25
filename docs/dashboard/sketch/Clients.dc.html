@@ -1,0 +1,169 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+  <style>
+    body { margin: 0; font-family: 'IBM Plex Sans', system-ui, sans-serif; background: #eef1f5; color: #1f2733; -webkit-font-smoothing: antialiased; }
+    a { color: #1f7f96; } a:hover { color: #17616f; }
+    .app { display: flex; min-height: 100vh; }
+    .sb { width: 230px; flex: 0 0 230px; background: #131a24; color: #9fb0c3; }
+    .brand { height: 58px; display: flex; align-items: center; gap: 10px; padding: 0 16px; background: #0e141c; color: #fff; font-weight: 600; font-size: 15px; }
+    .sec { padding: 18px 16px 6px; font-size: 10px; letter-spacing: .13em; text-transform: uppercase; color: #5d6d80; }
+    .it { padding: 9px 16px; font-size: 13.5px; }
+    .it.on { background: #1b2635; color: #fff; box-shadow: inset 3px 0 0 #24b3cf; }
+    .main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+    .nav { height: 58px; background: #fff; border-bottom: 1px solid #dde3ea; display: flex; align-items: center; justify-content: space-between; padding: 0 20px; }
+    .navr { display: flex; align-items: center; gap: 16px; font-size: 12.5px; color: #6b7785; }
+    .hd { padding: 18px 20px 0; }
+    .h1 { font-size: 20px; font-weight: 600; margin: 0; }
+    .sub { font-size: 12.5px; color: #6b7785; margin: 5px 0 0; }
+    .wrap { padding: 16px 20px 28px; display: flex; flex-direction: column; gap: 16px; }
+    .card { background: #fff; border: 1px solid #dde3ea; border-radius: 4px; }
+    .ch { margin: 0; font-size: 13.5px; font-weight: 600; padding: 12px 14px; border-bottom: 1px solid #e6ebf1; display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+    .bd { padding: 14px; }
+    .note { font-size: 11.5px; color: #6b7785; line-height: 1.55; }
+    .mono { font-family: 'IBM Plex Mono', monospace; }
+    table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+    th { text-align: left; font-weight: 600; color: #6b7785; font-size: 10.5px; text-transform: uppercase; letter-spacing: .06em; padding: 0 10px 8px; }
+    td { padding: 9px 10px; border-top: 1px solid #eef2f6; }
+    .num { text-align: right; font-variant-numeric: tabular-nums; font-family: 'IBM Plex Mono', monospace; }
+    .bar { height: 5px; border-radius: 3px; background: #e7edf3; overflow: hidden; }
+    .pchip { display: inline-block; border-radius: 3px; padding: 1px 8px; font-size: 11.5px; font-family: 'IBM Plex Mono', monospace; border: 1px solid #d9e4ec; background: #eef4f8; color: #33586e; }
+    .pchip.inh { background: #f6f8fa; border-style: dashed; color: #8a95a3; }
+    .inp { border: 1px solid #cfd8e3; border-radius: 3px; padding: 5px 10px; font-size: 12.5px; color: #8a95a3; background: #fff; }
+  </style>
+</helmet>
+
+<div class="app">
+  <div class="sb">
+    <div class="brand"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#24b3cf" stroke-width="1.8"><circle cx="12" cy="12" r="8"></circle><path d="M12 1.5v4M12 18.5v4M1.5 12h4M18.5 12h4"></path><circle cx="12" cy="12" r="2.4" fill="#24b3cf" stroke="none"></circle></svg>FastAdHunter</div>
+    <div class="sec">Overview</div><div class="it">Dashboard</div>
+    <div class="sec">Filtering</div><div class="it">Lists</div><div class="it">Custom Rules</div><div class="it">Policies</div><div class="it on">Clients</div><div class="it">Rule Tester</div>
+    <div class="sec">Runtime</div><div class="it">Cache</div><div class="it">Performance</div><div class="it">Upstreams</div>
+    <div class="sec">System</div><div class="it">Settings</div><div class="it">Diagnostics</div>
+  </div>
+
+  <div class="main">
+    <div class="nav">
+      <div style="font-size: 14px; font-weight: 600;">Clients</div>
+      <div class="navr"><span>v0.2.20</span><span>up 4h 31m</span><span>theme</span><span>sign out</span></div>
+    </div>
+
+    <div class="hd">
+      <p class="h1">Clients</p>
+      <p class="sub">Every address that has actually asked something — <span class="mono">GET /api/v1/clients</span></p>
+    </div>
+
+    <div class="wrap">
+
+      <div class="card">
+        <h3 class="ch">
+          <span>Observed clients</span>
+          <span style="display: flex; gap: 8px; align-items: center;"><span class="inp" style="width: 200px;">search address or name…</span></span>
+        </h3>
+        <div class="bd" style="padding: 12px 0 0;">
+          <table>
+            <tr>
+              <th style="padding-left: 14px;">Address</th><th>Name</th><th>Policy in force</th><th class="num">Queries 24 h</th><th class="num">Blocked</th><th style="width: 16%;">Blocked share</th><th>Last seen</th><th style="padding-right: 14px;"></th>
+            </tr>
+            <tr>
+              <td style="padding-left: 14px;" class="mono">192.168.10.15</td>
+              <td class="mono">liviu-phone</td>
+              <td><span class="pchip inh">default</span></td>
+              <td class="num">30,122</td><td class="num">3,020</td>
+              <td><div class="bar"><div style="width: 10%; height: 100%; background: #d1504b;"></div></div><div class="note num" style="margin-top: 3px;">10.0 %</div></td>
+              <td class="mono" style="color: #6b7785;">2 s ago</td>
+              <td style="padding-right: 14px; text-align: right; color: #8a95a3;">⋯</td>
+            </tr>
+            <tr>
+              <td style="padding-left: 14px;" class="mono">192.168.10.4</td>
+              <td class="mono">desktop</td>
+              <td><span class="pchip inh">default</span></td>
+              <td class="num">24,880</td><td class="num">4,411</td>
+              <td><div class="bar"><div style="width: 17.7%; height: 100%; background: #d1504b;"></div></div><div class="note num" style="margin-top: 3px;">17.7 %</div></td>
+              <td class="mono" style="color: #6b7785;">4 s ago</td>
+              <td style="padding-right: 14px; text-align: right; color: #8a95a3;">⋯</td>
+            </tr>
+            <tr style="background: #f7fbfc;">
+              <td style="padding-left: 14px;" class="mono">192.168.10.50</td>
+              <td class="mono">tv</td>
+              <td><span class="pchip">kids</span> <span class="note">mon–fri 21:00 → 07:00</span></td>
+              <td class="num">18,204</td><td class="num">6,902</td>
+              <td><div class="bar"><div style="width: 37.9%; height: 100%; background: #d1504b;"></div></div><div class="note num" style="margin-top: 3px;">37.9 %</div></td>
+              <td class="mono" style="color: #6b7785;">11 s ago</td>
+              <td style="padding-right: 14px; text-align: right; color: #8a95a3;">⋯</td>
+            </tr>
+            <tr>
+              <td style="padding-left: 14px;" class="mono">192.168.10.22</td>
+              <td style="color: #b6bfc9;">unnamed</td>
+              <td><span class="pchip">kids</span> <span class="note">sat–sun · window shut now</span></td>
+              <td class="num">9,118</td><td class="num">1,204</td>
+              <td><div class="bar"><div style="width: 13.2%; height: 100%; background: #d1504b;"></div></div><div class="note num" style="margin-top: 3px;">13.2 %</div></td>
+              <td class="mono" style="color: #6b7785;">1 m ago</td>
+              <td style="padding-right: 14px; text-align: right; color: #8a95a3;">⋯</td>
+            </tr>
+            <tr>
+              <td style="padding-left: 14px;" class="mono">192.168.20.11</td>
+              <td style="color: #b6bfc9;">unnamed</td>
+              <td><span class="pchip inh">guest</span> <span class="note">via 192.168.20.0/24</span></td>
+              <td class="num">1,204</td><td class="num">388</td>
+              <td><div class="bar"><div style="width: 32.2%; height: 100%; background: #d1504b;"></div></div><div class="note num" style="margin-top: 3px;">32.2 %</div></td>
+              <td class="mono" style="color: #6b7785;">3 m ago</td>
+              <td style="padding-right: 14px; text-align: right; color: #8a95a3;">⋯</td>
+            </tr>
+            <tr>
+              <td style="padding-left: 14px;" class="mono">192.168.10.7</td>
+              <td class="mono">printer</td>
+              <td><span class="pchip inh">default</span></td>
+              <td class="num">42</td><td class="num">0</td>
+              <td><div class="bar"></div><div class="note num" style="margin-top: 3px;">0 %</div></td>
+              <td class="mono" style="color: #6b7785;">2 h ago</td>
+              <td style="padding-right: 14px; text-align: right; color: #8a95a3;">⋯</td>
+            </tr>
+          </table>
+          <p class="note" style="margin: 0; padding: 12px 14px; border-top: 1px solid #eef2f6;">
+            A solid chip is an assignment naming <i>this address</i>. A dashed chip is inherited — from a subnet, a name, or <span class="mono">default</span> — and the API says which, so the UI never has to guess why a client is where it is.
+            <span style="display: block; margin-top: 4px;">A client whose schedule window is shut still shows its policy, marked as not in force. That is the honest reading: the assignment exists, it is simply not deciding anything right now.</span>
+          </p>
+        </div>
+      </div>
+
+      <div style="display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 16px;">
+        <div class="card">
+          <h3 class="ch"><span>Editing a client</span></h3>
+          <div class="bd">
+            <div style="display: grid; grid-template-columns: 130px 1fr; gap: 12px; align-items: center; font-size: 12.5px;">
+              <span style="color: #6b7785;">Address</span><span class="mono">192.168.10.50</span>
+              <span style="color: #6b7785;">Name</span><span><span class="inp" style="color: #1f2733; font-family: 'IBM Plex Mono', monospace;">tv</span> <span class="note">clear it to go back to unnamed</span></span>
+              <span style="color: #6b7785;">Policy</span><span><span class="inp" style="color: #1f2733;">kids</span></span>
+              <span style="color: #6b7785;">Days</span><span><span class="inp" style="color: #1f2733; font-family: 'IBM Plex Mono', monospace;">mon-fri</span></span>
+              <span style="color: #6b7785;">Window</span><span><span class="inp" style="color: #1f2733; font-family: 'IBM Plex Mono', monospace;">21:00</span> → <span class="inp" style="color: #1f2733; font-family: 'IBM Plex Mono', monospace;">07:00</span></span>
+            </div>
+            <p class="note" style="margin: 12px 0 0;">Start and end are set together or not at all. Saving replaces any assignment this address already had, in whichever policy held it — one address, one assignment.</p>
+          </div>
+        </div>
+
+        <div class="card">
+          <h3 class="ch"><span>What this page is not</span></h3>
+          <div class="bd">
+            <p class="note" style="margin: 0;">
+              Clients here are <b>observed by traffic</b>. There is no ARP table, no DHCP lease list, and no device inventory behind this — a machine that has never sent a query does not appear, and one that stops asking stays listed with an old <span class="mono">last_seen</span> rather than dropping off.
+              <span style="display: block; margin-top: 6px;">Names are a label you set, not something discovered from the network. FastAdHunter does not do reverse lookups to fill them in.</span>
+              <span style="display: block; margin-top: 6px;">The 24 h counts come from the same rolling window as the Dashboard, so they will not agree with a longer range picked on the history pages.</span>
+            </p>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+</x-dc>
+</body>
+</html>

@@ -1,0 +1,194 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+  <style>
+    body { margin: 0; font-family: 'IBM Plex Sans', system-ui, sans-serif; background: #eef1f5; color: #1f2733; -webkit-font-smoothing: antialiased; }
+    a { color: #1f7f96; } a:hover { color: #17616f; }
+    .app { display: flex; min-height: 100vh; }
+    .sb { width: 230px; flex: 0 0 230px; background: #131a24; color: #9fb0c3; }
+    .brand { height: 58px; display: flex; align-items: center; gap: 10px; padding: 0 16px; background: #0e141c; color: #fff; font-weight: 600; font-size: 15px; }
+    .sec { padding: 18px 16px 6px; font-size: 10px; letter-spacing: .13em; text-transform: uppercase; color: #5d6d80; }
+    .it { padding: 9px 16px; font-size: 13.5px; }
+    .it.on { background: #1b2635; color: #fff; box-shadow: inset 3px 0 0 #24b3cf; }
+    .main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+    .nav { height: 58px; background: #fff; border-bottom: 1px solid #dde3ea; display: flex; align-items: center; justify-content: space-between; padding: 0 20px; }
+    .navr { display: flex; align-items: center; gap: 16px; font-size: 12.5px; color: #6b7785; }
+    .hd { padding: 18px 20px 0; }
+    .h1 { font-size: 20px; font-weight: 600; margin: 0; }
+    .sub { font-size: 12.5px; color: #6b7785; margin: 5px 0 0; }
+    .wrap { padding: 16px 20px 28px; display: flex; flex-direction: column; gap: 16px; }
+    .row2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+    .row3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
+    .card { background: #fff; border: 1px solid #dde3ea; border-radius: 4px; }
+    .ch { margin: 0; font-size: 13.5px; font-weight: 600; padding: 12px 14px; border-bottom: 1px solid #e6ebf1; display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+    .bd { padding: 14px; }
+    .note { font-size: 11.5px; color: #6b7785; line-height: 1.55; }
+    .mono { font-family: 'IBM Plex Mono', monospace; }
+    .num { font-variant-numeric: tabular-nums; font-family: 'IBM Plex Mono', monospace; }
+    .chip { border: 1px solid #cfd8e3; background: #fff; border-radius: 3px; padding: 3px 10px; font-size: 11.5px; color: #47535f; }
+    .chip.on { background: #1f9dbb; border-color: #1f9dbb; color: #fff; }
+    .sw { width: 10px; height: 10px; border-radius: 2px; display: inline-block; vertical-align: -1px; }
+    .big { font-size: 25px; font-weight: 600; font-variant-numeric: tabular-nums; font-family: 'IBM Plex Mono', monospace; }
+    .ok { background: #e4f3ea; color: #2f7d4e; font-size: 10.5px; font-weight: 600; padding: 2px 8px; border-radius: 3px; letter-spacing: .03em; }
+  </style>
+</helmet>
+
+<div class="app">
+  <div class="sb">
+    <div class="brand"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#24b3cf" stroke-width="1.8"><circle cx="12" cy="12" r="8"></circle><path d="M12 1.5v4M12 18.5v4M1.5 12h4M18.5 12h4"></path><circle cx="12" cy="12" r="2.4" fill="#24b3cf" stroke="none"></circle></svg>FastAdHunter</div>
+    <div class="sec">Overview</div><div class="it">Dashboard</div>
+    <div class="sec">Filtering</div><div class="it">Lists</div><div class="it">Custom Rules</div><div class="it">Policies</div><div class="it">Clients</div><div class="it">Rule Tester</div>
+    <div class="sec">Runtime</div><div class="it">Cache</div><div class="it on">Performance</div><div class="it">Upstreams</div>
+    <div class="sec">System</div><div class="it">Settings</div><div class="it">Diagnostics</div>
+  </div>
+
+  <div class="main">
+    <div class="nav">
+      <div style="font-size: 14px; font-weight: 600;">Performance</div>
+      <div class="navr"><span>v0.2.20</span><span>up 4h 31m</span><span>theme</span><span>sign out</span></div>
+    </div>
+
+    <div class="hd">
+      <p class="h1">Performance</p>
+      <p class="sub">What the engine adds, per sample — <span class="mono">GET /api/v1/history/perf</span>, one row per 60 s</p>
+    </div>
+
+    <div class="wrap">
+
+      <div class="row3">
+        <div class="card"><div class="bd">
+          <div class="note">block stage, p99</div>
+          <div style="display: flex; align-items: baseline; gap: 10px; margin-top: 3px;"><span class="big">0.039</span><span class="note">ms</span><span class="ok" style="margin-left: auto;">BUDGET &lt; 1 ms</span></div>
+          <div style="height: 6px; border-radius: 3px; background: #e7edf3; overflow: hidden; margin-top: 9px;"><div style="width: 3.9%; height: 100%; background: #3d9a63;"></div></div>
+        </div></div>
+        <div class="card"><div class="bd">
+          <div class="note">cache-hit stage, p99</div>
+          <div style="display: flex; align-items: baseline; gap: 10px; margin-top: 3px;"><span class="big">0.051</span><span class="note">ms</span><span class="ok" style="margin-left: auto;">BUDGET &lt; 1 ms</span></div>
+          <div style="height: 6px; border-radius: 3px; background: #e7edf3; overflow: hidden; margin-top: 9px;"><div style="width: 5.1%; height: 100%; background: #3d9a63;"></div></div>
+        </div></div>
+        <div class="card"><div class="bd">
+          <div class="note">forward stage, engine overhead p99</div>
+          <div style="display: flex; align-items: baseline; gap: 10px; margin-top: 3px;"><span class="big">0.412</span><span class="note">ms</span><span class="ok" style="margin-left: auto;">BUDGET &lt; 1 ms</span></div>
+          <div style="height: 6px; border-radius: 3px; background: #e7edf3; overflow: hidden; margin-top: 9px;"><div style="width: 41.2%; height: 100%; background: #dd9a2f;"></div></div>
+        </div></div>
+      </div>
+
+      <div class="card">
+        <h3 class="ch">
+          <span>In-engine latency, p50 and p99 by stage</span>
+          <span style="display: flex; gap: 6px;"><span class="chip">24 h</span><span class="chip on">7 d</span><span class="chip">30 d</span></span>
+        </h3>
+        <div class="bd">
+          <svg viewBox="0 0 1360 226" style="width: 100%; height: 226px; display: block;">
+            <line x1="0" y1="30" x2="1360" y2="30" stroke="#eef2f6"></line>
+            <line x1="0" y1="80" x2="1360" y2="80" stroke="#eef2f6"></line>
+            <line x1="0" y1="130" x2="1360" y2="130" stroke="#eef2f6"></line>
+            <line x1="0" y1="180" x2="1360" y2="180" stroke="#eef2f6"></line>
+            <text x="1360" y="27" font-size="10" fill="#b6bfc9" text-anchor="end" font-family="IBM Plex Mono">1.0 ms — budget</text>
+            <line x1="0" y1="30" x2="1360" y2="30" stroke="#dd9a2f" stroke-width="1.2" stroke-dasharray="5 4"></line>
+            <text x="1360" y="77" font-size="10" fill="#b6bfc9" text-anchor="end" font-family="IBM Plex Mono">0.75 ms</text>
+            <text x="1360" y="127" font-size="10" fill="#b6bfc9" text-anchor="end" font-family="IBM Plex Mono">0.50 ms</text>
+            <text x="1360" y="177" font-size="10" fill="#b6bfc9" text-anchor="end" font-family="IBM Plex Mono">0.25 ms</text>
+
+            <polyline fill="none" stroke="#6f5fbe" stroke-width="1.8" points="0,148 59,146 118,150 177,144 237,142 296,147 355,152 414,145 473,141 532,143 591,149 650,146 710,140 769,144 828,147 887,143 946,145 1005,141 1064,146 1123,148 1183,143 1242,145 1301,142 1360,138"></polyline>
+            <polyline fill="none" stroke="#6f5fbe" stroke-width="1.4" stroke-dasharray="4 3" opacity="0.55" points="0,196 59,195 118,197 177,194 237,194 296,196 355,198 414,195 473,193 532,194 591,196 650,195 710,193 769,194 828,196 887,194 946,195 1005,193 1064,195 1123,196 1183,194 1242,195 1301,193 1360,192"></polyline>
+
+            <polyline fill="none" stroke="#3d9a63" stroke-width="1.8" points="0,210 59,210 118,211 177,210 237,209 296,210 355,211 414,210 473,209 532,210 591,210 650,210 710,209 769,210 828,210 887,209 946,210 1005,209 1064,210 1123,210 1183,209 1242,210 1301,209 1360,210"></polyline>
+            <polyline fill="none" stroke="#1f9dbb" stroke-width="1.8" points="0,209 59,209 118,210 177,209 237,208 296,209 355,210 414,209 473,208 532,209 591,209 650,209 710,208 769,209 828,209 887,208 946,209 1005,208 1064,209 1123,209 1183,208 1242,209 1301,208 1360,209"></polyline>
+
+            <line x1="0" y1="220" x2="1360" y2="220" stroke="#cfd8e3"></line>
+            <text x="0" y="238" font-size="10" fill="#8a95a3" font-family="IBM Plex Mono">7 d ago</text>
+            <text x="1360" y="238" font-size="10" fill="#8a95a3" font-family="IBM Plex Mono" text-anchor="end">now</text>
+          </svg>
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 8px; gap: 20px;">
+            <div style="display: flex; gap: 18px; font-size: 11.5px; color: #47535f;">
+              <span><span class="sw" style="background: #3d9a63;"></span> block</span>
+              <span><span class="sw" style="background: #1f9dbb;"></span> cache hit</span>
+              <span><span class="sw" style="background: #6f5fbe;"></span> forward (engine only)</span>
+              <span style="color: #6b7785;">solid p99 · dashed p50</span>
+            </div>
+            <span class="note" style="text-align: right;">never an average — an average hides the tail the budget is written against</span>
+          </div>
+          <p class="note" style="margin: 12px 0 0; border-top: 1px solid #eef2f6; padding-top: 11px;">
+            Forward excludes upstream round-trip time: these three stages measure only what FastAdHunter adds. Block and cache-hit sit so near the axis that they read as flat — which is the point of the chart, not a failure of it.
+            <span style="display: block; margin-top: 5px;">Percentiles are bucket-granularity estimates over each sampling interval and saturate at the top finite bucket. Good for a trend line, not exact quantiles.</span>
+          </p>
+        </div>
+      </div>
+
+      <div class="row2">
+        <div class="card">
+          <h3 class="ch"><span>Queries per second</span><span class="note">per-interval, not cumulative</span></h3>
+          <div class="bd">
+            <svg viewBox="0 0 620 140" style="width: 100%; height: 140px; display: block;">
+              <line x1="0" y1="20" x2="620" y2="20" stroke="#eef2f6"></line>
+              <line x1="0" y1="60" x2="620" y2="60" stroke="#eef2f6"></line>
+              <line x1="0" y1="100" x2="620" y2="100" stroke="#eef2f6"></line>
+              <text x="620" y="17" font-size="10" fill="#b6bfc9" text-anchor="end" font-family="IBM Plex Mono">30 /s</text>
+              <text x="620" y="97" font-size="10" fill="#b6bfc9" text-anchor="end" font-family="IBM Plex Mono">10 /s</text>
+              <polygon fill="#1f9dbb" fill-opacity="0.2" stroke="#1f9dbb" stroke-width="1.6" points="0,104 27,101 54,98 81,92 108,86 135,80 162,74 189,70 216,66 243,62 270,64 297,68 324,74 351,80 378,86 405,92 432,96 459,100 486,102 513,98 540,94 567,92 594,90 620,89 620,120 0,120"></polygon>
+              <line x1="0" y1="120" x2="620" y2="120" stroke="#cfd8e3"></line>
+              <text x="0" y="136" font-size="10" fill="#8a95a3" font-family="IBM Plex Mono">7 d ago</text>
+              <text x="620" y="136" font-size="10" fill="#8a95a3" font-family="IBM Plex Mono" text-anchor="end">now</text>
+            </svg>
+            <div style="display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 14px; margin-top: 10px; font-size: 12.5px;">
+              <div><div class="num" style="font-size: 17px; font-weight: 600;">12.5</div><div class="note">now, per second</div></div>
+              <div><div class="num" style="font-size: 17px; font-weight: 600;">28.4</div><div class="note">busiest sample</div></div>
+              <div><div class="num" style="font-size: 17px; font-weight: 600;">20 k+</div><div class="note">sustained capacity measured</div></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <h3 class="ch"><span>Verdicts per interval</span><span class="note">pass · allow · block</span></h3>
+          <div class="bd">
+            <svg viewBox="0 0 620 140" style="width: 100%; height: 140px; display: block;">
+              <line x1="0" y1="20" x2="620" y2="20" stroke="#eef2f6"></line>
+              <line x1="0" y1="60" x2="620" y2="60" stroke="#eef2f6"></line>
+              <line x1="0" y1="100" x2="620" y2="100" stroke="#eef2f6"></line>
+              <polygon fill="#8a95a3" fill-opacity="0.28" stroke="#8a95a3" stroke-width="1.5" points="0,102 27,99 54,96 81,90 108,84 135,78 162,72 189,68 216,64 243,60 270,62 297,66 324,72 351,78 378,84 405,90 432,94 459,98 486,100 513,96 540,92 567,90 594,88 620,87 620,120 0,120"></polygon>
+              <polygon fill="#d1504b" fill-opacity="0.35" stroke="#d1504b" stroke-width="1.5" points="0,112 27,111 54,110 81,108 108,106 135,104 162,102 189,101 216,100 243,99 270,99 297,100 324,102 351,104 378,106 405,108 432,110 459,111 486,112 513,110 540,109 567,108 594,108 620,107 620,120 0,120"></polygon>
+              <line x1="0" y1="120" x2="620" y2="120" stroke="#cfd8e3"></line>
+              <text x="0" y="136" font-size="10" fill="#8a95a3" font-family="IBM Plex Mono">7 d ago</text>
+              <text x="620" y="136" font-size="10" fill="#8a95a3" font-family="IBM Plex Mono" text-anchor="end">now</text>
+            </svg>
+            <div style="display: flex; gap: 18px; font-size: 11.5px; color: #47535f; margin-top: 10px;">
+              <span><span class="sw" style="background: #8a95a3;"></span> pass</span>
+              <span><span class="sw" style="background: #d1504b;"></span> block</span>
+              <span><span class="sw" style="background: #3d9a63;"></span> allow <span class="note">(too few to see at this scale)</span></span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3 class="ch"><span>Reading this page</span></h3>
+        <div class="bd" style="display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 22px;">
+          <div>
+            <div style="font-size: 12.5px; font-weight: 500; margin-bottom: 5px;">Three stages, never one number</div>
+            <p class="note" style="margin: 0;">Every resolved query lands in exactly one of block, cache hit or forward. A latency figure without its stage is meaningless — a fast average is usually just a high cache-hit rate.</p>
+          </div>
+          <div>
+            <div style="font-size: 12.5px; font-weight: 500; margin-bottom: 5px;">Decimation is visible</div>
+            <p class="note" style="margin: 0;">At 60 s sampling, one day is 1,440 rows, so a wide range is thinned. Only every n-th row is returned — whole rows, never averaged — and the chart says when that happens.</p>
+          </div>
+          <div>
+            <div style="font-size: 12.5px; font-weight: 500; margin-bottom: 5px;">The budget is a target, not a limit</div>
+            <p class="note" style="margin: 0;">Nothing enforces these at runtime. A line crossed is something to investigate against a pre-change build, not a failure the engine will act on.</p>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+</x-dc>
+</body>
+</html>

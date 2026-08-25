@@ -1,0 +1,201 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+  <style>
+    body { margin: 0; font-family: 'IBM Plex Sans', system-ui, sans-serif; background: #eef1f5; color: #1f2733; -webkit-font-smoothing: antialiased; }
+    a { color: #1f7f96; } a:hover { color: #17616f; }
+    .app { display: flex; min-height: 100vh; }
+    .sb { width: 230px; flex: 0 0 230px; background: #131a24; color: #9fb0c3; }
+    .brand { height: 58px; display: flex; align-items: center; gap: 10px; padding: 0 16px; background: #0e141c; color: #fff; font-weight: 600; font-size: 15px; }
+    .sec { padding: 18px 16px 6px; font-size: 10px; letter-spacing: .13em; text-transform: uppercase; color: #5d6d80; }
+    .it { display: flex; align-items: center; gap: 10px; padding: 9px 16px; font-size: 13.5px; }
+    .it.on { background: #1b2635; color: #fff; box-shadow: inset 3px 0 0 #24b3cf; }
+    .main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+    .nav { height: 58px; background: #fff; border-bottom: 1px solid #dde3ea; display: flex; align-items: center; justify-content: space-between; padding: 0 20px; }
+    .navr { display: flex; align-items: center; gap: 16px; font-size: 12.5px; color: #6b7785; }
+    .hd { padding: 18px 20px 0; display: flex; justify-content: space-between; align-items: flex-end; }
+    .h1 { font-size: 20px; font-weight: 600; margin: 0; }
+    .sub { font-size: 12.5px; color: #6b7785; margin: 5px 0 0; }
+    .wrap { padding: 16px 20px 28px; display: flex; flex-direction: column; gap: 16px; }
+    .card { background: #fff; border: 1px solid #dde3ea; border-radius: 4px; }
+    .ch { margin: 0; font-size: 13.5px; font-weight: 600; padding: 12px 14px; border-bottom: 1px solid #e6ebf1; display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+    .bd { padding: 14px; }
+    table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+    th { text-align: left; font-weight: 600; color: #6b7785; font-size: 10.5px; text-transform: uppercase; letter-spacing: .06em; padding: 0 10px 8px; }
+    td { padding: 9px 10px; border-top: 1px solid #eef2f6; vertical-align: top; }
+    .num { text-align: right; font-variant-numeric: tabular-nums; font-family: 'IBM Plex Mono', monospace; }
+    .mono { font-family: 'IBM Plex Mono', monospace; }
+    .note { font-size: 11.5px; color: #6b7785; line-height: 1.5; }
+    .pill { display: inline-block; padding: 1px 8px; border-radius: 3px; font-size: 10.5px; font-weight: 600; letter-spacing: .03em; }
+    .btn { background: #1f9dbb; color: #fff; border-radius: 3px; padding: 7px 13px; font-size: 12.5px; font-weight: 500; display: inline-block; }
+    .btn.g { background: #fff; color: #33414f; border: 1px solid #cfd8e3; }
+    .sw { width: 32px; height: 18px; border-radius: 9px; background: #3d9a63; position: relative; display: inline-block; }
+    .sw i { position: absolute; top: 2px; right: 2px; width: 14px; height: 14px; border-radius: 50%; background: #fff; }
+    .sw.off { background: #cfd8e3; }
+    .sw.off i { right: auto; left: 2px; }
+    .seg { display: flex; height: 7px; border-radius: 3px; overflow: hidden; width: 190px; }
+    .lk { color: #8a95a3; }
+  </style>
+</helmet>
+
+<div class="app">
+
+  <div class="sb">
+    <div class="brand">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#24b3cf" stroke-width="1.8"><circle cx="12" cy="12" r="8"></circle><path d="M12 1.5v4M12 18.5v4M1.5 12h4M18.5 12h4"></path><circle cx="12" cy="12" r="2.4" fill="#24b3cf" stroke="none"></circle></svg>
+      FastAdHunter
+    </div>
+    <div class="sec">Overview</div>
+    <div class="it">Dashboard</div>
+    <div class="sec">Filtering</div>
+    <div class="it on">Lists</div>
+    <div class="it">Custom Rules</div>
+    <div class="it">Policies</div>
+    <div class="it">Clients</div>
+    <div class="it">Rule Tester</div>
+    <div class="sec">Runtime</div>
+    <div class="it">Cache</div>
+    <div class="it">Performance</div>
+    <div class="it">Upstreams</div>
+    <div class="sec">System</div>
+    <div class="it">Settings</div>
+    <div class="it">Diagnostics</div>
+  </div>
+
+  <div class="main">
+    <div class="nav">
+      <div style="font-size: 14px; font-weight: 600;">Lists</div>
+      <div class="navr">
+        <span style="display: flex; align-items: center; gap: 6px;"><span style="width: 8px; height: 8px; border-radius: 50%; background: #3d9a63; display: inline-block;"></span>live</span>
+        <span>v0.2.20</span>
+        <span>theme</span>
+        <span>sign out</span>
+      </div>
+    </div>
+
+    <div class="hd">
+      <div>
+        <p class="h1">Rule lists</p>
+        <p class="sub">Adding, enabling or removing a list rewrites <span class="mono">[[rules.lists]]</span> in the config before the change reaches the engine — the file and the running engine never disagree</p>
+      </div>
+      <div style="display: flex; gap: 8px;">
+        <span class="btn g">Refresh all</span>
+        <span class="btn">Add list</span>
+      </div>
+    </div>
+
+    <div class="wrap">
+
+      <div class="card">
+        <div class="bd" style="display: grid; grid-template-columns: repeat(4, minmax(0,1fr)); gap: 20px;">
+          <div><div style="font-size: 21px; font-weight: 600;" class="mono">512,883</div><div class="note">compiled rules</div></div>
+          <div><div style="font-size: 21px; font-weight: 600;" class="mono">87,422</div><div class="note">duplicates removed</div></div>
+          <div><div style="font-size: 21px; font-weight: 600;" class="mono">7.41 s</div><div class="note">last compile</div></div>
+          <div><div style="font-size: 21px; font-weight: 600;" class="mono">13 / 15</div><div class="note">enabled / configured</div></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3 class="ch">
+          <span>Configured lists</span>
+          <span class="note"><span style="display:inline-block;width:8px;height:8px;background:#1f9dbb;border-radius:2px;"></span> domain tier &nbsp; <span style="display:inline-block;width:8px;height:8px;background:#6f5fbe;border-radius:2px;"></span> URL tier &nbsp; <span style="display:inline-block;width:8px;height:8px;background:#d6dde5;border-radius:2px;"></span> not answered by any tier yet</span>
+        </h3>
+        <div class="bd" style="padding: 12px 0 0;">
+          <table>
+            <tr>
+              <th style="padding-left: 14px;">List</th><th>On</th><th>Every</th><th>Last refresh</th><th>Status</th><th>Rules</th><th class="num" style="padding-right: 14px;">Total</th>
+            </tr>
+
+            <tr>
+              <td style="padding-left: 14px;"><div class="mono" style="font-weight: 500;">oisd-basic</div><div class="note mono lk">https://small.oisd.nl</div></td>
+              <td><span class="sw"><i></i></span></td>
+              <td class="mono">24 h</td>
+              <td class="mono" style="color: #6b7785;">04:00</td>
+              <td><span class="pill" style="background: #e4f3ea; color: #2f7d4e;">OK</span></td>
+              <td>
+                <div class="seg"><div style="flex: 198500; background: #1f9dbb;"></div><div style="flex: 9181; background: #6f5fbe;"></div><div style="flex: 15501; background: #d6dde5;"></div></div>
+                <div class="note mono" style="margin-top: 4px;">198,500 dns · 9,181 url · 15,501 inactive</div>
+              </td>
+              <td class="num" style="padding-right: 14px;">223,182</td>
+            </tr>
+
+            <tr>
+              <td style="padding-left: 14px;"><div class="mono" style="font-weight: 500;">easylist</div><div class="note mono lk">https://easylist.to/easylist/easylist.txt</div></td>
+              <td><span class="sw"><i></i></span></td>
+              <td class="mono">24 h</td>
+              <td class="mono" style="color: #6b7785;">04:00</td>
+              <td><span class="pill" style="background: #e4f3ea; color: #2f7d4e;">OK</span></td>
+              <td>
+                <div class="seg"><div style="flex: 21400; background: #1f9dbb;"></div><div style="flex: 48210; background: #6f5fbe;"></div><div style="flex: 9840; background: #d6dde5;"></div></div>
+                <div class="note mono" style="margin-top: 4px;">21,400 dns · 48,210 url · 9,840 inactive</div>
+              </td>
+              <td class="num" style="padding-right: 14px;">79,450</td>
+            </tr>
+
+            <tr style="background: #fffaf2;">
+              <td style="padding-left: 14px;"><div class="mono" style="font-weight: 500;">hagezi-pro</div><div class="note mono lk">https://raw.githubusercontent.com/…/pro.txt</div></td>
+              <td><span class="sw"><i></i></span></td>
+              <td class="mono">24 h</td>
+              <td class="mono" style="color: #6b7785;">yesterday 04:00</td>
+              <td>
+                <span class="pill" style="background: #fbe9e8; color: #b03c37;">FAILED</span>
+                <div class="note" style="margin-top: 5px; color: #a4562f;">fetch failed: connection timed out after 30 s</div>
+                <div class="note">last good copy still serving</div>
+              </td>
+              <td>
+                <div class="seg"><div style="flex: 152300; background: #1f9dbb;"></div><div style="flex: 2100; background: #6f5fbe;"></div><div style="flex: 8600; background: #d6dde5;"></div></div>
+                <div class="note mono" style="margin-top: 4px;">152,300 dns · 2,100 url · 8,600 inactive</div>
+              </td>
+              <td class="num" style="padding-right: 14px;">163,000</td>
+            </tr>
+
+            <tr style="background: #fffaf2;">
+              <td style="padding-left: 14px;"><div class="mono" style="font-weight: 500;">adaway</div><div class="note mono lk">https://adaway.org/hosts.txt</div></td>
+              <td><span class="sw"><i></i></span></td>
+              <td class="mono">24 h</td>
+              <td class="mono" style="color: #6b7785;">04:00</td>
+              <td>
+                <span class="pill" style="background: #fff2e0; color: #9a6414;">REJECTED</span>
+                <div class="note" style="margin-top: 5px; color: #8a6420;">collapse: 0 dns rules vs baseline 6,710</div>
+                <div class="note">content gate refused the body before it could commit</div>
+              </td>
+              <td>
+                <div class="seg"><div style="flex: 6710; background: #1f9dbb;"></div><div style="flex: 0; background: #6f5fbe;"></div><div style="flex: 190; background: #d6dde5;"></div></div>
+                <div class="note mono" style="margin-top: 4px;">6,710 dns · 0 url · 190 inactive</div>
+              </td>
+              <td class="num" style="padding-right: 14px;">6,900</td>
+            </tr>
+
+            <tr>
+              <td style="padding-left: 14px;"><div class="mono" style="font-weight: 500;">local-extra</div><div class="note mono lk">/data/lists/local.txt</div></td>
+              <td><span class="sw off"><i></i></span></td>
+              <td class="mono" style="color: #b6bfc9;">—</td>
+              <td class="mono" style="color: #6b7785;">never</td>
+              <td><span class="pill" style="background: #eef2f6; color: #55606d;">DISABLED</span></td>
+              <td>
+                <div class="seg"><div style="flex: 1; background: #e7edf3;"></div></div>
+                <div class="note mono" style="margin-top: 4px;">not compiled while disabled</div>
+              </td>
+              <td class="num" style="padding-right: 14px;">412</td>
+            </tr>
+          </table>
+          <p class="note" style="margin: 0; padding: 12px 14px; border-top: 1px solid #eef2f6;">
+            The three counts partition the list: a rule answers a domain question, answers an HTTP request, or no tier answers it yet (cosmetic, <span class="mono">$client</span>, unsupported). Inactive is not broken.
+            <span style="display: block; margin-top: 4px;">Refresh all runs one pass and recompiles once, not once per list. A list that fails is reported and skipped; the rest still refresh.</span>
+          </p>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+</x-dc>
+</body>
+</html>

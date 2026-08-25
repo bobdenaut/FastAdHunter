@@ -1,0 +1,251 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+  <style>
+    body { margin: 0; font-family: 'IBM Plex Sans', system-ui, sans-serif; background: #eef1f5; color: #1f2733; -webkit-font-smoothing: antialiased; }
+    a { color: #1f7f96; } a:hover { color: #17616f; }
+    .app { display: flex; min-height: 100vh; }
+    .sb { width: 230px; flex: 0 0 230px; background: #131a24; color: #9fb0c3; }
+    .brand { height: 58px; display: flex; align-items: center; gap: 10px; padding: 0 16px; background: #0e141c; color: #fff; font-weight: 600; font-size: 15px; }
+    .sec { padding: 18px 16px 6px; font-size: 10px; letter-spacing: .13em; text-transform: uppercase; color: #5d6d80; }
+    .it { display: flex; align-items: center; gap: 10px; padding: 9px 16px; font-size: 13.5px; }
+    .it.on { background: #1b2635; color: #fff; box-shadow: inset 3px 0 0 #24b3cf; }
+    .sub2 { display: flex; align-items: center; gap: 10px; padding: 7px 16px 7px 41px; font-size: 12.5px; }
+    .sub2.on { color: #fff; }
+    .main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+    .nav { height: 58px; background: #fff; border-bottom: 1px solid #dde3ea; display: flex; align-items: center; justify-content: space-between; padding: 0 20px; }
+    .navr { display: flex; align-items: center; gap: 16px; font-size: 12.5px; color: #6b7785; }
+    .hd { padding: 18px 20px 0; }
+    .h1 { font-size: 20px; font-weight: 600; margin: 0; }
+    .sub { font-size: 12.5px; color: #6b7785; margin: 5px 0 0; }
+    .wrap { padding: 16px 20px 28px; display: flex; flex-direction: column; gap: 16px; }
+    .card { background: #fff; border: 1px solid #dde3ea; border-radius: 4px; }
+    .ch { margin: 0; font-size: 13.5px; font-weight: 600; padding: 12px 14px; border-bottom: 1px solid #e6ebf1; display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+    .bd { padding: 14px; }
+    table { width: 100%; border-collapse: collapse; font-size: 12px; }
+    th { text-align: left; font-weight: 600; color: #6b7785; font-size: 10.5px; text-transform: uppercase; letter-spacing: .06em; padding: 0 10px 8px; }
+    td { padding: 6px 10px; border-top: 1px solid #eef2f6; }
+    .num { text-align: right; font-variant-numeric: tabular-nums; font-family: 'IBM Plex Mono', monospace; }
+    .mono { font-family: 'IBM Plex Mono', monospace; }
+    .note { font-size: 11.5px; color: #6b7785; line-height: 1.5; }
+    .pill { display: inline-block; padding: 1px 8px; border-radius: 3px; font-size: 10.5px; font-weight: 600; letter-spacing: .03em; }
+    .chip { border: 1px solid #cfd8e3; background: #fff; border-radius: 3px; padding: 4px 11px; font-size: 12px; color: #47535f; }
+    .chip.on { background: #1f9dbb; border-color: #1f9dbb; color: #fff; }
+    .inp { border: 1px solid #cfd8e3; border-radius: 3px; padding: 5px 10px; font-size: 12.5px; color: #8a95a3; background: #fff; }
+    .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+    .kind { font-size: 10px; font-weight: 600; letter-spacing: .06em; color: #6b7785; border: 1px solid #dde3ea; border-radius: 2px; padding: 0 5px; }
+  </style>
+</helmet>
+
+<div class="app">
+
+  <div class="sb">
+    <div class="brand">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#24b3cf" stroke-width="1.8"><circle cx="12" cy="12" r="8"></circle><path d="M12 1.5v4M12 18.5v4M1.5 12h4M18.5 12h4"></path><circle cx="12" cy="12" r="2.4" fill="#24b3cf" stroke="none"></circle></svg>
+      FastAdHunter
+    </div>
+    <div class="sec">Overview</div>
+    <div class="it">Dashboard</div>
+    <div class="sec">Filtering</div>
+    <div class="it">Lists</div>
+    <div class="it">Custom Rules</div>
+    <div class="it">Policies</div>
+    <div class="it">Clients</div>
+    <div class="it">Rule Tester</div>
+    <div class="sec">Runtime</div>
+    <div class="it">Cache</div>
+    <div class="it">Performance</div>
+    <div class="it">Upstreams</div>
+    <div class="sec">System</div>
+    <div class="it">Settings</div>
+    <div class="it on">Diagnostics</div>
+    <div class="sub2">Health</div>
+    <div class="sub2">Memory</div>
+    <div class="sub2 on">Live Feed</div>
+  </div>
+
+  <div class="main">
+    <div class="nav">
+      <div style="font-size: 14px; font-weight: 600;">Diagnostics · Live Feed</div>
+      <div class="navr">
+        <span style="display: flex; align-items: center; gap: 6px;"><span class="dot" style="background: #3d9a63;"></span>socket connected</span>
+        <span>v0.2.20</span>
+        <span>theme</span>
+        <span>sign out</span>
+      </div>
+    </div>
+
+    <div class="hd">
+      <p class="h1">Live Feed</p>
+      <p class="sub">Every query and request as it is decided, from <span class="mono">WS /api/v1/events</span></p>
+    </div>
+
+    <div class="wrap">
+
+      <div style="background: #fff6e6; border: 1px solid #e8cf9a; border-left: 3px solid #dd9a2f; border-radius: 4px; padding: 11px 14px; display: flex; gap: 11px; align-items: flex-start;">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#b8791c" stroke-width="1.9" style="flex: 0 0 auto; margin-top: 1px;"><circle cx="12" cy="12" r="9"></circle><path d="M12 7v6M12 16.5v.5"></path></svg>
+        <div style="font-size: 12.5px; line-height: 1.55;">
+          <b>This is a live tail, not a query log.</b> FastAdHunter keeps no per-query records — the feed starts empty when the page opens, holds the last 500 rows in this tab, and retains nothing when you leave. Filters below apply to those rows only. There is no history to search, by design: no per-query store means no per-query memory growth.
+        </div>
+      </div>
+
+      <div class="card">
+        <h3 class="ch">
+          <span>Filters</span>
+          <span class="note">applied in the browser, over the rows held here</span>
+        </h3>
+        <div class="bd" style="display: flex; gap: 22px; flex-wrap: wrap; align-items: center;">
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <span class="note">verdict</span>
+            <span class="chip on">all</span><span class="chip">pass</span><span class="chip">allow</span><span class="chip">block</span>
+          </div>
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <span class="note">pipeline</span>
+            <span class="chip on">all</span><span class="chip">dns</span><span class="chip">http</span>
+          </div>
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <span class="note">client</span>
+            <span class="inp" style="width: 180px;">any client</span>
+          </div>
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <span class="note">domain contains</span>
+            <span class="inp" style="width: 200px;">filter…</span>
+          </div>
+          <div style="margin-left: auto; display: flex; gap: 8px;">
+            <span class="chip">pause</span>
+            <span class="chip">clear</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3 class="ch">
+          <span>Feed</span>
+          <span class="note mono">500 / 500 rows held · 0 shed by the engine</span>
+        </h3>
+        <div class="bd" style="padding: 12px 0 0;">
+          <table>
+            <tr>
+              <th style="padding-left: 14px;">Time</th><th>Pipe</th><th>Client</th><th>Domain / path</th><th>Verdict</th><th>Rule</th><th>List</th><th>Detail</th><th class="num" style="padding-right: 14px;">ms</th>
+            </tr>
+            <tr>
+              <td class="mono" style="padding-left: 14px; color: #6b7785;">10:41:03.610</td>
+              <td><span class="kind">HTTP</span></td>
+              <td class="mono">liviu-phone</td>
+              <td class="mono">ads.example.com<span style="color: #8a95a3;">/pixel.gif?id=7</span></td>
+              <td><span class="pill" style="background: #fbe9e8; color: #b03c37;">BLOCK</span></td>
+              <td class="mono" style="color: #47535f;">||ads.example.com^</td>
+              <td class="mono" style="color: #6b7785;">easylist</td>
+              <td class="mono" style="color: #6b7785;">GET · image · 200 · 0 B</td>
+              <td class="num" style="padding-right: 14px;">0.1</td>
+            </tr>
+            <tr>
+              <td class="mono" style="padding-left: 14px; color: #6b7785;">10:41:03.588</td>
+              <td><span class="kind">DNS</span></td>
+              <td class="mono">desktop</td>
+              <td class="mono">github.com</td>
+              <td><span class="pill" style="background: #eef2f6; color: #55606d;">PASS</span></td>
+              <td style="color: #b6bfc9;">—</td>
+              <td style="color: #b6bfc9;">—</td>
+              <td class="mono" style="color: #6b7785;">A · cached</td>
+              <td class="num" style="padding-right: 14px;">0.1</td>
+            </tr>
+            <tr>
+              <td class="mono" style="padding-left: 14px; color: #6b7785;">10:41:03.402</td>
+              <td><span class="kind">DNS</span></td>
+              <td class="mono">tv</td>
+              <td class="mono">telemetry.example.io</td>
+              <td><span class="pill" style="background: #fbe9e8; color: #b03c37;">BLOCK</span></td>
+              <td class="mono" style="color: #47535f;">||telemetry.example.io^</td>
+              <td class="mono" style="color: #6b7785;">oisd-basic</td>
+              <td class="mono" style="color: #6b7785;">AAAA</td>
+              <td class="num" style="padding-right: 14px;">0.0</td>
+            </tr>
+            <tr>
+              <td class="mono" style="padding-left: 14px; color: #6b7785;">10:41:02.940</td>
+              <td><span class="kind">DNS</span></td>
+              <td class="mono">192.168.10.22</td>
+              <td class="mono">time.cloudflare.com</td>
+              <td><span class="pill" style="background: #eef2f6; color: #55606d;">PASS</span></td>
+              <td style="color: #b6bfc9;">—</td>
+              <td style="color: #b6bfc9;">—</td>
+              <td class="mono" style="color: #6b7785;">A · endpoint 0</td>
+              <td class="num" style="padding-right: 14px;">18.4</td>
+            </tr>
+            <tr>
+              <td class="mono" style="padding-left: 14px; color: #6b7785;">10:41:02.771</td>
+              <td><span class="kind">DNS</span></td>
+              <td class="mono">desktop</td>
+              <td class="mono">goodsite.example.com</td>
+              <td><span class="pill" style="background: #e4f3ea; color: #2f7d4e;">ALLOW</span></td>
+              <td class="mono" style="color: #47535f;">@@||goodsite.example.com^</td>
+              <td class="mono" style="color: #6b7785;">user rules</td>
+              <td class="mono" style="color: #6b7785;">A</td>
+              <td class="num" style="padding-right: 14px;">0.1</td>
+            </tr>
+            <tr>
+              <td class="mono" style="padding-left: 14px; color: #6b7785;">10:41:02.610</td>
+              <td><span class="kind">HTTP</span></td>
+              <td class="mono">liviu-phone</td>
+              <td class="mono">cdn.jsdelivr.net<span style="color: #8a95a3;">/npm/chart.js</span></td>
+              <td><span class="pill" style="background: #eef2f6; color: #55606d;">PASS</span></td>
+              <td style="color: #b6bfc9;">—</td>
+              <td style="color: #b6bfc9;">—</td>
+              <td class="mono" style="color: #6b7785;">GET · script · 200 · 62.1 KB</td>
+              <td class="num" style="padding-right: 14px;">41.2</td>
+            </tr>
+            <tr>
+              <td class="mono" style="padding-left: 14px; color: #6b7785;">10:41:02.115</td>
+              <td><span class="kind">DNS</span></td>
+              <td class="mono">tv</td>
+              <td class="mono">metrics.vendor.net</td>
+              <td><span class="pill" style="background: #fbe9e8; color: #b03c37;">BLOCK</span></td>
+              <td class="mono" style="color: #47535f;">||vendor.net^$third-party</td>
+              <td class="mono" style="color: #6b7785;">hagezi-pro</td>
+              <td class="mono" style="color: #6b7785;">A · policy kids</td>
+              <td class="num" style="padding-right: 14px;">0.0</td>
+            </tr>
+            <tr>
+              <td class="mono" style="padding-left: 14px; color: #6b7785;">10:41:01.884</td>
+              <td><span class="kind">DNS</span></td>
+              <td class="mono">192.168.10.4</td>
+              <td class="mono">updates.example.net</td>
+              <td><span class="pill" style="background: #eef2f6; color: #55606d;">PASS</span></td>
+              <td style="color: #b6bfc9;">—</td>
+              <td style="color: #b6bfc9;">—</td>
+              <td class="mono" style="color: #6b7785;">HTTPS · endpoint 1</td>
+              <td class="num" style="padding-right: 14px;">62.9</td>
+            </tr>
+            <tr>
+              <td class="mono" style="padding-left: 14px; color: #6b7785;">10:41:01.402</td>
+              <td><span class="kind">HTTP</span></td>
+              <td class="mono">192.168.10.50</td>
+              <td class="mono">203.0.113.9<span style="color: #8a95a3;">/beacon</span></td>
+              <td><span class="pill" style="background: #f3ecf7; color: #6b4a86;">REFUSED</span></td>
+              <td style="color: #b6bfc9;">—</td>
+              <td style="color: #b6bfc9;">—</td>
+              <td class="mono" style="color: #6b7785;">egress policy · IP literal host</td>
+              <td class="num" style="padding-right: 14px;">0.0</td>
+            </tr>
+          </table>
+          <p class="note" style="margin: 0; padding: 12px 14px; border-top: 1px solid #eef2f6;">
+            <span class="mono">cached</span> is a marker on a row, not a verdict — a cache hit is still a <span class="mono">pass</span>.
+            <span class="mono">endpoint N</span> is the answering server's index and appears only on a forwarded DNS answer.
+            A slow tab is disconnected by the engine rather than back-pressuring it; the socket reconnects on its own.
+          </p>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+</x-dc>
+</body>
+</html>

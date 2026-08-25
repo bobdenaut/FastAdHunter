@@ -1,0 +1,206 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+  <style>
+    body { margin: 0; font-family: 'IBM Plex Sans', system-ui, sans-serif; background: #eef1f5; color: #1f2733; -webkit-font-smoothing: antialiased; }
+    a { color: #1f7f96; } a:hover { color: #17616f; }
+    .app { display: flex; min-height: 100vh; }
+    .sb { width: 230px; flex: 0 0 230px; background: #131a24; color: #9fb0c3; }
+    .brand { height: 58px; display: flex; align-items: center; gap: 10px; padding: 0 16px; background: #0e141c; color: #fff; font-weight: 600; font-size: 15px; }
+    .sec { padding: 18px 16px 6px; font-size: 10px; letter-spacing: .13em; text-transform: uppercase; color: #5d6d80; }
+    .it { padding: 9px 16px; font-size: 13.5px; }
+    .it.on { background: #1b2635; color: #fff; box-shadow: inset 3px 0 0 #24b3cf; }
+    .main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+    .nav { height: 58px; background: #fff; border-bottom: 1px solid #dde3ea; display: flex; align-items: center; justify-content: space-between; padding: 0 20px; }
+    .navr { display: flex; align-items: center; gap: 16px; font-size: 12.5px; color: #6b7785; }
+    .hd { padding: 18px 20px 0; }
+    .h1 { font-size: 20px; font-weight: 600; margin: 0; }
+    .sub { font-size: 12.5px; color: #6b7785; margin: 5px 0 0; }
+    .wrap { padding: 16px 20px 28px; display: flex; flex-direction: column; gap: 16px; }
+    .row2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+    .card { background: #fff; border: 1px solid #dde3ea; border-radius: 4px; }
+    .ch { margin: 0; font-size: 13.5px; font-weight: 600; padding: 12px 14px; border-bottom: 1px solid #e6ebf1; display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+    .bd { padding: 14px; }
+    .note { font-size: 11.5px; color: #6b7785; line-height: 1.55; }
+    .mono { font-family: 'IBM Plex Mono', monospace; }
+    .num { font-variant-numeric: tabular-nums; font-family: 'IBM Plex Mono', monospace; }
+    .sw { width: 10px; height: 10px; border-radius: 2px; display: inline-block; vertical-align: -1px; }
+    .btn { background: #1f9dbb; color: #fff; border-radius: 3px; padding: 7px 13px; font-size: 12.5px; font-weight: 500; display: inline-block; }
+    .btn.g { background: #fff; color: #33414f; border: 1px solid #cfd8e3; }
+    table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+    td { padding: 7px 0; border-top: 1px solid #f2f5f8; }
+    td:last-child { text-align: right; }
+    .cb { width: 15px; height: 15px; border: 1px solid #cfd8e3; border-radius: 3px; display: inline-block; vertical-align: -3px; background: #fff; }
+  </style>
+</helmet>
+
+<div class="app">
+  <div class="sb">
+    <div class="brand"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#24b3cf" stroke-width="1.8"><circle cx="12" cy="12" r="8"></circle><path d="M12 1.5v4M12 18.5v4M1.5 12h4M18.5 12h4"></path><circle cx="12" cy="12" r="2.4" fill="#24b3cf" stroke="none"></circle></svg>FastAdHunter</div>
+    <div class="sec">Overview</div><div class="it">Dashboard</div>
+    <div class="sec">Filtering</div><div class="it">Lists</div><div class="it">Custom Rules</div><div class="it">Policies</div><div class="it">Clients</div><div class="it">Rule Tester</div>
+    <div class="sec">Runtime</div><div class="it on">Cache</div><div class="it">Performance</div><div class="it">Upstreams</div>
+    <div class="sec">System</div><div class="it">Settings</div><div class="it">Diagnostics</div>
+  </div>
+
+  <div class="main">
+    <div class="nav">
+      <div style="font-size: 14px; font-weight: 600;">Cache</div>
+      <div class="navr"><span>v0.2.20</span><span>up 4h 31m</span><span>theme</span><span>sign out</span></div>
+    </div>
+
+    <div class="hd">
+      <p class="h1">DNS cache</p>
+      <p class="sub">Bounded by entries <b>and</b> bytes — <span class="mono">GET /api/v1/cache</span></p>
+    </div>
+
+    <div class="wrap">
+
+      <div class="card">
+        <h3 class="ch"><span>Entries by lifetime stage</span><span class="note mono">1,108 of 50,000</span></h3>
+        <div class="bd">
+          <div style="display: flex; height: 32px; border-radius: 3px; overflow: hidden; border: 1px solid #e2e8ee;">
+            <div style="flex: 155; background: #3d9a63;"></div>
+            <div style="flex: 953; background: #dd9a2f;"></div>
+            <div style="flex: 48892; background: #f1f4f7;"></div>
+          </div>
+          <div style="display: grid; grid-template-columns: repeat(4, minmax(0,1fr)); gap: 16px; margin-top: 14px;">
+            <div>
+              <div style="font-size: 12.5px; font-weight: 500;"><span class="sw" style="background: #3d9a63;"></span> fresh <span class="num" style="margin-left: 4px;">155</span></div>
+              <p class="note" style="margin: 4px 0 0;">Inside its TTL. Answers the client directly, at <span class="mono">0.051 ms</span>.</p>
+            </div>
+            <div>
+              <div style="font-size: 12.5px; font-weight: 500;"><span class="sw" style="background: #dd9a2f;"></span> stale <span class="num" style="margin-left: 4px;">953</span></div>
+              <p class="note" style="margin: 4px 0 0;">Past TTL, inside the RFC 8767 serve-stale window. Answers <b>only</b> after a forward has failed — this is outage insurance, not waste.</p>
+            </div>
+            <div>
+              <div style="font-size: 12.5px; font-weight: 500;"><span class="sw" style="background: #c3ccd6;"></span> expired <span class="num" style="margin-left: 4px;">0</span></div>
+              <p class="note" style="margin: 4px 0 0;">Past the stale window. Dead weight waiting for eviction or a clean.</p>
+            </div>
+            <div>
+              <div style="font-size: 12.5px; font-weight: 500;"><span class="sw" style="background: #e7edf3;"></span> free <span class="num" style="margin-left: 4px;">48,892</span></div>
+              <p class="note" style="margin: 4px 0 0;">Capacity is per-shard × shard count, so it can round slightly below the configured maximum.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="row2">
+        <div class="card">
+          <h3 class="ch"><span>The two bounds</span><span class="note">eviction runs until both are satisfied</span></h3>
+          <div class="bd">
+            <div style="margin-bottom: 16px;">
+              <div style="display: flex; justify-content: space-between; font-size: 12.5px; margin-bottom: 6px;">
+                <span><b>entries</b> <span style="color: #6b7785;">1,108 / 50,000</span></span>
+                <span class="num" style="font-weight: 600;">2.2 %</span>
+              </div>
+              <div style="height: 12px; border-radius: 3px; background: #e7edf3; overflow: hidden;"><div style="width: 2.2%; height: 100%; background: #1f9dbb;"></div></div>
+            </div>
+            <div>
+              <div style="display: flex; justify-content: space-between; font-size: 12.5px; margin-bottom: 6px;">
+                <span><b>bytes</b> <span style="color: #6b7785;">1.1 MiB / 64 MiB</span></span>
+                <span class="num" style="font-weight: 600;">1.7 %</span>
+              </div>
+              <div style="height: 12px; border-radius: 3px; background: #e7edf3; overflow: hidden;"><div style="width: 1.7%; height: 100%; background: #6f5fbe;"></div></div>
+            </div>
+            <div style="margin-top: 14px; background: #f2f8fa; border: 1px solid #d9e8ee; border-radius: 4px; padding: 10px 12px; font-size: 12.5px;">
+              <b>Entries is the bound closest to evicting</b> — the higher of the two is always the one that will trigger first. Neither is near it here.
+            </div>
+            <p class="note" style="margin: 12px 0 0;">
+              <span class="mono">bytes</span> is a coarse per-entry estimate of what resident answers hold. It excludes the hash-table slabs, which the memory breakdown counts separately — the two figures are answering different questions, not disagreeing.
+            </p>
+          </div>
+        </div>
+
+        <div class="card">
+          <h3 class="ch"><span>Lifetime counters</span><span class="note">since process start</span></h3>
+          <div class="bd" style="padding-top: 4px;">
+            <table>
+              <tr><td>lookups</td><td class="num">11,171</td></tr>
+              <tr><td>hits</td><td class="num" style="color: #2f7d4e;">10,021</td></tr>
+              <tr><td>misses</td><td class="num">1,150</td></tr>
+              <tr><td>evictions</td><td class="num">0</td></tr>
+            </table>
+            <div style="margin-top: 14px; display: flex; align-items: center; gap: 16px;">
+              <svg width="86" height="86" viewBox="0 0 86 86">
+                <circle cx="43" cy="43" r="34" fill="none" stroke="#eef2f6" stroke-width="14"></circle>
+                <circle cx="43" cy="43" r="34" fill="none" stroke="#3d9a63" stroke-width="14" stroke-dasharray="191.7 22.0" transform="rotate(-90 43 43)"></circle>
+                <text x="43" y="47" font-size="15" font-weight="600" text-anchor="middle" font-family="IBM Plex Mono" fill="#1f2733">89.7%</text>
+              </svg>
+              <p class="note" style="margin: 0;">Hit rate. Every hit is a query that never left the box — the difference between <span class="mono">0.051 ms</span> and an upstream round trip.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="row2">
+        <div class="card">
+          <h3 class="ch"><span>Clean now</span><span class="note">instead of waiting for capacity eviction</span></h3>
+          <div class="bd">
+            <div style="display: flex; align-items: flex-start; gap: 10px; font-size: 12.5px;">
+              <span class="cb"></span>
+              <div>
+                <div><b>Also purge the stale window</b> <span class="note">(0 expired entries right now — this would remove 953 stale ones)</span></div>
+                <p class="note" style="margin: 4px 0 0;">Off by default. Stale entries are the insurance an upstream outage is survived on; purging them is an explicit admin choice, not tidying up.</p>
+              </div>
+            </div>
+            <div style="display: flex; gap: 8px; margin-top: 14px;">
+              <span class="btn">Remove expired</span>
+              <span class="btn g">Cancel</span>
+            </div>
+            <div style="margin-top: 14px; border-top: 1px solid #eef2f6; padding-top: 12px;">
+              <div class="note" style="margin-bottom: 7px;">Last clean, 03:14</div>
+              <table>
+                <tr><td>expired removed</td><td class="num">1,834</td></tr>
+                <tr><td>stale removed</td><td class="num">0</td></tr>
+                <tr><td>entries before → after</td><td class="num">9,095 → 7,261</td></tr>
+                <tr><td>freed</td><td class="num">2.7 MiB</td></tr>
+                <tr><td>took</td><td class="num">4.7 ms</td></tr>
+              </table>
+              <p class="note" style="margin: 10px 0 0;">RSS does not fall by the freed amount: a clean returns each entry's own heap but never shrinks the table slab.</p>
+            </div>
+          </div>
+        </div>
+
+        <div style="display: flex; flex-direction: column; gap: 16px;">
+          <div class="card">
+            <h3 class="ch"><span>Stale-while-revalidate</span><span class="note">refresh ahead of expiry</span></h3>
+            <div class="bd" style="padding-top: 4px;">
+              <table>
+                <tr><td>enqueued</td><td class="num">12,044</td></tr>
+                <tr><td>deduplicated</td><td class="num">3,311</td></tr>
+                <tr><td>completed</td><td class="num" style="color: #2f7d4e;">8,702</td></tr>
+                <tr><td>failed</td><td class="num">31</td></tr>
+                <tr><td>dropped</td><td class="num">0</td></tr>
+              </table>
+              <p class="note" style="margin: 10px 0 0;">Deduplicated means the same name was already queued — that work was saved, not lost. Dropped is the one to watch: it means the queue was full.</p>
+            </div>
+          </div>
+
+          <div class="card">
+            <h3 class="ch"><span>Background cleanup</span></h3>
+            <div class="bd" style="padding-top: 4px;">
+              <table>
+                <tr><td>runs</td><td class="num">308</td></tr>
+                <tr><td>entries removed</td><td class="num">44,120</td></tr>
+                <tr><td>bytes freed</td><td class="num">9.4 MiB</td></tr>
+                <tr><td>last run took</td><td class="num">1.84 ms</td></tr>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+</x-dc>
+</body>
+</html>

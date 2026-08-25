@@ -1,0 +1,200 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+  <style>
+    body { margin: 0; font-family: 'IBM Plex Sans', system-ui, sans-serif; background: #eef1f5; color: #1f2733; -webkit-font-smoothing: antialiased; }
+    a { color: #1f7f96; } a:hover { color: #17616f; }
+    .app { display: flex; min-height: 100vh; }
+    .sb { width: 230px; flex: 0 0 230px; background: #131a24; color: #9fb0c3; }
+    .brand { height: 58px; display: flex; align-items: center; gap: 10px; padding: 0 16px; background: #0e141c; color: #fff; font-weight: 600; font-size: 15px; }
+    .sec { padding: 18px 16px 6px; font-size: 10px; letter-spacing: .13em; text-transform: uppercase; color: #5d6d80; }
+    .it { padding: 9px 16px; font-size: 13.5px; }
+    .it.on { background: #1b2635; color: #fff; box-shadow: inset 3px 0 0 #24b3cf; }
+    .main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+    .nav { height: 58px; background: #fff; border-bottom: 1px solid #dde3ea; display: flex; align-items: center; justify-content: space-between; padding: 0 20px; }
+    .navr { display: flex; align-items: center; gap: 16px; font-size: 12.5px; color: #6b7785; }
+    .hd { padding: 18px 20px 0; }
+    .h1 { font-size: 20px; font-weight: 600; margin: 0; }
+    .sub { font-size: 12.5px; color: #6b7785; margin: 5px 0 0; }
+    .wrap { padding: 16px 20px 28px; display: flex; flex-direction: column; gap: 16px; }
+    .card { background: #fff; border: 1px solid #dde3ea; border-radius: 4px; }
+    .ch { margin: 0; font-size: 13.5px; font-weight: 600; padding: 12px 14px; border-bottom: 1px solid #e6ebf1; display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+    .bd { padding: 14px; }
+    .note { font-size: 11.5px; color: #6b7785; line-height: 1.55; }
+    .mono { font-family: 'IBM Plex Mono', monospace; }
+    .num { font-variant-numeric: tabular-nums; font-family: 'IBM Plex Mono', monospace; }
+    .ep { display: grid; grid-template-columns: 300px 1fr 260px; gap: 20px; padding: 14px; border-top: 1px solid #eef2f6; align-items: center; }
+    .st { display: inline-block; padding: 2px 9px; border-radius: 3px; font-size: 10.5px; font-weight: 600; letter-spacing: .04em; }
+    .kv { display: grid; grid-template-columns: repeat(4, minmax(0,1fr)); gap: 6px 14px; font-size: 12px; }
+    .kv .k { color: #8a95a3; font-size: 10.5px; text-transform: uppercase; letter-spacing: .05em; }
+    .runs { display: flex; align-items: flex-end; gap: 3px; height: 34px; }
+    .runs div { width: 15px; background: #cfd8e3; border-radius: 2px 2px 0 0; }
+  </style>
+</helmet>
+
+<div class="app">
+  <div class="sb">
+    <div class="brand"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#24b3cf" stroke-width="1.8"><circle cx="12" cy="12" r="8"></circle><path d="M12 1.5v4M12 18.5v4M1.5 12h4M18.5 12h4"></path><circle cx="12" cy="12" r="2.4" fill="#24b3cf" stroke="none"></circle></svg>FastAdHunter</div>
+    <div class="sec">Overview</div><div class="it">Dashboard</div>
+    <div class="sec">Filtering</div><div class="it">Lists</div><div class="it">Custom Rules</div><div class="it">Policies</div><div class="it">Clients</div><div class="it">Rule Tester</div>
+    <div class="sec">Runtime</div><div class="it">Cache</div><div class="it">Performance</div><div class="it on">Upstreams</div>
+    <div class="sec">System</div><div class="it">Settings</div><div class="it">Diagnostics</div>
+  </div>
+
+  <div class="main">
+    <div class="nav">
+      <div style="font-size: 14px; font-weight: 600;">Upstreams</div>
+      <div class="navr"><span style="display: flex; align-items: center; gap: 6px;"><span style="width: 8px; height: 8px; border-radius: 50%; background: #dd9a2f; display: inline-block;"></span>degraded</span><span>v0.2.20</span><span>theme</span><span>sign out</span></div>
+    </div>
+
+    <div class="hd">
+      <p class="h1">Upstream endpoints</p>
+      <p class="sub">Health and state of each configured server — <span class="mono">/api/v1/telemetry</span> <span class="mono">upstreams</span>, strategy <span class="mono">adaptive</span></p>
+    </div>
+
+    <div class="wrap">
+
+      <div style="background: #fff6e6; border: 1px solid #e8cf9a; border-left: 3px solid #dd9a2f; border-radius: 4px; padding: 12px 14px; display: flex; gap: 11px; align-items: flex-start;">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#b8791c" stroke-width="1.9" style="flex: 0 0 auto; margin-top: 1px;"><circle cx="12" cy="12" r="9"></circle><path d="M12 7v6M12 16.5v.5"></path></svg>
+        <div style="font-size: 12.5px; line-height: 1.6;">
+          <b>Health reports <span class="mono">degraded</span> — this is not an outage.</b> Under the adaptive strategy it means no endpoint is currently <span class="mono">healthy</span>: every one is penalized or being probed. Cache hits and serve-stale keep answering throughout, and a penalized endpoint is still queried when nothing better is left. Clients are being served.
+        </div>
+      </div>
+
+      <div class="card">
+        <h3 class="ch">
+          <span>Endpoints</span>
+          <span class="note">order is the configured order — the index is what a query reports as its answering endpoint</span>
+        </h3>
+
+        <div class="ep">
+          <div>
+            <div style="display: flex; align-items: center; gap: 9px;">
+              <span class="num" style="background: #eef2f6; color: #55606d; font-size: 11px; font-weight: 600; padding: 1px 7px; border-radius: 3px;">0</span>
+              <span class="mono" style="font-size: 13.5px; font-weight: 500;">1.1.1.1:853</span>
+            </div>
+            <div style="margin-top: 6px; display: flex; gap: 6px; align-items: center;">
+              <span class="st" style="background: #e4f3ea; color: #2f7d4e;">HEALTHY</span>
+              <span class="note mono">dot · v4</span>
+            </div>
+          </div>
+          <div class="kv">
+            <div><div class="k">attempts</div><div class="num">201,883</div></div>
+            <div><div class="k">failures</div><div class="num">12</div></div>
+            <div><div class="k">consecutive</div><div class="num" style="color: #2f7d4e;">0</div></div>
+            <div><div class="k">TLS handshakes</div><div class="num">41</div></div>
+            <div><div class="k">penalties</div><div class="num">0</div></div>
+            <div><div class="k">penalized for</div><div class="num">0 s</div></div>
+            <div><div class="k">probes</div><div class="num">0</div></div>
+            <div><div class="k">probe successes</div><div class="num">0</div></div>
+          </div>
+          <div>
+            <div class="note" style="margin-bottom: 5px;">failure-run histogram</div>
+            <div class="runs">
+              <div style="height: 26px;"></div><div style="height: 13px;"></div><div style="height: 2px;"></div><div style="height: 2px;"></div>
+            </div>
+            <div class="note mono" style="margin-top: 4px;">2 · 1 · 0 · 0 &nbsp;<span style="color: #b6bfc9;">runs of length 1,2,3,4+</span></div>
+          </div>
+        </div>
+
+        <div class="ep" style="background: #fffaf2;">
+          <div>
+            <div style="display: flex; align-items: center; gap: 9px;">
+              <span class="num" style="background: #eef2f6; color: #55606d; font-size: 11px; font-weight: 600; padding: 1px 7px; border-radius: 3px;">1</span>
+              <span class="mono" style="font-size: 13.5px; font-weight: 500;">9.9.9.9:853</span>
+            </div>
+            <div style="margin-top: 6px; display: flex; gap: 6px; align-items: center;">
+              <span class="st" style="background: #fff2e0; color: #9a6414;">PENALIZED</span>
+              <span class="note mono">dot · v4 · round 2</span>
+            </div>
+          </div>
+          <div class="kv">
+            <div><div class="k">attempts</div><div class="num">8,204</div></div>
+            <div><div class="k">failures</div><div class="num" style="color: #b03c37;">311</div></div>
+            <div><div class="k">consecutive</div><div class="num" style="color: #b03c37;">7</div></div>
+            <div><div class="k">TLS handshakes</div><div class="num">188</div></div>
+            <div><div class="k">penalties</div><div class="num">4</div></div>
+            <div><div class="k">penalized for</div><div class="num">312 s</div></div>
+            <div><div class="k">probes</div><div class="num">9</div></div>
+            <div><div class="k">probe successes</div><div class="num">2</div></div>
+          </div>
+          <div>
+            <div class="note" style="margin-bottom: 5px;">failure-run histogram</div>
+            <div class="runs">
+              <div style="height: 10px; background: #dd9a2f;"></div><div style="height: 18px; background: #dd9a2f;"></div><div style="height: 26px; background: #dd9a2f;"></div><div style="height: 34px; background: #d1504b;"></div>
+            </div>
+            <div class="note mono" style="margin-top: 4px;">12 · 21 · 30 · 39 &nbsp;<span style="color: #b6bfc9;">long runs dominate</span></div>
+          </div>
+        </div>
+
+        <div class="ep">
+          <div>
+            <div style="display: flex; align-items: center; gap: 9px;">
+              <span class="num" style="background: #eef2f6; color: #55606d; font-size: 11px; font-weight: 600; padding: 1px 7px; border-radius: 3px;">2</span>
+              <span class="mono" style="font-size: 13.5px; font-weight: 500;">149.112.112.112:853</span>
+            </div>
+            <div style="margin-top: 6px; display: flex; gap: 6px; align-items: center;">
+              <span class="st" style="background: #eef4f8; color: #33586e;">PROBING</span>
+              <span class="note mono">dot · v4</span>
+            </div>
+          </div>
+          <div class="kv">
+            <div><div class="k">attempts</div><div class="num">61,402</div></div>
+            <div><div class="k">failures</div><div class="num">4</div></div>
+            <div><div class="k">consecutive</div><div class="num">1</div></div>
+            <div><div class="k">TLS handshakes</div><div class="num">26</div></div>
+            <div><div class="k">penalties</div><div class="num">1</div></div>
+            <div><div class="k">penalized for</div><div class="num">60 s</div></div>
+            <div><div class="k">probes</div><div class="num">3</div></div>
+            <div><div class="k">probe successes</div><div class="num">3</div></div>
+          </div>
+          <div>
+            <div class="note" style="margin-bottom: 5px;">failure-run histogram</div>
+            <div class="runs">
+              <div style="height: 20px;"></div><div style="height: 6px;"></div><div style="height: 2px;"></div><div style="height: 2px;"></div>
+            </div>
+            <div class="note mono" style="margin-top: 4px;">3 · 1 · 0 · 0</div>
+          </div>
+        </div>
+
+        <p class="note" style="margin: 0; padding: 12px 14px; border-top: 1px solid #eef2f6;">
+          Counters are cumulative since process start. <b>Consecutive failures is the live one</b> — it resets on a success, so it says what is happening now, where the totals say what has happened ever.
+          <span style="display: block; margin-top: 4px;">The failure-run histogram counts closed runs by length. Many short runs is ordinary packet loss; a few long ones is an endpoint that goes away and comes back, which is what earns a penalty.</span>
+        </p>
+      </div>
+
+      <div style="display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 16px;">
+        <div class="card">
+          <h3 class="ch"><span>Why this is not a traffic pie</span></h3>
+          <div class="bd">
+            <p class="note" style="margin: 0;">
+              A per-query "which upstream answered" share cannot be drawn here, and no attempt is made to fake one: the address is deliberately not carried per query. What a query does report is the <b>answering endpoint index</b>, and only when an upstream actually answered — a cache hit or a block carries no endpoint at all.
+              <span style="display: block; margin-top: 6px;">So this page charts health, which is what the data actually supports: attempts, failures, and how the adaptive strategy is currently treating each endpoint.</span>
+            </p>
+          </div>
+        </div>
+
+        <div class="card">
+          <h3 class="ch"><span>What the states mean</span></h3>
+          <div class="bd" style="display: flex; flex-direction: column; gap: 9px;">
+            <div style="display: flex; gap: 11px; align-items: flex-start;"><span class="st" style="background: #e4f3ea; color: #2f7d4e; flex: 0 0 auto;">HEALTHY</span><span class="note">Answering normally. Preferred for new queries.</span></div>
+            <div style="display: flex; gap: 11px; align-items: flex-start;"><span class="st" style="background: #fff2e0; color: #9a6414; flex: 0 0 auto;">PENALIZED</span><span class="note">Failed enough to be stepped back. Each round lengthens the penalty. Still queried when nothing else is available — being penalized is not being removed.</span></div>
+            <div style="display: flex; gap: 11px; align-items: flex-start;"><span class="st" style="background: #eef4f8; color: #33586e; flex: 0 0 auto;">PROBING</span><span class="note">Under test after a penalty. Successful probes return it to healthy.</span></div>
+            <p class="note" style="margin: 4px 0 0; border-top: 1px solid #f2f5f8; padding-top: 9px;">Under the <span class="mono">fallback</span> strategy these states do not apply — <span class="mono">degraded</span> there simply means every endpoint carries a non-zero consecutive-failure count. The page names the strategy in force so the reading is never ambiguous.</p>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+</x-dc>
+</body>
+</html>

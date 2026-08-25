@@ -1,0 +1,304 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+  <style>
+    body { margin: 0; font-family: 'IBM Plex Sans', system-ui, sans-serif; background: #eef1f5; color: #1f2733; -webkit-font-smoothing: antialiased; }
+    a { color: #1f7f96; } a:hover { color: #17616f; }
+    .app { display: flex; min-height: 100vh; }
+    .sb { width: 230px; flex: 0 0 230px; background: #131a24; color: #9fb0c3; }
+    .brand { height: 58px; display: flex; align-items: center; gap: 10px; padding: 0 16px; background: #0e141c; color: #fff; font-weight: 600; font-size: 15px; }
+    .sec { padding: 18px 16px 6px; font-size: 10px; letter-spacing: .13em; text-transform: uppercase; color: #5d6d80; }
+    .it { display: flex; align-items: center; gap: 10px; padding: 9px 16px; font-size: 13.5px; }
+    .it.on { background: #1b2635; color: #fff; box-shadow: inset 3px 0 0 #24b3cf; }
+    .sub2 { padding: 7px 16px 7px 41px; font-size: 12.5px; }
+    .sub2.on { color: #fff; }
+    .main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+    .nav { height: 58px; background: #fff; border-bottom: 1px solid #dde3ea; display: flex; align-items: center; justify-content: space-between; padding: 0 20px; }
+    .navr { display: flex; align-items: center; gap: 16px; font-size: 12.5px; color: #6b7785; }
+    .hd { padding: 18px 20px 0; }
+    .h1 { font-size: 20px; font-weight: 600; margin: 0; }
+    .sub { font-size: 12.5px; color: #6b7785; margin: 5px 0 0; }
+    .wrap { padding: 16px 20px 28px; display: flex; flex-direction: column; gap: 16px; }
+    .row { display: grid; gap: 16px; }
+    .c2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .card { background: #fff; border: 1px solid #dde3ea; border-radius: 4px; }
+    .ch { margin: 0; font-size: 13.5px; font-weight: 600; padding: 12px 14px; border-bottom: 1px solid #e6ebf1; display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+    .bd { padding: 14px; }
+    .note { font-size: 11.5px; color: #6b7785; line-height: 1.55; }
+    .mono { font-family: 'IBM Plex Mono', monospace; }
+    .num { font-variant-numeric: tabular-nums; font-family: 'IBM Plex Mono', monospace; }
+    .sw { width: 10px; height: 10px; border-radius: 2px; display: inline-block; vertical-align: -1px; }
+    .chip { border: 1px solid #cfd8e3; background: #fff; border-radius: 3px; padding: 3px 10px; font-size: 11.5px; color: #47535f; }
+    .chip.on { background: #1f9dbb; border-color: #1f9dbb; color: #fff; }
+    table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+    td { padding: 7px 0; border-top: 1px solid #f2f5f8; }
+    td:last-child { text-align: right; }
+    .tagq { background: #f3ecf7; color: #6b4a86; font-size: 9.5px; font-weight: 600; padding: 1px 5px; border-radius: 2px; letter-spacing: .04em; }
+  </style>
+</helmet>
+
+<svg width="0" height="0" style="position: absolute;">
+  <defs>
+    <pattern id="hatch" width="7" height="7" patternTransform="rotate(45)" patternUnits="userSpaceOnUse">
+      <rect width="7" height="7" fill="#e3e8ee"></rect>
+      <line x1="0" y1="0" x2="0" y2="7" stroke="#a8b3c0" stroke-width="2.6"></line>
+    </pattern>
+  </defs>
+</svg>
+
+<div class="app">
+
+  <div class="sb">
+    <div class="brand">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#24b3cf" stroke-width="1.8"><circle cx="12" cy="12" r="8"></circle><path d="M12 1.5v4M12 18.5v4M1.5 12h4M18.5 12h4"></path><circle cx="12" cy="12" r="2.4" fill="#24b3cf" stroke="none"></circle></svg>
+      FastAdHunter
+    </div>
+    <div class="sec">Overview</div>
+    <div class="it">Dashboard</div>
+    <div class="sec">Filtering</div>
+    <div class="it">Lists</div>
+    <div class="it">Custom Rules</div>
+    <div class="it">Policies</div>
+    <div class="it">Clients</div>
+    <div class="it">Rule Tester</div>
+    <div class="sec">Runtime</div>
+    <div class="it">Cache</div>
+    <div class="it">Performance</div>
+    <div class="it">Upstreams</div>
+    <div class="sec">System</div>
+    <div class="it">Settings</div>
+    <div class="it on">Diagnostics</div>
+    <div class="sub2">Health</div>
+    <div class="sub2 on">Memory</div>
+    <div class="sub2">Live Feed</div>
+  </div>
+
+  <div class="main">
+    <div class="nav">
+      <div style="font-size: 14px; font-weight: 600;">Diagnostics · Memory</div>
+      <div class="navr">
+        <span style="display: flex; align-items: center; gap: 6px;"><span style="width: 8px; height: 8px; border-radius: 50%; background: #3d9a63; display: inline-block;"></span>live</span>
+        <span>v0.2.20</span>
+        <span>up 4h 31m</span>
+        <span>sign out</span>
+      </div>
+    </div>
+
+    <div class="hd">
+      <p class="h1">Memory</p>
+      <p class="sub">Where RSS goes, now and over time — <span class="mono">GET /api/v1/debug/memory</span> for the instant, <span class="mono">GET /api/v1/history/perf</span> for the trend</p>
+    </div>
+
+    <div class="wrap">
+
+      <div class="card">
+        <h3 class="ch">
+          <span>Footprint against budget</span>
+          <span class="note">budgets in decimal MB · readings in MiB — 54.9 MiB is 57.6 MB, and the ~4.9 % gap is where a false breach comes from</span>
+        </h3>
+        <div class="bd">
+          <svg viewBox="0 0 1360 118" style="width: 100%; height: 118px; display: block;">
+            <rect x="0" y="30" width="1360" height="36" rx="3" fill="#f1f4f7" stroke="#e2e8ee"></rect>
+
+            <rect x="0" y="30" width="133.7" height="36" fill="#2d6fa8"></rect>
+            <rect x="133.7" y="30" width="6.1" height="36" fill="#1f9dbb"></rect>
+            <rect x="139.8" y="30" width="8.9" height="36" fill="#6f5fbe"></rect>
+            <rect x="148.7" y="30" width="157.1" height="36" fill="url(#hatch)"></rect>
+            <rect x="0" y="30" width="305.8" height="36" fill="none" stroke="#1f2733" stroke-width="1"></rect>
+            <text x="315" y="52" font-size="12" fill="#1f2733" font-family="IBM Plex Mono" font-weight="500">54.9 MiB now</text>
+
+            <line x1="540" y1="24" x2="540" y2="72" stroke="#8a95a3" stroke-width="1" stroke-dasharray="3 3"></line>
+            <text x="548" y="80" font-size="10.5" fill="#8a95a3" font-family="IBM Plex Sans">97 MiB — highest the sampled series ever recorded</text>
+
+            <line x1="680" y1="24" x2="680" y2="72" stroke="#dd9a2f" stroke-width="1.5"></line>
+            <text x="688" y="20" font-size="11" fill="#a8761f" font-family="IBM Plex Sans">128 MB steady-state budget</text>
+
+            <line x1="745" y1="18" x2="745" y2="72" stroke="#47535f" stroke-width="1" stroke-dasharray="3 3"></line>
+            <polygon points="745,72 739,82 751,82" fill="#47535f"></polygon>
+            <text x="753" y="96" font-size="11" fill="#47535f" font-family="IBM Plex Sans">peak 133.7 MiB</text>
+            <text x="753" y="109" font-size="10" fill="#8a95a3" font-family="IBM Plex Sans">lifetime high-water — the startup compile, over in seconds</text>
+
+            <line x1="1359" y1="24" x2="1359" y2="72" stroke="#dd9a2f" stroke-width="1.5" stroke-dasharray="4 3"></line>
+            <text x="1352" y="20" font-size="11" fill="#a8761f" text-anchor="end" font-family="IBM Plex Sans">256 MB hard-ceiling budget</text>
+            <text x="1352" y="82" font-size="10" fill="#8a95a3" text-anchor="end" font-family="IBM Plex Sans">not enforced — the container runs memory-high=unlimited</text>
+
+            <text x="0" y="82" font-size="10" fill="#8a95a3" font-family="IBM Plex Mono">0</text>
+            <text x="340" y="82" font-size="10" fill="#8a95a3" font-family="IBM Plex Mono" text-anchor="middle">64 MB</text>
+            <text x="1020" y="82" font-size="10" fill="#8a95a3" font-family="IBM Plex Mono" text-anchor="middle">192 MB</text>
+          </svg>
+          <div style="display: flex; justify-content: space-between; align-items: flex-end; margin-top: 6px; gap: 24px;">
+            <div style="display: flex; gap: 26px; align-items: baseline;">
+              <div><span class="num" style="font-size: 26px; font-weight: 600;">54.9</span> <span class="note">MiB resident · 45 % of the steady-state budget</span></div>
+            </div>
+            <span class="note" style="max-width: 660px; text-align: right;">
+              The peak sits past the 128 MB line and that is not a breach: the budget governs steady state, and this mark is a compile transient the process has not been near since.
+              <span style="display: block; margin-top: 4px;"><b>Both lines are budgets, not limits.</b> Nothing enforces them at runtime — the container runs <span class="mono">memory-high=unlimited</span>, so crossing one is a budget breach to investigate, never a kill. They are drawn as markers rather than a red wall for exactly that reason.</span>
+            </span>
+          </div>
+        </div>
+      </div>
+
+      <div class="row c2">
+
+        <div class="card">
+          <h3 class="ch"><span>What RSS is made of</span><span class="note">this instant</span></h3>
+          <div class="bd" style="display: flex; align-items: center; gap: 26px;">
+            <svg width="182" height="182" viewBox="0 0 182 182">
+              <circle cx="91" cy="91" r="62" fill="none" stroke="#eef2f6" stroke-width="26"></circle>
+              <circle cx="91" cy="91" r="62" fill="none" stroke="#2d6fa8" stroke-width="26" stroke-dasharray="170.3 219.3" stroke-dashoffset="0" transform="rotate(-90 91 91)"></circle>
+              <circle cx="91" cy="91" r="62" fill="none" stroke="#1f9dbb" stroke-width="26" stroke-dasharray="7.8 381.8" stroke-dashoffset="-170.3" transform="rotate(-90 91 91)"></circle>
+              <circle cx="91" cy="91" r="62" fill="none" stroke="#6f5fbe" stroke-width="26" stroke-dasharray="11.3 378.3" stroke-dashoffset="-178.1" transform="rotate(-90 91 91)"></circle>
+              <circle cx="91" cy="91" r="62" fill="none" stroke="url(#hatch)" stroke-width="26" stroke-dasharray="200.2 189.4" stroke-dashoffset="-189.4" transform="rotate(-90 91 91)"></circle>
+              <text x="91" y="86" font-size="22" font-weight="600" text-anchor="middle" font-family="IBM Plex Mono" fill="#1f2733">54.9</text>
+              <text x="91" y="103" font-size="10.5" text-anchor="middle" fill="#8a95a3" font-family="IBM Plex Sans">MiB RSS</text>
+            </svg>
+            <table>
+              <tr><td><span class="sw" style="background: #2d6fa8;"></span> compiled ruleset <span class="note">752,585 rules</span></td><td class="num">24.0 MiB</td><td class="num" style="color: #6b7785; width: 52px;">43.7 %</td></tr>
+              <tr><td><span class="sw" style="background: #1f9dbb;"></span> DNS cache <span class="note">1,108 entries</span></td><td class="num">1.1 MiB</td><td class="num" style="color: #6b7785;">2.0 %</td></tr>
+              <tr><td><span class="sw" style="background: #6f5fbe;"></span> stats aggregates + clients</td><td class="num">1.6 MiB</td><td class="num" style="color: #6b7785;">2.9 %</td></tr>
+              <tr><td><span class="sw" style="background: #a8b3c0;"></span> residual</td><td class="num">28.2 MiB</td><td class="num" style="color: #6b7785;">51.4 %</td></tr>
+              <tr><td style="font-weight: 500;">accounted</td><td class="num" style="font-weight: 500;">26.7 MiB</td><td class="num" style="color: #6b7785;">48.6 %</td></tr>
+            </table>
+          </div>
+          <p class="note" style="margin: 0; padding: 12px 14px; border-top: 1px solid #eef2f6;">
+            The four sum to RSS exactly — residual is <span class="mono">process_rss − accounted_bytes</span>, so it is a real slice, not an estimate of what is left over. It is hatched rather than coloured because it is not one structure: binary text and data pages, thread stacks, the Tokio runtime, and memory the allocator holds but has not returned to the kernel.
+            <span style="display: block; margin-top: 5px;"><b>Peak is deliberately not a slice here.</b> A lifetime high-water mark is not part of current RSS — putting 133.7 into this ring would draw a whole that does not exist, and would make the ruleset look half its real share. It belongs on the rail above, which is what a high-water mark is for.</span>
+          </p>
+        </div>
+
+        <div class="card">
+          <h3 class="ch"><span>Leak watch</span><span class="note">residual trend</span></h3>
+          <div class="bd">
+            <div style="display: flex; align-items: baseline; gap: 12px;">
+              <span class="num" style="font-size: 26px; font-weight: 600;">28.2</span>
+              <span class="note">MiB residual</span>
+              <span style="margin-left: auto; background: #e4f3ea; color: #2f7d4e; font-size: 11.5px; font-weight: 600; padding: 3px 9px; border-radius: 3px;">rose and returned — not a leak</span>
+            </div>
+            <svg viewBox="0 0 620 96" style="width: 100%; height: 96px; display: block; margin-top: 10px;">
+              <line x1="0" y1="78" x2="620" y2="78" stroke="#e7edf3"></line>
+              <polyline fill="none" stroke="#7c8899" stroke-width="1.9" points="0,64 27,63 54,61 81,57 108,50 135,40 162,29 189,20 216,14 243,10 270,13 297,21 324,32 351,43 378,52 405,58 432,62 459,64 486,72 513,68 540,64 567,60 594,58 620,57"></polyline>
+              <line x1="486" y1="6" x2="486" y2="86" stroke="#cfd8e3" stroke-width="1" stroke-dasharray="2 4"></line>
+              <text x="480" y="92" font-size="9.5" fill="#8a95a3" text-anchor="end" font-family="IBM Plex Sans">restart</text>
+              <text x="0" y="92" font-size="10" fill="#8a95a3" font-family="IBM Plex Mono">24 h ago</text>
+              <text x="620" y="92" font-size="10" fill="#8a95a3" font-family="IBM Plex Mono" text-anchor="end">now</text>
+            </svg>
+            <div style="display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 8px 20px; margin-top: 10px; font-size: 12.5px;">
+              <div style="display: flex; justify-content: space-between;"><span style="color: #6b7785;">residual, this process</span><span class="num">+4.1 MiB</span></div>
+              <div style="display: flex; justify-content: space-between;"><span style="color: #6b7785;">components, same window</span><span class="num">+0.3 MiB</span></div>
+              <div style="display: flex; justify-content: space-between;"><span style="color: #6b7785;">series min / max</span><span class="num">42 / 97 MiB</span></div>
+              <div style="display: flex; justify-content: space-between;"><span style="color: #6b7785;">minor fault rate</span><span class="num">118 /s</span></div>
+            </div>
+            <p class="note" style="margin: 12px 0 0;">
+              Residual is the number to watch, and only its <b>trend</b> means anything — it is never zero. It swelled to about 70 MiB and came back down while every component stayed flat: that is the allocator holding freed memory and later returning it, not a leak. A leak is residual that rises and never returns.
+              <span style="display: block; margin-top: 5px;">Growth in a <i>component</i> is not a leak either — it is that structure filling toward its cap. And a rising fault rate at flat RSS is purge thrash, not growth.</span>
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3 class="ch">
+          <span>Where RSS goes, over time</span>
+          <span style="display: flex; gap: 6px;"><span class="chip on">stacked</span><span class="chip">separate</span><span class="chip">share</span><span class="chip" style="margin-left: 10px;">24 h</span><span class="chip">7 d</span><span class="chip">30 d</span></span>
+        </h3>
+        <div class="bd">
+          <svg viewBox="0 0 1360 252" style="width: 100%; height: 252px; display: block;">
+            <line x1="0" y1="20" x2="1360" y2="20" stroke="#eef2f6"></line>
+            <line x1="0" y1="70" x2="1360" y2="70" stroke="#eef2f6"></line>
+            <line x1="0" y1="120" x2="1360" y2="120" stroke="#eef2f6"></line>
+            <line x1="0" y1="170" x2="1360" y2="170" stroke="#eef2f6"></line>
+            <text x="1360" y="17" font-size="10" fill="#b6bfc9" text-anchor="end" font-family="IBM Plex Mono">160 MiB</text>
+            <text x="1360" y="67" font-size="10" fill="#b6bfc9" text-anchor="end" font-family="IBM Plex Mono">120 MiB</text>
+            <text x="1360" y="117" font-size="10" fill="#b6bfc9" text-anchor="end" font-family="IBM Plex Mono">80 MiB</text>
+            <text x="1360" y="167" font-size="10" fill="#b6bfc9" text-anchor="end" font-family="IBM Plex Mono">40 MiB</text>
+
+            <polygon fill="url(#hatch)" points="0,165 59,164 118,163 177,160 237,155 296,148 355,138 414,128 473,116 532,106 591,99 650,101 710,110 769,121 828,131 887,139 946,144 1005,148 1064,149 1123,168 1183,163 1242,158 1301,153 1360,150 1360,187 1301,187 1242,187 1183,187 1123,187 1064,187 1005,187 946,187 887,187 828,187 769,187 710,187 650,187 591,187 532,187 473,187 414,187 355,187 296,187 237,187 177,187 118,187 59,187 0,187"></polygon>
+            <polygon fill="#6f5fbe" points="0,187 1360,187 1360,189 0,189"></polygon>
+            <polygon fill="#1f9dbb" points="0,189 1360,189 1360,190 0,190"></polygon>
+            <polygon fill="#2d6fa8" points="0,190 1360,190 1360,220 0,220"></polygon>
+            <line x1="0" y1="220" x2="1360" y2="220" stroke="#cfd8e3"></line>
+
+            <polyline fill="none" stroke="#47535f" stroke-width="1.7" stroke-dasharray="5 3" points="0,34 59,34 118,34 177,34 237,34 296,34 355,34 414,34 473,34 532,34 591,34 650,34 710,34 769,34 828,34 887,34 946,34 1005,34 1064,34 1123,53 1183,53 1242,53 1301,53 1360,53"></polyline>
+
+            <line x1="1123" y1="14" x2="1123" y2="220" stroke="#b6bfc9" stroke-width="1" stroke-dasharray="2 4"></line>
+            <circle cx="1123" cy="53" r="3.5" fill="#47535f"></circle>
+            <text x="1113" y="30" font-size="11" fill="#47535f" text-anchor="end" font-family="IBM Plex Sans">restart — the peak line drops here</text>
+            <text x="1113" y="44" font-size="10.5" fill="#8a95a3" text-anchor="end" font-family="IBM Plex Sans">a fall in this line is always a restart, never a reclaim</text>
+            <text x="1133" y="70" font-size="10.5" fill="#8a95a3" font-family="IBM Plex Sans">new process peak 133.7 — the startup compile,</text>
+            <text x="1133" y="84" font-size="10.5" fill="#8a95a3" font-family="IBM Plex Sans">never sampled by the area below it</text>
+
+            <text x="0" y="240" font-size="10" fill="#8a95a3" font-family="IBM Plex Mono">24 h ago</text>
+            <text x="1360" y="240" font-size="10" fill="#8a95a3" font-family="IBM Plex Mono" text-anchor="end">now</text>
+          </svg>
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 8px; gap: 24px;">
+            <div style="display: flex; gap: 18px; font-size: 11.5px; color: #47535f;">
+              <span><span class="sw" style="background: #2d6fa8;"></span> ruleset</span>
+              <span><span class="sw" style="background: #1f9dbb;"></span> cache</span>
+              <span><span class="sw" style="background: #6f5fbe;"></span> stats</span>
+              <span><span class="sw" style="background: #a8b3c0;"></span> residual</span>
+              <span style="color: #6b7785;">— — peak RSS</span>
+            </div>
+            <span class="note" style="text-align: right;">the stack sums to RSS · residual is the top band, so a leak reads as one thing: the top thickening while the others stay flat</span>
+          </div>
+          <p class="note" style="margin: 12px 0 0; border-top: 1px solid #eef2f6; padding-top: 11px;">
+            The hump is residual alone — the three components are flat lines across the whole window. That is the allocator, not the engine.
+            <span style="display: block; margin-top: 5px;">The compile peak never appears in the area, because it lasts seconds against a 60-second sample interval: the sampled series has never exceeded 97 MiB, while the high-water mark caught 133.7. That is the whole reason peak is charted beside the stack instead of derived from it.</span>
+            <span style="display: block; margin-top: 5px;">Cache and stats are hairlines at this scale. That is the true proportion, not a rendering fault — <b>share</b> reads the small bands, <b>separate</b> gives each its own axis.</span>
+          </p>
+        </div>
+      </div>
+
+      <div class="row c2">
+        <div class="card">
+          <h3 class="ch"><span>Minor page faults</span><span class="note">the rate, never the counter</span></h3>
+          <div class="bd">
+            <svg viewBox="0 0 620 132" style="width: 100%; height: 132px; display: block;">
+              <line x1="0" y1="30" x2="620" y2="30" stroke="#eef2f6"></line>
+              <line x1="0" y1="65" x2="620" y2="65" stroke="#eef2f6"></line>
+              <line x1="0" y1="100" x2="620" y2="100" stroke="#eef2f6"></line>
+              <text x="620" y="27" font-size="10" fill="#b6bfc9" text-anchor="end" font-family="IBM Plex Mono">400 /s</text>
+              <text x="620" y="97" font-size="10" fill="#b6bfc9" text-anchor="end" font-family="IBM Plex Mono">100 /s</text>
+              <polyline fill="none" stroke="#6f5fbe" stroke-width="1.9" points="0,97 27,96 54,95 81,94 108,92 135,90 162,89 189,91 216,93 243,95 270,94 297,93 324,95 351,96 378,95 405,96 432,95 459,96 486,18 513,74 540,90 567,95 594,96 620,96"></polyline>
+              <line x1="486" y1="10" x2="486" y2="112" stroke="#cfd8e3" stroke-width="1" stroke-dasharray="2 4"></line>
+              <text x="496" y="16" font-size="10.5" fill="#6f5fbe" font-family="IBM Plex Sans">restart + compile</text>
+              <text x="0" y="124" font-size="10" fill="#8a95a3" font-family="IBM Plex Mono">24 h ago</text>
+              <text x="620" y="124" font-size="10" fill="#8a95a3" font-family="IBM Plex Mono" text-anchor="end">now</text>
+            </svg>
+            <p class="note" style="margin: 10px 0 0;">
+              The counter is cumulative since process start, so charting it draws a ramp and says nothing. Its derivative is the purge-thrash detector: a rising rate at flat RSS means the purge delay is returning pages the allocator is about to fault straight back in.
+            </p>
+          </div>
+        </div>
+
+        <div class="card">
+          <h3 class="ch"><span>Kernel and allocator</span><span class="note">figures, not charts — each would draw a ramp</span></h3>
+          <div class="bd" style="padding-top: 4px;">
+            <table>
+              <tr><td>major page faults</td><td class="num" style="color: #2f7d4e;">0</td></tr>
+              <tr><td>minor page faults <span class="note">lifetime</span></td><td class="num">4,211,337</td></tr>
+              <tr><td>peak RSS <span class="note">lifetime</span></td><td class="num">133.7 MiB</td></tr>
+              <tr><td>allocator committed <span class="tagq">NO CONTRACT</span></td><td class="num">318.0 MiB</td></tr>
+              <tr><td>allocator committed peak <span class="tagq">NO CONTRACT</span></td><td class="num">318.0 MiB</td></tr>
+            </table>
+            <p class="note" style="margin: 12px 0 0;">
+              <b>Major faults are structurally near-zero</b> — nothing FastAdHunter touches is demand-paged from disk, so a non-zero value here means host memory pressure, not a FastAdHunter problem.
+              <span style="display: block; margin-top: 5px;"><b>Committed exceeding RSS several times over is expected</b>, not a problem: the allocator never decrements the counter when a purge returns pages, so it only rises. RSS is the authority on footprint. The two committed figures being equal is the normal state — if they ever diverge, the allocator has started accounting purges and the live figure becomes worth reading as one.</span>
+              <span style="display: block; margin-top: 5px;">Both come from whichever allocator is linked in and carry no compatibility promise, which is why they are labelled and parked here rather than charted next to the kernel readings.</span>
+            </p>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+</x-dc>
+</body>
+</html>
