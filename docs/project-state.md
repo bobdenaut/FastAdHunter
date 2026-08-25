@@ -4,20 +4,21 @@ Where the work is right now. **Rewrite this file — never append.** History
 belongs in `git log`, `docs/code-review/` and the phase tables; this file is only
 what is true today.
 
-**Last updated:** 2026-08-24
+**Last updated:** 2026-08-25
 
 ## Now
 
 | | |
 | --- | --- |
-| Branch | `main`, `5657aa0`. Everything is on **both** origin and backup; nothing is local-only. Tag `v0.2.19-phase2.5` pushed |
-| Tree | clean. No runtime code change since p2.5-11 (`6417842`) other than phase-2.6 Stage 1 work through p2.6-09; the four most recent commits are documentation and measurement data only |
-| Tests | green — fmt/clippy/test at the last code-bearing task (p2.6-09) |
-| Version | 0.2.19 (workspace). **The version string does not identify a build** — the deployed phase-2.5 image and the Stage 1 image both report `0.2.19`. Discriminate by container `tag`, or by whether `/telemetry`'s upstream entries carry the p2.6-06 fields (`state`, `penalty_round`, `penalties`, `penalized_seconds_total`, `probes`, `probe_successes`, `family`) |
-| Deployed | **production**: 0.2.19 phase-2.5 build on `veth1` (`172.17.0.2`) since 2026-08-23T14:59:52Z, carrying p2.5-01…11, `strategy = "fallback"`. **probe**: container `fah-probe` on `veth3` (`172.17.0.4`) running `fastadhunter:stage1` built at `f65386f`, also `fallback`, `start-on-boot=no` — a measurement container, not a service |
-| Phase | **2.5 closed**, tag `v0.2.19-phase2.5`. **2.6 in `plan/wip/phase2.6-adaptive-stage1`** — 13 tasks, **11 `DONE`** |
-| Gate | [Global Architecture Review-Reconciled.md](code-review/Global%20Architecture%20Review-Reconciled.md): §5.1–6 **cleared** — §5.1 p2.5-01, §5.2 p2.5-02, §5.4 p2.5-03, §5.5 p2.5-04, §5.6 p2.5-05 + p2.5-10. §5.7–14 gate Phase 3. **S1-G2 tier 1 met** (p2.6-08); **tier 3 frozen at 5.00 %** (p2.6-10) |
-| **Next** | `p2.6-11-optin-deploy-soak` |
+| Branch | `main`, `8924ca0`. Everything is on **both** origin and backup; nothing is local-only. Tag `v0.2.19-phase2.5` pushed; 0.2.20 is **not** tagged |
+| Tree | clean. No runtime code change since p2.5-11 (`6417842`) other than phase-2.6 Stage 1 work through p2.6-09; every commit since is documentation, measurement data or the version bump |
+| Tests | green — fmt/clippy/test at `1c430aa`: **1 056 passed, 0 failed, 8 ignored** |
+| Version | 0.2.20 (workspace). **The version string still does not identify a build** — 0.2.19 named both the phase-2.5 production image and the Stage 1 probe image. 0.2.20 is unambiguous today, but discriminate by container `tag` or by whether `/telemetry`'s upstream entries carry the p2.6-06 fields (`state`, `penalty_round`, `penalties`, `penalized_seconds_total`, `probes`, `probe_successes`, `family`) |
+| Deployed | **production**: container **`fah-next`** on `veth1` (`172.17.0.2`), 0.2.20, `root-dir /kingston/fastadhunter/root-0220`, **`strategy = "adaptive"`** via envlist `fah-optin`, `start-on-boot=yes`, soaking since 2026-08-25T07:57:02Z. **rollback**: the 0.2.19 container still exists as `comment="fastadhunter"`, stopped, `start-on-boot=no`. **probe**: `fah-probe` on `veth3` (`172.17.0.4`), `fastadhunter:stage1` at `f65386f`, stopped between arms |
+| Selector trap | `[find comment="fastadhunter"]` now resolves to the **stopped 0.2.19 rollback container**. Every live-path command targets `[find comment="fah-next"]` until the post-soak cleanup renames it back |
+| Phase | **2.5 closed**, tag `v0.2.19-phase2.5`. **2.6 in `plan/wip/phase2.6-adaptive-stage1`** — 13 tasks, **11 `DONE`**, p2.6-11 in progress |
+| Gate | [Global Architecture Review-Reconciled.md](code-review/Global%20Architecture%20Review-Reconciled.md): §5.1–6 **cleared** — §5.1 p2.5-01, §5.2 p2.5-02, §5.4 p2.5-03, §5.5 p2.5-04, §5.6 p2.5-05 + p2.5-10. §5.7–14 gate Phase 3. **S1-G2 tiers 1, 2 and 3 all met**; **S1-G4 and S1-G5 are not validated and will not be** |
+| **Next** | `p2.6-11` continues — L.4a/L.4b, then the soak closes 2026-09-01 |
 
 ## Phase 2.6 — Adaptive DNS Stage 1, in progress
 
@@ -27,8 +28,37 @@ docs. p2.6-08 met S1-G2 tier 1 on the microbench. p2.6-09 passed S1-G3 on the
 injected-failure bench. p2.6-13 built the on-device harness. p2.6-10 ran suite
 S1-N and froze the tier-3 threshold.
 
-**Remaining:** `p2.6-11` (opt-in deploy, 7-day soak, G2 tiers 2–3, G4, G5),
-then `p2.6-12` (default flip).
+**`p2.6-11` is in progress** — deploy done, pre-flip measurements done, soak
+running. Full evidence:
+[p2.6-11 review](code-review/phase2.6/p2.6-11-optin-deploy-soak-review.md).
+
+| Item | Result |
+| --- | --- |
+| 0.2.20 deployed, verified under `fallback`, then opted in | done |
+| M.8 re-run — **closes p2.6-08 F1** | PASS. K = 8 pre-declared; 95 % t-CI of `mean(d_i)` `[−2.385 %, +1.893 %]`; worst pair +4.43 %; control −1.95 % |
+| S1-G2 tier 2 | PASS — `attempts/miss = 1.000000`, zero penalties, zero probes, 6 repetitions |
+| S1-G2 tier 3 | PASS — **+0.036 %** against the frozen 5.00 % |
+| L.1s, the SWR arm | PASS — 114 000 refreshes/repetition, zero dropped, zero failed |
+| S1-G4, S1-G5 | **NOT validated** — see below |
+| L.3 soak | running, 2026-08-25T07:57:02Z → 2026-09-01 |
+| L.4a / L.4b | not run |
+
+**S1-G4 closed without an answer, by owner decision.** The `fallback`
+run-length window ended at the opt-in with **three closed runs, all of length 1,
+zero of length ≥ 2, over 42 639 primary attempts (0.0070 %)**. That is far too
+few to calibrate `penalty_failures`, which therefore stays at its compiled
+default of **2 — provisional and empirically uncalibrated.** The alternative was
+holding `fallback` another 12–17 days; it was put to the owner and declined.
+S1-G5 route 1 is confirmed closed (partial failure exists, suite T); **route 2
+stays open and is not decidable from this deployment.** Do not later describe
+Stage 1's constants as calibrated on this deployment.
+
+The window cannot be reopened without reverting the strategy: under `adaptive`,
+`upstreams[].attempts` excludes `resolve_host`, so post-flip samples are a
+different quantity and are not pooled.
+
+**Remaining after p2.6-11:** `p2.6-12` (default flip) — and its precondition is
+a gate set that now has two unvalidated members.
 
 **The on-device measurement harness exists** — this is the expensive thing not
 to rediscover:
@@ -50,7 +80,19 @@ to rediscover:
   [p2.6-10-session/](code-review/phase2.6/p2.6-10-session/) (`tools/`,
   `config/`, nine repetitions) and
   [p2.6-13-trial/](code-review/phase2.6/p2.6-13-trial/).
-- Teardown of `fah-probe` is **deliberately deferred** until p2.6-11 finishes.
+- **Flipping the probe's strategy** costs one router command, not a config
+  edit: envlist `probe-optin` carries `FAH__DNS__UPSTREAMS__STRATEGY=adaptive`,
+  and `/container/set [find comment="fah-probe"] envlists=fah-env,probe-optin`
+  (or back to `fah-env` alone) plus a restart switches arms. **`fah-env` must
+  never carry a strategy key** — production and the probe share it, so setting
+  it there flips both and silently destroys the `fallback` control.
+- **Cache settings decide what a probe arm can measure.** The probe runs
+  `max_entries = 10 000`, `min_ttl_seconds = 0`. A unique-name flood at
+  ~10 000 QPS evicts the whole cache about once a second, so no entry survives
+  to go stale and SWR is structurally unmeasurable. L.1s works only at a low
+  rate over a working set below `max_entries`.
+- Teardown of `fah-probe` is **deliberately deferred** until p2.6-11 finishes;
+  L.4a/L.4b still need it.
 
 **S1-G2 tier 3 is frozen at 5.00 %** on total upstream attempts, from
 N = 0.1094 % over a pre-declared K = 8 null A/B on the RB5009
@@ -73,9 +115,17 @@ for it; that was considered and rejected. The metric order is unchanged.
 - Thirteen tasks, each with a `-plan.md`; the phase CLAUDE.md requires reading
   both. `p2.6-13` was appended rather than inserted — it runs **before** 10 and
   11 despite the higher `NN`, because renumbering would break every
-  cross-reference in the phase's review files. Deployment tier keeps two
-  explicit owner decisions: `penalty_failures` from the observed run-length
-  data, and extending a short S1-G4 window rather than reading it.
+  cross-reference in the phase's review files. Both deployment-tier owner
+  decisions have now been taken, and both went the same way: `penalty_failures`
+  was **not** derived from run-length data, and the S1-G4 window was **not**
+  extended.
+- **Pre-declaration is the phase's recurring failure mode.** p2.6-08 F1 existed
+  because K was extended mid-session; it closed in p2.6-11 only by writing K = 8
+  down first. Two further declarations in p2.6-11 were wrong when written —
+  M.8's sample size, and an L.1s workload that could not have exercised SWR at
+  all — and both were caught while setting the arm up, corrected before the
+  first measurement, and recorded with their reason. A declaration that can be
+  quietly edited is not a declaration.
 - Timing terms fixed everywhere: `timeout_ms` per leg (`attempt_timeout` in
   code); `attempt_bound_ms = ATTEMPT_LEGS × timeout_ms`; `PENALTY_BASE = 10 ×
   attempt_bound_ms`; `PENALTY_MAX = 300 s`.
@@ -94,10 +144,18 @@ for it; that was considered and rejected. The metric order is unchanged.
 ## Sequencing
 
 1. **Phase 2.6 — Adaptive Stage 1**: p2.6-01…09 on the dev box **done**;
-   p2.6-13 (harness) and p2.6-10 (null A/B) on the device **done**; next
-   p2.6-11 (opt-in deploy, 7-day soak, S1-G4, S1-G5); p2.6-12 default flip only
-   if every deployment-tier gate passes. If the run-length window shows only
-   isolated single losses, not flipping the default is the correct outcome.
+   p2.6-13 (harness) and p2.6-10 (null A/B) **done**; p2.6-11 **in progress** —
+   deployed and opted in, tiers 2–3, M.8 and L.1s all passed, soak closes
+   2026-09-01, L.4a/L.4b outstanding. Then p2.6-12.
+   **p2.6-12's precondition is now weaker than the plan assumed.** The default
+   flip was gated on every deployment-tier gate passing; S1-G4 and S1-G5 route 2
+   closed unvalidated instead. The spec's own narrow rejection route still
+   stands — if this deployment produces only isolated single losses, Stage 1 at
+   `penalty_failures = 2` never engages and **not flipping the default is the
+   correct outcome**. Three length-1 runs are consistent with that route and
+   equally consistent with too small a sample; nothing measured distinguishes
+   them. That call belongs to p2.6-12 and needs an explicit owner decision, not
+   an inference from "the other gates passed".
 2. **Phase 3 — after 2.6 closes**, conditional on §5.7–14 (cert machinery
    home/ADR, connector redesign, DoH/DoT listener placement, telemetry
    taxonomy, memory caps per new state owner, 443 steering v4+v6, on-device
@@ -105,21 +163,30 @@ for it; that was considered and rejected. The metric order is unchanged.
 
 ## Open unknowns (reconciled §4)
 
-- **S1-G4 run-length distribution — the gate that decides whether Stage 1
-  ships.** Captures and procedure:
-  [s1g4-window/](code-review/phase2.5/s1g4-window/) (owner says
-  "capture S1-G4"). Read as the sum of per-process `failure_runs` deltas;
-  counters reset on restart, so a segment survives only if captured before its
-  process ends. Running total: **one closed run, of length 1**, over 18,949
-  primary attempts. Live bucketing is confirmed working (it was unobserved at
-  p2.5-09 V5c). Segment 02 is open on 0.2.19.
-- **The failure rate does not match the earlier sample.** This window gives
-  0.0053 % (1 / 18,949). Suite T sample 1 recorded 0.072 % and 27 partial
-  failure events over 45.7 h — an order of magnitude busier. Unexplained, and
-  it decides whether S1-G4 can ever accumulate enough closed runs to read.
-- **Three of four endpoints produce no data under `fallback`.** `9.9.9.9` one
-  attempt, both v6 endpoints zero, across both segments. Stage 1 cannot
-  penalize or probe an endpoint that is never selected.
+- **S1-G4 is closed, not answered.** Final window in
+  [s1g4-window/](code-review/phase2.5/s1g4-window/): three closed runs, all
+  length 1, zero of length ≥ 2, over 42 639 primary attempts. Not reopenable
+  without reverting to `fallback`. One procedural lesson, paid for once:
+  `failure_runs` resets per process, so **capture immediately before any
+  restart** — segment 02's ~13 h tail was lost to a deploy that skipped it.
+- **The two failure rates are not comparable, and that is the finding.** Suite
+  T sample 1 gave 0.072 %; this window gives 0.0070 %. Upstream composition
+  moved underneath them — SWR 69.1 % → 47.0 %, `resolve_host` 20.1 % → 36.5 %,
+  client forwards 10.3 % → 16.4 % — at nearly identical total volume (913 vs
+  929 attempts/h). They are rates over differently composed denominators;
+  comparing them directly is a category error, and the spec's "base rate
+  documented — 0.072 %" is scoped to suite T's composition. **Unproven:** that
+  the composition shift *causes* the 15× gap. Telemetry carries no per-class
+  failure attribution by design (S1.12), so the failures cannot be assigned to
+  the class that shrank. Ruled out: `timeout_ms` unchanged since phase 0;
+  p2.5-05 added event fields without touching `failures` semantics.
+- **Three of four endpoints produce no data.** `9.9.9.9` gets one attempt per
+  primary failure and nothing else; both v6 endpoints stay at zero, across
+  every segment. Stage 1 cannot penalize or probe an endpoint that is never
+  selected, and `adaptive` does not change this — selection is config-order,
+  first-healthy-wins, not latency-aware. Making those endpoints observable
+  needs deliberate probing of non-selected endpoints, which is Stage 2 work and
+  is not designed.
 - **The deployed build is unsoaked.** V6 passed on 0.2.18 over 15.81 h;
   0.2.19 shipped after it. The delta is a WS event key and a counter on a 10 s
   poll, so no soak was run — but the soak evidence describes a build that is
@@ -131,10 +198,19 @@ for it; that was considered and rejected. The metric order is unchanged.
   `cache_hit_p99` never left its first bucket in 161 perf rows, making the
   control arm's p99 half structurally unable to fire. Any future gate wanting
   latency resolution needs a code change, not a methodology change.
-- **Whether the SWR path needs its own arm is unanswered.** The L.1 workload
-  produces zero SWR activity by construction — unique forward names are never
-  re-queried and control names stay fresh — so ~69 % of upstream attempts stay
-  unmeasured. Carried to p2.6-11.
+- ~~Whether the SWR path needs its own arm.~~ **Answered in p2.6-11: it did,
+  and Stage 1 is clean on it.** L.1's `swr.*` zeroes were vacuous — its
+  workload enqueues nothing, so passing `swr.failed == 0` was arithmetic. The
+  L.1s arm sustains 114 000 refreshes per repetition with zero dropped, zero
+  failed, and no penalty or probe on the `adaptive` arm. Two limits stand: L.1
+  is ~100 % client forwards and L.1s is 97–100 % SWR, so the deployed ~69/10
+  blend is measured by neither, and their interaction is untested; and
+  `probes == 0` is evidence about refresh traffic against **healthy**
+  endpoints only — SWR against a failing endpoint is B.8's scenario, covered
+  in-process at 100 stale keys and never on-device at load.
+- **The deployed build has no soak evidence of its own yet.** 0.2.20 is the
+  first build to run `adaptive` in production; its 7-day window closes
+  2026-09-01. Until then the only soak evidence on file describes 0.2.18.
 - IPv6 upstream forwarding: first on-device evidence 2026-08-22
   (`2606:4700:4700::1111` at index 0, 37 attempts / 0 failures, 0.2.17;
   [p2.5-08 review](code-review/phase2.5/p2.5-08-hygiene-review.md) §Side
