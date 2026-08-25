@@ -1,0 +1,94 @@
+{
+ "captured_utc": "20260825T061838Z",
+ "health": {
+  "status": "ok",
+  "version": "0.2.20",
+  "uptime_seconds": 31322
+ },
+ "upstreams": [
+  {
+   "address": "1.1.1.1",
+   "protocol": "udp",
+   "attempts": 8700,
+   "failures": 0,
+   "consecutive_failures": 0,
+   "tls_handshakes": 0,
+   "failure_runs": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "state": "healthy",
+   "penalty_round": 0,
+   "penalties": 0,
+   "penalized_seconds_total": 0,
+   "probes": 0,
+   "probe_successes": 0,
+   "family": "v4"
+  },
+  {
+   "address": "9.9.9.9",
+   "protocol": "udp",
+   "attempts": 0,
+   "failures": 0,
+   "consecutive_failures": 0,
+   "tls_handshakes": 0,
+   "failure_runs": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "state": "healthy",
+   "penalty_round": 0,
+   "penalties": 0,
+   "penalized_seconds_total": 0,
+   "probes": 0,
+   "probe_successes": 0,
+   "family": "v4"
+  },
+  {
+   "address": "2606:4700:4700::1111",
+   "protocol": "udp",
+   "attempts": 0,
+   "failures": 0,
+   "consecutive_failures": 0,
+   "tls_handshakes": 0,
+   "failure_runs": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "state": "healthy",
+   "penalty_round": 0,
+   "penalties": 0,
+   "penalized_seconds_total": 0,
+   "probes": 0,
+   "probe_successes": 0,
+   "family": "v6"
+  },
+  {
+   "address": "2620:fe::fe",
+   "protocol": "udp",
+   "attempts": 0,
+   "failures": 0,
+   "consecutive_failures": 0,
+   "tls_handshakes": 0,
+   "failure_runs": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "state": "healthy",
+   "penalty_round": 0,
+   "penalties": 0,
+   "penalized_seconds_total": 0,
+   "probes": 0,
+   "probe_successes": 0,
+   "family": "v6"
+  }
+ ]
+}

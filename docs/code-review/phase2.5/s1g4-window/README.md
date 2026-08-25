@@ -42,9 +42,19 @@ Optional alongside it, useful only at a build boundary:
 | # | Build | Captured | Window covered | `1.1.1.1` attempts / failures | `failure_runs` |
 | --- | --- | --- | --- | --- | --- |
 | 01 | 0.2.18 | 2026-08-23T14:54:35Z | 2026-08-22T22:19:31Z → capture (16.6 h) | 18,780 / 1 | `[1,0,0,0]` |
-| 02 | 0.2.19 | 2026-08-24T08:28:51Z | process start 14:59:52Z → capture (17.5 h), **open** | 12,287 / 1 | `[1,0,0,0]` |
+| 02 | 0.2.19 | 2026-08-24T08:28:51Z | process start 14:59:52Z → capture (17.5 h), **truncated** | 12,287 / 1 | `[1,0,0,0]` |
+| 03 | 0.2.20 | 2026-08-25T06:18:38Z | process start 2026-08-24T21:35:55Z → capture (8.7 h), **open** | 8,700 / 0 | `[0,0,0,0]` |
 
-Segment 02 is live and has no end capture yet.
+**Segment 02's tail is lost.** Its process kept running for ~13 h after the
+08:28:51Z capture and was stopped by the p2.6-11 deploy at 2026-08-24T21:35Z
+with no final capture. `failure_runs` resets per process, so any run that
+closed in that window is unrecoverable. The procedure above says to capture
+immediately before a deploy; that step was skipped. Segment 02 therefore
+contributes only what its last capture holds.
+
+Segment 03 is live on the p2.6-11 build and has no end capture yet. **Capture
+it before the `adaptive` opt-in restart**, or the same loss repeats — and that
+restart is the boundary the whole `fallback` window closes at.
 
 `9.9.9.9` and both v6 endpoints: 0–1 attempts across both segments. Under
 `fallback` the primary answers essentially everything, so three of four
@@ -57,7 +67,8 @@ endpoints are unmeasured — Stage 1 cannot penalize or probe what never runs.
 | Window opened | 2026-08-22T22:19:31Z (p2.5-09 V5d), 0.2.18 deploy |
 | Closed runs, all segments | **2**, both of length 1 |
 | Runs of length ≥ 2 | **0** |
-| Primary failure rate | 2 / 31,067 attempts = 0.0064 % |
+| Primary failure rate | 2 / 39,767 attempts = 0.0050 % |
+| Recorded window | ~42.8 h across three segments, **plus ~13 h observed but unrecorded** (segment 02's lost tail) |
 
 Earlier suite T sample 1 put the base rate at 0.072 % and found 27 partial
 failure events over 45.7 h. This window is an order of magnitude quieter. The
