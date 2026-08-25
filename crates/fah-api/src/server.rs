@@ -66,6 +66,7 @@ impl ApiServer {
         // one actually bound, mirroring `fah_dns::Server`.
         let local_addr = listener.local_addr()?;
 
+        crate::web::check_root();
         let events = EventHub::new();
         let router = crate::routes::router(state.build(events.clone()));
         let tls = tls_config.is_some();

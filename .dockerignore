@@ -4,7 +4,16 @@
 /.vscode
 /plan
 /docs
-/dashboard
+# `/dashboard` is NOT excluded: the frontend stage builds from
+# dashboard/frontend/ (p5-05). Only what a local `npm install` and
+# `npm run build` leave behind is kept out of the context — the image must
+# never carry node_modules, and dist/ is what the stage regenerates.
+#
+# `**/node_modules` rather than the one path: npm workspaces and a failed hoist
+# both put node_modules below dashboard/frontend/, and a nested one would
+# otherwise be re-sent as build context on every build.
+**/node_modules
+dashboard/frontend/dist
 /benches
 /tests
 /requests

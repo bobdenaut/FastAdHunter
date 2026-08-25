@@ -10,7 +10,7 @@ use std::time::{Duration, SystemTime};
 use axum::extract::{Path, Query, State, WebSocketUpgrade};
 use axum::http::StatusCode;
 use axum::response::Response;
-use axum::routing::{get, post, put};
+use axum::routing::{any, get, post, put};
 use axum::{Json, Router};
 use fah_config::{AssignmentConfig, PolicyConfig, RuleListConfig};
 use fah_model::{HistoryRange, HistoryResolution, TopKind};
@@ -81,17 +81,21 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/config", get(get_config).post(post_config))
         .route("/config/apikey/rotate", post(rotate_api_key))
         .route("/debug/memory", get(debug_memory))
-        .route("/events", get(events_socket));
+        .route("/events", get(events_socket))
+        .fallback(not_found);
+
+    let api = Router::new().nest("/v1", v1).fallback(not_found);
 
     Router::new()
         .route("/health", get(health))
-        .nest("/api/v1", v1)
-        .fallback(not_found)
+        .route("/api/", any(not_found))
+        .nest("/api", api)
         .layer(axum::middleware::from_fn_with_state(
             Arc::clone(&state),
             crate::auth::require_api_key,
         ))
         .with_state(state)
+        .merge(crate::web::mounted())
 }
 
 async fn not_found() -> ApiError {

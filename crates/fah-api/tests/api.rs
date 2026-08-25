@@ -604,7 +604,7 @@ async fn every_v1_route_requires_the_key() {
 }
 
 #[tokio::test]
-async fn health_is_public_and_every_other_route_is_not() {
+async fn health_is_public_and_every_api_route_is_not() {
     let harness = start().await;
 
     let health = harness
@@ -631,7 +631,6 @@ async fn an_unknown_route_is_a_json_not_found() {
     let body: Value = response.json().await.unwrap();
     assert_eq!(body["error"]["code"], "not_found");
 
-    // Auth wraps the whole router, so it answers before routing does.
     let anonymous = harness
         .client
         .get(harness.url("/api/v1/nope"))
@@ -639,6 +638,59 @@ async fn an_unknown_route_is_a_json_not_found() {
         .await
         .unwrap();
     assert_eq!(anonymous.status(), 401);
+    assert!(
+        anonymous.headers().get("vary").is_none(),
+        "the API surface must not be answered by the static service"
+    );
+}
+
+#[tokio::test]
+async fn every_path_under_api_is_json_never_the_shell() {
+    let harness = start().await;
+
+    for path in ["/api", "/api/", "/api/v2/stats", "/api/v1/nope"] {
+        let response = harness.get(path).await;
+        assert_eq!(response.status(), 404, "{path}");
+        assert!(
+            response.headers().get("vary").is_none(),
+            "{path} was answered by the static service"
+        );
+
+        let body: Value = response.json().await.unwrap();
+        assert_eq!(body["error"]["code"], "not_found", "{path}");
+
+        let anonymous = harness.client.get(harness.url(path)).send().await.unwrap();
+        assert_eq!(anonymous.status(), 401, "{path} must stay behind the key");
+    }
+}
+
+#[tokio::test]
+async fn the_static_paths_are_outside_the_api_key_boundary() {
+    let harness = start().await;
+
+    for path in ["/", "/assets/app.deadbeef.js", "/lists/oisd-basic"] {
+        let response = harness.client.get(harness.url(path)).send().await.unwrap();
+        assert_ne!(response.status(), 401, "{path} must not require the key");
+        assert_eq!(
+            response.headers().get("vary").and_then(|v| v.to_str().ok()),
+            Some("accept-encoding"),
+            "{path} must be answered by the static service"
+        );
+        assert_ne!(
+            response
+                .headers()
+                .get("content-type")
+                .and_then(|v| v.to_str().ok()),
+            Some("application/json"),
+            "{path} must not be answered by the API router"
+        );
+
+        let body = response.text().await.unwrap();
+        assert!(
+            !body.contains("\"error\""),
+            "{path} was answered by the API, not the static service: {body}"
+        );
+    }
 }
 
 // ─── TLS ───────────────────────────────────────────────────────────────

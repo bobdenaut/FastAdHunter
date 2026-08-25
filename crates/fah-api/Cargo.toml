@@ -40,6 +40,12 @@ time = { version = "0.3", default-features = false, features = ["formatting", "p
 tokio = { workspace = true, features = ["macros", "net", "rt-multi-thread", "sync", "time"] }
 tokio-rustls = { version = "0.26", default-features = false, features = ["aws_lc_rs", "tls12"] }
 tower = { version = "0.5", features = ["util"] }
+# `fs` is the dashboard's static surface (ServeDir/ServeFile, pre-compressed
+# variants, Last-Modified revalidation); `set-header` adds the cache-control and
+# Vary layers over it. Already in Cargo.lock through reqwest, but only as a
+# dev-dependency and without `fs`, so this is a genuine release-binary addition
+# — the delta is recorded in docs/code-review/phase5/p5-01-static-serving-review.md.
+tower-http = { version = "0.6", default-features = false, features = ["fs", "set-header"] }
 tracing = { workspace = true }
 
 [dev-dependencies]

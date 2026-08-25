@@ -26,6 +26,7 @@ mod state;
 mod telemetry;
 mod timestamp;
 mod tls;
+mod web;
 mod wire;
 
 pub use config_store::{ConfigStore, ConfigStoreError, UpdateOutcome};

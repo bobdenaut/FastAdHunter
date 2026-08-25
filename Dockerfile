@@ -4,13 +4,17 @@
 # a distroless image (SECURITY.md §Container hardening: no shell, no package
 # manager, non-root). Deployment target is RouterOS/RB5009 (arm64).
 #
+# `--build-arg FAH_VERSION=` is what the placeholder page names; it defaults to
+# `dev` and matters only until p5-05 replaces the fixture with the real build.
+#
 # Build (single platform, loads into local `docker images`):
-#   docker buildx build --platform linux/amd64 -t fastadhunter:dev --load .
+#   docker buildx build --platform linux/amd64 --build-arg FAH_VERSION=0.2.20 \
+#     -t fastadhunter:dev --load .
 #
 # Build (multi-arch, requires a registry to push to — see docs/deploy-rb5009.md
 # and the one-time buildx builder setup below):
 #   docker buildx build --platform linux/amd64,linux/arm64 \
-#     -t <registry>/fastadhunter:0.1.0 --push .
+#     --build-arg FAH_VERSION=0.1.0 -t <registry>/fastadhunter:0.1.0 --push .
 #
 # One-time buildx setup (per host):
 #   docker buildx create --name fah-builder --use
@@ -27,6 +31,38 @@
 # A C compiler *is* required, for mimalloc (see `crates/fastadhunter/src/allocator.rs`). Both halves of that are
 # already in this stage — see the `apk add` below.
 
+# The web UI (`/web`), built on the *build host's* architecture. Its output is
+# static files with no architecture, and without --platform=$BUILDPLATFORM the
+# arm64 build would run the whole Node toolchain under QEMU for nothing.
+#
+# Node is a build-time dependency only: nothing from this stage reaches the
+# runtime image except the emitted files.
+#
+# p5-01 ships a *fixture* bundle rather than a real build — there is no frontend
+# source yet, and the delivery path still has to prove MIME coverage,
+# pre-compressed selection and the cache split. p5-05 replaces the RUN below
+# with `COPY dashboard/frontend/ .` + `npm ci && npm run build` (which is what
+# `.dockerignore` was opened up for) and deletes the fixture.
+FROM --platform=$BUILDPLATFORM node:22.21.1-alpine AS frontend
+
+ARG FAH_VERSION=dev
+WORKDIR /web
+
+# Content is deterministic on purpose — no timestamps, no /dev/urandom — so an
+# unchanged build produces an identical layer. The `.gz`/`.br` siblings come
+# from Node's own zlib (brotli included), which costs no extra package.
+RUN set -eu; \
+    mkdir -p assets; \
+    printf '<!doctype html>\n<meta charset="utf-8">\n<title>FastAdHunter</title>\n<h1>FastAdHunter %s</h1>\n<p>Placeholder bundle. The dashboard lands later in phase 5.\n' "$FAH_VERSION" > index.html; \
+    printf 'export const version = "%s";\n' "$FAH_VERSION" > assets/app.a1b2c3d4.js; \
+    printf ':root { color-scheme: light dark; }\n' > assets/app.a1b2c3d4.css; \
+    printf '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"></svg>\n' > assets/sprite.a1b2c3d4.svg; \
+    printf '{"version":"%s"}\n' "$FAH_VERSION" > assets/meta.a1b2c3d4.json; \
+    printf 'wOF2 fixture\n' > assets/font.a1b2c3d4.woff2; \
+    printf 'ico fixture\n' > favicon.ico; \
+    node -e 'const z=require("zlib"),f=require("fs");for(const p of process.argv.slice(1)){const b=f.readFileSync(p);f.writeFileSync(p+".gz",z.gzipSync(b,{level:9}));f.writeFileSync(p+".br",z.brotliCompressSync(b));}' \
+      index.html assets/app.a1b2c3d4.js assets/app.a1b2c3d4.css
+
 # Keep this tag's Rust version in sync with rust-toolchain.toml.
 FROM rust:1.96.0-alpine AS builder
 
@@ -38,7 +74,14 @@ FROM rust:1.96.0-alpine AS builder
 RUN apk add --no-cache musl-dev
 
 WORKDIR /build
-COPY . .
+# Scoped rather than `COPY . .`, so an edit under `dashboard/` cannot invalidate
+# this stage's layer cache and force a full Rust rebuild. These four entries are
+# everything `cargo build --locked -p fastadhunter` reads: the workspace
+# manifest and lockfile, the toolchain pin, and both `members` globs
+# (`crates/*`, `tui-monitor`).
+COPY Cargo.toml Cargo.lock rust-toolchain.toml ./
+COPY crates ./crates
+COPY tui-monitor ./tui-monitor
 
 RUN cargo build --release --locked -p fastadhunter
 
@@ -54,6 +97,10 @@ FROM gcr.io/distroless/static-debian12:nonroot
 COPY --from=builder /build/target/release/fastadhunter /fastadhunter
 COPY --from=builder --chown=65532:65532 /seed/config /config
 COPY --from=builder --chown=65532:65532 /seed/data /data
+# Image content, never a volume (VOLUME below stays /config + /data): the UI and
+# the API version and deploy as one artifact, so a rollback can never pair an
+# older binary with a newer UI. Left root-owned — the serving uid only reads it.
+COPY --from=frontend /web /web
 
 # Root at entry, by design (ADR-0004): the process binds port 53 — which
 # RouterOS permits no other way, having no `cap-add`, no lowered
