@@ -140,7 +140,7 @@ Shipped and verified on-device; see `plan/closed/phase2/`.
       deployment already sits at the best case. `p2-11` and `p2-12` both closed
       with zero code (`docs/code-review/phase2/p2-12-compile-transient-attribution.md`).
 
-## Phase 2.5 — Pre-Adaptive hardening 🚧 **IN PROGRESS** (`plan/wip/phase2.5-hardening/`)
+## Phase 2.5 — Pre-Adaptive hardening ✅ **DONE** (`plan/closed/phase2.5-hardening/`)
 
 Unplanned phase, inserted after Phase 2 shipped. Closes the operational risks
 and the Adaptive DNS Stage 1 ship-gates a global architecture review raised.
@@ -165,19 +165,18 @@ and the Adaptive DNS Stage 1 ship-gates a global architecture review raised.
       upstream walk
 - [x] **p2.5-08** hygiene — tracked bearer token gone and rotated, layering
       guard covers the whole workspace, stale docs reconciled
-- [ ] **p2.5-09** phase verification — gates green, 0.2.18 deployed,
-      listener-death drill passed, S1-G4 collection running; the soak
-      criteria are still being read
-- [ ] **p2.5-10** WS endpoint attribution — `endpoint` reaches the WS `query`
-      event (merged; not yet in a deployed build)
-- [ ] **p2.5-11** refusal log hygiene — egress refusals log at `debug` and are
-      counted on `/telemetry` (merged; not yet in a deployed build)
+- [x] **p2.5-09** phase verification — gates green, 0.2.18 deployed,
+      listener-death drill passed, S1-G4 collection running
+- [x] **p2.5-10** WS endpoint attribution — `endpoint` reaches the WS `query`
+      event
+- [x] **p2.5-11** refusal log hygiene — egress refusals log at `debug` and are
+      counted on `/telemetry`
 
 0.2.18 went to the device after `p2.5-08`: the failure counters and the
 run-length distribution want **deployment time**, since every day they run
 before Stage 1 lands is measurement data for judging it.
 
-## Phase 2.6 — Adaptive DNS Stage 1 📋 **PLANNED** (`plan/open/phase2.6-adaptive-stage1/`)
+## Phase 2.6 — Adaptive DNS Stage 1 🚧 **IN PROGRESS** (`plan/wip/phase2.6-adaptive-stage1/`)
 
 Failure-aware upstream selection, behind `strategy = "adaptive"`, opt-in.
 Specification frozen: [docs/design/adaptive-upstream-selection.md](docs/design/adaptive-upstream-selection.md)
@@ -208,12 +207,51 @@ Two tiers of acceptance:
   only isolated single losses, **not shipping the default flip is the
   correct outcome** — Stage 1 has to earn it.
 
-Starts when Phase 2.5 closes. Phase 3 restarts from the Phase 2 + proven
-Stage 1 baseline afterwards.
+Starts when Phase 2.5 closes. Phase 5 follows, then Phase 3 restarts from the
+Phase 2 + proven Stage 1 baseline.
+
+## Phase 5 — Web Dashboard 📋 **PLANNED** (`plan/open/phase5/`)
+
+**Numbered 5, scheduled next.** Execution order is
+2.5 → 2.6 → **5** → 3 → 4: the number follows the capability roadmap, the
+position follows what the household needs (owner decision, 2026-08-25). It
+starts when Phase 2.6 closes — the L.3 soak has to return a verdict first.
+
+A static, API-only web interface served by `fah-api` itself on the existing TLS
+listener. No second container, no Node in the runtime image, no new port. Pi-hole
+supplies the visual and interaction language; the FAH API decides what exists.
+Design record: [docs/dashboard/](docs/dashboard/) — the capability matrix is the
+gate for what gets built, and a screen with no endpoint behind it is cut, never
+faked.
+
+- [ ] **p5-01** static serving — `fah-api` serves the baked `/web`; route
+      ordering, cache split, pre-compressed assets, multi-stage image
+- [ ] **p5-02** certificate and browser spike — real desktop/phone evidence, the
+      SAN decision, the regeneration migration
+- [ ] **p5-03** API contract additions — `/events` subscription protocol,
+      `GET /clients` policy fields, reserved API.md sections
+- [ ] **p5-04** authentication — Argon2id, session cookie, cookie on REST and the
+      WebSocket upgrade
+- [ ] **p5-05** frontend foundation — Vite/TS/Preact shell, typed client, socket
+      manager, bundle-size gate
+- [ ] **p5-06 … p5-09** pages — Dashboard and Lists · filtering · runtime ·
+      Settings and Diagnostics
+- [ ] **p5-10** verification — bundle, image and device budgets, mobile pass,
+      every rendered figure traced to an API field
+
+Three things decide whether it succeeds: the bundle stays under 150 KB gzip, an
+inactive page performs approximately zero API work, and the image stays inside
+30 MB. Performance is the product, and a dashboard that contradicts it is worse
+than no dashboard.
+
+**Phase 3 and Phase 4 each trigger a dashboard re-review** when they land — Phase
+3 adds certificate UI and per-client HTTPS-interception controls, Phase 4 moves
+cosmetic rules out of `rules_inactive` and changes the Lists partition. Neither
+is designed for in advance.
 
 ## Phase 3 — HTTPS
 
-After Phase 2.6 closes.
+After Phase 5 closes.
 
 - HTTPS interception for managed environments (opt-in, per-client)
 - Certificate management: generate CA, import PEM/PFX, export CA, status —
@@ -290,5 +328,7 @@ parameters, never supply JavaScript.
   designs behind explicit benchmark gates and are not scheduled. Still the
   thing that makes a second-family (IPv6) upstream safe to add.
 - Per-client blocked-response modes (NXDOMAIN, REFUSED, custom IP)
-- Dashboard (`dashboard/`) — separate deliverable, API-only consumer
+- ~~Dashboard (`dashboard/`) — separate deliverable, API-only consumer~~ —
+  **promoted out of the backlog** as Phase 5, Web Dashboard (above), and
+  scheduled ahead of Phases 3 and 4.
 - List-file management endpoints (upload/edit local lists via API)

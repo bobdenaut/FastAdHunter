@@ -30,31 +30,44 @@ numbers below are measured on the target hardware, not estimated.
 | 1 | DNS + REST API + Docker | ✅ done | `v0.2.0-phase1` |
 | 1.5 | Observability persistence | ✅ done | `v0.3.0-phase1.5` |
 | 2 | HTTP engine + Policies | ✅ done | `v0.2.17-phase2` |
-| 2.5 | Pre-Adaptive hardening | 🚧 in progress | — |
-| 2.6 | Adaptive DNS Stage 1 | 📋 planned, spec frozen | — |
+| 2.5 | Pre-Adaptive hardening | ✅ done | — |
+| 2.6 | Adaptive DNS Stage 1 | 🚧 in progress, soaking | — |
+| 5 | Web dashboard | 📋 next, plan frozen | — |
 | 3 | HTTPS interception | ⬜ not started | — |
 | 4 | HTML filtering | ⬜ not started | — |
 
+Rows are in **execution** order, which is not numeric order: the dashboard is
+numbered 5 by capability and scheduled ahead of HTTPS and HTML filtering because
+that is what the household needs next.
+
 Running in production on a MikroTik RB5009 as the household's only resolver, in
 `dns+http` mode. Phase 2's engine work is deployed — the transparent HTTP proxy,
-URL-path rules, per-client Policies and the single JSON telemetry surface — and
-the first Phase 2.5 build (0.2.18) has been on the device since 2026-08-23.
+URL-path rules, per-client Policies and the single JSON telemetry surface.
 
-Phase 2.5 is hardening, not features: the live-resolver defects an architecture
+Phase 2.5 was hardening, not features: the live-resolver defects an architecture
 review found (a DNS listener that could die silently, a 200-OK garbage list body
 that could replace a good ruleset), the encrypted-transport fixes adaptive
-upstream selection will depend on, and the outcome telemetry that makes it
-judgeable — a served SERVFAIL is now countable, a forwarded query's event names
-which upstream answered it, and every endpoint reports the length distribution
-of its failure runs.
+upstream selection depends on, and the outcome telemetry that makes it judgeable
+— a served SERVFAIL is now countable, a forwarded query's event names which
+upstream answered it, and every endpoint reports the length distribution of its
+failure runs.
 
 Phase 2.6 is the first adaptive step, specified and frozen before a line of it
-is written: an upstream that stops answering is penalized after a few
+was written: an upstream that stops answering is penalized after a few
 consecutive transport failures, skipped at the cost of one relaxed atomic load,
 and probed for recovery on the query path — no background task, no timer, no
-RTT ranking, no hedging. It ships opt-in and earns the default flip on the
-device, or does not: if the failure telemetry collecting since 0.2.18 shows only
-isolated single losses, the honest outcome is to leave it off.
+RTT ranking, no hedging. Build 0.2.20 has been on the device since 2026-08-25
+with `strategy = "adaptive"` opted in, and a **7-day soak** decides the rest. It
+earns the default flip or it does not: if the failure telemetry shows only
+isolated single losses, the honest outcome is to leave it off. The pass/fail is
+RSS drift under 2 MB; nothing about the feature's appeal is allowed to substitute
+for that reading.
+
+Phase 5 is the web dashboard, planned and frozen but not started — ten tasks,
+reviewed against the running code before any of it is written. A static bundle
+under 150 KB gzip, served by `fah-api` itself from the same image and the same
+TLS listener: no second container, no Node in the runtime image, no new port.
+Design record: [docs/dashboard/](docs/dashboard/).
 
 ### Measured, on the RB5009
 
@@ -172,7 +185,8 @@ and the cache never stores verdicts
 ![FastAdHunter architecture](docs/diagrams/architecture.svg)
 
 ```text
-             Dashboard (optional, later phase)
+             Dashboard (Phase 5 — served by fah-api,
+                        talks only to the API)
                      │
           REST / WebSocket API  (fah-api)
                      │
@@ -190,8 +204,10 @@ and the cache never stores verdicts
                  Internet
 ```
 
-The dashboard is a separate deliverable and talks only to the API. The core
-never depends on any UI.
+The dashboard is a separate deliverable and talks only to the API — it is served
+*by* `fah-api` as static files baked into the same image, but it holds no
+privileged path into the engine and would work unchanged against a remote
+appliance. The core never depends on any UI.
 
 Full diagram: [SVG](docs/diagrams/architecture.svg) ·
 [HTML](docs/diagrams/architecture.html) ·
@@ -563,7 +579,7 @@ FastAdHunter/
 ├── plan/                 # task orchestration: open / wip / closed phases
 ├── docs/                 # decisions/, design/, diagrams/, images/,
 │                         # code-review/, solutions/
-└── dashboard/            # empty until the dashboard phase
+└── dashboard/            # empty until Phase 5 scaffolds the frontend
 ```
 
 ---
@@ -605,10 +621,16 @@ firewall · a replacement for a good browser extension.
 | **1** ✅ | DNS filtering, REST API, Docker image, on-device soak |
 | **1.5** ✅ | Persisted history, perf series, byte-bounded cache |
 | **2** ✅ | HTTP proxy, URL-path rules, Policies, telemetry consolidation, compile-transient attribution |
-| **2.5** 🚧 | Listener resilience, list-refresh integrity, encrypted-transport fixes, outcome telemetry, failure run-length telemetry — hardening before adaptive upstream selection |
-| **2.6** 📋 | Adaptive DNS Stage 1 — per-endpoint health, penalty and skip on repeated transport failure, on-path recovery probing; opt-in first, default only after a 7-day on-device soak and the gates in `docs/design/` |
+| **2.5** ✅ | Listener resilience, list-refresh integrity, encrypted-transport fixes, outcome telemetry, failure run-length telemetry — hardening before adaptive upstream selection |
+| **2.6** 🚧 | Adaptive DNS Stage 1 — per-endpoint health, penalty and skip on repeated transport failure, on-path recovery probing; deployed opt-in, default only after the 7-day soak and the gates in `docs/design/` |
+| **5** 📋 | Web dashboard — static bundle served by `fah-api` on one origin, session-cookie auth, every screen backed by an endpoint that exists |
 | **3** | HTTPS interception, certificate management, DoT/DoH listeners |
 | **4** | HTML filtering with `lol_html`, cosmetic rules |
+
+Execution order is 2.5 → 2.6 → **5** → 3 → 4. Phases 3 and 4 each send the
+dashboard back for a capability re-review when they land: Phase 3 adds
+certificate screens and per-client interception controls, Phase 4 changes what
+the rule-partition figures mean.
 
 Detail and per-phase task status: [ROADMAP.md](ROADMAP.md) and `plan/`.
 
@@ -635,6 +657,8 @@ if the decision is being reversed.
     ├── decisions/            ADRs 0001–0005
     ├── design/               accepted designs not yet built, with their
     │                         benchmark protocols
+    ├── dashboard/            Phase 5: capability matrix, information
+    │                         architecture, visual system, sketches
     ├── diagrams/             architecture SVG + HTML
     ├── code-review/          per-task review notes with measured results
     ├── solutions/            documented learnings — patterns and bugs worth
