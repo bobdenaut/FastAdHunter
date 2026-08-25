@@ -26,26 +26,59 @@ No Donate item.
 ## Dashboard
 
 The landing screen. One `GET /stats` on load, then the `stats` push over
-`WS /events` every ~2 s replaces polling. `GET /stats` is still called once on
-connect because the first push is up to ~2 s away.
+`WS /events` every ~2 s replaces polling **of `/stats`**. `GET /stats` is still
+called once on connect because the first push is up to ~2 s away.
 
-**Tile row 1 — DNS.** Total Queries · Blocked · Blocked % · Cache Hit %.
+**The push covers half this page, not all of it.** The `stats` message is
+byte-for-byte the `/stats` payload: tile row 1, the four top-N tables, the
+buckets. The ruleset card, the upstream bars, the HTTP tiles, uptime and cache
+state come from `/telemetry`, `/health` and `/cache`, and **nothing pushes
+those**. They arrive through the shared bounded refresh — one slow interval, one
+in-flight request per endpoint shared by every widget reading it, paused while
+the page is hidden. No widget owns a timer.
+
+The socket on this page subscribes to `stats`, `config_changed` and
+`list_refreshed`. **Not `query`** — the Dashboard renders no per-query rows, so
+receiving the feed would cost the phone and the engine for nothing.
+
+**Tile row 1 — DNS, rolling 24 h.** Total Queries · Blocked · Blocked % · Cache
+Hit %.
 
 Pi-hole's fourth tile is "Domains on Lists". FAH's equivalent figure is
 `compiled_rules`, which is a ruleset property rather than a traffic figure, so
 it moves to the Ruleset card and Cache Hit % takes the tile.
 
-**Tile row 2 — HTTP and engine.** HTTP Requests · HTTP Blocked · Compiled
-Rules · Uptime.
+**Tile row 2 — HTTP and engine, since restart.** HTTP Requests · HTTP Blocked ·
+Compiled Rules · Uptime.
 
 The second row exists because FAH runs two pipelines. `counters.dns` and
 `counters.http` are separate by contract and the UI never sums them into one
 "queries" number.
 
-**Full width — Queries over time.** Stacked allowed/blocked area from
+**The row carries a "since restart" label and it is load-bearing.** Row 1 is a
+rolling 24 h window; `counters.http` is process-lifetime cumulative and returns
+to zero on restart. Two identical-looking rows over different windows is the
+trap. The API has no 24 h HTTP figure and the UI does not invent one.
+
+**Full width — Queries over time.** Stacked permitted/blocked area from
 `GET /history/summary`. Range selector: 24 h · 7 d · 30 d, mapping to
 `resolution=hour` then `day`. When `stride > 1` the chart footnote says the
 series is decimated and that every plotted point is a real reading.
+
+Two things the chart states about itself:
+
+- **DNS only.** `history/summary` carries no HTTP series. On a dashboard that
+  keeps the pipelines apart everywhere else, silence here would read as a total.
+- **`permitted`, not "allowed".** The endpoint gives `queries`, `blocked`,
+  `cache_hits` and `per_type`; the lower band is `queries − blocked`. `allow` is
+  a different, much smaller thing — the explicit exception verdict — and the two
+  words are never swapped (capability-matrix.md §Vocabulary).
+
+**When `history.enabled` is `false`, this chart says so.** The flag is
+runtime-mutable, so Settings can turn the recorder off live, after which
+`/history/*` answers `200` with empty `items` for ever. "No data in this range"
+and "nothing is being recorded" are different facts and the UI reads the flag
+from `GET /config` to tell them apart.
 
 **Half / half — Query Types · Upstream Health.** Donut from
 `history/summary.per_type`. Upstreams is a horizontal bar of attempts with
@@ -78,10 +111,26 @@ Actions: add (`POST /lists`, URL or mounted path), enable/disable and interval
 outcome arrives as a `list_refreshed` event), refresh all
 (`POST /lists/refresh`, synchronous, blocking with per-list results).
 
+`parse_errors` sits beside the partition: it counts the unparseable lines of the
+copy **currently serving**, never of a refused body, and reads `0` both for a
+clean list and for one contributing nothing — so it is presented next to
+`enabled` and `rules_total`, which is what tells those two apart.
+
 Failure surface: `last_status` is `ok` \| `failed` \| `rejected` \| `degraded`
-\| `never`, and `last_error` carries the reason. A `rejected` row explains that
-the content gate refused a body and the last good copy still serves — this is
-not an outage.
+\| `never`, and `last_error` carries the reason.
+
+- **`degraded` is not a gentler `ok`.** The fetch worked and most of the body
+  failed to parse — a format misdetection, where the list contributes far fewer
+  rules than it should. It gets its own presentation and points at
+  RULE_ENGINE.md §Supported formats, because it used to be indistinguishable
+  from success.
+- **`rejected` carries its own way out.** The content gate refused a body and the
+  last good copy still serves — not an outage. But a source that legitimately
+  restructured stays rejected on every attempt, across restarts, and disabling
+  and re-enabling does **not** clear it: the cached copy is the baseline. The
+  API's recovery contract is `DELETE` then re-add, and that is the action the row
+  offers. This is the page an operator opens when a list is broken; the way out
+  belongs on it.
 
 `409` on add is shown as what it is: either a derived id collision or the same
 source already configured under another id, naming that list.
@@ -122,7 +171,13 @@ and carry no warning. The 16-policy ceiling is enforced in the form.
 ## Clients
 
 `GET /clients`: ip, name, first seen, last seen, 24 h queries, 24 h blocked,
-with a blocked-share bar.
+with a blocked-share bar — **plus the policy in force and its assignment
+source**, added to that response in `p5-03` for this page.
+
+That addition is why the table costs one request. The policy was otherwise only
+on `GET /clients/{ip}/policy`, one call per row: a household with forty observed
+clients would have paid forty extra requests every time the page opened, to fill
+a column the design calls for on every row.
 
 Clients here are **observed by traffic**. There is no ARP table, no DHCP lease
 list, and no notion of a client that has never sent a query.
@@ -132,9 +187,11 @@ policy assignment (`PUT|DELETE /clients/{ip}/policy`, with optional
 `days`/`start`/`end`).
 
 The assignment column distinguishes an assignment naming this address from one
-inherited via subnet or name — `GET` returns the policy in force now, and
-`assignment` is absent in the inherited case. Assignment changes are live in
-milliseconds and are labelled so, in contrast to the policy-edit warning.
+inherited via subnet or name — the response gives the policy in force now, and
+the assignment source says which case it is. `GET /clients/{ip}/policy` stays the
+single-address read and the write path, so the two cannot report different
+answers for one address. Assignment changes are live in milliseconds and are
+labelled so, in contrast to the policy-edit warning.
 
 ## Rule Tester
 
@@ -167,11 +224,25 @@ removed, before/after and `freed_bytes`, and states that RSS does not fall by
 
 SWR panel: enqueued, deduplicated, dropped, completed, failed.
 
+Background-cleanup panel: runs, entries removed, bytes freed — and
+`last_duration_micros`, which is the **only last-value gauge** in a block of
+cumulative counters. It describes the most recent sweep, so it is rendered as a
+current value and never as a series.
+
+`/cache` and the telemetry counters arrive through the shared bounded refresh,
+not a timer belonging to this page.
+
 ## Performance
 
 `GET /history/perf`, using `fields` to fetch only the series a chart draws.
 
-Charts: QPS · verdict deltas (queries/blocked/allowed) · latency percentiles
+This whole page is persisted history, so **`history.enabled = false` is its own
+state**, not an empty chart. With the recorder off every series is empty for
+ever, which would read as "nothing happened".
+
+Charts: QPS · verdict deltas — `queries_delta`, `blocked_delta` and
+`allowed_delta`, which here really is the **`allow` verdict** the engine counted,
+not the derived `permitted` band the Dashboard chart draws · latency percentiles
 p50 and p99 per class, block / cache_hit / forward · RSS and peak RSS · cache
 entries and hit ratio.
 
@@ -184,11 +255,22 @@ from the documented set.
 
 ## Upstreams
 
-`telemetry.upstreams` plus `/health`.
+`telemetry.upstreams`, `/health`, and `dns.upstreams.strategy` from
+`GET /config`.
+
+**The strategy is not optional context, it is what makes the rest readable.**
+`telemetry.upstreams[]` does not carry it. Under `fallback` every row publishes
+`state: "healthy"`, `penalty_round: 0` and zeros for penalties, probes and
+penalized seconds — which API.md is explicit means *no health state exists to
+report*, not *everything is fine*. Rendering those zeros without naming the
+strategy states the opposite of the truth, so the page reads the strategy from
+config and says which one is in force.
 
 Per endpoint: address, protocol, attempts, failures, `consecutive_failures`,
 TLS handshakes, and — under the adaptive strategy — whether it is healthy,
-penalized or being probed.
+penalized or being probed. `family` is `null` for a DoH URL whose host is a
+domain name resolved at connect time; that renders as unknown, never as the word
+"null".
 
 `/health` reporting `degraded` renders as a banner that explains it rather than
 an alarm: under `adaptive` it means no endpoint is currently healthy, under
@@ -199,16 +281,29 @@ endpoint is still queried when nothing else is left.
 ## Settings
 
 **Decided: the form is hand-written per config section, not generated from the
-API response.** `GET /config` is the source of current effective values and of
-validation metadata; the frontend owns the field grouping, the descriptions, the
+API response.** The frontend owns the field grouping, the descriptions, the
 mutability labelling, and which keys are exposed at all. A generic renderer
 would give up exactly the control this page exists to provide — it cannot write
 a field's help text, cannot decide that `rules.lists` belongs elsewhere, and
 cannot tell a boot-only key from a live one without being told.
 
-`GET /config` renders the effective merged configuration with secrets redacted,
-grouped by config section as
-[CONFIGURATION.md](../../CONFIGURATION.md) organises them.
+**`GET /config` is the source of current effective values and of nothing else.**
+It is not a schema endpoint: it returns the merged configuration with secrets
+redacted, and carries no types, no bounds, no enums and no mutability classes.
+Every one of those is hand-carried from [CONFIGURATION.md](../../CONFIGURATION.md)
+and the backend schema into the frontend. That is the cost of the decision above,
+and it is paid deliberately — but nothing on this page may be built as though the
+API described its own constraints.
+
+The form is grouped by config section as CONFIGURATION.md organises them.
+
+**`[api]` is not an ordinary section.** `api.tls = false` removes the only origin
+on which a `Secure` `__Host-` cookie can exist, so the next restart leaves the
+dashboard unable to authenticate at all — and there is no HTTP fallback by
+design. `api.address` and `api.port` move the listener out from under whoever is
+using it. Either the section stays out of the curated form, or each field is
+gated behind an explicit confirmation naming the lock-out. A TLS toggle rendered
+like any other boolean is the failure mode.
 
 Every field carries its mutability class: **live** or **restart required**.
 Most options are boot-only — `[dns.cache]`, `[dns.upstreams]`,
@@ -220,8 +315,11 @@ The runtime set is `history.enabled`, `history.retention_days`,
 holds until a restart is observed via `/health` uptime resetting. The
 `config_changed` event refreshes the form.
 
-`rules.lists` and `policies` are absent from the form. They are `422` on this
-endpoint on purpose — they have exactly one writer each, on their own pages.
+`rules.lists`, `policies` and `auth.*` are absent from the form. All three are
+`422` on this endpoint on purpose — each has exactly one writer. For the first
+two that writer is another page; for `auth.*` it is the password-change route,
+which verifies the current password and invalidates every session. A deep-merge
+patch that could set a password hash would bypass both.
 
 ### All settings — a read-only panel at the bottom
 
@@ -238,6 +336,16 @@ Read-only is deliberate. Editing an arbitrary key needs the type, the bounds and
 the mutability class the curated fields carry by hand; offering an edit box
 without them would invite a `422` the UI could not explain.
 
+**It renders whatever `GET /config` returns, so what that endpoint returns is a
+security boundary for this panel.** `auth.*` is redacted at the endpoint from
+`p5-04` — a password hash is offline-crackable material and "it is only a hash"
+is not a reason to print it into a browser. The panel checks as well as trusts.
+
+One wording note: `policies` is omitted from the response when no policy is
+configured, so the zero-config case shows no key at all. Word that as "none
+configured" — an absent key reading as ambiguity is precisely what this panel
+exists to prevent.
+
 ### Writing config
 
 **`POST /config` receives only the keys that changed.** The endpoint is a
@@ -253,9 +361,11 @@ Corollary: the form tracks its own dirty state per field. It cannot derive what
 changed by comparing against a re-fetch, because `config_changed` may have
 altered the server's copy in between.
 
-Separate panel: rotate API key (`POST /config/apikey/rotate`). The new key is
-returned once; the dialog says so before the user confirms, and the old key
-stops working immediately.
+Separate Access panel: change password (current password required — an explicit
+reauthentication barrier for a privileged operation, and the last one standing
+for an unattended logged-in browser), sign out everywhere, and rotate API key
+(`POST /config/apikey/rotate`). The new key is returned once; the dialog says so
+before the user confirms, and the old key stops working immediately.
 
 ## Diagnostics
 
@@ -275,6 +385,11 @@ Everything that answers "is it healthy and where is the memory".
   ring holds: verdict, kind, client, domain substring. The panel states that it
   starts empty on page load, holds a bounded number of rows, and retains
   nothing — there is no server-side query store to search.
+
+  **This is the only screen that subscribes to `query`.** It adds the
+  subscription on mount and drops it on unmount. Left open, the household's whole
+  per-query feed would keep arriving at a phone showing Settings, and the engine
+  would keep doing per-query publish work for a page nobody is looking at.
 - **Answer outcomes** — `counters.dns.answers`: `servfail_synthesized`,
   `servfail_relayed`, `refused_relayed`.
 - **Shed** — `counters.events_dropped`, one number covering both pipelines
@@ -288,18 +403,75 @@ Everything that answers "is it healthy and where is the memory".
 
 ## Cross-cutting behaviour
 
-**The event socket drives the UI.** One `WS /api/v1/events` connection per
-session. `stats` refreshes the Dashboard, `config_changed` refreshes Settings,
-`list_refreshed` re-reads `GET /lists` — the event is a nudge and carries no
-reason, so the reason comes from `last_error`. Reconnect with backoff; a
-disconnect banner appears because slow consumers are dropped by design.
+**The event socket drives what it can, and only that.** One
+`WS /api/v1/events` connection per session. `stats` refreshes the Dashboard,
+`config_changed` refreshes Settings, `list_refreshed` re-reads `GET /lists` — the
+event is a nudge and carries no reason, so the reason comes from `last_error`.
+
+**The socket subscribes; it does not simply listen.** The baseline is `stats`,
+`config_changed` and `list_refreshed`; the Live Feed adds `query` while it is
+open. The subscription is re-sent after every reconnect. Server-side filtering is
+what makes this worth doing: it removes the bandwidth *and* the lag — a
+stats-only socket sends one message every two seconds and cannot fall behind on
+query volume the way an unfiltered one does.
+
+Reconnect with backoff; a disconnect banner appears because slow consumers are
+dropped by design. **A rejected upgrade is not a reconnect loop.** A browser
+`WebSocket` exposes no status for a failed handshake, so a `401` is
+indistinguishable from a dropped network. After repeated immediate failures the
+client makes one authenticated REST probe and acts on what it learns: expired
+session → login, transport failure → keep backing off, server unreachable → say
+so. Only a real authentication failure returns the user to login.
+
+**Everything the socket does not push has one refresh mechanism.**
+`/telemetry`, `/cache` and `/health` are read on a slow shared interval, one
+in-flight request per endpoint however many widgets want it. No page starts a
+timer of its own, and nothing polls what the socket already pushes.
+
+**Route-scoped data fetching.** The invariant the whole frontend is measured
+against: **an inactive page has approximately zero API activity attributable to
+it.**
+
+- A page fetches and polls only what the active route renders. Unmounting clears
+  its timers and releases its event types.
+- Re-entering may show cached data at once, then revalidates on that page's own
+  policy. The page cache is bounded — thirteen screens visited is not thirteen
+  payloads retained.
+- **Shared state yes, shared *schedule* no.** The refresh mechanism above polls an
+  endpoint only while a mounted page subscribes to it; the last unsubscribe stops
+  that timer. Shared and global are easy to confuse, and only the first is
+  allowed.
+- **The socket is shared but not persistent.** `stats` belongs to the Dashboard,
+  `list_refreshed` to Lists, `config_changed` to Settings, `query` to the Live
+  Feed. The other nine screens need none, and on them the connection is **closed**
+  rather than held idle.
+- **Hidden document:** polling and rendering stop at once; the socket closes after
+  a short grace period, so an app switch or a screen lock does not cost a TLS
+  handshake. Becoming visible cancels a pending close, or reconnects and restores
+  the active route's subscriptions.
+- **A socket is never idled by subscribing to nothing.** The 2 s stats cadence is
+  what lets the server notice a peer that vanished without closing; a silent
+  socket holds a connection slot until TCP gives up. Close it instead.
+
+**The connection indicator has three states**, because a closed socket is correct
+on most of the UI: **live** · **not needed here** · **reconnecting**. Only the
+last reports a problem, and `aria-live` covers all three. A two-state indicator
+would cry fault on nine screens that never wanted a connection.
+
+**The restart-required banner is global state without a global poll.** It
+survives navigation and revalidates on entering Settings, or opportunistically
+when a mounted page's shared refresh reads `/health`. It will not clear live from
+an unrelated page — a banner does not earn a standing timer.
 
 **Errors are shown as the API states them.** The error envelope's `message` is
 displayed verbatim; `code` selects the presentation — `422` anchors to fields
 or lines, `409` names the conflicting resource, `401` returns to login.
 
-**Empty is not an error.** A history window with no data is a `200` with empty
-`items` and renders as "no data in this range", never as a failure.
+**Empty is not an error — and "disabled" is not empty.** A history window with no
+data is a `200` with empty `items` and renders as "no data in this range", never
+as a failure. `history.enabled = false` produces the identical response for ever,
+so the UI reads the flag and renders that case as its own state. Two different
+facts must not share one rendering.
 
 **Approximation is labelled.** `/history/top` merges daily top-N files, so a
 domain that missed a day's cut-off contributes nothing for that day. The table
@@ -308,3 +480,13 @@ says it answers "what dominated this range", not an exact order.
 **Units and meanings never drift.** New API fields may appear; existing ones do
 not change meaning. The UI reads documented fields only and ignores unknown
 ones.
+
+**Windows are labelled wherever two of them meet.** `/stats` is rolling 24 h;
+`/telemetry` counters are cumulative since process start and return to zero on
+restart; `/history/*` is the persisted series. A figure from one placed beside a
+figure from another says which it is — the Dashboard's two tile rows are the case
+this rule was written for.
+
+**One derived figure exists, and it is named.** `permitted` is
+`queries − blocked`. Nothing else on any page is computed from data the API did
+not measure, and `permitted` is never called "allowed".

@@ -3,7 +3,12 @@
 Blockers and undecided points for the dashboard. Each one needs an answer
 before the code it gates is written.
 
-## 1. Authentication — blocking
+**Sections 1 and 2 are closed.** They are kept in full because they record what
+was weighed; the answers now live in `plan/open/phase5/` and in
+[implementation-plan.md](implementation-plan.md), and the closing notes below
+each one say where. Section 3 is what is genuinely still open.
+
+## 1. Authentication — closed 2026-08-25, implemented in `p5-04`
 
 **State.** The API accepts a single bearer API key and nothing else.
 `crates/fah-api/src/routes.rs` wraps the whole router in `require_api_key`,
@@ -35,16 +40,25 @@ needed beyond secret rotation).
 - `401` distinguishable as "session expired" so the UI can return to login
   rather than showing an error
 
-**Interim, if the session work lands later.** The dashboard can ship
-key-in-browser, but only with that trade-off written down and the key held in
-memory for the tab rather than persisted. This is worse and should not become
-the permanent answer.
+**Interim, if the session work lands later.** Rejected. `p5-04` precedes every
+page, so key-in-browser is never shipped even temporarily.
 
-**Also open.** Whether a session cookie is enough on its own for the mutating
-routes, or whether an anti-CSRF measure is needed. `SameSite` covers most of
-it; the decision belongs with the draft's token-format question.
+**CSRF — closed.** `SameSite=Strict` is defence in depth, not the whole defence:
+browsers send cookies on a WebSocket handshake and a WebSocket has no
+same-origin policy, so any LAN page could otherwise open a socket onto the query
+feed. A cookie-authenticated upgrade requires `Origin` to equal the request's own
+effective target origin; a bearer-authenticated one does not, and its absence is
+normal for scripts. **No configured allowlist** — the dashboard is same-origin by
+construction, and a list would fail the moment the box is reached by a name other
+than the configured one.
 
-## 2. Serving the bundle — blocking
+**Also closed with it.** `auth.*` is redacted from `GET /config` and `422` on
+`POST /config`; Argon2id runs on `spawn_blocking` behind a `try_acquire`
+semaphore; the authoritative session expiry lives inside the signed token;
+password change requires the current password. Rationale in
+[implementation-plan.md](implementation-plan.md) §Stage B.
+
+## 2. Serving the bundle — closed 2026-08-25, implemented in `p5-01`
 
 **State.** Verified 2026-08-25: `fah-api` serves no static files. The router is
 `/health`, `/api/v1/*`, and a `not_found` fallback. There is no `ServeDir`, no
@@ -65,16 +79,20 @@ it; the decision belongs with the draft's token-format question.
 `fah-api`, and it pays for that with a whole second container on the tightest
 resource on the device.
 
-**Sub-questions.**
+**Sub-questions — all answered.**
 
-- Where the assets live in the image, given `/config` and `/data` are the
-  volumes and the binary is a musl static build in a distroless image —
-  probably baked into the image rather than mounted.
-- Whether the static route is behind auth at all. The bundle contains no
-  secrets, and gating it means the login page cannot load; `/health` is the
-  precedent for an exemption.
-- Cache headers: the bundle is content-hashed and immutable, `index.html` is
-  not.
+- **Where the assets live:** baked into the image at `/web` by a multi-stage
+  build. Never a volume; the volume set stays `/config` and `/data`.
+- **Auth on the static route:** exempt, as `/health` is — but by a **closed
+  positive allowlist** (`/`, `/assets/*`, SPA fallback), never by "anything
+  outside `/api/v1`".
+- **Cache headers:** hashed assets `immutable` with a long max-age; `index.html`
+  revalidatable. Revalidation is `Last-Modified` / `If-Modified-Since` —
+  **`ServeDir` emits no `ETag`** and none is added. `Vary: Accept-Encoding` is
+  required wherever the body is picked by `Accept-Encoding`.
+
+**One thing this section did not anticipate:** `.dockerignore` excludes
+`/dashboard`, so the frontend stage cannot see its own source. `p5-01` fixes it.
 
 ## 3. Undecided, not blocking
 
@@ -86,9 +104,12 @@ resource on the device.
   render in browser-local or UTC — and if browser-local, how a UTC day boundary
   in `resolution=day` is labelled without lying.
 - **Default dashboard range.** 24 h matches `GET /stats`; 7 d shows more.
-- **Reconnect policy for `WS /events`.** Backoff shape and when the UI falls
-  back to polling `GET /stats`. Slow consumers are disconnected by design, so
-  reconnect is expected traffic, not an error path.
+- **Reconnect backoff shape for `WS /events`**, and when the UI falls back to
+  polling `GET /stats`. Slow consumers are disconnected by design, so reconnect
+  is expected traffic, not an error path. *Partly settled:* an upgrade rejected
+  for authentication is classified by a REST probe rather than retried forever
+  (`p5-05`), and a socket that does not subscribe to `query` no longer lags on
+  query volume at all (`p5-03`). What remains open is only the timing curve.
 - **Where the dashboard's own build lives** in the repo layout, and whether its
   Node toolchain is part of the workspace's quality gates or separate.
 
@@ -122,9 +143,37 @@ Two rules follow from it, and neither is optional:
   diffing against a re-fetch, since `config_changed` can move the server's copy
   in between.
 
+One correction to it: **`GET /config` supplies current effective values and
+nothing else.** It is not a schema endpoint — no types, no bounds, no enums, no
+mutability classes. All of that is hand-carried from CONFIGURATION.md and the
+backend schema. That is the real cost of choosing a hand-written form, and it is
+paid on purpose.
+
 ### Diagnostics as a top-level section — closed 2026-08-25
 
 **Stays nested under System.** Health, Memory and Live Feed are operational
 views, reached while investigating rather than in daily use, so they do not earn
 a fourth top-level section. The sidebar keeps four sections; System holds
 Settings and Diagnostics.
+
+### Bundle shape — closed 2026-08-25
+
+**3–4 chunks, no web font.** "One JS chunk" was the earlier decision and it put
+uPlot on the login page and made any edit invalidate the whole immutable asset.
+Route-level splitting is free in Vite; unbounded splitting is not, so the count
+is bounded and module-preload is configured explicitly. The web font was dropped
+for a system stack — 15–40 KB already-compressed and a critical-path request, out
+of a 150 KB budget, for no functional gain.
+
+### The `/events` firehose — closed 2026-08-25
+
+**The socket subscribes.** Every connected socket previously received every query
+event, and `has_subscribers()` turned on engine-side per-query publish work for
+any socket at all — so a phone showing Settings cost bandwidth, battery and
+engine time. `p5-03` adds a `subscribe` message, defaulting to every event so no
+existing client breaks, with server-side filtering and the engine-side gate moved
+to match. Only the Live Feed asks for `query`.
+
+No new per-client buffering: the existing broadcast capacity and lag-disconnect
+remain the backpressure design, and filtering is what stops a stats-only socket
+lagging on query volume in the first place.

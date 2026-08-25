@@ -16,9 +16,11 @@ they sit on a single pan-and-zoom canvas.
 | Runtime & System | `Cache` · `Performance` · `Upstreams` · `Settings` · `Health` · `Memory` · `LiveFeed` |
 | Phone, 390 × 844 | `MobileNav` · `MobileDashboard` · `MobileLiveFeed` · `MobileClients` |
 
-The phone row is **normative for the mobile acceptance criteria** in `p5-04`,
-`p5-05` and `p5-07` — it is not a smaller copy of the desktop layout, and the
-rules it settles are the ones those tasks are checked against:
+The phone row is **normative for the mobile acceptance criteria** in `p5-06`
+(`MobileNav`, `MobileDashboard`), `p5-07` (`MobileClients`) and `p5-09`
+(`MobileLiveFeed`), and is re-checked on a real device in `p5-10`. It is not a
+smaller copy of the desktop layout, and the rules it settles are the ones those
+tasks are checked against:
 
 - 44 px minimum on the smallest axis of every interactive control;
 - the body never scrolls sideways — wide content scrolls inside its own

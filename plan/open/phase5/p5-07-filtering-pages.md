@@ -1,6 +1,6 @@
-# P5-05 — Filtering Pages
+# P5-07 — Filtering Pages
 
-**Phase:** 5 · **Depends on:** p5-04 · **Model:** Opus
+**Phase:** 5 · **Depends on:** p5-06 · **Model:** Opus
 
 ## Goal
 
@@ -39,10 +39,15 @@ Sketches: `CustomRules`, `Policies`, `Clients`, `RuleTester`.
 
 **Clients** — the client list, naming, and per-client policy assignment.
 
+- **The policy column comes from `GET /clients`, in one request.** `p5-03` added
+  the in-force policy and the assignment source to that response for this page.
+  Do **not** fan out one `GET /clients/{ip}/policy` per row — a household with
+  forty observed clients would pay forty extra requests on every page load, and
+  the design already rejects that pattern.
 - Rename inline; assign a policy inline with an optional schedule.
 - Distinguish an assignment naming this address from one inherited via subnet or
-  name — the API returns the policy in force now, and the assignment field is
-  absent in the inherited case.
+  name — the API returns the policy in force now, and the assignment source says
+  which case it is.
 - A client whose window is shut shows its policy, marked not in force.
 - State plainly that clients are observed by traffic: no ARP table, no DHCP
   leases, no device inventory.
@@ -75,21 +80,29 @@ single-column form with the result directly beneath it.
 - Inherited versus direct assignment is visually unambiguous.
 - Rule Tester returns and renders all four result fields, in both the client and
   the policy mode.
+- **Loading Clients issues one request for the list.** Asserted by counting
+  requests, not by inspection — an N+1 regression here is invisible on a dev box
+  with three clients.
 - No page invents a per-rule identity, a group, or a device inventory.
 - Correct in both themes at all three breakpoints, verified at 390 px. Touch
   targets at least 44 px.
-- Gates green, cargo and frontend. Bundle size recorded.
+- **None of these four pages needs any event type at all**, so the WebSocket is
+  closed while one of them is the active route — verified server-side by
+  connection count, not only in the browser. They read on entry and on explicit
+  user action; none holds a timer.
+- Gates green, cargo and frontend. Bundle size recorded, gzip and brotli.
 
 ## Out of scope
 
-Runtime pages (p5-06). Settings and Diagnostics (p5-07).
+Runtime pages (p5-08). Settings and Diagnostics (p5-09). Adding the policy fields
+to `GET /clients` — that is `p5-03`'s, already done.
 
 ## Suggested prompt
 
 > Read docs/dashboard/capability-matrix.md section Reshaped,
 > docs/dashboard/information-architecture.md, API.md, and
-> plan/wip/phase5/p5-05-filtering-pages.md. Build Custom Rules as a validated
+> plan/open/phase5/p5-07-filtering-pages.md. Build Custom Rules as a validated
 > document editor, Policies with the recompile confirmations, Clients with
-> inline naming and assignment including the inherited-versus-direct
-> distinction, and the Rule Tester in both its client and policy modes. Design
+> inline naming and assignment reading the policy column straight from
+> `GET /clients`, and the Rule Tester in both its client and policy modes. Design
 > the phone layout for each.

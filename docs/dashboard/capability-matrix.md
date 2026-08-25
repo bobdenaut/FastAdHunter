@@ -12,6 +12,18 @@ Sources checked: [API.md](../../API.md) and
 `crates/fah-api/src/routes.rs` (they agree route for route, verified
 2026-08-25).
 
+**Phase 5 adds three things to that surface**, settled in `plan/open/phase5/`
+before any page is written and marked below as *(p5-03)* or *(p5-04)*: the
+`/events` subscription protocol, the in-force policy on `GET /clients`, and the
+session routes. Everything else in this file is what already ships.
+
+**Re-review after Phase 3 and Phase 4.** Phase 5 is deliberately built ahead of
+both. Phase 3 brings certificate machinery and per-client HTTPS interception —
+a screen this file currently has no row for, and a control the Clients page will
+need. Phase 4 activates cosmetic rules, which today land in `rules_inactive`;
+the Lists partition gains a band. Neither is designed for now, and both come back
+to this file when they land.
+
 ## The API surface, in full
 
 | Route | Method | What the dashboard gets from it |
@@ -22,7 +34,7 @@ Sources checked: [API.md](../../API.md) and
 | `/api/v1/history/summary` | GET | persisted hourly/daily series: queries, blocked, cache_hits, `per_type` |
 | `/api/v1/history/perf` | GET | persisted per-interval samples: RSS, QPS, verdict deltas, cache, latency percentiles, memory, upstreams |
 | `/api/v1/history/top` | GET | top-N over a range, `kind=blocked\|queried\|clients` |
-| `/api/v1/clients` | GET | observed clients: ip, name, first/last seen, 24h queries and blocks |
+| `/api/v1/clients` | GET | observed clients: ip, name, first/last seen, 24h queries and blocks, and *(p5-03)* the in-force policy with its assignment source |
 | `/api/v1/clients/{ip}` | PUT | set or clear a client name |
 | `/api/v1/clients/{ip}/policy` | GET/PUT/DELETE | the policy in force for one address, and its assignment |
 | `/api/v1/cache` | GET | entries, capacity, fresh/stale/expired, hits/misses/evictions, bytes, both load percentages |
@@ -38,27 +50,28 @@ Sources checked: [API.md](../../API.md) and
 | `/api/v1/config` | GET/POST | effective config with secrets redacted; partial update with `applied` / `restart_required` |
 | `/api/v1/config/apikey/rotate` | POST | new API key, returned once |
 | `/api/v1/debug/memory` | GET | where RSS goes, per bounded structure, plus `residual_bytes` |
-| `/api/v1/events` | WS | the **only** per-query feed: `query`, `stats`, `config_changed`, `list_refreshed` |
+| `/api/v1/events` | WS | the **only** per-query feed: `query`, `stats`, `config_changed`, `list_refreshed`. *(p5-03)* a `subscribe` message narrows what a socket receives; default is every event, and only the Live Feed asks for `query` |
+| session routes | *(p5-04)* | login, logout, logout-everywhere, password change — session cookie alongside the bearer key. Exact paths are fixed by `p5-03`'s reserved API.md section |
 
 ## Ships — Pi-hole screen, FAH data
 
 | Pi-hole feature | FAH source | Notes |
 | --- | --- | --- |
 | Four dashboard stat tiles | `GET /stats` | Pi-hole's fourth tile is "Domains on Lists"; FAH's equivalent number is `lists.compiled_rules`, which belongs on the Ruleset card, so the fourth tile is Cache Hit % instead |
-| Total-queries time chart | `GET /history/summary` | `resolution=hour\|day`, `stride` decimation; points are real readings, never averaged |
+| Total-queries time chart | `GET /history/summary` | `resolution=hour\|day`, `stride` decimation; points are real readings, never averaged. DNS-only — this endpoint carries no HTTP series. The bands are **permitted** and blocked, not "allowed" (see Vocabulary) |
 | Query-types donut | `history/summary.per_type` | fixed label set; zero buckets omitted |
 | Top permitted / blocked domains | `stats.top_*_domains`, `history/top` | `/history/top` is an approximation by construction — the UI labels it "what dominated this range", not an exact order |
 | Top clients | `stats.top_clients`, `history/top?kind=clients` | |
-| Query log presentation (table shape, row density, verdict colouring) | `WS /events` | the presentation carries over; the persistence behind it does not — see Cut |
+| Query log presentation (table shape, row density, verdict colouring) | `WS /events`, subscribed to `query` | the presentation carries over; the persistence behind it does not — see Cut. Only this screen subscribes to `query` |
 | Lists management | `/lists` CRUD | per-list `rules_active_dns` / `rules_active_url` / `rules_inactive` partition is richer than Pi-hole's per-list count |
 | "Update Gravity" | `POST /lists/refresh` | synchronous, best-effort, per-list `ok` \| `failed` \| `rejected` |
 | Allow/deny domains | `GET\|PUT /rules/user` | shape differs — see Reshaped |
 | Clients list and naming | `GET /clients`, `PUT /clients/{ip}` | FAH clients are *observed by traffic*; there is no ARP or DHCP source |
-| Group assignment | `/policies`, `/clients/{ip}/policy` | shape differs — see Reshaped |
+| Group assignment | `/policies`, `/clients/{ip}/policy` | shape differs — see Reshaped. The Clients **table** reads its policy column from `GET /clients` *(p5-03)*; `/clients/{ip}/policy` stays the write path and the single-address read |
 | "Search Lists" (which rule blocks X) | `POST /rules/test` | strictly better: returns verdict, rule, list **and** deciding policy, and can test under a client or a hypothetical policy |
 | Settings pages | `GET\|POST /config` | shape differs — see Reshaped |
 | API/key settings | `POST /config/apikey/rotate` | the key is shown once; the UI says so before rotating |
-| Login | *not yet* | see [open-questions.md](open-questions.md) |
+| Login | *(p5-04)* | password + session cookie, no database. `auth.*` is redacted from `GET /config` and `422` on `POST /config` — one writer, the password-change route |
 
 ## Cut — no FAH backing
 
@@ -67,7 +80,7 @@ from the UI.
 
 | Pi-hole feature | Why |
 | --- | --- |
-| Persisted, searchable query log | FAH keeps **no per-query store**. `WS /events` is a live feed; the history endpoints are aggregate-only. This is the single largest divergence from Pi-hole. |
+| Persisted, searchable query log | FAH keeps **no per-query store**. `WS /events` is a live feed; the history endpoints are aggregate-only. This is the single largest divergence from Pi-hole. **CONTEXT.md §Query Log still defines the opposite** — "the bounded, *persisted* record of individual queries and requests", with a `domain` filter. That entry describes something that does not exist and is reconciled with **Live Feed** in this phase; the vocabulary there is binding, so two contradictory definitions cannot both stand. |
 | Query-log date/time range picker, "query on-disk data" | follows from the above — there is no on-disk per-query data to range over |
 | Query-log filters: upstream, reply, DNSSEC status | those fields do not exist per query. `upstream` is `null` by contract; the answering endpoint index appears only on forwarded DNS items; DNSSEC is not modelled. |
 | Client Activity chart (per-client series over time) | `/history/*` holds no per-client series. Per-client numbers exist only as 24h totals on `/clients` and as top-N rankings. |
@@ -128,9 +141,19 @@ The UI uses [CONTEXT.md](../../CONTEXT.md) terms, not Pi-hole's.
 | Say | Not |
 | --- | --- |
 | pass / allow / block | OK / forwarded / blocked |
+| permitted (the derived `queries − blocked` band) | allowed |
 | cached (a flag on an event) | "cached" as a status value |
 | stale (inside the RFC 8767 serve-stale window) | stale as "old" |
 | answering endpoint (an index into the configured servers) | upstream server, where the index is meant |
 | policy | group |
 | rule list | gravity, blocklist |
 | compiled rules | domains on lists |
+
+**`allow` and `permitted` are not synonyms and must never be swapped.** `allow`
+is the explicit exception verdict the API counts — `counters.dns.allow`,
+`history/perf.allowed_delta` — four figures against six-figure traffic.
+`permitted` is `queries − blocked`, which no endpoint carries and the UI derives
+for charts. Labelling the derived band "allowed" claims a measurement the engine
+never took; relabelling a real `allow` counter "permitted" throws away the
+distinction CONTEXT.md §Verdict exists to make. `permitted` is added to
+CONTEXT.md in this phase, since the vocabulary there is binding.

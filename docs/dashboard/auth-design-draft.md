@@ -1,5 +1,10 @@
 # Web Dashboard Authentication — Minimal Design
 
+> **Status: the draft stands; six constraints were added to it 2026-08-25.**
+> The design below is unchanged and still correct. What review added is at the
+> end, under §Constraints added in review — read that with §Open implementation
+> decisions, which `p5-04` closes.
+
 ## Goal
 
 Provide authentication for the household web dashboard without introducing a database or another persistent service solely for one user/password and session state.
@@ -202,6 +207,24 @@ Before implementation, decide and document:
 4. Secret generation and first-run initialization behavior.
 5. Password-change flow and global session invalidation.
 6. Whether `/data` revocation state is needed beyond global secret rotation.
+
+## Constraints added in review — 2026-08-25
+
+Six things this draft does not say that the implementation must do. Each came out
+of checking the draft against the running code rather than against itself.
+
+| # | Constraint | Why the draft alone is not enough |
+| - | ---------- | --------------------------------- |
+| 1 | **Argon2id runs on `spawn_blocking`.** | One multi-thread Tokio runtime serves DNS, HTTP and the API. A verification on a worker thread stalls query answering for its whole duration on a 4-core box — tens of ms on x86, ~9× that on the RB5009. The binary already has the precedent. |
+| 2 | **Concurrent verifications are bounded by a semaphore**, `try_acquire`, `503` with `Retry-After` on saturation. Rate limiting stays as a separate control. | The draft prescribes rate limiting for a risk that is not rate-shaped: peak RSS is driven by *concurrent* verifications. Eight at once at 19 MiB is ~150 MiB of transient allocation on a 1 GB box. A rate limit does not bound that; a permit count does. |
+| 3 | **The authoritative expiry lives inside the signed token**, enforced server-side. | The draft asks for "an explicit lifetime/expiry" on the cookie and separately for server-side enforcement. `Expires`/`Max-Age` is a client-side hint a browser can ignore, so only the in-token expiry is a boundary. |
+| 4 | **Password change requires the current password.** | The draft covers invalidation but not reauthentication. With `SameSite=Strict` and no CSRF token, the old-password check is the last barrier for an unattended logged-in browser. |
+| 5 | **`Origin` is validated on a cookie-authenticated WebSocket upgrade**, against the request's own effective target origin — no configured allowlist. Bearer-authenticated upgrades do not need it. | The draft's CSRF answer is `SameSite`. Browsers send cookies on a WebSocket handshake and a WebSocket has no same-origin policy, so `SameSite` is defence in depth rather than the whole defence. An allowlist would break whenever the box is reached by a name other than the configured one. |
+| 6 | **`auth.*` is redacted from `GET /config` and rejected `422` on `POST /config`.** | The draft puts the hash in "the application's persistent configuration". That endpoint returns the whole config — and the dashboard renders it verbatim in a read-only panel. A hash is offline-crackable material, and a deep-merge patch could otherwise set a password while bypassing the change route, its current-password check and session invalidation. |
+
+One thing the draft is right about that is worth restating: the password hash is
+not secret in the cryptographic sense. That is an argument for not treating it
+like the session secret. It is not an argument for publishing it.
 
 ## References
 

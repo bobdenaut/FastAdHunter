@@ -1,6 +1,6 @@
-# P5-07 — Settings and Diagnostics
+# P5-09 — Settings and Diagnostics
 
-**Phase:** 5 · **Depends on:** p5-06 · **Model:** Opus
+**Phase:** 5 · **Depends on:** p5-08 · **Model:** Opus
 
 ## Goal
 
@@ -21,19 +21,43 @@ hand-written per config section rather than generated. Sketched as `Settings`,
 **Settings** — the config endpoints.
 
 - Hand-written per config section, grouped as CONFIGURATION.md organises them.
-  The API supplies current effective values and validation metadata; the
-  frontend owns grouping, descriptions, and which keys appear.
+- **`GET /config` supplies current effective values and nothing else.** It is not
+  a schema endpoint: API.md describes it as "effective configuration (all sources
+  merged), secrets redacted", and the handler serialises the typed config
+  verbatim. There is no validation metadata — no types, no bounds, no enums, no
+  mutability classes. Every one of those is hand-carried from CONFIGURATION.md
+  and the backend schema into the frontend, which is a cost this page pays on
+  purpose and a drift risk it accepts. Anything that reads as "the API told us
+  the bounds" is wrong.
 - Every field tagged live-apply or restart-required. Most options are boot-only;
   the runtime set is small and named in the IA.
+- **`[api]` is not an ordinary editable section.** `api.tls = false` removes the
+  only origin on which a `Secure` `__Host-` cookie can exist — after that restart
+  the dashboard cannot authenticate at all, and an HTTP fallback is forbidden.
+  `api.address` and `api.port` move the listener out from under whoever is using
+  it. Either exclude the section from the curated form, or gate each field behind
+  an explicit consequence confirmation naming the lock-out. Presenting TLS as a
+  harmless toggle is the failure mode.
 - A restart-required banner persists until a restart is observed through the
   health endpoint's uptime resetting. The config-changed event refreshes the
-  form.
+  form. The banner is **global UI state, not a global poll**: it revalidates on
+  entering Settings and whenever a mounted page's shared refresh happens to read
+  `/health`. No timer exists solely to clear it.
 - The rule-list array and the policy set are absent from the form. They are
   rejected by this endpoint on purpose: each has exactly one writer, on its own
   page.
 - **A read-only All settings panel at the bottom** rendering the complete
   effective config. A curated form is a subset by construction, and without this
   panel an operator cannot tell "not exposed here" from "not set".
+  - **It renders whatever `GET /config` returns, so it must never render auth
+    material.** `p5-04` redacts `auth.*` at the endpoint — that is the guarantee
+    this panel relies on, and the panel adds a second check rather than assuming
+    it. A password hash printed into a browser is offline-crackable material,
+    and "it is only a hash" is not a reason to publish it.
+  - `policies` is absent from the response when the list is empty
+    (`skip_serializing_if`), so the panel shows no key at all in the zero-config
+    case. Word it so that reads as "none configured", not as the ambiguity the
+    panel exists to remove.
 - **Writes send only changed keys.** The endpoint is a partial deep-merge;
   submitting the read-back document would overwrite keys the UI does not model —
   a hand-edited value, or one from a newer build — with whatever the form last
@@ -64,6 +88,17 @@ pipelines in one table. Client-side filters over the rows held. The panel states
 that it starts empty, holds a bounded ring, and retains nothing — there is no
 server-side query store to search. A cached marker is not a verdict.
 
+- **This is the only page that subscribes to `query`.** It adds `query` on mount
+  and drops it on unmount, per the protocol frozen in `p5-03`. Leaving the
+  subscription open after navigating away would put the whole household's
+  per-query feed back on a phone that is showing Settings — and would keep the
+  engine doing per-query publish work for a page nobody is looking at.
+- Dropping it is what closes the connection when the next route needs no events.
+  Health and Memory need none; Settings holds `config_changed` only.
+- **It is a Live Feed, not a Query Log.** The term matters: a log promises
+  retained history and FAH keeps none. Use the vocabulary CONTEXT.md carries
+  after this phase reconciles it.
+
 **Mobile.** `sketch/MobileLiveFeed.dc.html` is the source of truth for the Live
 Feed phone layout. It settles: one card per event, never the nine-column table —
 verdict, pipeline and time on the first line, the domain given room to wrap,
@@ -82,7 +117,12 @@ stay legible without pinch-zoom.
 
 - A settings write sends only the changed keys — asserted by inspecting the
   request body in a test.
-- The All settings panel shows keys the curated form does not model.
+- The All settings panel shows keys the curated form does not model, and shows
+  **no** `auth.*` material.
+- `[api]` fields are either absent from the form or gated behind a consequence
+  confirmation that names the lock-out.
+- No bound, enum or mutability class in the form is sourced from the API
+  response — they are hand-carried, and the review file says from where.
 - The restart banner appears on a boot-only change and clears after a restart.
 - Rotating the API key warns that the key is shown once and that existing
   clients break.
@@ -91,21 +131,35 @@ stay legible without pinch-zoom.
 - The Live Feed ring is bounded, pauses when hidden, and never grows with
   uptime. At 390 px it matches `sketch/MobileLiveFeed.dc.html`: card per event,
   200-row ring, hidden-page pause stated on the page.
+- The `query` subscription is added on entering the Live Feed and dropped on
+  leaving it — asserted against a running API, by observing that no query frames
+  arrive once another page is shown, **and** that the engine stops doing
+  per-query publish work.
+- **Route-scoped, per the phase invariant.** Settings holds `config_changed`
+  while mounted and nothing else; Health and Memory hold no subscription, so the
+  socket is closed while either is the active route. Leaving any of the four stops
+  its traffic within one refresh interval.
+- The restart-required banner is global UI state with **no** timer of its own: it
+  revalidates on entering Settings, and opportunistically when a mounted page's
+  shared refresh reads `/health`. It does not clear live from an unrelated page,
+  and that is deliberate — a banner is not worth a standing poll.
 - Degraded status is explained identically wherever it appears — one string in
   the code, not three.
 - Correct in both themes at all three breakpoints, verified at 390 px.
-- Gates green, cargo and frontend. Bundle size recorded.
+- Gates green, cargo and frontend. Bundle size recorded, gzip and brotli.
 
 ## Out of scope
 
-Any config key the API rejects on that endpoint. Editing from the raw panel.
+Any config key the API rejects on that endpoint — `rules.lists`, `policies` and,
+after `p5-04`, `auth.*`. Editing from the raw panel.
 
 ## Suggested prompt
 
 > Read docs/dashboard/information-architecture.md sections Settings and
 > Diagnostics, docs/dashboard/open-questions.md section Closed, API.md,
 > CONFIGURATION.md for the sections being exposed, and
-> plan/wip/phase5/p5-07-settings-and-diagnostics.md. Build the hand-written
-> Settings form with its raw panel and changed-keys-only writes, and the three
-> Diagnostics views. Design the phone layout for each, including the Live Feed
-> as cards.
+> plan/open/phase5/p5-09-settings-and-diagnostics.md. Build the hand-written
+> Settings form with its raw panel, changed-keys-only writes, hand-carried
+> validation metadata and gated `[api]` fields, and the three Diagnostics views
+> with the Live Feed owning the `query` subscription. Design the phone layout for
+> each, including the Live Feed as cards.
