@@ -1,20 +1,21 @@
 {
- "captured_utc": "20260825T061838Z",
+ "captured_utc": "20260825T074700Z",
+ "note": "final fallback-window capture, taken immediately before the adaptive opt-in restart",
  "health": {
   "status": "ok",
   "version": "0.2.20",
-  "uptime_seconds": 31322
+  "uptime_seconds": 36624
  },
  "upstreams": [
   {
    "address": "1.1.1.1",
    "protocol": "udp",
-   "attempts": 8700,
-   "failures": 0,
+   "attempts": 11572,
+   "failures": 1,
    "consecutive_failures": 0,
    "tls_handshakes": 0,
    "failure_runs": [
-    0,
+    1,
     0,
     0,
     0
@@ -30,7 +31,7 @@
   {
    "address": "9.9.9.9",
    "protocol": "udp",
-   "attempts": 0,
+   "attempts": 1,
    "failures": 0,
    "consecutive_failures": 0,
    "tls_handshakes": 0,
