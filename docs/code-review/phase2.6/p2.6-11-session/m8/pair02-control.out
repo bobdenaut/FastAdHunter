@@ -1,0 +1,10 @@
+upstream/forward_udp_answered
+                        time:   [79.556 µs 79.815 µs 80.085 µs]
+                        change: [+0.8492% +1.7287% +2.5649%] (p = 0.00 < 0.05)
+                        Change within noise threshold.
+Found 19 outliers among 200 measurements (9.50%)
+  2 (1.00%) low severe
+  9 (4.50%) low mild
+  4 (2.00%) high mild
+  4 (2.00%) high severe
+

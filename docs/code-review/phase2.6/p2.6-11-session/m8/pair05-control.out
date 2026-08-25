@@ -1,0 +1,9 @@
+upstream/forward_udp_answered
+                        time:   [77.785 µs 78.020 µs 78.265 µs]
+                        change: [-1.5330% -0.5526% +0.4931%] (p = 0.30 > 0.05)
+                        No change in performance detected.
+Found 8 outliers among 200 measurements (4.00%)
+  1 (0.50%) low mild
+  4 (2.00%) high mild
+  3 (1.50%) high severe
+

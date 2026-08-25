@@ -1,0 +1,17 @@
+upstream/forward_udp_answered
+                        time:   [87.352 µs 87.957 µs 88.603 µs]
+                        change: [+4.9277% +6.4056% +7.7716%] (p = 0.00 < 0.05)
+                        Performance has regressed.
+Found 16 outliers among 200 measurements (8.00%)
+  3 (1.50%) low severe
+  6 (3.00%) low mild
+  5 (2.50%) high mild
+  2 (1.00%) high severe
+upstream/forward_udp_answered_adaptive
+                        time:   [83.113 µs 83.637 µs 84.218 µs]
+                        change: [+8.4332% +9.5999% +10.732%] (p = 0.00 < 0.05)
+                        Performance has regressed.
+Found 5 outliers among 200 measurements (2.50%)
+  3 (1.50%) high mild
+  2 (1.00%) high severe
+

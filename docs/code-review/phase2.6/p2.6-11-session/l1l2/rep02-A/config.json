@@ -1,0 +1,79 @@
+{
+ "api": {
+  "address": "0.0.0.0",
+  "port": 8443,
+  "tls": true
+ },
+ "dns": {
+  "blocking": {
+   "mode": "null_ip",
+   "ttl_seconds": 10
+  },
+  "cache": {
+   "cleanup_interval_seconds": 360,
+   "max_bytes": 67108864,
+   "max_entries": 10000,
+   "max_ttl_seconds": 86400,
+   "min_ttl_seconds": 0,
+   "negative_ttl_max_seconds": 60,
+   "serve_stale": true,
+   "swr_workers": 3
+  },
+  "listen": {
+   "address": "0.0.0.0",
+   "port": 53
+  },
+  "upstreams": {
+   "penalty_failures": 2,
+   "servers": [
+    {
+     "address": "192.168.10.10:5301",
+     "hostname": null,
+     "protocol": "udp"
+    },
+    {
+     "address": "192.168.10.10:5302",
+     "hostname": null,
+     "protocol": "udp"
+    }
+   ],
+   "strategy": "adaptive",
+   "timeout_ms": 800
+  }
+ },
+ "egress": {
+  "allow_destinations": [],
+  "allow_ip_literal_hosts": false
+ },
+ "engine": {
+  "mode": "dns"
+ },
+ "history": {
+  "enabled": true,
+  "retention_days": 30,
+  "sample_interval_seconds": 30
+ },
+ "http": {
+  "header_timeout_ms": 10000,
+  "idle_timeout_ms": 60000,
+  "listen": {
+   "address": "::",
+   "port": 8080
+  },
+  "max_connections": 1024
+ },
+ "log": {
+  "format": "text",
+  "level": "info"
+ },
+ "rules": {
+  "lists": [],
+  "refresh_hours_default": 24
+ },
+ "schedule": {
+  "timezone": "UTC"
+ },
+ "stats": {
+  "snapshot_interval_seconds": 300
+ }
+}
