@@ -14,14 +14,24 @@
 //!                                                           └─ /api/v1/* ─ ports
 //! ```
 
+#[cfg(all(feature = "test-harness", not(debug_assertions)))]
+compile_error!(
+    "the test-harness feature carries relaxed authentication limits and an \
+     in-memory AuthState constructor; it must never be compiled into a release \
+     build. Drop --all-features, or build the measurement harness in the dev \
+     profile."
+);
+
 mod auth;
 mod config_store;
 mod error;
 mod events;
 mod keys;
+mod password;
 mod ports;
 mod routes;
 mod server;
+mod session;
 mod state;
 mod telemetry;
 mod timestamp;
@@ -33,6 +43,9 @@ pub use config_store::{ConfigStore, ConfigStoreError, UpdateOutcome};
 pub use error::ApiError;
 pub use events::{Event, EventHub};
 pub use keys::ApiKeyStore;
+pub use password::AuthState;
+#[cfg(feature = "test-harness")]
+pub use password::RateLimits;
 pub use ports::{
     BucketCount, CacheClean, CacheSource, CacheStats, ClientCount, ClientEntry, DomainCount,
     HistorySource, PolicyCount, QueryRecord, StatsOverview, StatsSource, TelemetrySource,

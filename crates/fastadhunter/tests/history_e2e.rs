@@ -441,6 +441,15 @@ impl Harness {
             cache: Arc::new(NoCache),
             config: Arc::new(ConfigStore::new(config, config_path)),
             keys: Arc::new(keys),
+            auth: Arc::new(
+                fah_api::AuthState::for_tests(
+                    config_dir.path(),
+                    data_dir.path(),
+                    "history-e2e-password",
+                    fah_api::AuthState::relaxed_limits(),
+                )
+                .unwrap(),
+            ),
         };
         let server = ApiServer::bind("127.0.0.1", 0, tls, state).await.unwrap();
         let base = server.base_url();

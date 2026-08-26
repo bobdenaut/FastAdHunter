@@ -15,6 +15,13 @@ workspace = true
 # traits (`StatsSource`, `TelemetrySource`), implemented in `fastadhunter` —
 # ARCHITECTURE.md rule 2: siblings never import each other, the binary wires
 # them via channels and handles (same pattern as fah-metrics' snapshot DTOs).
+[features]
+# Relaxed rate-limiter and known-password `AuthState` constructors for the
+# integration harnesses and the p5-04 measurement legs. Non-default and never
+# enabled by `cargo build --release`; `resolver = "2"` keeps dev-dependency
+# features out of normal builds, so the shipped binary cannot carry them.
+test-harness = []
+
 [dependencies]
 fah-common = { path = "../fah-common" }
 fah-config = { path = "../fah-config" }
@@ -22,6 +29,14 @@ fah-model = { path = "../fah-model" }
 fah-rules = { path = "../fah-rules" }
 
 arc-swap = { workspace = true }
+# Argon2id for the dashboard password (SECURITY.md's crypto set). The only new
+# runtime crate this task adds.
+argon2 = "0.5"
+# HMAC-SHA256 over the session token, plus its constant-time `verify`. Already
+# compiled into this crate through rcgen's `aws_lc_rs` feature and rustls, so
+# this is a manifest edge rather than a new crate — Rust has no transitive
+# visibility, and the name has to be declared here to be callable.
+aws-lc-rs = "1.17"
 axum = { version = "0.8", features = ["ws"] }
 futures-util = { version = "0.3", default-features = false, features = ["sink"] }
 hyper = { version = "1", features = ["http1", "http2", "server"] }
@@ -49,6 +64,9 @@ tower-http = { version = "0.6", default-features = false, features = ["fs", "set
 tracing = { workspace = true }
 
 [dev-dependencies]
+# Self dev-dependency: the only way to turn `test-harness` on for this crate's
+# own integration tests without it reaching a release build (D4-a).
+fah-api = { path = ".", features = ["test-harness"] }
 reqwest = { workspace = true, features = ["json", "blocking"] }
 tempfile = "3"
 x509-parser = "0.18"

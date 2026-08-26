@@ -74,7 +74,9 @@ section is needed.
    atomic swap. Rule Engine runs BEFORE the cache; the cache never stores
    verdicts.
 4. **Bounded everything**: memory must not grow with traffic or uptime.
-5. **No hand-rolled crypto**: rustls, rcgen, x509-parser only.
+5. **No hand-rolled crypto**: rustls, rcgen, x509-parser, argon2, aws-lc-rs
+   only. `argon2` hashes the dashboard password; `aws-lc-rs` supplies the
+   constant-time HMAC-SHA256 signing the session token.
 6. **Use CONTEXT.md vocabulary** in code, comments, APIs. New/changed terms
    update CONTEXT.md in the same change.
 7. **No comments in Rust code.** Not `//`, not `///`, not `//!`, not `/* */`.

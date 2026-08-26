@@ -10,6 +10,7 @@ use fah_rules::{ListManager, PolicyState};
 use crate::config_store::ConfigStore;
 use crate::events::EventHub;
 use crate::keys::ApiKeyStore;
+use crate::password::AuthState;
 use crate::ports::{CacheSource, HistorySource, StatsSource, TelemetrySource};
 
 pub struct AppState {
@@ -23,6 +24,8 @@ pub struct AppState {
     pub cache: Arc<dyn CacheSource>,
     pub config: Arc<ConfigStore>,
     pub keys: Arc<ApiKeyStore>,
+    pub auth: Arc<AuthState>,
+    pub tls: bool,
     pub events: EventHub,
     pub started_at: Instant,
     /// Serializes `POST`/`PATCH`/`DELETE /api/v1/lists`. Each of those reads
@@ -53,10 +56,11 @@ pub struct AppStateBuilder {
     pub cache: Arc<dyn CacheSource>,
     pub config: Arc<ConfigStore>,
     pub keys: Arc<ApiKeyStore>,
+    pub auth: Arc<AuthState>,
 }
 
 impl AppStateBuilder {
-    pub fn build(self, events: EventHub) -> Arc<AppState> {
+    pub fn build(self, events: EventHub, tls: bool) -> Arc<AppState> {
         Arc::new(AppState {
             rules: self.rules,
             policies: self.policies,
@@ -66,6 +70,8 @@ impl AppStateBuilder {
             cache: self.cache,
             config: self.config,
             keys: self.keys,
+            auth: self.auth,
+            tls,
             events,
             started_at: Instant::now(),
             list_mutations: tokio::sync::Mutex::new(()),

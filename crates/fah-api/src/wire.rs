@@ -1111,6 +1111,17 @@ pub struct ApiKeyResponse {
     pub api_key: String,
 }
 
+#[derive(Debug, Deserialize)]
+pub struct LoginRequest {
+    pub password: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct PasswordChangeRequest {
+    pub current_password: String,
+    pub new_password: String,
+}
+
 #[cfg(test)]
 mod tests {
     use std::net::Ipv4Addr;

@@ -68,8 +68,8 @@ impl ApiServer {
 
         crate::web::check_root();
         let events = EventHub::new();
-        let router = crate::routes::router(state.build(events.clone()));
         let tls = tls_config.is_some();
+        let router = crate::routes::router(state.build(events.clone(), tls));
         let acceptor = tls_config.map(TlsAcceptor::from);
 
         let accept_loop = tokio::spawn(accept(listener, router, acceptor));

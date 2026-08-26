@@ -271,9 +271,13 @@ tls = true                    # boot    — self-signed generated on first boot;
 # SANs of the generated API certificate. It does not need to be set: the box's own
 # LAN address is discovered at generation time. Pin it only when the reachable
 # address is not the one the default route selects.
-# /health is unauthenticated and not configurable; every other route needs the key.
+# /health and POST /api/v1/auth/login are unauthenticated and not configurable;
+# every other route needs the API key or a session cookie.
 # api key: stored in /config, never in this file's plaintext sections;
 # rotate via POST /api/v1/config/apikey/rotate
+# dashboard password: Argon2id hash in /config/auth-hash, session secret in
+# /data/session-secret — neither is a config key. tls = false removes session
+# login (the __Host- cookie needs Secure); bearer auth is unaffected.
 
 # ─── Logging ───────────────────────────────────────────────────────────
 [log]
@@ -288,15 +292,33 @@ Empty `/config` volume → FastAdHunter generates:
 1. `fastadhunter.toml` with the defaults above
 2. an API key (printed once to the container log, stored in `/config`)
 3. a self-signed TLS certificate (rcgen) for the API
+4. a dashboard password — **printed once to the container log**, with only its
+   Argon2id hash stored in `/config/auth-hash`. It is never printed again and
+   no API route ever returns it. Lost it? Delete `/config/auth-hash` and
+   restart; see [SECURITY.md](SECURITY.md) §Password recovery.
+5. a session secret in `/data/session-secret`, which every session cookie is
+   signed with
 
 The container is functional with zero configuration.
+
+**There is no `[auth]` section**, and the dashboard password has no mutability
+class — it is not a config key. The hash and the session secret are two
+standalone files, changed through `POST /api/v1/auth/password` or by deleting
+them. `POST /api/v1/config` rejects a top-level `auth` key with `422`, and
+`GET /api/v1/config` omits auth material entirely. Keeping them out of the TOML
+is also what keeps a rollback to an older binary clean.
 
 ## Volumes
 
 | Mount | Class | Contents |
 |-------|-------|----------|
-| `/config` | small, back this up | TOML, API key, TLS certs |
-| `/data`   | bulky, regenerable  | cached rule lists, query-log segments, stats snapshots, history rollups + perf series |
+| `/config` | small, back this up | TOML, API key, TLS certs, `auth-hash` |
+| `/data`   | bulky, regenerable  | `session-secret`, cached rule lists, query-log segments, stats snapshots, history rollups + perf series |
+
+`/data/session-secret` is regenerable in the sense that a fresh one is written
+when it is missing — but regenerating it **ends every signed-in session**, and
+the password is unchanged. An ephemeral `/data` therefore signs everyone out on
+each restart, logged at `warn!`.
 
 ## Who owns the list set
 

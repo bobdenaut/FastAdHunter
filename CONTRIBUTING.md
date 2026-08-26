@@ -11,11 +11,33 @@ your machine before merging to `main`:
 ```sh
 cargo fmt --check
 cargo clippy --workspace --all-targets -- -D warnings
-cargo test --workspace
+cargo test --all-features --workspace
 cargo bench            # when touching a hot path — compare against main
 ```
 
 An optional git pre-commit hook running the first three is recommended.
+
+### `test-harness` is a dev-profile-only feature
+
+`fah-api` and `fastadhunter` each carry a non-default `test-harness` feature. It
+carries the relaxed login rate limiter and the known-password `AuthState`
+constructor that the integration harnesses and the p5-04 measurement legs need.
+**Shipping it would leave the appliance with no effective online-guessing
+control**, so a `compile_error!` in `crates/fah-api/src/lib.rs` fails any build
+that enables it without `debug_assertions`.
+
+Consequences to know before you hit them:
+
+- `cargo test --all-features` (dev profile) is the intended context and is the
+  gate above.
+- **`cargo test --release --all-features` does not compile.** That is the guard
+  working, not a break.
+- Building the measurement harness needs the flag back on:
+  `RUSTFLAGS="-C debug-assertions=yes" cargo build --release --locked -p fastadhunter --features test-harness`.
+- **Never add `--all-features` to a release build**, and never to the
+  `Dockerfile`. The shipped path is
+  `cargo build --release --locked -p fastadhunter`, and `resolver = "2"` keeps
+  dev-dependency features out of it.
 
 ## Performance discipline
 
@@ -53,3 +75,6 @@ An optional git pre-commit hook running the first three is recommended.
 - Rule Engine changes ship with parser fixtures (real-world list excerpts)
   and verdict tests.
 - Bug fixes include a regression test.
+- A new `/api/v1/` route needs a fixture in `requests/*.http`, or
+  `crates/fah-api/tests/request_coverage.rs` fails. Nothing in those files is
+  ever issued by the suite, so a destructive route still takes a fixture.
