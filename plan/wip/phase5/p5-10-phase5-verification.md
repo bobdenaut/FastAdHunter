@@ -64,6 +64,19 @@ see [docs/measurement-traps.md](../../../docs/measurement-traps.md).
   | Background the tab past the grace period | socket closed; on return it is recreated with exactly the active route's subscriptions |
   | Visit all thirteen screens in sequence | client memory does not grow with the number visited |
 
+- **Cost of the polled endpoints on the RB5009.** `GET /health`,
+  `GET /api/v1/telemetry` and `GET /api/v1/cache`: median service time and CPU
+  cost per call, with `/cache` measured at two cache occupancies to establish
+  whether stage counting is proportional to entries.
+
+  `p5-05` set the background-refresh defaults — `/health` 60 s, `/telemetry`
+  300 s, `/cache` 300 s — and the option sets offered on the card selector
+  (`/health` 30/60/300 s, `/telemetry` and `/cache` 60/300 s) from reasoning,
+  not measurement. **They are provisional and are corrected here from the
+  measured figures**, in `dashboard/frontend/src/constants.ts`. Whether
+  `/telemetry` and `/cache` may offer a 30 s option is decided by this
+  measurement and by nothing else.
+
 - **Mobile pass**: every page opened on a real phone over the LAN, checked
   against the phone artboards in [docs/dashboard/sketch/](../../../docs/dashboard/sketch/)
   — `MobileNav`, `MobileDashboard`, `MobileLiveFeed`, `MobileClients` — which are

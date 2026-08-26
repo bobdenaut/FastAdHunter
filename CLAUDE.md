@@ -260,7 +260,7 @@ tests/         # workspace integration tests
 benches/       # criterion benches vs PERFORMANCE.md budgets
 docs/          # images/, diagrams/, decisions/ (ADRs); solutions/ = documented
                # learnings (bugs, patterns; YAML frontmatter: module, tags, problem_type)
-dashboard/     # empty until the dashboard phase — do not scaffold
+dashboard/     # frontend/ — Vite + TypeScript + Preact dashboard (p5-05)
 plan/          # task orchestration — open/ wip/ closed/ phases
 ```
 

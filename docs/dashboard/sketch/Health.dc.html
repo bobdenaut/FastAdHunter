@@ -32,6 +32,10 @@
     .bd { padding: 14px; }
     .note { font-size: 11.5px; color: #6b7785; line-height: 1.55; }
     .mono { font-family: 'IBM Plex Mono', monospace; }
+    .ctl { display: flex; align-items: center; gap: 8px; flex: 0 0 auto; }
+    .age { font-size: 11.5px; color: #6b7785; white-space: nowrap; font-variant-numeric: tabular-nums; }
+    .sel { border: 1px solid #cfd8e3; background: #fff; border-radius: 4px; padding: 3px 6px 3px 8px; font-size: 11.5px; color: #47535f; display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
+    .mini { border: 1px solid #cfd8e3; background: #fff; border-radius: 4px; width: 26px; height: 24px; display: inline-flex; align-items: center; justify-content: center; color: #47535f; flex: 0 0 auto; }
     .num { font-variant-numeric: tabular-nums; font-family: 'IBM Plex Mono', monospace; }
     table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
     td { padding: 8px 0; border-top: 1px solid #f2f5f8; }
@@ -77,6 +81,7 @@
           <div style="text-align: right; flex: 0 0 auto;">
             <div class="num" style="font-size: 21px; font-weight: 600;">4h 31m</div>
             <div class="note">uptime · v0.2.20</div>
+            <span class="ctl" style="margin-top: 9px; justify-content: flex-end;"><span class="age">updated 41 s ago</span><span class="sel">1 m<svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M5 8l7 7 7-7"></path></svg></span><span class="mini" title="Refresh now"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20.5 11.5a8.5 8.5 0 1 0-2.5 6.4"></path><path d="M20.5 4v7.5H13"></path></svg></span></span>
           </div>
         </div>
         <div class="lnk">
@@ -87,7 +92,7 @@
 
       <div class="row2">
         <div class="card">
-          <h3 class="ch"><span>What clients received</span><span class="note">answer outcomes, since boot</span></h3>
+          <h3 class="ch"><span>What clients received</span><span class="ctl"><span class="note">answer outcomes, since boot</span><span class="age">2 m ago</span><span class="sel">5 m<svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M5 8l7 7 7-7"></path></svg></span><span class="mini" title="Refresh now"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20.5 11.5a8.5 8.5 0 1 0-2.5 6.4"></path><path d="M20.5 4v7.5H13"></path></svg></span></span></h3>
           <div class="bd" style="padding-top: 4px;">
             <table>
               <tr><td>SERVFAIL synthesized <span class="note">by FastAdHunter</span></td><td class="num">1,204</td></tr>

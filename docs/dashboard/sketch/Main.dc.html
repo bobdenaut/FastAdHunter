@@ -41,6 +41,10 @@
     td { padding: 7px 10px; border-top: 1px solid #eef2f6; }
     .num { text-align: right; font-variant-numeric: tabular-nums; font-family: 'IBM Plex Mono', monospace; }
     .mono { font-family: 'IBM Plex Mono', monospace; }
+    .ctl { display: flex; align-items: center; gap: 8px; flex: 0 0 auto; }
+    .age { font-size: 11.5px; color: #6b7785; white-space: nowrap; font-variant-numeric: tabular-nums; }
+    .sel { border: 1px solid #cfd8e3; background: #fff; border-radius: 4px; padding: 3px 6px 3px 8px; font-size: 11.5px; color: #47535f; display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
+    .mini { border: 1px solid #cfd8e3; background: #fff; border-radius: 4px; width: 26px; height: 24px; display: inline-flex; align-items: center; justify-content: center; color: #47535f; flex: 0 0 auto; }
     .chips { display: flex; gap: 6px; }
     .chip { border: 1px solid #cfd8e3; background: #fff; border-radius: 3px; padding: 3px 10px; font-size: 11.5px; color: #47535f; }
     .chip.on { background: #1f9dbb; border-color: #1f9dbb; color: #fff; }
@@ -140,28 +144,127 @@
 
       <div class="card">
         <h3 class="ch">
-          <span>Queries over time</span>
+          <span>Queries over time <span class="note" style="font-weight: 400; margin-left: 8px;"><span class="num">184,233</span> queries · <span class="num">23,411</span> blocked · <span class="num">12.7 %</span></span></span>
           <span class="chips"><span class="chip on">24 h</span><span class="chip">7 d</span><span class="chip">30 d</span></span>
         </h3>
         <div class="bd">
           <svg viewBox="0 0 1360 236" style="width: 100%; height: 236px; display: block;">
-            <line x1="0" y1="20" x2="1360" y2="20" stroke="#eef2f6"></line>
-            <line x1="0" y1="80" x2="1360" y2="80" stroke="#eef2f6"></line>
-            <line x1="0" y1="140" x2="1360" y2="140" stroke="#eef2f6"></line>
-            <line x1="0" y1="200" x2="1360" y2="200" stroke="#eef2f6"></line>
-            <polygon fill="#1f9dbb" fill-opacity="0.22" stroke="#1f9dbb" stroke-width="1.6" points="0,160 59,168 118,175 177,180 237,182 296,176 355,150 414,125 473,100 532,85 591,80 650,88 710,92 769,80 828,70 887,75 946,82 1005,70 1064,55 1123,62 1183,80 1242,110 1301,135 1360,150 1360,220 0,220"></polygon>
-            <polygon fill="#d1504b" fill-opacity="0.32" stroke="#d1504b" stroke-width="1.6" points="0,212 59,213 118,214 177,215 237,215 296,214 355,211 414,208 473,204 532,202 591,201 650,203 710,203 769,202 828,200 887,201 946,202 1005,200 1064,198 1123,199 1183,202 1242,206 1301,209 1360,211 1360,220 0,220"></polygon>
-            <line x1="0" y1="220" x2="1360" y2="220" stroke="#cfd8e3"></line>
-            <text x="0" y="234" font-size="10" fill="#8a95a3" font-family="IBM Plex Mono, monospace">10:00</text>
-            <text x="640" y="234" font-size="10" fill="#8a95a3" font-family="IBM Plex Mono, monospace">22:00</text>
-            <text x="1300" y="234" font-size="10" fill="#8a95a3" font-family="IBM Plex Mono, monospace">10:00</text>
+            <line x1="0" y1="20" x2="1314" y2="20" stroke="#eef2f6"></line>
+            <text x="1360" y="23.5" font-size="10" fill="#b6bfc9" text-anchor="end" font-family="IBM Plex Mono, monospace">15k</text>
+            <line x1="0" y1="68.5" x2="1314" y2="68.5" stroke="#eef2f6"></line>
+            <text x="1360" y="72" font-size="10" fill="#b6bfc9" text-anchor="end" font-family="IBM Plex Mono, monospace">11.3k</text>
+            <line x1="0" y1="117" x2="1314" y2="117" stroke="#eef2f6"></line>
+            <text x="1360" y="120.5" font-size="10" fill="#b6bfc9" text-anchor="end" font-family="IBM Plex Mono, monospace">7.5k</text>
+            <line x1="0" y1="165.5" x2="1314" y2="165.5" stroke="#eef2f6"></line>
+            <text x="1360" y="169" font-size="10" fill="#b6bfc9" text-anchor="end" font-family="IBM Plex Mono, monospace">3.8k</text>
+            <line x1="0" y1="214" x2="1314" y2="214" stroke="#eef2f6"></line>
+            <text x="1360" y="217.5" font-size="10" fill="#b6bfc9" text-anchor="end" font-family="IBM Plex Mono, monospace">0</text>
+            <rect x="0" y="162.9" width="51.8" height="45.4" fill="#1f9dbb" fill-opacity="0.9"></rect>
+            <rect x="0" y="208.3" width="51.8" height="5.7" fill="#d1504b" fill-opacity="0.9"></rect>
+            <text x="25.9" y="156.9" font-size="9.5" fill="#55606d" text-anchor="middle" font-family="IBM Plex Mono, monospace">4k</text>
+            <rect x="54.8" y="173.1" width="51.8" height="36.6" fill="#1f9dbb" fill-opacity="0.9"></rect>
+            <rect x="54.8" y="209.7" width="51.8" height="4.3" fill="#d1504b" fill-opacity="0.9"></rect>
+            <text x="80.6" y="167.1" font-size="9.5" fill="#55606d" text-anchor="middle" font-family="IBM Plex Mono, monospace">3.2k</text>
+            <rect x="109.5" y="179.9" width="51.8" height="30.7" fill="#1f9dbb" fill-opacity="0.9"></rect>
+            <rect x="109.5" y="210.7" width="51.8" height="3.3" fill="#d1504b" fill-opacity="0.9"></rect>
+            <text x="135.4" y="173.9" font-size="9.5" fill="#55606d" text-anchor="middle" font-family="IBM Plex Mono, monospace">2.6k</text>
+            <rect x="164.3" y="183.3" width="51.8" height="27.7" fill="#1f9dbb" fill-opacity="0.9"></rect>
+            <rect x="164.3" y="211.1" width="51.8" height="2.9" fill="#d1504b" fill-opacity="0.9"></rect>
+            <text x="190.1" y="177.3" font-size="9.5" fill="#55606d" text-anchor="middle" font-family="IBM Plex Mono, monospace">2.4k</text>
+            <rect x="219" y="185" width="51.8" height="26.1" fill="#1f9dbb" fill-opacity="0.9"></rect>
+            <rect x="219" y="211.1" width="51.8" height="2.9" fill="#d1504b" fill-opacity="0.9"></rect>
+            <text x="244.9" y="179" font-size="9.5" fill="#55606d" text-anchor="middle" font-family="IBM Plex Mono, monospace">2.2k</text>
+            <rect x="273.8" y="181.6" width="51.8" height="28.9" fill="#1f9dbb" fill-opacity="0.9"></rect>
+            <rect x="273.8" y="210.6" width="51.8" height="3.4" fill="#d1504b" fill-opacity="0.9"></rect>
+            <text x="299.6" y="175.6" font-size="9.5" fill="#55606d" text-anchor="middle" font-family="IBM Plex Mono, monospace">2.5k</text>
+            <rect x="328.5" y="166.3" width="51.8" height="42" fill="#1f9dbb" fill-opacity="0.9"></rect>
+            <rect x="328.5" y="208.3" width="51.8" height="5.7" fill="#d1504b" fill-opacity="0.9"></rect>
+            <text x="354.4" y="160.3" font-size="9.5" fill="#55606d" text-anchor="middle" font-family="IBM Plex Mono, monospace">3.7k</text>
+            <rect x="383.3" y="135.6" width="51.8" height="67.8" fill="#1f9dbb" fill-opacity="0.9"></rect>
+            <rect x="383.3" y="203.5" width="51.8" height="10.5" fill="#d1504b" fill-opacity="0.9"></rect>
+            <text x="409.1" y="129.6" font-size="9.5" fill="#55606d" text-anchor="middle" font-family="IBM Plex Mono, monospace">6.1k</text>
+            <rect x="438" y="108.4" width="51.8" height="90.9" fill="#1f9dbb" fill-opacity="0.9"></rect>
+            <rect x="438" y="199.3" width="51.8" height="14.7" fill="#d1504b" fill-opacity="0.9"></rect>
+            <text x="463.9" y="102.4" font-size="9.5" fill="#55606d" text-anchor="middle" font-family="IBM Plex Mono, monospace">8.2k</text>
+            <rect x="492.8" y="94.8" width="51.8" height="103.6" fill="#1f9dbb" fill-opacity="0.9"></rect>
+            <rect x="492.8" y="198.4" width="51.8" height="15.6" fill="#d1504b" fill-opacity="0.9"></rect>
+            <text x="518.6" y="88.8" font-size="9.5" fill="#55606d" text-anchor="middle" font-family="IBM Plex Mono, monospace">9.2k</text>
+            <text x="518.6" y="209.6" font-size="9" font-weight="500" fill="#fff" text-anchor="middle" font-family="IBM Plex Mono, monospace">1.2k</text>
+            <rect x="547.5" y="91.4" width="51.8" height="107.2" fill="#1f9dbb" fill-opacity="0.9"></rect>
+            <rect x="547.5" y="198.5" width="51.8" height="15.5" fill="#d1504b" fill-opacity="0.9"></rect>
+            <text x="573.4" y="85.4" font-size="9.5" fill="#55606d" text-anchor="middle" font-family="IBM Plex Mono, monospace">9.5k</text>
+            <text x="573.4" y="209.7" font-size="9" font-weight="500" fill="#fff" text-anchor="middle" font-family="IBM Plex Mono, monospace">1.2k</text>
+            <rect x="602.3" y="88" width="51.8" height="110.7" fill="#1f9dbb" fill-opacity="0.9"></rect>
+            <rect x="602.3" y="198.6" width="51.8" height="15.4" fill="#d1504b" fill-opacity="0.9"></rect>
+            <text x="628.1" y="82" font-size="9.5" fill="#55606d" text-anchor="middle" font-family="IBM Plex Mono, monospace">9.7k</text>
+            <text x="628.1" y="209.7" font-size="9" font-weight="500" fill="#fff" text-anchor="middle" font-family="IBM Plex Mono, monospace">1.2k</text>
+            <rect x="657" y="84.6" width="51.8" height="113.9" fill="#1f9dbb" fill-opacity="0.9"></rect>
+            <rect x="657" y="198.5" width="51.8" height="15.5" fill="#d1504b" fill-opacity="0.9"></rect>
+            <text x="682.9" y="78.6" font-size="9.5" fill="#55606d" text-anchor="middle" font-family="IBM Plex Mono, monospace">10k</text>
+            <text x="682.9" y="209.6" font-size="9" font-weight="500" fill="#fff" text-anchor="middle" font-family="IBM Plex Mono, monospace">1.2k</text>
+            <rect x="711.8" y="86.3" width="51.8" height="111.9" fill="#1f9dbb" fill-opacity="0.9"></rect>
+            <rect x="711.8" y="198.2" width="51.8" height="15.8" fill="#d1504b" fill-opacity="0.9"></rect>
+            <text x="737.6" y="80.3" font-size="9.5" fill="#55606d" text-anchor="middle" font-family="IBM Plex Mono, monospace">9.9k</text>
+            <text x="737.6" y="209.5" font-size="9" font-weight="500" fill="#fff" text-anchor="middle" font-family="IBM Plex Mono, monospace">1.2k</text>
+            <rect x="766.5" y="89.7" width="51.8" height="108.3" fill="#1f9dbb" fill-opacity="0.9"></rect>
+            <rect x="766.5" y="198" width="51.8" height="16" fill="#d1504b" fill-opacity="0.9"></rect>
+            <text x="792.4" y="83.7" font-size="9.5" fill="#55606d" text-anchor="middle" font-family="IBM Plex Mono, monospace">9.6k</text>
+            <text x="792.4" y="209.4" font-size="9" font-weight="500" fill="#fff" text-anchor="middle" font-family="IBM Plex Mono, monospace">1.2k</text>
+            <rect x="821.3" y="84.6" width="51.8" height="111.8" fill="#1f9dbb" fill-opacity="0.9"></rect>
+            <rect x="821.3" y="196.4" width="51.8" height="17.6" fill="#d1504b" fill-opacity="0.9"></rect>
+            <text x="847.1" y="78.6" font-size="9.5" fill="#55606d" text-anchor="middle" font-family="IBM Plex Mono, monospace">10k</text>
+            <text x="847.1" y="208.6" font-size="9" font-weight="500" fill="#fff" text-anchor="middle" font-family="IBM Plex Mono, monospace">1.4k</text>
+            <rect x="876" y="74.3" width="51.8" height="119.8" fill="#1f9dbb" fill-opacity="0.9"></rect>
+            <rect x="876" y="194.2" width="51.8" height="19.8" fill="#d1504b" fill-opacity="0.9"></rect>
+            <text x="901.9" y="68.3" font-size="9.5" fill="#55606d" text-anchor="middle" font-family="IBM Plex Mono, monospace">10.8k</text>
+            <text x="901.9" y="207.5" font-size="9" font-weight="500" fill="#fff" text-anchor="middle" font-family="IBM Plex Mono, monospace">1.5k</text>
+            <rect x="930.8" y="60.7" width="51.8" height="130.6" fill="#1f9dbb" fill-opacity="0.9"></rect>
+            <rect x="930.8" y="191.3" width="51.8" height="22.7" fill="#d1504b" fill-opacity="0.9"></rect>
+            <text x="956.6" y="54.7" font-size="9.5" fill="#55606d" text-anchor="middle" font-family="IBM Plex Mono, monospace">11.9k</text>
+            <text x="956.6" y="206.1" font-size="9" font-weight="500" fill="#fff" text-anchor="middle" font-family="IBM Plex Mono, monospace">1.8k</text>
+            <rect x="985.5" y="43.7" width="51.8" height="144.6" fill="#1f9dbb" fill-opacity="0.9"></rect>
+            <rect x="985.5" y="188.3" width="51.8" height="25.7" fill="#d1504b" fill-opacity="0.9"></rect>
+            <text x="1011.4" y="37.7" font-size="9.5" fill="#55606d" text-anchor="middle" font-family="IBM Plex Mono, monospace">13.2k</text>
+            <text x="1011.4" y="204.5" font-size="9" font-weight="500" fill="#fff" text-anchor="middle" font-family="IBM Plex Mono, monospace">2k</text>
+            <rect x="1040.3" y="48.8" width="51.8" height="141.4" fill="#1f9dbb" fill-opacity="0.9"></rect>
+            <rect x="1040.3" y="190.2" width="51.8" height="23.8" fill="#d1504b" fill-opacity="0.9"></rect>
+            <text x="1066.1" y="42.8" font-size="9.5" fill="#55606d" text-anchor="middle" font-family="IBM Plex Mono, monospace">12.8k</text>
+            <text x="1066.1" y="205.5" font-size="9" font-weight="500" fill="#fff" text-anchor="middle" font-family="IBM Plex Mono, monospace">1.8k</text>
+            <rect x="1095" y="64.1" width="51.8" height="129.6" fill="#1f9dbb" fill-opacity="0.9"></rect>
+            <rect x="1095" y="193.8" width="51.8" height="20.2" fill="#d1504b" fill-opacity="0.9"></rect>
+            <text x="1120.9" y="58.1" font-size="9.5" fill="#55606d" text-anchor="middle" font-family="IBM Plex Mono, monospace">11.6k</text>
+            <text x="1120.9" y="207.3" font-size="9" font-weight="500" fill="#fff" text-anchor="middle" font-family="IBM Plex Mono, monospace">1.6k</text>
+            <rect x="1149.8" y="91.4" width="51.8" height="107.4" fill="#1f9dbb" fill-opacity="0.9"></rect>
+            <rect x="1149.8" y="198.8" width="51.8" height="15.2" fill="#d1504b" fill-opacity="0.9"></rect>
+            <text x="1175.6" y="85.4" font-size="9.5" fill="#55606d" text-anchor="middle" font-family="IBM Plex Mono, monospace">9.5k</text>
+            <text x="1175.6" y="209.8" font-size="9" font-weight="500" fill="#fff" text-anchor="middle" font-family="IBM Plex Mono, monospace">1.2k</text>
+            <rect x="1204.5" y="125.4" width="51.8" height="78.3" fill="#1f9dbb" fill-opacity="0.9"></rect>
+            <rect x="1204.5" y="203.7" width="51.8" height="10.3" fill="#d1504b" fill-opacity="0.9"></rect>
+            <text x="1230.4" y="119.4" font-size="9.5" fill="#55606d" text-anchor="middle" font-family="IBM Plex Mono, monospace">6.8k</text>
+            <rect x="1259.3" y="149.3" width="51.8" height="57.7" fill="#1f9dbb" fill-opacity="0.9"></rect>
+            <rect x="1259.3" y="207" width="51.8" height="7" fill="#d1504b" fill-opacity="0.9"></rect>
+            <text x="1285.1" y="143.3" font-size="9.5" fill="#55606d" text-anchor="middle" font-family="IBM Plex Mono, monospace">5k</text>
+            <line x1="0" y1="214" x2="1314" y2="214" stroke="#cfd8e3"></line>
+            <text x="0" y="230" font-size="10" fill="#8a95a3" font-family="IBM Plex Mono, monospace">10:00</text>
+            <text x="328.5" y="230" font-size="10" fill="#8a95a3" font-family="IBM Plex Mono, monospace">16:00</text>
+            <text x="657" y="230" font-size="10" fill="#8a95a3" font-family="IBM Plex Mono, monospace">22:00</text>
+            <text x="985.5" y="230" font-size="10" fill="#8a95a3" font-family="IBM Plex Mono, monospace">04:00</text>
+            <line x1="1011.4" y1="20" x2="1011.4" y2="214" stroke="#98a4b2" stroke-dasharray="3 3"></line>
+            <rect x="1045.3" y="33.7" width="172" height="76" rx="4" fill="#1f2733" fill-opacity="0.95"></rect>
+            <text x="1056.3" y="52.7" font-size="11" fill="#fff" font-family="IBM Plex Mono, monospace">04:00 – 05:00</text>
+            <text x="1056.3" y="69.7" font-size="11" fill="#9fb0c3" font-family="IBM Plex Mono, monospace">queries</text>
+            <text x="1206.3" y="69.7" font-size="11" fill="#fff" text-anchor="end" font-family="IBM Plex Mono, monospace">13,169</text>
+            <text x="1056.3" y="85.7" font-size="11" fill="#9fb0c3" font-family="IBM Plex Mono, monospace">blocked</text>
+            <text x="1206.3" y="85.7" font-size="11" fill="#e08a86" text-anchor="end" font-family="IBM Plex Mono, monospace">1,989</text>
+            <text x="1056.3" y="101.7" font-size="11" fill="#9fb0c3" font-family="IBM Plex Mono, monospace">blocked %</text>
+            <text x="1206.3" y="101.7" font-size="11" fill="#fff" text-anchor="end" font-family="IBM Plex Mono, monospace">15.1</text>
           </svg>
           <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 10px;">
             <div style="display: flex; gap: 16px; font-size: 11.5px; color: #47535f;">
-              <span><span class="dot" style="background: #1f9dbb;"></span> allowed</span>
+              <span><span class="dot" style="background: #1f9dbb;"></span> permitted</span>
               <span><span class="dot" style="background: #d1504b;"></span> blocked</span>
             </div>
-            <span class="note">hourly resolution · stride 1 — every point plotted is a real reading, never an average</span>
+            <span class="note">hourly resolution · stride 1 — every bar is a real reading, never an average. Hover a bar for its exact figures</span>
           </div>
         </div>
       </div>
@@ -188,7 +291,7 @@
         </div>
 
         <div class="card">
-          <h3 class="ch"><span>Upstream health</span><span class="note">strategy: adaptive</span></h3>
+          <h3 class="ch"><span>Upstream health</span><span class="ctl"><span class="note">strategy: adaptive</span><span class="age">2 m ago</span><span class="sel">5 m<svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M5 8l7 7 7-7"></path></svg></span><span class="mini" title="Refresh now"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20.5 11.5a8.5 8.5 0 1 0-2.5 6.4"></path><path d="M20.5 4v7.5H13"></path></svg></span></span></h3>
           <div class="bd" style="display: flex; flex-direction: column; gap: 13px;">
             <div>
               <div style="display: flex; justify-content: space-between; font-size: 12.5px; margin-bottom: 5px;">
@@ -261,7 +364,7 @@
         </div>
 
         <div class="card">
-          <h3 class="ch"><span>Cache state</span><span class="note">entries 7,261 / 10,000</span></h3>
+          <h3 class="ch"><span>Cache state</span><span class="ctl"><span class="note">entries 7,261 / 10,000</span><span class="age">2 m ago</span><span class="sel">5 m<svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M5 8l7 7 7-7"></path></svg></span><span class="mini" title="Refresh now"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20.5 11.5a8.5 8.5 0 1 0-2.5 6.4"></path><path d="M20.5 4v7.5H13"></path></svg></span></span></h3>
           <div class="bd">
             <div style="display: flex; height: 26px; border-radius: 3px; overflow: hidden;">
               <div style="flex: 7026; background: #3d9a63;"></div>

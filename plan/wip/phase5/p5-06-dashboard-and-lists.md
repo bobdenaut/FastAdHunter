@@ -42,10 +42,32 @@ socket; `GET /history/summary` for the series; the shared bounded refresh from
   restart (API.md §telemetry). Two visually identical tile rows meaning different
   windows is the trap this label exists to close. There is no 24 h HTTP figure in
   the API — do not derive one.
-- Queries over time, stacked **permitted** and blocked, with the 24 h / 7 d / 30 d
-  range selector mapping to hourly then daily resolution. When the response
-  carries a stride above 1, the chart says the series is decimated and that
-  every plotted point is a real reading.
+- Queries over time as **stacked bars**, one bar per bucket, **permitted** and
+  blocked, with the 24 h / 7 d / 30 d range selector. **Match
+  [Main.dc.html](../../../docs/dashboard/sketch/Main.dc.html) and
+  [MobileDashboard.dc.html](../../../docs/dashboard/sketch/MobileDashboard.dc.html)** —
+  the artboards are the specification and were redrawn for this; visual-system.md
+  §Charts carries the rules behind them. Bars rather than an area because the data
+  is discrete hourly rollups and a common baseline is what makes a ~12 % blocked
+  segment comparable bar to bar. uPlot draws them with its `paths.bars` renderer,
+  so the p5-05 chart wrapper must not be line-only.
+  - **Range mapping: 24 h hourly (24 bars), 7 d and 30 d daily (7 and 30 bars).**
+    7 d requests `resolution=day` — 168 hourly bars is unreadable at any width.
+  - **A y-axis is required**, gridline labels right-aligned outside the plot,
+    10 px mono in the tick colour, as `Performance` already does.
+  - **Printed figures follow the floors, and are dropped rather than shrunk:**
+    a bar ≥ **50 px** wide carries its total above it; a blocked segment ≥ **15 px**
+    tall carries its own figure inside it in white. Below either floor nothing is
+    drawn — that is what makes the phone work with no phone-specific code, and
+    what stops 30 daily bars becoming a wall of digits.
+  - **Exact per-bucket figures come from hover**, not the printed labels: bucket
+    window, `queries`, `blocked`, `blocked_percent`, hovered bar at full opacity
+    and the rest dimmed. `blocked_percent` is served per item — do not derive it.
+    This is the only hover state in the system.
+  - **Totals go in the card title bar's secondary-text slot** — the aggregate a
+    bar chart structurally cannot show.
+  - When the response carries a stride above 1, the chart says the series is
+    decimated and that every bar is a real reading.
   - **`permitted` is `queries − blocked`, and it is not `allow`.**
     `history/summary` items carry `queries`, `blocked`, `cache_hits` and
     `per_type` — there is no allowed series. `allow` in CONTEXT.md is an explicit
