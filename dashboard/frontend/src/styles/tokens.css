@@ -1,0 +1,180 @@
+/*
+ * Every colour in the application is one of these custom properties. The dark
+ * theme redefines the tokens and nothing else — no component carries a second
+ * palette, and no rule outside this file may name a literal colour.
+ *
+ * Light values are the artboards' (docs/dashboard/sketch/). The artboards draw
+ * light only; the dark set is derived from the sidebar surfaces they do draw,
+ * which are dark in both themes.
+ */
+:root {
+  --page: #eef1f5;
+  --surface: #ffffff;
+  --surface-raised: #ffffff;
+  --surface-sunken: #f2f5f8;
+
+  --text: #1f2733;
+  --text-muted: #6b7785;
+  --text-faint: #8a95a3;
+  --text-control: #47535f;
+
+  --border: #dde3ea;
+  --border-soft: #e6ebf1;
+  --border-row: #eef2f6;
+  --border-control: #cfd8e3;
+
+  --link: #1f7f96;
+  --link-hover: #17616f;
+
+  --rail: #131a24;
+  --rail-brand: #0e141c;
+  --rail-text: #9fb0c3;
+  --rail-text-strong: #ffffff;
+  --rail-section: #5d6d80;
+  --rail-active: #1b2635;
+  --rail-accent: #24b3cf;
+  --rail-divider: #1d2734;
+  --rail-foot: #6b7c90;
+
+  --accent: #1f9dbb;
+  --accent-strong: #17798f;
+  --track: #e7edf3;
+  --scrim: rgba(12, 17, 23, 0.55);
+
+  --tile-volume: #4bb4dd;
+  --tile-blocked: #c9504b;
+  --tile-ratio: #dda02c;
+  --tile-healthy: #3d9a63;
+  --tile-zero: #8a95a3;
+
+  --pill-neutral-bg: #eef2f6;
+  --pill-neutral-fg: #55606d;
+  --pill-good-bg: #e4f3ea;
+  --pill-good-fg: #2f7d4e;
+  --pill-bad-bg: #fbe9e8;
+  --pill-bad-fg: #b03c37;
+  --pill-warn-bg: #fff2e0;
+  --pill-warn-fg: #9a6414;
+  --pill-special-bg: #f3ecf7;
+  --pill-special-fg: #6b4a86;
+
+  --state-live: #3d9a63;
+  --state-idle: #8a95a3;
+  --state-problem: #dd9a2f;
+
+  --focus: #1f9dbb;
+
+  --font: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial,
+    sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas,
+    'Liberation Mono', monospace;
+
+  --radius: 4px;
+  --radius-tile: 5px;
+  --rail-width: 230px;
+  --rail-width-compact: 64px;
+  --bar-height: 58px;
+  --gap: 16px;
+}
+
+/*
+ * The dark set is defined twice on purpose. The inline pre-paint script stamps
+ * `data-theme`, but it is wrapped in try/catch: a browser with site data
+ * blocked leaves the attribute unset, and only `prefers-color-scheme` is left
+ * to separate the two.
+ */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    --page: #0f151d;
+    --surface: #18212c;
+    --surface-raised: #1d2733;
+    --surface-sunken: #141c25;
+
+    --text: #e3e9f0;
+    --text-muted: #9aa7b6;
+    --text-faint: #78858f;
+    --text-control: #c3ccd6;
+
+    --border: #26313d;
+    --border-soft: #222c37;
+    --border-row: #202a34;
+    --border-control: #313d4a;
+
+    --link: #4fc0d8;
+    --link-hover: #7dd4e6;
+
+    --accent: #24b3cf;
+    --accent-strong: #4fc0d8;
+    --track: #222c37;
+
+    --tile-volume: #3d93b4;
+    --tile-blocked: #a5423e;
+    --tile-ratio: #b58223;
+    --tile-healthy: #327e51;
+    --tile-zero: #55606d;
+
+    --pill-neutral-bg: #232e3a;
+    --pill-neutral-fg: #b6bfc9;
+    --pill-good-bg: #16301f;
+    --pill-good-fg: #6bc48c;
+    --pill-bad-bg: #351a19;
+    --pill-bad-fg: #e08480;
+    --pill-warn-bg: #33260f;
+    --pill-warn-fg: #e0af5c;
+    --pill-special-bg: #2a2236;
+    --pill-special-fg: #b198cf;
+
+    --state-live: #5cb87f;
+    --state-idle: #78858f;
+    --state-problem: #e0af5c;
+
+    --focus: #4fc0d8;
+  }
+}
+
+:root[data-theme='dark'] {
+  --page: #0f151d;
+  --surface: #18212c;
+  --surface-raised: #1d2733;
+  --surface-sunken: #141c25;
+
+  --text: #e3e9f0;
+  --text-muted: #9aa7b6;
+  --text-faint: #78858f;
+  --text-control: #c3ccd6;
+
+  --border: #26313d;
+  --border-soft: #222c37;
+  --border-row: #202a34;
+  --border-control: #313d4a;
+
+  --link: #4fc0d8;
+  --link-hover: #7dd4e6;
+
+  --accent: #24b3cf;
+  --accent-strong: #4fc0d8;
+  --track: #222c37;
+
+  --tile-volume: #3d93b4;
+  --tile-blocked: #a5423e;
+  --tile-ratio: #b58223;
+  --tile-healthy: #327e51;
+  --tile-zero: #55606d;
+
+  --pill-neutral-bg: #232e3a;
+  --pill-neutral-fg: #b6bfc9;
+  --pill-good-bg: #16301f;
+  --pill-good-fg: #6bc48c;
+  --pill-bad-bg: #351a19;
+  --pill-bad-fg: #e08480;
+  --pill-warn-bg: #33260f;
+  --pill-warn-fg: #e0af5c;
+  --pill-special-bg: #2a2236;
+  --pill-special-fg: #b198cf;
+
+  --state-live: #5cb87f;
+  --state-idle: #78858f;
+  --state-problem: #e0af5c;
+
+  --focus: #4fc0d8;
+}

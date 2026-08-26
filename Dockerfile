@@ -4,17 +4,13 @@
 # a distroless image (SECURITY.md §Container hardening: no shell, no package
 # manager, non-root). Deployment target is RouterOS/RB5009 (arm64).
 #
-# `--build-arg FAH_VERSION=` is what the placeholder page names; it defaults to
-# `dev` and matters only until p5-05 replaces the fixture with the real build.
-#
 # Build (single platform, loads into local `docker images`):
-#   docker buildx build --platform linux/amd64 --build-arg FAH_VERSION=0.2.20 \
-#     -t fastadhunter:dev --load .
+#   docker buildx build --platform linux/amd64 -t fastadhunter:dev --load .
 #
 # Build (multi-arch, requires a registry to push to — see docs/deploy-rb5009.md
 # and the one-time buildx builder setup below):
 #   docker buildx build --platform linux/amd64,linux/arm64 \
-#     --build-arg FAH_VERSION=0.1.0 -t <registry>/fastadhunter:0.1.0 --push .
+#     -t <registry>/fastadhunter:0.1.0 --push .
 #
 # One-time buildx setup (per host):
 #   docker buildx create --name fah-builder --use
@@ -38,30 +34,22 @@
 # Node is a build-time dependency only: nothing from this stage reaches the
 # runtime image except the emitted files.
 #
-# p5-01 ships a *fixture* bundle rather than a real build — there is no frontend
-# source yet, and the delivery path still has to prove MIME coverage,
-# pre-compressed selection and the cache split. p5-05 replaces the RUN below
-# with `COPY dashboard/frontend/ .` + `npm ci && npm run build` (which is what
-# `.dockerignore` was opened up for) and deletes the fixture.
+# The bundle carries no version string: the top bar reads `version` from
+# `GET /health` at runtime, so nothing here needs a build argument.
 FROM --platform=$BUILDPLATFORM node:22.21.1-alpine AS frontend
 
-ARG FAH_VERSION=dev
-WORKDIR /web
+WORKDIR /app
 
-# Content is deterministic on purpose — no timestamps, no /dev/urandom — so an
-# unchanged build produces an identical layer. The `.gz`/`.br` siblings come
-# from Node's own zlib (brotli included), which costs no extra package.
-RUN set -eu; \
-    mkdir -p assets; \
-    printf '<!doctype html>\n<meta charset="utf-8">\n<title>FastAdHunter</title>\n<h1>FastAdHunter %s</h1>\n<p>Placeholder bundle. The dashboard lands later in phase 5.\n' "$FAH_VERSION" > index.html; \
-    printf 'export const version = "%s";\n' "$FAH_VERSION" > assets/app.a1b2c3d4.js; \
-    printf ':root { color-scheme: light dark; }\n' > assets/app.a1b2c3d4.css; \
-    printf '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"></svg>\n' > assets/sprite.a1b2c3d4.svg; \
-    printf '{"version":"%s"}\n' "$FAH_VERSION" > assets/meta.a1b2c3d4.json; \
-    printf 'wOF2 fixture\n' > assets/font.a1b2c3d4.woff2; \
-    printf 'ico fixture\n' > favicon.ico; \
-    node -e 'const z=require("zlib"),f=require("fs");for(const p of process.argv.slice(1)){const b=f.readFileSync(p);f.writeFileSync(p+".gz",z.gzipSync(b,{level:9}));f.writeFileSync(p+".br",z.brotliCompressSync(b));}' \
-      index.html assets/app.a1b2c3d4.js assets/app.a1b2c3d4.css
+# Manifest first, so `npm ci` caches across every source-only edit.
+COPY dashboard/frontend/package.json dashboard/frontend/package-lock.json ./
+RUN npm ci
+
+COPY dashboard/frontend/ ./
+
+# `npm run build` typechecks, builds, writes the `.gz`/`.br` siblings and
+# enforces the 150 KB gzip budget. A bundle over budget fails the image build,
+# not merely a local check.
+RUN npm run build && mkdir -p /web && cp -R dist/. /web/
 
 # Keep this tag's Rust version in sync with rust-toolchain.toml.
 FROM rust:1.96.0-alpine AS builder

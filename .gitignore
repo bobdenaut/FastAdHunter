@@ -16,3 +16,12 @@ fah-urlbench-*.tar
 
 # tui-monitor: holds the live bearer token. Copy config.example.toml instead.
 tui-monitor/config.toml
+
+# Dashboard frontend (p5-05): npm install output and the Vite build directory.
+# The bundle is produced by the Docker `frontend` stage; it is never committed.
+dashboard/frontend/node_modules/
+dashboard/frontend/dist/
+
+# Browser-verification scratch (Playwright MCP screenshots/traces). p5-05 ships
+# no Playwright; this only keeps a verification run out of the tree.
+.playwright-mcp/

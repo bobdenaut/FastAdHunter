@@ -1,0 +1,479 @@
+/* Component vocabulary. Built once here and used by every later task; the
+   measurements are the artboards' (docs/dashboard/sketch/). */
+
+/* Tile — a large figure, a label, a translucent corner glyph, a solid accent
+   background, and a footer strip that links deeper. */
+.tile {
+  border-radius: var(--radius-tile);
+  color: #fff;
+  position: relative;
+  overflow: hidden;
+}
+
+.tile .in {
+  padding: 13px 16px 12px;
+  position: relative;
+  z-index: 1;
+}
+
+.tile .lb {
+  font-size: 13.5px;
+  font-weight: 500;
+}
+
+.tile .n {
+  font-size: 33px;
+  font-weight: 600;
+  line-height: 1.14;
+  margin-top: 2px;
+  font-variant-numeric: tabular-nums;
+}
+
+.tile .ic {
+  position: absolute;
+  right: 10px;
+  top: 10px;
+  opacity: 0.28;
+  z-index: 0;
+  color: #fff;
+}
+
+.tile .ft {
+  background: rgba(0, 0, 0, 0.13);
+  padding: 6px 14px;
+  font-size: 11.5px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  position: relative;
+  z-index: 1;
+  color: #fff;
+}
+
+.tile .ft:hover {
+  text-decoration: none;
+  background: rgba(0, 0, 0, 0.2);
+}
+
+/* Accent roles are fixed and never reused for another meaning. */
+.tile.volume {
+  background: var(--tile-volume);
+}
+.tile.blocked {
+  background: var(--tile-blocked);
+}
+.tile.ratio {
+  background: var(--tile-ratio);
+}
+.tile.healthy {
+  background: var(--tile-healthy);
+}
+.tile.zero {
+  background: var(--tile-zero);
+}
+
+/* Card — title bar, optional tool button, body. */
+.card {
+  background: var(--surface-raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  min-width: 0;
+}
+
+.ch {
+  margin: 0;
+  font-size: 13.5px;
+  font-weight: 600;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--border-soft);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+
+.ch-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 0 0 auto;
+  font-weight: 400;
+}
+
+.bd {
+  padding: 14px;
+}
+
+/* Table — right-aligned tabular figures, a translucent frequency bar behind a
+   count, zebra off, hover on, horizontal scroll inside its own container. */
+.table-scroll {
+  overflow-x: auto;
+}
+
+table.t {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12.5px;
+}
+
+table.t th {
+  text-align: left;
+  font-weight: 600;
+  color: var(--text-muted);
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding: 0 10px 8px;
+  white-space: nowrap;
+}
+
+table.t th.num,
+table.t td.num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  font-family: var(--font-mono);
+}
+
+table.t td {
+  padding: 7px 10px;
+  border-top: 1px solid var(--border-row);
+}
+
+table.t tbody tr:hover td {
+  background: var(--surface-sunken);
+}
+
+.bar {
+  height: 4px;
+  border-radius: 2px;
+  background: var(--track);
+  overflow: hidden;
+}
+
+.bar > span {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+}
+
+/* Pills — always with their word, never colour alone. */
+.pill {
+  display: inline-block;
+  padding: 1px 8px;
+  border-radius: 3px;
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+.pill.neutral {
+  background: var(--pill-neutral-bg);
+  color: var(--pill-neutral-fg);
+}
+.pill.good {
+  background: var(--pill-good-bg);
+  color: var(--pill-good-fg);
+}
+.pill.bad {
+  background: var(--pill-bad-bg);
+  color: var(--pill-bad-fg);
+}
+.pill.warn {
+  background: var(--pill-warn-bg);
+  color: var(--pill-warn-fg);
+}
+.pill.special {
+  background: var(--pill-special-bg);
+  color: var(--pill-special-fg);
+}
+
+/* Stage bar — a segmented proportion bar with the legend beside it. */
+.seg {
+  display: flex;
+  height: 7px;
+  border-radius: 3px;
+  overflow: hidden;
+  background: var(--track);
+}
+
+.seg-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 9px;
+  font-size: 11.5px;
+  color: var(--text-muted);
+}
+
+.sw {
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  display: inline-block;
+  vertical-align: -1px;
+  margin-right: 6px;
+}
+
+/* Empty and error states. An empty result is not an error. */
+.empty-state,
+.error-state {
+  padding: 22px 14px;
+  text-align: center;
+}
+
+.empty-state-title,
+.error-state-title {
+  margin: 0 0 4px;
+  font-size: 13.5px;
+  font-weight: 600;
+}
+
+.error-state {
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--state-problem);
+  border-radius: var(--radius);
+  background: var(--surface-raised);
+  text-align: left;
+  display: flex;
+  gap: 11px;
+  align-items: flex-start;
+}
+
+.error-state .warning {
+  color: var(--pill-warn-fg);
+  flex: 0 0 auto;
+  margin-top: 1px;
+}
+
+.error-state-message {
+  margin: 0;
+  font-size: 12.5px;
+}
+
+.error-state-code {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--text-muted);
+}
+
+/* Buttons and chips. */
+.btn {
+  background: var(--accent);
+  color: #fff;
+  border: 1px solid var(--accent);
+  border-radius: 3px;
+  padding: 7px 13px;
+  font-size: 12.5px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.btn.g {
+  background: var(--surface-raised);
+  color: var(--text-control);
+  border-color: var(--border-control);
+}
+
+.btn:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.chip {
+  border: 1px solid var(--border-control);
+  background: var(--surface-raised);
+  border-radius: 3px;
+  padding: 3px 10px;
+  font-size: 11.5px;
+  color: var(--text-control);
+  cursor: pointer;
+}
+
+.chip.on {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+/* Refresh cluster — data age, interval selector, mini Refresh, in that order. */
+.ctl {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 0 0 auto;
+}
+
+.age {
+  font-size: 11.5px;
+  color: var(--text-muted);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.sel {
+  border: 1px solid var(--border-control);
+  background: var(--surface-raised);
+  border-radius: var(--radius);
+  padding: 3px 6px 3px 8px;
+  font-size: 11.5px;
+  color: var(--text-control);
+  white-space: nowrap;
+}
+
+.mini {
+  border: 1px solid var(--border-control);
+  background: var(--surface-raised);
+  border-radius: var(--radius);
+  width: 26px;
+  height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-control);
+  flex: 0 0 auto;
+  cursor: pointer;
+  padding: 0;
+}
+
+.mini:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+/* Confirm dialog. */
+.dialog-scrim {
+  position: fixed;
+  inset: 0;
+  background: var(--scrim);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  z-index: 40;
+}
+
+.dialog {
+  background: var(--surface-raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  max-width: 420px;
+  width: 100%;
+  padding: 18px;
+}
+
+.dialog h2 {
+  margin: 0 0 6px;
+  font-size: 15px;
+}
+
+.dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+/* Chart wrapper. */
+.chart {
+  position: relative;
+  min-height: 160px;
+}
+
+.chart-footnote {
+  margin: 8px 0 0;
+  font-size: 11.5px;
+  color: var(--text-muted);
+}
+
+.boot {
+  min-height: 120px;
+}
+
+@media (max-width: 767px) {
+  /* The cluster becomes a full-width row at the top of that card's body, with
+     44 px targets — the relocation the range selector already uses. */
+  .ctl.in-card {
+    width: 100%;
+    justify-content: space-between;
+    padding: 10px 14px 0;
+  }
+
+  .ctl.in-card .sel,
+  .ctl.in-card .mini {
+    min-height: 44px;
+  }
+
+  .ctl.in-card .mini {
+    min-width: 44px;
+  }
+
+  .hd {
+    flex-direction: column;
+    align-items: stretch;
+  }
+}
+
+/* Login — no artboard draws this screen, so visual-system.md decides: the same
+   card, tokens and control shapes as everywhere else. */
+.login {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+
+.login-card {
+  background: var(--surface-raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 22px;
+  width: 100%;
+  max-width: 340px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.login-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-weight: 600;
+  font-size: 16px;
+  margin-bottom: 6px;
+}
+
+.login-brand svg {
+  color: var(--accent);
+}
+
+.login-label {
+  font-size: 11.5px;
+  color: var(--text-muted);
+}
+
+.login-input {
+  border: 1px solid var(--border-control);
+  background: var(--surface);
+  border-radius: var(--radius);
+  padding: 9px 10px;
+  font-size: 13.5px;
+  min-height: 44px;
+}
+
+.login-error {
+  margin: 0;
+  font-size: 12.5px;
+  color: var(--pill-bad-fg);
+  background: var(--pill-bad-bg);
+  border-radius: 3px;
+  padding: 8px 10px;
+}
+
+.login-version {
+  margin: 2px 0 0;
+  text-align: right;
+}
