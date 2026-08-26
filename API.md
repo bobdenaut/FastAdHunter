@@ -441,11 +441,21 @@ Observed clients (by source IP) with stats and optional names.
       "first_seen": "2026-07-01T08:00:00Z",
       "last_seen": "2026-07-17T10:41:03Z",
       "queries_24h": 30122,
-      "blocked_24h": 3020
+      "blocked_24h": 3020,
+      "policy": "kids",
+      "assignment_source": "direct"
     }
   ]
 }
 ```
+
+`policy` is the policy in force for that address at this instant, `default` when
+nothing is assigned — the same value `GET /api/v1/clients/{ip}/policy` reports,
+resolved from the same snapshot. `assignment_source` is `direct` and **present
+only** when an assignment names that exact address; it is absent when the client
+is covered by a subnet or name assignment, and absent when it is unassigned —
+mirroring the presence or absence of that endpoint's `assignment` field. The
+full assignment (schedule included) stays on the per-client endpoint.
 
 ### `PUT /api/v1/clients/{ip}`
 
@@ -864,6 +874,31 @@ Server → client messages:
 `POST /api/v1/lists/refresh`. The event carries no reason — it is a nudge to
 re-read `GET /api/v1/lists`, where `last_error` has it.
 
+**Client → server.** One message, the only one the socket accepts:
+
+```json
+{ "subscribe": ["stats", "query"] }
+```
+
+Names are `query`, `stats`, `config_changed`, `list_refreshed`. No wildcards.
+**Subscribe replaces** — one message sets the whole set, so unsubscribing is
+sending a smaller list and there is no `unsubscribe` verb. **The default is
+every event**, so a client that sends nothing sees today's behaviour unchanged.
+An unknown name, or a text frame that is not a usable `subscribe` message,
+leaves the previous set standing and never closes the socket; it is logged at
+`debug`. Binary frames and `Pong` are ignored silently. An empty list is valid.
+
+**Frames are capped at 4096 bytes.** A `subscribe` message is tens of bytes, so
+the cap is unreachable in normal use. It is enforced by the WebSocket layer, not
+by this contract: an oversized frame is a protocol error and **does close the
+connection** — unlike a malformed message inside the cap, which does not.
+Reconnect and send a valid subscription.
+
+Filtering is server-side and happens before the send. A subscription that omits
+`stats` would otherwise leave an idle socket silent, so the server sends a
+WebSocket `Ping` on the same ~2 s cadence instead — the traffic that lets a peer
+which vanished without closing be detected.
+
 A `query` event carries both pipelines (p2-04), tagged by `kind`:
 
 ```json
@@ -910,7 +945,16 @@ reads `0`. `resource_type` is the `$option` vocabulary (`script`, `image`,
 The `stats` push is byte-for-byte the `GET /api/v1/stats` payload. That endpoint
 is still worth calling once on connect: the first push is up to ~2 s away.
 
-Slow consumers are disconnected rather than back-pressuring the engine.
+Slow consumers are disconnected rather than back-pressuring the engine. A
+subscriber that does not ask for `query` is not sent it.
+
+That is delivery, not exemption. While **any** connected socket still asks for
+`query`, the engine publishes those events and every socket — including one that
+filtered them out — receives them into its buffer and must drain them. Draining
+is cheap and the filtered socket does no work per event beyond it, but a peer
+stalled long enough can still fall behind the buffer and be disconnected. Only
+when **no** socket asks for `query` does the engine stop producing the events at
+all.
 
 ---
 
@@ -1034,3 +1078,39 @@ this endpoint serves one instant.
 
 `/api/v1/certificates` — import PEM, import PFX, generate CA, export CA,
 status. Endpoints specified when Phase 3 begins; namespace reserved now.
+
+---
+
+## Session authentication *(Phase 5 — reserved)*
+
+The dashboard signs in with a password and carries a session cookie. This
+section is the part of that contract already frozen — enough to write a typed
+client and tests against, and not yet shipped. `p5-04` implements it and
+promotes this section to live wording.
+
+The bearer key above is unchanged and stays the path every existing client uses.
+
+**Cookie.** `__Host-` prefix, `Secure`, `HttpOnly`, `SameSite=Strict`, `Path=/`,
+explicit expiry. The token comes from a CSPRNG and is at least 128 bits.
+
+**Expiry.** The authoritative expiry lives inside the signed token and is
+enforced server-side. The cookie's `Expires`/`Max-Age` is a client-side
+convenience, not the security boundary.
+
+**Middleware.** A request authenticates with a valid session cookie **or** a
+bearer key. `401` reuses the existing `unauthorized` code, and a failure message
+never reveals which half was wrong.
+
+**WebSocket upgrade.** On a cookie-authenticated upgrade, `Origin` must be
+present and must match the request's own effective origin. On a
+bearer-authenticated upgrade `Origin` is irrelevant, and its absence is normal.
+
+**Configuration.** `GET /api/v1/config` redacts or omits every `auth.*` field.
+`POST /api/v1/config` carrying any `auth.*` field returns `422`.
+
+**Caching.** Auth responses carry `Cache-Control: no-store`.
+
+Not specified yet, and landing with `p5-04`: the route paths, the request and
+response bodies, the token format and its signing primitive, the session
+lifetime and any inactivity timeout, and first-run behaviour on a box with no
+password set.

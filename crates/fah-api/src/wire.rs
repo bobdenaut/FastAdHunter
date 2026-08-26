@@ -13,7 +13,7 @@ use fah_model::{
 };
 use serde::{Deserialize, Serialize};
 
-use crate::ports::{CacheClean, CacheStats, ClientEntry, QueryRecord, StatsOverview};
+use crate::ports::{CacheClean, CacheStats, QueryRecord, StatsOverview};
 use crate::timestamp;
 
 #[derive(Debug, Serialize)]
@@ -606,19 +606,9 @@ pub struct ClientResponse {
     pub last_seen: std::time::SystemTime,
     pub queries_24h: u64,
     pub blocked_24h: u64,
-}
-
-impl From<ClientEntry> for ClientResponse {
-    fn from(entry: ClientEntry) -> Self {
-        Self {
-            ip: entry.ip,
-            name: entry.name,
-            first_seen: entry.first_seen,
-            last_seen: entry.last_seen,
-            queries_24h: entry.queries_24h,
-            blocked_24h: entry.blocked_24h,
-        }
-    }
+    pub policy: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub assignment_source: Option<&'static str>,
 }
 
 #[derive(Debug, Deserialize)]

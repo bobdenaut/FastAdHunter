@@ -636,10 +636,7 @@ fn spawn_event_fanout(
                 fah_model::Event::Dns(query) => metrics.record(query),
                 fah_model::Event::Http(request) => metrics.record_http(request),
             }
-            // The WS publish work (a clone, a boxed record, a client-name
-            // lookup) is only bought when a dashboard is actually connected —
-            // no-subscribers is the appliance's idle state ~24h/day.
-            let publish = hub.has_subscribers();
+            let publish = hub.has_query_subscribers();
             let for_hub = publish.then(|| event.clone());
             match event {
                 fah_model::Event::Dns(query) => stats.record(*query),

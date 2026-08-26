@@ -47,7 +47,7 @@ everything learned. Verification closes it against the budgets.
 |---|-----------|---------|-------|--------|
 | 1 | `p5-01-static-serving.md` | `fah-api` serves `/web`; multi-stage image; route ordering; boot check | Opus | DONE |
 | 2 | `p5-02-cert-browser-spike.md` | Real desktop/phone evidence; SAN decision and code change; regeneration migration | Opus | DONE |
-| 3 | `p5-03-api-contracts.md` | `/events` subscription protocol, `GET /clients` policy fields, reserved API docs | Opus | WAITING |
+| 3 | `p5-03-api-contracts.md` | `/events` subscription protocol, `GET /clients` policy fields, reserved API docs | Opus | DONE |
 | 4 | `p5-04-auth-session.md` | Argon2id password, session cookie, login/logout, cookie on REST + WS (heavy) | Opus | WAITING |
 | 5 | `p5-05-frontend-foundation.md` | Vite/TS/Preact shell, typed client, socket manager, size gate, login page | Opus | WAITING |
 | 6 | `p5-06-dashboard-and-lists.md` | Dashboard and Lists — proves tiles, charts, tables, mutations | Opus | WAITING |

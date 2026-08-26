@@ -2,7 +2,7 @@
 //! handle, map to the wire shape — all the logic lives in `fah-rules` and
 //! behind the [`crate::ports`] traits.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::net::IpAddr;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
@@ -12,13 +12,13 @@ use axum::http::StatusCode;
 use axum::response::Response;
 use axum::routing::{any, get, post, put};
 use axum::{Json, Router};
-use fah_config::{AssignmentConfig, PolicyConfig, RuleListConfig};
+use fah_config::{AssignmentConfig, Config, PolicyConfig, RuleListConfig};
 use fah_model::{HistoryRange, HistoryResolution, TopKind};
 use fah_rules::{ListPatch, ListStatus, RefreshResult};
 
 use crate::error::{ApiError, ApiResult};
 use crate::events::{self, Event};
-use crate::ports::HistorySource;
+use crate::ports::{ClientEntry, HistorySource};
 use crate::state::AppState;
 use crate::telemetry::{MemorySnapshot, TelemetryResponse, TelemetrySnapshot};
 use crate::timestamp;
@@ -344,13 +344,40 @@ fn parse_perf_fields(params: &HashMap<String, String>) -> ApiResult<PerfFields> 
 
 // ─── Clients ───────────────────────────────────────────────────────────
 
+const DIRECT_ASSIGNMENT: &str = "direct";
+
+fn client_response(
+    entry: ClientEntry,
+    policy: String,
+    assignment_source: Option<&'static str>,
+) -> ClientResponse {
+    ClientResponse {
+        policy,
+        assignment_source,
+        ip: entry.ip,
+        name: entry.name,
+        first_seen: entry.first_seen,
+        last_seen: entry.last_seen,
+        queries_24h: entry.queries_24h,
+        blocked_24h: entry.blocked_24h,
+    }
+}
+
 async fn clients(State(state): State<Arc<AppState>>) -> Json<ClientsResponse> {
+    let resolver = PolicyResolver::build(&state);
     Json(ClientsResponse {
         items: state
             .stats
             .clients(SystemTime::now())
             .into_iter()
-            .map(Into::into)
+            .map(|entry| {
+                let ip = entry.ip;
+                client_response(
+                    entry,
+                    resolver.policy_of(ip),
+                    resolver.is_direct(ip).then_some(DIRECT_ASSIGNMENT),
+                )
+            })
             .collect(),
     })
 }
@@ -374,7 +401,14 @@ async fn set_client_name(
     // A rename can move the client into or out of a name assignment, and the
     // snapshot resolved names when it was built.
     republish_policies(&state);
-    Ok(Json(entry.into()))
+
+    let config = state.config.current();
+    let key = assignment_key(ip);
+    Ok(Json(client_response(
+        entry,
+        policy_in_force(&state.policies.current(), ip),
+        direct_assignment(&config, &key).map(|_| DIRECT_ASSIGNMENT),
+    )))
 }
 
 // ─── Rule lists ────────────────────────────────────────────────────────
@@ -986,26 +1020,60 @@ async fn clear_client_policy(
     Ok(StatusCode::NO_CONTENT)
 }
 
-/// What the client is judged under *now* — read from the live snapshot, not
-/// re-derived, so it reflects an open or closed schedule window.
-fn client_policy_response(state: &AppState, ip: IpAddr) -> ClientPolicyResponse {
-    let active = state.policies.current();
-    let policy = active
+fn assignment_key(ip: IpAddr) -> String {
+    ip.to_string()
+}
+
+fn policy_in_force(active: &fah_rules::ActivePolicies, ip: IpAddr) -> String {
+    active
         .id_of(active.policy_for(ip))
-        .map_or_else(|| DEFAULT_POLICY.to_string(), |id| id.to_string());
-    let client = ip.to_string();
-    let assignment = state
-        .config
-        .current()
+        .map_or_else(|| DEFAULT_POLICY.to_string(), |id| id.to_string())
+}
+
+fn direct_assignment<'a>(config: &'a Config, key: &str) -> Option<&'a AssignmentConfig> {
+    config
         .policies
         .iter()
         .flat_map(|policy| &policy.assignments)
-        .find(|existing| existing.client == client)
-        .map(assignment_response);
+        .find(|assignment| assignment.client == key)
+}
+
+struct PolicyResolver {
+    active: Arc<fah_rules::ActivePolicies>,
+    direct: HashSet<String>,
+}
+
+impl PolicyResolver {
+    fn build(state: &AppState) -> Self {
+        let direct = state
+            .config
+            .current()
+            .policies
+            .iter()
+            .flat_map(|policy| &policy.assignments)
+            .map(|assignment| assignment.client.clone())
+            .collect();
+        Self {
+            active: state.policies.current(),
+            direct,
+        }
+    }
+
+    fn policy_of(&self, ip: IpAddr) -> String {
+        policy_in_force(&self.active, ip)
+    }
+
+    fn is_direct(&self, ip: IpAddr) -> bool {
+        self.direct.contains(&assignment_key(ip))
+    }
+}
+
+fn client_policy_response(state: &AppState, ip: IpAddr) -> ClientPolicyResponse {
+    let config = state.config.current();
     ClientPolicyResponse {
         ip,
-        policy,
-        assignment,
+        policy: policy_in_force(&state.policies.current(), ip),
+        assignment: direct_assignment(&config, &assignment_key(ip)).map(assignment_response),
     }
 }
 
@@ -1334,9 +1402,12 @@ async fn rotate_api_key(State(state): State<Arc<AppState>>) -> ApiResult<Json<Ap
 // ─── Events ────────────────────────────────────────────────────────────
 
 async fn events_socket(State(state): State<Arc<AppState>>, upgrade: WebSocketUpgrade) -> Response {
-    let receiver = state.events.subscribe();
+    let (receiver, subscription) = state.events.subscribe_socket();
     let stats = Arc::clone(&state.stats);
-    upgrade.on_upgrade(move |socket| events::run_socket(socket, receiver, stats))
+    upgrade
+        .max_message_size(events::MAX_CLIENT_MESSAGE_BYTES)
+        .max_frame_size(events::MAX_CLIENT_MESSAGE_BYTES)
+        .on_upgrade(move |socket| events::run_socket(socket, receiver, stats, subscription))
 }
 
 #[cfg(test)]

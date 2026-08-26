@@ -6,7 +6,7 @@
 //! ARCHITECTURE.md §Dependency Layering). Everything else is real: real
 //! rustls, real axum routing, the real `ListManager`, the real config store.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 use std::net::{IpAddr, Ipv4Addr};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime};
@@ -1319,6 +1319,11 @@ async fn clients_list_and_naming_round_trip() {
     assert_eq!(item["first_seen"], "1970-01-01T00:00:00Z");
     assert_eq!(item["queries_24h"], 30_122);
     assert_eq!(item["blocked_24h"], 3_020);
+    assert_eq!(item["policy"], "default");
+    assert!(
+        item.get("assignment_source").is_none(),
+        "an unassigned client carries no assignment source: {item}"
+    );
 
     let response = harness
         .client
@@ -1331,6 +1336,14 @@ async fn clients_list_and_naming_round_trip() {
     assert_eq!(response.status(), 200);
     let updated: Value = response.json().await.unwrap();
     assert_eq!(updated["name"], "liviu-phone");
+    assert_eq!(
+        updated["policy"], "default",
+        "the naming response carries the same policy fields as the list: {updated}"
+    );
+    assert!(
+        updated.get("assignment_source").is_none(),
+        "an unassigned client carries no assignment source here either: {updated}"
+    );
 
     // `{"name": null}` clears it (API.md).
     let cleared: Value = harness
@@ -1345,6 +1358,96 @@ async fn clients_list_and_naming_round_trip() {
         .await
         .unwrap();
     assert!(cleared["name"].is_null());
+}
+
+#[tokio::test]
+async fn clients_carry_the_in_force_policy_and_agree_with_the_per_client_endpoint() {
+    let harness = start().await;
+
+    let direct: IpAddr = "192.168.10.15".parse().unwrap();
+    let by_subnet: IpAddr = "10.1.0.5".parse().unwrap();
+    let by_name: IpAddr = "172.16.0.7".parse().unwrap();
+    let unassigned: IpAddr = "203.0.113.9".parse().unwrap();
+
+    for ip in [by_subnet, by_name, unassigned] {
+        harness.stats.clients.lock().unwrap().push(ClientEntry {
+            ip,
+            name: None,
+            first_seen: SystemTime::UNIX_EPOCH,
+            last_seen: SystemTime::UNIX_EPOCH,
+            queries_24h: 1,
+            blocked_24h: 0,
+        });
+    }
+
+    let response = harness
+        .client
+        .put(harness.url(&format!("/api/v1/clients/{by_name}")))
+        .bearer_auth(&harness.key)
+        .json(&json!({"name": "guest-tv"}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(
+        response.status(),
+        200,
+        "a name assignment resolves only once the client carries that name"
+    );
+
+    for (id, client) in [
+        ("kids", direct.to_string()),
+        ("lan", "10.1.0.0/24".to_string()),
+        ("guests", "guest-tv".to_string()),
+    ] {
+        let response = harness
+            .client
+            .post(harness.url("/api/v1/policies"))
+            .bearer_auth(&harness.key)
+            .json(&json!({
+                "id": id,
+                "lists": [],
+                "assignments": [{"client": client}],
+            }))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), 201, "creating the {id} policy");
+    }
+
+    let listed: HashMap<String, Value> = harness.get_json("/api/v1/clients").await["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|item| (item["ip"].as_str().unwrap().to_string(), item.clone()))
+        .collect();
+
+    for (ip, policy, source) in [
+        (direct, "kids", Some("direct")),
+        (by_subnet, "lan", None),
+        (by_name, "guests", None),
+        (unassigned, "default", None),
+    ] {
+        let item = &listed[&ip.to_string()];
+        assert_eq!(item["policy"], policy, "the policy in force for {ip}");
+        assert_eq!(
+            item.get("assignment_source").and_then(Value::as_str),
+            source,
+            "the assignment source for {ip}: {item}"
+        );
+
+        let per_client = harness
+            .get_json(&format!("/api/v1/clients/{ip}/policy"))
+            .await;
+        assert_eq!(
+            item["policy"], per_client["policy"],
+            "the two endpoints must agree on the policy for {ip}"
+        );
+        assert_eq!(
+            item.get("assignment_source").is_some(),
+            per_client.get("assignment").is_some(),
+            "the two endpoints must agree on what is direct for {ip}"
+        );
+    }
 }
 
 #[tokio::test]
@@ -2569,6 +2672,252 @@ async fn the_event_socket_pushes_periodic_stats() {
     let event: Value = serde_json::from_str(&message.into_text().unwrap()).unwrap();
     assert_eq!(event["type"], "stats");
     assert_eq!(event["data"]["queries_total"], 184_233);
+}
+
+type EventSocket =
+    tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>;
+
+async fn connect_events(harness: &Harness) -> EventSocket {
+    let url = format!(
+        "{}/api/v1/events?token={}",
+        harness.base.replace("https://", "wss://"),
+        harness.key
+    );
+    let connector = tokio_tungstenite::Connector::Rustls(Arc::new(insecure_client_config()));
+    tokio_tungstenite::connect_async_tls_with_config(&url, None, false, Some(connector))
+        .await
+        .expect("the events socket must accept a ?token= upgrade")
+        .0
+}
+
+async fn subscribe(socket: &mut EventSocket, frame: &str) {
+    use futures_util::SinkExt;
+    socket
+        .send(tokio_tungstenite::tungstenite::Message::Text(frame.into()))
+        .await
+        .unwrap();
+}
+
+async fn wait_for_query_subscribers(harness: &Harness, expected: bool) {
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(10);
+    while harness.server.events().has_query_subscribers() != expected {
+        assert!(
+            tokio::time::Instant::now() < deadline,
+            "the server never reached has_query_subscribers() == {expected}"
+        );
+        tokio::task::yield_now().await;
+    }
+}
+
+#[tokio::test]
+async fn the_default_subscription_delivers_every_event_kind() {
+    use futures_util::StreamExt;
+
+    let harness = start().await;
+    let mut socket = connect_events(&harness).await;
+
+    let events = harness.server.events();
+    events.publish_query(
+        fah_model::Event::dns(blocked_event(IpAddr::V4(Ipv4Addr::new(192, 168, 10, 15)))),
+        None,
+    );
+    events.publish(fah_api::Event::ConfigChanged {
+        restart_required: true,
+    });
+    events.publish(fah_api::Event::ListRefreshed {
+        id: "oisd-basic".to_string(),
+        status: "ok",
+    });
+
+    let mut seen = BTreeMap::new();
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(10);
+    while seen.len() < 4 {
+        let message = tokio::time::timeout_at(deadline, socket.next())
+            .await
+            .expect("timed out before all four event kinds arrived")
+            .expect("socket closed")
+            .expect("websocket error");
+        let Ok(text) = message.into_text() else {
+            continue;
+        };
+        let event: Value = serde_json::from_str(&text).unwrap();
+        seen.insert(event["type"].as_str().unwrap().to_string(), event);
+    }
+
+    assert_eq!(
+        seen.keys().cloned().collect::<Vec<_>>(),
+        vec![
+            "config_changed".to_string(),
+            "list_refreshed".to_string(),
+            "query".to_string(),
+            "stats".to_string()
+        ],
+        "a client that sends nothing still receives everything"
+    );
+}
+
+#[tokio::test]
+async fn a_stats_only_socket_receives_no_query_and_costs_the_engine_nothing() {
+    use futures_util::StreamExt;
+
+    let harness = start().await;
+    let mut socket = connect_events(&harness).await;
+    assert!(
+        harness.server.events().has_query_subscribers(),
+        "a fresh socket is counted from the instant it connects"
+    );
+
+    subscribe(&mut socket, r#"{"subscribe":["stats"]}"#).await;
+    wait_for_query_subscribers(&harness, false).await;
+
+    let events = harness.server.events();
+    let burst = IpAddr::V4(Ipv4Addr::new(192, 168, 10, 15));
+    for _ in 0..50 {
+        events.publish_query(fah_model::Event::dns(blocked_event(burst)), None);
+    }
+    events.publish(fah_api::Event::ConfigChanged {
+        restart_required: true,
+    });
+
+    subscribe(&mut socket, r#"{"subscribe":["query","stats"]}"#).await;
+    wait_for_query_subscribers(&harness, true).await;
+    let marker = IpAddr::V4(Ipv4Addr::new(10, 9, 9, 9));
+    events.publish_query(fah_model::Event::dns(blocked_event(marker)), None);
+
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(10);
+    loop {
+        let message = tokio::time::timeout_at(deadline, socket.next())
+            .await
+            .expect("timed out waiting for the query that follows the widened subscription")
+            .expect("socket closed")
+            .expect("websocket error");
+        let Ok(text) = message.into_text() else {
+            continue;
+        };
+        let event: Value = serde_json::from_str(&text).unwrap();
+        match event["type"].as_str() {
+            Some("query") => {
+                assert_eq!(
+                    event["data"]["client"], "10.9.9.9",
+                    "the burst published while stats-only must never reach this socket"
+                );
+                break;
+            }
+            Some("stats") => continue,
+            other => panic!("a stats-only socket received {other:?}"),
+        }
+    }
+}
+
+#[tokio::test]
+async fn an_unusable_subscription_frame_leaves_the_previous_set_standing() {
+    let harness = start().await;
+    let mut socket = connect_events(&harness).await;
+
+    subscribe(&mut socket, r#"{"subscribe":["stats"]}"#).await;
+    wait_for_query_subscribers(&harness, false).await;
+
+    subscribe(&mut socket, r#"{"subscribe":["query","nonsense"]}"#).await;
+    subscribe(&mut socket, "not json at all").await;
+    assert!(
+        !harness.server.events().has_query_subscribers(),
+        "neither unusable frame may be partially applied: the previous \
+         stats-only set stands until a usable frame replaces it"
+    );
+
+    subscribe(&mut socket, r#"{"subscribe":["query","stats"]}"#).await;
+    wait_for_query_subscribers(&harness, true).await;
+    assert!(
+        harness.server.events().has_query_subscribers(),
+        "the socket survived both unusable frames and still applies a valid one"
+    );
+}
+
+#[tokio::test]
+async fn a_socket_that_does_not_want_stats_is_kept_alive_by_a_ping() {
+    use futures_util::StreamExt;
+
+    let harness = start().await;
+    let mut socket = connect_events(&harness).await;
+    subscribe(&mut socket, r#"{"subscribe":["query"]}"#).await;
+
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(10);
+    loop {
+        let message = tokio::time::timeout_at(deadline, socket.next())
+            .await
+            .expect("a socket without stats must still be fed a ping")
+            .expect("socket closed")
+            .expect("websocket error");
+        if matches!(message, tokio_tungstenite::tungstenite::Message::Ping(_)) {
+            break;
+        }
+    }
+}
+
+#[tokio::test]
+async fn an_oversized_frame_is_refused_and_releases_the_subscription() {
+    use futures_util::StreamExt;
+
+    let harness = start().await;
+    let mut socket = connect_events(&harness).await;
+    assert!(
+        harness.server.events().has_query_subscribers(),
+        "the default subscription counts against the engine gate"
+    );
+
+    let oversized = format!(r#"{{"subscribe":["{}"]}}"#, "q".repeat(2 * 4096));
+    assert!(
+        oversized.len() > 2 * 4096,
+        "one unfragmented frame well past the 4096-byte cap"
+    );
+    subscribe(&mut socket, &oversized).await;
+
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(10);
+    loop {
+        let message = tokio::time::timeout_at(deadline, socket.next())
+            .await
+            .expect("the server must not leave an oversized frame unanswered");
+        match message {
+            None | Some(Err(_)) => break,
+            Some(Ok(tokio_tungstenite::tungstenite::Message::Close(_))) => break,
+            Some(Ok(_)) => continue,
+        }
+    }
+
+    wait_for_query_subscribers(&harness, false).await;
+}
+
+#[tokio::test]
+async fn a_frame_header_declaring_a_huge_payload_is_refused_before_the_payload() {
+    use futures_util::StreamExt;
+    use tokio::io::AsyncWriteExt;
+
+    let harness = start().await;
+    let mut socket = connect_events(&harness).await;
+
+    let mut header = vec![0x81u8, 0xFF];
+    header.extend_from_slice(&(8u64 * 1024 * 1024).to_be_bytes());
+    header.extend_from_slice(&[0xAA, 0xBB, 0xCC, 0xDD]);
+    let stream = socket.get_mut();
+    stream.write_all(&header).await.unwrap();
+    stream.flush().await.unwrap();
+
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+    loop {
+        let message = tokio::time::timeout_at(deadline, socket.next())
+            .await
+            .expect(
+                "a header declaring 8 MiB must be refused from the header alone, \
+                 never buffered while the payload is awaited",
+            );
+        match message {
+            None | Some(Err(_)) => break,
+            Some(Ok(tokio_tungstenite::tungstenite::Message::Close(_))) => break,
+            Some(Ok(_)) => continue,
+        }
+    }
+
+    wait_for_query_subscribers(&harness, false).await;
 }
 
 #[tokio::test]

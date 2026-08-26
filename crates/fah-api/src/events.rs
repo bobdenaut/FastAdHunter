@@ -1,15 +1,10 @@
 //! `WS /api/v1/events` — the dashboard's live tail (API.md §Events).
-//!
-//! One `tokio::broadcast` channel fans every event out to all connected
-//! sockets. Broadcast is deliberate: it drops for a receiver that falls
-//! behind instead of back-pressuring the sender, which is exactly API.md's
-//! "slow consumers are disconnected rather than back-pressuring the engine" —
-//! a lagging socket sees `RecvError::Lagged` and we close it.
 
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::json;
 use tokio::sync::broadcast;
 
@@ -34,6 +29,8 @@ const STATS_INTERVAL: Duration = Duration::from_secs(2);
 /// this even on an idle network.
 const SEND_TIMEOUT: Duration = Duration::from_secs(15);
 
+pub const MAX_CLIENT_MESSAGE_BYTES: usize = 4096;
+
 /// What the server pushes to clients. Serialized as
 /// `{ "type": …, "data": … }`.
 #[derive(Debug, Clone)]
@@ -47,6 +44,7 @@ pub enum Event {
 #[derive(Clone)]
 pub struct EventHub {
     sender: broadcast::Sender<Event>,
+    queries: Arc<AtomicUsize>,
 }
 
 impl Default for EventHub {
@@ -58,7 +56,10 @@ impl Default for EventHub {
 impl EventHub {
     pub fn new() -> Self {
         let (sender, _) = broadcast::channel(CHANNEL_CAPACITY);
-        Self { sender }
+        Self {
+            sender,
+            queries: Arc::new(AtomicUsize::new(0)),
+        }
     }
 
     /// Publishes a completed event from either pipeline. The binary calls this
@@ -78,16 +79,122 @@ impl EventHub {
         let _ = self.sender.send(event);
     }
 
-    pub fn subscribe(&self) -> broadcast::Receiver<Event> {
-        self.sender.subscribe()
+    pub fn subscribe_socket(&self) -> (broadcast::Receiver<Event>, SocketSubscription) {
+        (
+            self.sender.subscribe(),
+            SocketSubscription::new(Arc::clone(&self.queries)),
+        )
     }
 
-    /// Whether any events socket is currently connected. The binary's
-    /// fan-out checks this before doing per-query publish work (client-name
-    /// lookup, boxing the record) that the hub would otherwise throw away —
-    /// and no-dashboard-connected is the appliance's idle state ~24h/day.
-    pub fn has_subscribers(&self) -> bool {
-        self.sender.receiver_count() > 0
+    pub fn has_query_subscribers(&self) -> bool {
+        self.queries.load(Ordering::Relaxed) > 0
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Subscription(u8);
+
+impl Subscription {
+    const QUERY: u8 = 1;
+    const STATS: u8 = 1 << 1;
+    const CONFIG_CHANGED: u8 = 1 << 2;
+    const LIST_REFRESHED: u8 = 1 << 3;
+
+    pub const ALL: Self =
+        Self(Self::QUERY | Self::STATS | Self::CONFIG_CHANGED | Self::LIST_REFRESHED);
+
+    fn flag(name: &str) -> Option<u8> {
+        match name {
+            "query" => Some(Self::QUERY),
+            "stats" => Some(Self::STATS),
+            "config_changed" => Some(Self::CONFIG_CHANGED),
+            "list_refreshed" => Some(Self::LIST_REFRESHED),
+            _ => None,
+        }
+    }
+
+    fn parse(frame: &str) -> Option<Self> {
+        let message: SubscribeMessage = serde_json::from_str(frame).ok()?;
+        let mut flags = 0;
+        for name in &message.subscribe {
+            flags |= Self::flag(name)?;
+        }
+        Some(Self(flags))
+    }
+
+    fn holds(self, flag: u8) -> bool {
+        self.0 & flag != 0
+    }
+
+    fn wants_query(self) -> bool {
+        self.holds(Self::QUERY)
+    }
+
+    fn wants_stats(self) -> bool {
+        self.holds(Self::STATS)
+    }
+
+    fn wants(self, event: &Event) -> bool {
+        self.holds(match event {
+            Event::Query(_) => Self::QUERY,
+            Event::ConfigChanged { .. } => Self::CONFIG_CHANGED,
+            Event::ListRefreshed { .. } => Self::LIST_REFRESHED,
+        })
+    }
+}
+
+#[derive(Deserialize)]
+struct SubscribeMessage {
+    subscribe: Vec<String>,
+}
+
+pub struct SocketSubscription {
+    queries: Arc<AtomicUsize>,
+    current: Subscription,
+}
+
+impl SocketSubscription {
+    fn new(queries: Arc<AtomicUsize>) -> Self {
+        queries.fetch_add(1, Ordering::Relaxed);
+        Self {
+            queries,
+            current: Subscription::ALL,
+        }
+    }
+
+    fn current(&self) -> Subscription {
+        self.current
+    }
+
+    fn set(&mut self, next: Subscription) {
+        match (self.current.wants_query(), next.wants_query()) {
+            (false, true) => {
+                self.queries.fetch_add(1, Ordering::Relaxed);
+            }
+            (true, false) => {
+                self.queries.fetch_sub(1, Ordering::Relaxed);
+            }
+            _ => {}
+        }
+        self.current = next;
+    }
+
+    fn apply(&mut self, frame: &str) {
+        match Subscription::parse(frame) {
+            Some(next) => self.set(next),
+            None => tracing::debug!(
+                frame,
+                "ignoring an unusable events subscription frame; the previous set stands"
+            ),
+        }
+    }
+}
+
+impl Drop for SocketSubscription {
+    fn drop(&mut self) {
+        if self.current.wants_query() {
+            self.queries.fetch_sub(1, Ordering::Relaxed);
+        }
     }
 }
 
@@ -132,10 +239,25 @@ pub fn encode_stats<S: StatsSource + ?Sized>(stats: &S, now: SystemTime) -> Stri
 /// Drives one connected socket until it closes or falls behind. Returns when
 /// the connection should be dropped.
 pub async fn run_socket<S: StatsSource + ?Sized>(
-    mut socket: axum::extract::ws::WebSocket,
+    socket: axum::extract::ws::WebSocket,
+    events: broadcast::Receiver<Event>,
+    stats: Arc<S>,
+    subscription: SocketSubscription,
+) {
+    drive_socket(socket, events, stats, subscription).await;
+}
+
+async fn drive_socket<T, S, E, F>(
+    mut socket: T,
     mut events: broadcast::Receiver<Event>,
     stats: Arc<S>,
-) {
+    mut subscription: SocketSubscription,
+) where
+    T: futures_util::stream::Stream<Item = Result<axum::extract::ws::Message, E>>
+        + futures_util::sink::Sink<axum::extract::ws::Message, Error = F>
+        + Unpin,
+    S: StatsSource + ?Sized,
+{
     use axum::extract::ws::Message;
     use futures_util::SinkExt;
 
@@ -143,29 +265,36 @@ pub async fn run_socket<S: StatsSource + ?Sized>(
     ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
 
     loop {
-        let text = tokio::select! {
+        let message = tokio::select! {
             received = events.recv() => match received {
-                Ok(event) => encode(event),
-                // The engine outran this socket: disconnect rather than let
-                // the backlog grow (API.md §Events).
+                Ok(event) if !subscription.current().wants(&event) => continue,
+                Ok(event) => Message::Text(encode(event).into()),
                 Err(broadcast::error::RecvError::Lagged(dropped)) => {
                     tracing::debug!(dropped, "disconnecting a slow events subscriber");
                     break;
                 }
                 Err(broadcast::error::RecvError::Closed) => break,
             },
-            _ = ticker.tick() => encode_stats(stats.as_ref(), SystemTime::now()),
+            _ = ticker.tick() => {
+                if subscription.current().wants_stats() {
+                    Message::Text(encode_stats(stats.as_ref(), SystemTime::now()).into())
+                } else {
+                    Message::Ping(Default::default())
+                }
+            }
             incoming = futures_util::StreamExt::next(&mut socket) => {
                 match incoming {
-                    // Clients are not expected to send anything; a close or a
-                    // transport error ends the connection.
                     Some(Ok(Message::Close(_))) | Some(Err(_)) | None => break,
+                    Some(Ok(Message::Text(frame))) => {
+                        subscription.apply(frame.as_str());
+                        continue;
+                    }
                     Some(Ok(_)) => continue,
                 }
             }
         };
 
-        match tokio::time::timeout(SEND_TIMEOUT, socket.send(Message::Text(text.into()))).await {
+        match tokio::time::timeout(SEND_TIMEOUT, socket.send(message)).await {
             Ok(Ok(())) => {}
             // A transport error or a peer that stopped draining: drop it.
             Ok(Err(_)) | Err(_) => break,
@@ -299,8 +428,8 @@ mod tests {
     #[tokio::test]
     async fn subscribers_receive_published_events() {
         let hub = EventHub::new();
-        let mut first = hub.subscribe();
-        let mut second = hub.subscribe();
+        let (mut first, _first_guard) = hub.subscribe_socket();
+        let (mut second, _second_guard) = hub.subscribe_socket();
 
         hub.publish_query(fah_model::Event::dns(blocked_event()), None);
 
@@ -313,15 +442,295 @@ mod tests {
     #[tokio::test]
     async fn subscriber_presence_is_reported_live() {
         let hub = EventHub::new();
-        assert!(!hub.has_subscribers(), "idle by default");
+        assert!(!hub.has_query_subscribers(), "idle by default");
 
-        let receiver = hub.subscribe();
-        assert!(hub.has_subscribers());
-
-        drop(receiver);
+        let (_receiver, subscription) = hub.subscribe_socket();
         assert!(
-            !hub.has_subscribers(),
+            hub.has_query_subscribers(),
+            "a fresh socket defaults to every event, query included"
+        );
+
+        drop(subscription);
+        assert!(
+            !hub.has_query_subscribers(),
             "a disconnected dashboard stops the per-query publish work"
+        );
+    }
+
+    #[tokio::test]
+    async fn narrowing_away_from_query_stops_the_engine_work_without_closing_anything() {
+        let hub = EventHub::new();
+        let (_receiver, mut subscription) = hub.subscribe_socket();
+
+        subscription.apply(r#"{"subscribe":["stats"]}"#);
+        assert!(
+            !hub.has_query_subscribers(),
+            "a stats-only dashboard must cost the engine what no dashboard costs it"
+        );
+
+        subscription.apply(r#"{"subscribe":["query","stats"]}"#);
+        assert!(hub.has_query_subscribers(), "widening restores the work");
+    }
+
+    #[tokio::test]
+    async fn the_count_tracks_sockets_independently() {
+        let hub = EventHub::new();
+        let (_first_receiver, mut first) = hub.subscribe_socket();
+        let (_second_receiver, second) = hub.subscribe_socket();
+
+        first.apply(r#"{"subscribe":[]}"#);
+        assert!(
+            hub.has_query_subscribers(),
+            "the second socket still wants queries"
+        );
+
+        drop(second);
+        assert!(!hub.has_query_subscribers());
+
+        drop(first);
+        assert!(
+            !hub.has_query_subscribers(),
+            "dropping a socket already narrowed off query must not decrement twice"
+        );
+    }
+
+    #[test]
+    fn a_subscription_message_replaces_the_whole_set() {
+        assert_eq!(
+            Subscription::parse(r#"{"subscribe":["stats","query"]}"#),
+            Some(Subscription(Subscription::STATS | Subscription::QUERY))
+        );
+        assert_eq!(
+            Subscription::parse(r#"{"subscribe":["stats"]}"#),
+            Some(Subscription(Subscription::STATS))
+        );
+        assert_eq!(
+            Subscription::parse(r#"{"subscribe":[]}"#),
+            Some(Subscription(0)),
+            "an empty list is valid and asks for nothing"
+        );
+    }
+
+    #[test]
+    fn an_unusable_frame_leaves_the_previous_set_standing() {
+        let queries = Arc::new(AtomicUsize::new(0));
+        let mut subscription = SocketSubscription::new(Arc::clone(&queries));
+        subscription.apply(r#"{"subscribe":["stats"]}"#);
+
+        for frame in [
+            r#"{"subscribe":["stats","nonsense"]}"#,
+            r#"{"subscribe":"stats"}"#,
+            r#"{"unsubscribe":["query"]}"#,
+            "not json at all",
+            "",
+        ] {
+            subscription.apply(frame);
+            assert_eq!(
+                subscription.current(),
+                Subscription(Subscription::STATS),
+                "{frame:?} must leave the previous set standing"
+            );
+        }
+        assert_eq!(queries.load(Ordering::Relaxed), 0);
+    }
+
+    #[test]
+    fn filtering_decides_per_event_kind() {
+        let stats_only = Subscription(Subscription::STATS);
+        let queries_only = Subscription(Subscription::QUERY);
+        let query = Event::Query(Box::new(QueryRecord {
+            event: fah_model::Event::dns(blocked_event()),
+            client_name: None,
+        }));
+        let config = Event::ConfigChanged {
+            restart_required: false,
+        };
+
+        assert!(!stats_only.wants(&query));
+        assert!(!stats_only.wants(&config));
+        assert!(stats_only.wants_stats());
+
+        assert!(queries_only.wants(&query));
+        assert!(!queries_only.wants(&config));
+        assert!(!queries_only.wants_stats());
+
+        assert!(Subscription::ALL.wants(&query));
+        assert!(Subscription::ALL.wants(&config));
+        assert!(Subscription::ALL.wants_stats());
+    }
+
+    struct SilentStats;
+
+    impl StatsSource for SilentStats {
+        fn overview(&self, _now: SystemTime) -> crate::ports::StatsOverview {
+            crate::ports::StatsOverview {
+                window: "24h",
+                queries_total: 0,
+                blocked_total: 0,
+                blocked_percent: 0.0,
+                cache_hit_percent: 0.0,
+                top_blocked_domains: Vec::new(),
+                top_queried_domains: Vec::new(),
+                top_clients: Vec::new(),
+                buckets: Vec::new(),
+                policies: Vec::new(),
+            }
+        }
+
+        fn clients(&self, _now: SystemTime) -> Vec<crate::ports::ClientEntry> {
+            Vec::new()
+        }
+
+        fn set_client_name(
+            &self,
+            _ip: IpAddr,
+            _name: Option<String>,
+        ) -> Option<crate::ports::ClientEntry> {
+            None
+        }
+
+        fn client_name(&self, _ip: IpAddr) -> Option<String> {
+            None
+        }
+
+        fn named_clients(&self) -> Vec<(IpAddr, Arc<str>)> {
+            Vec::new()
+        }
+
+        fn apply_history_config(&self, _enabled: bool, _retention_days: u32) {}
+
+        fn heap(&self) -> fah_model::StatsHeap {
+            fah_model::StatsHeap::default()
+        }
+    }
+
+    type SocketMessage = axum::extract::ws::Message;
+    type Incoming = futures_channel::mpsc::UnboundedSender<Result<SocketMessage, axum::Error>>;
+    type Outgoing = futures_channel::mpsc::Receiver<SocketMessage>;
+
+    struct TestSocket {
+        incoming: futures_channel::mpsc::UnboundedReceiver<Result<SocketMessage, axum::Error>>,
+        outgoing: futures_channel::mpsc::Sender<SocketMessage>,
+    }
+
+    impl futures_util::stream::Stream for TestSocket {
+        type Item = Result<SocketMessage, axum::Error>;
+
+        fn poll_next(
+            self: std::pin::Pin<&mut Self>,
+            cx: &mut std::task::Context<'_>,
+        ) -> std::task::Poll<Option<Self::Item>> {
+            std::pin::Pin::new(&mut self.get_mut().incoming).poll_next(cx)
+        }
+    }
+
+    impl futures_util::sink::Sink<SocketMessage> for TestSocket {
+        type Error = futures_channel::mpsc::SendError;
+
+        fn poll_ready(
+            self: std::pin::Pin<&mut Self>,
+            cx: &mut std::task::Context<'_>,
+        ) -> std::task::Poll<Result<(), Self::Error>> {
+            std::pin::Pin::new(&mut self.get_mut().outgoing).poll_ready(cx)
+        }
+
+        fn start_send(
+            self: std::pin::Pin<&mut Self>,
+            item: SocketMessage,
+        ) -> Result<(), Self::Error> {
+            std::pin::Pin::new(&mut self.get_mut().outgoing).start_send(item)
+        }
+
+        fn poll_flush(
+            self: std::pin::Pin<&mut Self>,
+            cx: &mut std::task::Context<'_>,
+        ) -> std::task::Poll<Result<(), Self::Error>> {
+            std::pin::Pin::new(&mut self.get_mut().outgoing).poll_flush(cx)
+        }
+
+        fn poll_close(
+            self: std::pin::Pin<&mut Self>,
+            cx: &mut std::task::Context<'_>,
+        ) -> std::task::Poll<Result<(), Self::Error>> {
+            std::pin::Pin::new(&mut self.get_mut().outgoing).poll_close(cx)
+        }
+    }
+
+    fn test_socket(buffer: usize) -> (TestSocket, Incoming, Outgoing) {
+        let (incoming_sender, incoming) = futures_channel::mpsc::unbounded();
+        let (outgoing, outgoing_receiver) = futures_channel::mpsc::channel(buffer);
+        (
+            TestSocket { incoming, outgoing },
+            incoming_sender,
+            outgoing_receiver,
+        )
+    }
+
+    #[tokio::test]
+    async fn a_stats_only_socket_drains_a_burst_that_disconnects_an_unfiltered_one() {
+        use futures_util::StreamExt;
+
+        let hub = EventHub::new();
+        let stats = Arc::new(SilentStats);
+
+        let (unfiltered_socket, _unfiltered_incoming, mut unfiltered_outgoing) = test_socket(1);
+        let (filtered_socket, filtered_incoming, mut filtered_outgoing) = test_socket(1);
+
+        let (unfiltered_events, unfiltered_guard) = hub.subscribe_socket();
+        let (filtered_events, mut filtered_guard) = hub.subscribe_socket();
+        filtered_guard.apply(r#"{"subscribe":["stats"]}"#);
+        assert!(
+            hub.has_query_subscribers(),
+            "the unfiltered socket wants it"
+        );
+
+        let unfiltered = tokio::spawn(drive_socket(
+            unfiltered_socket,
+            unfiltered_events,
+            Arc::clone(&stats),
+            unfiltered_guard,
+        ));
+        let filtered = tokio::spawn(drive_socket(
+            filtered_socket,
+            filtered_events,
+            Arc::clone(&stats),
+            filtered_guard,
+        ));
+
+        for _ in 0..(CHANNEL_CAPACITY + 64) {
+            hub.publish_query(fah_model::Event::dns(blocked_event()), None);
+            tokio::task::yield_now().await;
+        }
+
+        while unfiltered_outgoing.next().await.is_some() {}
+        unfiltered
+            .await
+            .expect("the unfiltered socket ends by disconnecting, not by panicking");
+        assert!(
+            !filtered.is_finished(),
+            "the stats-only socket drained the same burst without falling behind"
+        );
+        assert!(
+            !hub.has_query_subscribers(),
+            "the only socket left is stats-only, so the engine is idle again"
+        );
+
+        drop(filtered_incoming);
+        filtered
+            .await
+            .expect("the stats-only socket was still live and closed on the peer's close");
+
+        let mut delivered = Vec::new();
+        while let Some(message) = filtered_outgoing.next().await {
+            if let SocketMessage::Text(text) = message {
+                let event: Value = serde_json::from_str(&text).unwrap();
+                delivered.push(event["type"].as_str().unwrap().to_string());
+            }
+        }
+        assert_eq!(
+            delivered,
+            vec!["stats".to_string()],
+            "the stats-only socket emitted its stats push and not one event of the burst"
         );
     }
 
@@ -337,7 +746,7 @@ mod tests {
     #[tokio::test]
     async fn a_subscriber_that_falls_behind_is_told_it_lagged() {
         let hub = EventHub::new();
-        let mut slow = hub.subscribe();
+        let (mut slow, _guard) = hub.subscribe_socket();
 
         // Overrun the buffer without ever reading: the next read reports the
         // lag, which `run_socket` turns into a disconnect.
