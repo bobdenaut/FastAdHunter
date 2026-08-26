@@ -642,6 +642,7 @@ dependencies = [
  "tower",
  "tower-http",
  "tracing",
+ "x509-parser",
 ]
 
 [[package]]

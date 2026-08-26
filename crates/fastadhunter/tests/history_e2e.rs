@@ -428,7 +428,8 @@ impl Harness {
 
         let (keys, generated) = ApiKeyStore::load_or_create(config_dir.path()).unwrap();
         let key = generated.expect("first boot generates a key");
-        let tls = Some(fah_api::load_or_generate_tls(config_dir.path()).unwrap());
+        let tls =
+            Some(fah_api::load_or_generate_tls(config_dir.path(), "127.0.0.1", None).unwrap());
 
         let port = Arc::new(StatsPort(Arc::clone(&stats)));
         let state = AppStateBuilder {

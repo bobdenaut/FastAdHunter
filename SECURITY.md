@@ -35,6 +35,43 @@ x509-parser only; no hand-rolled TLS or crypto anywhere.
   documented as **unsafe**: the API key is a bearer token — over HTTP a single
   sniffed request leaks full admin control and the DNS history.
 
+### What a browser actually shows
+
+The certificate is self-signed, so every browser warns on the first visit.
+Chrome reports `ERR_CERT_AUTHORITY_INVALID` — "Your connection is not private"
+— and proceeding takes two actions: **Advanced**, then **Proceed to
+\<address\> (unsafe)**. The exception, and any cookie set afterwards, survive a
+browser restart. *(Measured: Chrome 151.0.7922.174, Windows 11, fresh profile,
+IP-literal origin.)*
+
+The certificate covers the box's own LAN address, discovered at generation
+time, alongside `fastadhunter`, `localhost`, `127.0.0.1` and `::1`. It is valid
+for 397 days from first boot and does **not** renew itself; regenerating it is
+an operator action and invalidates every accepted browser exception once.
+
+**Phones work.** Measured on Android 16 with Brave 1.93.138 against an
+IP-literal origin: after the one-time warning is accepted, the browser treats
+the origin as secure, and a `Secure`, `__Host-`-prefixed session cookie
+survives both a full browser restart and a device reboot. The address bar keeps
+a "not secure" marker; it does not affect the session. iOS Safari has not been
+measured.
+
+### What a household should do
+
+| Option | Cost | What it gets |
+| ------ | ---- | ------------ |
+| Accept the warning once, per device and per browser | 2 actions per device; repeated after any certificate regeneration | A working dashboard. The address bar keeps saying "Not secure" |
+| Install the box certificate as a trusted root on each device | One install per device, plus a repeat after each regeneration | A clean connection with no warning — verified: `openssl` returns `0 (ok)` once the certificate is trusted **and** the address is in its SAN set. Trusting a certificate whose SAN set misses the address still fails with `64 (IP address mismatch)`, which is why the SAN set matters more than the warning does |
+| A real name with a publicly trusted certificate | A domain, DNS, and a renewal mechanism this project does not ship | No warning anywhere, no per-device work. Out of scope until Phase 3 |
+
+`fastadhunter` is in the certificate but resolves nowhere: reaching the
+dashboard by name needs a DNS entry or a hosts file; without one the browser
+fails with `ERR_NAME_NOT_RESOLVED` before TLS is ever attempted.
+
+Do not use `https://localhost:8443/` to judge whether the certificate works —
+browsers treat `localhost` as a secure origin regardless of TLS, so it hides
+exactly the failure worth finding.
+
 ## Network exposure
 
 - Bind addresses are configurable; the API must face the LAN side only.

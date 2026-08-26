@@ -434,7 +434,11 @@ impl Engine {
             tracing::info!(api_key = %key, "generated API key — store it now; it is not shown again");
         }
         let tls = if config.api.tls {
-            Some(fah_api::load_or_generate_tls(config_dir)?)
+            Some(fah_api::load_or_generate_tls(
+                config_dir,
+                &config.api.address,
+                fah_api::probe_local_address(),
+            )?)
         } else {
             tracing::warn!(
                 "api.tls is disabled — the API key travels in plaintext; see SECURITY.md"

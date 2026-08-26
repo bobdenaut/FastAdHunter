@@ -39,4 +39,7 @@ pub use ports::{
 };
 pub use server::ApiServer;
 pub use state::AppStateBuilder;
-pub use tls::{install_crypto_provider, load_or_generate as load_or_generate_tls, TlsError};
+pub use tls::{
+    install_crypto_provider, load_or_generate as load_or_generate_tls, probe_local_address,
+    TlsError,
+};

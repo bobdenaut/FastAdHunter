@@ -267,6 +267,10 @@ retention_days = 30           # runtime — age cap on /data/history day-files;
 address = "0.0.0.0"           # boot    — bind LAN-side only; never expose to WAN
 port = 8443                   # boot
 tls = true                    # boot    — self-signed generated on first boot; opt-out is UNSAFE
+# address, when set to a literal IP rather than 0.0.0.0 or ::, is included in the
+# SANs of the generated API certificate. It does not need to be set: the box's own
+# LAN address is discovered at generation time. Pin it only when the reachable
+# address is not the one the default route selects.
 # /health is unauthenticated and not configurable; every other route needs the key.
 # api key: stored in /config, never in this file's plaintext sections;
 # rotate via POST /api/v1/config/apikey/rotate

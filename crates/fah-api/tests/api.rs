@@ -488,7 +488,7 @@ async fn start_with(options: HarnessOptions) -> Harness {
 
     let tls_config = options
         .tls
-        .then(|| fah_api::load_or_generate_tls(config_dir.path()).unwrap());
+        .then(|| fah_api::load_or_generate_tls(config_dir.path(), "127.0.0.1", None).unwrap());
 
     let stats = Arc::new(FakeStats::with_client(IpAddr::V4(Ipv4Addr::new(
         192, 168, 10, 15,
