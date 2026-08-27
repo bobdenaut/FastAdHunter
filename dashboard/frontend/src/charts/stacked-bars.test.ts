@@ -1,14 +1,13 @@
 import { describe, expect, it } from 'vitest';
+import { niceMax, ySplits } from './scale';
 import {
   HOUR_AXIS_LABELS,
   SEGMENT_LABEL_MIN_PX,
   TOTAL_LABEL_MIN_BAR_PX,
   barWidthPx,
   hourSplits,
-  niceMax,
   showsSegmentLabel,
   showsTotalLabel,
-  ySplits,
 } from './stacked-bars';
 
 describe('the y scale', () => {

@@ -1,6 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { setUnauthorizedHandler } from './core';
-import { getHistorySummary, historySummaryQuery } from './history';
+import { cleanCache } from './cache';
+import {
+  PERF_FIELDS,
+  getHistoryPerf,
+  getHistorySummary,
+  historyPerfQuery,
+  historySummaryQuery,
+} from './history';
 import {
   addList,
   deleteList,
@@ -12,7 +19,7 @@ import {
 import { getStats } from './stats';
 import { getClients } from './clients';
 import { getConfig } from './config';
-import type { RefreshAllResponse } from './types';
+import type { PerfItem, RefreshAllResponse } from './types';
 
 function respond(status: number, body?: unknown): Response {
   return {
@@ -161,5 +168,73 @@ describe('the list mutations', () => {
       'failed',
       'rejected',
     ]);
+  });
+});
+
+describe('the perf history query string', () => {
+  it('carries `from` and the comma-joined fields, and nothing else', () => {
+    expect(
+      historyPerfQuery({
+        from: '2026-08-01T00:00:00.000Z',
+        fields: ['qps', 'latency'],
+      }),
+    ).toBe('from=2026-08-01T00%3A00%3A00.000Z&fields=qps%2Clatency');
+  });
+
+  it('omits `to`, so the server’s own now ends the window', () => {
+    expect(historyPerfQuery({ from: 'x', fields: PERF_FIELDS })).not.toContain(
+      'to=',
+    );
+  });
+
+  it('omits `max_points`, so the perf default of 1000 stands', () => {
+    // Which is what makes `stride > 1` reachable at 7 d and 30 d, and the
+    // decimation footnote something a range actually trips.
+    expect(historyPerfQuery({ from: 'x', fields: PERF_FIELDS })).not.toContain(
+      'max_points',
+    );
+  });
+
+  it('asks for exactly the five keys the page draws', () => {
+    // An unknown name is a `400`, and a memory key here would be a figure this
+    // page has no business rendering. Pinned, not merely typed.
+    expect([...PERF_FIELDS]).toEqual([
+      'qps',
+      'queries_delta',
+      'blocked_delta',
+      'allowed_delta',
+      'latency',
+    ]);
+  });
+
+  it('appends the query to the documented path', async () => {
+    fetchMock.mockResolvedValue(respond(200, { items: [] }));
+    await getHistoryPerf({ from: 'x', fields: ['qps'] });
+    expect(calledWith()[0]).toBe('/api/v1/history/perf?from=x&fields=qps');
+  });
+
+  it('reads a trimmed row without demanding the dropped keys', () => {
+    // A compile-time scenario: `fields` drops keys entirely, so a consumer has
+    // to handle absence rather than read a null as a zero.
+    const item: PerfItem = { ts: '2026-08-01T00:00:00Z', qps: 12.5 };
+    expect(item.latency).toBeUndefined();
+    expect(item.queries_delta).toBeUndefined();
+  });
+});
+
+describe('the cache clean', () => {
+  it('posts with no query string by default, keeping the stale window', async () => {
+    fetchMock.mockResolvedValue(respond(200, {}));
+    await cleanCache(false);
+    const [url, init] = calledWith();
+    expect(url).toBe('/api/v1/cache/clean');
+    expect(init.method).toBe('POST');
+    expect(init.body).toBeUndefined();
+  });
+
+  it('asks for the stale purge only when the operator chose it', async () => {
+    fetchMock.mockResolvedValue(respond(200, {}));
+    await cleanCache(true);
+    expect(calledWith()[0]).toBe('/api/v1/cache/clean?stale=true');
   });
 });

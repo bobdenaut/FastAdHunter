@@ -144,9 +144,14 @@ export const ROUTES: readonly Route[] = [
     title: 'Cache',
     section: 'runtime',
     events: [],
-    endpoints: ['cache'],
-    built: false,
-    load: null,
+    // `telemetry` joined in p5-08: the SWR and background-cleanup panels are
+    // `counters.swr` and `counters.cache_cleanup`, which live there and nowhere
+    // else. Read through the same shared refresh as `/cache`, so the page still
+    // holds no timer of its own.
+    endpoints: ['cache', 'telemetry'],
+    built: true,
+    ownsHeader: true,
+    load: () => import('../pages/cache'),
   },
   {
     // `/history/perf` is a range query, not a poll — no endpoint to declare.
@@ -155,17 +160,22 @@ export const ROUTES: readonly Route[] = [
     section: 'runtime',
     events: [],
     endpoints: [],
-    built: false,
-    load: null,
+    built: true,
+    ownsHeader: true,
+    load: () => import('../pages/performance'),
   },
   {
     path: '/upstreams',
     title: 'Upstreams',
     section: 'runtime',
     events: [],
+    // Plus one `GET /config` on mount and never again: the strategy is
+    // boot-only, so it cannot change under a running process and a re-read
+    // would answer the same thing for ever.
     endpoints: ['telemetry', 'health'],
-    built: false,
-    load: null,
+    built: true,
+    ownsHeader: true,
+    load: () => import('../pages/upstreams'),
   },
   {
     path: '/settings',

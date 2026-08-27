@@ -1,11 +1,18 @@
+import type { PerfItem, PerfLatency } from './api/types';
+
 /**
- * **Every derived display value on the Dashboard and Lists lives here.**
+ * **The derived display values of the shipped pages live here**, keyed to the
+ * tables that authorise them: `R*` is p5-06's §8.2 (Dashboard, Lists) and `E*`
+ * is p5-08's §6 (Cache, Performance, Upstreams).
  *
  * Phase 5 standing constraint 1 forbids figures the API does not support. A
  * derivation is a stated arithmetic function of documented fields; anything not
- * in this module is read from a response verbatim. The row ids are the p5-06
- * plan's §8.2 table, so a reviewer checks one file against one table rather than
- * hunting arithmetic through the pages.
+ * in this module is read from a response verbatim, so a reviewer checks one
+ * file against those tables rather than hunting arithmetic through the pages.
+ *
+ * *(p5-06 R5, R7, R11, R12, R15, R16 and R17 are counted, printed or laid out
+ * where they are rendered — one operator or a `length` each; the p5-06 review's
+ * closure pass records that and why wrapping them adds no checkable place.)*
  *
  * Never derived at all, and deliberately absent: a 24 h HTTP figure (the API
  * has none), a combined DNS + HTTP "queries" total (the pipelines are never
@@ -130,4 +137,172 @@ export function upstreamBar(
     width: shareOfMax(attempts, maxAttempts),
     overlay: attempts <= 0 ? 0 : Math.min(1, failures / attempts),
   };
+}
+
+/* ------------------------------------------------------- p5-08 runtime pages */
+
+/**
+ * **The runtime pages' half of the table above.** `E*` rows are the p5-08
+ * plan's §6; the same property holds — one module against one table, and
+ * nothing arithmetic on Cache, Performance or Upstreams lives anywhere else.
+ *
+ * Never derived at all on those three pages, and deliberately absent here: any
+ * latency **average** (an average hides the tail the budget is written
+ * against), any upstream share of traffic, success rate, availability
+ * percentage or health score, anything computed from `tls_handshakes`, any
+ * delta of two telemetry reads, any delta of `last_duration_micros` (it is a
+ * last-value gauge), and any figure combining `/stats` with these endpoints.
+ */
+
+/** E1 — the cache stage bar's fourth band. Same rule as R7 on the Dashboard:
+ *  `capacity` can round slightly below the configured maximum, and a negative
+ *  band is not drawn. */
+export function freeEntries(capacity: number, entries: number): number {
+  return Math.max(0, capacity - entries);
+}
+
+/** E3 — `hits + misses`, which is resolved queries (`pass + allow`): a blocked
+ *  query never reaches the cache, so it is in neither term. */
+export function cacheLookups(hits: number, misses: number): number {
+  return hits + misses;
+}
+
+/** E4 — the hit-rate donut. A zero denominator draws the empty track rather
+ *  than dividing. */
+export function cacheHitRate(hits: number, misses: number): number {
+  const lookups = cacheLookups(hits, misses);
+  return lookups === 0 ? 0 : (hits / lookups) * 100;
+}
+
+/** Which of the two bounds evicts first. The bars themselves render
+ *  `load_percent` and `byte_load_percent` verbatim; only this callout is
+ *  derived. */
+export type CacheBound = 'entries' | 'bytes' | 'equal';
+
+/** E5 — eviction runs until entries **and** bytes are each back inside their
+ *  bound, so the higher load is the one that triggers first (API.md §Cache). */
+export function closestBound(
+  loadPercent: number,
+  byteLoadPercent: number,
+): CacheBound {
+  if (loadPercent > byteLoadPercent) return 'entries';
+  if (byteLoadPercent > loadPercent) return 'bytes';
+  return 'equal';
+}
+
+/**
+ * E10 / E12 — one latency percentile, seconds to milliseconds, with the
+ * no-traffic case mapped out.
+ *
+ * `LatencySummary` reports exactly `0.0` for a stage with **no queries in that
+ * interval**, and a real reading is a bucket upper bound, so it can never be
+ * exactly `0.0`. Plotting the zeros would draw latency dips the engine never
+ * had; `null` is a gap in the series and an em-dash on a tile.
+ */
+export function latencyMs(seconds: number): number | null {
+  return seconds === 0 ? null : seconds * 1000;
+}
+
+/**
+ * E10's other half — **which** row a tile reads, beside `qpsStats`'s E14, which
+ * scopes the same way. Both pick over the **served** rows only: decimation drops
+ * whole rows, so at `stride > 1` the last row served is not the last row the
+ * recorder wrote, and the tile labels say so.
+ *
+ * Rows without a `latency` block are skipped rather than read as zeros — a
+ * trimmed `fields` drops the key entirely (absent, not null), and an absent key
+ * is not a measurement of nothing.
+ */
+export function latestLatency(items: readonly PerfItem[]): PerfLatency | null {
+  for (let index = items.length - 1; index >= 0; index -= 1) {
+    const latency = items[index]?.latency;
+    if (latency !== undefined) return latency;
+  }
+  return null;
+}
+
+/** E11 — how much of its budget a stage is using, and whether it has reached
+ *  it. Capped for display only; `over` is the one documented boundary, and
+ *  there is no tier between zero and the budget to invent. */
+export interface BudgetProximity {
+  /** 0..100. */
+  percent: number;
+  over: boolean;
+}
+
+export function budgetProximity(
+  valueMs: number,
+  budgetMs: number,
+): BudgetProximity {
+  if (budgetMs <= 0) return { percent: 0, over: false };
+  const ratio = (valueMs / budgetMs) * 100;
+  return { percent: Math.min(100, Math.max(0, ratio)), over: ratio >= 100 };
+}
+
+/**
+ * E14 — the QPS stat row, over the **served** rows only.
+ *
+ * At `stride > 1` the response is a 1-in-stride subsample, so `busiest` is the
+ * busiest sample that was served rather than the range's true peak, and
+ * `latest` lags real time by up to `stride × interval`. The labels say so; this
+ * function only picks.
+ */
+export interface QpsStats {
+  latest: number | null;
+  busiest: number | null;
+}
+
+export function qpsStats(values: readonly (number | undefined)[]): QpsStats {
+  let latest: number | null = null;
+  let busiest: number | null = null;
+  for (const value of values) {
+    if (value === undefined) continue;
+    latest = value;
+    if (busiest === null || value > busiest) busiest = value;
+  }
+  return { latest, busiest };
+}
+
+/**
+ * E16 — the `pass` band, the derivation `crates/fah-model/src/perf.rs`
+ * documents. Floored at zero: a restart boundary inside the range zeroes the
+ * cumulative counters the server deltas against, so one sample can come back
+ * with the parts exceeding the whole.
+ *
+ * `allowed_delta` is the **real `allow` verdict**, never the derived
+ * `permitted` band — the two are different figures and never share a word.
+ */
+export function passDelta(
+  queriesDelta: number,
+  blockedDelta: number,
+  allowedDelta: number,
+): number {
+  return Math.max(0, queriesDelta - blockedDelta - allowedDelta);
+}
+
+/** E22 — the failure-run histogram, normalised to the row's **own** largest
+ *  bucket so a quiet endpoint is not drawn as a busy one. All zero draws four
+ *  empty tracks; the counts are printed verbatim beneath either way. */
+export function failureRunShares(runs: readonly number[]): number[] {
+  const max = runs.reduce((highest, run) => Math.max(highest, run), 0);
+  return runs.map((run) => shareOfMax(run, max));
+}
+
+/**
+ * KTD5 / E25 — the strategy decides whether the health block can be read at
+ * all.
+ *
+ * Under `fallback` every row publishes `state: healthy`, `penalty_round: 0` and
+ * zeros for penalties, penalized seconds, probes and probe successes, which
+ * API.md states means *no health state exists to report* — not "everything is
+ * fine". Those cells are therefore omitted rather than rendered as good news.
+ * `unknown` is `GET /config` having failed: the counters are still verbatim,
+ * and the page says it cannot name the strategy.
+ */
+export type UpstreamMode = 'adaptive' | 'fallback' | 'unknown';
+
+export function upstreamMode(strategy: string | null | undefined): UpstreamMode {
+  if (strategy === 'adaptive') return 'adaptive';
+  if (strategy === 'fallback') return 'fallback';
+  return 'unknown';
 }

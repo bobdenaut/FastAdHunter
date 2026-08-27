@@ -677,20 +677,41 @@ table.t tbody tr:hover td {
     width: 100%;
     justify-content: space-between;
     padding: 10px 14px 0;
+    flex-wrap: wrap;
   }
 
+  /* A cluster carrying a secondary note (the Endpoints card's configured-order
+     sentence) puts it on its own line: sharing the row with the age, the
+     selector and the button squeezed it into a four-line column. */
+  .ctl.in-card > .note {
+    flex: 1 0 100%;
+  }
+
+  /* The header placement gets the same treatment. `p5-06` sized the in-card
+     cluster only, because every cluster it shipped was in a card; `/cache` and
+     `/upstreams` are the first routes to use the header placement, and its
+     select and mini button arrived 55 × 25 and 26 × 24 at 390 px. */
   .ctl.in-card .sel,
-  .ctl.in-card .mini {
+  .ctl.in-card .mini,
+  .hd .ctl .sel,
+  .hd .ctl .mini {
     min-height: 44px;
   }
 
-  .ctl.in-card .mini {
+  .ctl.in-card .mini,
+  .hd .ctl .mini {
     min-width: 44px;
   }
 
   .hd {
     flex-direction: column;
     align-items: stretch;
+  }
+
+  /* Stretched by `align-items: stretch` above, the header cluster's row would
+     otherwise be as tall as its 44 px controls make it and pushed to one side. */
+  .hd .ctl {
+    justify-content: space-between;
   }
 }
 
@@ -1003,6 +1024,22 @@ table.t tbody tr:hover td {
      what `MobileDashboard.dc.html` drops. */
   .z-cache .figure-grid,
   .z-cache .bd > .note {
+    display: none;
+  }
+
+  /* p5-06 F5, closed here. `MobileDashboard.dc.html` draws three segments and
+     three legend entries — `fresh`, `stale`, `expired` — and the shipped card
+     passed four at every width.
+
+     A selector rather than a conditional prop: `free` is a legitimate R7
+     figure and dropping it is a width decision, and this application has no
+     viewport listener anywhere — passing the segment conditionally would add
+     the first one, to drop one band from one card. The bar is laid out with
+     `flex` weights, so removing the fourth child lets the other three fill the
+     track, which is exactly what the phone artboard draws. The full four-band
+     reading is one tap away on the Cache page. */
+  .z-cache .seg > div:nth-child(4),
+  .z-cache .seg-legend > span:nth-child(4) {
     display: none;
   }
 }
@@ -2736,5 +2773,525 @@ table.t tbody tr:hover td {
 
   .policy-tools .btn {
     padding: 6px 12px;
+  }
+}
+
+/* ═══════════════════════════════════════════════════ p5-08 · Cache ═══════ */
+
+/* Two cards stacked into one half of the `.row c2` pair, so the SWR and
+   cleanup cards together balance the taller Clean card beside them. */
+.stack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap);
+}
+
+/* The lifetime bar is the artboard's 32 px slab rather than the 7 px partition
+   line a list row draws. `StageBar` renders its own inline legend; this page
+   needs the four stages as a grid with a sentence each, so the built-in one is
+   suppressed exactly as the Lists row suppresses it. */
+.cache-stage .seg {
+  height: 32px;
+  border-radius: 3px;
+}
+
+.cache-stage .seg-legend {
+  display: none;
+}
+
+.stage-notes {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 16px;
+  margin-top: 14px;
+}
+
+.stage-name {
+  font-size: 12.5px;
+  font-weight: 500;
+}
+
+.stage-name .mono {
+  margin-left: 4px;
+}
+
+.stage-notes .note {
+  margin: 4px 0 0;
+}
+
+/* The two bounds. */
+.bound + .bound {
+  margin-top: 16px;
+}
+
+.bound-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 12.5px;
+  margin-bottom: 6px;
+}
+
+.bound-figure {
+  font-weight: 600;
+}
+
+.bar.bound-bar {
+  height: 12px;
+  border-radius: 3px;
+}
+
+/* The "closest to evicting" statement. A tinted panel, from tokens: the
+   surface and the border move with the theme rather than being an alpha wash
+   that survives only one of them. */
+.callout {
+  margin: 14px 0 0;
+  background: var(--surface-sunken);
+  border: 1px solid var(--border-soft);
+  border-left: 3px solid var(--accent);
+  border-radius: var(--radius);
+  padding: 10px 12px;
+  font-size: 12.5px;
+  line-height: 1.55;
+}
+
+.callout + .note {
+  margin-top: 12px;
+}
+
+/* Headerless label/value list — the artboards' counter tables. */
+table.t.counters td {
+  padding: 7px 0;
+}
+
+table.t.counters td.good {
+  color: var(--pill-good-fg);
+}
+
+table.t.counters td.bad {
+  color: var(--pill-bad-fg);
+}
+
+.hit-rate {
+  margin-top: 14px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.hit-rate .note {
+  margin: 0;
+}
+
+/* The percentage sits inside the ring, as the artboard draws it. `Donut` is
+   one shape and carries no text; overlaying it here keeps it that way. */
+.hit-ring {
+  position: relative;
+  display: inline-flex;
+  flex: 0 0 auto;
+}
+
+.hit-figure {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+/* The clean action. The checkbox is the deliberate choice this write needs, so
+   its target is the whole label rather than the 15 px box the artboard draws. */
+.clean-choice {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  font-size: 12.5px;
+  min-height: 44px;
+  padding: 4px 0;
+  cursor: pointer;
+}
+
+/* Same shape as the list toggle's target: the box stays the artboard's size
+   and an absolutely-positioned 44 × 44 box centred on it is what a finger
+   actually hits. It sits inside the `<label>`, so a tap on it toggles. */
+.cb-target {
+  position: relative;
+  display: inline-flex;
+  flex: 0 0 auto;
+  margin-top: 3px;
+}
+
+.cb-target::before {
+  content: '';
+  position: absolute;
+  width: 44px;
+  height: 44px;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+}
+
+.clean-choice input {
+  width: 18px;
+  height: 18px;
+  margin: 0;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.clean-choice > span {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.clean-choice-title {
+  line-height: 1.5;
+}
+
+.clean-choice .note {
+  margin: 0;
+}
+
+.clean-card .page-buttons {
+  margin-top: 14px;
+}
+
+/* The Clean card and the two counter cards beside it are different heights and
+   should stay so: stretched to match, the Clean card is mostly empty space
+   before its first result lands. */
+.row.cache-actions {
+  align-items: start;
+}
+
+.clean-result {
+  margin-top: 14px;
+  border-top: 1px solid var(--border-row);
+  padding-top: 12px;
+}
+
+.clean-result .note:first-child {
+  margin-bottom: 7px;
+}
+
+.clean-result .note:last-child {
+  margin: 10px 0 0;
+}
+
+@media (max-width: 767px) {
+  /* One card per row already; the bars stay full width and only the four-up
+     stage legend folds. */
+  .stage-notes {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+/* ═══════════════════════════════════════════ p5-08 · Performance ═════════ */
+
+/* The three stage tiles are cards rather than `.tile`s: the artboard draws a
+   label, a figure with its unit, a budget chip and a proximity bar, which is a
+   different object from the Dashboard's accented tile. */
+.stage-tile .big {
+  font-size: 26px;
+  font-weight: 600;
+}
+
+.stage-figure {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin-top: 3px;
+}
+
+/* The pill's tone and shape, but not its casing: the artboard writes the unit
+   as `ms`, and `.pill`'s `text-transform` turned it into `MS`. */
+.stage-budget {
+  margin-left: auto;
+  align-self: center;
+  text-transform: none;
+}
+
+/* The proximity bar is the neutral accent for the whole span under the budget:
+   there is no documented threshold between zero and it, so an amber tier would
+   invent one. The tone flips at the budget itself and nowhere else. */
+.bar.stage-bar-track {
+  height: 6px;
+  border-radius: 3px;
+  margin-top: 9px;
+}
+
+.bar > span.stage-bar-fill {
+  background: var(--accent);
+}
+
+.bar > span.stage-bar-fill.over {
+  background: var(--series-blocked);
+}
+
+.stage-idle {
+  margin: 8px 0 0;
+}
+
+.stage-tiles-note {
+  margin: -4px 0 0;
+}
+
+/* The window's two ends, in place of x ticks. */
+.axis-ends {
+  display: flex;
+  justify-content: space-between;
+  border-top: 1px solid var(--border-control);
+  padding-top: 6px;
+  margin-top: 2px;
+  font-size: 10px;
+  color: var(--text-faint);
+}
+
+/* Scoped to this page's two legends, never to `.chart-legend` itself: that base
+   rule is p5-06's and the Dashboard's own legend renders through it. Both of
+   these carry more than three entries and, on the latency card, a right-aligned
+   aside beside them, so they wrap where the Dashboard's does not need to. */
+.latency-legend,
+.verdicts-legend {
+  flex-wrap: wrap;
+  align-items: baseline;
+}
+
+.latency-legend .legend-aside {
+  margin-left: auto;
+  text-align: right;
+}
+
+.footnote-line {
+  display: block;
+  margin-top: 5px;
+}
+
+.stat-row {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+  margin-top: 10px;
+}
+
+.stat-figure {
+  font-size: 17px;
+  font-weight: 600;
+}
+
+.bd.reading-body {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 22px;
+}
+
+.reading-title {
+  font-size: 12.5px;
+  font-weight: 500;
+  margin-bottom: 5px;
+}
+
+.bd.reading-body .note {
+  margin: 0;
+}
+
+@media (max-width: 1199px) {
+  .bd.reading-body {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 767px) {
+  /* The tiles already stack: `layout.css` spans a `.row.c3` child to twelve
+     columns below 1200 px, and the range chips already leave the title bar for
+     a full-height row above the plot. Only the legend aside and the explainer
+     columns need saying. */
+  .stage-tiles-note {
+    margin: 0;
+  }
+
+  .latency-legend .legend-aside {
+    margin-left: 0;
+    text-align: left;
+  }
+
+  .bd.reading-body {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .stat-row {
+    gap: 10px;
+  }
+}
+
+/* ═══════════════════════════════════════════════ p5-08 · Upstreams ═══════ */
+
+.banner.warn {
+  background: var(--pill-warn-bg);
+  border-color: var(--pill-warn-fg);
+  border-left-color: var(--pill-warn-fg);
+}
+
+.banner .warning {
+  color: var(--pill-warn-fg);
+  flex: 0 0 auto;
+  margin-top: 1px;
+}
+
+.bd.upstreams-body {
+  padding: 0;
+}
+
+/* Three zones per endpoint: identity, the counter grid, the histogram. One
+   grid rather than a row and a header that have to agree — there is no header
+   here at all, because every cell carries its own label. */
+.ep {
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) minmax(0, 2fr) minmax(0, 0.9fr);
+  gap: 20px;
+  align-items: start;
+  padding: 14px;
+  border-top: 1px solid var(--border-row);
+}
+
+.ep:first-child {
+  border-top: 0;
+}
+
+/* The artboard's penalized-row tint, from the token pair the Lists alert row
+   already uses — a background that exists in both palettes rather than an
+   alpha wash that survives only one. */
+.ep.is-penalized {
+  background: var(--pill-warn-bg);
+}
+
+.ep-head {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+
+.ep-index {
+  background: var(--pill-neutral-bg);
+  color: var(--pill-neutral-fg);
+  font-size: 11px;
+  font-weight: 600;
+  padding: 1px 7px;
+  border-radius: 3px;
+}
+
+.ep-address {
+  font-size: 13.5px;
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+
+.ep-state {
+  margin-top: 6px;
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.ep-counters {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px 16px;
+  font-size: 12.5px;
+}
+
+.ep-counters .k {
+  font-size: 11px;
+}
+
+.ep-counters .good {
+  color: var(--pill-good-fg);
+}
+
+.ep-counters .bad {
+  color: var(--pill-bad-fg);
+}
+
+/* Four buckets, neutral at every state: the printed counts carry the figures
+   and the card footer carries the reading guide, so the bars do not have to
+   assert a severity the histogram alone cannot support. */
+.runs {
+  display: flex;
+  align-items: flex-end;
+  gap: 4px;
+  height: 34px;
+  margin-bottom: 4px;
+}
+
+.run-track {
+  flex: 1;
+  height: 100%;
+  display: flex;
+  align-items: flex-end;
+  background: var(--track);
+  border-radius: 2px;
+}
+
+.run-bar {
+  width: 100%;
+  background: var(--series-4);
+  border-radius: 2px;
+}
+
+.run-legend {
+  color: var(--text-faint);
+}
+
+.ep-foot {
+  margin: 0;
+  padding: 12px 14px;
+  border-top: 1px solid var(--border-row);
+}
+
+.state-legend {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+
+.state-legend > div {
+  display: flex;
+  gap: 11px;
+  align-items: flex-start;
+}
+
+.state-legend .pill {
+  flex: 0 0 auto;
+}
+
+.state-legend-foot {
+  margin: 4px 0 0;
+  border-top: 1px solid var(--border-row);
+  padding-top: 9px;
+}
+
+@media (max-width: 1199px) {
+  .ep {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.6fr);
+  }
+
+  .ep-runs {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 767px) {
+  /* One card per endpoint: identity, then the counter grid at two columns,
+     then the histogram full width beneath. */
+  .ep {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 12px;
+  }
+
+  .ep-counters {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }

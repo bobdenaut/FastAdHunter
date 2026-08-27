@@ -2,14 +2,35 @@ import { describe, expect, it } from 'vitest';
 import {
   OTHER_LABEL,
   blockedPercent,
+  budgetProximity,
+  cacheHitRate,
+  cacheLookups,
+  closestBound,
+  failureRunShares,
+  freeEntries,
+  latencyMs,
+  latestLatency,
+  passDelta,
+  qpsStats,
   queryTypeSlices,
   shareOfMax,
   sliceShare,
   sumOver,
   sumPerType,
   upstreamBar,
+  upstreamMode,
 } from './derive';
-import { compactCount, percent1 } from './charts/format';
+import {
+  compactCount,
+  epochSeconds,
+  formatMiB,
+  latencyMsLabel,
+  microsLabel,
+  millisLabel,
+  msAxisLabel,
+  percent1,
+  qpsLabel,
+} from './charts/format';
 import { formatUptime, lastRefreshLabel } from './time';
 
 describe('compactCount', () => {
@@ -197,5 +218,204 @@ describe('the upstream bar (D4, option A)', () => {
 
   it('cannot exceed the bar even if a response were inconsistent', () => {
     expect(upstreamBar(10, 99, 10).overlay).toBe(1);
+  });
+});
+
+/* ------------------------------------------------------- p5-08 runtime pages */
+
+describe('the cache figures', () => {
+  it('never draws a negative free band', () => {
+    // `capacity` is per-shard × shard count and can round below the configured
+    // maximum, so `entries` above it is a real reading rather than a bug.
+    expect(freeEntries(50_000, 1_108)).toBe(48_892);
+    expect(freeEntries(10_000, 10_400)).toBe(0);
+  });
+
+  it('counts lookups as hits plus misses, which is resolved queries', () => {
+    expect(cacheLookups(10_021, 1_150)).toBe(11_171);
+  });
+
+  it('gives an untouched cache a zero hit rate rather than a NaN', () => {
+    expect(cacheHitRate(0, 0)).toBe(0);
+    expect(cacheHitRate(10_021, 1_150)).toBeCloseTo(89.7, 1);
+  });
+
+  it('names whichever bound is higher, and says so when they are level', () => {
+    expect(closestBound(2.2, 1.7)).toBe('entries');
+    expect(closestBound(1.7, 2.2)).toBe('bytes');
+    expect(closestBound(2.2, 2.2)).toBe('equal');
+  });
+
+  it('prints bytes in the artboard’s own MiB form', () => {
+    expect(formatMiB(67_108_864)).toBe('64 MiB');
+    expect(formatMiB(2_846_720)).toBe('2.7 MiB');
+    expect(formatMiB(9_871_232)).toBe('9.4 MiB');
+  });
+
+  it('prints a sweep duration as the artboard does, both figures', () => {
+    expect(millisLabel(1842 / 1000)).toBe('1.84');
+    expect(millisLabel(4.7)).toBe('4.7');
+  });
+});
+
+describe('latency, seconds to milliseconds', () => {
+  it('maps an exact 0.0 to a gap, because it means no traffic', () => {
+    // `LatencySummary` reports 0.0 for a stage with no queries in the interval.
+    // A real reading is a bucket upper bound and can never be exactly zero, so
+    // there is no measurement to lose here.
+    expect(latencyMs(0)).toBeNull();
+  });
+
+  it('converts a real reading', () => {
+    expect(latencyMs(0.000_039)).toBeCloseTo(0.039, 6);
+    expect(latencyMs(0.000_412)).toBeCloseTo(0.412, 6);
+  });
+
+  it('formats a tile figure at the artboard’s precision', () => {
+    expect(latencyMsLabel(0.039)).toBe('0.039');
+    expect(latencyMsLabel(0.412)).toBe('0.412');
+  });
+
+  it('labels the axis the way the artboard draws it', () => {
+    expect(msAxisLabel(1)).toBe('1.0');
+    expect(msAxisLabel(0.75)).toBe('0.75');
+    expect(msAxisLabel(0.5)).toBe('0.50');
+    expect(msAxisLabel(0.25)).toBe('0.25');
+  });
+});
+
+describe('the budget proximity bar', () => {
+  it('fills proportionally while under the budget, and is not over', () => {
+    const bar = budgetProximity(0.412, 1);
+    expect(bar.percent).toBeCloseTo(41.2, 6);
+    expect(bar.over).toBe(false);
+    expect(budgetProximity(0.039, 1).over).toBe(false);
+  });
+
+  it('flips at the budget itself — the one documented boundary', () => {
+    expect(budgetProximity(1, 1)).toEqual({ percent: 100, over: true });
+  });
+
+  it('caps the bar rather than painting past its track', () => {
+    expect(budgetProximity(3.4, 1)).toEqual({ percent: 100, over: true });
+  });
+});
+
+describe('the QPS stat row', () => {
+  it('takes the latest and the busiest of the served rows', () => {
+    expect(qpsStats([10, 28.4, 12.5])).toEqual({ latest: 12.5, busiest: 28.4 });
+  });
+
+  it('skips rows the `fields` trim dropped rather than reading them as zero', () => {
+    expect(qpsStats([10, undefined, 4])).toEqual({ latest: 4, busiest: 10 });
+  });
+
+  it('has nothing to report on an empty range', () => {
+    expect(qpsStats([])).toEqual({ latest: null, busiest: null });
+  });
+});
+
+describe('the pass band', () => {
+  it('is queries minus blocked minus the real allow verdict', () => {
+    expect(passDelta(750, 210, 5)).toBe(535);
+  });
+
+  it('floors at zero across a restart boundary', () => {
+    // The server deltas against its own previous snapshot; a restart inside the
+    // range zeroes the cumulative counters and one sample comes back with the
+    // parts exceeding the whole.
+    expect(passDelta(0, 210, 5)).toBe(0);
+  });
+});
+
+describe('the failure-run histogram', () => {
+  it('normalises to the row’s own largest bucket', () => {
+    expect(failureRunShares([12, 21, 30, 39])).toEqual([
+      12 / 39,
+      21 / 39,
+      30 / 39,
+      1,
+    ]);
+  });
+
+  it('draws four empty tracks when the endpoint has closed no runs', () => {
+    expect(failureRunShares([0, 0, 0, 0])).toEqual([0, 0, 0, 0]);
+  });
+});
+
+describe('the upstream rendering mode', () => {
+  it('is the strategy when the configuration named one', () => {
+    expect(upstreamMode('adaptive')).toBe('adaptive');
+    expect(upstreamMode('fallback')).toBe('fallback');
+  });
+
+  it('is unknown when `/config` could not be read', () => {
+    // Not "adaptive by default": under `fallback` the zeros mean no health
+    // state exists, so guessing states the opposite of the truth.
+    expect(upstreamMode(null)).toBe('unknown');
+    expect(upstreamMode(undefined)).toBe('unknown');
+    expect(upstreamMode('something-new')).toBe('unknown');
+  });
+});
+
+describe('the two unit conversions that are formatting, not derivation', () => {
+  it('turns the cleanup gauge’s microseconds into the artboard’s figure', () => {
+    expect(microsLabel(1842)).toBe('1.84');
+    expect(microsLabel(10)).toBe('0.01');
+  });
+
+  it('turns an RFC 3339 stamp into the epoch seconds uPlot takes', () => {
+    expect(epochSeconds('2026-08-27T10:00:00Z')).toBe(
+      Date.UTC(2026, 7, 27, 10, 0, 0) / 1000,
+    );
+  });
+});
+
+describe('E10 — which row a latency tile reads', () => {
+  function row(p99: number | null, ts = '2026-08-27T10:00:00Z') {
+    return p99 === null
+      ? { ts }
+      : {
+          ts,
+          latency: {
+            block_p50: 0,
+            block_p99: p99,
+            cache_hit_p50: 0,
+            cache_hit_p99: 0,
+            forward_p50: 0,
+            forward_p99: 0,
+          },
+        };
+  }
+
+  it('takes the last served row, not the first', () => {
+    expect(latestLatency([row(0.000_039), row(0.000_077)])?.block_p99).toBe(
+      0.000_077,
+    );
+  });
+
+  it('skips a row whose `latency` key was trimmed away', () => {
+    // `fields` drops a key entirely — absent, not null — and an absent key is
+    // not a measurement of nothing.
+    expect(latestLatency([row(0.000_039), row(null)])?.block_p99).toBe(
+      0.000_039,
+    );
+  });
+
+  it('answers null when no served row carries one', () => {
+    expect(latestLatency([])).toBeNull();
+    expect(latestLatency([row(null), row(null)])).toBeNull();
+  });
+});
+
+describe('qpsLabel', () => {
+  it('prints the stat row’s one decimal', () => {
+    expect(qpsLabel(12.5)).toBe('12.5');
+    expect(qpsLabel(28.4)).toBe('28.4');
+  });
+
+  it('keeps the decimal on a whole figure, as the artboard draws it', () => {
+    expect(qpsLabel(20)).toBe('20.0');
+    expect(qpsLabel(0)).toBe('0.0');
   });
 });

@@ -1,3 +1,4 @@
+import type { ComponentChildren } from 'preact';
 import { useEffect, useRef, useState } from 'preact/hooks';
 import type uPlot from 'uplot';
 import { loadUPlot } from '../charts/runtime';
@@ -24,6 +25,13 @@ export interface ChartProps {
    * a real reading, never an average.
    */
   decimatedBy?: number;
+  /**
+   * Rendered immediately beneath the plot and above the footnotes — the
+   * Performance artboards draw the window's two ends there (`7 d ago … now`)
+   * in place of x ticks, and those captions belong to the plot rather than to
+   * whatever the page puts after it.
+   */
+  footer?: ComponentChildren;
 }
 
 /**
@@ -45,7 +53,13 @@ export function chartConstructions(): number {
  * through `charts/runtime.ts`, which owns the single dynamic import and is what
  * keeps the library off the login path.
  */
-export function Chart({ data, options, height = 220, decimatedBy }: ChartProps) {
+export function Chart({
+  data,
+  options,
+  height = 220,
+  decimatedBy,
+  footer,
+}: ChartProps) {
   const host = useRef<HTMLDivElement>(null);
   const plot = useRef<uPlot | null>(null);
   const [failed, setFailed] = useState(false);
@@ -104,6 +118,7 @@ export function Chart({ data, options, height = 220, decimatedBy }: ChartProps) 
   return (
     <div>
       <div class="chart" ref={host} />
+      {footer}
       {failed && <p class="chart-footnote">The chart could not be drawn.</p>}
       {decimatedBy !== undefined && decimatedBy > 1 && (
         <p class="chart-footnote">

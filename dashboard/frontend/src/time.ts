@@ -80,3 +80,10 @@ export function lastSeenLabel(ts: string, now: number): string {
   const at = new Date(ts).getTime();
   return Number.isNaN(at) ? ts : formatAge(at, now);
 }
+
+/** `03:14` — the clock the Cache page prints beside a clean result. It is the
+ *  client's receive time, not an API field: the API keeps no clean history, so
+ *  the panel is session state and says only when this browser saw it. */
+export function clockLabel(at: number): string {
+  return CLOCK.format(new Date(at));
+}

@@ -17,6 +17,7 @@ export type Status =
   | 'rejected'
   | 'never'
   | 'disabled'
+  | 'healthy'
   | 'penalized'
   | 'probing';
 
@@ -27,6 +28,7 @@ const TONE: Record<Status, string> = {
   rejected: 'warn',
   never: 'neutral',
   disabled: 'neutral',
+  healthy: 'good',
   penalized: 'warn',
   probing: 'special',
 };

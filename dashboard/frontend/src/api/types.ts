@@ -21,6 +21,22 @@ export interface CacheUsage {
   byte_load_percent: number;
 }
 
+/**
+ * `POST /api/v1/cache/clean`. Six fields, all read verbatim.
+ *
+ * `freed_bytes` is the removed entries' own heap and **not** an RSS delta: a
+ * clean never shrinks the hash-table slab, so resident memory does not fall by
+ * this figure (API.md §Cache).
+ */
+export interface CacheCleanResponse {
+  removed_expired: number;
+  removed_stale: number;
+  entries_before: number;
+  entries_after: number;
+  freed_bytes: number;
+  duration_ms: number;
+}
+
 export interface DnsAnswers {
   servfail_synthesized: number;
   servfail_relayed: number;
@@ -218,6 +234,54 @@ export interface HistorySummary {
   items: HistoryItem[];
 }
 
+/**
+ * Per-stage percentiles **in seconds**, estimated from fixed histogram buckets
+ * over one sampling interval: `pXX` is the smallest bucket upper bound whose
+ * cumulative count reaches the quantile, so it is coarse by construction and
+ * saturates at the top finite bucket.
+ *
+ * **A stage with no queries in the interval reports `0.0`**
+ * (`crates/fah-model/src/perf.rs`). That is an absence of traffic rather than a
+ * measurement of zero — a real reading is a bucket bound and can never be
+ * exactly `0.0` — so the UI maps it to a gap and never plots it as a dip.
+ */
+export interface PerfLatency {
+  block_p50: number;
+  block_p99: number;
+  cache_hit_p50: number;
+  cache_hit_p99: number;
+  forward_p50: number;
+  forward_p99: number;
+}
+
+/**
+ * One persisted `PerfSample`. `ts` is always present; every other key is
+ * **absent** — not null — when `fields` did not ask for it, so each is optional
+ * here and a consumer has to handle absence rather than read a null as a zero.
+ *
+ * `qps` and the three `*_delta` counters are per-interval, not cumulative.
+ * `pass` is not served: it is `queries_delta − blocked_delta − allowed_delta`,
+ * and `allowed_delta` is the real `allow` verdict the engine counted, never the
+ * derived `permitted` band the Dashboard chart draws.
+ */
+export interface PerfItem {
+  ts: string;
+  qps?: number;
+  queries_delta?: number;
+  blocked_delta?: number;
+  allowed_delta?: number;
+  latency?: PerfLatency;
+}
+
+export interface HistoryPerf {
+  from: string;
+  to: string;
+  /** Above 1 when the response was decimated. Decimation keeps whole rows —
+   *  every point served is a real reading, never an average. */
+  stride: number;
+  items: PerfItem[];
+}
+
 /* ------------------------------------------------------------------- clients */
 
 export interface Client {
@@ -323,7 +387,9 @@ export interface RefreshAllResponse {
  * declared, and `p5-09` owns the full shape.
  */
 export interface Config {
-  history?: { enabled?: boolean };
+  /** `enabled` is runtime-mutable; `sample_interval_seconds` is boot-only and
+   *  is what one persisted perf row covers (API.md §History). */
+  history?: { enabled?: boolean; sample_interval_seconds?: number };
   dns?: { upstreams?: { strategy?: string } };
 }
 

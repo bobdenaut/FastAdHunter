@@ -62,6 +62,17 @@ describe('the route table', () => {
     ]);
   });
 
+  // The SWR and background-cleanup panels are `counters.swr` and
+  // `counters.cache_cleanup`, which live on `/telemetry` and nowhere else. Both
+  // go through the one shared mechanism, so the page still starts no timer of
+  // its own — and `REFRESH_ENDPOINTS` is unchanged by this, which the pin above
+  // is what proves.
+  it('gives Cache both endpoints its cards actually read', () => {
+    const cache = ROUTES.find((r) => r.path === '/cache');
+    expect(cache?.endpoints).toEqual(['cache', 'telemetry']);
+    expect(cache?.events).toEqual([]);
+  });
+
   it('polls nothing on Performance — /history/perf is a range query', () => {
     const performance = ROUTES.find((r) => r.path === '/performance');
     expect(performance?.endpoints).toEqual([]);
@@ -99,6 +110,9 @@ describe('what a route actually acquires', () => {
       '/policies',
       '/clients',
       '/rule-tester',
+      '/cache',
+      '/performance',
+      '/upstreams',
     ]);
     const dashboard = ROUTES.find((r) => r.path === '/');
     expect(effectiveEvents(dashboard!)).toEqual(['stats']);

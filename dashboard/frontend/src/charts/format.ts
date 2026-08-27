@@ -70,3 +70,60 @@ export function axisTimeLabel(
   const at = new Date(epochSeconds * 1000);
   return resolution === 'day' ? LOCAL_DAY.format(at) : CLOCK.format(at);
 }
+
+const MIB = 1024 * 1024;
+
+/**
+ * `1.1 MiB`, `64 MiB`, `2.7 MiB` — the artboards' byte form, and a display-unit
+ * conversion only. The figure it renders is `bytes` against `max_bytes`, which
+ * API.md calls a coarse per-entry estimate excluding the hash-table slabs; the
+ * unit does not make it an allocator audit.
+ */
+export function formatMiB(bytes: number): string {
+  return `${oneDecimal(bytes / MIB)} MiB`;
+}
+
+/** A latency tile's figure: `0.039`, `0.412`. Three decimals because the
+ *  in-engine stages sit in the tens of microseconds and two would round two of
+ *  the three to the same number. */
+export function latencyMsLabel(ms: number): string {
+  return ms.toFixed(3);
+}
+
+/**
+ * `1.84` from `last_duration_micros`, `4.7` from a clean's `duration_ms` — the
+ * artboard's two sweep figures, from one rule: two decimals, second one dropped
+ * when it is a zero. These are milliseconds with a fraction worth keeping and
+ * no microsecond detail worth printing.
+ */
+export function millisLabel(ms: number): string {
+  const text = ms.toFixed(2);
+  return text.endsWith('0') ? text.slice(0, -1) : text;
+}
+
+/** `1.84` from `cache_cleanup.last_duration_micros` — the unit conversion and
+ *  the formatting together, so neither happens in a card. */
+export function microsLabel(micros: number): string {
+  return millisLabel(micros / 1000);
+}
+
+/** The latency axis: `1.0`, `0.75`, `0.50`, `0.25`, exactly as the artboard
+ *  draws them. */
+export function msAxisLabel(ms: number): string {
+  return ms >= 1 ? ms.toFixed(1) : ms.toFixed(2);
+}
+
+/** An RFC 3339 stamp as the epoch **seconds** uPlot's time scale takes. One
+ *  helper rather than one `Date.parse(...) / 1000` per chart. */
+export function epochSeconds(ts: string): number {
+  return Date.parse(ts) / 1000;
+}
+
+/**
+ * `12.5`, `28.4` — the QPS stat row's two figures. One decimal because `qps` is
+ * `queries_delta` over the sampling interval and arrives fractional; it is a
+ * formatting of a served field and nothing more (KTD9).
+ */
+export function qpsLabel(qps: number): string {
+  return qps.toFixed(1);
+}

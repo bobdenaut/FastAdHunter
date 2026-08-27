@@ -267,3 +267,125 @@ describe('the dashed policy chip', () => {
     expect(declaration('.pchip.inh', 'background')).toBe('var(--surface)');
   });
 });
+
+/**
+ * p5-08's grids. Same reasoning as above — jsdom resolves no layout, so the
+ * declarations are read as text; the browser widths they produce are measured
+ * in the task's verification pass instead.
+ */
+/**
+ * The `@media` block matching `query` that mentions `needle`. There are several
+ * blocks per breakpoint — the sheet is grouped by page rather than by width —
+ * so a bare `indexOf` on the query finds whichever came first.
+ */
+function mediaBlockWith(query: string, needle: string): string {
+  const source = withoutComments(CSS);
+  let at = 0;
+  for (;;) {
+    const start = source.indexOf(query, at);
+    expect(start, `no ${query} block mentions ${needle}`).toBeGreaterThan(-1);
+    const end = source.indexOf('\n}', start);
+    const block = source.slice(start, end === -1 ? undefined : end);
+    if (block.includes(needle)) return block;
+    at = start + query.length;
+  }
+}
+
+describe('the p5-08 four-up grids', () => {
+  it('folds the upstream counter grid to two columns on a phone', () => {
+    expect(declaration('.ep-counters {', 'grid-template-columns')).toBe(
+      'repeat(4, minmax(0, 1fr))',
+    );
+    expect(
+      mediaBlockWith('@media (max-width: 767px)', '.ep-counters'),
+    ).toMatch(/\.ep-counters \{\s*grid-template-columns: repeat\(2, minmax\(0, 1fr\)\);/);
+  });
+
+  it('folds the cache stage legend the same way', () => {
+    expect(declaration('.stage-notes {', 'grid-template-columns')).toBe(
+      'repeat(4, minmax(0, 1fr))',
+    );
+    expect(mediaBlockWith('@media (max-width: 767px)', '.stage-notes')).toMatch(
+      /\.stage-notes \{\s*grid-template-columns: repeat\(2, minmax\(0, 1fr\)\);/,
+    );
+  });
+
+  it('gives the endpoint row three zones that stack down to one', () => {
+    // Three across on a desktop; two at the tablet width with the histogram on
+    // its own full-width line; one card per endpoint on a phone.
+    expect(declaration('.ep {', 'grid-template-columns')).toBe(
+      'minmax(0, 1.1fr) minmax(0, 2fr) minmax(0, 0.9fr)',
+    );
+    const tablet = mediaBlockWith('@media (max-width: 1199px)', '.ep-runs');
+    expect(tablet).toMatch(
+      /\.ep \{\s*grid-template-columns: minmax\(0, 1fr\) minmax\(0, 1\.6fr\);/,
+    );
+    expect(tablet).toMatch(/\.ep-runs \{\s*grid-column: 1 \/ -1;/);
+    expect(mediaBlockWith('@media (max-width: 767px)', '.ep-counters')).toMatch(
+      /\.ep \{\s*grid-template-columns: minmax\(0, 1fr\);/,
+    );
+  });
+});
+
+describe('the phone Cache card (p5-06 F5, closed by p5-08)', () => {
+  it('drops the `free` band and its legend entry below 768 px', () => {
+    // `MobileDashboard.dc.html` draws three segments and three legend entries.
+    // A selector rather than a conditional prop: this application has no
+    // viewport listener anywhere, and one band on one card does not justify
+    // introducing the first.
+    expect(
+      declaration(
+        '.z-cache .seg > div:nth-child(4),\n  .z-cache .seg-legend > span:nth-child(4)',
+        'display',
+      ),
+    ).toBe('none');
+  });
+
+  it('keeps all four bands on the Cache page itself', () => {
+    // The page whose subject is the cache states every stage, including the
+    // free one — the phone omission is the Dashboard summary's, not the
+    // figure's.
+    const source = withoutComments(CSS);
+    expect(source).not.toMatch(/\.cache-stage \.seg > div:nth-child\(4\)/);
+  });
+});
+
+describe('the p5-08 tinted surfaces', () => {
+  it('tints a penalized row and the degraded banner from theme-paired tokens', () => {
+    // p5-06's F17/N4: a `color-mix(…, transparent)` wash premultiplies to
+    // about 2 % alpha and vanishes in one of the two themes. Both of these are
+    // token pairs that exist in every palette block.
+    expect(declaration('.ep.is-penalized', 'background')).toBe(
+      'var(--pill-warn-bg)',
+    );
+    expect(declaration('.banner.warn', 'background')).toBe('var(--pill-warn-bg)');
+  });
+
+  it('tints the cache callout the same way', () => {
+    expect(declaration('.callout', 'background')).toBe('var(--surface-sunken)');
+  });
+});
+
+describe('the p5-08 touch targets', () => {
+  it('gives the clean action’s choice a 44 px row', () => {
+    // The checkbox the artboard draws is 15 px. The target grows and the
+    // drawing does not — the same rule the list toggle already follows.
+    expect(declaration('.clean-choice', 'min-height')).toBe('44px');
+  });
+});
+
+describe('the p5-08 chart legends', () => {
+  it('scopes its wrapping to this page’s legends, not to `.chart-legend`', () => {
+    // The base rule is p5-06's and the Dashboard's own legend renders through
+    // it. Re-opening `.chart-legend` from the Performance section changed a
+    // p5-06 page from a page that does not name it.
+    const rules = withoutComments(CSS).match(/^\.chart-legend \{/gm) ?? [];
+    expect(rules, '`.chart-legend` is declared more than once').toHaveLength(1);
+    expect(
+      declaration('.latency-legend,\n.verdicts-legend', 'flex-wrap'),
+    ).toBe('wrap');
+    expect(
+      declaration('.latency-legend,\n.verdicts-legend', 'align-items'),
+    ).toBe('baseline');
+  });
+});

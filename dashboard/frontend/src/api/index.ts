@@ -15,14 +15,22 @@ export type {
 } from './core';
 export { getHealth, HEALTH_PATH } from './health';
 export { getTelemetry, TELEMETRY_PATH } from './telemetry';
-export { getCache, CACHE_PATH } from './cache';
+export { getCache, cleanCache, CACHE_PATH, CACHE_CLEAN_PATH } from './cache';
 export { getStats, STATS_PATH } from './stats';
 export {
   getHistorySummary,
+  getHistoryPerf,
   historySummaryQuery,
+  historyPerfQuery,
+  PERF_FIELDS,
   HISTORY_SUMMARY_PATH,
+  HISTORY_PERF_PATH,
 } from './history';
-export type { HistorySummaryQuery } from './history';
+export type {
+  HistorySummaryQuery,
+  HistoryPerfQuery,
+  PerfField,
+} from './history';
 export {
   getClients,
   setClientName,
