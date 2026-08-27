@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import {
+  HOUR_AXIS_LABELS,
   SEGMENT_LABEL_MIN_PX,
   TOTAL_LABEL_MIN_BAR_PX,
   barWidthPx,
+  hourSplits,
   niceMax,
   showsSegmentLabel,
   showsTotalLabel,
@@ -102,5 +104,63 @@ describe('the printed-figure floors', () => {
   it('treats each floor as inclusive at exactly its value', () => {
     expect(showsTotalLabel(TOTAL_LABEL_MIN_BAR_PX)).toBe(true);
     expect(showsTotalLabel(TOTAL_LABEL_MIN_BAR_PX - 0.1)).toBe(false);
+  });
+});
+
+describe('the hourly x axis', () => {
+  const HOUR = 3600;
+  /** A 24 h window opening at 10:00 UTC — `Main.dc.html`'s own. */
+  const TEN = Date.UTC(2026, 7, 26, 10) / 1000;
+
+  const clock = (at: number) =>
+    new Date(at * 1000).toISOString().slice(11, 16);
+
+  it('prints the plan’s four, whatever the phase of the window', () => {
+    // The defect this replaces: uPlot chose the increment from its own table
+    // and emitted however many landed inside the window, so the same range at
+    // the same width gave 3, 4 or 5 depending on where midnight fell.
+    for (let openingHour = 0; openingHour < 24; openingHour += 1) {
+      const min = Date.UTC(2026, 7, 26, openingHour) / 1000;
+      expect(hourSplits(min, min + 23 * HOUR)).toHaveLength(HOUR_AXIS_LABELS);
+    }
+  });
+
+  it('is the artboard’s cadence on the artboard’s window', () => {
+    expect(hourSplits(TEN, TEN + 23 * HOUR).map(clock)).toEqual([
+      '10:00',
+      '16:00',
+      '22:00',
+      '04:00',
+    ]);
+  });
+
+  it('survives the padding uPlot puts either side of a bar series', () => {
+    // The scale is asked, not the data: for bars uPlot widens the range by
+    // half a slot, so `min` is not a whole hour.
+    expect(hourSplits(TEN - 1800, TEN + 23 * HOUR + 1800).map(clock)).toEqual([
+      '10:00',
+      '16:00',
+      '22:00',
+      '04:00',
+    ]);
+  });
+
+  it('lands every split on a whole hour', () => {
+    for (const at of hourSplits(TEN + 137, TEN + 23 * HOUR)) {
+      expect(at % HOUR).toBe(0);
+    }
+  });
+
+  it('never steps below an hour on a short window', () => {
+    // Four buckets is not a range the chips offer; it is what a decimated or
+    // truncated response could be, and a 15-minute label is not a clock the
+    // rest of the page uses.
+    const splits = hourSplits(TEN, TEN + 3 * HOUR);
+    expect(splits).toHaveLength(HOUR_AXIS_LABELS);
+    expect(splits.map(clock)).toEqual(['10:00', '11:00', '12:00', '13:00']);
+  });
+
+  it('emits one split rather than dividing an empty window', () => {
+    expect(hourSplits(TEN, TEN)).toEqual([TEN]);
   });
 });

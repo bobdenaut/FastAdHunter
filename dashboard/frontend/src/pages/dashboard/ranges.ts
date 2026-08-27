@@ -28,6 +28,28 @@ export const RANGES: Record<RangeKey, RangeSpec> = {
   '30d': { label: '30 d', spanMs: 30 * DAY_MS, resolution: 'day' },
 };
 
+/**
+ * The resolution the **plotted** data is in, which is not always the one the
+ * chips are asking for.
+ *
+ * A range change swaps the request immediately and the response lands a round
+ * trip later, and the chart deliberately keeps the previous range's bars up
+ * meanwhile rather than blanking. Formatting those bars with the new range's
+ * axis therefore labelled thirty daily buckets `00:00 · 00:00 · 00:00 · 00:00`
+ * for the length of the fetch. Reading the resolution off the response instead
+ * keeps the axis and the bars describing the same data at every instant; both
+ * flip together when the response arrives.
+ *
+ * The requested range is the fallback for the one case with nothing plotted —
+ * the first load, where `summary` is still `null`.
+ */
+export function plottedResolution(
+  summary: { resolution: HistoryResolution } | null,
+  range: RangeKey,
+): HistoryResolution {
+  return summary?.resolution ?? RANGES[range].resolution;
+}
+
 export function rangeQuery(
   key: RangeKey,
   now: number,

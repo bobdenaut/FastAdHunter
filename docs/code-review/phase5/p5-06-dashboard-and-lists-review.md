@@ -939,3 +939,803 @@ The **Query types hover** the owner asked for during the review is built and
 approved — as a legend-row highlight rather than the tooltip first requested,
 for the reason recorded above. It is an addition neither artboard draws, so it
 is listed as new work rather than as a finding closed.
+
+---
+
+## Second review pass — post-fix verification
+
+**Scope.** Every hunk in the fix commit (`5509ae6`) against `2dc15c5`, the three
+test files it adds, and the runtime behaviour those hunks reach. F1, F2 and F4
+were reproduced from the running application rather than read off the text
+above. Nothing was changed: no code, no plan, no other document, no git state.
+
+**Instrument.** Chromium via Playwright against the running `fah-p506`
+container (`fastadhunter:p5-05`), the dev server proxying at `localhost:5201`.
+Axis labels read by intercepting `CanvasRenderingContext2D.fillText` — uPlot
+paints them to canvas and the DOM carries none. Requests counted through a
+`window.fetch` wrapper. Geometry from `getBoundingClientRect` and
+`getComputedStyle`. Inventory at the time of measurement: **6 lists, 5
+enabled** (one more than the first pass's five).
+
+### Gates, re-run here
+
+| Gate | Result |
+| ---- | ------ |
+| `npm run typecheck` | clean |
+| `npm run test` | **328 passed / 26 files** — reproduces |
+| `npm run build` | **59,869 B gzip (39.0 %)**, brotli **53,516 B** — reproduces byte-for-byte; postbuild assertions pass |
+| Rust | not re-run, and correctly so: `git diff --name-only 383b904 5509ae6` touches `dashboard/`, `docs/` and `plan/` only. No `crates/`, no `Cargo.*` |
+
+### F1, F2, F4 — reproduced directly
+
+| # | What was measured | Result |
+| - | ----------------- | ------ |
+| **F1** | `gridTemplateColumns` off `.list-head` and all six `.list-row`s at 1600 px and at 1000 px | **identical on every element**, both widths: `265.3 46 62 104 224.5 244.9 84 200`. Cell `x` agrees head-to-row on all six cells (265 / 782 / 1016 / 1271 / 1365) |
+| **F1** | the pending-state jump — Refresh clicked on `dead-source`, geometry read 120 ms later | actions cell **200 px before and during**; label changed to `refresh requested`; that row's Total column moved **0 px**; every other row's Total column unchanged at 1271. Closed by construction, not by tolerance |
+| **F2** | x-axis labels, 1213 px plot | 24 h: **5 labels, 4 h cadence** — `16:00 · 20:00 · 00:00 · 04:00 · 08:00`. 7 d: **4**, 2 d — `Aug 21 · 23 · 25 · 27`. 30 d: **5**, 6 d — `Jul 30 · Aug 5 · 11 · 17 · 23`. Phone (292 px plot): 24 h gives **5** at 4 h. The wall of ~24 hourly labels is gone at every width |
+| **F4** | refresh-all on the 5-enabled-list inventory, counted at `fetch` | `POST /lists/refresh` **1**, `GET /lists` **2**, `GET /telemetry` **2** — two waves 44 ms apart (t = 72464 and t = 72508). **The corrected V11 is what ships.** Summary rendered `4 refreshed · 1 failed, rejected lists included — 5 in all` over five result rows, so R17 holds |
+| **F3** | not reproducible without writing `history.enabled` on the container | code path read instead: `empty` now covers `summary === null`, so the first-load boot branch survives; `QueryTypes` receives `loading` and holds on `recording && loading && slices.length === 0`. Four cases in `cards.test.tsx` cover both directions, including the one that must **not** blank on an ordinary range change |
+
+**One recorded figure in the fix pass does not reproduce.** Its F2 row states
+"6 h cadence … 3 in this window's phase, 4 when a fourth boundary falls inside
+it". Measured here at the same 1213 px plot: **4 h cadence, 5 labels.** Both
+readings are consistent with `space: dim / 5` — uPlot picks the increment from
+the data's own span, which moves with the bucket count a response happens to
+carry — and that is the point: **the label count is not pinned by anything.**
+This confirms rather than contradicts the fix pass's own closing paragraph;
+§7.4's "4 labels at 24 h" is met at some widths and phases and not at others.
+Left as the owner's call, unchanged.
+
+### The eight remaining dispositions, re-checked
+
+| # | Claimed | Verified |
+| - | ------- | -------- |
+| **F6** | fixed | `innerText` at phone width reads `Blocked` · `Blocked` · `Cache hit`; the desktop copy is hidden, not removed |
+| **F8** | fixed | `.l-rules .seg-legend` computes `display: none`; the Rules cell prints `58,879 dns · 0 url · 0 inactive` / `0 parse errors` **once** |
+| **F10** | fixed | both domain tables head `Frequency`, Top clients heads `Share` |
+| **F13** | fixed | `derive.sliceShare` is what the card calls; two cases in `derive.test.ts`, including `sliceShare(0, 0) === 0`. R16 is still inline and the correction note says so |
+| **F16** | fixed | at a 1000 px viewport `documentElement.scrollWidth == clientWidth == 1000`; the table scrolls inside its card (`1094` in `895`). At 433 px both pages `scrollWidth == clientWidth` |
+| **F17** | fixed | five `--tip-*` tokens in all three palette blocks; dark raises `--tip-surface` `#2b3846` above `--surface` `#18212c` and adds `--tip-border` `#47535f` |
+| **F5, F7, F9, F11, F12, F14** | deferred | all still present exactly as described — the phone Cache card still prints `free 9,982`; the phone list card still orders header → meta → why → partition → actions; the footnote is still the DNS-only line and the resolution is still never stated; `/health` is still fetched twice at boot (both at t = 48 ms) |
+| **F15** | doc-fixed | `ranges.ts` corrected; V11 and V14 struck through and restated |
+
+### The invariants asked about
+
+| Invariant | Result |
+| --------- | ------ |
+| Sketch is the visual source of truth | held, with one new exception — see **N1** |
+| API provenance / §8.2 boundary | held. The fix pass adds no figure: `sliceShare` **is** R13 moved, `labelShort` and `frequencyLabel` are labels |
+| Route-scoped subscriptions and refresh timers | held. `fahTimers()` **5** on `/`, **1** on `/lists`, **0** on `/policies`; `fahUnion()` `['stats']` / `['list_refreshed']` / `[]`; socket `open` → `open` → **`closed`** |
+| Shared endpoint refcounting | held. Dashboard → Lists issued **exactly one** request, `GET /telemetry`. No second `GET /lists` |
+| Chart option memoisation | held. `useMemo` keyed on `[resolution, theme]`; the new `space` closure lives inside that object. `fahChartBuilds()` **3 → 3** across 10 s of `stats` pushes |
+| uPlot lazy loading | held. `uPlot.esm-*.js` is the only asset naming uPlot; the postbuild assertion runs and the build exits 0 |
+| No forbidden strings | held. Neither `dist/` nor `src/` contains `pi-hole` / `pihole`. `allow` survives only as the API field name in the R5 sum at `tiles.tsx:100` |
+| 44 px touch targets | **broken — see N1** |
+
+---
+
+### N1 · Major · The list enable/disable switch is a 32 × 18 px touch target
+
+`dashboard/frontend/src/styles/components.css:1332-1342`
+
+`.switch` is a hard `width: 32px; height: 18px` with no phone override — the
+rule sits **after** the `@media (max-width: 767px)` block closes at line 1328,
+so the figure is the same at every width. The `<input type="checkbox">` inside
+it is `position: absolute; inset: 0` and inherits the same box; the `.l-on`
+wrapper measures 32 × 22.
+
+Measured at a phone viewport, one per list row, six rows:
+
+| control | w × h | in the drawer? |
+| ------- | ----: | -------------- |
+| `label.switch` | **32 × 18** | no |
+| its `input[type=checkbox]` | **32 × 18** | no |
+| every `button` on both pages | ≥ 44 × 44 | — |
+
+**This contradicts two recorded statements.** V17 reads "No interactive control
+outside the drawer measured under 44 px on either axis at 390 px", and the fix
+pass's browser table repeats "every control outside the drawer ≥ 44 px on both
+axes". The task file's acceptance criteria state it plainly: *"Touch targets on
+interactive controls are at least 44 px."* The Dashboard is clean — 15
+interactive elements, none under 44 px — so the violation is Lists-only, and it
+is that page's only stateful control.
+
+**Why both measuring passes missed it.** The switch is neither a `button` nor an
+`a`; a sweep over those two element types returns nothing. Reaching it needs
+`input` and `label.switch` in the selector.
+
+**`MobileLists.dc.html` draws it at 32 × 18 — and that does not settle it.**
+This review file's own deviations table already made the argument and applied it
+twice: *"Touch targets grown past the artboards' 22 px tile footer and 18 px
+trailing links — the acceptance criterion states 44 px; a drawn height is not a
+measurement (phase constraint 8)."* The same reasoning was not carried to the
+switch the same task drew. Phase constraint 8 is explicit that sketch figures
+are not measurements.
+
+**Impact.** An 18 px-tall target is about two fifths of the guideline in the
+axis that matters most for a thumb, and it sits inside a 44 px row — so a miss
+lands on inert text beside it rather than on nothing, which reads as a tap that
+did nothing.
+
+**Smallest correct fix, and it moves no drawn pixel.** Expand the hit area, not
+the pill: a `.switch::before` with `content: ''; position: absolute; inset:
+-13px -6px;` gives 44 × 44 while the 32 × 18 track and its 14 px knob render
+exactly as the artboard draws them. `.switch` is already `position: relative`.
+One rule.
+
+**Fix before `DONE`.** It is a stated acceptance criterion and a recorded PASS
+that does not reproduce — the same class as F4, one severity up because here the
+behaviour is wrong, not merely the sentence describing it.
+
+### N2 · Nit · A range change paints the previous range's bars under the new range's axis labels
+
+`dashboard/frontend/src/pages/dashboard/queries-over-time.tsx:52-86`
+
+The options memo is keyed on `[resolution, theme]` and flips the moment a chip
+is clicked; `data` is keyed on `[summary]` and lags by the `/history/summary`
+round trip. For that one interval the old series is drawn through the new
+range's formatter.
+
+Captured off `fillText`, 30 d → 24 h at a 1213 px plot:
+
+```text
+frame 1   00:00  00:00  00:00  00:00  00:00      x = 55 281 507 733 959
+          (the 30 d bucket positions and the 30 d y-scale, hour-formatted)
+frame 2   16:00  20:00  00:00  04:00  08:00      x = 132 350 568 787 1005
+```
+
+`axisTimeLabel` renders a UTC-midnight day boundary as `00:00` under the hour
+formatter, so five identical labels are the visible symptom. Reproduced at phone
+width too (7 d → 24 h, four × `00:00`).
+
+**Pre-existing, not introduced by the fix pass** — the earlier code also fell
+through to render with stale data on a range change, and F3's fix deliberately
+keeps the bars up (`cards.test.tsx` pins that). What is new is that the
+behaviour is now stated as intended, which makes the mislabelled frame worth
+recording. Sub-second on a LAN; longer on a slow link.
+
+**Deferrable.** Closing it means holding the axis on the old resolution until
+the response lands, which couples the memo to in-flight state — more moving
+parts than a sub-second flash is worth. Recorded so `p5-08` does not rediscover
+it when it reuses this chart.
+
+### N3 · Nit · `overflow-x: auto` on `.bd.lists-body` also makes it scroll vertically
+
+`dashboard/frontend/src/styles/components.css:1090-1096`
+
+CSS computes a non-`visible` value on one axis into `auto` on the other.
+Measured: `overflowX: "auto"`, **`overflowY: "auto"`**. Harmless today —
+`scrollHeight == clientHeight` (1707 = 1707) because the container has no height
+cap, and the only absolutely positioned descendants are the switch's own input
+and knob, both inside their own positioned label.
+
+It does make the card a scroll container and a block formatting context. Worth
+knowing before anything that paints outside the padding box goes inside it — a
+dropdown, a positioned tooltip, a focus ring on an edge cell. No change asked
+for.
+
+### N4 · Nit · F17 removed two literal colours and added one
+
+`tokens.css`' header allows no exception: *"no rule outside this file may name a
+literal colour."*
+
+| Where | Literal | Whose |
+| ----- | ------- | ----- |
+| `components.css:569` | `box-shadow: 0 4px 14px rgb(0 0 0 / 35%)` | **added by the F17 fix** |
+| `components.css:1363` | `.switch i { background: #fff }` | p5-06's own, unfixed |
+| 7 further sites | `#fff`, `rgba(0, 0, 0, …)` | p5-05's, present at `383b904` |
+
+The F17 entry reads "two literal colours removed from `components.css`", which
+is true and incomplete: the same edit introduced a third and left p5-06's own
+fourth in place. Either the rule takes a stated shadow/knob exception or these
+become tokens — a one-line decision either way, and not this task's blocker.
+
+---
+
+### Verdict — second pass
+
+**BLOCKED**, on one new Major.
+
+Everything the first pass blocked on is genuinely closed, and closed under
+independent measurement rather than under the fix pass's own account of it:
+**F1, F2, F3, F6, F8, F10, F13, F16, F17** all verify, F4's corrected V11
+reproduces exactly (1 / 2 / 2), and the six deferred rows are present and
+unchanged. Every invariant listed for re-checking holds — API provenance, the
+§8.2 boundary, route-scoped timers and subscriptions, shared-endpoint
+refcounting, chart memoisation under the `stats` push, the uPlot chunk split and
+the absence of forbidden strings. The three new test files pin what they claim
+to, including the one invariant jsdom cannot compute. No fix weakened or
+bypassed anything.
+
+What blocks it is **N1**: the per-row enable/disable switch is a 32 × 18 px
+touch target at every width, against an acceptance criterion that says 44 px and
+against a V17 row recording that no such control exists. One CSS rule closes it
+without moving a drawn pixel.
+
+N2–N4 are Nits, fine to defer or to take in the same pass. The open judgement
+call the fix pass raised — what the 24 h label count should actually be — stands
+unresolved and is the owner's, not a defect.
+
+**Re-run after N1:** the 44 px sweep at phone width with `input` and
+`label.switch` in the selector, `npm run test`, `npm run build`.
+
+---
+
+## Second fix pass — N1–N4 and the 24 h label count
+
+Approved by the owner. Four findings closed and one open decision settled. **No
+plan, task file or other repository document was changed**, no deferred finding
+(F5, F7, F9, F11, F12, F14) was touched, and nothing was committed.
+
+### Changed
+
+| # | Change | Files |
+| - | ------ | ----- |
+| **N1** | `.switch::before` — a 44 × 44 pseudo-element centred on the pill. The drawn 32 × 18 track and its 14 px knob are untouched; only the target grows | `styles/components.css` |
+| **N2** | the chart's axis now takes its resolution from **the response** (`plottedResolution`), not from the chips, so the axis and the bars always describe the same data | `pages/dashboard/ranges.ts`, `queries-over-time.tsx` |
+| **N3** | the horizontal scroller moved off `.bd.lists-body` and onto `.lists-table`; the per-row floor moved with it, from the container to `.list-head, .list-row` | `styles/components.css` |
+| **N4** | `--tip-shadow` and `--switch-knob` added to all three palette blocks; the two literals in `components.css` replaced by them | `styles/tokens.css`, `components.css` |
+| **§7.4** | `hourSplits` — four hour-aligned x splits, computed from the window rather than chosen by uPlot from a hint | `charts/stacked-bars.ts` |
+
+**N1 — why a pseudo-element and not a bigger control.** `MobileLists.dc.html`
+draws the pill at 32 × 18 and §2 makes that the visual authority; the
+acceptance criterion asks for a 44 px *target*. Both are satisfiable at once
+because they are different things, which is the same reasoning the first fix
+pass used on the 22 px tile footer and the 18 px trailing links. The box is
+centred on the pill rather than inset from it, so it stays 44 px whatever the
+pill becomes.
+
+**N2 — why the response and not a loading gate.** Blanking the plot for the
+round trip would undo F3's "keep the bars up while a range with data is
+refetched", which `cards.test.tsx` pins. Reading the resolution off the
+response instead leaves that behaviour alone and makes the mismatch
+unrepresentable: both halves flip together when the response lands. The memo
+key is unchanged in shape — `[resolution, theme]` — so the rebuild count is what
+it was.
+
+**N3 — what CSS actually allows.** A horizontal scroll container is a scroll
+container on **both** axes: a `visible` companion computes to `auto`, and `clip`
+computes to `hidden` in the same position, so one axis alone cannot be asked
+for. What can be done is put it on the smallest element that needs it. On the
+card body it also swept in the footnote — prose, which was scrolling sideways
+with the rows; on the table it holds only the head and the rows, whose height is
+their content's, so the vertical axis is inert and now provably so.
+
+**§7.4 — why a hint could not deliver a count.** `space` tells uPlot how much
+room a label wants; uPlot then picks the nearest increment from its own table
+and emits however many fall inside the window. The count therefore moved with
+the response's bucket count and with where the window's hour boundaries sat —
+3, 4 or 5 for the same range at the same width, which is what the first fix
+pass measured as "6 h cadence" and this review measured as "4 h cadence".
+`hourSplits` anchors on the window's first whole hour and steps by a quarter of
+it, rounded to the hour: **four labels, always, on the clock.** 7 d and 30 d keep
+`space: dim / 5` untouched, which the plan asks only "~5" of.
+
+### Gates
+
+| Gate | Result |
+| ---- | ------ |
+| `npm run typecheck` | clean |
+| `npm run test` | **345 passed / 28 files** (was 328 / 26 — two new files, 17 new cases) |
+| `npm run build` | **60,067 B gzip against 153,600 B — 39.1 %**, brotli 53,727 B. Was 59,869 B / 39.0 %; **+198 B** |
+| postbuild assertions | pass |
+| Rust | not re-run. No `crates/` or `Cargo.*` path was touched |
+
+### New tests
+
+| File | Cases | Pins |
+| ---- | ----: | ---- |
+| `styles/literal-colours.test.ts` | 4 | an **allowlist**, not a ban: the seven inherited literals in `base`/`components`/`layout` must stay exactly seven and in place, so a new one fails here rather than being noticed a review later. Plus both new tokens defined in all three palette blocks — a token in one block only is the other half of the same mistake |
+| `pages/dashboard/ranges.test.ts` | 3 | the chart follows the response's resolution while a range change is in flight, falls back to the chip only when nothing is plotted, and agrees with the chip once the response lands |
+| `charts/stacked-bars.test.ts` (+6) | 6 | four labels for **all 24 opening hours** of a window, the artboard's own `10:00 · 16:00 · 22:00 · 04:00`, survival of uPlot's half-slot bar padding, every split on a whole hour, no sub-hour step on a short window, and a zero-width window |
+| `styles/grid-tracks.test.ts` (rewritten in part) | +4 | the scroller is the table and **not** the card body, no height is imposed on it, the row floor is on the rows, and the pill stays 32 × 18 while its target is 44 × 44 |
+
+### Re-measured in a real browser
+
+Same instrument as before — Chromium against `fah-p506`, dev server proxying.
+Viewport figures are CSS pixels.
+
+| # | Check | Result |
+| - | ----- | ------ |
+| **N1** | effective target, both pages at 390 px, `input` and `label.switch` in the selector | **zero controls under 44 px** on either page. `.switch::before` measures 43.99 × 43.99 |
+| **N1** | does it steal clicks | all four corners of the 44 × 44 box resolve to `LABEL.switch`. At 1440 px **no control on the page loses its own centre** — the sweep returned an empty list. The metadata row's `every` and `last` cells still own theirs |
+| **N1** | does the enlarged target actually work | a click **20 px diagonally out from the pill centre** — outside the 32 × 18 pill — flipped `local-extra` `false → true`. Restored to `false` afterwards |
+| **N1** | the drawing | pill still 32 × 18 at every width; the `On` column is a 46 px track and holds the 44 px box |
+| **N2** | 30 d → 24 h, every axis frame captured off `fillText` | **one frame only**: `14:00 · 19:00 · 00:00 · 05:00`. The `00:00 · 00:00 · 00:00 · 00:00 · 00:00` frame is gone. 24 h → 7 d and 7 d → 30 d likewise show one frame each |
+| **N2** | memoisation | `fahChartBuilds()` 1 → 2 on hour→day, **2** on day→day (memo holds), 3 on day→hour. **3 → 3** across 10 s of `stats` pushes |
+| **§7.4** | label counts at a 1053 px plot | 24 h **4** (`14:00 · 19:00 · 00:00 · 05:00`, whole hours), 7 d **4** (`Aug 21 · 23 · 25 · 27`), 30 d **5** (`Jul 30 · Aug 5 · 11 · 17 · 23`) — the plan's four, and 7 d / 30 d unchanged |
+| **N3** | `/lists` at 900 px | page `883 == 883`, no body scroll — **F16 unchanged**. Table scrolls inside itself, `1094` in `778`. Head and all six rows still resolve identical tracks — **F1 unchanged** |
+| **N3** | the implicit second axis | `.bd.lists-body` now computes `overflow: visible / visible` — no longer a scroll container. `.lists-table` is `auto / auto` with `scrollHeight == clientHeight` (541 = 541), so nothing scrolls or clips vertically |
+| **N3** | the footnote | now **outside** the scroller and full width (778 px); it used to scroll sideways with the rows |
+| **N4** | tokens in both themes | `--tip-shadow` `rgb(0 0 0 / 35%)` and `--switch-knob` `#ffffff` resolve in light, dark and after a toggle back |
+| **N4** | rendered appearance | the raised tooltip computes `rgba(0, 0, 0, 0.35) 0px 4px 14px` — byte-identical to the literal it replaced, so F17's look is preserved. `blocked %` is still the served field (`12.0`) |
+| lifecycle | unchanged | `fahTimers()` **5** on `/`, `fahUnion()` `['stats']`, socket `open` |
+| both pages at 390 px | unchanged | `scrollWidth == clientWidth` on each |
+
+**One measurement worth stating so it is not read as a defect.** Resizing the
+window from 1440 px to 390 px *while a chart tooltip is pinned* leaves the
+overlay at its old x and the document reports 742 px of scroll width until the
+next cursor event. Loading either page at 390 px, or raising a tooltip there,
+gives `416 == 416`. It is a stale absolutely-positioned overlay across a live
+viewport resize, not a layout defect, and no dispositions rest on it.
+
+### Still open — the Lists table's own width
+
+> **Superseded.** Settled by the third fix pass and the documentation edit
+> below. The measurement in this section stands; the sentence about
+> `visual-system.md` is **wrong as written** and is struck through — see
+> §"A correction to this document".
+
+Not a finding and not in this pass's scope; recorded because it was measured
+here.
+
+`.lists-table` cannot be narrower than **1094 px** — that is the sum of the
+eight declared minimums (`150 + 46 + 62 + 104 + 160 + 190 + 84 + 200 = 996`),
+seven 10 px gaps and 28 px of row padding, and it matches the measured
+`scrollWidth` exactly. The container reaches 1094 px at about a **1365 px**
+viewport, so the table scrolls below that. ~~`visual-system.md` §Responsive
+sanctions that scroll for **768–1199 px** and asks for the full grid at ≥ 1200,
+so the band 1200–1365 px scrolls where the document says it should not.~~
+**WRONG AS RECORDED.** That clause belongs to the `< 768 px` row, where Lists
+renders as cards; the sentence that governs is unconditional and the
+implementation satisfies it. There is no contradiction — only an undocumented
+figure, which the edit at the end of this file now supplies.
+
+The 200 px actions track is the largest single column and is F1's fix — it has
+to stay content-independent, so shrinking it is not on offer. What is:
+
+| | Change | Fits from |
+| - | ------ | --------- |
+| a | leave it — **what ships** | ~1365 px |
+| b | trim the soft floors: Status 160 → 110, Rules 190 → 150, List 150 → 130, Last refresh 104 → 78 | ~1240 px |
+| c | b, plus merging `Every` and `Last refresh` into one cell as the phone card already does (−72 px) | ~1165 px |
+
+(b) needs no structural change and no artboard deviation; (c) departs from
+`Lists.dc.html`'s drawn column set. **Neither was applied** — the owner was
+offered them during this pass and asked for the scoped fixes only.
+
+### Verdict — after the second fix pass
+
+**PASS WITH DEFERRED FINDINGS** on the measured evidence above — *proposed, not
+asserted*: the owner's instruction is that this task is not marked `PASS` or
+`DONE` until they agree the measurements match the plan. The phase table still
+reads `WAITING` and nothing here changes it.
+
+N1, the only blocker, is closed and proven by a click landing 20 px outside the
+pill. N2, N3 and N4 are closed with it, and the 24 h label count is now a
+property of the code — four, at whole hours, for every one of the 24 possible
+window phases — rather than of whatever uPlot inferred from a hint. Every
+invariant re-checked in the pass before this one still holds, measured again
+here: route-scoped timers and subscriptions, shared-endpoint refcounting, chart
+memoisation under the `stats` push, F1's grid tracks, F16's page-scroll
+freedom, and F17's rendered appearance.
+
+What remains open is **six Minor/Nit rows — F5, F7, F9, F11, F12, F14** — all
+cosmetic, none touching a figure, each listed above with its reason, plus the
+table-width question in the section above, which is a judgement rather than a
+defect.
+
+---
+
+## Third fix pass — the Lists table's own width (option b)
+
+Approved by the owner: trim the four soft column floors, keep the internal
+scrollbar wherever the desktop table cannot fit, do **not** touch the 200 px
+actions track, do **not** merge `Every` and `Last refresh`. Validate against
+`visual-system.md` §Responsive and report the measured minimum if the 1200 px
+contract cannot be met.
+
+**It cannot. The Lists table's own measured minimum is 1247 px.** Details below.
+
+> **Terminology, fixed here and used the same way everywhere after it.**
+> **1247 px is the measured minimum viewport at which the Lists table fits
+> without an internal scrollbar.** It is a property of that one table's eight
+> columns, not a breakpoint. The application's breakpoints are unchanged and
+> remain `visual-system.md` §Responsive's — ≥ 1200 px, 768–1199 px, < 768 px.
+> Where the text below says "the 1200 px contract", it means the expectation
+> that a desktop-layout page needs no internal scrolling, not the breakpoint
+> itself.
+
+### Changed
+
+| Track | Floor before | after |
+| ----- | -----------: | ----: |
+| List | `minmax(150px, 1.3fr)` | **130px** |
+| Last refresh | `104px` | **78px** |
+| Status | `minmax(160px, 1.1fr)` | **110px** |
+| Rules | `minmax(190px, 1.2fr)` | **150px** |
+| actions | `200px` | **unchanged** |
+
+The `fr` weights are untouched, so nothing moves at a width where the row
+already fits — the trim only lowers where the row stops fitting. Row floor:
+
+```text
+130 + 46 + 62 + 78 + 110 + 150 + 84 + 200 = 860
++ 7 gaps × 10 = 70   + row padding 28     = 958      (was 1094)
+```
+
+**One further change the validation forced.** At the Status column's new floor
+the `dead-source` row's `last_error` painted **35 px outside its own cell**: the
+string carries a bare URL, `(http://172.17.0.99/nope.txt):` is a 145 px token
+with no break opportunity, and 145 does not fit in 110. `.l-status .note` gains
+`overflow-wrap: anywhere`. It is the right rule for an address — read, not
+scanned — and it also covers a longer URL than this one, which would have spilled
+at the old 160 px floor too. The `failed` row grows from 233 px to 267 px tall
+because the URL now wraps instead of overflowing; no other row changes height.
+
+### Measured — `/lists`, both themes, chrome overhead 271 px
+
+| viewport | `clientWidth` | container | table floor | internal scrollbar | page body scrolls |
+| -------: | ------------: | --------: | ----------: | ------------------ | ----------------- |
+| 1200 px | 1183 | 912 | 958 | **yes**, 46 px short | no |
+| 1240 px | 1223 | 952 | 958 | **yes**, 6 px short | no |
+| **1247 px** | 1230 | 958 | 958 | **no** — first width that fits | no |
+| 1300 px | 1283 | 1012 | — | no | no |
+| 1365/1366 px | 1366 | 1094 | — | no | no |
+
+Dark and light are identical at every width — geometry does not read the
+palette. Before this pass the same table first fitted at ~1365 px, so the trim
+moved the threshold down **118 px**.
+
+### Acceptance, item by item
+
+| Asked | Result |
+| ----- | ------ |
+| no page/body horizontal scroll at ≥ 1200 px | **holds** — `scrollWidth == clientWidth` at 1200, 1240, 1247, 1300 and 1366, both themes |
+| table fits without an internal scrollbar wherever the documented full grid applies | **not met, by 46 px at 1200 px.** The table fits from 1247 px up; below that it scrolls inside its card while the page keeps its desktop layout. Accepted and documented rather than closed — see below |
+| below the threshold, scrolling stays inside the table container | **holds** — at 1200 px, 958 px of table in a 912 px scroller, page body clean. Re-checked at 900 px: 1094-era behaviour preserved, `883 == 883` |
+| header and all row columns aligned | **holds** — head and all six rows resolve identical tracks at every width measured; the Total column's `x` is one value across head and rows (901 at 1200, 954 at 1300, 1037 at 1366) |
+| normal, pending and rejected rows keep identical tracks | **holds** — measured at 1200 px, the tightest: tracks equal, actions cell 200 × 18 and Total `x` = 901 in all three states, including a live `refresh requested` and an injected `Delete and re-add` |
+| no action wrapping or vertical layout jump | **holds** — the actions cell is 18 px tall in every row and every state; row heights are byte-identical across the three snapshots (81 / 81 / 233 / 64 / 81 / 81) |
+| readability not harmed | **one harm found and fixed** — the `last_error` spill above. After the wrap rule **no cell on any row overflows** at 1200 px |
+
+### The 1200 px contract — measured, not met
+
+`visual-system.md` §Responsive asks for the full grid at ≥ 1200 px. At 1200 px
+the card gives the table **912 px** and the row's floor is **958 px** — short by
+**46 px**. Every remaining source of 46 px was excluded by the instruction or by
+an earlier finding:
+
+| Where 46 px could come from | Why not |
+| --------------------------- | ------- |
+| the 200 px actions track | F1's fix. It must stay content-independent, or the header and the rows disagree again and a pending row jumps sideways. Excluded by the owner |
+| merging `Every` and `Last refresh` | excluded by the owner; departs from `Lists.dc.html`'s drawn column set |
+| trimming the four soft floors further | they are already at what their content needs — the Status trim to 110 px is what pushed a URL out of its cell, and the fix was to break the URL, not to give the column back its width |
+| dropping a column | `Lists.dc.html` draws all seven; §2 makes the artboard the authority on structure |
+
+**Reported rather than invented around, as instructed. The measured minimum
+viewport at which the Lists table fits without an internal scrollbar is
+1247 px** (1230 px of `documentElement.clientWidth`, 958 px of container).
+Between 1200 and 1247 px the table scrolls inside its own card; the page body
+never does, and the page is in its desktop layout throughout.
+
+That figure is the table's, not the application's. **No breakpoint moves** —
+what is undocumented is the table's own floor, which the edit recorded at the
+end of this file supplies. Nothing was changed in this pass; the wording above
+about the document disagreeing with the code was itself wrong and is corrected
+in §"A correction to this document".
+
+### Gates
+
+| Gate | Result |
+| ---- | ------ |
+| `npm run typecheck` | clean |
+| `npm run test` | **347 passed / 28 files** (was 345 — two new cases) |
+| `npm run build` | **60,082 B gzip against 153,600 B — 39.1 %**, brotli 53,710 B. Was 60,067 B; **+15 B** |
+| postbuild assertions | pass |
+| Rust | not re-run. No `crates/` or `Cargo.*` path was touched |
+
+### New tests
+
+| Case | Pins |
+| ---- | ---- |
+| `grid-tracks.test.ts` — "keeps its own floor under what the full grid can give it" | the floor arithmetic, to **958**. A widened track fails here, with the 1247 px consequence written beside it, so the band cannot grow again unnoticed |
+| `grid-tracks.test.ts` — "breaks a bare URL rather than painting outside its column" | `.l-status .note { overflow-wrap: anywhere }`, without which the narrower Status floor spills a `last_error` into the gutter |
+
+---
+
+## Final verification at the Lists table's 1247 px minimum
+
+The owner accepted **1247 px** as the measured width at which the Lists table
+fits without an internal scrollbar — a figure belonging to that table, not a new
+application breakpoint — and asked for
+one last pass before any documentation moves. **No code was changed in this
+pass.** Column widths and table structure are exactly as the third fix pass left
+them.
+
+### 3 widths × 2 themes × 3 row states — 18 measurements, all clean
+
+`rejected` is the widest action label (`Delete and re-add`) injected into a live
+row, `pending` a real `POST /lists/{id}/refresh` on `dead-source`.
+
+| viewport | container | internal scrollbar | body scrolls | tracks equal | misaligned cells | text overflow | actions track | actions height | row heights |
+| -------: | --------: | ------------------ | ------------ | ------------ | ---------------: | ------------: | ------------: | -------------: | ----------- |
+| 1247 px | 958 | **none** | no | yes | **0** | **0** | 200 px | 18 px | 81/81/267/64/81/81 |
+| 1250 px | 962 | **none** | no | yes | **0** | **0** | 200 px | 18 px | 81/81/267/64/81/81 |
+| 1300 px | 1012 | **none** | no | yes | **0** | **0** | 200 px | 18 px | 81/81/215/64/81/81 |
+
+Dark and light are identical at every width and in every state — geometry does
+not read the palette.
+
+- **Alignment** was checked cell by cell, not by the grid template alone: all
+  eight cells of all six rows sit at the header's own `x` at every width. Zero
+  disagreements out of 8 × 6 × 3 × 3 comparisons.
+- **No layout jump.** Row heights are byte-identical across `normal`,
+  `rejected` and `pending` at each width. The `dead-source` row is 267 px at
+  1247/1250 and 215 px at 1300 — that is the wrapped `last_error` reflowing as
+  the Status column widens, which happens between widths, never between states.
+- **The actions track never moves**: 200 px on the header and on every row, in
+  every state, at every width.
+- **No text overflow anywhere**, which is the `overflow-wrap` rule from the
+  third pass holding at the tightest column widths the design now allows.
+
+### A correction to this document
+
+The §"Still open — the Lists table's own width" section above says
+`visual-system.md` §Responsive "sanctions that scroll for **768–1199 px**".
+**It does not.** Read at source, the table reads:
+
+| Width | Behaviour |
+| --- | --- |
+| ≥ 1200 px | full grid, sidebar expanded |
+| 768–1199 px | halves become full width, sidebar collapses to icons |
+| < 768 px | single column, sidebar is an overlay drawer, tables scroll inside their own container |
+
+followed by: *"The page body never scrolls horizontally. Wide tables and charts
+scroll inside themselves."*
+
+Three consequences, and they make the gap much smaller than that section stated:
+
+1. The "tables scroll inside their own container" clause belongs to **< 768 px**,
+   where Lists renders as cards and has no table — so it never applied here.
+2. The **unconditional** sentence under the table is the one that governs, and
+   the implementation satisfies it exactly: the page body never scrolls, the
+   wide table scrolls inside itself.
+3. The ≥ 1200 px row is about the **page** grid and the sidebar, not about a
+   table fitting. Measured at 1200 px: sidebar **230 px and expanded with
+   labels**, the two half-width cards side by side at `x` 250 and 714, no body
+   scroll. **That row is accurate as written and does not need to change.**
+
+So there is no contradiction to repair — only an undocumented figure.
+
+### Proposed documentation edit — ~~not applied, awaiting approval~~ **superseded**
+
+> The owner approved the edit but rewrote it shorter and more neutral. **What
+> shipped is the version in §"Documentation edit — applied" at the end of this
+> file**; the draft below is kept only because the reasoning under it is what
+> the decision rested on.
+
+One sentence appended to the existing paragraph in
+`docs/dashboard/visual-system.md` §Responsive. The breakpoint table is untouched.
+
+```diff
+ The page body never scrolls horizontally. Wide tables and charts scroll inside
+-themselves.
++themselves. The Lists table is the one that reaches that limit on a desktop:
++its eight columns floor at 958 px of card, which a 1247 px viewport is the
++first to supply, so between 1200 and 1247 px the page grid is already full
++while the table still scrolls inside its card.
+```
+
+Why this and nothing larger:
+
+| Alternative | Why not |
+| ----------- | ------- |
+| move the ≥ 1200 px row to ≥ 1247 px | that row is about the page grid and the sidebar, both of which are correct at 1200 px — moving it would make an accurate row wrong |
+| add a fourth breakpoint row | the rows describe page layout; one table's own floor is not a breakpoint |
+| say nothing | the figure is measured, it is load-bearing for `p5-07`'s tables, and a reader cannot otherwise tell which table the unconditional sentence is about |
+
+No other document needs an edit. `plan/wip/phase5/p5-06-dashboard-and-lists-plan.md`
+§9.3 says "the page body never scrolls horizontally at any width", which is
+measured true at every width in this pass and in the two before it.
+
+### Documentation edit — **applied**
+
+Approved by the owner, in the owner's own wording — shorter and more neutral
+than the version proposed above, and it does not pin the sentence to a figure
+that a padding change would move.
+
+`docs/dashboard/visual-system.md` §Responsive, one paragraph. **The breakpoint
+table is untouched.**
+
+```diff
+ The page body never scrolls horizontally. Wide tables and charts scroll inside
+-themselves.
++themselves. The Lists table reaches that limit on desktop: its eight columns
++floor at 958 px of card width, so between 1200 and 1247 px the page grid is
++already in its desktop layout while the table scrolls inside its card.
+```
+
+The settled behaviour, stated once:
+
+| Width | Layout | Lists table |
+| ----- | ------ | ----------- |
+| ≥ 1247 px | desktop | fits, no scroll |
+| 1200–1246 px | desktop | scrolls inside its card |
+| < 1200 px | the responsive rules above, unchanged | — |
+
+**This closes the table-width question.** No other repository document was
+changed, and no code changed in this pass or the one before it.
+
+### Wording audit — 1247 px is the table's figure, not a breakpoint
+
+Every mention of the figure in this repository was re-read and made to say the
+same thing. **The application's breakpoints are unchanged and remain
+`visual-system.md` §Responsive's: ≥ 1200 px, 768–1199 px, < 768 px.**
+
+| Where | State |
+| ----- | ----- |
+| `docs/dashboard/visual-system.md` §Responsive | correct as shipped — the sentence names the Lists table as its subject and the breakpoint table is untouched |
+| `plan/wip/phase5/p5-06-dashboard-and-lists-plan.md` §9.3 | no change needed. It quotes the three breakpoints, which did not move, and asserts "the page body never scrolls horizontally at any width", measured true throughout |
+| `plan/wip/phase5/p5-06-dashboard-and-lists.md` | never mentions the figure |
+| this review file | four places rewritten — see below |
+| `styles/grid-tracks.test.ts` | the pinning case's comment reframed. Comment only; no assertion, no behaviour. Gates re-run |
+
+Rewritten in this file:
+
+| Was | Now |
+| --- | --- |
+| "the measured minimum is 1247 px" | "**the Lists table's own** measured minimum is 1247 px", with a terminology note fixing the phrase for everything after it |
+| "either `visual-system.md`'s **full-grid threshold moves to 1247 px**, or …" | "that figure is the table's, not the application's. **No breakpoint moves**" |
+| heading "Final verification at **the accepted 1247 px threshold**" | "Final verification at **the Lists table's 1247 px minimum**" |
+| "the owner accepted 1247 px as **the desktop full-grid threshold**" | "as the measured width at which the Lists table fits without an internal scrollbar — a figure belonging to that table, not a new application breakpoint" |
+
+Two stale passages were struck rather than deleted, following this file's own
+convention for a superseded claim (V11, V14): the §"Still open" paragraph that
+misread `visual-system.md`, and the first draft of the documentation edit, which
+the owner replaced with a shorter wording.
+
+**Settled, in one form of words:**
+
+| Width | Application layout | Lists table |
+| ----- | ------------------ | ----------- |
+| ≥ 1247 px | desktop | fits, no internal scrollbar |
+| 1200–1246 px | desktop | scrolls inside its card |
+| < 1200 px | `visual-system.md` §Responsive, unchanged | — |
+
+Gates after the comment change: `npm run typecheck` clean, `npm run test`
+**347 passed / 28 files**, `npm run build` **60,082 B gzip (39.1 %)**, brotli
+53,710 B — all unchanged.
+
+---
+
+## Fourth fix pass — glyph row actions, and the Rules column's share
+
+Approved by the owner after reviewing the page at ~1200 px, where the row still
+scrolled and `Remove` was clipped. Two changes, one of them the owner's
+suggestion.
+
+### Changed
+
+| # | Change | Files |
+| - | ------ | ----- |
+| 1 | the three row actions become **44 × 44 icon buttons** — `refresh`, `edit`, `trash`, and `restore` on a `rejected` row — each with `aria-label` and `title`. The actions track goes **200 px → 132 px** | `pages/lists/list-actions.tsx`, `assets/sprite.svg` (+3 symbols), `styles/components.css` |
+| 2 | the Rules column takes the **largest `fr` weight** (List 1, Status 1, Rules 2) | `styles/components.css` |
+
+**Why glyphs are structural here, not decoration.** As labels the three cost
+200 px of an eight-column row, which is what put an internal scrollbar on the
+table at every desktop width below 1247 px. They also varied by state — 130 px
+normally, 186 px pending, 189 px `rejected` — which is the variance F1's fixed
+200 px track existed to absorb. Three tiled 44 px targets are **132 px and
+cannot vary at all**, so F1 is closed by construction rather than by a
+clearance figure. The row floor drops **958 → 890 px**.
+
+**Why the `fr` weight, and why it is free.** The three-line wrap of
+`900 dns · 0 url · 0 inactive · 0 parse errors` was never a width shortage:
+Rules' 150 px minimum already exceeds its proportional share, so under the old
+weights every pixel of slack went to List and Status while Rules stayed pinned
+at its floor. Raising its weight redistributes rather than adds — **the floor is
+unchanged by it** — and the line drops to two rows at every desktop width.
+
+**Pending is now the same button in a busy state**: the refresh glyph spinning,
+disabled, `aria-label` reading `Refresh requested for <id>`, `animation: none`
+under `prefers-reduced-motion`. No second label, therefore no second width.
+
+**The confirmations are untouched and were re-verified live.** Clicking the
+trash on `gate-list` opened `Remove gate-list?` — *"The list is dropped from
+`[[rules.lists]]` and its cached copy is deleted, so its 900 rules stop serving
+at the next compile."* — with `Cancel` / `Remove`; Cancel closed it and all six
+rows remained. `Delete and re-add` keeps its own dialog and its own reasoning
+verbatim. **A glyph never performs a destructive action without the sentence
+that names the consequence.**
+
+### Measured — 4 widths × 2 themes × 3 row states
+
+`rejected` renders the `restore` glyph; `pending` is a real
+`POST /lists/{id}/refresh`. Row states were exercised at 1200, 1247 and 1300;
+390 px covers normal and pending (the phone card has no header to align).
+
+| viewport | table floor | internal scrollbar | body scrolls | tracks equal | misaligned cells | text overflow | Rules cell | partition lines | actions | icon button |
+| -------: | ----------: | ------------------ | ------------ | ------------ | ---------------: | ------------: | ---------: | --------------: | ------: | ----------- |
+| **1200 px** | 890 (fits 912) | **none** | no | yes | **0** | **0** | 172 px | **2** | 132 px | 44 × 44 |
+| 1247 px | 890 | none | no | yes | 0 | 0 | 218 px | 2 | 132 px | 44 × 44 |
+| 1300 px | 890 | none | no | yes | 0 | 0 | 254 px | 2 | 132 px | 44 × 44 |
+| 390 px | card layout | — | no (`373 == 373`) | n/a | — | 0 | — | 2 | full width | 99 × 44 |
+
+Dark and light are identical at every width and in every state. **Zero controls
+under 44 × 44** at 390 px outside the drawer. Row heights are byte-identical
+across the three states at each width, so no state introduces a jump; ordinary
+rows are now **64 px** rather than 81, because the partition line lost a row.
+
+Before this pass, for comparison: at 1200 px the floor was 958 in a 912 px
+container — a scrollbar, `Remove` clipped, Rules 150 px and its partition line
+on **three** rows.
+
+### The 1200–1247 exception is gone, and so is its documentation
+
+The table now fits from the 1200 px breakpoint up, so the sentence added to
+`docs/dashboard/visual-system.md` §Responsive one pass earlier has been
+**reverted**. `git diff` on that file is empty: it ends this task exactly as it
+began it, and the unconditional *"Wide tables and charts scroll inside
+themselves"* covers the sub-1200 case as it always did.
+
+The `grid-tracks.test.ts` case that pinned the old floor now pins the new one
+**against the width the breakpoint supplies** — `890 ≤ 1200 − 271 − 17` — so a
+track widened later fails the gate with the reason beside it rather than
+quietly bringing the band back.
+
+### One artboard discrepancy, declared and **not** acted on
+
+`MobileLists.dc.html` — the phone artboard this task drew under D2 — renders the
+card's action row as three words (`Refresh · Edit · Remove`, `.rowacts span`).
+The shipped card renders three glyphs in the same three full-width 44 px slots.
+**Structure, placement and count match; only the label form differs.**
+
+`Lists.dc.html` draws no per-row actions at all (C4 — "artboard silent, not
+contradicted"), so the desktop table has no conflict.
+
+The artboard was **left alone**, per the owner's instruction not to touch the
+artboards unless a real visual discrepancy requires it. This one is real but
+cosmetic and one line of the artboard would settle it either way; it is recorded
+here rather than decided.
+
+### Gates
+
+| Gate | Result |
+| ---- | ------ |
+| `npm run typecheck` | clean |
+| `npm run test` | **350 passed / 28 files** (was 347 — three new cases, four rewritten) |
+| `npm run build` | **60,327 B gzip against 153,600 B — 39.3 %**, brotli 53,957 B. Was 60,082 B; **+245 B**, of which the three sprite symbols are most |
+| postbuild assertions | pass |
+| Rust | not re-run. No `crates/` or `Cargo.*` path was touched |
+
+### Tests changed
+
+| File | What |
+| ---- | ---- |
+| `pages/lists/list-row.test.tsx` | the two action cases now read the **accessible name**, not `textContent` — a `textContent` assertion passes on an empty button, which is the failure mode icon actions have. Adds: every action carries label, title and glyph; the `rejected` glyph is `restore` and explicitly **not** the refresh arrow; the pending button is `is-busy`, disabled, and says `Refresh requested for <id>` |
+| `styles/grid-tracks.test.ts` | the actions track is now asserted **equal to 3 × 44**, not merely above the widest label; the floor case pins 890 and asserts it fits the 1200 px breakpoint's card; a new case pins Rules as the largest `fr` weight, with the reason |
+
+### The artboard discrepancy — closed
+
+Approved by the owner after it was declared. `MobileLists.dc.html`'s card action
+row now draws the same three glyphs the code renders, in the same three
+full-width 44 px slots.
+
+| | Before | After |
+| - | ------ | ----- |
+| ordinary card | `Refresh · Edit · Remove` | refresh · edit · trash glyphs |
+| `rejected` card | `Delete and re-add · Edit · Remove` | restore · edit · trash glyphs |
+
+The glyph paths are the sprite's own, inlined because an artboard is a
+standalone file with no sprite to reference. Each `<span>` keeps the word as
+`title` and `aria-label`, so the artboard records the accessible name the
+implementation carries rather than losing it with the label.
+
+**Nothing else about the artboard moved.** The row is still `display: flex` over
+a `1px solid #eef2f6` top border, each slot still `flex: 1; min-height: 44px`,
+and the card's height is unchanged — so `canvas.json`'s
+`{ w: 390, h: 1760 }` entry needs no edit and did not get one. The only CSS
+added is the 17 px glyph sizing; the only CSS removed is the 12.5 px label
+`font-size`, which no longer has a label to size.
+
+Verified by rendering the exact fragment in a browser: all six glyphs draw a
+non-zero bounding box (17 × 17 and 16 × 16), each in a 122 × 44 slot at the
+artboard's 390 px width, and the `rejected` card's `restore` arc is visibly the
+mirror of `refresh` rather than the same shape.
+
+`Lists.dc.html` needed no change — it draws no per-row actions at all (C4).
+
+**Sketch fidelity now holds in both directions** on this task's two Lists
+artboards: the desktop table has no drawn actions to disagree with, and the
+phone card draws what ships.

@@ -93,6 +93,14 @@
   --tip-text: #ffffff;
   --tip-label: #9fb0c3;
   --tip-blocked: #e08a86;
+  /* The overlay's drop shadow. A shadow is a colour like any other, so it is a
+     token: the same value in all three palettes, because the slab is dark in
+     both themes and the shadow does the same separating work under each. */
+  --tip-shadow: rgb(0 0 0 / 35%);
+
+  /* The switch knob. White over a coloured track in both themes — the track
+     carries the state, the knob only carries the position. */
+  --switch-knob: #ffffff;
 
   --font: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial,
     sans-serif;
@@ -181,6 +189,9 @@
     --tip-text: #ffffff;
     --tip-label: #b6bfc9;
     --tip-blocked: #e08480;
+    --tip-shadow: rgb(0 0 0 / 35%);
+
+    --switch-knob: #ffffff;
   }
 }
 
@@ -251,4 +262,7 @@
   --tip-text: #ffffff;
   --tip-label: #b6bfc9;
   --tip-blocked: #e08480;
+  --tip-shadow: rgb(0 0 0 / 35%);
+
+  --switch-knob: #ffffff;
 }

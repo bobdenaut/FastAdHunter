@@ -43,6 +43,15 @@
   <symbol id="refresh" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
     <path d="M20.5 11.5a8.5 8.5 0 1 0-2.5 6.4"/><path d="M20.5 4v7.5H13"/>
   </symbol>
+  <symbol id="edit" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+    <path d="M4 20h4L19 9a2.8 2.8 0 0 0-4-4L4 16v4z"/><path d="M14 6l4 4"/>
+  </symbol>
+  <symbol id="trash" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+    <path d="M4 7h16M10 4h4M6 7l1 13h10l1-13"/><path d="M10 11v6M14 11v6"/>
+  </symbol>
+  <symbol id="restore" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+    <path d="M3.5 11.5a8.5 8.5 0 1 1 2.5 6.4"/><path d="M3.5 4v7.5H11"/>
+  </symbol>
   <symbol id="menu" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
     <path d="M4 7h16M4 12h16M4 17h16"/>
   </symbol>

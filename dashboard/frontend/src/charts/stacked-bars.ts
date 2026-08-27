@@ -100,6 +100,42 @@ export function ySplits(max: number): number[] {
   return [0, top / 4, top / 2, (top * 3) / 4, top];
 }
 
+const HOUR_S = 3600;
+
+/** How many x labels the hourly range prints. Plan §7.4: four at 24 h. */
+export const HOUR_AXIS_LABELS = 4;
+
+/**
+ * Exactly four hour-aligned x splits across the plotted window — §7.4's "4
+ * labels at 24 h", made a property of the code rather than of the data.
+ *
+ * A `space` hint cannot do this. uPlot picks the increment nearest that hint
+ * from its own table and then emits however many of them fall inside the
+ * window, so the count moves with the response's bucket count and with where
+ * the window's hour boundaries happen to sit — 3, 4 or 5 for the same range at
+ * the same width. Anchoring on the window's own first whole hour and stepping
+ * by a quarter of it gives four every time, at whole hours, exactly as
+ * `Main.dc.html` draws them (`10:00 · 16:00 · 22:00 · 04:00` is this rule on a
+ * window that opens at 10:00).
+ *
+ * The step is rounded to a whole hour so the labels stay on the clock rather
+ * than reading `13:45`; the last split can therefore fall short of `max`, which
+ * is what the artboard draws too — its fourth label has bars after it.
+ */
+export function hourSplits(min: number, max: number): number[] {
+  const first = Math.ceil(min / HOUR_S) * HOUR_S;
+  const span = max - first;
+  if (!Number.isFinite(span) || span <= 0) return [first];
+  const step = Math.max(HOUR_S, Math.round(span / HOUR_AXIS_LABELS / HOUR_S) * HOUR_S);
+  const splits: number[] = [];
+  for (let index = 0; index < HOUR_AXIS_LABELS; index += 1) {
+    const at = first + index * step;
+    if (at > max) break;
+    splits.push(at);
+  }
+  return splits;
+}
+
 /* ------------------------------------------------------------------- hovering */
 
 /**
@@ -234,12 +270,21 @@ export function stackedBarsOptions(
         ticks: { show: false },
         font: `10px ${theme.mono}`,
         size: 26,
-        // A fifth of the plot per label. uPlot's default is a flat 50 px, which
-        // at 24 hourly bars over ~1200 px is one label per bar — a wall of
-        // clock digits where `Main.dc.html` draws four. Asking for a fifth of
-        // whatever width the plot has keeps that cadence at every width and at
-        // every range, so the phone gets the same rule and no second branch.
+        // uPlot's default is a flat 50 px, which at 24 hourly bars over
+        // ~1200 px is one label per bar — a wall of clock digits where
+        // `Main.dc.html` draws four. A fifth of the plot per label fixes that
+        // for the daily ranges, which the plan asks only for "~5" of and which
+        // measure 4 at 7 d and 5 at 30 d.
+        //
+        // The hourly range gets `splits` instead, because §7.4 asks for a
+        // *count* and a hint cannot deliver one: see `hourSplits`.
         space: (_u, _axisIdx, _min, _max, dim) => dim / 5,
+        ...(resolution === 'hour'
+          ? {
+              splits: (u: uPlot) =>
+                hourSplits(u.scales['x']?.min ?? 0, u.scales['x']?.max ?? 0),
+            }
+          : {}),
         values: (_u, splits) =>
           splits.map((value) => axisTimeLabel(value, resolution)),
       },

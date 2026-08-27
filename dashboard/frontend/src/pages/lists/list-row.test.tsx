@@ -56,7 +56,10 @@ afterEach(() => {
   }
 });
 
-function row(over: Partial<ListItem> = {}): HTMLElement {
+function row(
+  over: Partial<ListItem> = {},
+  { pending = false }: { pending?: boolean } = {},
+): HTMLElement {
   return mount(
     <ListRow
       item={item(over)}
@@ -64,7 +67,7 @@ function row(over: Partial<ListItem> = {}): HTMLElement {
       actions={
         <ListActions
           item={item(over)}
-          pending={false}
+          pending={pending}
           onRefresh={() => undefined}
           onEdit={() => undefined}
           onRemove={() => undefined}
@@ -209,20 +212,65 @@ describe('the five statuses, plus disabled', () => {
 });
 
 describe('the row actions', () => {
+  /**
+   * They are glyphs, so the word lives in `aria-label` and `title` rather than
+   * in the button's text. That is the whole accessible name — a test that reads
+   * `textContent` here would pass on an empty button, which is exactly the
+   * failure mode icon actions have.
+   */
+  const named = (el: Element) =>
+    Array.from(el.querySelectorAll('.row-actions button')).map((button) => ({
+      label: button.getAttribute('aria-label'),
+      title: button.getAttribute('title'),
+      glyph: button
+        .querySelector('use')
+        ?.getAttribute('href')
+        ?.split('#')
+        .pop(),
+    }));
+
   it('offers refresh, edit and remove in that order', () => {
-    const labels = Array.from(
-      row().querySelectorAll('.row-actions button'),
-    ).map((button) => button.textContent);
-    expect(labels).toEqual(['Refresh', 'Edit', 'Remove']);
+    expect(named(row())).toEqual([
+      { label: 'Refresh oisd-basic', title: 'Refresh', glyph: 'refresh' },
+      { label: 'Edit oisd-basic', title: 'Edit', glyph: 'edit' },
+      { label: 'Remove oisd-basic', title: 'Remove', glyph: 'trash' },
+    ]);
+  });
+
+  it('names every action, so no button is a bare glyph', () => {
+    for (const action of named(row())) {
+      expect(action.label).toBeTruthy();
+      expect(action.title).toBeTruthy();
+      expect(action.glyph).toBeTruthy();
+    }
   });
 
   it('replaces Refresh with delete-and-re-add on a rejected list', () => {
     // Neither a refresh nor a disable/enable clears the cached copy the content
     // gate measures against, so refresh is the one action that cannot work.
-    const labels = Array.from(
-      row({ last_status: 'rejected' }).querySelectorAll('.row-actions button'),
-    ).map((button) => button.textContent);
-    expect(labels).toEqual(['Delete and re-add', 'Edit', 'Remove']);
+    const actions = named(row({ last_status: 'rejected' }));
+    expect(actions[0]).toEqual({
+      label: 'Delete and re-add oisd-basic',
+      title: 'Delete and re-add',
+      glyph: 'restore',
+    });
+    // A distinct glyph, not the refresh arrow reused: the two actions differ in
+    // blast radius and must not look the same.
+    expect(actions[0]?.glyph).not.toBe('refresh');
+    expect(actions.slice(1).map((a) => a.title)).toEqual(['Edit', 'Remove']);
+  });
+
+  it('says so in the accessible name while a refresh is pending', () => {
+    // The pending state is the same button in a busy state — no second label,
+    // so it costs no width and cannot move a column. The fact still has to
+    // reach a screen reader, which is what this pins.
+    const pending = row({}, { pending: true });
+    const refresh = pending.querySelector('.row-actions button');
+    expect(refresh?.getAttribute('aria-label')).toBe(
+      'Refresh requested for oisd-basic',
+    );
+    expect(refresh?.className).toContain('is-busy');
+    expect((refresh as HTMLButtonElement).disabled).toBe(true);
   });
 
   it('cannot refresh a disabled list', () => {

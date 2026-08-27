@@ -14,7 +14,12 @@ import { Card } from '../../components/card';
 import { Chart } from '../../components/chart';
 import { EmptyState } from '../../components/empty-state';
 import { ErrorState } from '../../components/error-state';
-import { RANGES, RANGE_KEYS, type RangeKey } from './ranges';
+import {
+  RANGES,
+  RANGE_KEYS,
+  plottedResolution,
+  type RangeKey,
+} from './ranges';
 
 /**
  * The primary series, and **DNS only** — `history/summary` carries no HTTP
@@ -41,10 +46,13 @@ export function QueriesOverTime({
   recording: boolean;
 }) {
   const theme = useChartTheme();
-  const resolution = RANGES[range].resolution;
+  // The resolution of what is **on screen**, not of what was last asked for —
+  // see `plottedResolution`. Only the response moves it, so the axis and the
+  // bars always describe the same data.
+  const resolution = plottedResolution(summary, range);
 
   // The plot is keyed on this object's identity, so it is built once per
-  // `(range, theme)` pair and not once per render — p5-05's finding m4. A
+  // `(resolution, theme)` pair and not once per render — p5-05's finding m4. A
   // `stats` push re-renders this page every ~2 s and must rebuild nothing.
   const items = useRef<HistorySummary | null>(summary);
   items.current = summary;

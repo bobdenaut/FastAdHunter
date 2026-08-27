@@ -43,8 +43,13 @@
     .sw.off { background: #cfd8e3; }
     .sw.off i { right: auto; left: 2px; }
     .rowacts { display: flex; border-top: 1px solid #eef2f6; }
-    .rowacts span { flex: 1; min-height: 44px; display: flex; align-items: center; justify-content: center; font-size: 12.5px; color: #1f7f96; }
+    /* Glyphs, not words. As labels the three actions varied in width by row
+       state, which pushed the desktop table's other columns sideways mid-action
+       and cost 200 px of an eight-column row; three fixed 44 px targets cannot.
+       The word survives as the button's `aria-label` and `title`. */
+    .rowacts span { flex: 1; min-height: 44px; display: flex; align-items: center; justify-content: center; color: #1f7f96; }
     .rowacts span.danger { color: #b03c37; }
+    .rowacts svg { width: 17px; height: 17px; fill: none; stroke: currentColor; stroke-width: 2; }
     .why { padding: 0 12px 10px; }
   </style>
 </helmet>
@@ -90,7 +95,7 @@
       <div class="rules">0 parse errors</div>
     </div>
     <div class="meta"><span class="sw"><i></i></span><span class="mono">every 24 h</span><span class="mono" style="color: #6b7785;">last 04:00</span></div>
-    <div class="rowacts"><span>Refresh</span><span>Edit</span><span class="danger">Remove</span></div>
+    <div class="rowacts"><span title="Refresh" aria-label="Refresh"><svg viewBox="0 0 24 24"><path d="M20.5 11.5a8.5 8.5 0 1 0-2.5 6.4"/><path d="M20.5 4v7.5H13"/></svg></span><span title="Edit" aria-label="Edit"><svg viewBox="0 0 24 24"><path d="M4 20h4L19 9a2.8 2.8 0 0 0-4-4L4 16v4z"/><path d="M14 6l4 4"/></svg></span><span class="danger" title="Remove" aria-label="Remove"><svg viewBox="0 0 24 24"><path d="M4 7h16M10 4h4M6 7l1 13h10l1-13"/><path d="M10 11v6M14 11v6"/></svg></span></div>
   </div>
 
   <div class="lc alert">
@@ -114,7 +119,7 @@
       <div class="rules">0 parse errors</div>
     </div>
     <div class="meta"><span class="sw"><i></i></span><span class="mono">every 24 h</span><span class="mono" style="color: #6b7785;">last yesterday 04:00</span></div>
-    <div class="rowacts"><span>Refresh</span><span>Edit</span><span class="danger">Remove</span></div>
+    <div class="rowacts"><span title="Refresh" aria-label="Refresh"><svg viewBox="0 0 24 24"><path d="M20.5 11.5a8.5 8.5 0 1 0-2.5 6.4"/><path d="M20.5 4v7.5H13"/></svg></span><span title="Edit" aria-label="Edit"><svg viewBox="0 0 24 24"><path d="M4 20h4L19 9a2.8 2.8 0 0 0-4-4L4 16v4z"/><path d="M14 6l4 4"/></svg></span><span class="danger" title="Remove" aria-label="Remove"><svg viewBox="0 0 24 24"><path d="M4 7h16M10 4h4M6 7l1 13h10l1-13"/><path d="M10 11v6M14 11v6"/></svg></span></div>
   </div>
 
   <div class="lc alert">
@@ -138,7 +143,7 @@
       <div class="rules">0 parse errors</div>
     </div>
     <div class="meta"><span class="sw"><i></i></span><span class="mono">every 24 h</span><span class="mono" style="color: #6b7785;">last 04:00</span></div>
-    <div class="rowacts"><span>Delete and re-add</span><span>Edit</span><span class="danger">Remove</span></div>
+    <div class="rowacts"><span title="Delete and re-add" aria-label="Delete and re-add"><svg viewBox="0 0 24 24"><path d="M3.5 11.5a8.5 8.5 0 1 1 2.5 6.4"/><path d="M3.5 4v7.5H11"/></svg></span><span title="Edit" aria-label="Edit"><svg viewBox="0 0 24 24"><path d="M4 20h4L19 9a2.8 2.8 0 0 0-4-4L4 16v4z"/><path d="M14 6l4 4"/></svg></span><span class="danger" title="Remove" aria-label="Remove"><svg viewBox="0 0 24 24"><path d="M4 7h16M10 4h4M6 7l1 13h10l1-13"/><path d="M10 11v6M14 11v6"/></svg></span></div>
   </div>
 
   <div class="lc alert">
@@ -162,7 +167,7 @@
       <div class="rules">69,514 parse errors</div>
     </div>
     <div class="meta"><span class="sw"><i></i></span><span class="mono">every 24 h</span><span class="mono" style="color: #6b7785;">last 04:00</span></div>
-    <div class="rowacts"><span>Refresh</span><span>Edit</span><span class="danger">Remove</span></div>
+    <div class="rowacts"><span title="Refresh" aria-label="Refresh"><svg viewBox="0 0 24 24"><path d="M20.5 11.5a8.5 8.5 0 1 0-2.5 6.4"/><path d="M20.5 4v7.5H13"/></svg></span><span title="Edit" aria-label="Edit"><svg viewBox="0 0 24 24"><path d="M4 20h4L19 9a2.8 2.8 0 0 0-4-4L4 16v4z"/><path d="M14 6l4 4"/></svg></span><span class="danger" title="Remove" aria-label="Remove"><svg viewBox="0 0 24 24"><path d="M4 7h16M10 4h4M6 7l1 13h10l1-13"/><path d="M10 11v6M14 11v6"/></svg></span></div>
   </div>
 
   <div class="lc">
@@ -181,7 +186,7 @@
       <div class="rules">not compiled while disabled</div>
     </div>
     <div class="meta"><span class="sw off"><i></i></span><span class="mono" style="color: #b6bfc9;">—</span><span class="mono" style="color: #6b7785;">last never</span></div>
-    <div class="rowacts"><span>Refresh</span><span>Edit</span><span class="danger">Remove</span></div>
+    <div class="rowacts"><span title="Refresh" aria-label="Refresh"><svg viewBox="0 0 24 24"><path d="M20.5 11.5a8.5 8.5 0 1 0-2.5 6.4"/><path d="M20.5 4v7.5H13"/></svg></span><span title="Edit" aria-label="Edit"><svg viewBox="0 0 24 24"><path d="M4 20h4L19 9a2.8 2.8 0 0 0-4-4L4 16v4z"/><path d="M14 6l4 4"/></svg></span><span class="danger" title="Remove" aria-label="Remove"><svg viewBox="0 0 24 24"><path d="M4 7h16M10 4h4M6 7l1 13h10l1-13"/><path d="M10 11v6M14 11v6"/></svg></span></div>
   </div>
 
   <p class="note" style="margin: 0; padding: 0 2px 8px;">
