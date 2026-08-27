@@ -55,6 +55,7 @@ export function TopClients({
         <TopList
           variant="clients"
           columns={['Client', 'Queries', 'Blocked']}
+          frequencyLabel="Share"
           rows={ranked.map((row) => ({
             key: row.ip,
             primary: (

@@ -26,12 +26,16 @@ export interface TopRow {
  */
 export function TopList({
   columns,
+  frequencyLabel = 'Frequency',
   rows,
   more,
   expanded = false,
   variant,
 }: {
   columns: [string, string, string?];
+  /** The bar column's heading. `Main.dc.html` heads it `Frequency` on the two
+   *  domain tables and `Share` on Top clients. */
+  frequencyLabel?: string;
   rows: readonly TopRow[];
   /** The trailing 44 px row the phone artboards draw. Desktop hides it. */
   more?: ComponentChildren;
@@ -50,7 +54,7 @@ export function TopList({
         <span class="d">{columns[0]}</span>
         <span class="n">{columns[1]}</span>
         {columns[2] !== undefined && <span class="x">{columns[2]}</span>}
-        <span class="f">Frequency</span>
+        <span class="f">{frequencyLabel}</span>
       </div>
       <div class="toplist-rows">
         {rows.map((row) => (

@@ -28,7 +28,7 @@ Work followed the plan's units **W1 → W15 including W1a**, each ending with
 | Formatting | `src/charts/format.ts`, `src/time.ts` |
 | Chart | `src/charts/{stacked-bars,theme,runtime}.ts` (+ `stacked-bars.test.ts`) |
 | Components | `src/components/{donut,figure}.tsx` new; `{card,tile,status-pill,chart}.tsx` extended |
-| Dashboard | `src/pages/dashboard.tsx` + `src/pages/dashboard/{tiles,queries-over-time,query-types,upstream-health,top-domains,top-clients,top-list,cache-state,ruleset-card,ranges}.tsx` |
+| Dashboard | `src/pages/dashboard.tsx` + `src/pages/dashboard/{tiles,queries-over-time,query-types,upstream-health,top-domains,top-clients,top-list,cache-state,ruleset-card}.tsx` + `ranges.ts` |
 | Lists | `src/pages/lists.tsx` + `src/pages/lists/{list-row,list-status,list-actions,add-list-dialog,edit-interval-dialog,refresh-all-dialog}.tsx` |
 | Wiring | `src/router/routes.ts`, `src/refresh/{registry,preferences}.ts`, `src/constants.ts`, `src/services.ts`, `src/theme/theme.ts` |
 | Styles / assets | `src/styles/{tokens,components,layout}.css`, `src/assets/sprite.svg` (+6 symbols) |
@@ -50,6 +50,12 @@ pages is one exported function there, with the plan's row ids in the comments,
 so a reviewer checks one file against one table instead of hunting arithmetic
 through the pages. R18/R19 were written and unit-tested before anything rendered
 them.
+
+> **Correction (fix pass, F13).** As shipped for review this was true of every
+> row but two: R13's percentage was divided inline in `query-types.tsx` and R16
+> is two verbatim counts printed either side of a slash. R13 is now
+> `derive.sliceShare` and the sentence holds again; R16 stays where it is, and
+> is a formatting of two fields rather than a derivation.
 
 **Stacking by occlusion, not arithmetic.** Both series are drawn from zero and
 painted back to front — `queries` first, `blocked` on top — so the visible upper
@@ -183,10 +189,10 @@ notes are given where a check could not be produced from real API data.
 | **V8** | **PASS.** With recording genuinely on, an empty range rendered **"No data in this range"**, chips stayed live, one extra `/config`, and the totals slot disappeared. Visibly distinct from V7. |
 | **V9** | **NOT RUN.** A `stride > 1` response was never produced. The footnote is wired to `summary.stride` through the p5-05 wrapper, which the dev gallery renders with `decimatedBy={4}`. |
 | **V10** | **PASS.** Refresh-all blocked with a statement of what it does and an indeterminate bar (no faked per-list progress), then reported `4 refreshed · 1 failed, rejected lists included — 5 in all` with the per-list rows and the failure's `error`. |
-| **V11** | **PASS in part.** A 5-list refresh-all produced **one** `GET /lists` and **one** `GET /telemetry`; the fifteen-list case was not staged. |
+| **V11** | ~~**PASS in part.** A 5-list refresh-all produced **one** `GET /lists` and **one** `GET /telemetry`.~~ **WRONG AS RECORDED — corrected by F4.** Re-measured four times on the 5-list inventory, identical every time: **two** `GET /lists` and **two** `GET /telemetry`, from two coalescing groups that do not overlap (the dialog's completion callback, then the `list_refreshed` wave). Bounded and independent of list count, so the fan-out risk §5.2 names is closed; the figure is not one. The fifteen-list case was not staged. |
 | **V12** | **PASS.** A `rejected` row (`rejected: html document`, produced for real by serving an HTML body over a healthy baseline) offered **Delete and re-add** in place of Refresh; the confirm stated why; the sequence issued `DELETE` then `POST` in that order and the row came back as `never` with Refresh restored. `degraded` is visibly distinct from `ok` — amber pill, amber row, its own body line and the RULE_ENGINE.md pointer, `69,514 parse errors` beside the partition. |
 | **V13** | **PASS.** Both `409` kinds: the source conflict rendered the API message and named `clean-list` with the "two ids over one source" explanation; the derived-id conflict rendered its message and prefilled the id field. |
-| **V14** | **PASS.** `scrollWidth == clientWidth` on both pages, in both themes, at 1400 / 900 / 390 px. The chart re-reads its tokens on a theme change and draws correctly dark. |
+| **V14** | ~~**PASS.**~~ **WRONG AS RECORDED — corrected by F16.** `/lists` at 900 px measured `scrollWidth 964` against `clientWidth 883`: **81 px of body scroll**, not zero. `/` was clean at all three widths, and both pages were clean at 1400 and 390 px. Fixed and re-measured — see the fix pass. The chart does re-read its tokens on a theme change and draws correctly dark. |
 | **V15** | **PASS.** At 390 px the Dashboard matches `MobileDashboard.dc.html` in structure: tiles two-up, chips as full-height rows above the plot, HTTP tiles below the chart, row-form top-N, Upstream/Top-queried/Ruleset dropped with the closing note rendered verbatim. The drawer matches `MobileNav.dc.html` apart from X2. |
 | **V16** | **PASS.** Lists at 390 px is one card per list; `MobileLists.dc.html` added to the sketch and to `canvas.json`. |
 | **V17** | **PASS.** No interactive control outside the drawer measured under 44 px on either axis at 390 px. |
@@ -643,6 +649,61 @@ widths"; the rest are drift. None changes a figure.
   objection, but V19/V20 mean no heap or hidden-document evidence exists for the
   two new polled endpoints, which is where a leak would now show.
 
+### F16 · Major · `/lists` scrolls the page body sideways at 900 px
+
+`dashboard/frontend/src/styles/components.css:1039-1053` (as reviewed)
+
+Found while measuring F1's fix, and it is the same root cause seen from the
+other side. The eight columns' minimums add up to
+`150 + 46 + 62 + 104 + 160 + 190 + 84` plus seven 10 px gaps and 28 px of row
+padding — more than the content area between 768 and 1199 px. `.bd.lists-body`
+had `overflow-x: visible`, so the row overflowed the card, the card overflowed
+the page, and the body scrolled.
+
+Measured at a 900 px viewport, dark and light alike:
+
+| page | `scrollWidth` | `clientWidth` |
+| ---- | ---: | ---: |
+| `/` | 883 | 883 |
+| `/lists` | **964** | **883** |
+
+The actions track was resolving to **0 px** at that width, so the buttons were
+being squeezed out of their own column as well.
+
+**This contradicts two recorded statements.** V14 records `scrollWidth ==
+clientWidth` "on both pages, in both themes, at 1400 / 900 / 390 px", and plan
+§9.3 states "the page body never scrolls horizontally at any width".
+visual-system.md §Responsive already says what should happen instead at this
+band: "tables scroll inside their own container".
+
+**Why the tests miss it.** The same gap as F1 — no layout is computed anywhere
+in the suite, and the browser pass that produced V14 evidently checked 1400 and
+390 px and carried 900 forward.
+
+**Smallest correct fix.** `overflow-x: auto` on `.bd.lists-body`, plus
+`min-width: min-content` on `.lists-table` (desktop only) so the columns keep
+their widths inside the scroller rather than collapsing.
+
+### F17 · Minor · The chart tooltip is barely visible in the dark theme
+
+`dashboard/frontend/src/styles/components.css:519-533` (as reviewed)
+
+Reported by the owner against a running dark-theme page. `.chart-tip` was
+`rgba(31, 39, 51, 0.95)` with no border — the artboard's dark slab, which
+separates from a **white** card by value alone. In the dark theme the card
+behind it is `--surface: #18212c`, so the slab sits about seven units away from
+its own background and reads as a faint rectangle.
+
+Two further token-wall breaches in the same block: `color: #fff` and
+`.chart-tip-row .blocked { color: #e08a86 }` are literal colours, which
+`tokens.css`' own header forbids ("no rule outside this file may name a literal
+colour").
+
+**Smallest correct fix.** Five tokens — surface, border, text, label, blocked —
+defined in all three palette blocks, with the dark set raising the surface above
+the card instead of sinking into it, plus a border and a shadow so the overlay
+reads in both themes rather than relying on value in one.
+
 ---
 
 ### Test coverage — what is asserted versus what is guaranteed
@@ -668,14 +729,34 @@ compares them.
 
 ---
 
-### Requested during review, not a defect
+### Requested during review, not a defect — **built, and it changed shape**
 
-**A hover tooltip on the Query types donut**, matching the chart's. Neither
-artboard draws one, so it is an enhancement rather than a finding. It is cheap:
-`Donut` already renders one `<circle>` per segment, so the handler is per-segment
-rather than per-pixel, and `.chart-tip` is already a themed, positioned DOM node
-that can be reused as-is. Noted here so it is scheduled rather than lost —
-it needs the owner's yes before it is built.
+**A hover on the Query types donut.** Neither artboard draws one, so this is an
+enhancement rather than a finding. Asked for as "a hovertip exactly like the
+Queries over time card", built that way first, and then **deliberately not
+shipped that way** — the reason is worth keeping:
+
+| Step | What happened |
+| ---- | ------------- |
+| 1 | `.chart-tip` reused verbatim on the ring — same classes, tokens and three-line shape |
+| 2 | It **covered the legend**, which prints the same count and share it was repeating. A bar carries no figures of its own, so the chart *has* to raise a tooltip; a ring drawn beside its own legend does not |
+| 3 | Owner's call: mark the row instead. Pointing at a slice marks its legend row and dims the other arcs; pointing at a row lights its arc. The fact stays in one place and is made findable rather than duplicated into an overlay |
+| 4 | First mark used `--surface-sunken` — **four units from the card in dark**, invisible. Same mistake as F17, one card over |
+| 5 | Shipped: the mark is a **tint of the slice's own colour** (`color-mix(… 14%, var(--surface))`) plus a 3 px accent bar in that colour, so it says *which* arc, and a neutral tint cannot be dark enough for one theme and pale enough for the other |
+
+One bug found and fixed inside step 5, worth recording because it is silent:
+**`color-mix(in srgb, X 18%, transparent)` computes to ~1.8 % alpha, not 18 %** —
+mixing with a fully transparent colour premultiplies. Measured off the computed
+style (`oklab(… / 0.0181)`) rather than judged by eye. The fix is to mix over an
+opaque colour: `color-mix(in srgb, var(--slice) 14%, var(--surface))`.
+
+Verified in both themes at desktop, with five cases in `cards.test.tsx`: no
+tooltip is raised, a slice marks its row, a row lights its slice, leaving clears
+both, and each row carries its slice's token as `--slice`.
+
+**Files:** `components/donut.tsx` (`hovered` / `onHover`, per-segment dimming),
+`pages/dashboard/query-types.tsx` (the shared `hovered` state and the legend's
+half of it), `styles/components.css`.
 
 ---
 
@@ -721,3 +802,140 @@ Re-run after the fixes: the four rows above, plus `npm run typecheck`,
    than the instance.
 4. **F5–F12** — cosmetic drift, no figure affected. Defer as a batch or take
    them with (1); F6 and F10 are the two an operator would actually notice.
+
+---
+
+## Fix pass — applied and re-measured
+
+Approved by the owner after the review above. Nine findings fixed, six deferred.
+**No plan, task file or other repository document was changed**; the only
+document edited is this one, and only to correct its own errors (F13, F15) and
+record what follows.
+
+### Fixed
+
+| # | Change | Files |
+| - | ------ | ----- |
+| **F1** | last grid track `minmax(0, auto)` → `200px`, so the header and every row resolve the same tracks whatever a row's actions say | `styles/components.css` |
+| **F2** | x axis gains `space: (…, dim) => dim / 5` — a label per fifth of the plot instead of uPlot's flat 50 px | `charts/stacked-bars.ts` |
+| **F3** | the empty branch now waits on `loading`, and `QueryTypes` is given the same flag | `pages/dashboard/queries-over-time.tsx`, `query-types.tsx`, `dashboard.tsx` |
+| **F6** | `Tile` gains `labelShort`; the three phone labels the artboard shortens are supplied and swapped in CSS beside the existing footer swap | `components/tile.tsx`, `pages/dashboard/tiles.tsx`, `styles/components.css` |
+| **F8** | `.l-rules .seg-legend` hidden — the tier figures were printed twice per row | `styles/components.css` |
+| **F10** | `TopList` gains `frequencyLabel`, defaulting to `Frequency`; Top clients passes `Share` | `pages/dashboard/top-list.tsx`, `top-clients.tsx` |
+| **F13** | R13 moved out of the card into `derive.sliceShare`, so §8.2 is again checkable against one module | `derive.ts`, `pages/dashboard/query-types.tsx` |
+| **F16** | `overflow-x: auto` on `.bd.lists-body` and `min-width: min-content` on `.lists-table` (≥768 px only) | `styles/components.css` |
+| **F17** | five tooltip tokens in all three palette blocks, the dark set raised above the card, plus a border and a shadow; two literal colours removed from `components.css` | `styles/tokens.css`, `components.css` |
+
+F4, F14 and F15 were **document** fixes, applied above: V11 and V14 are struck
+through and restated with the measured figures, the `ranges.ts` filename is
+corrected, and the `derive.ts` claim carries its correction inline.
+
+**F4 deliberately changed no code.** Dropping the dialog's completion callback
+would make revalidation depend entirely on the socket, which this phase's own
+design allows to be closed; a refresh-all finishing while it is down would then
+leave the table stating pre-refresh figures with nothing to correct it. Two
+bounded reads is the cheaper correct answer.
+
+### Deferred, with reasons
+
+| # | Why it waits |
+| - | ------------ |
+| **F5** | phone Cache card keeps the `free` band. One selector, but it touches the segment set a figure is read from, and `free` is a legitimate R7 reading — worth doing beside `p5-08`'s Cache page rather than alone |
+| **F7** | phone list-card section order. The fix is `grid-row` assignments in the `<768 px` block, which re-flows five cells; higher regression risk than the rest of this pass for a card that is already legible |
+| **F9** | the artboard's chart footnote. Wording, and it interacts with the decimation footnote `Chart` owns — a wording change wants the owner's eye, not a reviewer's |
+| **F11** | second concurrent `/config` when an empty range beats the mount read. One request, on a box with no history at all |
+| **F12** | `/health` fetched twice at boot. Inherited shell shape; the fix belongs with whoever revisits `shell.tsx` |
+| **F14** | six small artboard divergences: mono card secondaries, round vs square legend swatches, the Top-blocked `24 h` secondary, the phone donut legend, the phone Cache refresh button, `every`/`last` wording |
+
+### Gates, re-run in full
+
+| Gate | Result |
+| ---- | ------ |
+| `npm run typecheck` | clean |
+| `npm run test` | **328 passed / 26 files** (was 272 / 23 — three new files, 56 new cases) |
+| `npm run build` | **59,869 B gzip against 153,600 B — 39.0 %**, brotli 53,516 B. Was 59,490 B / 38.7 %; +379 B, of which ~190 B is the donut highlight |
+| postbuild assertions | pass — the build exits non-zero on a violation and did not |
+| Rust workspace | **not re-run.** No Rust source was touched in this pass or in the task; last green was `1,195 passed, 0 failed` |
+
+### New tests — what they pin
+
+| File | Cases | Pins |
+| ---- | ----: | ---- |
+| `styles/grid-tracks.test.ts` | 7 | F1 and F16 **from the stylesheet**, because jsdom computes no layout: the Lists template is eight tracks, its last is a fixed length, that length clears the widest action set (≥ 189 px), no other track is content-sized, the container scrolls, the grid is floored at `min-content`, and the row's duplicate tier legend stays hidden |
+| `pages/lists/list-row.test.tsx` | 21 | cell inventory and order against `Lists.dc.html`, the five `last_status` values plus `disabled`, the secondary line's presence and absence, the alert tint on a live failure but not a disabled one, `never`, the disabled interval dash, and the three action sets |
+| `pages/dashboard/cards.test.tsx` | 26 | both tile rows' labels, short labels, footers, short footers and figures; R5's sum excluding `refused`; the "since restart" caption; `Frequency` vs `Share`; all four chart states including the F3 hold; the donut's range label, its own hold, every slice's count and share, and the five cases pinning its highlight |
+
+Five of the seventeen findings were of a kind these files would have caught
+before a browser did (F1, F6, F8, F10, F16); the sixth class — a jump that only
+appears while a row is pending — is now impossible by construction rather than
+by assertion.
+
+### Re-measured in a real browser
+
+Chromium against the running container, dev server proxying. Same instrument as
+the first pass.
+
+| # | Before | After |
+| - | ------ | ----- |
+| **F1** header vs row tracks at 1440 px | `337.5 46 62 104 285.6 311.5 84 0.01` vs `290.6 46 62 104 245.9 268.2 84 130` | **identical**, and every cell's `x` matches: 265 / 479 / 535 / 607 / 721 / 904 / 1104 / 1198 |
+| **F1** row-to-row | actions cell 130 / 186 / 189 px by row state | fixed **200 px** on every row; `Delete and re-add` injected into a live row moved the Total column by **0 px** |
+| **F1** all rows vs head | — | `true` at 1440 px and at 900 px |
+| **F2** 24 h | one label per bar (~24) | 6 h cadence — `18:00 · 00:00 · 06:00`, 3 in this window's phase, 4 when a fourth boundary falls inside it |
+| **F2** 7 d | — | 2 d cadence — `Aug 21 · 23 · 25 · 27`, 4 plus one clipped |
+| **F2** 30 d | — | 6 d cadence — `Jul 30 · Aug 5 · 11 · 17 · 23`, **5**, which is plan §7.4's "~5" |
+| **F4** refresh-all | 2 × `GET /lists`, 2 × `/telemetry` | unchanged and expected — 2 and 2, summary `4 refreshed · 1 failed, rejected lists included — 5 in all` |
+| **F16** `/lists` at 900 px | `scrollWidth 964` vs `clientWidth 883` | **883 == 883**; the table now scrolls inside its card (`1094` in a `778` container) |
+| **F6** phone tile labels | `Queries blocked · Percentage blocked · Cache hit rate` | `Blocked · Blocked · Cache hit` — read through `innerText`, which sees only the visible copy |
+| **F17** tooltip | dark slab ~7 units from the dark card | raised surface, border and shadow; legible in both themes, dimming intact, `blocked %` still the served field |
+| 390 px, both pages | — | `scrollWidth == clientWidth`; every control outside the drawer ≥ 44 px on both axes; screenshots retaken |
+| lifecycle, unchanged | — | `fahTimers()` 5 on `/` and 1 on `/lists`, `fahUnion()` `['stats']` / `['list_refreshed']`, `fahChartBuilds()` 1 on load |
+
+**F3 is proven by test, not by browser.** Reaching it needs `history.enabled`
+switched off against a mounted page, which is a write to the container's
+configuration; the four cases in `cards.test.tsx` cover the branch exactly,
+including the one that must *not* blank on an ordinary range change.
+
+### Changed-hunks re-review
+
+Every hunk read back after the fact. Nothing found:
+
+- `space` is a `uPlot.Axis.SpaceFn` and lives inside the options object already
+  memoised on `(resolution, theme)`, so it adds no identity churn and cannot
+  re-trigger m4.
+- `empty` in `queries-over-time.tsx` covers `summary === null` as well, so the
+  old first-load boot branch is preserved rather than replaced.
+- `Tile` renders a bare string when `labelShort` is absent — five of the eight
+  tiles gain no extra element — and `display: none` keeps the hidden copy out of
+  the tab order and the accessibility tree.
+- `sliceShare` guards `total <= 0`; `frequencyLabel` defaults, so neither domain
+  table changes.
+- Hiding `.l-rules .seg-legend` does not make colour the only signal: the mono
+  partition line names each tier with its count, and the card title bar keeps
+  the legend once.
+- `min-width: min-content` is scoped to ≥ 768 px so a long unbreakable
+  `last_error` URL cannot set the floor on the phone card layout.
+- `StageBar`'s legend is untouched everywhere else — Cache state still renders
+  `fresh · stale · expired · free`.
+
+### Verdict
+
+**PASS WITH DEFERRED FINDINGS** on the measured evidence above — *proposed, not
+asserted*: the owner's instruction is that this task is not marked `PASS` or
+`DONE` until they agree the measurements match the plan. The phase table still
+reads `WAITING` and nothing here changes it.
+
+The three blockers are closed and re-measured, and F16 — which the first pass
+missed and which broke a stated plan invariant — is closed with them. What
+remains open is six Minor/Nit rows, all cosmetic, none touching a figure, all
+listed above with a reason.
+
+**One measurement to judge rather than accept.** Plan §7.4 asks for "4 labels at
+24 h". What ships is the artboard's *cadence* — one label every six hours — which
+yields 3 or 4 depending on where the window's hour boundaries fall relative to
+now. 7 d and 30 d land on ~5 as the plan asks. If the plan means exactly four at
+every phase, that needs an explicit `splits` and a further edit.
+
+The **Query types hover** the owner asked for during the review is built and
+approved — as a legend-row highlight rather than the tooltip first requested,
+for the reason recorded above. It is an addition neither artboard draws, so it
+is listed as new work rather than as a finding closed.

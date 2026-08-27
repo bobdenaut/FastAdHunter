@@ -32,8 +32,12 @@ export function DnsTiles({
         footerShort={clientCount === null ? '—' : `${String(clientCount)} clients`}
         href="/clients"
       />
+      {/* The three shortened labels are `MobileDashboard.dc.html`'s own:
+          `Blocked`, `Blocked`, `Cache hit`. The two "Blocked" tiles are told
+          apart by their figure and their footer, as the artboard draws them. */}
       <Tile
         label="Queries blocked"
+        labelShort="Blocked"
         figure={figure(stats?.blocked_total)}
         accent="blocked"
         glyph="hand"
@@ -43,6 +47,7 @@ export function DnsTiles({
       />
       <Tile
         label="Percentage blocked"
+        labelShort="Blocked"
         figure={ratio(stats?.blocked_percent)}
         accent="ratio"
         glyph="pie"
@@ -51,6 +56,7 @@ export function DnsTiles({
       />
       <Tile
         label="Cache hit rate"
+        labelShort="Cache hit"
         figure={ratio(stats?.cache_hit_percent)}
         accent="ratio"
         glyph="cache"

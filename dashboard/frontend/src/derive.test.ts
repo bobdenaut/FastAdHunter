@@ -4,6 +4,7 @@ import {
   blockedPercent,
   queryTypeSlices,
   shareOfMax,
+  sliceShare,
   sumOver,
   sumPerType,
   upstreamBar,
@@ -111,6 +112,16 @@ describe('the query-type fold', () => {
         { per_type: { A: 2, HTTPS: 4 } },
       ]),
     ).toEqual({ A: 5, AAAA: 1, HTTPS: 4 });
+  });
+
+  it('gives each slice its share of the summed total', () => {
+    expect(sliceShare(114224, 184233)).toBeCloseTo(62.0, 1);
+  });
+
+  it('is zero on an empty range rather than NaN', () => {
+    // An all-zero donut draws its empty track; five NaNs would render as
+    // `NaN%` beside five zeroes.
+    expect(sliceShare(0, 0)).toBe(0);
   });
 });
 

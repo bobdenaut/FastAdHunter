@@ -234,6 +234,12 @@ export function stackedBarsOptions(
         ticks: { show: false },
         font: `10px ${theme.mono}`,
         size: 26,
+        // A fifth of the plot per label. uPlot's default is a flat 50 px, which
+        // at 24 hourly bars over ~1200 px is one label per bar — a wall of
+        // clock digits where `Main.dc.html` draws four. Asking for a fifth of
+        // whatever width the plot has keeps that cadence at every width and at
+        // every range, so the phone gets the same rule and no second branch.
+        space: (_u, _axisIdx, _min, _max, dim) => dim / 5,
         values: (_u, splits) =>
           splits.map((value) => axisTimeLabel(value, resolution)),
       },

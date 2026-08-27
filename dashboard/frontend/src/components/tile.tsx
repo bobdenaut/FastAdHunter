@@ -7,6 +7,7 @@ export type TileAccent = 'volume' | 'blocked' | 'ratio' | 'healthy' | 'zero';
 
 export function Tile({
   label,
+  labelShort,
   figure,
   accent,
   glyph,
@@ -15,6 +16,12 @@ export function Tile({
   href,
 }: {
   label: string;
+  /**
+   * The phone artboard's shortened label (`Blocked`, `Cache hit`). Same
+   * mechanism as `footerShort`: both are rendered and one is hidden per
+   * breakpoint, because a JS width branch would put a listener on every tile.
+   */
+  labelShort?: string;
   figure: string;
   accent: TileAccent;
   glyph: string;
@@ -41,7 +48,16 @@ export function Tile({
     <div class={`tile ${accent}`}>
       <Icon name={glyph} size={64} className="ic" />
       <div class="in">
-        <div class="lb">{label}</div>
+        <div class="lb">
+          {labelShort === undefined ? (
+            label
+          ) : (
+            <>
+              <span class="lb-long">{label}</span>
+              <span class="lb-short">{labelShort}</span>
+            </>
+          )}
+        </div>
         <div class="n">{figure}</div>
       </div>
       {footer !== undefined &&

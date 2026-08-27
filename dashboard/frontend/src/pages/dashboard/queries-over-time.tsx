@@ -167,8 +167,16 @@ export function QueriesOverTime({
       );
     }
     if (error !== null) return <ErrorState error={error} />;
-    if (loading && summary === null) return <div class="boot" />;
-    if ((summary?.items.length ?? 0) === 0) return <EmptyState />;
+    // An empty response is exactly when the mount snapshot of
+    // `history.enabled` may be stale, so the page re-reads `/config` before it
+    // says which empty state this is. Holding the loading state across that one
+    // round trip is what stops "no data in this range" flashing ahead of
+    // "history is not being recorded" — the two the task requires be
+    // distinguishable. A range change with data keeps its bars up meanwhile:
+    // only the answer that would *be* an empty state waits.
+    const empty = (summary?.items.length ?? 0) === 0;
+    if (loading && empty) return <div class="boot" />;
+    if (empty) return <EmptyState />;
     // Decimation is visible. `max_points` is left at the server default, so
     // this is unreachable at the three offered ranges — it is built because
     // `stride` is part of the contract, not because a range trips it.

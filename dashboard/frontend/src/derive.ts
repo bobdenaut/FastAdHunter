@@ -71,6 +71,13 @@ export function queryTypeSlices(
   return head;
 }
 
+/** R13 — a slice as a percentage of the summed `per_type`. Here rather than in
+ *  the card so §8.2 really is checkable against this one module. `0` on an
+ *  empty range: an all-zero donut draws its empty track, not five NaNs. */
+export function sliceShare(value: number, total: number): number {
+  return total <= 0 ? 0 : (value / total) * 100;
+}
+
 /** Sums `per_type` across a range's items. Kept beside the fold because the two
  *  are one figure in two steps and splitting them invites a second summation. */
 export function sumPerType(

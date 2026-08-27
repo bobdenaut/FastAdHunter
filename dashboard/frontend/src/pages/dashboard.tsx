@@ -124,6 +124,7 @@ export function Dashboard(_props: PageProps) {
           range={range}
           summary={history.summary}
           recording={history.recording}
+          loading={history.loading}
           className="z-query-types"
         />
         <UpstreamHealth

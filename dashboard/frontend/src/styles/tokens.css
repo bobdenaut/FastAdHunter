@@ -84,6 +84,16 @@
 
   --focus: #1f9dbb;
 
+  /* The chart's hover tooltip. `Main.dc.html` draws it as a dark slab, which
+     separates from a white card by value alone — in the dark theme the same
+     slab is within a few units of the card behind it and all but disappears,
+     so the dark set raises it above the surface and gives it a border. */
+  --tip-surface: #1f2733;
+  --tip-border: #1f2733;
+  --tip-text: #ffffff;
+  --tip-label: #9fb0c3;
+  --tip-blocked: #e08a86;
+
   --font: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial,
     sans-serif;
   --font-mono: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas,
@@ -165,6 +175,12 @@
     --cache-free: #222c37;
 
     --focus: #4fc0d8;
+
+    --tip-surface: #2b3846;
+    --tip-border: #47535f;
+    --tip-text: #ffffff;
+    --tip-label: #b6bfc9;
+    --tip-blocked: #e08480;
   }
 }
 
@@ -229,4 +245,10 @@
   --cache-free: #222c37;
 
   --focus: #4fc0d8;
+
+  --tip-surface: #2b3846;
+  --tip-border: #47535f;
+  --tip-text: #ffffff;
+  --tip-label: #b6bfc9;
+  --tip-blocked: #e08480;
 }

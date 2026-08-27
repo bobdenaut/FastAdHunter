@@ -56,7 +56,8 @@
   background: rgba(0, 0, 0, 0.2);
 }
 
-.tile .ft-short {
+.tile .ft-short,
+.tile .lb-short {
   display: none;
 }
 
@@ -232,6 +233,43 @@ table.t tbody tr:hover td {
   gap: 26px;
 }
 
+/* Pointing at a slice marks its legend row, and pointing at a row lights its
+   slice. No tooltip: a bar carries no figures of its own so the chart has to
+   raise one, but this ring is drawn beside a legend that already prints every
+   count and share — an overlay here would cover the numbers it repeats. */
+.donut-seg {
+  cursor: default;
+  transition: opacity 120ms ease;
+}
+
+.donut-legend tr {
+  transition: background 120ms ease;
+}
+
+/* The mark is the slice's **own colour**, not a neutral band: a grey row says
+   only that something is marked, where a cyan one says which arc it belongs to
+   — and a neutral tint dark enough to see in one theme is a pale grey slab in
+   the other. `--slice` is set per row from the token the swatch already uses,
+   so the tint and the accent bar move with the palette. */
+/* Mixed over the card colour, never over `transparent`: mixing with a fully
+   transparent colour premultiplies, and `18%, transparent` computes to about
+   1.8 % alpha — a tint that is not there. */
+.donut-legend tr.on {
+  background: color-mix(in srgb, var(--slice) 14%, var(--surface));
+}
+
+.donut-legend tr.on td:first-child {
+  box-shadow: inset 3px 0 0 var(--slice);
+  font-weight: 500;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .donut-seg,
+  .donut-legend tr {
+    transition: none;
+  }
+}
+
 .donut-legend {
   width: 100%;
   border-collapse: collapse;
@@ -243,8 +281,10 @@ table.t tbody tr:hover td {
   white-space: nowrap;
 }
 
+/* The gutter the marked row's accent bar lives in, held open at every row so
+   marking one shifts no text. */
 .donut-legend td:first-child {
-  padding-left: 0;
+  padding-left: 9px;
   width: 100%;
 }
 
@@ -514,19 +554,25 @@ table.t tbody tr:hover td {
   display: none;
 }
 
-/* The hover tooltip — the only hover state in the system. Dark in both themes,
-   as the artboards draw it, so it reads as an overlay rather than as a card. */
+/* The hover tooltip — the only hover state in the system. It reads as an
+   overlay rather than as a card, which on a light page is the dark slab
+   `Main.dc.html` draws and in the dark theme is a surface raised above the card
+   plus a border: the artboard's slab is within a few units of the dark card
+   behind it, so value alone stops separating it. The border and the shadow do
+   that work in both themes; the tokens carry the difference. */
 .chart-tip {
   position: absolute;
   z-index: 2;
   pointer-events: none;
-  background: rgba(31, 39, 51, 0.95);
+  background: var(--tip-surface);
+  border: 1px solid var(--tip-border);
+  box-shadow: 0 4px 14px rgb(0 0 0 / 35%);
   border-radius: var(--radius);
   padding: 9px 11px;
   font-family: var(--font-mono);
   font-size: 11px;
   line-height: 1.55;
-  color: #fff;
+  color: var(--tip-text);
   white-space: nowrap;
   min-width: 150px;
 }
@@ -542,11 +588,11 @@ table.t tbody tr:hover td {
 }
 
 .chart-tip-row span:first-child {
-  color: var(--rail-text);
+  color: var(--tip-label);
 }
 
 .chart-tip-row .blocked {
-  color: #e08a86;
+  color: var(--tip-blocked);
 }
 
 /* The chart's own legend, below the plot — uPlot's is disabled. */
@@ -595,11 +641,16 @@ table.t tbody tr:hover td {
     min-height: 22px;
   }
 
-  .tile .ft-long {
+  /* `MobileDashboard.dc.html` shortens the label as well as the footer strip —
+     `Blocked`, `Cache hit` — because a half-width tile has no room for the
+     desktop wording beside a 24 px figure. */
+  .tile .ft-long,
+  .tile .lb-long {
     display: none;
   }
 
-  .tile .ft-short {
+  .tile .ft-short,
+  .tile .lb-short {
     display: inline;
   }
 
@@ -1038,17 +1089,41 @@ table.t tbody tr:hover td {
    opens when a list has failed. */
 .bd.lists-body {
   padding: 12px 0 0;
+  /* 768–1199 px the eight columns no longer fit: the table scrolls inside its
+     own container rather than the page body, which never scrolls sideways at
+     any width (visual-system.md §Responsive). */
+  overflow-x: auto;
 }
 
 .list-head,
 .list-row {
   display: grid;
+  /* The last track is a FIXED width, never `auto` and never `fr`. Each row is
+     its own grid, so a content-sized track is measured per row: the actions
+     cell is 130 px normally, 186 px while a refresh is pending and 189 px on a
+     `rejected` row, and the difference comes straight off the three `fr`
+     tracks. That made the header sit up to 130 px right of its own column and
+     shifted a row's other five cells sideways the moment its Refresh was
+     clicked. 200 px clears the widest action set (189 px measured) with room
+     for a font that renders a little wider; `.row-actions` wraps rather than
+     overflowing if it ever does not. A longer label than `Delete and re-add`
+     needs this figure raised with it, which `grid-tracks.test.ts` catches. */
   grid-template-columns:
     minmax(150px, 1.3fr) 46px 62px 104px minmax(160px, 1.1fr)
-    minmax(190px, 1.2fr) 84px minmax(0, auto);
+    minmax(190px, 1.2fr) 84px 200px;
   gap: 10px;
   align-items: start;
   padding: 9px 14px;
+}
+
+/* Floors the grid at the sum of its own tracks so the columns keep their
+   widths inside the scroller instead of collapsing. Desktop only: the phone
+   card layout has no column minimums, and a long unbreakable `last_error` URL
+   would otherwise set the floor. */
+@media (min-width: 768px) {
+  .lists-table {
+    min-width: min-content;
+  }
 }
 
 /* The three metadata cells are their own element so the phone can group them
@@ -1093,6 +1168,16 @@ table.t tbody tr:hover td {
 
 .l-rules .seg {
   height: 7px;
+}
+
+/* The tier legend belongs to the card title bar, where `Lists.dc.html` draws it
+   once for the whole table. `StageBar` renders its own beside every bar, which
+   printed the three figures a second time directly above the mono partition
+   line that already carries them — two wasted lines in the narrowest cell on
+   the row. Colour is still not the only signal: the partition line names each
+   tier with its count. */
+.l-rules .seg-legend {
+  display: none;
 }
 
 .l-partition {
