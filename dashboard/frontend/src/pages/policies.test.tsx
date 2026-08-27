@@ -541,3 +541,34 @@ describe('the empty list subset (F3)', () => {
     expect(writes).toEqual([]);
   });
 });
+
+describe('mutations racing the route (F12)', () => {
+  it('does not re-read after unmount when a live mutation settles late', async () => {
+    const dom = await mount();
+    await click(byText(dom, 'Edit'));
+    const name = dom.querySelector('#policy-name') as HTMLInputElement;
+    await act(async () => {
+      name.value = 'Children';
+      name.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    let settle: ((value: Response) => void) | null = null;
+    fetchMock.mockImplementationOnce(
+      () =>
+        new Promise<Response>((resolve) => {
+          settle = resolve;
+        }),
+    );
+    await click(byText(dom, 'Save changes'));
+    const before = calls().length;
+
+    await act(async () => {
+      render(null, host as HTMLElement);
+    });
+    await act(async () => {
+      settle?.(respond(200, POLICIES.items[0]));
+    });
+    await flush();
+
+    expect(calls().length).toBe(before);
+  });
+});

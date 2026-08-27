@@ -483,6 +483,57 @@ describe('mutations racing the route (F4/F5/F6)', () => {
     expect(calls().length).toBe(before);
   });
 
+  // F14 — one busy slot meant starting a second row's mutation blanked the
+  // first row's busy state mid-flight; a set keeps both rows busy until each
+  // one settles.
+  it('keeps both rows busy while two mutations are in flight', async () => {
+    const pending: Array<(value: Response) => void> = [];
+    fetchMock.mockImplementation((path: string, init?: RequestInit) => {
+      if ((init?.method ?? 'GET') === 'PUT') {
+        return new Promise<Response>((resolve) => {
+          pending.push(resolve);
+        });
+      }
+      return Promise.resolve(route(path, init));
+    });
+    const dom = await mount();
+
+    const rename = async (index: number) => {
+      await click(rows(dom)[index]?.querySelector('.iconbtn'));
+      await click(
+        [...(rows(dom)[index]?.querySelectorAll('button') ?? [])].find(
+          (button) => button.textContent === 'Rename',
+        ),
+      );
+      await click(
+        [...(rows(dom)[index]?.querySelectorAll('button') ?? [])].find(
+          (button) => button.textContent === 'Save',
+        ),
+      );
+    };
+    await rename(0);
+    await rename(4);
+
+    const glyph = (index: number) =>
+      rows(dom)[index]?.querySelector<HTMLButtonElement>('.iconbtn');
+    expect(pending).toHaveLength(2);
+    expect(glyph(0)?.disabled).toBe(true);
+    expect(glyph(4)?.disabled).toBe(true);
+
+    await act(async () => {
+      pending[0]?.(respond(200, CLIENTS[0]));
+    });
+    await flush();
+    expect(glyph(0)?.disabled).toBe(false);
+    expect(glyph(4)?.disabled).toBe(true);
+
+    await act(async () => {
+      pending[1]?.(respond(200, CLIENTS[4]));
+    });
+    await flush();
+    expect(glyph(4)?.disabled).toBe(false);
+  });
+
   it('reports a failed re-read instead of silently keeping stale rows', async () => {
     const dom = await mount();
     fetchMock.mockImplementation((path: string, init?: RequestInit) => {

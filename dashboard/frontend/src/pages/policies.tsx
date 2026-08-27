@@ -60,6 +60,7 @@ export function Policies(_props: PageProps) {
   const [pending, setPending] = useState<PolicyDraft | null>(null);
   const [busy, setBusy] = useState<Busy | null>(null);
   const controller = useRef<AbortController | null>(null);
+  const disposed = useRef(false);
 
   const reloadPolicies = useCallback(() => {
     controller.current?.abort();
@@ -94,7 +95,10 @@ export function Policies(_props: PageProps) {
         if (cause instanceof DOMException && cause.name === 'AbortError') return;
         setLoadError(cause instanceof Error ? cause : new Error(String(cause)));
       });
-    return () => controller.current?.abort();
+    return () => {
+      disposed.current = true;
+      controller.current?.abort();
+    };
   }, []);
 
   /**
@@ -109,10 +113,13 @@ export function Policies(_props: PageProps) {
       setDialogError(null);
       const unblock = recompiles ? blockNavigation() : () => undefined;
       work()
+        // A live mutation can settle after navigation — nothing blocks it the
+        // way a recompiling one is blocked — and a re-read issued then would be
+        // a request attributable to a dead page. The next entry re-reads.
         .then(() => {
           setEditing(null);
           setRemoving(null);
-          return reloadPolicies();
+          if (!disposed.current) return reloadPolicies();
         })
         .catch((cause: unknown) => {
           const error =

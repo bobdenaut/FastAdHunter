@@ -40,6 +40,13 @@ import { pushRecord, SessionRing } from './rule-tester/session-ring';
  * cross-references, and nothing else on this page is derived: no domain
  * matching, no rule evaluation, no list attribution happens in the browser.
  */
+/**
+ * Client mode with the client field left blank: the engine answers from a bare
+ * context, so `default` decides. Its own sentence, because the policy-mode one
+ * ("you chose this policy") would claim a choice nobody made.
+ */
+const NO_CLIENT_REASON = 'no client given — the default policy decides';
+
 export function RuleTester(_props: PageProps) {
   const [clients, setClients] = useState<readonly Client[]>([]);
   const [policies, setPolicies] = useState<readonly Policy[]>([]);
@@ -84,8 +91,7 @@ export function RuleTester(_props: PageProps) {
    * right story.
    */
   const explain = useCallback(
-    (address: string | null, decided: string): string => {
-      if (address === null) return CHOSEN_POLICY_REASON;
+    (address: string, decided: string): string => {
       const observed = clients.find((client) => client.ip === address);
       const subjectClient: Client =
         observed === undefined
@@ -118,7 +124,9 @@ export function RuleTester(_props: PageProps) {
               ? CHOSEN_POLICY_REASON
               : record.partial
                 ? 'no address was given, so no assignment could apply'
-                : explain(record.sentClient, result.policy);
+                : record.sentClient === null
+                  ? NO_CLIENT_REASON
+                  : explain(record.sentClient, result.policy);
           setRing((current) =>
             pushRecord(current, { ...record, result, why }),
           );

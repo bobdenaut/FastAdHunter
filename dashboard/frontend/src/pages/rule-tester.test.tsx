@@ -254,6 +254,21 @@ describe('client mode by address', () => {
     await ask(dom, 'goodsite.example.com', '192.168.10.4');
     expect(kv(dom)['from list']).toBe('your custom rules');
   });
+
+  // F13 — a blank client field is a default-context test, not a chosen policy:
+  // the "why" must not borrow policy mode's sentence.
+  it('says the default policy decides when the client field is blank', async () => {
+    const dom = await mount();
+    testResult = { verdict: 'pass', rule: null, list: null, policy: 'default' };
+    await ask(dom, 'github.com', '');
+    expect(sent(2)).toEqual({ domain: 'github.com', qtype: 'A' });
+    expect(kv(dom)['why that policy']).toBe(
+      'no client given — the default policy decides',
+    );
+    expect(dom.querySelector('.ring-row')?.textContent).toContain(
+      'asthe default policy',
+    );
+  });
 });
 
 describe('D5 — a name resolved to an address', () => {

@@ -38,6 +38,11 @@ export function SessionRing({ ring }: { ring: readonly TestRecord[] }) {
                   <span class="note">under policy</span>
                   <span class="mono">{record.sentPolicy}</span>
                 </>
+              ) : record.sentClient === null ? (
+                <>
+                  <span class="note">as</span>
+                  <span class="note">the default policy</span>
+                </>
               ) : (
                 <>
                   <span class="note">as</span>

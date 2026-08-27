@@ -58,7 +58,7 @@ export function Clients(_props: PageProps) {
   const [openIp, setOpenIp] = useState<string | null>(null);
   const [renamingIp, setRenamingIp] = useState<string | null>(null);
   const [assigningIp, setAssigningIp] = useState<string | null>(null);
-  const [busyIp, setBusyIp] = useState<string | null>(null);
+  const [busyIps, setBusyIps] = useState<ReadonlySet<string>>(new Set());
   const [now, setNow] = useState(nowMs);
   const controller = useRef<AbortController | null>(null);
   const disposed = useRef(false);
@@ -99,7 +99,7 @@ export function Clients(_props: PageProps) {
    */
   const run = useCallback(
     (ip: string, work: Promise<unknown>, silent404 = false) => {
-      setBusyIp(ip);
+      setBusyIps((current) => new Set(current).add(ip));
       setMutationError(null);
       work
         .catch((cause: unknown) => {
@@ -122,9 +122,14 @@ export function Clients(_props: PageProps) {
         })
         // Cleared per-ip, not wholesale: a second row's mutation can be in
         // flight, and the first one finishing must not wipe its busy state or
-        // close its open editor.
+        // close its open editor. A set rather than one slot, so both rows read
+        // busy while both are in flight.
         .finally(() => {
-          setBusyIp((current) => (current === ip ? null : current));
+          setBusyIps((current) => {
+            const next = new Set(current);
+            next.delete(ip);
+            return next;
+          });
           setRenamingIp((current) => (current === ip ? null : current));
           setAssigningIp((current) => (current === ip ? null : current));
         });
@@ -235,7 +240,7 @@ export function Clients(_props: PageProps) {
                     classification={classifyAssignment(client, policyItems)}
                     now={now}
                     open={openIp === client.ip}
-                    busy={busyIp === client.ip}
+                    busy={busyIps.has(client.ip)}
                     onToggle={() => {
                       setRenamingIp(null);
                       setOpenIp((current) =>
@@ -246,7 +251,7 @@ export function Clients(_props: PageProps) {
                     {renamingIp === client.ip ? (
                       <RenameField
                         client={client}
-                        busy={busyIp === client.ip}
+                        busy={busyIps.has(client.ip)}
                         onSave={(name) => rename(client, name)}
                         onCancel={() => setRenamingIp(null)}
                       />
@@ -255,7 +260,7 @@ export function Clients(_props: PageProps) {
                         <button
                           type="button"
                           class="btn g"
-                          disabled={busyIp === client.ip}
+                          disabled={busyIps.has(client.ip)}
                           onClick={() => setRenamingIp(client.ip)}
                         >
                           Rename
@@ -264,7 +269,7 @@ export function Clients(_props: PageProps) {
                           type="button"
                           class="btn"
                           disabled={
-                            busyIp === client.ip || policies === null
+                            busyIps.has(client.ip) || policies === null
                           }
                           onClick={() => setAssigningIp(client.ip)}
                         >
@@ -290,7 +295,7 @@ export function Clients(_props: PageProps) {
         <AssignDialog
           client={assigning}
           policies={policyItems}
-          busy={busyIp === assigning.ip}
+          busy={busyIps.has(assigning.ip)}
           onAssign={(body) => assign(assigning, body)}
           onClear={() => clear(assigning)}
           onCancel={() => setAssigningIp(null)}

@@ -545,6 +545,136 @@ cargo run (1,196 passed, 0 failed) stands. `npm run typecheck` clean;
 `npm run test` **512 passed** (+6); `npm run build` **82,701 B gzip (53.8 %)**,
 brotli 73,616.
 
+### Second-pass verification (2026-08-27) — full p5-06 → HEAD re-review after the fixes
+
+Independent re-review of the complete range `03a81d8..1aba73d` (56 files), not
+only the fix diffs. Ground truth re-read: `routes.rs` (`put_user_rules`,
+`patch_policy`, `delete_policy`, `test_rule`, the `Recompile::` sites),
+`wire.rs` (`PatchPolicyRequest` double options), `fah-rules/src/policy.rs`
+`parse_selector`, `fah-model/src/policy.rs` `matches`/`specificity`/
+`network_contains`, `fah-config/src/schema/policy.rs` `parse_days`/
+`parse_time_of_day`. All gates re-run on this checkout, not read from the
+sections above.
+
+#### F1–F11 — independently confirmed fixed
+
+| # | Re-verified by |
+| - | -------------- |
+| F1 | `put_user_rules` validates the joined document **as sent** before the dedup; dedup runs on the success path only; the stored text and the response are the deduped set, so T3's `sent.length − response.rules.length` still holds. `user_rules_422_line_numbers_index_the_document_as_sent` pins dup-above-invalid → `line 3`. The frontend sends `buffer.split('\n')` verbatim and anchors onto that same buffer — the two now index one document. |
+| F2 | `onPopState` consults `navigationBlocks`; while held it `pushState`s the path captured at `blockNavigation()` and announces nothing, so the page stays mounted and `currentPath()` stays consistent for `navigate()`'s same-path check. Release → normal announce. `router.test.ts` pins restore, no-announce, and post-release popstate. History cannot grow unboundedly (each Back re-pushes the same held entry and clears forward history). |
+| F3 | `ListChips` renders `[]` as `no lists — blocks nothing` (`.lchip-warn`, words not hue); the dialog's `subsetError` disables submit on an empty subset in **both** create and edit; `patch.lists` emits a literal `null` (pinned in `filtering.test.ts`), and `sameLists` distinguishes `null` / `[]` / order exactly as Rust's `target.lists != lists` does. |
+| F4 | `disposed` ref set in the Clients effect cleanup; a mutation settling late skips `load()`; test `does not re-read after unmount when a mutation settles late` green. **Scope was Clients only — see F12.** |
+| F5 | The `finally` clears `busyIp`/`renamingIp`/`assigningIp` per-ip via functional updates. Residual single-slot display noted as F14. |
+| F6 | Both pages render `ErrorState` when `loadError !== null` with data on screen (`clients.tsx`, `policies.tsx`); test green. |
+| F7 | The test POST carries `testController`'s signal, aborted in the effect cleanup; `AbortError` swallowed. |
+| F8 | `buffer === '' ? 0 : buffer.split('\n').length`; empty-document test green. |
+| F9 | Both modals read "being validated and, once accepted, … recompiled and swapped in" — no acceptance claimed before the response. |
+| F10 | `parseV6` takes the embedded v4 form only as the final 32 bits of the whole address (`1.2.3.4::` → `Name`, `::1.2.3.4:5` still rejected, `64:ff9b::192.0.2.1` still an address); the prefix suffix takes `/^\+?[0-9]+$/` with the >255 u8 refusal — both line-checked against `parse_selector` and `Ipv4Addr`/`Ipv6Addr::from_str` semantics, tests pinned. |
+| F11 | `parseStrict` walks each quoted rule as a Rust debug string (`\` escapes), `TAIL` accepted only as the final segment, any grammar violation → zero anchors + raw. Embedded-anchor, embedded-remainder, escaped-quote and unterminated-quote tests green. |
+
+#### Gates, re-run on this checkout
+
+`cargo fmt --all -- --check` clean · `cargo clippy --workspace --all-targets
+-- -D warnings` clean · `cargo test --all-features --workspace` **1,196
+passed, 0 failed, 8 ignored** · `npm run typecheck` clean · `npm run test`
+**512 passed in 40 files** · `npm run build` **82,701 B gzip (53.8 %), brotli
+73,616 B** — every figure byte-identical to the second-round claims above.
+`dist/` grep: no `pi-hole`/`pihole` anywhere; `uplot` only in
+`uPlot.esm-*.js` and the p5-06 CSS scope — no chunk from this task references
+it.
+
+#### Whole-plan regression pass — categories checked, no issue found
+
+- **Recompile boundary vs Rust** — §10.1 re-verified against the live
+  `Recompile::` sites (`routes.rs:907/933-938/969/1012/1036`); the frontend's
+  `sameLists` and the handler's `target.lists != lists` agree on `null` vs
+  `[]` vs order, so confirm/block and the actual rebuild cannot disagree on
+  one snapshot. A stale page copy can only over-confirm, never under-confirm.
+- **Clients request discipline** — one `GET /clients` + one `GET /policies`
+  on mount, zero `GET …/policy` (test-pinned); no `getClientPolicy` accessor
+  (invariants test).
+- **Assignment classification** — `selectors.ts` and `assignment.ts`
+  re-checked line-for-line against `parse_selector`, `matches`,
+  `network_contains` and §7.3 (branch order R1, 2a′ refusal, both branch-0
+  shapes, string-equality direct lookup, first-match order); `viaText`'s two
+  spellings and 2b's sole-candidate append match §8.4. `parseDays`/
+  `parseTimeOfDay` mirror `schema/policy.rs` including the first-dash split
+  and the `u8`/`u16` `+`-sign quirks.
+- **Rule Tester** — D5's three branches, R3's zero-request block, policy-mode
+  short-circuit, `user-rules` naming, all consistent with
+  `routes.rs:1258-1298` (name → bare `ClientContext`, explicit `policy` wins).
+  The empty-client-field case is F13.
+- **Patch shapes** — `PatchPolicyRequest.name` is a plain option, so a name
+  cannot be cleared via the API; the form's inability to clear one mirrors the
+  API rather than hiding a capability. Double options emitted as literal
+  `null`s, pinned.
+- **events/endpoints/timers** — all four routes declare `[]`/`[]`;
+  `filtering-invariants.test.ts` + `routes.test.ts` pin the absences and the
+  `REFRESH_ENDPOINTS` five. The V2a server-side connection count and the
+  V14–V17 browser measurements were **not re-staged in this pass** (no live
+  container run); they stand on the second-round re-verification recorded
+  above.
+- **Scope hygiene** — staged range holds p5-07 paths, the plan file, the
+  phase-table status and this review only; the modified `phase2.6` review file
+  remains uncommitted per plan §2; no dev fixture in the tree.
+
+#### New findings
+
+##### F12 — Should-fix — FIXED (2026-08-27) — Policies re-reads from a dead page; F4's fix was applied to Clients only
+
+`policies.tsx` `run()` chains `.then(() => reloadPolicies())` with no
+`disposed` guard — the exact shape F4 fixed in `clients.tsx:120-122`. A
+non-recompiling `PATCH` (rename, blocking-mode, assignments — nothing blocks
+navigation for these) settling after unmount calls `reloadPolicies()`, which
+creates a **fresh** `AbortController` and issues a `GET /policies`
+attributable to the unmounted route, with a controller nothing will abort (the
+effect cleanup aborted the previous one before `reloadPolicies` replaced it).
+Violates the phase invariant "leaving a page stops its work" in the same
+mutate-then-navigate window F4 named. Recompiling mutations are unaffected —
+the navigation block keeps the page mounted. Inferred from code, not staged.
+**Smallest fix:** the same `disposed` ref pattern `clients.tsx` uses, checked
+before `reloadPolicies()`.
+
+##### F13 — Minor — FIXED (2026-08-27) — client mode with an empty client field renders the policy-mode "why"
+
+`QueryForm`'s submit is enabled on a non-empty domain alone, and
+`rule-tester.tsx:160-172` sends `{domain, qtype}` when the client field is
+blank. The record then has `sentPolicy: null`, `partial: false`,
+`sentClient: null`, so `send()` falls through to `explain(null, …)`, which
+returns `CHOSEN_POLICY_REASON` — the result card prints **"you chose this
+policy — assignments are ignored"** for a test where no policy was chosen and
+client mode was selected. §8.4's table has no row for this shape and the
+sentence it borrows belongs to policy mode; the session ring also renders
+`as` followed by nothing. The verdict itself is honest (default context is
+what the engine uses). **Smallest fix:** its own sentence — e.g.
+`no client given — the default policy decides` — or require the field before
+submitting in client mode.
+
+##### F14 — Nitpick — FIXED (2026-08-27) — `busyIp` is a single slot, so a second row's mutation blanks the first row's busy state
+
+F5's fix stopped the *clearing* from being wholesale, but `busyIp` still holds
+one ip: starting a mutation on row B while row A's is in flight repoints it to
+B, so row A renders idle mid-flight and its buttons re-enable — a second,
+overlapping mutation on A becomes startable, and the first A-run's per-ip
+`finally` then clears the second A-run's state. Display-only: the mutations
+are idempotent PUTs/DELETE, the re-reads settle every row, and no data is
+wrong. **Smallest fix:** a `Set` of busy ips (add on start, delete own entry
+on settle).
+
+### Fixes applied (2026-08-27, third round) — F12–F14, owner-approved
+
+| # | Fix | Where |
+| - | --- | ----- |
+| F12 | `disposed` ref set in the effect cleanup; a mutation settling after unmount skips `reloadPolicies()` — the same pattern F4 put on Clients | `policies.tsx`; test `does not re-read after unmount when a live mutation settles late` (`policies.test.tsx`) |
+| F13 | a blank client field gets its own sentence — `no client given — the default policy decides` — never policy mode's; `explain()` tightened to a non-null address; the session ring prints `as the default policy` instead of `as ` | `rule-tester.tsx`, `session-ring.tsx`; test pins the request body (`{domain, qtype}`, no `client`), the "why" row and the ring row |
+| F14 | `busyIp` replaced with a `ReadonlySet<string>`: added on start, own entry deleted on settle, so two rows in flight both read busy and a same-ip re-entry cannot start while its first run is pending | `clients.tsx`; test `keeps both rows busy while two mutations are in flight` settles the two in order and asserts each glyph re-enables on its own settle |
+
+**Verification.** Frontend only — no Rust touched, the first round's cargo run
+(1,196 passed, 0 failed) stands. `npm run typecheck` clean; `npm run test`
+**515 passed in 40 files** (+3); `npm run build` **82,754 B gzip (53.9 %)**,
+brotli 73,675 — +53 B gzip for the three fixes.
+
 ### Status
 
-**PASS** — F1–F11 all fixed and verified; nothing open.
+**PASS** — F1–F14 all fixed and verified. The V2a/V14–V17 live rows and V19's
+heap half stand on the earlier runs as recorded in Known limitations.
