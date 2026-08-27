@@ -275,20 +275,44 @@ describe('the query-types donut', () => {
     summary?: HistorySummary | null;
     loading?: boolean;
     recording?: boolean;
+    range?: '24h' | '7d' | '30d';
   }) =>
     mount(
       <QueryTypes
-        range="24h"
+        range={over.range ?? '24h'}
         summary={over.summary ?? null}
         recording={over.recording ?? true}
         loading={over.loading ?? false}
       />,
     );
 
-  it('follows the range selector rather than a fixed `last 24 h`', () => {
-    expect(donut({ summary: summary([BUCKET]) }).querySelector('.ch-right')?.textContent).toBe(
-      'last 24 h',
+  const label = (el: HTMLElement) =>
+    el.querySelector('.ch-right')?.textContent;
+
+  it('states the range rather than a fixed `last 24 h`', () => {
+    expect(label(donut({ summary: summary([BUCKET]) }))).toBe('last 24 h');
+    expect(label(donut({ summary: null, range: '30d' }))).toBe('last 30 d');
+  });
+
+  it('names the range its own figures cover, not the one being fetched', () => {
+    // The chips flip on click; the slices arrive a round trip later. Naming the
+    // chip printed `last 24 h` over the 30 d figures for the length of the
+    // fetch — the chart's own defect (N2), one card over.
+    const thirtyDays = {
+      ...summary([BUCKET]),
+      resolution: 'day' as const,
+      from: '2026-07-28T12:00:00Z',
+      to: '2026-08-27T12:00:00Z',
+    };
+    expect(label(donut({ summary: thirtyDays, range: '24h' }))).toBe(
+      'last 30 d',
     );
+    // And the ring's own accessible name moves with it, not with the chip.
+    expect(
+      donut({ summary: thirtyDays, range: '24h' })
+        .querySelector('svg')
+        ?.getAttribute('aria-label'),
+    ).toBe('Query types over the last 30 d');
   });
 
   it('holds its answer across the disambiguation read too', () => {

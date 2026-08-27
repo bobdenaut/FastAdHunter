@@ -45,17 +45,40 @@ widened to `['health','telemetry','cache','clients','lists']`; `clients` and
 polling mechanism: they inherit the registry's refcounting, coalescing, suspend
 and last-unsubscribe teardown unchanged. `routes.test.ts` pins the five names.
 
-**`src/derive.ts` is the whole of §8.2.** Every derived display value on both
+~~**`src/derive.ts` is the whole of §8.2.** Every derived display value on both
 pages is one exported function there, with the plan's row ids in the comments,
 so a reviewer checks one file against one table instead of hunting arithmetic
-through the pages. R18/R19 were written and unit-tested before anything rendered
-them.
+through the pages.~~ R18/R19 were written and unit-tested before anything
+rendered them.
 
-> **Correction (fix pass, F13).** As shipped for review this was true of every
+> ~~**Correction (fix pass, F13).** As shipped for review this was true of every
 > row but two: R13's percentage was divided inline in `query-types.tsx` and R16
 > is two verbatim counts printed either side of a slash. R13 is now
 > `derive.sliceShare` and the sentence holds again; R16 stays where it is, and
-> is a formatting of two fields rather than a derivation.
+> is a formatting of two fields rather than a derivation.~~
+>
+> **WRONG AS RECORDED, twice — corrected by R5(c) in the closure pass.** The
+> claim was never true and the F13 correction understated by how much. Read at
+> source against the final tree, `derive.ts` holds **R2, R3, R4, R8, R9, R13,
+> R14, R18, R19**. Seven §8.2 rows are computed where they are printed:
+>
+> | Row | Where | What it is |
+> | --- | ----- | ---------- |
+> | R5 | `pages/dashboard/tiles.tsx:100` | `http.pass + http.allow + http.block` |
+> | R7 | `pages/dashboard/cache-state.tsx:50` | `capacity − entries`, clamped ≥ 0 |
+> | R11 | `pages/dashboard.tsx:103` | `items.length` |
+> | R12 | `pages/dashboard.tsx:93`, `pages/dashboard/ruleset-card.tsx` | count of `enabled` |
+> | R15 | `pages/lists/list-row.tsx:63-82` | the three tiers as `flex` weights, whose sum **is** `rules_total` (`crates/fah-api/src/routes.rs:484`) — a proportion laid out rather than divided |
+> | R16 | `pages/lists.tsx:241` | `count(enabled) / items.length` |
+> | R17 | `pages/lists/refresh-all-dialog.tsx:78-80` | `refreshed`, `failed`, `results.length` printed together |
+>
+> **Every one of them matches its §8.2 row and no unlisted derivation exists** —
+> that half of V1 stands, reproduced independently in the closure pass. What was
+> wrong is the sentence a reviewer is told to check one file against: `derive.ts`
+> holds the arithmetic that is worth naming, not all of it. Moving the remaining
+> seven was **not** done — R11/R12/R16 are `length` and a `filter().length`,
+> R5/R7 are one operator each, R15 is a layout and R17 is a sentence; wrapping
+> them would add indirection without adding a checkable place.
 
 **Stacking by occlusion, not arithmetic.** Both series are drawn from zero and
 painted back to front — `queries` first, `blocked` on top — so the visible upper
@@ -74,6 +97,16 @@ with the range and deliberately do **not** move with the `stats` push.
 chips are a single markup with CSS `order`, `display: contents` and `grid-area`
 placement doing the phone layout. There is no viewport listener and no second
 component tree in this task.
+
+> **Precision, closure pass.** True of the tables and the rows; the **range
+> chips are one element rendered into two slots** — `queries-over-time.tsx:118`
+> builds `chips` once and passes it both as the card's `tools` and inside
+> `.chips-mobile`, and CSS shows whichever the width calls for. So there is one
+> markup and one state, but two DOM copies. Checked at 390 px because a
+> duplicated control is an accessibility question, not only a tidiness one: the
+> hidden copy's **parent** is `display: none`, so those three buttons are out of
+> the tab order and out of the accessibility tree. No duplicate control is
+> exposed at either width.
 
 **Lists has two read paths on purpose** — the inventory through the shared
 registry, `/telemetry` as a timerless one-shot for the compile duration — and
@@ -287,7 +320,7 @@ byte-for-byte.
 | Bar printed figures | `stacked-bars.ts:322-364` | `items[].queries`, `.blocked` | verbatim, `compactCount` | plotted data |
 | Tooltip `blocked %` | `queries-over-time.tsx:68` | `items[i].blocked_percent` | **read, never divided** | `/history/summary` |
 | Donut segments | `derive.ts:56-80` | `Σ items[].per_type` | R13/R14 | `/history/summary` |
-| Donut % | `query-types.tsx:71` (inline) | same | R13 — formula correct, **not in `derive.ts`** (F13) | `/history/summary` |
+| Donut % | ~~`query-types.tsx:71` (inline)~~ **`derive.sliceShare`** | same | R13 — ~~formula correct, **not in `derive.ts`** (F13)~~ **moved by the F13 fix; the final tree calls `derive.sliceShare`** | `/history/summary` |
 | Upstream bar width | `derive.ts:118-127` | `upstreams[].attempts` | R18 | `/telemetry` |
 | Upstream overlay | `derive.ts:118-127` | `.failures / .attempts` | R19, no minimum width | `/telemetry` |
 | `N attempts · M failures` | `upstream-health.tsx:70-73` | verbatim | — | `/telemetry` |
@@ -710,7 +743,7 @@ reads in both themes rather than relying on value in one.
 
 | Invariant | Tested? | Gap |
 | --------- | ------- | --- |
-| §8.2 derivations | yes — `derive.test.ts`, every row incl. all-zero and sub-pixel | **helpers only.** Nothing asserts a page calls them. R13/R16 (F13) are inline and untested |
+| §8.2 derivations | yes — `derive.test.ts`, every row incl. all-zero and sub-pixel | **helpers only.** Nothing asserts a page calls them. ~~R13/R16 (F13) are inline and untested~~ — R13 moved to `derive.sliceShare` and is tested; **seven rows are still computed where they are printed**, see the corrected note in the Implementation Summary |
 | `REFRESH_ENDPOINTS` is the five | yes — `routes.test.ts:39` | — |
 | Registry refcount / coalesce / suspend / timer reset | yes — 25 cases, `registry.test.ts` | — |
 | Route transition holds exactly the declaration | yes — `route-lifecycle.test.ts` + a DEV assertion | shared-endpoint transition (V5b) is **not** a test; verified by hand here |
@@ -816,7 +849,7 @@ record what follows.
 
 | # | Change | Files |
 | - | ------ | ----- |
-| **F1** | last grid track `minmax(0, auto)` → `200px`, so the header and every row resolve the same tracks whatever a row's actions say | `styles/components.css` |
+| **F1** | last grid track `minmax(0, auto)` → `200px`, so the header and every row resolve the same tracks whatever a row's actions say. **Superseded by the fourth pass: the track is `132px` in the final tree** — 3 × 44 px of glyph, which cannot vary by row state at all | `styles/components.css` |
 | **F2** | x axis gains `space: (…, dim) => dim / 5` — a label per fifth of the plot instead of uPlot's flat 50 px | `charts/stacked-bars.ts` |
 | **F3** | the empty branch now waits on `loading`, and `QueryTypes` is given the same flag | `pages/dashboard/queries-over-time.tsx`, `query-types.tsx`, `dashboard.tsx` |
 | **F6** | `Tile` gains `labelShort`; the three phone labels the artboard shortens are supplied and swapped in CSS beside the existing footer swap | `components/tile.tsx`, `pages/dashboard/tiles.tsx`, `styles/components.css` |
@@ -1123,7 +1156,13 @@ literal colour."*
 | ----- | ------- | ----- |
 | `components.css:569` | `box-shadow: 0 4px 14px rgb(0 0 0 / 35%)` | **added by the F17 fix** |
 | `components.css:1363` | `.switch i { background: #fff }` | p5-06's own, unfixed |
-| 7 further sites | `#fff`, `rgba(0, 0, 0, …)` | p5-05's, present at `383b904` |
+| ~~7~~ **6** further sites | `#fff`, `rgba(0, 0, 0, …)` | p5-05's, present at `383b904` |
+
+**Count corrected by R5(d).** The inherited literals are **eight** across the
+three sheets — seven in `components.css`, one in `layout.css` — and this row
+counted only `components.css`'s and then miscounted them. The two p5-06 rows
+above are now tokens, so what the allowlist in `styles/literal-colours.test.ts`
+holds is exactly those eight; its header said "seven" and now names the split.
 
 The F17 entry reads "two literal colours removed from `components.css`", which
 is true and incomplete: the same edit introduced a third and left p5-06's own
@@ -1344,7 +1383,7 @@ contract cannot be met.
 | Last refresh | `104px` | **78px** |
 | Status | `minmax(160px, 1.1fr)` | **110px** |
 | Rules | `minmax(190px, 1.2fr)` | **150px** |
-| actions | `200px` | **unchanged** |
+| actions | `200px` | **unchanged in this pass** — the fourth pass took it to `132px`, which is the final tree |
 
 The `fr` weights are untouched, so nothing moves at a width where the row
 already fits — the trim only lowers where the row stops fitting. Row floor:
@@ -1353,6 +1392,9 @@ already fits — the trim only lowers where the row stops fitting. Row floor:
 130 + 46 + 62 + 78 + 110 + 150 + 84 + 200 = 860
 + 7 gaps × 10 = 70   + row padding 28     = 958      (was 1094)
 ```
+
+**Final tree:** the fourth pass replaced the 200 px actions track with 132 px of
+glyphs, so the same sum reads `… + 132 = 792`, `+ 70 + 28 = **890**`.
 
 **One further change the validation forced.** At the Status column's new floor
 the `dead-source` row's `last_error` painted **35 px outside its own cell**: the
@@ -1386,7 +1428,7 @@ moved the threshold down **118 px**.
 | below the threshold, scrolling stays inside the table container | **holds** — at 1200 px, 958 px of table in a 912 px scroller, page body clean. Re-checked at 900 px: 1094-era behaviour preserved, `883 == 883` |
 | header and all row columns aligned | **holds** — head and all six rows resolve identical tracks at every width measured; the Total column's `x` is one value across head and rows (901 at 1200, 954 at 1300, 1037 at 1366) |
 | normal, pending and rejected rows keep identical tracks | **holds** — measured at 1200 px, the tightest: tracks equal, actions cell 200 × 18 and Total `x` = 901 in all three states, including a live `refresh requested` and an injected `Delete and re-add` |
-| no action wrapping or vertical layout jump | **holds** — the actions cell is 18 px tall in every row and every state; row heights are byte-identical across the three snapshots (81 / 81 / 233 / 64 / 81 / 81) |
+| no action wrapping or vertical layout jump | **holds for the columns, and the height sentence overreaches** — the actions cell is 18 px tall in every row and every state, and ~~row heights are byte-identical across the three snapshots (81 / 81 / 233 / 64 / 81 / 81)~~ **corrected by R5(b)**: they are identical between `normal` and `pending`, and a real `rejected` is taller because §10.2 requires it to carry `last_error` and the gate sentence. See the closure pass |
 | readability not harmed | **one harm found and fixed** — the `last_error` spill above. After the wrap rule **no cell on any row overflows** at 1200 px |
 
 ### The 1200 px contract — measured, not met
@@ -1460,10 +1502,18 @@ not read the palette.
 - **Alignment** was checked cell by cell, not by the grid template alone: all
   eight cells of all six rows sit at the header's own `x` at every width. Zero
   disagreements out of 8 × 6 × 3 × 3 comparisons.
-- **No layout jump.** Row heights are byte-identical across `normal`,
-  `rejected` and `pending` at each width. The `dead-source` row is 267 px at
-  1247/1250 and 215 px at 1300 — that is the wrapped `last_error` reflowing as
-  the Status column widens, which happens between widths, never between states.
+- **No layout jump.** ~~Row heights are byte-identical across `normal`,
+  `rejected` and `pending` at each width.~~ **Overstated — corrected by R5(b) in
+  the closure pass.** They are identical between `normal` and `pending`, which
+  is the state pair F1 was about; a real `rejected` row is taller, because the
+  status cell then carries `last_error` and "content gate refused the body
+  before it could commit", which §10.2 requires it to. Measured at 1200 px on
+  the final tree: `gate-list` **64 px → 129 px** when its `last_status` becomes
+  `rejected`. **No column moves in any state** — Total `x` = 922.27 and the
+  actions track 131.99 px in all three, which is the invariant that was actually
+  claimed to hold. The `dead-source` row is 267 px at 1247/1250 and 215 px at
+  1300 — that is the wrapped `last_error` reflowing as the Status column widens,
+  which happens between widths, never between states.
 - **The actions track never moves**: 200 px on the header and on every row, in
   every state, at every width.
 - **No text overflow anywhere**, which is the `overflow-wrap` rule from the
@@ -1529,7 +1579,26 @@ No other document needs an edit. `plan/wip/phase5/p5-06-dashboard-and-lists-plan
 §9.3 says "the page body never scrolls horizontally at any width", which is
 measured true at every width in this pass and in the two before it.
 
-### Documentation edit — **applied**
+### Documentation edit — ~~**applied**~~ **applied, then reverted**
+
+> **SUPERSEDED, and the heading was left wrong for two passes — corrected by
+> R5(a) in the closure pass.** The fourth fix pass replaced the 200 px action
+> labels with 132 px of glyphs, which dropped the table's floor to **890 px** —
+> under the 912 px a 1200 px viewport gives it. The exception this edit
+> documented therefore stopped existing, and the edit was **reverted with it**.
+>
+> **What is true of the final tree:** `git diff 383b904..HEAD --
+> docs/dashboard/visual-system.md` is **empty** — the file ends this task exactly
+> as it began it — and the Lists table needs no internal scrollbar anywhere in
+> the ≥ 1200 px band. Re-measured in the closure pass at a 1200 px viewport, both
+> themes: table `scrollWidth == clientWidth == 912`, page `1183 == 1183`. The
+> unconditional *"Wide tables and charts scroll inside themselves"* covers the
+> sub-1200 case as it always did, and **1247 px is now history** — it is the
+> floor the table had before the glyphs, not a figure anything in the tree
+> depends on.
+>
+> The two subsections below are kept for the reasoning, not for their
+> conclusions. Everything either of them says about a 1200–1247 px band is void.
 
 Approved by the owner, in the owner's own wording — shorter and more neutral
 than the version proposed above, and it does not pin the sentence to a figure
@@ -1546,18 +1615,31 @@ table is untouched.**
 +already in its desktop layout while the table scrolls inside its card.
 ```
 
-The settled behaviour, stated once:
+~~The settled behaviour, stated once:~~ **Void — this is the pre-glyph
+behaviour.**
 
 | Width | Layout | Lists table |
 | ----- | ------ | ----------- |
-| ≥ 1247 px | desktop | fits, no scroll |
-| 1200–1246 px | desktop | scrolls inside its card |
+| ~~≥ 1247 px~~ | desktop | ~~fits, no scroll~~ |
+| ~~1200–1246 px~~ | desktop | ~~scrolls inside its card~~ |
 | < 1200 px | the responsive rules above, unchanged | — |
 
-**This closes the table-width question.** No other repository document was
-changed, and no code changed in this pass or the one before it.
+**What replaces it, measured on the final tree:**
+
+| Width | Layout | Lists table |
+| ----- | ------ | ----------- |
+| ≥ 1200 px | desktop | **fits, no internal scrollbar** — floor 890 px in ≥ 912 px of card |
+| < 1200 px | `visual-system.md` §Responsive, unchanged | scrolls inside its own container, as that document already says |
+
+~~**This closes the table-width question.**~~ The glyph change closed it, one
+pass later, by removing the band rather than documenting it.
 
 ### Wording audit — 1247 px is the table's figure, not a breakpoint
+
+> **Superseded one pass later — see R5(a).** The glyph change dropped the floor
+> to 890 px and the figure stopped describing anything in the tree. This section
+> is accurate about the pass it belongs to; **1247 px appears nowhere in the
+> final tree** and no document mentions it.
 
 Every mention of the figure in this repository was re-read and made to say the
 same thing. **The application's breakpoints are unchanged and remain
@@ -1565,7 +1647,7 @@ same thing. **The application's breakpoints are unchanged and remain
 
 | Where | State |
 | ----- | ----- |
-| `docs/dashboard/visual-system.md` §Responsive | correct as shipped — the sentence names the Lists table as its subject and the breakpoint table is untouched |
+| `docs/dashboard/visual-system.md` §Responsive | ~~correct as shipped — the sentence names the Lists table as its subject and the breakpoint table is untouched~~ **the sentence was reverted one pass later; the file is byte-unchanged across the whole task** |
 | `plan/wip/phase5/p5-06-dashboard-and-lists-plan.md` §9.3 | no change needed. It quotes the three breakpoints, which did not move, and asserts "the page body never scrolls horizontally at any width", measured true throughout |
 | `plan/wip/phase5/p5-06-dashboard-and-lists.md` | never mentions the figure |
 | this review file | four places rewritten — see below |
@@ -1585,12 +1667,13 @@ convention for a superseded claim (V11, V14): the §"Still open" paragraph that
 misread `visual-system.md`, and the first draft of the documentation edit, which
 the owner replaced with a shorter wording.
 
-**Settled, in one form of words:**
+~~**Settled, in one form of words:**~~ **Void — pre-glyph. The final tree's
+table is two sections above.**
 
 | Width | Application layout | Lists table |
 | ----- | ------------------ | ----------- |
-| ≥ 1247 px | desktop | fits, no internal scrollbar |
-| 1200–1246 px | desktop | scrolls inside its card |
+| ~~≥ 1247 px~~ | desktop | ~~fits, no internal scrollbar~~ |
+| ~~1200–1246 px~~ | desktop | ~~scrolls inside its card~~ |
 | < 1200 px | `visual-system.md` §Responsive, unchanged | — |
 
 Gates after the comment change: `npm run typecheck` clean, `npm run test`
@@ -1653,9 +1736,12 @@ that names the consequence.**
 | 390 px | card layout | — | no (`373 == 373`) | n/a | — | 0 | — | 2 | full width | 99 × 44 |
 
 Dark and light are identical at every width and in every state. **Zero controls
-under 44 × 44** at 390 px outside the drawer. Row heights are byte-identical
-across the three states at each width, so no state introduces a jump; ordinary
-rows are now **64 px** rather than 81, because the partition line lost a row.
+under 44 × 44** at 390 px outside the drawer. ~~Row heights are byte-identical
+across the three states at each width, so no state introduces a jump~~ — **see
+R5(b)**: identical between `normal` and `pending`, and a real `rejected` row is
+taller because §10.2 makes it carry `last_error` and the gate sentence. **No
+column moves in any state**, which is the invariant F1 owns. Ordinary rows are
+now **64 px** rather than 81, because the partition line lost a row.
 
 Before this pass, for comparison: at 1200 px the floor was 958 in a 912 px
 container — a scrollbar, `Remove` clipped, Rules 150 px and its partition line
@@ -1739,3 +1825,256 @@ mirror of `refresh` rather than the same shape.
 **Sketch fidelity now holds in both directions** on this task's two Lists
 artboards: the desktop table has no drawn actions to disagree with, and the
 phone card draws what ships.
+
+---
+
+## Closure pass — R1, R2, R4 fixed; R5 corrects this document
+
+Approved by the owner after a final regression review of the whole range
+(`383b904..HEAD`). Scope was deliberately narrow: **regressions from the latest
+changes, and claims in this file contradicted by the final tree.** No deferred
+finding was reopened, nothing was redesigned, and nothing was committed, pushed,
+tagged or moved in the phase table.
+
+Findings are numbered `R…` to keep them apart from the four earlier passes'
+`F…`/`N…`.
+
+### R1 · Minor · The fifth donut slice was invisible, and read as the fourth
+
+`styles/tokens.css` — the `--series-4` / `--series-5` pair, all three palettes.
+
+Both were neutral greys, so **luminance was the only thing separating them** —
+and the fifth additionally failed to clear the card it is drawn on. Measured off
+the running page before the fix:
+
+| | light | dark |
+| --- | ---: | ---: |
+| `--series-5` vs `--surface` | **1.62** | **2.82** |
+| `--series-5` vs `--track` | **1.38** | **2.46** |
+| `--series-4` vs `--series-5` | **1.87** | **2.02** |
+
+Live on this inventory: five query types (`A / AAAA / HTTPS / PTR / NS`), so
+§8.2's R14 folds nothing and both greys are drawn, adjacent, in the ring and in
+the legend. The owner found it by looking at the page.
+
+**Two greys cannot be fixed by moving one of them.** 3 : 1 between the pair
+*and* 3 : 1 from each to a white card needs the darker one at a luminance the
+neutral ramp does not reach. What the palette does everywhere else is the
+answer: **hue carries the category, luminance carries visibility.** Series 1–3
+sit 1.16–1.46 apart in contrast and are told apart by hue alone.
+
+Fixed by giving series 5 the sheet's violet family — muted, so it is not read as
+`--tier-url` — placed where it clears its card like every other series. Series 4
+keeps the grey `Main.dc.html` draws.
+
+| | light before → after | dark before → after |
+| --- | --- | --- |
+| `--series-5` | `#c3ccd6` → **`#6d5fa6`** | `#5c6773` → **`#8f82c0`** |
+| vs `--surface` | 1.62 → **5.47** | 2.82 → **4.74** |
+| vs `--track` | 1.38 → **4.64** | 2.46 → **4.13** |
+| vs `--series-4` | 1.87 → 1.80 **+ hue** | 2.02 → 1.20 **+ hue** |
+
+**The luminance ratio to series 4 went down in dark, and that is the point, not
+a regression.** It now sits in the same family as every other adjacent pair in
+this palette (1↔2 = 1.16, 2↔3 = 1.21, 3↔4 = 1.42), all of which are separated by
+hue. What changed is that the fifth slice is now *present* on its card in both
+themes, where before it was not.
+
+**Artboard deviation, declared.** `Main.dc.html:288` draws the fifth donut row
+`#c3ccd6`, which measures **1.62 : 1** against the white it sits on. Phase
+constraint 8 — a drawn colour is not a measurement — the same reasoning this
+task already applied three times, to the artboards' 22 px tile footer, 18 px
+trailing links and 32 × 18 switch. The artboards were **not** edited.
+
+Blast radius is one card: `--series-1…5` are referenced only by
+`query-types.tsx`'s `tone()`, which `cards.test.tsx` already pins.
+
+### R2 · Minor · Query types named a range its own figures did not cover
+
+`pages/dashboard/query-types.tsx`, `pages/dashboard/ranges.ts`.
+
+The card's `secondary` and the ring's `aria-label` came from the **chip**
+(`RANGES[range].label`), which flips on click, while the slices lag by the
+`/history/summary` round trip. Measured with 900 ms injected on that request,
+30 d → 24 h: for **750 ms** the header read `last 24 h` over the 30 d figures
+(`A 3,373,852`), beside a chart that — since N2 — was correctly still showing
+the 30 d totals and the 30 d axis. **N2, one card over**, and pre-existing since
+`2dc15c5`; N2's fix is what made it conspicuous by making the chart right.
+
+`plottedResolution` could not be reused: 7 d and 30 d both ask for
+`resolution: 'day'`, so the response's resolution does not say which it is. The
+**window** does. `plottedRange(summary, range)` picks the range whose span is
+nearest `to − from`, with the requested range breaking a tie. The server echoes
+the `from` it was given and sets `to` to its own now
+(`crates/fah-api/src/routes.rs`, `parse_range`; `history_summary` passes
+`range.from` / `range.to` straight through — no clamping to retention), so the
+span is what was asked for give or take clock skew, and the three spans are a
+day, a week and a month apart.
+
+Re-measured on the final tree, both directions, 900 ms injected:
+
+```text
+24 h → 30 d    0–600 ms  last 24 h :: A 87,289        750 ms  last 30 d :: A 3,373,852
+30 d → 24 h    0–600 ms  last 30 d :: A 3,373,852     750 ms  last 24 h :: A 87,289
+```
+
+**Zero frames** in which the words and the figures disagree, in either
+direction. The ring's `aria-label` moves with them.
+
+### R4 · Nit · A disabled list's Refresh named an action that cannot run
+
+`pages/lists/list-actions.tsx`.
+
+Introduced by the fourth pass's glyph change. `disabled={pending ||
+!item.enabled}` was already there, but as a word `Refresh` could be greyed and
+still read; as a glyph at `--text-faint` it says nothing, and a disabled control
+fires no pointer events, so its `title` never opens. The accessible name — the
+only channel left — still read `Refresh local-extra`.
+
+Fixed by making the name carry the condition. The glyph, the 44 × 44 target and
+the `disabled` semantics are unchanged.
+
+| state | `aria-label` | `title` |
+| ----- | ------------ | ------- |
+| enabled | `Refresh <id>` | `Refresh` |
+| **disabled list** | **`Refresh <id> — unavailable while the list is disabled`** | **`Refresh — unavailable while the list is disabled`** |
+| pending | `Refresh requested for <id>` | `Refresh requested` |
+
+Pending wins over disabled: a list disabled while its `202` is unanswered is
+busy, not unavailable. Pinned both ways.
+
+### R5 · This document's own corrections
+
+Every one applied above, in place, following this file's strike-through
+convention for a superseded claim (V11, V14):
+
+| # | What was wrong | Where it is corrected |
+| - | -------------- | --------------------- |
+| **a** | §"Documentation edit — **applied**" and both "settled behaviour" tables described a **1200–1246 px band** in which the Lists table scrolls. The fourth pass's glyphs dropped the floor 958 → 890 px and **reverted that documentation edit**; the heading and the tables were left standing | that section, the wording audit, and both tables — struck, with the final tree's measured behaviour beside them |
+| **b** | "Row heights are byte-identical across the three states", in three places | struck in all three. True of `normal` vs `pending`; a real `rejected` row is taller because §10.2 makes it carry `last_error` and the gate sentence — measured **64 → 129 px** at 1200 px. **No column moves in any state**, which is the invariant F1 owns |
+| **c** | "Every derived display value on both pages is one exported function in `derive.ts`", and the F13 correction's "true of every row but two" | Implementation Summary — struck, with the **seven** rows computed where they are printed listed by file and line. All seven match §8.2; **no unlisted derivation exists**, which is the half of V1 that matters and which reproduces |
+| **d** | N4's "7 further sites"; `literal-colours.test.ts`' header said "the seven sites below" | both corrected to **eight** — seven in `components.css`, one in `layout.css`, which is what the allowlist has always asserted |
+
+Two further contradicted rows were found and struck while checking: the
+provenance table's "R13 … **not in `derive.ts`**" (the F13 fix moved it to
+`derive.sliceShare`), and the test-coverage table's "R13/R16 are inline and
+untested". One code comment was corrected with them —
+`grid-tracks.test.ts`'s "the eight columns stop fitting well above 1199 px",
+which was the pre-glyph floor; the assertion beside it was already right.
+
+**`docs/dashboard/visual-system.md` ends this task byte-unchanged**, verified:
+`git diff 383b904..HEAD -- docs/dashboard/visual-system.md` is empty. **No
+document states the 1247 px figure**, and nothing in the code depends on it; it
+survives only in three comments (`list-actions.tsx`, `grid-tracks.test.ts` ×2)
+that explain what the glyphs replaced, where it is history rather than a claim
+about the final tree.
+
+### Gates — closure pass
+
+| Gate | Result |
+| ---- | ------ |
+| `npm run typecheck` | clean |
+| `npm run test` | **360 passed / 29 files** (was 350 / 28 — one new file, ten new cases) |
+| `npm run build` | **60,437 B gzip against 153,600 B — 39.3 %**, brotli 54,042 B. Was 60,327 B; **+110 B** |
+| postbuild assertions | pass — the build exits 0 |
+| `cargo fmt --all -- --check` | clean |
+| `cargo clippy --workspace --all-targets -- -D warnings` | clean |
+| `cargo test --workspace` | **1,195 passed, 0 failed, 8 ignored** (44 suites) — unchanged from `p5-05`, as expected for a task that touched no Rust. Re-run in full at the point of marking `DONE`, per `plan/CLAUDE.md` §Mandatory steps 3, rather than carried forward |
+
+### New and changed tests — closure pass
+
+| File | Cases | Pins |
+| ---- | ----: | ---- |
+| `styles/series-palette.test.ts` (new) | 4 | R1 **from the stylesheet**, because jsdom computes no colour: all five series defined in all three palette blocks; series 5 ≥ 3 : 1 on both its surface and its track in every palette; series 4 ≥ 3 : 1 on its surface; and — the actual defect — series 4 is a neutral while series 5 is not, so the two adjacent slices can never both be greys again |
+| `pages/dashboard/ranges.test.ts` (+4) | 4 | R2: the label names the response's window while a change is in flight, **including the `7 d` ↔ `30 d` pair `plottedResolution` cannot separate**; agrees with the chip once the response lands; falls back to the chip on `null`, an unparseable window and a zero span; tolerates browser-to-server clock skew |
+| `pages/dashboard/cards.test.tsx` (+1, 1 rewritten) | 2 | the donut's `secondary` **and** the ring's `aria-label` both follow a 30 d response under a `24h` chip |
+| `pages/lists/list-row.test.tsx` (+1, 1 rewritten) | 2 | R4: the disabled refresh's accessible name and title carry the reason, the glyph is unchanged, and `pending` on a disabled list still reports busy rather than unavailable |
+
+### Re-measured in a real browser — closure pass
+
+Chromium against the running `fah-p506` container, dev server proxying. Viewport
+figures are CSS pixels.
+
+| # | Check | Result |
+| - | ----- | ------ |
+| **R1** | tokens and painted arcs, both themes | light `rgb(109, 95, 166)`, dark `rgb(143, 130, 192)` — the violet is actually stroked, not merely declared. The contrast table above reproduces off the live page |
+| **R2** | 24 h → 30 d and 30 d → 24 h, 900 ms injected, sampled every 150 ms | **0 mismatched frames** in either direction; label, `aria-label` and figures flip together |
+| **R4** | `local-extra`, desktop and 390 px, both themes | `Refresh local-extra — unavailable while the list is disabled`, `disabled` true, glyph still `#refresh`, target 44 × 44 desktop / 99 × 44 phone |
+| regression — Lists at 1200 px | both themes | page `1183 == 1183`, table `912 == 912` (**no internal scrollbar**), `.bd.lists-body` `visible / visible`, tracks equal on head and all six rows, **0** misaligned cells, **0** text overflow, actions track 131.99 px, heights `64 / 64 / 267 / 63 / 64 / 64` — identical to the pass before this one |
+| regression — both pages at 390 px | both themes | `373 == 373`; the only controls under 44 × 44 are the drawer's `Theme` (34 × 44) and `Sign out` (42 × 44), `p5-05` chrome and outside V17's scope, unchanged |
+| regression — lifecycle | — | `fahTimers()` **5** on `/`, `fahUnion()` `['stats']`, socket `open` |
+| regression — chart memoisation | — | 24 h → 7 d rebuilds **once**; 7 d → 30 d rebuilds **zero** times (same `day`, memo holds); **zero** rebuilds across 8 s of `stats` pushes |
+
+### Reviewed and found unchanged
+
+The whole range was re-derived rather than inherited: API client shapes against
+API.md, the `202` short-circuit, the route table and refresh union, socket
+subscriptions, every §8.2 arithmetic site, the uPlot chunk split (`index`,
+`login` and `system` carry **0** `uplot` strings; the only CSS mentions are the
+two hand-written `.chart .uplot` rules), F1's grid tracks, F16's page-scroll
+freedom, N1's 44 × 44 switch target, N3's single-axis scroller, and the `409`
+parsers against the live API. **No fix in any pass weakened or bypassed an
+earlier invariant.**
+
+### Still deferred, unchanged and untouched by this pass
+
+**F5, F7, F9, F11, F12, F14** — each verified still present, none reopened: the
+phone Cache card still prints `free 9,982`; the phone list card still orders
+header → meta → why → partition → actions; the chart footnote is still the
+DNS-only line; `/config` is still read twice when an empty range beats the mount
+read; `/health` is still fetched twice at boot (both at t = 41 ms); the six small
+artboard divergences stand.
+
+Two rows are added to that list by this review, both Nits, both pre-existing:
+
+| # | What | Why it waits |
+| - | ---- | ------------ |
+| **R3** | **F14(d), with one part F14 does not record.** `MobileDashboard.dc.html:189` draws the phone Query types card as `Query types` alone over a four-entry `label · %` list. Shipped keeps the `last 24 h` secondary the artboard drops — and at 349 px of card `.ch` is `flex-wrap: wrap`, so it takes its own line — and renders the desktop three-column `label / count / %` table, five rows | it is the phone donut legend F14(d) already defers, and the fix is the same edit. R1 makes the card legible; this would make it the artboard's |
+| **R6** | delete-and-re-add re-adds with `refresh_hours: item.refresh_hours`, and `GET /lists` resolves that field through `refresh_hours.unwrap_or(default_hours)` (`crates/fah-api/src/routes.rs:481`) — so a list that inherited `rules.refresh_hours_default` comes back with an explicit override and stops following a later change to the default | arguably to spec: §10.3 asks for a re-add with "the same … `refresh_hours`". A behaviour question for the owner, not a defect |
+
+### Verdict — closure pass
+
+**PASS WITH DEFERRED FINDINGS.**
+
+R1, R2 and R4 are closed and proven from the running application; R5's
+corrections leave this document with no claim contradicted by the final tree.
+Every invariant the four earlier passes established was re-derived here rather
+than inherited, and all of them hold. What remains open is **eight Minor/Nit
+rows — F5, F7, F9, F11, F12, F14, R3, R6** — all cosmetic or presentational,
+none touching a figure, each listed above with its reason.
+
+---
+
+## Task status — `DONE`
+
+**The owner accepted this verdict on 2026-08-27 and marked the task `DONE`**, so
+the "proposed, not asserted" qualifier the four earlier verdicts carry is
+resolved: the measurements match the plan, and `plan/wip/phase5/CLAUDE.md` row 6
+now reads `DONE` in the same change as the code.
+
+Gates at the point of the flip, all re-run rather than carried forward:
+
+| Gate | Result |
+| ---- | ------ |
+| `cargo fmt --all -- --check` | clean |
+| `cargo clippy --workspace --all-targets -- -D warnings` | clean |
+| `cargo test --workspace` | **1,195 passed, 0 failed, 8 ignored** (44 suites) |
+| `npm run typecheck` | clean |
+| `npm run test` | **360 passed / 29 files** |
+| `npm run build` | **60,437 B gzip — 39.3 % of 153,600**, brotli 54,042 B; postbuild assertions pass |
+
+**The eight deferred rows travel with the task, not against it.** None touches a
+figure or a documented invariant; each is recorded above with the reason it
+waits and, where it belongs to a later task's surface, the task that owns it —
+F5 beside `p5-08`'s Cache page, F12 with whoever revisits `shell.tsx`, the
+chunk-count observation with `p5-10`'s bundle audit, and F14/R3 wherever the
+phone Dashboard's artboard drift is taken as a batch.
+
+**`p5-07` inherits, unchanged and load-bearing:** the shared bounded refresh
+widened to five endpoints, `derive.ts` as the place §8.2 arithmetic worth naming
+lives, the uPlot chunk split and its postbuild assertion, the Lists mutation
+idiom (confirm-then-`invalidate`, the `202`/event split, the `409` classifiers),
+the 44 px target rules including `.switch::before`, and the four stylesheet
+guards — `grid-tracks`, `literal-colours`, `series-palette` and the chart-split
+assertion — which are what stop this task's five defect classes recurring in the
+next one.

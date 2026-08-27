@@ -40,9 +40,23 @@ export function ListActions({
   // `pending` is the 202's own state, cleared by the `list_refreshed` event
   // rather than by the response. As a glyph it is the same button in a busy
   // state — no second label, and therefore no second width.
+  //
+  // The button is also disabled on a disabled list, and there the accessible
+  // name has to carry the reason. A word can be greyed and still read; a glyph
+  // greyed to `--text-faint` says nothing, and a disabled control fires no
+  // pointer events, so its `title` never opens. The name is the only channel
+  // left, so it states the condition rather than naming an action that will not
+  // run.
   const refreshLabel = pending
     ? `Refresh requested for ${item.id}`
-    : `Refresh ${item.id}`;
+    : item.enabled
+      ? `Refresh ${item.id}`
+      : `Refresh ${item.id} — unavailable while the list is disabled`;
+  const refreshTitle = pending
+    ? 'Refresh requested'
+    : item.enabled
+      ? 'Refresh'
+      : 'Refresh — unavailable while the list is disabled';
   return (
     <div class="row-actions">
       {item.last_status === 'rejected' ? (
@@ -61,7 +75,7 @@ export function ListActions({
           class={pending ? 'iconbtn is-busy' : 'iconbtn'}
           disabled={pending || !item.enabled}
           aria-label={refreshLabel}
-          title={pending ? 'Refresh requested' : 'Refresh'}
+          title={refreshTitle}
           onClick={onRefresh}
         >
           <Icon name="refresh" size={17} />

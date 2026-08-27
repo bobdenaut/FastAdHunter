@@ -273,8 +273,34 @@ describe('the row actions', () => {
     expect((refresh as HTMLButtonElement).disabled).toBe(true);
   });
 
-  it('cannot refresh a disabled list', () => {
+  it('cannot refresh a disabled list, and the name says why', () => {
+    // A word can be greyed and still read. A glyph greyed to `--text-faint`
+    // says nothing, and a disabled control fires no pointer events, so its
+    // `title` never opens — the accessible name is the only channel left, and
+    // `Refresh <id>` alone names an action that will not run.
     const refresh = row({ enabled: false }).querySelector('.row-actions button');
     expect((refresh as HTMLButtonElement).disabled).toBe(true);
+    expect(refresh?.getAttribute('aria-label')).toBe(
+      'Refresh oisd-basic — unavailable while the list is disabled',
+    );
+    expect(refresh?.getAttribute('title')).toBe(
+      'Refresh — unavailable while the list is disabled',
+    );
+    // Still the refresh glyph in the same 44 px slot: only the name changes.
+    expect(refresh?.querySelector('use')?.getAttribute('href')).toContain(
+      '#refresh',
+    );
+  });
+
+  it('does not blame the disabled list when a refresh is pending', () => {
+    // `pending` on a list that is also disabled is reachable — disable a list
+    // whose 202 has not been answered yet. The busy state is the one that
+    // describes the button, so it wins.
+    const refresh = row({ enabled: false }, { pending: true }).querySelector(
+      '.row-actions button',
+    );
+    expect(refresh?.getAttribute('aria-label')).toBe(
+      'Refresh requested for oisd-basic',
+    );
   });
 });

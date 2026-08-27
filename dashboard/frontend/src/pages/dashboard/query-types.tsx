@@ -5,7 +5,7 @@ import { Card } from '../../components/card';
 import { Donut } from '../../components/donut';
 import { EmptyState } from '../../components/empty-state';
 import { queryTypeSlices, sliceShare, sumPerType } from '../../derive';
-import { RANGES, type RangeKey } from './ranges';
+import { RANGES, plottedRange, type RangeKey } from './ranges';
 
 /**
  * R13 / R14. The donut reads the **same response as the chart above it**, so
@@ -41,6 +41,14 @@ export function QueryTypes({
   );
   const total = slices.reduce((sum, slice) => sum + slice.value, 0);
 
+  // The range of what is **on screen**, not of what was last asked for. The
+  // slices lag a range change by the round trip, so naming the chip's range
+  // would print `last 24 h` over the 30 d figures until the response landed.
+  // Only the response moves this, so the words and the numbers always describe
+  // the same window — the chart's `plottedResolution` rule, applied to a label.
+  const plotted = plottedRange(summary, range);
+  const rangeLabel = RANGES[plotted].label;
+
   /** The slice the pointer is on, shared by the ring and the legend so either
    *  one can raise it and both show it. */
   const [hovered, setHovered] = useState<number | null>(null);
@@ -51,7 +59,7 @@ export function QueryTypes({
   return (
     <Card
       title="Query types"
-      secondary={`last ${RANGES[range].label}`}
+      secondary={`last ${rangeLabel}`}
       bodyClass="donut-body"
       className={className}
     >
@@ -69,7 +77,7 @@ export function QueryTypes({
               value: slice.value,
               colour: tone(index),
             }))}
-            label={`Query types over the last ${RANGES[range].label}`}
+            label={`Query types over the last ${rangeLabel}`}
             size={150}
             thickness={22}
             hovered={hovered}

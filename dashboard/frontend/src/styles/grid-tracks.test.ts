@@ -142,11 +142,14 @@ describe('the Lists row’s Rules cell', () => {
 
 describe('the Lists table container', () => {
   it('scrolls the table rather than the page body', () => {
-    // The eight columns stop fitting well above 1199 px — measured 1094 px of
-    // table in a 1062 px container at a 1333 px viewport. visual-system.md
-    // §Responsive puts that scroll inside the table's own container; the page
-    // body never scrolls sideways at any width. Measured before the rule
-    // existed: 964 px of content in an 883 px viewport on `/lists`.
+    // The eight columns stop fitting below the 1200 px desktop breakpoint —
+    // measured on the final tree, 890 px of table in an 878 px container at a
+    // 1000 px viewport. visual-system.md §Responsive puts that scroll inside
+    // the table's own container; the page body never scrolls sideways at any
+    // width. Measured before the rule existed: 964 px of content in an 883 px
+    // viewport on `/lists`. (With the text actions this rule replaced, the
+    // floor was 958 px and the scroll reached up to 1247 px; the glyphs took it
+    // to 890 and the case above pins that it stays under the breakpoint's 912.)
     expect(declaration('.lists-table', 'overflow-x')).toBe('auto');
   });
 

@@ -50,6 +50,43 @@ export function plottedResolution(
   return summary?.resolution ?? RANGES[range].resolution;
 }
 
+/**
+ * The range the **plotted** data covers, for anything that prints the range in
+ * words rather than formatting an axis with it.
+ *
+ * `plottedResolution` cannot answer this: 7 d and 30 d both ask for
+ * `resolution: 'day'`, so the response's own resolution does not say which of
+ * the two it is. The window does. The server echoes the `from` it was given and
+ * sets `to` to its own now (`crates/fah-api/src/routes.rs`, `parse_range`), so
+ * `to − from` is the span that was asked for, give or take clock skew — and the
+ * three spans are a day, a week and a month apart, which no plausible skew
+ * closes. Nearest span wins, and the requested range breaks a tie, so a
+ * response that is still the previous range's keeps naming the previous range
+ * until the new one lands.
+ *
+ * Without this the Query types card printed `last 24 h` over the 30 d slices
+ * for the length of the fetch — the same defect `plottedResolution` closed on
+ * the chart's axis, one card over.
+ */
+export function plottedRange(
+  summary: { from: string; to: string } | null,
+  range: RangeKey,
+): RangeKey {
+  if (summary === null) return range;
+  const span = Date.parse(summary.to) - Date.parse(summary.from);
+  if (!Number.isFinite(span) || span <= 0) return range;
+  let best = range;
+  let bestGap = Math.abs(RANGES[range].spanMs - span);
+  for (const key of RANGE_KEYS) {
+    const gap = Math.abs(RANGES[key].spanMs - span);
+    if (gap < bestGap) {
+      bestGap = gap;
+      best = key;
+    }
+  }
+  return best;
+}
+
 export function rangeQuery(
   key: RangeKey,
   now: number,

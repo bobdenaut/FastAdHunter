@@ -8,10 +8,11 @@ import { describe, expect, it } from 'vitest';
  * pass and introduced a third in the same edit without anyone noticing.
  *
  * This is the enforcement, and it is an **allowlist rather than a ban** on
- * purpose: the seven sites below predate this task and are not its to move, but
- * they must stay exactly seven. A new literal fails here, so widening the
- * exception becomes a deliberate edit to this list with a reason beside it —
- * which is the whole point.
+ * purpose: the eight sites below — seven in `components.css`, one in
+ * `layout.css` — predate this task and are not its to move, but they must stay
+ * exactly those eight. A new literal fails here, so widening the exception
+ * becomes a deliberate edit to this list with a reason beside it — which is the
+ * whole point.
  */
 
 const SHEETS = ['base.css', 'components.css', 'layout.css'] as const;

@@ -50,7 +50,7 @@ everything learned. Verification closes it against the budgets.
 | 3 | `p5-03-api-contracts.md` | `/events` subscription protocol, `GET /clients` policy fields, reserved API docs | Opus | DONE |
 | 4 | `p5-04-auth-session.md` | Argon2id password, session cookie, login/logout, cookie on REST + WS (heavy) | Opus | DONE |
 | 5 | `p5-05-frontend-foundation.md` | Vite/TS/Preact shell, typed client, socket manager, size gate, login page | Opus | DONE |
-| 6 | `p5-06-dashboard-and-lists.md` | Dashboard and Lists — proves tiles, charts, tables, mutations | Opus | WAITING |
+| 6 | `p5-06-dashboard-and-lists.md` | Dashboard and Lists — proves tiles, charts, tables, mutations | Opus | DONE |
 | 7 | `p5-07-filtering-pages.md` | Custom Rules, Policies, Clients, Rule Tester | Opus | WAITING |
 | 8 | `p5-08-runtime-pages.md` | Cache, Performance, Upstreams | Opus | WAITING |
 | 9 | `p5-09-settings-and-diagnostics.md` | Settings (curated + raw), Health, Memory, Live Feed | Opus | WAITING |
