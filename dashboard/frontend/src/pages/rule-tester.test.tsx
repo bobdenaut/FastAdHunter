@@ -315,6 +315,47 @@ describe('D5 — a name resolved to an address', () => {
     await click(dom.querySelectorAll('.ambiguous-choice')[1]);
     expect(sent(2)['client']).toBe('192.168.10.51');
     expect(dom.querySelector('.tester-ambiguous')).toBeNull();
+
+    // F20 — the parenthetical names the client that was picked. Typing `tv`
+    // and choosing the second match used to print `192.168.10.51 (tv)`, which
+    // is the *other* client's name beside this one's address.
+    expect(kv(dom)['tested as']).toBe('192.168.10.51 (TV)');
+    // And the field carries the address the test actually used, so pressing
+    // Test again asks the same question instead of re-opening the prompt.
+    expect(
+      (dom.querySelectorAll('input')[1] as HTMLInputElement).value,
+    ).toBe('192.168.10.51');
+  });
+
+  // F20 — the previous answer used to stay on screen directly under the new
+  // question, still answering the query before it.
+  it('takes the previous result down while a choice is pending', async () => {
+    fetchMock.mockImplementation((path: string, init?: RequestInit) => {
+      if (path === '/api/v1/policies') {
+        return Promise.resolve(respond(200, POLICIES));
+      }
+      if (path === '/api/v1/clients') {
+        return Promise.resolve(
+          respond(200, {
+            items: [
+              ...CLIENTS,
+              client({ ip: '192.168.10.51', name: 'TV', policy: 'guest' }),
+            ],
+          }),
+        );
+      }
+      if (path === '/api/v1/rules/test' && init?.method === 'POST') {
+        return Promise.resolve(respond(200, testResult));
+      }
+      throw new Error(`unexpected ${path}`);
+    });
+    const dom = await mount();
+    await ask(dom, 'metrics.vendor.net', '192.168.10.4');
+    expect(dom.querySelector('.tester-result')).not.toBeNull();
+
+    await ask(dom, 'metrics.vendor.net', 'tv');
+    expect(dom.querySelector('.tester-ambiguous')).not.toBeNull();
+    expect(dom.querySelector('.tester-result')).toBeNull();
   });
 
   it('marks an unobserved name partial and refuses to present `default` as an answer', async () => {

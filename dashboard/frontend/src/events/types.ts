@@ -33,8 +33,17 @@ export type ConnectionState =
   | 'backoff'
   | 'probing';
 
-/** Three states, and only three. A detail line is secondary text inside
- *  `reconnecting`, never a fourth state. */
-export type IndicatorState = 'live' | 'not-needed-here' | 'reconnecting';
+/** Three states, and only three, from the socket's point of view. A detail line
+ *  is secondary text inside `reconnecting`, never a fourth state.
+ *
+ *  `api-unreachable` is not one of them: the socket never produces it. The
+ *  shell substitutes it for `not-needed-here` when the API itself stopped
+ *  answering, so a route that opens no socket still reports health rather than
+ *  reporting the absence of a subscription. */
+export type IndicatorState =
+  | 'live'
+  | 'not-needed-here'
+  | 'reconnecting'
+  | 'api-unreachable';
 
 export const EVENTS_PATH = '/api/v1/events';

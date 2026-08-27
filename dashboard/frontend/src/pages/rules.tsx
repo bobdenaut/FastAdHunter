@@ -66,6 +66,19 @@ export function Rules(_props: PageProps) {
     return () => controller.abort();
   }, []);
 
+  /**
+   * A rejection describes the document **as it was sent**. The moment the text
+   * changes, every line number in it can address different content — measured:
+   * fixing the bad line left the band, the callout and `fix line 3` in place,
+   * and the error entry then selected a valid line. Editing therefore drops
+   * the whole rejection; the next save produces a fresh one.
+   */
+  const edit = useCallback((next: string) => {
+    setBuffer(next);
+    setRejected(null);
+    setSaveError(null);
+  }, []);
+
   const selectLine = useCallback(
     (line: number) => {
       const area = editor.current;
@@ -151,7 +164,7 @@ export function Rules(_props: PageProps) {
             <button
               type="button"
               class="btn"
-              disabled={saving || document === null}
+              disabled={saving || pristine || document === null}
               onClick={save}
             >
               Validate and save
@@ -219,7 +232,7 @@ export function Rules(_props: PageProps) {
               <>
                 <LineEditor
                   value={buffer}
-                  onInput={setBuffer}
+                  onInput={edit}
                   anchors={anchors}
                   disabled={saving || document === null}
                   textareaRef={editor}

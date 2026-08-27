@@ -182,6 +182,14 @@ export function RuleTester(_props: PageProps) {
 
       // An address goes straight through. Only a name needs resolving.
       if (forcedAddress !== undefined || parseIp(typed) !== null) {
+        // Chosen from the ambiguity prompt: the parenthetical names the client
+        // that was picked, not the string that was typed. `TV` matching both
+        // `tv` and `TV` is exactly when the two differ, and printing the typed
+        // one put another client's name beside this one's address.
+        const chosen =
+          forcedAddress === undefined
+            ? undefined
+            : clients.find((client) => client.ip === forcedAddress);
         send(
           { domain: cleanDomain, qtype, client: typed },
           {
@@ -190,12 +198,15 @@ export function RuleTester(_props: PageProps) {
             sentClient: typed,
             resolvedFrom:
               forcedAddress !== undefined && subject.trim() !== typed
-                ? subject.trim()
+                ? (chosen?.name ?? subject.trim())
                 : null,
             sentPolicy: null,
             partial: false,
           },
         );
+        // The field carries the address the test actually used, so pressing
+        // Test again asks the same question rather than re-opening the prompt.
+        if (forcedAddress !== undefined) setSubject(forcedAddress);
         return;
       }
 
@@ -309,7 +320,12 @@ export function RuleTester(_props: PageProps) {
 
             {testError !== null && <ErrorState error={testError} />}
 
-            {latest !== null && <ResultCard record={latest} />}
+            {/* A pending choice means nothing has been asked yet. Leaving the
+                previous card up puts an answer to an older question directly
+                under the question being asked. */}
+            {ambiguous === null && latest !== null && (
+              <ResultCard record={latest} />
+            )}
 
             <SessionRing ring={ring} />
 

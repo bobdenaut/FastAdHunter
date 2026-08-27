@@ -123,17 +123,29 @@ export function LineEditor({
       {/* Above the textarea and inert, so the callout never eats a click that
           was meant for the text under it. The message is the API's own words
           and nothing more: the `422` envelope carries no diagnosis, and
-          inventing one would put text on screen no field backs. */}
+          inventing one would put text on screen no field backs.
+
+          It sits on the bad line's **own** row, in the empty space after that
+          line's text — the row is monospace at the textarea's size, so one
+          `ch` is exactly one column and the offset needs no measurement. It
+          used to float over the row beneath, which hid that line's text
+          outright: measured at 1400 px and at 390 px, the line under a callout
+          could not be read at all. Clamped at 60 % so a long bad line leaves
+          the message somewhere to go; it then overlaps the tail of the line it
+          is about, never a different one. */}
       <div class="editor-callouts" aria-hidden="true">
         {anchors.map((anchor) => (
           <span
             key={`callout-${String(anchor.line)}`}
-            class="editor-callout"
+            class="editor-callout-row mono"
             style={{
-              top: `${String(lineTop(anchor.line + 1, EDITOR_LINE_HEIGHT, scrollTop))}px`,
+              top: `${String(lineTop(anchor.line, EDITOR_LINE_HEIGHT, scrollTop))}px`,
+              paddingLeft: `min(calc(4px + ${String((lines[anchor.line - 1] ?? '').length + 1)}ch), 60%)`,
             }}
           >
-            line {anchor.line} — {anchor.message}
+            <span class="editor-callout">
+              line {anchor.line} — {anchor.message}
+            </span>
           </span>
         ))}
       </div>

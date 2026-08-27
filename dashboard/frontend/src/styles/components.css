@@ -1814,13 +1814,25 @@ table.t tbody tr:hover td {
 
 /* The artboard draws the message *between* two lines. A textarea cannot host
    content between its own lines without changing the document, so the callout
-   floats immediately below the offending line and overlays the one beneath.
-   The anchored list under the editor is what makes the message reachable when
-   that is not good enough — at 390 px it always is. */
-.editor-callout {
+   shares the offending line's row and starts after that line's text — the row
+   carries the editor's own monospace face and size, which is what makes `ch`
+   an exact column. Overlaying the row beneath (the first shipped treatment)
+   hid that line's text completely. The anchored list under the editor is what
+   makes the message reachable when the row runs out of width. */
+.editor-callout-row {
   position: absolute;
-  left: 4px;
-  max-width: calc(100% - 8px);
+  left: 0;
+  right: 0;
+  display: flex;
+  align-items: center;
+  height: 22px;
+  font-size: 12.5px;
+  line-height: 22px;
+  padding-right: 4px;
+}
+
+.editor-callout {
+  min-width: 0;
   font-size: 11.5px;
   line-height: 18px;
   color: var(--pill-bad-fg);
@@ -2103,7 +2115,11 @@ table.t tbody tr:hover td {
   color: var(--text-faint);
 }
 
-.c-share-fill {
+/* Qualified by the track it lives in: `.bar > span` sets the accent and is one
+   type selector more specific than a bare class, so the blocked hue this rule
+   asks for never reached the screen — the bar was painted `--series-permitted`
+   while claiming to show the blocked share. */
+.bar > span.c-share-fill {
   background: var(--series-blocked);
 }
 
@@ -2409,7 +2425,8 @@ table.t tbody tr:hover td {
   flex-wrap: wrap;
 }
 
-.policy-traffic-fill {
+/* Same specificity trap as `.c-share-fill`. */
+.bar > span.policy-traffic-fill {
   background: var(--series-blocked);
 }
 
@@ -2692,5 +2709,32 @@ table.t tbody tr:hover td {
   .ring-detail {
     margin-left: 0;
     flex-basis: 100%;
+  }
+}
+
+/* Touch targets follow the pointer, not the width. The 44 px rules live in the
+   ≤ 767 px blocks, so a tablet in the 768–1199 px range takes the desktop
+   layout and the desktop sizes with it — measured at 768 px and at 1024 px,
+   both iPad orientations: `Edit` and `Delete` arrived 41.3 × 25.6, `New
+   policy` 33.6 tall and the client search box 34. Nothing here changes layout;
+   it raises the controls a finger has to hit. */
+@media (pointer: coarse) {
+  .btn,
+  .field-input,
+  .search-input,
+  .rename-controls .btn,
+  .row-expand-actions .btn,
+  .policy-tools .btn,
+  .policy-slot .btn,
+  .hd-actions .btn,
+  .page-buttons .btn,
+  /* The top bar is already 58 px tall, so these two only gain hit area. */
+  .navr-theme,
+  .navr-signout {
+    min-height: 44px;
+  }
+
+  .policy-tools .btn {
+    padding: 6px 12px;
   }
 }

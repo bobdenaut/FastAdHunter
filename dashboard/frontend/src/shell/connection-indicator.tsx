@@ -4,15 +4,19 @@ const WORDS: Record<IndicatorState, string> = {
   live: 'live',
   'not-needed-here': 'not needed here',
   reconnecting: 'reconnecting',
+  'api-unreachable': 'API not answering',
 };
 
 /**
- * Three states, and only three. Subscriptions are route-scoped, so a closed
- * socket is the correct steady state on nine of the thirteen screens and
- * `not needed here` must not read as a fault; only `reconnecting` is styled as
- * a problem. Every state carries its word as well as its colour.
+ * Subscriptions are route-scoped, so a closed socket is the correct steady
+ * state on nine of the thirteen screens. `not needed here` answered a question
+ * nobody asks in the place the operator reads health, so on those screens the
+ * shell reports the API instead: `live` once it has answered,
+ * `API not answering` when a read did not reach it. Only `reconnecting` and
+ * `api-unreachable` are styled as a problem; every state carries its word as
+ * well as its colour.
  *
- * A detail line is secondary text inside `reconnecting` — never a fourth state.
+ * A detail line is secondary text inside `reconnecting` — never a state.
  */
 export function ConnectionIndicator({
   state,

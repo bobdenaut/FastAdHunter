@@ -1,6 +1,7 @@
 import type { ComponentType } from 'preact';
 import { useEffect, useLayoutEffect, useState } from 'preact/hooks';
 import { getHealth } from '../api/health';
+import { apiReach, subscribeApiReach, type ApiReach } from '../api/core';
 import type { IndicatorState } from '../events/types';
 import { subscribeVisibility } from '../lifecycle/visibility';
 import { currentPath, navigate, subscribeRoute } from '../router/router';
@@ -44,6 +45,7 @@ export function Shell() {
   const [path, setPath] = useState(currentPath);
   const [Page, setPage] = useState<ComponentType<PageProps> | null>(null);
   const [indicator, setIndicator] = useState<IndicatorState>('not-needed-here');
+  const [reach, setReach] = useState<ApiReach>(apiReach);
   const [detail, setDetail] = useState<string | null>(null);
   const [version, setVersion] = useState<string | null>(null);
   const [drawer, setDrawer] = useState(false);
@@ -61,6 +63,10 @@ export function Shell() {
     [],
   );
 
+  // No clock: this moves when a page reads, which is the only thing that
+  // happens on a route with no subscription.
+  useEffect(() => subscribeApiReach(setReach), []);
+
   // An input, never an actor: the flag is handed to the owners, which decide.
   useEffect(() => subscribeVisibility((hidden) => routeLifecycle.setSuspended(hidden)), []);
 
@@ -75,6 +81,18 @@ export function Shell() {
   }, []);
 
   const route = routeFor(path) ?? NOT_FOUND;
+
+  // A route with a subscription reports its socket; one without reports the
+  // API, because "no socket here" is not an answer to the question the pill
+  // occupies the space for. `unknown` — nothing read yet — keeps the old word.
+  const shown: IndicatorState =
+    indicator !== 'not-needed-here'
+      ? indicator
+      : reach === 'reachable'
+        ? 'live'
+        : reach === 'unreachable'
+          ? 'api-unreachable'
+          : 'not-needed-here';
 
   const signOut = () => {
     void logout()
@@ -150,7 +168,7 @@ export function Shell() {
         onNavigate={() => setDrawer(false)}
         footer={
           <>
-            <ConnectionIndicator state={indicator} detail={detail} />
+            <ConnectionIndicator state={shown} detail={detail} />
             {version !== null && <span>v{version}</span>}
             <div class="sb-foot-actions">
               <button type="button" onClick={() => toggleTheme()}>
@@ -185,7 +203,7 @@ export function Shell() {
         <TopBar
           title={route.title}
           version={version}
-          indicator={indicator}
+          indicator={shown}
           detail={detail}
           onToggleDrawer={() => setDrawer((open) => !open)}
           onToggleTheme={() => toggleTheme()}

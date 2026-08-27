@@ -678,3 +678,259 @@ brotli 73,675 — +53 B gzip for the three fixes.
 
 **PASS** — F1–F14 all fixed and verified. The V2a/V14–V17 live rows and V19's
 heap half stand on the earlier runs as recorded in Known limitations.
+
+---
+
+## Live UI test pass (2026-08-27) — Playwright, no code read for verdicts
+
+Driven against the running app: Vite dev server on `:5173` proxying to
+`fah-p506` (`fastadhunter:p5-05`, published on 18443). Every row below is read
+off the live DOM, a live request log, or the API container's own network
+namespace. **No code was reviewed in this pass** — source was opened only to
+build a faithful stub (the 422 envelope shape) and to confirm the image
+predates the F1 fix.
+
+**Two method notes.**
+
+1. **Viewport.** `browser_resize` is a no-op on this browser (window follows
+   viewport), so 390 / 600 / 767 / 768 / 900 / 1024 px were measured in a
+   same-origin iframe of the app sized in CSS pixels — real media queries, real
+   layout. 1400+ was measured in the top-level page (1555 CSS px).
+2. **Mutations.** Live writes to the container were refused by the harness, so
+   every write in this pass was intercepted in the browser: the request is
+   built and sent by the page, then held pending or answered from a stub. What
+   this proves is the **UI contract** — what is sent, what is shown, what is
+   blocked; it does not re-prove server behaviour. The three checks that need a
+   real write (F1 end to end, V8a's wall-clock timings, the real `409`) are
+   listed as not reproduced.
+
+### Re-verified live — claims that held
+
+| Claim | Measured |
+| ----- | -------- |
+| V2 / V2b | all four routes: `fahUnion()` `[]`, `fahSocketState()` `closed`, `fahTimers()` `0` |
+| V2a | parked on `/clients`: **0** ESTABLISHED to the API inside its own netns (`docker run --network container:fah-p506 busybox netstat -tn`) |
+| V3 | Dashboard, each of the four, back to Dashboard: union `['stats']`, socket `open`, timers `5` restored |
+| V4 / V5 | fresh `/clients`: exactly `GET /api/v1/clients` + `GET /api/v1/policies`; zero `GET .../policy` |
+| V6 / V6a | five branches live: `.pchip` **solid** for direct (`kids` on 172.17.0.5), `.pchip.inh` **dashed** for inherited; notes `daily · 20:00 -> 22:00 · in force`, `via name printer`, `via 172.17.0.8/32`, bare `inherited` (two selectors match .10), `inherited · no assignment` |
+| V7a (R1 order) | 172.17.0.11: direct `kids` window **shut** *and* a schedule-less name assignment — row reads `not in force — the name assignment on "console" decides (guest)`, with **no** `window shut` claim |
+| X2 | `ACTIVE NOW` absent from the live Policies DOM |
+| V8 | `Change which lists this policy holds?` naming `seconds of CPU on the router`; **0** requests before the confirm; after it `PATCH /api/v1/policies/kids :: {"lists":["oisd-basic"]}` — changed field only; busy modal up; `navigate('/clients')` refused. Delete confirm: `Delete kids?` naming its **2** assignments and the rebuild; 0 requests before the confirm, 0 on Cancel |
+| F2 | with the PATCH pending: `history.back()` twice and `history.forward()` all left the path on `/policies`, modal up, `history.length` steady at **13**, no second request |
+| F9 | modal reads `The policy set is being validated and, once accepted, the whole ruleset is recompiled and swapped in...` — no acceptance claimed |
+| F3 | dialog: `only these` with nothing ticked gives `pick at least one list — an empty subset gives this policy no list at all`, submit disabled. Card: a policy with `lists: []` renders `no lists — blocks nothing` in `.lchip-warn` |
+| F4 / F12 | mutation held pending, navigate away, then settle: **zero** requests, on Clients *and* Policies |
+| F5 / F14 | two rows in flight at once both read busy; settling A re-enabled **only** A and fired its own re-read pair; settling B re-enabled B |
+| F6 | re-read failed after a successful mutation: `The API did not answer / GET /api/v1/clients did not reach the server` above **26** stale rows still on screen |
+| F13 | blank client field: body `{"domain":...,"qtype":"A"}` with no `client`; why-row `no client given — the default policy decides`; ring row `as the default policy` |
+| F8 | empty buffer reads `0 lines` |
+| F11 | `line 6: invalid rule syntax: "line 5: invalid rule syntax: \"x\""` yields exactly **one** anchor (line 6); no line-5 anchor |
+| V1 / V1b | 422 on line 7 of a 14-line document: band exactly over line 7 (band top 322.06 against a computed 322.07, height 21.99 against a 22 px line), buffer byte-identical, error entry a **765 x 44** button that focuses the textarea and selects exactly `@@||^`. Unparseable envelope: **0** anchors, **0** callouts, raw text in the banner, `2 lines` with no invalid count |
+| V9 / V10 | `default` gives `"default" names the implicit policy...`, submit disabled; `Kids Zone!` gives the API's own alphabet message; with 15 policies staged: `16 / 16`, `0 policy slots left` plus the 16-bit reason, **both** `New policy` buttons disabled |
+| V12 / V12a / V12b | client mode by address: `via name printer`, policy `guest`; policy mode: body carries `policy` and no `client`, why-row `you chose this policy — assignments are ignored`; ambiguous `TV`: `Which one?` listing `172.17.0.5 tv` / `172.17.0.6 TV` with **zero** `POST /rules/test`, and choosing one sent that address |
+| Ring bound | 12 tests leave **10** rows, newest first |
+| V14 | `scrollWidth - clientWidth` = **0** on `documentElement` and `.main`, all four routes, at 1555 / 900 / 390, dark **and** light. `.clients-scroll` is the only internal scroller: **104 px** at 900, **0** at 390 and at desktop |
+| V15 (390 only) | zero undersized controls on all four routes; drawer `Theme` **34.5 x 44**, `Sign out` **42.5 x 44** — the two pre-existing p5-05 exceptions, unchanged |
+| V16 | glyph **44 x 44**; tap expands in place, `Rename` / `Change policy` **153.7 x 44** on one row, `location.pathname` unchanged, desktop header `display: none`; rename editor input 181 x 44, `Save` 53.6 x 44, `Cancel` 64.7 x 44 |
+| V17 | 390 px: gutter **34 px**; a 60-line document scrolls **inside** the editor (`.editor-area` 1320 / 572) with the page still at 0 horizontal overflow; summary two-up; result `kv` single-column |
+| Clients grid | header against row: identical `left` and `width` on **all 8** columns (0.0 px difference), 10 px gutters, last track exactly **44 px** |
+| Search | name match (`printer`, 1 row), address prefix (`172.17.0.1`, 10 rows), `No client matches that search`, clears back to 25 |
+| Artboard fidelity | `Clients.dc.html` column labels and order match one for one; `RuleTester.dc.html` field labels, result rows and ring-row shape (`as` / `under policy`) match; `CustomRules.dc.html` banner, `rules.txt` card, `N lines · N invalid` and the Precedence trio match |
+
+### New findings
+
+#### F15 — Should-fix — a 422's anchors survive editing and then point at the wrong line
+
+The anchors, the band, the banner and the `· N invalid` count are cleared only
+by the next save, never by an edit. Staged live on `/rules` (422 stubbed on
+line 3 of a 3-line document, nothing written):
+
+| Buffer after the 422 | Band | Callout | Counter | Banner |
+| -------------------- | ---- | ------- | ------- | ------ |
+| line 3 fixed to a valid rule | still line 3 | `line 3 — invalid rule syntax: "@@||^"` | `3 lines · 1 invalid` | `fix line 3 and save again` |
+| shrunk to 1 line | still at y 322.1 — **below the last line** | unchanged | `1 line · 1 invalid` | unchanged |
+| emptied | unchanged | unchanged | **`0 lines · 1 invalid`** | unchanged |
+
+Clicking the stale entry on the 1-line buffer focused the textarea and selected
+**line 1** — a valid line, silently. That is the same failure F1 was raised for
+(an anchor over content that is not the reported one), reached by editing
+instead of by the dedup. `0 lines · 1 invalid` is also a self-contradicting
+figure.
+
+**Smallest fix:** clear the errors — or at least drop the band and callout — on
+the first `input` after a failed save.
+
+#### F16 — Should-fix — the floating callout hides the whole content of the line beneath it
+
+Measured with a 14-line document and an invalid line 7, at both widths:
+
+| Width | Band (line 7) | Callout | Overlap |
+| ----- | ------------- | ------- | ------- |
+| 1555 px | y 322.06, h 21.99 | y 344.06, h 19.99, w 203.3 | covers 20 of line 8's 22 px, from its left edge |
+| 390 px | y 557.3, h 22 | y 579.3, h 20, w 203.8 of a 302.7 px editor | same, 67 % of the line's width |
+
+The callout is opaque: at both widths line 8's text `@@||goodsite.example.com^`
+is **not visible anywhere** — the gutter still numbers 7, 8, 9 but row 8 shows
+only the callout. `CustomRules.dc.html` renders the same callout as its own row
+between line 7 and line 8, so no document content is hidden there. Section 7.1
+declares "overlaying the line beneath it" as the shipped treatment, but neither
+it nor V1 says the covered line's text becomes unreadable, and the artboard
+does not do that.
+
+**Smallest fix:** insert the callout as a row and push the following lines down,
+or offset it so the covered line stays readable.
+
+#### F17 — Should-fix — the 44 px touch rule is width-gated at 767 px, so tablets get 25.6 px controls
+
+Same page, four widths, `/policies`:
+
+| Width | `Edit` | `Delete` | `New policy` | Clients search box |
+| ----- | ------ | -------- | ------------ | ------------------ |
+| 1024 | 41.3 x **25.6** | 56.1 x **25.6** | 90.3 x **33.6** | 220 x **34** |
+| 768 | 41.3 x **25.6** | 56.1 x **25.6** | 90.3 x **33.6** | 220 x **34** |
+| 767 | 47.2 x 44 | 62.1 x 44 | 725.6 x 44 | at least 44 |
+| 600 | 47.2 x 44 | 62.1 x 44 | 559 x 44 | at least 44 |
+
+768 and 1024 are iPad portrait and landscape. V15's PASS was produced at 390 px
+only and does not cover the range where a touch device is most likely to meet
+the desktop layout. Nothing keys off `pointer: coarse`; the sizing flips purely
+on width, between 767 and 768.
+
+**Smallest fix:** add `@media (pointer: coarse)` to the rule the 767 px
+breakpoint already carries.
+
+#### F18 — Minor — the busy modal never takes focus
+
+On mount `document.activeElement` is **BODY**. The modal itself is
+`role="dialog" aria-modal="true" aria-busy="true" aria-label="Rebuilding the
+ruleset" tabindex="0"` and the trap does work — Tab lands on the modal, a
+second Tab returns to BODY, the sidebar behind it is never reached, and Escape
+does not dismiss — but nothing places focus inside it when it appears. Both
+dialogs that precede it do it correctly (edit dialog to `#policy-name`, confirm
+to `Cancel`). A screen-reader user gets no announcement that a blocking
+operation started; a keyboard user has to press Tab to find out where they are.
+The review's "one focusable element so the trap has somewhere to put focus" is
+half true: the element exists, nothing focuses it.
+
+#### F19 — Minor — the four new routes show no health signal at all
+
+| Route | Pill | Class | Dot |
+| ----- | ---- | ----- | --- |
+| `/rules`, `/policies`, `/clients`, `/rule-tester` | `not needed here` | `conn not-needed-here` | grey `rgb(138,149,163)` |
+| `/lists`, `/` | `live` | `conn live` | green `rgb(61,154,99)` |
+
+The pill is the only always-visible statement that the resolver is up. On the
+four routes this task ships it answers a different question — "this page needs
+no socket" — in the place where the operator reads health, so a resolver that
+has died is indistinguishable from one that is fine for as long as they stay on
+these pages. Raised by the repo owner from the running UI.
+
+**Options:** keep reporting the last known health (the shell already holds it),
+or state reachability from the page's own reads rather than from a socket it
+deliberately does not open.
+
+#### F20 — Nitpick — the Rule Tester's `tested as` prints the typed name, not the resolved client's
+
+Staged with the two observed clients `tv` (172.17.0.5) and `TV` (172.17.0.6).
+Typing `TV` and then choosing `172.17.0.5` from the prompt produced
+`tested as 172.17.0.5 (TV)` — but 172.17.0.5 is named **`tv`**, and `TV` is the
+name of the *other* client. The parenthetical reads as the resolved client's
+identity and is not.
+
+Two smaller things in the same flow: the client field still holds `TV` after
+the address is chosen (the address appears only on the result card), and the
+**previous** result card stays on screen underneath the `Which one?` prompt,
+still answering the earlier query.
+
+#### F21 — Nitpick — two guards the pages could apply locally and do not
+
+- `Validate and save` is **enabled on an unchanged buffer** (`Discard` is
+  correctly disabled), so a recompiling `PUT /rules/user` can be fired for a
+  no-op.
+- The create-policy form mirrors three server validators locally (`default`,
+  the id alphabet, the empty subset) but not **duplicate id**: typing `kids`,
+  which is in the list the page already holds, leaves `Create policy` enabled
+  and shows nothing; the `409` is only discovered after the round trip.
+
+#### F22 — Nitpick — blocked-share bars use the accent hue where both artboards use the bad hue
+
+| Source | Fill |
+| ------ | ---- |
+| live `policy-traffic-fill` and `c-share-fill` | `rgb(31,157,187)` (accent) |
+| `Policies.dc.html` lines 91/117/138, `Clients.dc.html` lines 80/89/98 | `#d1504b` (bad) |
+
+Proportions are right (`0.108 x 267.4 = 28.8 px` for a `10.8 %` row, so T9
+holds) and the two pages agree with each other; they disagree with both
+artboards, and the Deviations section does not list it.
+
+### Corrections to earlier sections
+
+| Section | Correction |
+| ------- | ---------- |
+| V15 | Its PASS covers 390 px only. At 768 to 1024 px this task's own controls measure 25.6 to 34 px — see F17. |
+| V10 | Only the **header** `New policy` carries the ceiling in its `title`; the second one has no `title` (the reason is printed above it). Both are disabled, as claimed. |
+| V17 | The result card was measured **30.7 px** below the form at 390 px (form bottom to card top), not 16 px. |
+| Section 7.1 / V1 | The shipped callout does not merely overlay the next line, it makes that line's text unreadable — see F16. |
+| Fixes applied, F1 | The running `fah-p506` image was built **2026-08-26T20:46Z**, before the fix commits, so F1 remains proven by the API test only. The frontend half was re-proven here against a stubbed `line 3` (dup, dup, invalid anchors line 3, buffer byte-identical). |
+
+### Not reproduced in this pass
+
+| What | Why |
+| ---- | --- |
+| F1 end to end | the live container predates the fix and rebuilding it was out of scope |
+| V8a wall-clock timings (33 / 26 / 13 / 12 / 11 ms) | live writes were refused by the harness; every mutation here was held or stubbed |
+| the real `409` on a duplicate policy id | same |
+| V19's heap half | unchanged from the original run, still needs a forced GC |
+
+### Status after this pass
+
+**PASS WITH DEFERRED FINDINGS** — F1 to F14 all hold up under live re-test.
+Three new should-fix items (F15 stale anchors, F16 hidden line, F17 tablet
+touch targets) and five smaller ones (F18 to F22) are open.
+
+### Fixes applied (2026-08-27, fourth round) — F15–F22, owner-approved
+
+F19 was fixed the way the owner chose: the pill reports the API on routes that
+open no socket, rather than reporting the absence of a subscription.
+
+| # | Fix | Where |
+| - | --- | ----- |
+| F15 | editing the buffer drops the whole rejection — anchors, band, banner and the `· N invalid` count — so a line number can never address text it was not measured against | `rules.tsx` (`edit`); test `drops the whole rejection as soon as the text changes` |
+| F16 | the callout moved onto the offending line's **own** row, starting one column after that line's text (`min(calc(4px + N ch), 60%)` on a row that carries the editor's monospace face, so `ch` is exact). No document line is covered any more; a long bad line clamps the message over its own tail, never over another | `line-editor.tsx`, `components.css` (`.editor-callout-row`); test pins row top = band top and the padding |
+| F17 | `@media (pointer: coarse)` raises the controls the ≤ 767 px blocks raise, so the rule follows the pointer instead of the width | `components.css`; test `styles/cascade-invariants.test.ts` |
+| F18 | `focusableWithin` counts the container when the container is itself focusable — `querySelectorAll` never returns the node it is called on, which is why the busy modal (whose only focusable element is its root) got no focus | `focus-trap.ts`; test `moves focus into the busy modal` |
+| F19 | `request()` publishes whether the API answered (`apiReach` / `subscribeApiReach`); the shell shows `live` for `not-needed-here` when it has, and a new `api-unreachable` state — `API not answering`, problem-coloured — when a read did not land. Event-driven, **no timer**: `activeTimers()` stays 0 on all four routes | `api/core.ts`, `api/index.ts`, `events/types.ts`, `shell/shell.tsx`, `connection-indicator.tsx`, `layout.css`; tests in `api/core.test.ts` |
+| F20 | `tested as` names the client that was picked, not the string that was typed; the field takes the chosen address; the previous result card comes down while a choice is pending | `rule-tester.tsx`; two tests in `rule-tester.test.tsx` |
+| F21 | `Validate and save` is disabled on an unchanged buffer, like `Discard`; the create form refuses an id the page already lists, in the handler's own wording, with no request sent | `rules.tsx`, `policy-dialog.tsx`, `policies.tsx`; three tests |
+| F22 | the two blocked-share fills are qualified by their track (`.bar > span.c-share-fill`), so they stop losing the cascade to `.bar > span`'s accent — the bars were painted `--series-permitted` while labelled "blocked share" | `components.css`; test in `styles/cascade-invariants.test.ts` |
+
+**Verification.** Frontend only — no Rust touched, `git status -- crates/`
+empty, so the first round's cargo run (1,196 passed) stands. `npm run
+typecheck` clean; `npm run test` **525 passed in 41 files** (+10); `npm run
+build` **83,236 B gzip (54.2 %)**, brotli 74,085 — +535 B gzip.
+
+The `409` test on Policies was rewritten rather than deleted: an id this page
+does not list is still refused by the server (another session can create one
+between the read and the write), and that path keeps its test.
+
+#### Re-measured live after the fixes
+
+Same harness as the pass above: Vite dev server against `fah-p506`, writes
+held or stubbed in the browser, container state verified unchanged afterwards.
+
+| # | Live result |
+| - | ----------- |
+| F15 | 422 on line 7 of a 14-line document, then edits: fixing line 7 → **0** callouts, 0 bands, 0 error entries, no banner, counter back to `14 lines`; shrinking to 1 line → `1 line`; emptying → `0 lines`. No `· 1 invalid` survives an edit |
+| F16 | callout row top **557.3** = band top 557.3 — the same row. Callout spans x 105.9–357.8 inside an editor starting at 60.7, i.e. it begins 45 px in (4 px padding + five columns of `@@||^`). Line 8 (`@@||goodsite.example.com^`) renders in full — screenshot in `.playwright-mcp/fix-f16-callout.png` |
+| F17 | 1024 × 768 with `(pointer: coarse)` true: **zero** controls under 44 px on Policies, Clients and Custom Rules — including the two top-bar controls, whose bar stays 58 px tall. With the emulation cleared the desktop sizes return (`Discard` 33.5, `theme` 18.1) |
+| F18 | focus lands on the modal itself (`DIV.dialog`, `aria-label="Rebuilding the ruleset"`) the moment it mounts; `Escape` still does not dismiss |
+| F19 | `/rules`, `/policies`, `/clients`, `/rule-tester`: `conn live`, green `rgb(61,154,99)`. With reads failing: `conn api-unreachable`, `API not answering`, problem colour. Reads recover → `live` again. `fahTimers()` **0** at every step |
+| F20 | typing `TV`, choosing `172.17.0.5`: `tested as 172.17.0.5 (tv)` — the resolved client's own name — deciding policy `kids`, field now `172.17.0.5`. While the prompt was up the previous result card was **absent** |
+| F21 | untouched document: `Validate and save` **disabled** alongside `Discard`; after one edit, enabled. `kids` and `guest` in the create form: `policy kids already exists` under the field, submit disabled, **zero** requests sent |
+| F22 | `c-share-fill` and `policy-traffic-fill` both computed `rgb(209,80,75)` = `#d1504b`, the artboards' hue; widths unchanged (28.8 of 267.4 px for a 10.8 % row) |
+
+### Status after the fixes
+
+**PASS** — F1–F22 fixed and verified. The V2a/V14–V17 rows and V19's heap half
+stand on the runs recorded above; F1 end to end still needs a container built
+from a commit that carries its fix.

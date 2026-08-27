@@ -72,6 +72,42 @@ export function setUnauthorizedHandler(handler: UnauthorizedHandler | null) {
   unauthorized = handler;
 }
 
+/**
+ * Whether the API answered the last request that was made. `unknown` until the
+ * first one completes.
+ *
+ * This is an **event-driven** signal with no clock behind it: it moves when a
+ * page reads, and nothing polls to keep it fresh. On a route that opens no
+ * socket and reads once on mount, `reachable` therefore means "the API
+ * answered when this page loaded", not "the API is answering right now" — the
+ * four filtering pages are deliberately clock-free (`activeTimers() === 0`),
+ * and a heartbeat here would be the timer they refuse.
+ *
+ * Only a request that never reached the server clears it. A `4xx` or a `5xx`
+ * is an answer, so the API is up and said no.
+ */
+export type ApiReach = 'unknown' | 'reachable' | 'unreachable';
+
+let reach: ApiReach = 'unknown';
+const reachListeners = new Set<(next: ApiReach) => void>();
+
+export function apiReach(): ApiReach {
+  return reach;
+}
+
+export function subscribeApiReach(
+  listener: (next: ApiReach) => void,
+): () => void {
+  reachListeners.add(listener);
+  return () => reachListeners.delete(listener);
+}
+
+function setReach(next: ApiReach) {
+  if (next === reach) return;
+  reach = next;
+  for (const listener of reachListeners) listener(next);
+}
+
 export interface RequestOptions {
   method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
   body?: unknown;
@@ -125,10 +161,13 @@ export async function request<T>(
     response = await fetch(path, init);
   } catch (cause) {
     if (cause instanceof DOMException && cause.name === 'AbortError') throw cause;
+    setReach('unreachable');
     throw new NetworkError(`${method} ${path} did not reach the server`, {
       cause,
     });
   }
+
+  setReach('reachable');
 
   if (!response.ok) {
     let payload: unknown = null;

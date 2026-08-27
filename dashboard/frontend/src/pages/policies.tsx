@@ -333,6 +333,7 @@ export function Policies(_props: PageProps) {
         <PolicyDialog
           policy={editing === 'new' ? null : editing}
           lists={lists?.items ?? []}
+          taken={items.map((entry) => entry.id)}
           busy={busy !== null}
           error={dialogError}
           suppressed={pending !== null}

@@ -415,28 +415,46 @@ describe('the form-enforced limits', () => {
     );
   });
 
+  it('refuses an id the page already lists, without asking the server', async () => {
+    const dom = await mount();
+    await click(byText(dom, 'New policy'));
+    const id = dom.querySelector('#policy-id') as HTMLInputElement;
+    const before = fetchMock.mock.calls.length;
+    await act(async () => {
+      id.value = 'kids';
+      id.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    expect(dom.querySelector('.field-error')?.textContent).toBe(
+      'policy kids already exists',
+    );
+    expect(byText(dom, 'Create policy').disabled).toBe(true);
+    expect(fetchMock.mock.calls.length).toBe(before);
+  });
+
+  // Still reachable with an id this page does not list: another session can
+  // create one between the read and the write.
   it('renders the API 409 in the dialog and keeps what was typed', async () => {
     const dom = await mount();
     await click(byText(dom, 'New policy'));
     const id = dom.querySelector('#policy-id') as HTMLInputElement;
     await act(async () => {
-      id.value = 'kids';
+      id.value = 'work';
       id.dispatchEvent(new Event('input', { bubbles: true }));
     });
     await click(byText(dom, 'Create policy'));
     fetchMock.mockImplementationOnce(() =>
       Promise.resolve(
         respond(409, {
-          error: { code: 'conflict', message: 'policy kids already exists' },
+          error: { code: 'conflict', message: 'policy work already exists' },
         }),
       ),
     );
     await click(confirmButton(dom));
     expect(dom.querySelector('.error-state-message')?.textContent).toBe(
-      'policy kids already exists',
+      'policy work already exists',
     );
     expect((dom.querySelector('#policy-id') as HTMLInputElement).value).toBe(
-      'kids',
+      'work',
     );
   });
 

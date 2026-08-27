@@ -2,9 +2,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   ApiError,
   NetworkError,
+  apiReach,
   parseRetryAfter,
   request,
   setUnauthorizedHandler,
+  subscribeApiReach,
 } from './core';
 import { getCache } from './cache';
 import { getHealth } from './health';
@@ -108,6 +110,56 @@ describe('request', () => {
     );
     const error = await request('/x').catch((e: unknown) => e);
     expect(error).toBeInstanceOf(DOMException);
+  });
+});
+
+/**
+ * The shell reads this on routes that open no socket, where `not needed here`
+ * used to occupy the place the operator looks for health. It is event-driven
+ * on purpose: those pages are clock-free, so nothing polls to keep it fresh.
+ */
+describe('API reachability', () => {
+  it('is set by an answer and cleared only by a request that never landed', async () => {
+    const seen: string[] = [];
+    const stop = subscribeApiReach((next) => seen.push(next));
+
+    fetchMock.mockResolvedValue(respond({ status: 200, body: {} }));
+    await request('/api/v1/health');
+    expect(apiReach()).toBe('reachable');
+
+    // An answer is an answer: a refusal still proves the API is up.
+    fetchMock.mockResolvedValue(
+      respond({
+        status: 409,
+        body: { error: { code: 'conflict', message: 'no' } },
+      }),
+    );
+    await expect(request('/api/v1/policies')).rejects.toBeInstanceOf(ApiError);
+    expect(apiReach()).toBe('reachable');
+
+    fetchMock.mockRejectedValue(new TypeError('offline'));
+    await expect(request('/api/v1/health')).rejects.toBeInstanceOf(
+      NetworkError,
+    );
+    expect(apiReach()).toBe('unreachable');
+
+    stop();
+    fetchMock.mockResolvedValue(respond({ status: 200, body: {} }));
+    await request('/api/v1/health');
+    expect(seen).toEqual(['reachable', 'unreachable']);
+    expect(apiReach()).toBe('reachable');
+  });
+
+  it('is not moved by an abort', async () => {
+    fetchMock.mockResolvedValue(respond({ status: 200, body: {} }));
+    await request('/api/v1/health');
+    fetchMock.mockRejectedValue(
+      new DOMException('aborted', 'AbortError'),
+    );
+    await expect(request('/api/v1/health')).rejects.toBeInstanceOf(
+      DOMException,
+    );
+    expect(apiReach()).toBe('reachable');
   });
 });
 

@@ -165,6 +165,45 @@ describe('a 422 on the document', () => {
     );
   });
 
+  // F15 — a rejection describes the document as it was sent. Measured live:
+  // fixing the bad line left the band, the callout and `fix line 2` in place,
+  // and the error entry then selected a line that was never rejected.
+  it('drops the whole rejection as soon as the text changes', async () => {
+    const dom = await mount();
+    await type(dom, '! keep\n@@||^\n\n|||\n');
+    fetchMock.mockResolvedValue(respond(422, REJECTION));
+    await press(dom, 'Validate and save');
+    expect(dom.querySelectorAll('.editor-callout')).toHaveLength(2);
+
+    await type(dom, '! keep\n||fixed.example^\n\n|||\n');
+    expect(dom.querySelectorAll('.editor-callout')).toHaveLength(0);
+    expect(dom.querySelectorAll('.editor-band')).toHaveLength(0);
+    expect(dom.querySelectorAll('.rule-error')).toHaveLength(0);
+    expect(dom.querySelector('.banner.bad')).toBeNull();
+    expect(dom.querySelector('.ch-right')?.textContent).not.toContain(
+      'invalid',
+    );
+  });
+
+  // F16 — the callout shares the bad line's row and starts after that line's
+  // text. It used to float over the row beneath, which hid that line entirely.
+  it('puts the callout on the offending line, past its own text', async () => {
+    const dom = await mount();
+    await type(dom, '! keep\n@@||^\n\n|||\n');
+    fetchMock.mockResolvedValue(respond(422, REJECTION));
+    await press(dom, 'Validate and save');
+
+    const rows = [...dom.querySelectorAll('.editor-callout-row')].map(
+      (node) => (node as HTMLElement).style,
+    );
+    const bands = [...dom.querySelectorAll('.editor-band')].map(
+      (node) => (node as HTMLElement).style.top,
+    );
+    expect(rows.map((style) => style.top)).toEqual(bands);
+    // `@@||^` is five columns, so the message starts at the sixth.
+    expect(rows[0]?.paddingLeft).toBe('min(6ch + 4px, 60%)');
+  });
+
   it('selects the offending line when its list entry is pressed', async () => {
     const dom = await mount();
     await type(dom, '! keep\n@@||^\n\n|||\n');
@@ -218,6 +257,9 @@ describe('a 422 on the document', () => {
 describe('the blocking save', () => {
   it('blocks navigation and the editor while the compile runs, then releases', async () => {
     const dom = await mount();
+    // Saving needs an edit: an unchanged buffer disables the button, so a
+    // recompiling PUT cannot be fired for a document nobody touched.
+    await type(dom, 'line one\nline two');
     let settle: ((value: Response) => void) | null = null;
     fetchMock.mockReturnValue(
       new Promise<Response>((resolve) => {
@@ -248,8 +290,42 @@ describe('the blocking save', () => {
     expect(navigationBlocked()).toBe(false);
   });
 
+  // F21 — `Discard` already knew the buffer was clean; `Validate and save` did
+  // not, so an untouched document could be posted back and recompile the whole
+  // ruleset for nothing.
+  it('refuses to save a document nobody edited', async () => {
+    const dom = await mount();
+    expect(button(dom, 'Validate and save').disabled).toBe(true);
+    await type(dom, 'line one');
+    expect(button(dom, 'Validate and save').disabled).toBe(false);
+  });
+
+  // F18 — the modal's only focusable element is its own root, and
+  // `querySelectorAll` never returns the node it is called on: focus stayed on
+  // `body` and nothing announced that a blocking compile had started.
+  it('moves focus into the busy modal', async () => {
+    const dom = await mount();
+    await type(dom, 'line one');
+    let settle: ((value: Response) => void) | null = null;
+    fetchMock.mockReturnValue(
+      new Promise<Response>((resolve) => {
+        settle = resolve;
+      }),
+    );
+    await press(dom, 'Validate and save');
+    expect(document.activeElement).toBe(
+      dom.querySelector('[aria-busy="true"]'),
+    );
+    // The block is module state: leaving it held would fail the next test.
+    await act(async () => {
+      settle?.(respond(200, { rules: DOCUMENT }));
+    });
+    await flush();
+  });
+
   it('releases the navigation block when the save fails', async () => {
     const dom = await mount();
+    await type(dom, 'line one\nline two');
     fetchMock.mockRejectedValue(new TypeError('offline'));
     await press(dom, 'Validate and save');
     expect(navigationBlocked()).toBe(false);

@@ -3,10 +3,16 @@ import { useEffect, useRef } from 'preact/hooks';
 export const FOCUSABLE =
   'a[href],button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])';
 
+/**
+ * The container counts when it is itself focusable. `querySelectorAll` only
+ * walks descendants, so a modal whose sole focusable element is its own root —
+ * the busy modal, which has nothing to press — came back empty: focus stayed
+ * on `body` and the first `Tab` was the only thing that ever moved it in.
+ */
 export function focusableWithin(node: HTMLElement | null): HTMLElement[] {
-  return node === null
-    ? []
-    : [...node.querySelectorAll<HTMLElement>(FOCUSABLE)];
+  if (node === null) return [];
+  const inside = [...node.querySelectorAll<HTMLElement>(FOCUSABLE)];
+  return node.matches(FOCUSABLE) ? [node, ...inside] : inside;
 }
 
 /**

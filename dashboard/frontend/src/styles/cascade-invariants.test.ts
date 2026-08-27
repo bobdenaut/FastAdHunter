@@ -1,0 +1,57 @@
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { describe, expect, it } from 'vitest';
+
+/**
+ * Two rules in this stylesheet that no rendered test can reach: jsdom applies
+ * no cascade to a sheet it never loads and resolves no media query, so both
+ * defects below were invisible to the suite and were found in a browser.
+ */
+
+const CSS = readFileSync(
+  fileURLToPath(new URL('./components.css', import.meta.url)),
+  'utf8',
+);
+
+/** `/* … *\/` removed so a commented-out rule cannot satisfy a check. */
+function withoutComments(text: string): string {
+  return text.replace(/\/\*[\s\S]*?\*\//g, '');
+}
+
+const BARE = withoutComments(CSS);
+
+describe('the blocked-share fills', () => {
+  /**
+   * `.bar > span` sets the accent and is one type selector more specific than
+   * a bare class, so `.c-share-fill { background: var(--series-blocked) }` lost
+   * the cascade and every "blocked share" bar was painted with the *permitted*
+   * hue — measured `rgb(31,157,187)` where the artboards draw `#d1504b`.
+   */
+  it('are qualified by their track, or they lose to `.bar > span`', () => {
+    for (const fill of ['c-share-fill', 'policy-traffic-fill']) {
+      expect(BARE).toContain(`.bar > span.${fill}`);
+      expect(BARE).not.toMatch(
+        new RegExp(`(?:^|[,}\\s])\\.${fill}\\s*\\{`, 'm'),
+      );
+    }
+  });
+});
+
+describe('touch targets', () => {
+  /**
+   * The 44 px rules live in the `≤ 767 px` blocks, so a tablet between 768 and
+   * 1199 px took the desktop layout and the desktop sizes with it: measured at
+   * 768 px and 1024 px — both iPad orientations — `Edit` and `Delete` arrived
+   * 41.3 × 25.6 and the client search box 34 tall. Width is not the question;
+   * the pointer is.
+   */
+  it('are raised on a coarse pointer, not only on a narrow viewport', () => {
+    const block = /@media \(pointer: coarse\) \{([\s\S]*?)\n\}/.exec(BARE);
+    expect(block).not.toBeNull();
+    const body = block?.[1] ?? '';
+    for (const selector of ['.btn', '.search-input', '.policy-tools .btn']) {
+      expect(body).toContain(selector);
+    }
+    expect(body).toContain('min-height: 44px');
+  });
+});

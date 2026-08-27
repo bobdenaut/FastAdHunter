@@ -4,8 +4,15 @@ export {
   request,
   setUnauthorizedHandler,
   parseRetryAfter,
+  apiReach,
+  subscribeApiReach,
 } from './core';
-export type { ApiErrorCode, ErrorEnvelope, RequestOptions } from './core';
+export type {
+  ApiErrorCode,
+  ApiReach,
+  ErrorEnvelope,
+  RequestOptions,
+} from './core';
 export { getHealth, HEALTH_PATH } from './health';
 export { getTelemetry, TELEMETRY_PATH } from './telemetry';
 export { getCache, CACHE_PATH } from './cache';

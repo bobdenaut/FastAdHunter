@@ -116,6 +116,7 @@ function sameAssignments(
 export function PolicyDialog({
   policy,
   lists,
+  taken,
   busy,
   error,
   suppressed = false,
@@ -125,6 +126,8 @@ export function PolicyDialog({
   /** `null` creates. */
   policy: Policy | null;
   lists: readonly ListItem[];
+  /** Ids already configured — the page holds them, so the `409` is avoidable. */
+  taken: readonly string[];
   busy: boolean;
   error: Error | null;
   /**
@@ -164,7 +167,17 @@ export function PolicyDialog({
     }
   }, [error, policy, busy]);
 
-  const idError = policy === null ? validatePolicyId(id) : null;
+  // The alphabet and the reserved id are refused here already; a duplicate is
+  // the third thing `POST /policies` refuses and the only one this form had to
+  // learn from a round trip, though the answer was in the list it renders. The
+  // wording is the handler's own (`routes.rs`, `policy {id} already exists`).
+  const idError =
+    policy === null
+      ? (validatePolicyId(id) ??
+        (id !== '' && taken.includes(id)
+          ? `policy ${id} already exists`
+          : null))
+      : null;
   // An empty subset is not "every enabled list" — the engine gives a
   // `lists: []` policy no list at all, so it would block nothing.
   const subsetError =

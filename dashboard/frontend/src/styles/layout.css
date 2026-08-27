@@ -170,7 +170,8 @@
   background: var(--state-idle);
 }
 
-.conn.reconnecting .dot {
+.conn.reconnecting .dot,
+.conn.api-unreachable .dot {
   background: var(--state-problem);
 }
 
