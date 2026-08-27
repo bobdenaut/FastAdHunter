@@ -24,10 +24,41 @@ function announce(path: string): void {
   for (const listener of listeners) listener(path);
 }
 
+let navigationBlocks = 0;
+let heldPath: string | null = null;
+
+/**
+ * Held while a mutation that recompiles the ruleset is in flight. Those
+ * requests are **never aborted**: Axum drops a handler future when its
+ * connection closes, so a cancel mid-compile can land between persist and swap
+ * and leave the config ahead of the live matcher, with the client unable to
+ * tell whether the write happened. Unmount is what would abort them, so
+ * unmount is what this prevents.
+ *
+ * Counted rather than boolean, and the release is idempotent, so an unmount
+ * racing a response cannot leave the application permanently un-navigable.
+ */
+export function blockNavigation(): () => void {
+  navigationBlocks += 1;
+  heldPath = currentPath();
+  let released = false;
+  return () => {
+    if (released) return;
+    released = true;
+    navigationBlocks -= 1;
+    if (navigationBlocks === 0) heldPath = null;
+  };
+}
+
+export function navigationBlocked(): boolean {
+  return navigationBlocks > 0;
+}
+
 export function navigate(
   path: string,
   options: { replace?: boolean; keepScroll?: boolean } = {},
 ): void {
+  if (navigationBlocks > 0) return;
   const next = normalize(path);
   if (next === currentPath() && !options.replace) return;
   if (options.replace) {
@@ -54,7 +85,18 @@ export function subscribeRoute(listener: Listener): () => void {
   };
 }
 
+/**
+ * Back/Forward is in-app navigation too: while a recompiling mutation holds
+ * the block, a popstate must not unmount the page out from under a request
+ * that is never aborted. The entry the browser moved to is replaced with the
+ * held path and nothing is announced, so the page stays mounted and the modal
+ * stays up.
+ */
 function onPopState(): void {
+  if (navigationBlocks > 0) {
+    window.history.pushState(null, '', heldPath ?? currentPath());
+    return;
+  }
   announce(currentPath());
 }
 

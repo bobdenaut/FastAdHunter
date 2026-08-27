@@ -326,3 +326,128 @@ export interface Config {
   history?: { enabled?: boolean };
   dns?: { upstreams?: { strategy?: string } };
 }
+
+/* ------------------------------------------------------------------ policies */
+
+/**
+ * `client` is a selector as configured — an address, a CIDR prefix, or a client
+ * name (`crates/fah-rules/src/policy.rs` `parse_selector`). It is echoed back
+ * on a `PATCH` exactly as it was given: the UI never re-spells it.
+ *
+ * `days`, `start` and `end` are absent rather than null when unset, and `start`
+ * and `end` are set together or not at all.
+ */
+export interface Assignment {
+  client: string;
+  days?: string;
+  start?: string;
+  end?: string;
+}
+
+/**
+ * `lists: null` means every enabled list, which is what an omitted `lists`
+ * means in the TOML too — not "no lists". `blocking_mode: null` means the
+ * policy inherits the global mode.
+ */
+export interface Policy {
+  id: string;
+  name: string;
+  lists: string[] | null;
+  blocking_mode: string | null;
+  assignments: Assignment[];
+}
+
+/**
+ * `items` holds the **configured** policies. `default` is never among them: it
+ * is implicit and reserved (`fah-config/src/lib.rs`), so the ceiling of 16
+ * counts it as one of the sixteen.
+ *
+ * `active_assignments` is assignments in force at this instant, after a `Name`
+ * selector has been expanded into one entry per matching named client — so it
+ * can exceed the number of configured assignment rows and is never phrased as
+ * "of N configured".
+ */
+export interface PoliciesResponse {
+  timezone: string;
+  items: Policy[];
+  active_assignments: number;
+}
+
+export interface CreatePolicyBody {
+  id: string;
+  name?: string;
+  lists?: string[] | null;
+  blocking_mode?: string | null;
+  assignments?: Assignment[];
+}
+
+/**
+ * A partial update. `lists` and `blocking_mode` are **double options**: absent
+ * leaves the field alone, an explicit `null` clears it, a value sets it
+ * (`wire.rs` `double_option_lists` / `double_option_string`). The request
+ * builder must emit the key with a literal `null` rather than drop it, which
+ * `resources.test.ts` pins.
+ */
+export interface PatchPolicyBody {
+  name?: string;
+  lists?: string[] | null;
+  blocking_mode?: string | null;
+  assignments?: Assignment[];
+}
+
+/* ------------------------------------------------- per-client policy and name */
+
+/** `null` clears the name back to unnamed. */
+export interface ClientNameBody {
+  name: string | null;
+}
+
+export interface ClientPolicyBody {
+  policy: string;
+  days?: string;
+  start?: string;
+  end?: string;
+}
+
+/** The single-address read and the write path's response. No page in `p5-07`
+ *  issues the `GET`; this is what the `PUT` answers with. */
+export interface ClientPolicyResponse {
+  ip: string;
+  policy: string;
+  assignment?: Assignment;
+}
+
+/* ---------------------------------------------------------------- user rules */
+
+/**
+ * The document as lines, both directions. There is no per-rule identity behind
+ * it — the whole set is validated and swapped as one unit — and exact-duplicate
+ * rule lines are dropped on the way in, so the response can be shorter than the
+ * request.
+ */
+export interface UserRules {
+  rules: string[];
+}
+
+/* --------------------------------------------------------------- rule tester */
+
+/**
+ * `qtype` is anything the resolver can name: `parse_qtype` maps everything but
+ * `A` and `AAAA` to `Other(name)`, so the five the artboard draws are all
+ * valid. `client` and `policy` may both be sent — an explicit `policy` wins.
+ */
+export interface RuleTestBody {
+  domain: string;
+  qtype?: string;
+  client?: string;
+  policy?: string;
+}
+
+/** Exactly four fields. Anything else on the result card is derived and is
+ *  listed in the plan's §8.5 table. */
+export interface RuleTestResult {
+  verdict: 'pass' | 'allow' | 'block';
+  rule: string | null;
+  list: string | null;
+  policy: string;
+}

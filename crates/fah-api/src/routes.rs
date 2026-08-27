@@ -1180,6 +1180,16 @@ async fn put_user_rules(
     State(state): State<Arc<AppState>>,
     Json(body): Json<UserRulesBody>,
 ) -> ApiResult<Json<UserRulesBody>> {
+    let sent = body
+        .rules
+        .iter()
+        .map(String::as_str)
+        .collect::<Vec<_>>()
+        .join("\n");
+    if let Some(message) = validate_user_rules(&sent) {
+        return Err(ApiError::ValidationFailed(message));
+    }
+
     // Drop exact-duplicate rule lines (keep the first, preserve order). Storing
     // the same rule twice only clutters the list — the matcher already dedups,
     // so the copy blocks nothing new (a self-duplicate, unlike a user rule that
@@ -1201,10 +1211,6 @@ async fn put_user_rules(
         .map(String::as_str)
         .collect::<Vec<_>>()
         .join("\n");
-
-    if let Some(message) = validate_user_rules(&text) {
-        return Err(ApiError::ValidationFailed(message));
-    }
 
     // Trailing newline so appending later never joins two rules onto a line.
     state.rules.set_user_rules(format!("{text}\n")).await;

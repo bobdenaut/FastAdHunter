@@ -1,5 +1,10 @@
 import { useEffect, useState } from 'preact/hooks';
 import { nowMs, subscribeAgeTick } from '../lifecycle/timers';
+import { formatAge } from '../time';
+
+/** Re-exported so the cluster's own tests and callers keep one import site;
+ *  the formatter itself belongs beside the other timestamp formatting. */
+export { formatAge };
 
 /**
  * At a five-minute interval an unlabelled figure is a lie, and on the Dashboard
@@ -11,16 +16,6 @@ import { nowMs, subscribeAgeTick } from '../lifecycle/timers';
  * `lifecycle/timers.ts` — refcounted, alive only while at least one of these is
  * mounted.
  */
-export function formatAge(fetchedAt: number | null, now: number): string {
-  if (fetchedAt === null) return 'not read yet';
-  const seconds = Math.max(0, Math.round((now - fetchedAt) / 1000));
-  if (seconds < 60) return `${seconds} s ago`;
-  const minutes = Math.floor(seconds / 60);
-  if (minutes < 60) return `${minutes} m ago`;
-  const hours = Math.floor(minutes / 60);
-  return `${hours} h ago`;
-}
-
 export function DataAge({
   fetchedAt,
   prefix = false,

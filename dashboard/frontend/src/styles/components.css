@@ -1656,3 +1656,1041 @@ table.t tbody tr:hover td {
   font-size: 11.5px;
   color: var(--text-muted);
 }
+
+/* ── p5-07 · filtering pages ─────────────────────────────────────────────── */
+
+/* The page's own header buttons, in the header the artboards draw them in.
+   Only a route declaring `ownsHeader` reaches this; Lists keeps its pair in
+   the page body, which is a shipped layout this task does not retrofit. */
+.hd-actions {
+  display: flex;
+  gap: 8px;
+  flex: 0 0 auto;
+  align-self: flex-end;
+}
+
+/* Policy chip. Solid = an assignment names this address; dashed = inherited.
+   Border style and weight carry it, and the note carries it in words — no hue
+   difference at all, so it survives both themes and a monochrome rendering. */
+.pol {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 7px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+.pchip {
+  display: inline-block;
+  border: 1px solid var(--border-control);
+  background: var(--surface-sunken);
+  color: var(--text);
+  font-weight: 500;
+  border-radius: 3px;
+  padding: 1px 8px;
+  font-size: 11.5px;
+  font-family: var(--font-mono);
+  white-space: nowrap;
+}
+
+.pchip.inh {
+  background: var(--surface);
+  border-style: dashed;
+  color: var(--text-muted);
+  font-weight: 400;
+}
+
+.pol-note {
+  min-width: 0;
+}
+
+/* A shut window is a state worth noticing, so it takes the warn foreground —
+   over words that already say it, never instead of them. */
+.pol-note.warn {
+  color: var(--pill-warn-fg);
+}
+
+@media (max-width: 767px) {
+  /* Scoped with `:has` so a header without actions — every screen p5-06
+     shipped — keeps the exact box it already had. */
+  .hd:has(.hd-actions) {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+  }
+
+  .hd-actions {
+    align-self: stretch;
+  }
+
+  .hd-actions .btn {
+    flex: 1;
+    min-height: 44px;
+  }
+}
+
+/* Custom Rules — the document editor. `CustomRules.dc.html` puts the editor
+   beside two static cards; below 1200 px the pair stacks under it. */
+.rules-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 330px;
+  gap: var(--gap);
+  align-items: start;
+}
+
+.rules-side {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap);
+}
+
+.bd.rules-body {
+  padding: 10px 14px 14px;
+}
+
+/* The three layers are positioned arithmetically against one line height, so
+   nothing here may set `line-height` in CSS alone — `EDITOR_LINE_HEIGHT` in
+   `line-editor.tsx` is applied inline to every layer instead. */
+.editor {
+  position: relative;
+  padding-left: 44px;
+  font-size: 12.5px;
+}
+
+.editor-gutter {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 44px;
+  overflow: hidden;
+  border-right: 1px solid var(--border-row);
+}
+
+.editor-gutter-inner {
+  position: absolute;
+  left: 0;
+  right: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.editor-gutter-inner span {
+  color: var(--text-faint);
+  text-align: right;
+  padding-right: 10px;
+  user-select: none;
+  font-size: 12.5px;
+  line-height: 22px;
+  height: 22px;
+}
+
+.editor-bands,
+.editor-callouts {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 44px;
+  right: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.editor-bands {
+  z-index: 0;
+}
+
+.editor-callouts {
+  z-index: 2;
+}
+
+.editor-band {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 22px;
+  background: var(--pill-bad-bg);
+}
+
+/* The artboard draws the message *between* two lines. A textarea cannot host
+   content between its own lines without changing the document, so the callout
+   floats immediately below the offending line and overlays the one beneath.
+   The anchored list under the editor is what makes the message reachable when
+   that is not good enough — at 390 px it always is. */
+.editor-callout {
+  position: absolute;
+  left: 4px;
+  max-width: calc(100% - 8px);
+  font-size: 11.5px;
+  line-height: 18px;
+  color: var(--pill-bad-fg);
+  background: var(--pill-bad-bg);
+  border-left: 2px solid var(--pill-bad-fg);
+  padding: 1px 8px;
+  border-radius: 0 3px 3px 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.editor-area {
+  position: relative;
+  z-index: 1;
+  display: block;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  padding: 0 4px;
+  margin: 0;
+  resize: none;
+  background: transparent;
+  color: var(--text);
+  font-size: 12.5px;
+  line-height: 22px;
+  white-space: pre;
+  overflow: auto;
+  tab-size: 4;
+}
+
+.editor-area:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+.editor-area:disabled {
+  color: var(--text-muted);
+}
+
+/* The anchored list. Each entry is a button, because tapping it is how the
+   message reaches its line on a phone. */
+.rule-errors {
+  margin-top: 12px;
+  border-top: 1px solid var(--border-row);
+}
+
+.rule-error {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: 0;
+  border-bottom: 1px solid var(--border-row);
+  padding: 12px 4px;
+  min-height: 44px;
+  font-size: 12.5px;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.rule-error:hover {
+  background: var(--surface-sunken);
+}
+
+.rule-error:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: -2px;
+}
+
+.rule-error-line {
+  color: var(--pill-bad-fg);
+  flex: 0 0 auto;
+}
+
+.rule-error-detail {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.rule-error-more {
+  padding: 10px 4px 0;
+}
+
+/* A page-level banner: the failure notice, and the duplicate-lines report. */
+.banner {
+  display: flex;
+  gap: 11px;
+  align-items: flex-start;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--text-faint);
+  border-radius: var(--radius);
+  background: var(--surface);
+  padding: 11px 14px;
+  font-size: 12.5px;
+  line-height: 1.55;
+}
+
+.banner.bad {
+  background: var(--pill-bad-bg);
+  border-color: var(--pill-bad-fg);
+  color: var(--pill-bad-fg);
+}
+
+.banner.bad b {
+  color: inherit;
+}
+
+.stacked {
+  display: block;
+  margin-top: 6px;
+}
+
+/* Precedence, drawn as three ranked rows. */
+.rank-list {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  font-size: 12.5px;
+}
+
+.rank-row {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+
+.rank {
+  width: 20px;
+  height: 20px;
+  border-radius: 3px;
+  font-size: 11px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+}
+
+.rank-1 {
+  background: var(--pill-good-bg);
+  color: var(--pill-good-fg);
+}
+
+.rank-2 {
+  background: var(--pill-bad-bg);
+  color: var(--pill-bad-fg);
+}
+
+.rank-3 {
+  background: var(--pill-neutral-bg);
+  color: var(--pill-neutral-fg);
+}
+
+.rank-footnote {
+  margin: 10px 0 0;
+}
+
+@media (max-width: 1199px) {
+  .rules-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 767px) {
+  /* §9.2 — the gutter stays, narrowed to a three-digit number, and the error
+     anchoring stays with it. The editor scrolls inside itself; the page body
+     does not scroll sideways. */
+  .editor {
+    padding-left: 34px;
+  }
+
+  .editor-gutter {
+    width: 34px;
+  }
+
+  .editor-gutter-inner span {
+    padding-right: 6px;
+  }
+
+  .editor-bands,
+  .editor-callouts {
+    left: 34px;
+  }
+}
+
+/* Clients — ONE grid for the header and every row. `p5-06`'s F1 was two grids
+   given the same template, and they drifted; here the rows are `subgrid`
+   children of the table's own tracks, so there is one definition and the
+   columns cannot disagree.
+
+   The last track is a fixed 44 px glyph, never a label: a text action cell is
+   content-sized per row, so a row whose action set varies with its state pulls
+   every other cell sideways the moment it changes. */
+.bd.clients-body {
+  padding: 12px 0 0;
+}
+
+.clients-scroll {
+  overflow-x: auto;
+}
+
+.clients-table {
+  display: grid;
+  /* The row padding lives HERE, not on the rows. A `subgrid` item's own
+     padding shortens the inherited tracks — measured at 1400 px, the 44 px
+     action track came out 25 px wide and the glyph with it. Padding the parent
+     leaves every track exactly as declared. */
+  padding: 0 14px;
+  /* The gutter is declared HERE and nowhere else. A subgrid that declares its
+     own `gap` overrides the parent's and takes the space out of the inherited
+     tracks — measured at 1400 px, 70 px of gutter came off the eight columns
+     and the 44 px action track arrived 39 px wide. Declared on the parent, the
+     tracks are sized around it and the subgrid inherits it unchanged. */
+  gap: 10px;
+  grid-template-columns:
+    minmax(118px, 1.1fr) minmax(96px, 1fr) minmax(196px, 2.2fr)
+    88px 74px 92px 76px 44px;
+  align-items: start;
+  min-width: min-content;
+}
+
+.client-head,
+.client-row {
+  display: grid;
+  grid-column: 1 / -1;
+  grid-template-columns: subgrid;
+  align-items: center;
+  padding: 6px 0;
+}
+
+.client-head {
+  font-weight: 600;
+  color: var(--text-muted);
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding-bottom: 8px;
+  white-space: nowrap;
+}
+
+.client-row {
+  border-top: 1px solid var(--border-row);
+  font-size: 12.5px;
+}
+
+.client-row:hover {
+  background: var(--surface-sunken);
+}
+
+.client-row.is-open {
+  background: var(--surface-sunken);
+}
+
+.c-queries,
+.c-blocked,
+.c-seen {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.client-head .c-queries,
+.client-head .c-blocked {
+  text-align: right;
+}
+
+.c-seen {
+  color: var(--text-muted);
+  text-align: left;
+  white-space: nowrap;
+}
+
+.client-head .c-seen {
+  text-align: left;
+}
+
+.c-name.unnamed {
+  color: var(--text-faint);
+}
+
+.c-share-fill {
+  background: var(--series-blocked);
+}
+
+.c-share-figure {
+  margin-top: 3px;
+  text-align: right;
+}
+
+.c-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+/* The label a cell carries only in card form. */
+.c-label {
+  display: none;
+}
+
+.c-expand {
+  grid-column: 1 / -1;
+  padding: 10px 0 12px;
+  border-top: 1px dashed var(--border-control);
+  margin-top: 6px;
+}
+
+.row-expand-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.row-expand-actions .btn {
+  min-height: 44px;
+  padding-left: 18px;
+  padding-right: 18px;
+}
+
+.rename-controls {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.rename-controls .field-input {
+  flex: 1 1 180px;
+  min-width: 0;
+}
+
+.rename-controls .btn {
+  min-height: 44px;
+}
+
+.rename .field-label {
+  margin-top: 0;
+}
+
+.search-input {
+  width: 220px;
+  min-height: 34px;
+  padding: 5px 10px;
+  font-size: 12.5px;
+}
+
+.clients-footnote {
+  margin: 0;
+  padding: 12px 14px;
+  border-top: 1px solid var(--border-row);
+}
+
+.window-pair {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.window-pair .field-input {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.assign-note {
+  margin: 14px 0 0;
+}
+
+@media (max-width: 767px) {
+  /* `MobileClients.dc.html`: one card per client — name and address, the chip
+     row, one stats row, last-seen, and the two actions when it is open. The
+     same cells, re-laid; no second component tree and no viewport listener. */
+  .client-head {
+    display: none;
+  }
+
+  .clients-scroll {
+    overflow-x: visible;
+  }
+
+  .clients-table {
+    grid-template-columns: minmax(0, 1fr);
+    min-width: 0;
+    padding: 0 12px;
+  }
+
+  .client-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 6px 10px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    margin-bottom: 10px;
+    padding: 10px 12px;
+    align-items: baseline;
+  }
+
+  .client-row:hover {
+    background: var(--surface-raised);
+  }
+
+  .client-row.is-open {
+    background: var(--surface-raised);
+    border-color: var(--border-control);
+  }
+
+  .c-name {
+    grid-column: 1;
+    grid-row: 1;
+    font-weight: 600;
+    font-size: 13px;
+  }
+
+  .c-ip {
+    grid-column: 1;
+    grid-row: 2;
+    color: var(--text-muted);
+    font-size: 11.5px;
+  }
+
+  .c-actions {
+    grid-column: 2;
+    grid-row: 1 / span 2;
+    align-self: center;
+  }
+
+  .c-policy {
+    grid-column: 1 / -1;
+    grid-row: 3;
+  }
+
+  /* The stats row: count, label, bar, percentage — one line, as drawn. */
+  .c-queries,
+  .c-blocked {
+    grid-row: 4;
+    display: flex;
+    align-items: baseline;
+    gap: 5px;
+    text-align: left;
+    white-space: nowrap;
+  }
+
+  .c-queries {
+    grid-column: 1;
+  }
+
+  .c-blocked {
+    grid-column: 2;
+    justify-self: end;
+  }
+
+  .c-label {
+    display: inline;
+    color: var(--text-muted);
+    font-size: 11.5px;
+    font-family: var(--font);
+  }
+
+  .c-share {
+    grid-column: 1 / -1;
+    grid-row: 5;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .c-share .bar {
+    flex: 1;
+  }
+
+  .c-share-figure {
+    margin-top: 0;
+    color: var(--pill-bad-fg);
+    flex: 0 0 auto;
+  }
+
+  .c-seen {
+    grid-column: 1 / -1;
+    grid-row: 6;
+  }
+
+  .c-expand {
+    grid-row: 7;
+    margin-top: 2px;
+  }
+
+  .row-expand-actions .btn {
+    flex: 1;
+  }
+
+  .search-input {
+    width: 100%;
+    min-height: 44px;
+  }
+
+  .card:has(.clients-table) .ch {
+    flex-wrap: wrap;
+  }
+
+  .card:has(.clients-table) .ch-right {
+    flex: 1 1 100%;
+  }
+}
+
+/* Policies — one card per policy, plus the synthetic Default card and the
+   empty-slot card the artboard draws at the end of the grid. */
+.policy-id {
+  font-weight: 400;
+}
+
+.policy-card .bd {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.policy-tools {
+  display: flex;
+  gap: 6px;
+}
+
+.policy-tools .btn {
+  padding: 3px 9px;
+}
+
+.danger-btn {
+  color: var(--pill-bad-fg);
+}
+
+.policy-lists {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.lchip {
+  display: inline-block;
+  background: var(--surface-sunken);
+  border: 1px solid var(--border);
+  color: var(--text-control);
+  border-radius: 3px;
+  padding: 1px 8px;
+  font-size: 11.5px;
+  font-family: var(--font-mono);
+}
+
+/* `lists: []` — a policy the engine gives no list at all. The warn foreground
+   over words that already say it, the same rule as `.pol-note.warn`. */
+.lchip-warn {
+  color: var(--pill-warn-fg);
+  border-color: var(--pill-warn-fg);
+}
+
+.policy-note {
+  margin: 0;
+}
+
+.assignments {
+  display: flex;
+  flex-direction: column;
+}
+
+.assignment {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+  font-size: 12.5px;
+  padding: 6px 0;
+  border-top: 1px solid var(--border-row);
+}
+
+.assignment-schedule {
+  margin-left: auto;
+}
+
+.assignments-empty {
+  margin: 0;
+}
+
+.policy-traffic-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 12.5px;
+  margin-bottom: 5px;
+  flex-wrap: wrap;
+}
+
+.policy-traffic-fill {
+  background: var(--series-blocked);
+}
+
+.policy-slot {
+  border-style: dashed;
+  background: var(--surface-sunken);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  min-height: 150px;
+  padding: 14px;
+}
+
+.policy-slot .btn {
+  margin-top: 8px;
+  min-height: 44px;
+}
+
+.figure-small {
+  font-size: 15px;
+  padding-top: 4px;
+}
+
+.bd.cost-body {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 24px;
+}
+
+.cost-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12.5px;
+  font-weight: 500;
+  margin-bottom: 6px;
+}
+
+.cost-footnote {
+  margin: 0;
+}
+
+/* The policy form is wider than a confirm: it holds a subset picker and a
+   variable number of assignment rows. */
+.dialog-wide {
+  max-width: 620px;
+  max-height: 86vh;
+  overflow-y: auto;
+}
+
+.field-set-block {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0;
+  margin-top: 12px;
+}
+
+.subset-picker {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 4px 10px;
+  max-height: 30vh;
+  overflow-y: auto;
+}
+
+.assignment-editor-row {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(0, 1.3fr) 76px 76px 44px;
+  gap: 6px;
+  align-items: center;
+  margin-top: 8px;
+}
+
+.assignment-editor-row .field-input {
+  min-height: 44px;
+  padding: 6px 8px;
+  font-size: 12.5px;
+}
+
+.add-assignment {
+  margin-top: 10px;
+  align-self: flex-start;
+  min-height: 44px;
+}
+
+@media (max-width: 1199px) {
+  .bd.cost-body {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 767px) {
+  /* §9.2 — cards stack one per row with their assignment rows intact, and the
+     summary card goes two-up. */
+  .assignment-editor-row {
+    grid-template-columns: minmax(0, 1fr) 44px;
+  }
+
+  .assignment-schedule {
+    margin-left: 0;
+    flex-basis: 100%;
+  }
+
+  .policy-tools .btn {
+    min-height: 44px;
+    padding: 6px 12px;
+  }
+}
+
+/* Rule Tester — `RuleTester.dc.html`'s form beside its result. At 390 px the
+   result sits directly beneath the form, so a phone sees the answer without
+   scrolling back past what it just filled in. */
+.tester-grid {
+  display: grid;
+  grid-template-columns: 400px minmax(0, 1fr);
+  gap: var(--gap);
+  align-items: start;
+}
+
+.tester-column {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap);
+  min-width: 0;
+}
+
+.tester-fields {
+  gap: 14px;
+}
+
+.tester-label {
+  margin-top: 0;
+}
+
+.tester-chips {
+  flex-wrap: wrap;
+  margin-top: 6px;
+}
+
+.tester-chips .chip {
+  /* Both axes: `A` is two glyphs wide and measured 38 px at 390 px, which is
+     under the 44 px the acceptance criterion names. */
+  min-height: 44px;
+  min-width: 44px;
+  padding: 6px 14px;
+  font-size: 12.5px;
+}
+
+.tester-decide {
+  border-top: 1px solid var(--border-row);
+  padding-top: 14px;
+}
+
+.tester-decide .field-input {
+  margin-top: 10px;
+}
+
+.tester-note {
+  margin: 7px 0 0;
+}
+
+.tester-submit {
+  margin-top: 14px;
+  min-height: 44px;
+}
+
+.tester-verdict {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--border-row);
+  flex-wrap: wrap;
+}
+
+.tester-verdict-line {
+  font-size: 13.5px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+/* The verdict slab. It carries the word, so the colour is never the signal —
+   the same rule the pills follow. */
+.verdict-slab {
+  font-size: 17px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  padding: 9px 20px;
+  border-radius: var(--radius);
+  text-transform: uppercase;
+  flex: 0 0 auto;
+}
+
+.verdict-slab.block {
+  background: var(--pill-bad-bg);
+  color: var(--pill-bad-fg);
+}
+
+.verdict-slab.allow {
+  background: var(--pill-good-bg);
+  color: var(--pill-good-fg);
+}
+
+.verdict-slab.pass {
+  background: var(--pill-neutral-bg);
+  color: var(--pill-neutral-fg);
+}
+
+.kv {
+  display: grid;
+  grid-template-columns: 120px minmax(0, 1fr);
+  gap: 9px 14px;
+  font-size: 12.5px;
+  align-items: baseline;
+  margin-top: 14px;
+}
+
+.kv > span:nth-child(odd) {
+  color: var(--text-muted);
+}
+
+.kv > span:nth-child(even) {
+  overflow-wrap: anywhere;
+}
+
+.ring {
+  display: flex;
+  flex-direction: column;
+  gap: 11px;
+}
+
+.ring-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 12.5px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+.ring-detail {
+  margin-left: auto;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.ambiguous-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.ambiguous-choice {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  min-height: 44px;
+  text-align: left;
+}
+
+@media (max-width: 1199px) {
+  .tester-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 767px) {
+  .kv {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 2px 0;
+  }
+
+  .kv > span:nth-child(odd) {
+    margin-top: 8px;
+  }
+
+  .ring-detail {
+    margin-left: 0;
+    flex-basis: 100%;
+  }
+}

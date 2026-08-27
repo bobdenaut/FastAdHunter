@@ -207,3 +207,63 @@ describe('the list toggle', () => {
     expect(declaration('.switch::before', 'position')).toBe('absolute');
   });
 });
+
+/**
+ * p5-07's Clients table. `p5-06`'s F1 was two grids given the same template,
+ * and they drifted; this is **one** grid — the rows are `subgrid` children of
+ * the table's tracks — so there is a single definition and the header cannot
+ * disagree with a row. jsdom still resolves no layout, so the source is again
+ * the honest test.
+ */
+describe('the Clients table grid', () => {
+  const tracks = declaration('.clients-table', 'grid-template-columns');
+
+  it('is eight columns, matching the artboard', () => {
+    const columns = tracks
+      .replace(/minmax\([^)]*\)/g, 'T')
+      .split(' ')
+      .filter((token) => token !== '');
+    expect(columns).toHaveLength(8);
+  });
+
+  it('sizes its actions column from nothing the content decides', () => {
+    const columns = tracks
+      .replace(/minmax\([^)]*\)/g, 'T')
+      .split(' ')
+      .filter((token) => token !== '');
+    expect(columns[columns.length - 1]).toBe('44px');
+  });
+
+  it('gives the header and the rows one grid rather than two that agree', () => {
+    expect(
+      declaration('.client-head,\n.client-row', 'grid-template-columns'),
+    ).toBe('subgrid');
+    expect(declaration('.client-head,\n.client-row', 'grid-column')).toBe(
+      '1 / -1',
+    );
+  });
+
+  it('scrolls the table inside its own container, never the page body', () => {
+    expect(declaration('.clients-scroll', 'overflow-x')).toBe('auto');
+    expect(declaration('.clients-table', 'min-width')).toBe('min-content');
+  });
+});
+
+describe('the row action glyph', () => {
+  it('is a 44 × 44 target on every page that uses it', () => {
+    expect(declaration('.iconbtn', 'width')).toBe('44px');
+    expect(declaration('.iconbtn', 'height')).toBe('44px');
+  });
+});
+
+describe('the dashed policy chip', () => {
+  // p5-06's F17/N4: a tint that reads in one theme and vanishes in the other.
+  // `color-mix(… X%, transparent)` premultiplies to about 1.8 % alpha, so the
+  // difference is carried by border style, weight and the words instead.
+  it('differs by border style and weight, never by a transparent wash', () => {
+    expect(declaration('.pchip.inh', 'border-style')).toBe('dashed');
+    expect(declaration('.pchip', 'font-weight')).toBe('500');
+    expect(declaration('.pchip.inh', 'font-weight')).toBe('400');
+    expect(declaration('.pchip.inh', 'background')).toBe('var(--surface)');
+  });
+});

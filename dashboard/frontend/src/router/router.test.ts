@@ -1,5 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { currentPath, isPlainLeftClick, navigate, normalize, subscribeRoute } from './router';
+import {
+  blockNavigation,
+  currentPath,
+  isPlainLeftClick,
+  navigate,
+  navigationBlocked,
+  normalize,
+  subscribeRoute,
+} from './router';
 
 interface HistoryCall {
   path: string;
@@ -95,6 +103,30 @@ describe('popstate', () => {
     for (const handler of windowListeners.get('popstate') ?? []) handler();
     release();
     expect(seen).toEqual(['/policies']);
+  });
+
+  // F2 — Back/Forward is in-app navigation too: while a recompiling mutation
+  // holds the block, a popstate must neither announce (which would unmount the
+  // page) nor leave the browser on the entry it moved to.
+  it('restores the held path and announces nothing while navigation is blocked', () => {
+    const seen: string[] = [];
+    const release = subscribeRoute((next) => seen.push(next));
+    navigate('/rules');
+    const unblock = blockNavigation();
+
+    path = '/clients';
+    for (const handler of windowListeners.get('popstate') ?? []) handler();
+
+    expect(seen).toEqual(['/rules']);
+    expect(path).toBe('/rules');
+    expect(calls[calls.length - 1]).toEqual({ path: '/rules', replace: false });
+    expect(navigationBlocked()).toBe(true);
+
+    unblock();
+    path = '/clients';
+    for (const handler of windowListeners.get('popstate') ?? []) handler();
+    expect(seen).toEqual(['/rules', '/clients']);
+    release();
   });
 });
 

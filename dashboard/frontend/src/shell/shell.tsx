@@ -191,8 +191,19 @@ export function Shell() {
           onToggleTheme={() => toggleTheme()}
           onSignOut={signOut}
         />
-        <ContentHeader title={route.title} />
-        <main class="wrap">{body}</main>
+        {/* A route that owns its header renders the header *and* the `.wrap`
+            itself, because the two are siblings — `.hd` sits outside the
+            padded content column. Until its chunk resolves the shell renders
+            neither, so an entry cannot flash a title the page is about to
+            replace with its own wording. */}
+        {route.ownsHeader === true && Page !== null && !loadFailed ? (
+          body
+        ) : (
+          <>
+            {route.ownsHeader !== true && <ContentHeader title={route.title} />}
+            <main class="wrap">{body}</main>
+          </>
+        )}
       </div>
     </div>
   );

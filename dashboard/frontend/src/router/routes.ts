@@ -45,6 +45,14 @@ export interface Route {
    * columns below are what the row declares once the task that owns it lands.
    */
   built: boolean;
+  /**
+   * The page renders its own `<ContentHeader>` and the shell renders none.
+   * Declared here rather than signalled from the page: the shell's header is
+   * painted before the lazy chunk resolves, so a page-side flag would flash a
+   * duplicate title on every entry, and a shared "the page took the header"
+   * flag would be exactly the stale closure this table exists to avoid.
+   */
+  ownsHeader?: boolean;
   load: (() => Promise<{ default: ComponentType<PageProps> }>) | null;
 }
 
@@ -84,37 +92,52 @@ export const ROUTES: readonly Route[] = [
     path: '/rules',
     title: 'Custom Rules',
     section: 'filtering',
+    // One entry read and one user-triggered write. No event would change what
+    // this page renders, and there is nothing here to poll.
     events: [],
     endpoints: [],
-    built: false,
-    load: null,
+    built: true,
+    ownsHeader: true,
+    load: () => import('../pages/rules'),
   },
   {
     path: '/policies',
     title: 'Policies',
     section: 'filtering',
+    // Three entry one-shots. `active_assignments` moves on its own as a
+    // schedule boundary passes, but a standing timer for one figure is exactly
+    // what the route-scoped invariant rules out — it is re-read on entry.
     events: [],
     endpoints: [],
-    built: false,
-    load: null,
+    built: true,
+    ownsHeader: true,
+    load: () => import('../pages/policies'),
   },
   {
     path: '/clients',
     title: 'Clients',
     section: 'filtering',
+    // Two entry one-shots and three user-triggered writes. `clients` is a
+    // `REFRESH_ENDPOINTS` member, but subscribing to it would start a timer,
+    // and the page whose job is current state must not be reading it through a
+    // five-minute preference either — so this route declares neither.
     events: [],
     endpoints: [],
-    built: false,
-    load: null,
+    built: true,
+    ownsHeader: true,
+    load: () => import('../pages/clients'),
   },
   {
     path: '/rule-tester',
     title: 'Rule Tester',
     section: 'filtering',
+    // Two entry one-shots and one user-triggered POST. The test reads the
+    // running matcher; there is nothing about it to poll or subscribe to.
     events: [],
     endpoints: [],
-    built: false,
-    load: null,
+    built: true,
+    ownsHeader: true,
+    load: () => import('../pages/rule-tester'),
   },
   {
     path: '/cache',

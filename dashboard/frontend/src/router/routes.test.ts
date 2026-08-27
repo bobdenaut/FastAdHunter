@@ -91,10 +91,14 @@ describe('what a route actually acquires', () => {
     }
   });
 
-  it('is the declaration for the screens p5-06 built, and only those', () => {
+  it('is the declaration for the screens built so far, and only those', () => {
     expect(ROUTES.filter((r) => r.built).map((r) => r.path)).toEqual([
       '/',
       '/lists',
+      '/rules',
+      '/policies',
+      '/clients',
+      '/rule-tester',
     ]);
     const dashboard = ROUTES.find((r) => r.path === '/');
     expect(effectiveEvents(dashboard!)).toEqual(['stats']);

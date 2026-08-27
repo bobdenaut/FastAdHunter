@@ -1995,6 +1995,31 @@ async fn invalid_user_rules_are_rejected_with_per_line_messages() {
 }
 
 #[tokio::test]
+async fn user_rules_422_line_numbers_index_the_document_as_sent() {
+    let harness = start().await;
+    let response = harness
+        .client
+        .put(harness.url("/api/v1/rules/user"))
+        .bearer_auth(&harness.key)
+        .json(&json!({"rules": ["||dup.example^", "||dup.example^", "||^"]}))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), 422);
+    let body: Value = response.json().await.unwrap();
+    assert_eq!(body["error"]["code"], "validation_failed");
+    let message = body["error"]["message"].as_str().unwrap();
+    assert!(message.contains("line 3"), "got: {message}");
+    assert!(!message.contains("line 2"), "got: {message}");
+
+    assert_eq!(
+        harness.get_json("/api/v1/rules/user").await["rules"],
+        json!([])
+    );
+}
+
+#[tokio::test]
 async fn rules_test_dry_runs_a_verdict() {
     let harness = start().await;
     harness

@@ -16,7 +16,27 @@ export {
   HISTORY_SUMMARY_PATH,
 } from './history';
 export type { HistorySummaryQuery } from './history';
-export { getClients, CLIENTS_PATH } from './clients';
+export {
+  getClients,
+  setClientName,
+  setClientPolicy,
+  clearClientPolicy,
+  CLIENTS_PATH,
+} from './clients';
+export {
+  getPolicies,
+  createPolicy,
+  patchPolicy,
+  deletePolicy,
+  POLICIES_PATH,
+} from './policies';
+export {
+  getUserRules,
+  putUserRules,
+  testRule,
+  USER_RULES_PATH,
+  RULES_TEST_PATH,
+} from './rules';
 export { getConfig, CONFIG_PATH } from './config';
 export {
   getLists,

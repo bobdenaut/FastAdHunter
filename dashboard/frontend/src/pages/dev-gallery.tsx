@@ -15,6 +15,9 @@ import { EmptyState } from '../components/empty-state';
 import { ErrorState } from '../components/error-state';
 import { RefreshCluster } from '../components/refresh-cluster';
 import { StageBar } from '../components/stage-bar';
+import { PolicyChip } from '../components/policy-chip';
+import { classifyAssignment } from '../policy/assignment';
+import type { Client, Policy } from '../api/types';
 import { StatusPill } from '../components/status-pill';
 import { FrequencyBar, Table } from '../components/table';
 import { Tile } from '../components/tile';
@@ -30,6 +33,70 @@ interface DomainRow {
   domain: string;
   hits: number;
 }
+
+/** Fixtures for the chip row. The classification is the real function, so the
+ *  gallery draws what the Clients page draws and cannot drift from it. */
+function galleryClient(overrides: Partial<Client> & Pick<Client, 'ip'>): Client {
+  return {
+    name: null,
+    first_seen: '2026-08-27T09:00:00Z',
+    last_seen: '2026-08-27T10:00:00Z',
+    queries_24h: 0,
+    blocked_24h: 0,
+    policy: 'default',
+    ...overrides,
+  };
+}
+
+const GALLERY_POLICIES: Policy[] = [
+  {
+    id: 'kids',
+    name: 'Kids',
+    lists: null,
+    blocking_mode: null,
+    assignments: [
+      {
+        client: '192.168.10.50',
+        days: 'mon-fri',
+        start: '21:00',
+        end: '07:00',
+      },
+      { client: '192.168.10.22', days: 'sat-sun' },
+    ],
+  },
+  {
+    id: 'guest',
+    name: 'Guest Wi-Fi',
+    lists: null,
+    blocking_mode: null,
+    assignments: [{ client: '192.168.20.0/24' }],
+  },
+];
+
+const DIRECT_CHIP = classifyAssignment(
+  galleryClient({
+    ip: '192.168.10.50',
+    name: 'tv',
+    policy: 'kids',
+    assignment_source: 'direct',
+  }),
+  GALLERY_POLICIES,
+);
+
+const SHUT_CHIP = classifyAssignment(
+  galleryClient({ ip: '192.168.10.22', assignment_source: 'direct' }),
+  GALLERY_POLICIES,
+);
+
+const INHERITED_CHIP = classifyAssignment(
+  galleryClient({ ip: '192.168.20.11', policy: 'guest' }),
+  GALLERY_POLICIES,
+);
+
+const UNASSIGNED_CHIP = classifyAssignment(
+  galleryClient({ ip: '192.168.10.15', name: 'liviu-phone' }),
+  GALLERY_POLICIES,
+);
 
 const TOP: DomainRow[] = [
   { domain: 'api.example.org', hits: 4021 },
@@ -212,6 +279,26 @@ export function DevGallery(_props: PageProps) {
           <p class="note">
             `permitted` is the derived `queries − blocked` band and is never a
             verdict, so it has no pill.
+          </p>
+        </Card>
+
+        <Card title="Policy chips" secondary="solid vs dashed, both themes">
+          <p>
+            <PolicyChip classification={DIRECT_CHIP} />
+          </p>
+          <p>
+            <PolicyChip classification={SHUT_CHIP} />
+          </p>
+          <p>
+            <PolicyChip classification={INHERITED_CHIP} />
+          </p>
+          <p>
+            <PolicyChip classification={UNASSIGNED_CHIP} />
+          </p>
+          <p class="note">
+            Solid means an assignment names this address. The difference is
+            border style, weight and the words — never hue, so switching the
+            theme changes nothing about which chip is which.
           </p>
         </Card>
       </div>
