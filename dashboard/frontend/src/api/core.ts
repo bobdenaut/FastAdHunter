@@ -148,7 +148,11 @@ export async function request<T>(
     throw error;
   }
 
-  if (response.status === 204) return undefined as T;
+  // The two documented bodiless successes. `202` is the accepted-but-not-done
+  // mutation (`POST /lists/{id}/refresh`), whose outcome arrives as an event
+  // rather than in this response; parsing its empty body would throw a syntax
+  // error where nothing actually failed.
+  if (response.status === 204 || response.status === 202) return undefined as T;
 
   // Unknown fields are ignored rather than policed: the types describe the
   // documented shape, and the compatibility contract permits additions.

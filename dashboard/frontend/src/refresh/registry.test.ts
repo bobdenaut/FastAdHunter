@@ -19,6 +19,8 @@ function counting(): Counting {
     health: 0,
     telemetry: 0,
     cache: 0,
+    clients: 0,
+    lists: 0,
   };
   const pending = new Map<
     RefreshEndpoint,
@@ -38,6 +40,8 @@ function counting(): Counting {
     health: fetcher('health'),
     telemetry: fetcher('telemetry'),
     cache: fetcher('cache'),
+    clients: fetcher('clients'),
+    lists: fetcher('lists'),
   });
 
   return {
@@ -131,6 +135,22 @@ describe('shared, not global', () => {
     expect(h.calls.telemetry).toBe(0);
     expect(h.calls.health).toBe(0);
     expect(h.calls.cache).toBe(0);
+    h.registry.dispose();
+  });
+
+  // p5-06 widened the union rather than building a second reader, so the two
+  // new endpoints must be indistinguishable from the original three here.
+  it('gives `clients` and `lists` the same refcount and teardown', () => {
+    const h = counting();
+    for (const endpoint of ['clients', 'lists'] as const) {
+      const release = h.registry.subscribe(endpoint, () => {});
+      expect(h.calls[endpoint]).toBe(1);
+      expect(h.registry.activeTimers()).toBe(1);
+      release();
+      expect(h.registry.activeTimers()).toBe(0);
+      vi.advanceTimersByTime(600_000);
+      expect(h.calls[endpoint]).toBe(1);
+    }
     h.registry.dispose();
   });
 

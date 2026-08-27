@@ -1,9 +1,24 @@
 import type { ComponentType } from 'preact';
 import { EVENT_TYPES, type EventType } from '../events/types';
 
-/** The three endpoints the shared bounded refresh reads. Nothing pushed is
- *  polled: `stats` arrives on the socket and is never in this set. */
-export const REFRESH_ENDPOINTS = ['health', 'telemetry', 'cache'] as const;
+/**
+ * The five endpoints the shared bounded refresh reads. Nothing pushed is
+ * polled: `stats` arrives on the socket and is never in this set.
+ *
+ * `clients` and `lists` joined the set in p5-06. A Top-clients table frozen at
+ * page-entry beside tiles that move every two seconds is quiet wrongness, and
+ * the alternative to polling them is a figure that silently goes stale — but
+ * they go through this one mechanism and no other, so they inherit its
+ * refcounting, its last-unsubscribe teardown and its suspend. A sixth name is
+ * a deliberate edit: `routes.test.ts` pins the list.
+ */
+export const REFRESH_ENDPOINTS = [
+  'health',
+  'telemetry',
+  'cache',
+  'clients',
+  'lists',
+] as const;
 export type RefreshEndpoint = (typeof REFRESH_ENDPOINTS)[number];
 
 export interface PageProps {
@@ -42,19 +57,28 @@ export const ROUTES: readonly Route[] = [
     path: '/',
     title: 'Dashboard',
     section: 'overview',
+    // `stats` only. The page renders nothing a `config_changed` or a
+    // `list_refreshed` event would change, and it renders no per-query rows —
+    // so it must not receive `query` either.
     events: ['stats'],
-    endpoints: ['telemetry', 'cache'],
-    built: false,
-    load: null,
+    // `health` for the Uptime tile's "status ok" footer; `clients` and `lists`
+    // because their cards would otherwise be frozen at page-entry beside tiles
+    // that move every two seconds (D1a).
+    endpoints: ['telemetry', 'cache', 'health', 'clients', 'lists'],
+    built: true,
+    load: () => import('../pages/dashboard'),
   },
   {
     path: '/lists',
     title: 'Lists',
     section: 'filtering',
     events: ['list_refreshed'],
-    endpoints: [],
-    built: false,
-    load: null,
+    // The inventory only. `/telemetry` is read once on mount for the compile
+    // duration and is deliberately **not** declared: declaring it would put a
+    // standing timer on an endpoint this page renders one field of.
+    endpoints: ['lists'],
+    built: true,
+    load: () => import('../pages/lists'),
   },
   {
     path: '/rules',

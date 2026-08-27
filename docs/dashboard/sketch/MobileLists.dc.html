@@ -1,0 +1,199 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+  <style>
+    body { margin: 0; font-family: 'IBM Plex Sans', system-ui, sans-serif; background: #eef1f5; color: #1f2733; -webkit-font-smoothing: antialiased; width: 390px; }
+    a { color: #1f7f96; } a:hover { color: #17616f; }
+    .top { height: 52px; background: #131a24; color: #fff; display: flex; align-items: center; gap: 10px; padding: 0 6px 0 0; position: sticky; top: 0; z-index: 5; }
+    .burger { width: 44px; height: 44px; display: flex; align-items: center; justify-content: center; margin-left: 4px; }
+    .tt { font-size: 15px; font-weight: 600; }
+    .tr { margin-left: auto; display: flex; align-items: center; gap: 8px; padding-right: 8px; font-size: 11.5px; color: #9fb0c3; }
+    .wrap { padding: 12px; display: flex; flex-direction: column; gap: 12px; }
+    .sub { font-size: 11.5px; color: #6b7785; line-height: 1.5; margin: 0; }
+    .acts { display: flex; gap: 8px; }
+    .btn { background: #1f9dbb; color: #fff; border-radius: 4px; font-size: 13px; font-weight: 500; flex: 1; min-height: 44px; display: flex; align-items: center; justify-content: center; }
+    .btn.g { background: #fff; color: #33414f; border: 1px solid #cfd8e3; }
+    .card { background: #fff; border: 1px solid #dde3ea; border-radius: 5px; }
+    .ch { margin: 0; font-size: 13px; font-weight: 600; padding: 11px 12px; border-bottom: 1px solid #e6ebf1; }
+    .bd { padding: 12px; }
+    .g2 { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 14px 20px; }
+    .fig { font-size: 19px; font-weight: 600; font-family: 'IBM Plex Mono', monospace; }
+    .note { font-size: 11px; color: #6b7785; line-height: 1.5; }
+    .mono { font-family: 'IBM Plex Mono', monospace; }
+    .pill { display: inline-block; padding: 1px 8px; border-radius: 3px; font-size: 10.5px; font-weight: 600; letter-spacing: .03em; }
+    .lc { background: #fff; border: 1px solid #dde3ea; border-radius: 5px; }
+    .lc.alert { background: #fffaf2; }
+    .lc .hd { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; padding: 10px 12px; }
+    .lc .id { font-family: 'IBM Plex Mono', monospace; font-weight: 500; font-size: 13px; }
+    .lc .src { font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: #8a95a3; margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .lc .sec { border-top: 1px solid #eef2f6; padding: 10px 12px; }
+    .seg { display: flex; height: 7px; border-radius: 3px; overflow: hidden; flex: 1; background: #e7edf3; }
+    .bar-row { display: flex; align-items: center; gap: 10px; }
+    .rules { font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: #6b7785; margin-top: 6px; }
+    .meta { display: flex; align-items: center; gap: 14px; min-height: 44px; border-top: 1px solid #eef2f6; padding: 0 12px; font-size: 12.5px; }
+    .sw { width: 32px; height: 18px; border-radius: 9px; background: #3d9a63; position: relative; display: inline-block; flex: 0 0 auto; }
+    .sw i { position: absolute; top: 2px; right: 2px; width: 14px; height: 14px; border-radius: 50%; background: #fff; }
+    .sw.off { background: #cfd8e3; }
+    .sw.off i { right: auto; left: 2px; }
+    .rowacts { display: flex; border-top: 1px solid #eef2f6; }
+    .rowacts span { flex: 1; min-height: 44px; display: flex; align-items: center; justify-content: center; font-size: 12.5px; color: #1f7f96; }
+    .rowacts span.danger { color: #b03c37; }
+    .why { padding: 0 12px 10px; }
+  </style>
+</helmet>
+
+<div class="top">
+  <div class="burger"><svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2"><path d="M4 7h16M4 12h16M4 17h16"></path></svg></div>
+  <div class="tt">Lists</div>
+  <div class="tr"><span style="width: 7px; height: 7px; border-radius: 50%; background: #3d9a63; display: inline-block;"></span>live</div>
+</div>
+
+<div class="wrap">
+
+  <p class="sub">Adding, enabling or removing a list rewrites <span class="mono">[[rules.lists]]</span> in the config before the change reaches the engine — the file and the running engine never disagree.</p>
+
+  <div class="acts">
+    <span class="btn g">Refresh all</span>
+    <span class="btn">Add list</span>
+  </div>
+
+  <div class="card">
+    <div class="bd g2">
+      <div><div class="fig">512,883</div><div class="note">compiled rules</div></div>
+      <div><div class="fig">87,422</div><div class="note">duplicates removed</div></div>
+      <div><div class="fig">7.41 s</div><div class="note">last compile</div></div>
+      <div><div class="fig">13 / 15</div><div class="note">enabled / configured</div></div>
+    </div>
+  </div>
+
+  <div class="lc">
+    <div class="hd">
+      <div style="min-width: 0;">
+        <div class="id">oisd-basic</div>
+        <div class="src">https://small.oisd.nl</div>
+      </div>
+      <span class="pill" style="background: #e4f3ea; color: #2f7d4e;">OK</span>
+    </div>
+    <div class="sec">
+      <div class="bar-row">
+        <div class="seg"><div style="flex: 198500; background: #1f9dbb;"></div><div style="flex: 9181; background: #6f5fbe;"></div><div style="flex: 15501; background: #d6dde5;"></div></div>
+        <span class="mono" style="font-size: 12px; white-space: nowrap;">223,182 rules</span>
+      </div>
+      <div class="rules">198,500 dns · 9,181 url · 15,501 inactive</div>
+      <div class="rules">0 parse errors</div>
+    </div>
+    <div class="meta"><span class="sw"><i></i></span><span class="mono">every 24 h</span><span class="mono" style="color: #6b7785;">last 04:00</span></div>
+    <div class="rowacts"><span>Refresh</span><span>Edit</span><span class="danger">Remove</span></div>
+  </div>
+
+  <div class="lc alert">
+    <div class="hd">
+      <div style="min-width: 0;">
+        <div class="id">hagezi-pro</div>
+        <div class="src">https://raw.githubusercontent.com/…/pro.txt</div>
+      </div>
+      <span class="pill" style="background: #fbe9e8; color: #b03c37;">FAILED</span>
+    </div>
+    <div class="why">
+      <div class="note" style="color: #a4562f;">fetch failed: connection timed out after 30 s</div>
+      <div class="note">last good copy still serving</div>
+    </div>
+    <div class="sec">
+      <div class="bar-row">
+        <div class="seg"><div style="flex: 152300; background: #1f9dbb;"></div><div style="flex: 2100; background: #6f5fbe;"></div><div style="flex: 8600; background: #d6dde5;"></div></div>
+        <span class="mono" style="font-size: 12px; white-space: nowrap;">163,000 rules</span>
+      </div>
+      <div class="rules">152,300 dns · 2,100 url · 8,600 inactive</div>
+      <div class="rules">0 parse errors</div>
+    </div>
+    <div class="meta"><span class="sw"><i></i></span><span class="mono">every 24 h</span><span class="mono" style="color: #6b7785;">last yesterday 04:00</span></div>
+    <div class="rowacts"><span>Refresh</span><span>Edit</span><span class="danger">Remove</span></div>
+  </div>
+
+  <div class="lc alert">
+    <div class="hd">
+      <div style="min-width: 0;">
+        <div class="id">adaway</div>
+        <div class="src">https://adaway.org/hosts.txt</div>
+      </div>
+      <span class="pill" style="background: #fff2e0; color: #9a6414;">REJECTED</span>
+    </div>
+    <div class="why">
+      <div class="note" style="color: #8a6420;">collapse: 0 dns rules vs baseline 6,710</div>
+      <div class="note">content gate refused the body before it could commit</div>
+    </div>
+    <div class="sec">
+      <div class="bar-row">
+        <div class="seg"><div style="flex: 6710; background: #1f9dbb;"></div><div style="flex: 190; background: #d6dde5;"></div></div>
+        <span class="mono" style="font-size: 12px; white-space: nowrap;">6,900 rules</span>
+      </div>
+      <div class="rules">6,710 dns · 0 url · 190 inactive</div>
+      <div class="rules">0 parse errors</div>
+    </div>
+    <div class="meta"><span class="sw"><i></i></span><span class="mono">every 24 h</span><span class="mono" style="color: #6b7785;">last 04:00</span></div>
+    <div class="rowacts"><span>Delete and re-add</span><span>Edit</span><span class="danger">Remove</span></div>
+  </div>
+
+  <div class="lc alert">
+    <div class="hd">
+      <div style="min-width: 0;">
+        <div class="id">misdetected</div>
+        <div class="src">https://example.org/filters.txt</div>
+      </div>
+      <span class="pill" style="background: #fff2e0; color: #9a6414;">DEGRADED</span>
+    </div>
+    <div class="why">
+      <div class="note" style="color: #8a6420;">fetch succeeded, most of the body failed to parse — likely a format misdetection</div>
+      <div class="note">check its syntax against RULE_ENGINE.md §Supported formats</div>
+    </div>
+    <div class="sec">
+      <div class="bar-row">
+        <div class="seg"><div style="flex: 83; background: #1f9dbb;"></div><div style="flex: 4; background: #d6dde5;"></div></div>
+        <span class="mono" style="font-size: 12px; white-space: nowrap;">87 rules</span>
+      </div>
+      <div class="rules">83 dns · 0 url · 4 inactive</div>
+      <div class="rules">69,514 parse errors</div>
+    </div>
+    <div class="meta"><span class="sw"><i></i></span><span class="mono">every 24 h</span><span class="mono" style="color: #6b7785;">last 04:00</span></div>
+    <div class="rowacts"><span>Refresh</span><span>Edit</span><span class="danger">Remove</span></div>
+  </div>
+
+  <div class="lc">
+    <div class="hd">
+      <div style="min-width: 0;">
+        <div class="id">local-extra</div>
+        <div class="src">/data/lists/local.txt</div>
+      </div>
+      <div style="text-align: right;">
+        <span class="pill" style="background: #eef2f6; color: #55606d;">DISABLED</span>
+        <div class="note" style="margin-top: 4px;">last attempt: never</div>
+      </div>
+    </div>
+    <div class="sec">
+      <div class="bar-row"><div class="seg"></div></div>
+      <div class="rules">not compiled while disabled</div>
+    </div>
+    <div class="meta"><span class="sw off"><i></i></span><span class="mono" style="color: #b6bfc9;">—</span><span class="mono" style="color: #6b7785;">last never</span></div>
+    <div class="rowacts"><span>Refresh</span><span>Edit</span><span class="danger">Remove</span></div>
+  </div>
+
+  <p class="note" style="margin: 0; padding: 0 2px 8px;">
+    One card per list, never a horizontal table. This is the page an operator
+    reaches for when a list has failed, and a seven-column scroller is not an
+    answer — so the failure reason and the way out are on the card itself. The
+    three tier counts and the parse-error line are read together: `0 parse
+    errors` means the same thing for a clean copy and for one contributing
+    nothing.
+  </p>
+
+</div>
+</x-dc>
+</body>
+</html>

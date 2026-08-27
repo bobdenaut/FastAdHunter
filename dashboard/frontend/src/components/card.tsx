@@ -11,15 +11,19 @@ export function Card({
   tools,
   children,
   bodyClass,
+  className,
 }: {
   title?: ComponentChildren;
   secondary?: ComponentChildren;
   tools?: ComponentChildren;
   children?: ComponentChildren;
-  bodyClass?: string;
+  bodyClass?: string | undefined;
+  /** A placement hook. The phone layout reorders and drops whole cards, and
+   *  doing that in CSS needs something to select. */
+  className?: string | undefined;
 }) {
   return (
-    <section class="card">
+    <section class={className === undefined ? 'card' : `card ${className}`}>
       {title !== undefined && (
         <h3 class="ch">
           <span>{title}</span>

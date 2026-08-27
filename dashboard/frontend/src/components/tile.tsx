@@ -11,6 +11,7 @@ export function Tile({
   accent,
   glyph,
   footer,
+  footerShort,
   href,
 }: {
   label: string;
@@ -18,8 +19,24 @@ export function Tile({
   accent: TileAccent;
   glyph: string;
   footer?: string;
+  /**
+   * The phone artboard's shortened footer ("6 clients", "proxy", "3 refused").
+   * Both are rendered and one is hidden per breakpoint: the swap is a CSS
+   * question, and a JS width branch would put a listener on every tile.
+   */
+  footerShort?: string;
   href?: string;
 }) {
+  const strip =
+    footerShort === undefined ? (
+      footer
+    ) : (
+      <>
+        <span class="ft-long">{footer}</span>
+        <span class="ft-short">{footerShort}</span>
+      </>
+    );
+
   return (
     <div class={`tile ${accent}`}>
       <Icon name={glyph} size={64} className="ic" />
@@ -29,10 +46,10 @@ export function Tile({
       </div>
       {footer !== undefined &&
         (href === undefined ? (
-          <div class="ft">{footer}</div>
+          <div class="ft">{strip}</div>
         ) : (
           <Link href={href} class="ft">
-            {footer}
+            {strip}
             <Icon name="arrow-right" size={13} />
           </Link>
         ))}

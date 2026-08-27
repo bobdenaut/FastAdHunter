@@ -8,6 +8,8 @@ import {
   gzipOf,
   isOverBudget,
   isSibling,
+  isLoginPathAsset,
+  chartSplitViolations,
 } from './postbuild.mjs';
 import {
   BUDGET_BYTES as CONSTANTS_BUDGET_BYTES,
@@ -78,5 +80,49 @@ describe('forbidden content', () => {
   it('rejects a Pi-hole string in any casing or spelling', () => {
     expect(forbiddenHits('index.html', 'inspired by Pi-hole')).toHaveLength(1);
     expect(forbiddenHits('index.html', 'PIHOLE_MODE')).toHaveLength(1);
+  });
+});
+
+describe('the chart chunk split', () => {
+  it('knows which assets the login path fetches', () => {
+    expect(isLoginPathAsset('index.html')).toBe(true);
+    expect(isLoginPathAsset('assets/index-Bcvo.js')).toBe(true);
+    expect(isLoginPathAsset('assets/login-AASu.js')).toBe(true);
+    expect(isLoginPathAsset('assets/style-57rS.css')).toBe(true);
+    expect(isLoginPathAsset('assets/uplot-Q1x2.js')).toBe(false);
+    expect(isLoginPathAsset('assets/dashboard-Q1x2.js')).toBe(false);
+  });
+
+  it('fails a build that puts uPlot back on the login path', () => {
+    expect(
+      chartSplitViolations('assets/index-Bcvo.js', 'var uPlot=function(){}'),
+    ).toHaveLength(1);
+    expect(
+      chartSplitViolations('assets/login-AASu.js', 'import "uplot"'),
+    ).toHaveLength(1);
+  });
+
+  it('leaves the chart chunk alone — that is where uPlot belongs', () => {
+    expect(
+      chartSplitViolations('assets/uplot-Q1x2.js', 'var uPlot=function(){}'),
+    ).toEqual([]);
+  });
+
+  it('fails a stylesheet that carries uPlot’s vendor rules again', () => {
+    expect(
+      chartSplitViolations(
+        'assets/style-57rS.css',
+        '.u-legend{font-size:14px}',
+      ),
+    ).toHaveLength(1);
+  });
+
+  it('accepts the hand-written `.chart` subset, which is ours', () => {
+    expect(
+      chartSplitViolations(
+        'assets/style-57rS.css',
+        '.chart .uplot{width:min-content}.chart .u-wrap{position:relative}',
+      ),
+    ).toEqual([]);
   });
 });

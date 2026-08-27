@@ -62,6 +62,26 @@
   --state-idle: #8a95a3;
   --state-problem: #dd9a2f;
 
+  /* Series colours. A chart or a segmented bar is drawn from these and never
+     from a literal, so the dark theme moves them with everything else.
+     `permitted` is `queries − blocked`; there is no `allowed` series. */
+  --series-permitted: #1f9dbb;
+  --series-blocked: #d1504b;
+  --series-1: #1f9dbb;
+  --series-2: #3d9a63;
+  --series-3: #dd9a2f;
+  --series-4: #8a95a3;
+  --series-5: #c3ccd6;
+
+  /* The three rule tiers, and the cache's four bands. */
+  --tier-dns: #1f9dbb;
+  --tier-url: #6f5fbe;
+  --tier-inactive: #d6dde5;
+  --cache-fresh: #3d9a63;
+  --cache-stale: #dd9a2f;
+  --cache-expired: #c3ccd6;
+  --cache-free: #eef2f6;
+
   --focus: #1f9dbb;
 
   --font: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial,
@@ -128,6 +148,22 @@
     --state-idle: #78858f;
     --state-problem: #e0af5c;
 
+    --series-permitted: #2ea7c4;
+    --series-blocked: #d0605c;
+    --series-1: #2ea7c4;
+    --series-2: #5cb87f;
+    --series-3: #e0af5c;
+    --series-4: #8f9aa6;
+    --series-5: #5c6773;
+
+    --tier-dns: #2ea7c4;
+    --tier-url: #8b7cd8;
+    --tier-inactive: #3a4652;
+    --cache-fresh: #5cb87f;
+    --cache-stale: #e0af5c;
+    --cache-expired: #6b7785;
+    --cache-free: #222c37;
+
     --focus: #4fc0d8;
   }
 }
@@ -175,6 +211,22 @@
   --state-live: #5cb87f;
   --state-idle: #78858f;
   --state-problem: #e0af5c;
+
+  --series-permitted: #2ea7c4;
+  --series-blocked: #d0605c;
+  --series-1: #2ea7c4;
+  --series-2: #5cb87f;
+  --series-3: #e0af5c;
+  --series-4: #8f9aa6;
+  --series-5: #5c6773;
+
+  --tier-dns: #2ea7c4;
+  --tier-url: #8b7cd8;
+  --tier-inactive: #3a4652;
+  --cache-fresh: #5cb87f;
+  --cache-stale: #e0af5c;
+  --cache-expired: #6b7785;
+  --cache-free: #222c37;
 
   --focus: #4fc0d8;
 }

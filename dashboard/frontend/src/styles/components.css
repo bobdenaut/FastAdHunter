@@ -56,6 +56,10 @@
   background: rgba(0, 0, 0, 0.2);
 }
 
+.tile .ft-short {
+  display: none;
+}
+
 /* Accent roles are fixed and never reused for another meaning. */
 .tile.volume {
   background: var(--tile-volume);
@@ -216,6 +220,38 @@ table.t tbody tr:hover td {
   margin-right: 6px;
 }
 
+/* Donut — query types only, legend beside the ring and never inside it. */
+.donut {
+  flex: 0 0 auto;
+  display: block;
+}
+
+.bd.donut-body {
+  display: flex;
+  align-items: center;
+  gap: 26px;
+}
+
+.donut-legend {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12.5px;
+}
+
+.donut-legend td {
+  padding: 4px 0 4px 10px;
+  white-space: nowrap;
+}
+
+.donut-legend td:first-child {
+  padding-left: 0;
+  width: 100%;
+}
+
+.donut-legend .share {
+  color: var(--text-muted);
+}
+
 /* Empty and error states. An empty result is not an error. */
 .empty-state,
 .error-state {
@@ -279,6 +315,19 @@ table.t tbody tr:hover td {
 .btn:disabled {
   opacity: 0.55;
   cursor: default;
+}
+
+.chips {
+  display: flex;
+  gap: 6px;
+}
+
+/* The same control at two placements. Exactly one is `display: none` at any
+   width, which keeps it out of the tab order and the accessibility tree
+   rather than merely out of sight. */
+.chips-mobile {
+  display: none;
+  margin-bottom: 10px;
 }
 
 .chip {
@@ -381,6 +430,134 @@ table.t tbody tr:hover td {
   min-height: 160px;
 }
 
+/*
+ * uPlot's layout contract, written here instead of importing its stylesheet.
+ *
+ * WHY: `build.cssCodeSplit` is `false`, so a vendor stylesheet imported by the
+ * lazily-loaded chart module still lands in the single stylesheet the login
+ * path fetches — the JS split is real, the CSS one is not. Roughly half of
+ * `uPlot.min.css` is unreachable here anyway (legend, drag-select, cursor
+ * points, title), and its font and cursor colour would be overridden by tokens
+ * the moment the chart is themed. So the reachable half is written once, from
+ * our own tokens, rather than layered over vendor defaults.
+ *
+ * WHAT IT COVERS: plot structure (`.uplot`, `.u-wrap`, `.u-over`, `.u-under`,
+ * the canvas, `.u-axis`) and the **x cursor** only.
+ *
+ * BEFORE ENABLING ANYTHING ELSE — the legend (`legend.show`), drag-select
+ * (`cursor.drag`) or cursor points (`cursor.points.show`) — restore the
+ * corresponding rules from `node_modules/uplot/dist/uPlot.min.css`. p5-06 turns
+ * all three off; a later page that turns one on gets an unstyled element, not a
+ * broken build. Class names are uPlot's documented DOM contract and the version
+ * is pinned at 1.6.32.
+ */
+.chart .uplot {
+  font-family: var(--font);
+  line-height: 1.5;
+  width: min-content;
+}
+
+.chart .u-wrap {
+  position: relative;
+  user-select: none;
+}
+
+.chart .u-over,
+.chart .u-under {
+  position: absolute;
+}
+
+.chart .u-under {
+  overflow: hidden;
+}
+
+.chart .uplot canvas {
+  display: block;
+  position: relative;
+  width: 100%;
+  height: 100%;
+}
+
+.chart .u-axis {
+  position: absolute;
+}
+
+.chart .u-select {
+  position: absolute;
+  pointer-events: none;
+}
+
+.chart .u-cursor-x,
+.chart .u-cursor-y {
+  position: absolute;
+  left: 0;
+  top: 0;
+  pointer-events: none;
+  will-change: transform;
+}
+
+.chart .u-hz .u-cursor-x {
+  height: 100%;
+  border-right: 1px dashed var(--text-faint);
+}
+
+.chart .u-hz .u-cursor-y {
+  width: 100%;
+  border-bottom: 1px dashed var(--text-faint);
+}
+
+.chart .u-axis.u-off,
+.chart .u-select.u-off,
+.chart .u-cursor-x.u-off,
+.chart .u-cursor-y.u-off,
+.chart .u-cursor-pt.u-off {
+  display: none;
+}
+
+/* The hover tooltip — the only hover state in the system. Dark in both themes,
+   as the artboards draw it, so it reads as an overlay rather than as a card. */
+.chart-tip {
+  position: absolute;
+  z-index: 2;
+  pointer-events: none;
+  background: rgba(31, 39, 51, 0.95);
+  border-radius: var(--radius);
+  padding: 9px 11px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.55;
+  color: #fff;
+  white-space: nowrap;
+  min-width: 150px;
+}
+
+.chart-tip-head {
+  margin-bottom: 4px;
+}
+
+.chart-tip-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 18px;
+}
+
+.chart-tip-row span:first-child {
+  color: var(--rail-text);
+}
+
+.chart-tip-row .blocked {
+  color: #e08a86;
+}
+
+/* The chart's own legend, below the plot — uPlot's is disabled. */
+.chart-legend {
+  display: flex;
+  gap: 16px;
+  margin-top: 10px;
+  font-size: 11.5px;
+  color: var(--text-control);
+}
+
 .chart-footnote {
   margin: 8px 0 0;
   font-size: 11.5px;
@@ -392,6 +569,57 @@ table.t tbody tr:hover td {
 }
 
 @media (max-width: 767px) {
+  /* `MobileDashboard.dc.html`: 54 px tiles, a 24 px figure and an 11.5 px
+     label, two-up. The footer strip keeps its arrow and takes the short
+     wording; the long one is what a wider viewport gets. */
+  .tile .in {
+    padding: 10px 12px;
+  }
+
+  .tile .lb {
+    font-size: 11.5px;
+  }
+
+  .tile .n {
+    font-size: 24px;
+  }
+
+  .tile .ic {
+    display: none;
+  }
+
+  .tile .ft {
+    padding: 5px 12px;
+    font-size: 10.5px;
+    justify-content: space-between;
+    min-height: 22px;
+  }
+
+  .tile .ft-long {
+    display: none;
+  }
+
+  .tile .ft-short {
+    display: inline;
+  }
+
+  /* The range selector leaves the title bar and becomes full-height chips
+     above the plot. */
+  .ch .chips {
+    display: none;
+  }
+
+  .chips-mobile {
+    display: block;
+  }
+
+  .chips-mobile .chip {
+    flex: 1;
+    min-height: 44px;
+    border-radius: var(--radius);
+    font-size: 12.5px;
+  }
+
   /* The cluster becomes a full-width row at the top of that card's body, with
      44 px targets — the relocation the range selector already uses. */
   .ctl.in-card {
@@ -476,4 +704,759 @@ table.t tbody tr:hover td {
 .login-version {
   margin: 2px 0 0;
   text-align: right;
+}
+
+/* The "since restart" caption under tile row 2. A rendered element, not a
+   tooltip: two visually identical rows over different windows is a trap, and a
+   trap nobody hovers is not closed. */
+.tile-caption {
+  margin: -6px 0 0;
+}
+
+/* The chart's range totals, beside the card title as the artboard draws them
+   rather than in the right-hand group with the range chips. */
+.ch-aside {
+  font-weight: 400;
+  margin-left: 8px;
+  font-family: var(--font-mono);
+}
+
+/* Top-N list — one DOM at both widths. Desktop is the artboard's three-column
+   table; below 768 px the same three cells become a 44 px row with the name
+   given the space, the bar next and the count right-aligned. */
+.toplist-head,
+.toplist-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 90px 34%;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 14px;
+}
+
+.toplist-head:has(.x),
+.toplist-row:has(.x) {
+  grid-template-columns: minmax(0, 1fr) 80px 80px 26%;
+}
+
+.toplist-head {
+  font-weight: 600;
+  color: var(--text-muted);
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding-bottom: 8px;
+}
+
+.toplist-row {
+  border-top: 1px solid var(--border-row);
+  font-size: 12.5px;
+}
+
+.toplist-row:hover {
+  background: var(--surface-sunken);
+}
+
+.toplist .d {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.toplist .d-sec,
+.toplist .cname {
+  color: var(--text-muted);
+  margin-left: 6px;
+}
+
+.toplist .n,
+.toplist .x {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  font-family: var(--font-mono);
+}
+
+.toplist .x-short {
+  display: none;
+}
+
+.toplist .bar > span.blocked {
+  background: var(--series-blocked);
+}
+
+/* Desktop shows five rows and no trailing row; the phone shows three and the
+   artboards' "Show all" / "Open Clients" row. */
+.toplist-rows > .toplist-row:nth-child(n + 6) {
+  display: none;
+}
+
+.toplist-more {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  border-top: 1px solid var(--border-row);
+  font-size: 12.5px;
+}
+
+.linky {
+  background: none;
+  border: 0;
+  padding: 0;
+  color: var(--link);
+  cursor: pointer;
+  font-size: 12.5px;
+}
+
+/* Upstream health — the D4/A encoding. The bar is workload; the inner band is
+   the failure rate within it and is never widened to be visible. */
+.bd.upstreams {
+  display: flex;
+  flex-direction: column;
+  gap: 13px;
+}
+
+.upstream-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 12.5px;
+  margin-bottom: 5px;
+  flex-wrap: wrap;
+}
+
+.upstream-figures {
+  color: var(--text-control);
+}
+
+.upstream .bar {
+  height: 6px;
+}
+
+.upstream .bar > span.upstream-work {
+  background: var(--accent);
+  display: block;
+  height: 100%;
+  position: relative;
+}
+
+.upstream .bar > span.upstream-work > i {
+  position: absolute;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  background: var(--series-blocked);
+  display: block;
+}
+
+/* Figure blocks — the Ruleset card's four, and Cache state's 2×2. */
+.bd.figure-row {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 20px;
+}
+
+.figure {
+  font-size: 21px;
+  font-weight: 600;
+}
+
+.figure-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px 20px;
+  margin-top: 14px;
+  font-size: 12.5px;
+}
+
+.figure-grid > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.card-more {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  border-top: 1px solid var(--border-row);
+  font-size: 12.5px;
+}
+
+@media (max-width: 767px) {
+  .toplist-head {
+    display: none;
+  }
+
+  .toplist-head,
+  .toplist-row,
+  .toplist-head:has(.x),
+  .toplist-row:has(.x) {
+    grid-template-columns: minmax(0, 1fr) 70px 52px;
+    min-height: 44px;
+    padding: 0 12px;
+  }
+
+  /* The phone artboard puts the bar before the count. */
+  .toplist .d {
+    order: 1;
+  }
+  .toplist .f {
+    order: 2;
+  }
+  .toplist .n {
+    order: 3;
+  }
+  .toplist .x {
+    order: 4;
+    grid-column: 3;
+    color: var(--pill-bad-fg);
+  }
+
+  /* A named client shows its name alone; an unnamed one still shows its
+     address. */
+  .toplist .has-name .ip {
+    display: none;
+  }
+  .toplist .cname {
+    margin-left: 0;
+    color: inherit;
+  }
+
+  .toplist .x-long {
+    display: none;
+  }
+  .toplist .x-short {
+    display: inline;
+  }
+
+  .toplist-rows > .toplist-row:nth-child(n + 4) {
+    display: none;
+  }
+
+  .toplist.is-expanded .toplist-rows > .toplist-row {
+    display: grid;
+  }
+
+  .toplist-more,
+  .card-more {
+    display: flex;
+  }
+
+  .bd.figure-row {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  /* Cache state keeps its bar and legend on a phone; the 2×2 figure grid is
+     what `MobileDashboard.dc.html` drops. */
+  .z-cache .figure-grid,
+  .z-cache .bd > .note {
+    display: none;
+  }
+}
+
+@media (max-width: 767px) {
+  /* The card title bar is three things at 390 px — title, secondary text and
+     the refresh cluster — and they do not fit on one line: the mini Refresh
+     button runs off the right edge on a phone. The artboards put the cluster in
+     the card body instead, so the bar wraps and the cluster takes its own
+     full-width row with 44 px targets. */
+  .ch {
+    flex-wrap: wrap;
+    row-gap: 10px;
+  }
+
+  .ch-right {
+    width: 100%;
+    justify-content: flex-start;
+    gap: 8px;
+  }
+
+  .ch-right .ctl {
+    flex: 1;
+    justify-content: flex-end;
+  }
+
+  .ch-right .age {
+    flex: 1;
+  }
+
+  .ch-right .sel,
+  .ch-right .mini {
+    min-height: 44px;
+  }
+
+  .ch-right .mini {
+    min-width: 44px;
+  }
+
+  /* Top clients drops its frequency bar on a phone: `MobileDashboard.dc.html`
+     draws name, queries and the blocked percentage, and three figures plus a
+     bar do not fit at 390 px. */
+  .toplist-clients .f {
+    display: none;
+  }
+
+  .toplist-clients .toplist-row,
+  .toplist-clients .toplist-head {
+    grid-template-columns: minmax(0, 1fr) 62px 52px;
+  }
+
+  .toplist-clients .n {
+    order: 2;
+  }
+
+  .toplist-clients .x {
+    order: 3;
+    grid-column: auto;
+  }
+}
+
+@media (max-width: 767px) {
+  /* Every interactive control is at least 44 px on its smallest axis. The
+     artboards draw a 22 px tile footer strip and 18 px trailing links, but a
+     drawn height is not a measurement (phase constraint 8) and the acceptance
+     criterion is explicit — so the hit areas grow while the type does not. */
+  .tile .ft {
+    min-height: 44px;
+  }
+
+  .toplist-more > *,
+  .card-more > * {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    min-height: 44px;
+  }
+}
+
+/* Lists — one grid, two layouts. Desktop flows the cells as the artboard's
+   eight table columns; below 768 px the same cells become one card per list.
+   A seven-column horizontal scroller is not an answer on the page an operator
+   opens when a list has failed. */
+.bd.lists-body {
+  padding: 12px 0 0;
+}
+
+.list-head,
+.list-row {
+  display: grid;
+  grid-template-columns:
+    minmax(150px, 1.3fr) 46px 62px 104px minmax(160px, 1.1fr)
+    minmax(190px, 1.2fr) 84px minmax(0, auto);
+  gap: 10px;
+  align-items: start;
+  padding: 9px 14px;
+}
+
+/* The three metadata cells are their own element so the phone can group them
+   into one 44 px row; on desktop they are three columns of the parent grid. */
+.l-meta {
+  display: contents;
+}
+
+.list-head {
+  font-weight: 600;
+  color: var(--text-muted);
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding-bottom: 8px;
+}
+
+.list-row {
+  border-top: 1px solid var(--border-row);
+  font-size: 12.5px;
+}
+
+.list-row.is-alert {
+  background: var(--pill-warn-bg);
+}
+
+.l-name {
+  font-weight: 500;
+}
+
+.l-source {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-faint);
+}
+
+.l-total {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.l-rules .seg {
+  height: 7px;
+}
+
+.l-partition {
+  margin-top: 4px;
+}
+
+.l-total-inline,
+.list-status-secondary {
+  display: none;
+}
+
+.list-status-alert {
+  color: var(--pill-warn-fg);
+  margin-top: 5px;
+}
+
+.list-status-secondary {
+  margin-top: 4px;
+}
+
+.list-legend {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
+  font-family: var(--font);
+}
+
+.list-legend .sw {
+  margin-left: 10px;
+  margin-right: 2px;
+}
+
+.list-legend .sw:first-child {
+  margin-left: 0;
+}
+
+.lists-footnote {
+  margin: 0;
+  padding: 12px 14px;
+  border-top: 1px solid var(--border-row);
+}
+
+.lists-footnote-second {
+  display: block;
+  margin-top: 4px;
+}
+
+.page-sub {
+  margin: 0;
+}
+
+@media (max-width: 767px) {
+  /* `MobileLists.dc.html`: one card per list. Header with the id and the status
+     pill, the partition block, a 44 px metadata row, then the actions. */
+  .list-head {
+    display: none;
+  }
+
+  .list-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 0;
+    padding: 0;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    margin: 0 12px 10px;
+  }
+
+  .l-id,
+  .l-rules,
+  .l-meta,
+  .l-actions {
+    padding: 10px 12px;
+  }
+
+  .l-id {
+    grid-column: 1;
+    grid-row: 1;
+  }
+
+  /* The status cell becomes two grid items: the pill belongs beside the id in
+     the card header, and the explanation belongs in a full-width block under
+     it. `display: contents` is what lets one component supply both without a
+     phone-specific render. */
+  .l-status {
+    display: contents;
+  }
+
+  .l-status > .pill {
+    grid-column: 2;
+    grid-row: 1;
+    justify-self: end;
+    align-self: start;
+    margin: 12px 12px 0;
+  }
+
+  .l-status > .note {
+    grid-column: 1 / -1;
+    padding: 0 12px 8px;
+  }
+
+  .l-rules,
+  .l-meta,
+  .l-actions {
+    grid-column: 1 / -1;
+    border-top: 1px solid var(--border-row);
+  }
+
+  .l-meta {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    min-height: 44px;
+  }
+
+  .l-rules-bar {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .l-rules-bar > div:first-child {
+    flex: 1;
+  }
+
+  .l-total-inline {
+    display: inline;
+    white-space: nowrap;
+  }
+
+  /* The card carries its total beside the partition bar, so the desktop
+     column is redundant rather than merely narrow. */
+  .l-total {
+    display: none;
+  }
+
+  .l-parse {
+    display: block;
+  }
+
+  .l-parse-sep {
+    display: none;
+  }
+
+  .list-status-secondary {
+    display: block;
+  }
+}
+
+/* The list toggle — the artboard's pill switch over a real checkbox, so the
+   keyboard and the accessibility tree keep working. */
+.switch {
+  display: inline-flex;
+  align-items: center;
+  width: 32px;
+  height: 18px;
+  border-radius: 9px;
+  background: var(--border-control);
+  position: relative;
+  cursor: pointer;
+  flex: 0 0 auto;
+}
+
+.switch.on {
+  background: var(--cache-fresh);
+}
+
+.switch input {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  margin: 0;
+  cursor: pointer;
+}
+
+.switch i {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #fff;
+  transition: left 0.12s ease-out;
+}
+
+.switch.on i {
+  left: 16px;
+}
+
+.switch:has(input:focus-visible) {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+.row-actions {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.linky.danger {
+  color: var(--pill-bad-fg);
+}
+
+.linky:disabled {
+  color: var(--text-faint);
+  cursor: default;
+}
+
+/* Page-level actions, which the artboard draws in the page header. */
+.page-actions {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.page-buttons {
+  display: flex;
+  gap: 8px;
+  flex: 0 0 auto;
+}
+
+/* Refresh all — a blocking wait with no fake per-list progress, then the
+   per-list outcomes the response actually carries. */
+.progress-indeterminate {
+  height: 4px;
+  border-radius: 2px;
+  background: var(--track);
+  overflow: hidden;
+  position: relative;
+  margin-top: 12px;
+}
+
+.progress-indeterminate::after {
+  content: '';
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 40%;
+  background: var(--accent);
+  animation: indeterminate 1.1s ease-in-out infinite;
+}
+
+@keyframes indeterminate {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(250%);
+  }
+}
+
+.refresh-results {
+  margin-top: 10px;
+  max-height: 40vh;
+  overflow-y: auto;
+}
+
+.refresh-result {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 7px 0;
+  border-top: 1px solid var(--border-row);
+  font-size: 12.5px;
+}
+
+.refresh-result-error {
+  flex-basis: 100%;
+  color: var(--pill-warn-fg);
+}
+
+.radio {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12.5px;
+  min-height: 44px;
+  cursor: pointer;
+}
+
+@media (max-width: 767px) {
+  .page-actions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .page-buttons .btn {
+    flex: 1;
+    min-height: 44px;
+  }
+
+  .row-actions {
+    justify-content: space-around;
+    gap: 8px;
+  }
+
+  .row-actions .linky {
+    min-height: 44px;
+    flex: 1;
+    text-align: center;
+  }
+}
+
+/* Form fields. The login card lays its own fields out with a flex column and
+   its `.login-*` classes lean on that; a dialog has no such column, so the two
+   overlapped. Fields have their own vocabulary here and the login page keeps
+   its own. */
+.form {
+  display: flex;
+  flex-direction: column;
+}
+
+.field-label {
+  display: block;
+  font-size: 11.5px;
+  color: var(--text-muted);
+  margin: 12px 0 4px;
+}
+
+.field-label .note {
+  font-size: 11.5px;
+}
+
+.field-input {
+  display: block;
+  width: 100%;
+  border: 1px solid var(--border-control);
+  background: var(--surface);
+  border-radius: var(--radius);
+  padding: 9px 10px;
+  font-size: 13.5px;
+  min-height: 44px;
+}
+
+.field-error {
+  margin: 12px 0 0;
+  font-size: 12.5px;
+  color: var(--pill-bad-fg);
+  background: var(--pill-bad-bg);
+  border-radius: 3px;
+  padding: 8px 10px;
+}
+
+.field-error .note {
+  color: inherit;
+  margin-top: 4px;
+}
+
+.field-set {
+  border: 0;
+  padding: 0;
+  margin: 6px 0 0;
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.field-set legend {
+  padding: 0;
+  font-size: 11.5px;
+  color: var(--text-muted);
 }

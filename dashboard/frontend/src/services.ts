@@ -65,3 +65,16 @@ export const routeLifecycle = new RouteLifecycle({
   // framework-lifecycle dependency the invariant otherwise rests on.
   assert: import.meta.env.DEV,
 });
+
+/**
+ * Dev-only handles for the route-scoped invariant. The phase is measured on
+ * "an inactive page has approximately zero API activity attributable to it",
+ * and that is read off a live browser rather than asserted — these are what a
+ * driver reads. The branch is dead in a production build.
+ */
+if (import.meta.env.DEV) {
+  const globals = window as unknown as Record<string, unknown>;
+  globals['fahTimers'] = () => refresh.activeTimers();
+  globals['fahUnion'] = () => subscriptions.union();
+  globals['fahSocketState'] = () => socket.state();
+}

@@ -13,6 +13,8 @@ const KEYS: Record<RefreshEndpoint, string> = {
   health: 'fah-refresh-health',
   telemetry: 'fah-refresh-telemetry',
   cache: 'fah-refresh-cache',
+  clients: 'fah-refresh-clients',
+  lists: 'fah-refresh-lists',
 };
 
 type Listener = (endpoint: RefreshEndpoint, seconds: number) => void;

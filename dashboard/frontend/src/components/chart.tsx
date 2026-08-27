@@ -1,6 +1,11 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
 import type uPlot from 'uplot';
-import 'uplot/dist/uPlot.min.css';
+import { loadUPlot } from '../charts/runtime';
+// uPlot's vendor stylesheet is deliberately **not** imported: `cssCodeSplit` is
+// `false`, so it would join the one stylesheet the login path fetches. The
+// rules this chart actually reaches are written under `.chart` in
+// `styles/components.css` — see the comment there before enabling any uPlot
+// feature this task turned off.
 
 export interface ChartProps {
   /** uPlot's aligned-data shape: `[xs, ...series]`. New data is pushed into the
@@ -22,9 +27,23 @@ export interface ChartProps {
 }
 
 /**
- * The only module that imports uPlot, and it imports it dynamically — one
- * static import anywhere collapses the split silently and puts the chart
- * library on the login path.
+ * How many uPlot instances this session has constructed. p5-05's finding m4 —
+ * that a caller passing an inline `options` object rebuilds the plot on every
+ * render — has no jsdom proof, because uPlot needs a canvas 2D context. This
+ * counter is that proof's instrument: a `stats` push re-renders the Dashboard
+ * every ~2 s and must move it by zero, while a range change must move it by
+ * exactly one.
+ */
+let constructions = 0;
+
+export function chartConstructions(): number {
+  return constructions;
+}
+
+/**
+ * The wrapper every chart in the phase goes through. It reaches uPlot only
+ * through `charts/runtime.ts`, which owns the single dynamic import and is what
+ * keeps the library off the login path.
  */
 export function Chart({ data, options, height = 220, decimatedBy }: ChartProps) {
   const host = useRef<HTMLDivElement>(null);
@@ -41,10 +60,11 @@ export function Chart({ data, options, height = 220, decimatedBy }: ChartProps) 
 
     let observer: ResizeObserver | null = null;
 
-    void import('uplot')
-      .then(({ default: UPlot }) => {
+    void loadUPlot()
+      .then((UPlot) => {
         if (!live || host.current === null) return;
         const width = node.clientWidth || 600;
+        constructions += 1;
         plot.current = new UPlot(
           { ...options, width, height } as uPlot.Options,
           latestData.current,
@@ -72,6 +92,14 @@ export function Chart({ data, options, height = 220, decimatedBy }: ChartProps) 
   useEffect(() => {
     plot.current?.setData(data);
   }, [data]);
+
+  // Dev-only, and the dead branch takes the assignment with it in a production
+  // build: the construction count has to be readable from a browser console or
+  // a driver, which a module-local export is not.
+  if (import.meta.env.DEV) {
+    (window as unknown as Record<string, unknown>)['fahChartBuilds'] =
+      chartConstructions;
+  }
 
   return (
     <div>

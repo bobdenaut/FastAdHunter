@@ -3,8 +3,11 @@ import { THEME_STORAGE_KEY } from '../constants';
 export type Theme = 'light' | 'dark';
 
 /**
- * There is no subscription: every token lives in CSS and the switch is one
- * attribute on `<html>`, so nothing re-renders and nothing needs telling.
+ * Every token lives in CSS and the switch is one attribute on `<html>`, so
+ * nothing built from markup needs telling. **A canvas does**: uPlot paints its
+ * axes and bars with literal colours and cannot inherit a custom property, so
+ * from p5-06 the chart reads the tokens at option-build time and rebuilds when
+ * they change. That is what `subscribeTheme` exists for, and its only caller.
  */
 
 export function isTheme(value: unknown): value is Theme {
@@ -38,10 +41,45 @@ export function currentTheme(): Theme {
   return storedTheme() ?? systemTheme();
 }
 
+type ThemeListener = (theme: Theme) => void;
+
+const listeners = new Set<ThemeListener>();
+let systemWatch: (() => void) | null = null;
+
+function announce(theme: Theme): void {
+  for (const listener of listeners) listener(theme);
+}
+
 function apply(theme: Theme): void {
   const root = document.documentElement;
   root.dataset['theme'] = theme;
   root.style.colorScheme = theme;
+  announce(theme);
+}
+
+/**
+ * Refcounted, and it holds a `matchMedia` listener rather than a timer: with
+ * nothing stored the effective theme follows the system preference, so a
+ * subscriber that only watched `setTheme` would miss the switch that costs it
+ * an unreadable chart. The last unsubscribe removes the listener.
+ */
+export function subscribeTheme(listener: ThemeListener): () => void {
+  listeners.add(listener);
+  if (systemWatch === null && typeof matchMedia === 'function') {
+    const query = matchMedia('(prefers-color-scheme: dark)');
+    const onChange = () => {
+      if (storedTheme() === null) announce(systemTheme());
+    };
+    query.addEventListener('change', onChange);
+    systemWatch = () => query.removeEventListener('change', onChange);
+  }
+  return () => {
+    listeners.delete(listener);
+    if (listeners.size === 0 && systemWatch !== null) {
+      systemWatch();
+      systemWatch = null;
+    }
+  };
 }
 
 export function setTheme(theme: Theme): void {

@@ -81,6 +81,58 @@ export function forbiddenHits(name, text) {
   return hits;
 }
 
+/**
+ * The assets the login path fetches. `build.cssCodeSplit` is `false`, so there
+ * is exactly one stylesheet and every page's CSS is in it — which is why it is
+ * on this list beside the entry and login chunks.
+ */
+export function isLoginPathAsset(name) {
+  return (
+    name === 'index.html' ||
+    /^assets\/index-[^/]+\.js$/.test(name) ||
+    /^assets\/login-[^/]+\.js$/.test(name) ||
+    /^assets\/style-[^/]+\.css$/.test(name)
+  );
+}
+
+/**
+ * uPlot's own stylesheet rules for features this application does not use. Its
+ * vendor sheet is deliberately not imported (p5-05 finding m8, option (c)): the
+ * reachable half is hand-written under `.chart` in `styles/components.css`, so
+ * a `.uplot` or `.u-wrap` selector in the bundle is **ours**. These selectors
+ * are not — one appearing means the vendor sheet came back.
+ */
+export const UPLOT_VENDOR_ONLY_SELECTORS = [
+  '.u-legend',
+  '.u-series',
+  '.u-inline',
+  '.u-marker',
+  '.u-live',
+  '.u-title',
+];
+
+/**
+ * The claim, at exactly the scope it holds: the chart **library** is absent
+ * from every asset the login path fetches, and the chart **stylesheet** that
+ * ships is the hand-written subset rather than the vendor file.
+ */
+export function chartSplitViolations(name, text) {
+  const hits = [];
+  if (isLoginPathAsset(name)) {
+    if (extensionOf(name) === '.js' && /\buplot\b/i.test(text)) {
+      hits.push('uPlot reached a login-path script — the chunk split is gone');
+    }
+    if (extensionOf(name) === '.css') {
+      for (const selector of UPLOT_VENDOR_ONLY_SELECTORS) {
+        if (text.includes(selector)) {
+          hits.push(`uPlot's vendor stylesheet is back (${selector})`);
+        }
+      }
+    }
+  }
+  return hits;
+}
+
 function walk(dir, out = []) {
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
     const full = join(dir, entry.name);
@@ -131,7 +183,11 @@ function run(distDir) {
     rows.push([name, raw.length, gz.length, br.length]);
 
     if (TEXT_EXTENSIONS.has(extensionOf(name))) {
-      for (const hit of forbiddenHits(name, raw.toString('utf8'))) {
+      const text = raw.toString('utf8');
+      for (const hit of forbiddenHits(name, text)) {
+        violations.push(`${name}: ${hit}`);
+      }
+      for (const hit of chartSplitViolations(name, text)) {
         violations.push(`${name}: ${hit}`);
       }
     }

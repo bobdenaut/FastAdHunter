@@ -24,7 +24,7 @@ describe('the route table', () => {
     }
   });
 
-  it('declares only the three polled endpoints', () => {
+  it('declares only the polled endpoints the registry knows', () => {
     for (const route of [...ROUTES, LOGIN_ROUTE, GALLERY_ROUTE]) {
       for (const endpoint of route.endpoints) {
         expect(REFRESH_ENDPOINTS).toContain(endpoint);
@@ -32,15 +32,34 @@ describe('the route table', () => {
     }
   });
 
+  // Pinned, not merely typed: the union is what `useRefresh`, `RefreshCluster`,
+  // `preferences.ts` and `registry.ts` are all keyed on, so a sixth polled
+  // endpoint has to be an edit somebody made on purpose.
+  it('polls exactly these five endpoints and no others', () => {
+    expect([...REFRESH_ENDPOINTS]).toEqual([
+      'health',
+      'telemetry',
+      'cache',
+      'clients',
+      'lists',
+    ]);
+  });
+
   it('puts `query` on exactly one screen, and it is the Live Feed', () => {
     const withQuery = ROUTES.filter((r) => r.events.includes('query'));
     expect(withQuery.map((r) => r.path)).toEqual(['/diagnostics/live-feed']);
   });
 
-  it('gives the Dashboard the stats push and no /health poll', () => {
+  it('gives the Dashboard the stats push and the five polled endpoints', () => {
     const dashboard = ROUTES.find((r) => r.path === '/');
     expect(dashboard?.events).toEqual(['stats']);
-    expect(dashboard?.endpoints).toEqual(['telemetry', 'cache']);
+    expect(dashboard?.endpoints).toEqual([
+      'telemetry',
+      'cache',
+      'health',
+      'clients',
+      'lists',
+    ]);
   });
 
   it('polls nothing on Performance — /history/perf is a range query', () => {
@@ -66,11 +85,28 @@ describe('the route table', () => {
 
 describe('what a route actually acquires', () => {
   it('is nothing at all while the screen is not built', () => {
-    for (const route of ROUTES) {
-      expect(route.built).toBe(false);
+    for (const route of ROUTES.filter((r) => !r.built)) {
       expect(effectiveEvents(route)).toEqual([]);
       expect(effectiveEndpoints(route)).toEqual([]);
     }
+  });
+
+  it('is the declaration for the screens p5-06 built, and only those', () => {
+    expect(ROUTES.filter((r) => r.built).map((r) => r.path)).toEqual([
+      '/',
+      '/lists',
+    ]);
+    const dashboard = ROUTES.find((r) => r.path === '/');
+    expect(effectiveEvents(dashboard!)).toEqual(['stats']);
+    expect(effectiveEndpoints(dashboard!)).toHaveLength(5);
+  });
+
+  // The compile duration is one field read once per mount, not a polled
+  // endpoint — declaring `telemetry` here would put a timer on it.
+  it('gives Lists the inventory and its event, and no `telemetry` poll', () => {
+    const lists = ROUTES.find((r) => r.path === '/lists');
+    expect(lists?.events).toEqual(['list_refreshed']);
+    expect(lists?.endpoints).toEqual(['lists']);
   });
 
   it('is the declaration once the screen is built', () => {

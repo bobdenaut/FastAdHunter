@@ -423,3 +423,54 @@
     gap: 10px;
   }
 }
+
+/* The phone Dashboard is `MobileDashboard.dc.html`, not a shrunken desktop
+   grid. It drops three cards, moves the HTTP tile row below the chart and
+   reorders what is left. `.wrap` is a flex column and `.row.c2` a grid, so both
+   take `order` — no viewport listener and no second component tree. */
+.z-phone-note {
+  display: none;
+}
+
+@media (max-width: 767px) {
+  .wrap > .z-tiles-dns {
+    order: 1;
+  }
+  .wrap > .z-chart {
+    order: 2;
+  }
+  .wrap > .z-tiles-http {
+    order: 3;
+  }
+  .wrap > .z-caption {
+    order: 4;
+  }
+  .wrap > .z-cards {
+    order: 5;
+  }
+  .wrap > .z-phone-note {
+    order: 6;
+    display: block;
+  }
+
+  /* Dropped, with the reason rendered in `.z-phone-note`: each is one tap away
+     on its own page. */
+  .z-upstreams,
+  .z-top-queried,
+  .wrap > .z-ruleset {
+    display: none;
+  }
+
+  .z-top-blocked {
+    order: 1;
+  }
+  .z-top-clients {
+    order: 2;
+  }
+  .z-query-types {
+    order: 3;
+  }
+  .z-cache {
+    order: 4;
+  }
+}

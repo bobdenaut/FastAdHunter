@@ -1,7 +1,16 @@
-import { useState } from 'preact/hooks';
+import { useMemo, useState } from 'preact/hooks';
+import type uPlot from 'uplot';
 import { Card } from '../components/card';
+import {
+  barLabelsPlugin,
+  createHoverState,
+  hoverPlugin,
+  stackedBarsOptions,
+} from '../charts/stacked-bars';
+import { readChartTheme } from '../charts/theme';
 import { Chart } from '../components/chart';
 import { ConfirmDialog } from '../components/confirm-dialog';
+import { Donut } from '../components/donut';
 import { EmptyState } from '../components/empty-state';
 import { ErrorState } from '../components/error-state';
 import { RefreshCluster } from '../components/refresh-cluster';
@@ -12,6 +21,7 @@ import { Tile } from '../components/tile';
 import { VerdictPill } from '../components/verdict-pill';
 import { ApiError } from '../api/core';
 import { DEV_GALLERY_MARKER } from '../constants';
+import { queryTypeSlices } from '../derive';
 import { refresh } from '../services';
 import { currentTheme, setTheme } from '../theme/theme';
 import type { PageProps } from '../router/routes';
@@ -27,11 +37,33 @@ const TOP: DomainRow[] = [
   { domain: 'time.example.com', hits: 2884 },
 ];
 
-// A static series: this task proves the wrapper, never a chart bound to real
-// data.
-const SERIES: [number[], number[]] = [
-  [0, 1, 2, 3, 4, 5, 6, 7],
-  [12, 19, 15, 22, 31, 27, 24, 30],
+const QUERY_TYPES = queryTypeSlices({
+  A: 114224,
+  AAAA: 44216,
+  HTTPS: 14738,
+  PTR: 7369,
+  NS: 2400,
+  SOA: 1286,
+});
+
+/**
+ * A static 24-bucket series in the real aligned shape — `[xs, queries,
+ * blocked]` — so the gallery exercises the option factory the Dashboard uses,
+ * axes and both bar series included, without a live API. It is also where a
+ * missing uPlot structural rule would show up, now that the vendor stylesheet
+ * is gone.
+ */
+const HOURLY = [
+  4000, 3200, 2600, 2400, 2200, 2500, 3700, 6100, 8200, 9200, 9500, 9700, 10000,
+  9900, 9600, 10000, 10800, 11900, 13169, 12800, 11600, 9500, 6800, 5000,
+];
+
+const GALLERY_START = Date.UTC(2026, 7, 20, 10, 0, 0) / 1000;
+
+const SERIES: uPlot.AlignedData = [
+  HOURLY.map((_, index) => GALLERY_START + index * 3600),
+  HOURLY,
+  HOURLY.map((queries) => Math.round(queries * 0.14)),
 ];
 
 /**
@@ -50,6 +82,36 @@ const SERIES: [number[], number[]] = [
  */
 export function DevGallery(_props: PageProps) {
   const [dialog, setDialog] = useState(false);
+  // Memoised on nothing here because the gallery's range and theme never
+  // change within a render pass; the Dashboard keys the same factory on
+  // `(range, theme)`, which is what finding m4 requires.
+  const chartOptions = useMemo(() => {
+    const theme = readChartTheme();
+    const hover = createHoverState();
+    return stackedBarsOptions({
+      resolution: 'hour',
+      theme,
+      hover,
+      plugins: [
+        barLabelsPlugin(theme, hover),
+        hoverPlugin({
+          resolution: 'hour',
+          hover,
+          item: (index) => {
+            const queries = HOURLY[index];
+            if (queries === undefined) return null;
+            const blocked = Math.round(queries * 0.14);
+            return {
+              ts: new Date((GALLERY_START + index * 3600) * 1000).toISOString(),
+              queries,
+              blocked,
+              blockedPercent: 14,
+            };
+          },
+        }),
+      ],
+    });
+  }, []);
 
   return (
     <div data-marker={DEV_GALLERY_MARKER}>
@@ -144,6 +206,7 @@ export function DevGallery(_props: PageProps) {
           <p>
             <StatusPill status="ok" /> <StatusPill status="degraded" />{' '}
             <StatusPill status="failed" /> <StatusPill status="rejected" />{' '}
+            <StatusPill status="never" /> <StatusPill status="disabled" />{' '}
             <StatusPill status="penalized" /> <StatusPill status="probing" />
           </p>
           <p class="note">
@@ -155,16 +218,42 @@ export function DevGallery(_props: PageProps) {
 
       <div class="row c2">
         <Card title="Queries over time" secondary="static series">
-          <Chart
-            data={SERIES}
-            options={{
-              scales: { x: { time: false } },
-              series: [{}, { label: 'queries', stroke: '#1f9dbb' }],
-            }}
-            decimatedBy={4}
-          />
+          <Chart data={SERIES} options={chartOptions} decimatedBy={4} />
+          <div class="chart-legend">
+            <span>
+              <span class="sw" style={{ background: 'var(--series-permitted)' }} />
+              permitted
+            </span>
+            <span>
+              <span class="sw" style={{ background: 'var(--series-blocked)' }} />
+              blocked
+            </span>
+          </div>
         </Card>
 
+        <Card title="Query types" bodyClass="donut-body">
+          <Donut
+            segments={QUERY_TYPES.map((slice, index) => ({
+              label: slice.label,
+              value: slice.value,
+              colour: `var(--series-${String(index + 1)})`,
+            }))}
+            label="Query types by share"
+          />
+          <table class="donut-legend">
+            <tbody>
+              {QUERY_TYPES.map((slice) => (
+                <tr key={slice.label}>
+                  <td>{slice.label}</td>
+                  <td class="num">{slice.value.toLocaleString()}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </Card>
+      </div>
+
+      <div class="row c2">
         <Card title="Empty and error states">
           <EmptyState>An empty result is not an error.</EmptyState>
           <ErrorState

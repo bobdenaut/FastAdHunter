@@ -1,5 +1,7 @@
 import { getCache } from '../api/cache';
+import { getClients } from '../api/clients';
 import { getHealth } from '../api/health';
+import { getLists } from '../api/lists';
 import { getTelemetry } from '../api/telemetry';
 import { every, nowMs, type Cancel } from '../lifecycle/timers';
 import { REFRESH_ENDPOINTS, type RefreshEndpoint } from '../router/routes';
@@ -24,6 +26,8 @@ const DEFAULT_FETCHERS: Record<RefreshEndpoint, Fetcher> = {
   health: (signal) => getHealth(signal),
   telemetry: (signal) => getTelemetry(signal),
   cache: (signal) => getCache(signal),
+  clients: (signal) => getClients(signal),
+  lists: (signal) => getLists(signal),
 };
 
 interface Slot {
@@ -144,7 +148,7 @@ export class RefreshRegistry {
     }
   }
 
-  /** Bounded by the endpoint set — at most three values plus their timestamps,
+  /** Bounded by the endpoint set — at most five values plus their timestamps,
    *  never by uptime or by the number of pages visited. */
   retained(endpoint: RefreshEndpoint): EndpointState {
     return stateOf(this.slotFor(endpoint));

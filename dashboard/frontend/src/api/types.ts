@@ -145,3 +145,184 @@ export interface Memory {
   process_rss_anon: number | null;
   process_rss_file: number | null;
 }
+
+/* ---------------------------------------------------------------- statistics */
+
+export interface TopDomain {
+  domain: string;
+  count: number;
+}
+
+export interface TopClient {
+  ip: string;
+  name: string | null;
+  count: number;
+}
+
+export interface StatsBucket {
+  start: string;
+  queries: number;
+  blocked: number;
+}
+
+/** Counts both pipelines, unlike the domain tables which stay DNS-only. */
+export interface PolicyStat {
+  policy: string;
+  queries: number;
+  blocked: number;
+}
+
+/**
+ * A rolling 24 h view. `window` is `"24h"`; nothing here is a lifetime figure,
+ * and nothing here covers HTTP — `counters.http` on `/telemetry` does, over a
+ * different window.
+ */
+export interface Stats {
+  window: string;
+  queries_total: number;
+  blocked_total: number;
+  blocked_percent: number;
+  cache_hit_percent: number;
+  top_blocked_domains: TopDomain[];
+  top_queried_domains: TopDomain[];
+  top_clients: TopClient[];
+  buckets: StatsBucket[];
+  policies: PolicyStat[];
+}
+
+/* ------------------------------------------------------------------- history */
+
+export type HistoryResolution = 'hour' | 'day';
+
+/**
+ * `ts` is the **start** of the bucket. `per_type` uses the fixed rollup label
+ * set and omits zero buckets, so a missing label means zero rather than
+ * unknown. There is no allowed series: `permitted` is `queries − blocked` and
+ * the UI derives it, never labelling it `allow`.
+ */
+export interface HistoryItem {
+  ts: string;
+  queries: number;
+  blocked: number;
+  blocked_percent: number;
+  cache_hits: number;
+  per_type: Record<string, number>;
+}
+
+export interface HistorySummary {
+  resolution: HistoryResolution;
+  from: string;
+  to: string;
+  /** Above 1 when the response was decimated. Decimation keeps whole rows. */
+  stride: number;
+  items: HistoryItem[];
+}
+
+/* ------------------------------------------------------------------- clients */
+
+export interface Client {
+  ip: string;
+  name: string | null;
+  first_seen: string;
+  last_seen: string;
+  queries_24h: number;
+  blocked_24h: number;
+  policy: string;
+  /** Present only when an assignment names that exact address. */
+  assignment_source?: string;
+}
+
+export interface ClientsResponse {
+  items: Client[];
+}
+
+/* --------------------------------------------------------------------- lists */
+
+/**
+ * `degraded` is not a milder `ok`: the fetch succeeded and most of the body
+ * failed to parse, which is the signature of a format misdetection.
+ */
+export type ListStatus = 'ok' | 'degraded' | 'failed' | 'rejected' | 'never';
+
+/**
+ * `url` carries the source whether it is remote or a mounted path — the wire
+ * type has one field for both (`crates/fah-api/src/wire.rs`), so the UI reads
+ * one and never guesses which key is present.
+ *
+ * The `rules_*` counts and `parse_errors` describe the copy **currently
+ * serving**, and `last_status` describes the last refresh *attempt*. They are
+ * deliberately independent: `failed` with a non-zero `rules_total` is the
+ * normal report for a list whose download broke but whose rules keep blocking.
+ */
+export interface ListItem {
+  id: string;
+  url: string;
+  format: string;
+  enabled: boolean;
+  refresh_hours: number;
+  /** `null` until the first successful refresh in this process. */
+  last_refresh: string | null;
+  last_status: ListStatus;
+  rules_total: number;
+  rules_active_dns: number;
+  rules_active_url: number;
+  rules_inactive: number;
+  parse_errors: number;
+  /** Present only when `last_status` is `failed` or `rejected`. */
+  last_error?: string;
+}
+
+/** `compiled_rules` and `duplicates_removed` describe the **merged** ruleset,
+ *  which is why they sit on the envelope rather than on an item. */
+export interface ListsResponse {
+  items: ListItem[];
+  compiled_rules: number;
+  duplicates_removed: number;
+}
+
+export interface AddListRequest {
+  /** Exactly one of `url` or `path`. */
+  url?: string;
+  path?: string;
+  id?: string;
+  enabled?: boolean;
+  refresh_hours?: number;
+}
+
+/** `refresh_hours: null` clears a per-list override back to the default. */
+export interface PatchListRequest {
+  enabled?: boolean;
+  refresh_hours?: number | null;
+}
+
+/** `degraded` does not occur here — the content gate refuses a misparsed body
+ *  before it can commit — and `never` describes a list, not an attempt. */
+export type RefreshOutcome = 'ok' | 'failed' | 'rejected';
+
+export interface RefreshAllResult {
+  id: string;
+  status: RefreshOutcome;
+  rules_active_dns?: number;
+  error?: string;
+}
+
+/** `failed` counts every list that did not refresh, rejected ones included, so
+ *  `refreshed + failed` is the number of `results`. */
+export interface RefreshAllResponse {
+  refreshed: number;
+  failed: number;
+  results: RefreshAllResult[];
+}
+
+/* -------------------------------------------------------------------- config */
+
+/**
+ * Deliberately **narrow**. `GET /api/v1/config` returns the whole configuration
+ * tree; typing all of it here would duplicate CONFIGURATION.md in TypeScript
+ * and rot against it. Only the two keys this phase's built pages read are
+ * declared, and `p5-09` owns the full shape.
+ */
+export interface Config {
+  history?: { enabled?: boolean };
+  dns?: { upstreams?: { strategy?: string } };
+}

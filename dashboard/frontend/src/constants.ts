@@ -1,13 +1,20 @@
+/** Neither inventory changes fast — a client appears when it first resolves, a
+ *  list on an operator action or on its own `refresh_hours` — so `clients` and
+ *  `lists` take `telemetry`'s pair rather than a shorter option. */
 export const REFRESH_OPTIONS_SECS = {
   health: [30, 60, 300],
   telemetry: [60, 300],
   cache: [60, 300],
+  clients: [60, 300],
+  lists: [60, 300],
 } as const;
 
 export const REFRESH_DEFAULT_SECS = {
   health: 60,
   telemetry: 300,
   cache: 300,
+  clients: 300,
+  lists: 300,
 } as const;
 
 export const REFRESH_LABELS: Record<number, string> = {
