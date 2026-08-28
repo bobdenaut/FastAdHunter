@@ -9,7 +9,7 @@ import { useRefresh } from '../refresh/use-refresh';
 import type { PageProps } from '../router/routes';
 import { refresh } from '../services';
 import { ContentHeader } from '../shell/content-header';
-import { DegradedBanner } from './upstreams/degraded-banner';
+import { DegradedBanner } from '../components/degraded-banner';
 import { EndpointRow } from './upstreams/endpoint-row';
 import { NoPieCard } from './upstreams/no-pie-card';
 import { StatesCard } from './upstreams/states-card';

@@ -1,9 +1,11 @@
 import type { ComponentChildren } from 'preact';
 import { Link } from '../router/link';
 import {
+  GROUP_LABELS,
   SECTION_LABELS,
   navigableRoutes,
   type Route,
+  type RouteGroup,
   type Section,
 } from '../router/routes';
 import { Icon } from './icon';
@@ -29,10 +31,19 @@ const SECTION_ORDER: Section[] = [
   'system',
 ];
 
-const DIAGNOSTICS_ROOT = '/diagnostics/health';
-
-function inDiagnostics(path: string): boolean {
-  return path.startsWith('/diagnostics/');
+/**
+ * A group's landing route and the prefix that marks a path as inside it, both
+ * read off the group's own routes.
+ *
+ * **No group name is written in this file.** `GROUP_LABELS` forces a label for
+ * a new group, but the block that draws one was still keyed on the literal
+ * `'diagnostics'` — so a second group would have compiled and then been dropped
+ * from the sidebar in silence, which is the failure the label record was added
+ * to remove.
+ */
+function groupNest(members: readonly Route[]): { root: string; prefix: string } {
+  const root = members[0]?.path ?? '/';
+  return { root, prefix: root.slice(0, root.lastIndexOf('/') + 1) };
 }
 
 /**
@@ -57,8 +68,17 @@ export function Sidebar({
   footer?: ComponentChildren;
 }) {
   const routes = navigableRoutes();
-  const diagnostics = routes.filter((route) => route.group === 'diagnostics');
-  const expanded = inDiagnostics(path);
+  // Every nested group there is, in the order its routes are declared.
+  const groups = [
+    ...new Set(
+      routes
+        .map((route) => route.group)
+        .filter((group): group is RouteGroup => group !== undefined),
+    ),
+  ].map((group) => ({
+    group,
+    members: routes.filter((route) => route.group === group),
+  }));
 
   return (
     <nav
@@ -88,41 +108,74 @@ export function Sidebar({
                   onNavigate={onNavigate}
                 />
               ))}
-            {section === 'system' && diagnostics.length > 0 && (
-              <>
-                {/* No `aria-current` on the parent: the active child carries
-                    `page`, and two current markers in one subtree is a worse
-                    answer to "where am I" than one. */}
-                <Link
-                  href={DIAGNOSTICS_ROOT}
-                  class={`it${expanded ? ' on' : ''}`}
-                  onClickCapture={onNavigate}
-                >
-                  <Icon name="diagnostics" />
-                  <span>Diagnostics</span>
-                </Link>
-                {expanded &&
-                  diagnostics.map((route) => (
-                    <Link
-                      key={route.path}
-                      href={route.path}
-                      class={`sub2${route.path === path ? ' on' : ''}`}
-                      {...(route.path === path
-                        ? { 'aria-current': 'page' as const }
-                        : {})}
-                      onClickCapture={onNavigate}
-                    >
-                      {route.title}
-                    </Link>
-                  ))}
-              </>
-            )}
+            {groups
+              .filter(({ members }) => members[0]?.section === section)
+              .map(({ group, members }) => (
+                <Group
+                  key={group}
+                  group={group}
+                  members={members}
+                  path={path}
+                  onNavigate={onNavigate}
+                />
+              ))}
           </div>
         ))}
       </div>
 
       {footer !== undefined && <div class="sb-foot">{footer}</div>}
     </nav>
+  );
+}
+
+/**
+ * One nested group: its parent line, and its children while a path inside it is
+ * active. The group key is also the sprite name — `sidebar.test.tsx` asserts
+ * that every group has both a label and a symbol, so a new group cannot ship
+ * with a blank tile.
+ */
+function Group({
+  group,
+  members,
+  path,
+  onNavigate,
+}: {
+  group: RouteGroup;
+  members: readonly Route[];
+  path: string;
+  onNavigate: () => void;
+}) {
+  const { root, prefix } = groupNest(members);
+  const expanded = path.startsWith(prefix);
+
+  return (
+    <>
+      {/* No `aria-current` on the parent: the active child carries `page`, and
+          two current markers in one subtree is a worse answer to "where am I"
+          than one. */}
+      <Link
+        href={root}
+        class={`it${expanded ? ' on' : ''}`}
+        onClickCapture={onNavigate}
+      >
+        <Icon name={group} />
+        <span>{GROUP_LABELS[group]}</span>
+      </Link>
+      {expanded &&
+        members.map((route) => (
+          <Link
+            key={route.path}
+            href={route.path}
+            class={`sub2${route.path === path ? ' on' : ''}`}
+            {...(route.path === path
+              ? { 'aria-current': 'page' as const }
+              : {})}
+            onClickCapture={onNavigate}
+          >
+            {route.title}
+          </Link>
+        ))}
+    </>
   );
 }
 

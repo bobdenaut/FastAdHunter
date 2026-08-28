@@ -3,6 +3,7 @@ import { SubscriptionRegistry } from './events/subscriptions';
 import { RouteLifecycle } from './lifecycle/route-lifecycle';
 import { RefreshRegistry } from './refresh/registry';
 import { endSession } from './session/session';
+import { observeHealth } from './system/restart-banner';
 
 /**
  * The application's four long-lived objects, created once. They are wired here
@@ -56,6 +57,21 @@ export const socket = new SocketManager({
   open: openWebSocket,
   onAuthFailure: endSession,
 });
+
+/**
+ * The restart banner's whole feed, and the **only** `observe` call in the
+ * application — `refresh/observe-callers.test.ts` pins that.
+ *
+ * The tap is typed down to `observe` at the point of use so this wiring cannot
+ * grow a `subscribe` or an `invalidate`: a banner that started a timer, or
+ * caused a request, would be the global poll the phase invariant forbids. It is
+ * never released — the registry and the banner are both process-lived — so
+ * nothing is returned to a caller that would have to remember to.
+ */
+const healthTap: Pick<RefreshRegistry, 'observe'> = refresh;
+// The listener is the store's own function: the reading carries its own clock
+// (`fetchedAt`), so there is nothing for this wiring to sample.
+healthTap.observe('health', observeHealth);
 
 export const routeLifecycle = new RouteLifecycle({
   subscriptions,

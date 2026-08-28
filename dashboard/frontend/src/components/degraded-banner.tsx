@@ -1,14 +1,21 @@
-import { Icon } from '../../shell/icon';
-import type { UpstreamMode } from '../../derive';
+import { Icon } from '../shell/icon';
+import type { UpstreamMode } from '../derive';
 
 /**
  * E25 — `degraded` explained in place rather than alarmed, and the explanation
  * is different under each strategy. Amber, never red: neither reading is an
  * outage, and the box is still answering throughout.
  *
+ * **One module, two pages.** Upstreams raised it in p5-08 and Diagnostics ·
+ * Health shows the same reading, so it moved out of `pages/upstreams/` here
+ * rather than being restated — p5-09's acceptance criterion "explained
+ * identically wherever it appears: one string in the code, not three" made
+ * structural. `pages/system-invariants.test.ts` asserts the strings exist once
+ * in `src/`.
+ *
  * It carries no controls. One refresh cluster per polled endpoint is the rule,
- * and `/health` already has one in the page header — a second pair of controls
- * for the same endpoint would show two different ages for one reading.
+ * and `/health` already has one in each page's header — a second pair of
+ * controls for the same endpoint would show two different ages for one reading.
  */
 export function DegradedBanner({ mode }: { mode: UpstreamMode }) {
   return (

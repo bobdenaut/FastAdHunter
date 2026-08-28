@@ -148,6 +148,39 @@ Accent roles are fixed and never reused for another meaning:
 - Axes carry units. Bytes are binary-prefixed and labelled. Durations are ms
   under a second, s above.
 
+### The categorical palette is capped, and Memory is where it binds
+
+The series ramp carries five hues. That is enough for every chart in the system
+except one, and rather than stretch it, `Diagnostics · Memory` spends encodings
+that are not hue.
+
+- **A chart gets at most three categorical hues when a status colour is also on
+  it.** Measured against both surfaces, a fourth hue does not clear the
+  colour-blind separation floor beside the first three plus an amber and a red:
+  magenta lands 1.6 from the aqua under deuteranopia, violet 1.9 from the blue
+  under protanopia, lime 2.4 from the amber. The floor is Delta E 8 for
+  simulated vision and 15 for normal vision, OKLab ×100.
+- **Past three, the encoding changes rather than the hue.** Memory draws five
+  series and two thresholds at once, and does it with three hues, a **texture**
+  for the residual, the **ink of the stack's top edge** for RSS, and a second
+  **step of one hue** for the smaller of two related bands. Cache and stats are
+  2 % and 3 % of RSS — bands a few pixels tall, where lightness separates and
+  hue would not have anyway.
+- **A remainder is drawn as a texture, never as a hue.** Residual is
+  `process_rss − accounted_bytes`: real, measured, and not one structure. A hue
+  would promise it is a thing.
+- **A total that is the top of its own stack wears ink, not a hue.** In a stack
+  summing to RSS, the top edge *is* RSS, so a hue for it would be a sixth colour
+  describing a line the geometry already names.
+- **Status colours stay reserved and never appear alone.** The over-budget red
+  is drawn only alongside the labelled rule that names its threshold, and the
+  watch band is a shaded zone with a caption. A status colour a reader cannot
+  check against a number is an alarm, not information.
+- **Page-scoped tokens are legitimate when a page has a constraint the system
+  does not.** Memory's ramp lives beside the shared one in `tokens.css` rather
+  than replacing it: repainting every other chart is a larger change than the
+  page that needs it. `series-palette.test.ts` pins the separations of both.
+
 ## Tables
 
 Pi-hole's density and alignment: numbers right-aligned and tabular-figure, a

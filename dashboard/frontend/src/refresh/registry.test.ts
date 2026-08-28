@@ -447,3 +447,92 @@ describe('suspension', () => {
     h.registry.dispose();
   });
 });
+
+/**
+ * `observe` exists for one caller — the restart banner, which has to notice a
+ * `/health` reading some other page's refresh happened to take. It is a tap and
+ * must stay one: the moment it refcounts, replays or fetches, it is a second
+ * lifecycle mechanism and the route-scoped invariant has two things to prove
+ * instead of one. These five are that bound.
+ */
+describe('the passive observer', () => {
+  it('never calls back on registration — it is not a data source', () => {
+    const h = counting();
+    h.registry.subscribe('health', () => {});
+    h.resolve('health', { uptime_seconds: 10 });
+
+    const seen: EndpointState[] = [];
+    h.registry.observe('health', (state) => seen.push(state));
+    expect(seen).toEqual([]);
+    h.registry.dispose();
+  });
+
+  it('causes no request and no timer with nothing else subscribed', async () => {
+    const h = counting();
+    h.registry.observe('health', () => {});
+    await h.settleAll();
+    expect(h.calls.health).toBe(0);
+    expect(h.registry.activeTimers()).toBe(0);
+
+    // And it still causes none once the interval would have elapsed.
+    await vi.advanceTimersByTimeAsync(REFRESH_DEFAULT_SECS.health * 1000 * 3);
+    expect(h.calls.health).toBe(0);
+    h.registry.dispose();
+  });
+
+  it('is not a subscriber, so it cannot hold an endpoint open', () => {
+    const h = counting();
+    h.registry.observe('health', () => {});
+    expect(h.registry.subscriberCount('health')).toBe(0);
+    h.registry.dispose();
+  });
+
+  it('hears the announcements a real subscriber causes', async () => {
+    const h = counting();
+    const seen: EndpointState[] = [];
+    h.registry.observe('health', (state) => seen.push(state));
+    h.registry.subscribe('health', () => {});
+    h.resolve('health', { uptime_seconds: 42 });
+    await h.settleAll();
+    // Pending, then settled — the same pair the subscriber got.
+    expect(seen.map((state) => state.pending)).toEqual([true, false]);
+    expect(seen[1]?.data).toEqual({ uptime_seconds: 42 });
+    h.registry.dispose();
+  });
+
+  it('does not keep the timer alive when the last subscriber leaves', async () => {
+    const h = counting();
+    h.registry.observe('health', () => {});
+    const release = h.registry.subscribe('health', () => {});
+    expect(h.registry.activeTimers()).toBe(1);
+    release();
+    expect(h.registry.activeTimers()).toBe(0);
+    // The in-flight request was aborted with it, exactly as with no observer.
+    await h.settleAll();
+    h.registry.dispose();
+  });
+
+  it('restarts nothing when the page becomes visible again', async () => {
+    const h = counting();
+    h.registry.observe('telemetry', () => {});
+    h.registry.setSuspended(true);
+    h.registry.setSuspended(false);
+    await h.settleAll();
+    expect(h.calls.telemetry).toBe(0);
+    expect(h.registry.activeTimers()).toBe(0);
+    h.registry.dispose();
+  });
+
+  it('releases idempotently and stops hearing announcements', async () => {
+    const h = counting();
+    const seen: EndpointState[] = [];
+    const release = h.registry.observe('health', (state) => seen.push(state));
+    release();
+    release();
+    h.registry.subscribe('health', () => {});
+    h.resolve('health', { uptime_seconds: 1 });
+    await h.settleAll();
+    expect(seen).toEqual([]);
+    h.registry.dispose();
+  });
+});

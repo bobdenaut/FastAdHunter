@@ -90,6 +90,32 @@
   --series-4: #8a95a3;
   --series-5: #6d5fa6;
 
+  /* Diagnostics · Memory draws its own ramp, and the reason is a constraint no
+     other page has: it puts **five series and two status thresholds on one
+     chart at once** — ruleset, cache, stats, residual and RSS, under a peak
+     line, a watch rule and an over-budget rule. The five-hue ramp above cannot
+     do that. Measured against the surfaces this page uses, a fourth
+     categorical hue does not survive beside the first three plus the amber and
+     the red: magenta lands 1.6 from the aqua under deuteranopia, violet 1.9
+     from the blue under protanopia, lime 2.4 from the amber. So the page
+     spends three channels that are not hue — a texture for residual, the ink
+     of the stack's top edge for RSS, and a second *step* of the aqua for
+     stats — and takes only three hues. `series-palette.test.ts` pins the
+     separations. Scoped rather than global on purpose: repainting Dashboard,
+     Cache and Performance is not this task's to do. */
+  --memory-ruleset: #2a78d6;
+  --memory-cache: #0b6647;
+  --memory-stats: #4fc99a;
+  --memory-peak: #eda100;
+  --memory-watch: #a67c00;
+  --memory-over: #d03b3b;
+  --memory-residual-fill: #e3e8ee;
+  --memory-residual-line: #a8b3c0;
+
+  /* The KPI spark area fill. Lighter here: the same alpha carries further
+     against a white card than against a dark one. */
+  --spark-shade: 0.18;
+
   /* The three rule tiers, and the cache's four bands. */
   --tier-dns: #1f9dbb;
   --tier-url: #6f5fbe;
@@ -192,6 +218,22 @@
     /* The violet, lightened for the dark card. See the light block's note. */
     --series-5: #8f82c0;
 
+    /* Memory's ramp, stepped for the dark card — the same six hues, not a
+       second palette. The aqua pair keeps its lightness order, so cache stays
+       the darker step of the two in both themes and the ordinal reading does
+       not invert. `--memory-over` is mode-invariant: a status red that changes
+       between themes is a status red nobody can learn. */
+    --memory-ruleset: #3987e5;
+    --memory-cache: #199e70;
+    --memory-stats: #7fe3bb;
+    --memory-peak: #c98500;
+    --memory-watch: #fab219;
+    --memory-over: #d03b3b;
+    --memory-residual-fill: #26313d;
+    --memory-residual-line: #4f6070;
+
+    --spark-shade: 0.28;
+
     --tier-dns: #2ea7c4;
     --tier-url: #8b7cd8;
     --tier-inactive: #3a4652;
@@ -265,6 +307,18 @@
   --series-4: #8f9aa6;
   /* The violet, lightened for the dark card. See the light block's note. */
   --series-5: #8f82c0;
+
+  /* Memory's ramp, dark steps — see the light block's note. */
+  --memory-ruleset: #3987e5;
+  --memory-cache: #199e70;
+  --memory-stats: #7fe3bb;
+  --memory-peak: #c98500;
+  --memory-watch: #fab219;
+  --memory-over: #d03b3b;
+  --memory-residual-fill: #26313d;
+  --memory-residual-line: #4f6070;
+
+  --spark-shade: 0.28;
 
   --tier-dns: #2ea7c4;
   --tier-url: #8b7cd8;

@@ -57,6 +57,14 @@ interface Slot {
 export class RefreshRegistry {
   private readonly fetchers: Record<RefreshEndpoint, Fetcher>;
   private readonly slots = new Map<RefreshEndpoint, Slot>();
+  /**
+   * The passive taps. A separate map from `Slot.listeners`, and it is read in
+   * exactly two places — `observe()` and `announce()`. Nothing in `subscribe`,
+   * `startTimer`, `fetch`, `isStale` or `setSuspended` may look at it: the
+   * moment one of them does, this is a second lifecycle mechanism rather than
+   * a tap on the one that exists.
+   */
+  private readonly observers = new Map<RefreshEndpoint, Set<Listener>>();
   private readonly releasePreferences: () => void;
   private suspended = false;
 
@@ -99,6 +107,34 @@ export class RefreshRegistry {
         // subscriber is gone.
         slot.controller?.abort();
       }
+    };
+  }
+
+  /**
+   * A **passive tap**: the listener hears announcements an endpoint already
+   * makes and causes none. It refcounts nothing, starts no timer and triggers
+   * no fetch, so an endpoint with observers and no subscribers is read exactly
+   * as often as one with neither — never.
+   *
+   * **There is no initial replay.** Unlike `subscribe`, this does not call back
+   * with the retained state on registration, so it cannot be used as a data
+   * source: a caller that needs the current value reads the endpoint itself.
+   * That absence is what keeps this from growing into a second `useRefresh`.
+   *
+   * The restart banner is its one caller (`services.ts`): it needs to notice a
+   * `/health` reading some other page's refresh happened to take, and a timer
+   * of its own is exactly what a banner is not worth.
+   */
+  observe(endpoint: RefreshEndpoint, listener: Listener): () => void {
+    const taps = this.observers.get(endpoint) ?? new Set<Listener>();
+    this.observers.set(endpoint, taps);
+    taps.add(listener);
+
+    let released = false;
+    return () => {
+      if (released) return;
+      released = true;
+      taps.delete(listener);
     };
   }
 
@@ -215,7 +251,7 @@ export class RefreshRegistry {
 
     const controller = new AbortController();
     slot.controller = controller;
-    this.announce(slot, true);
+    this.announce(endpoint, slot, true);
 
     const run = this.fetchers[endpoint](controller.signal)
       .then((data) => {
@@ -242,16 +278,23 @@ export class RefreshRegistry {
         // Cleared on failure too: the timer is untouched by a failed refresh,
         // and the flag must not arm the next background fetch.
         slot.restartTimerOnSuccess = false;
-        this.announce(slot, false);
+        this.announce(endpoint, slot, false);
       });
 
     slot.inFlight = run;
     return run;
   }
 
-  private announce(slot: Slot, pending: boolean): void {
+  private announce(
+    endpoint: RefreshEndpoint,
+    slot: Slot,
+    pending: boolean,
+  ): void {
     const state = { ...stateOf(slot), pending };
     for (const listener of slot.listeners) listener(state);
+    // Second, and last, of the two sites that read `observers`. A tap never
+    // reaches a request: it only hears one that a subscriber already caused.
+    for (const tap of this.observers.get(endpoint) ?? []) tap(state);
   }
 }
 

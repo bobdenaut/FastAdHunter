@@ -23,9 +23,11 @@ export {
   historySummaryQuery,
   historyPerfQuery,
   PERF_FIELDS,
+  MEMORY_PERF_FIELDS,
   HISTORY_SUMMARY_PATH,
   HISTORY_PERF_PATH,
 } from './history';
+export { getDebugMemory, DEBUG_MEMORY_PATH } from './debug';
 export type {
   HistorySummaryQuery,
   HistoryPerfQuery,
@@ -52,7 +54,13 @@ export {
   USER_RULES_PATH,
   RULES_TEST_PATH,
 } from './rules';
-export { getConfig, CONFIG_PATH } from './config';
+export {
+  getConfig,
+  postConfig,
+  rotateApiKey,
+  CONFIG_PATH,
+  APIKEY_ROTATE_PATH,
+} from './config';
 export {
   getLists,
   addList,
@@ -62,5 +70,14 @@ export {
   refreshAllLists,
   LISTS_PATH,
 } from './lists';
-export { login, logout, LOGIN_PATH, LOGOUT_PATH } from './auth';
+export {
+  login,
+  logout,
+  logoutAll,
+  changePassword,
+  LOGIN_PATH,
+  LOGOUT_PATH,
+  LOGOUT_ALL_PATH,
+  PASSWORD_PATH,
+} from './auth';
 export type * from './types';

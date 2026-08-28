@@ -4,6 +4,7 @@ import { Icon } from './icon';
 
 export function TopBar({
   title,
+  group,
   version,
   indicator,
   detail,
@@ -12,6 +13,8 @@ export function TopBar({
   onSignOut,
 }: {
   title: string;
+  /** The parent section, when the route is nested. */
+  group?: string | undefined;
   version: string | null;
   indicator: IndicatorState;
   detail: string | null;
@@ -30,7 +33,10 @@ export function TopBar({
       >
         <Icon name="menu" size={21} />
       </button>
-      <div class="nav-title">{title}</div>
+      {/* A nested route names its parent: `Diagnostics · Memory`, as the
+          artboards draw it. Three routes are nested and all three are under
+          Diagnostics, so the group is the whole of the prefix. */}
+      <div class="nav-title">{group === undefined ? title : `${group} · ${title}`}</div>
       <div class="navr">
         <ConnectionIndicator state={indicator} detail={detail} />
         {/* `version` comes from GET /health, fetched once per shell mount and

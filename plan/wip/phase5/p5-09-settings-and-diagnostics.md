@@ -73,15 +73,32 @@ as one number because they share one bounded channel; HTTP refusals, the only
 standing signal of a LAN client probing; a summary of list problems. Degraded is
 explained, not alarmed.
 
-**Diagnostics · Memory** — the composition of RSS as a donut summing exactly to
-RSS, with the residual rendered distinctly because it is a remainder rather than
-a structure. A budget rail carrying current RSS, the lifetime peak as a
-high-water marker, and the budget lines as markers rather than walls. The
-persisted breakdown over time with residual as the top band, so a leak reads as
-the top thickening while the components stay flat, and the peak series beside it
-rather than derived from it. Page-fault rate as a derivative, never the
-cumulative counter. Allocator figures as labelled values, marked as carrying no
-compatibility promise.
+**Diagnostics · Memory** — `sketch/Memory.dc.html` is the source of truth for
+this page. The composition of RSS as a 100 %-stacked bar summing exactly to RSS,
+with the residual rendered as a texture rather than a hue because it is a
+remainder rather than a structure, and the four components split into tiles
+beneath it. A KPI rail of four figures — RSS, residual, lifetime peak, allocator
+committed — each carrying its own trend and its own denominator, with the
+budget lines as markers rather than walls and peak explicitly not measured
+against the budget. The persisted breakdown over time with residual as the top
+band, so a leak reads as the top thickening while the components stay flat, and
+the peak series beside it rather than derived from it. Page-fault rate as a
+derivative, never the cumulative counter. Allocator figures as labelled values,
+marked as carrying no compatibility promise.
+
+- **The RSS line carries a state, and the two thresholds are drawn.** Ink below
+  100 MiB, red above the steady-state budget in MiB, with the band between them
+  shaded and labelled. 100 MiB is the watch point because it sits above anything
+  the sampled series has recorded, so a reading there is new territory while
+  still under budget. Both thresholds are dotted rules with captions, never
+  walls — and red is a status colour, so it ships with the labelled budget line
+  that makes it legible, never alone.
+- **The categorical palette is capped at what can actually be told apart.**
+  Ruleset takes one hue, cache and stats two steps of a second, residual the
+  texture, RSS the ink of the stack's top edge, peak the amber. A fourth
+  categorical hue does not survive the colour-blind separation floor against the
+  first three plus amber and red, which is why cache and stats share a hue and
+  the review file records the measured separations.
 
 **Diagnostics · Live Feed** — the event socket's query items. Columns for both
 pipelines in one table. Client-side filters over the rows held. The panel states
@@ -110,7 +127,7 @@ and **rendering that stops while the page is hidden**, stated on the page,
 resuming on return with whatever arrived meanwhile simply missed — there is no
 history to backfill from.
 
-Settings fields stack label-over-control. The memory rail and composition donut
+Settings fields stack label-over-control. The memory KPI rail and composition bar
 stay legible without pinch-zoom.
 
 ## Acceptance criteria
@@ -126,8 +143,10 @@ stay legible without pinch-zoom.
 - The restart banner appears on a boot-only change and clears after a restart.
 - Rotating the API key warns that the key is shown once and that existing
   clients break.
-- The memory donut's slices sum to RSS; peak is not among them.
-- No memory or latency budget is drawn as a wall.
+- The memory composition bar's segments sum to RSS; peak is not among them.
+- No memory or latency budget is drawn as a wall. The watch and over-budget
+  rules are dotted markers with captions, and the over-budget state never
+  appears without the budget line that names it.
 - The Live Feed ring is bounded, pauses when hidden, and never grows with
   uptime. At 390 px it matches `sketch/MobileLiveFeed.dc.html`: card per event,
   200-row ring, hidden-page pause stated on the page.

@@ -6,6 +6,7 @@ import type { IndicatorState } from '../events/types';
 import { subscribeVisibility } from '../lifecycle/visibility';
 import { currentPath, navigate, subscribeRoute } from '../router/router';
 import {
+  GROUP_LABELS,
   LOGIN_ROUTE,
   routeFor,
   type PageProps,
@@ -21,6 +22,7 @@ import { ErrorState } from '../components/error-state';
 import { useFocusTrap } from '../components/focus-trap';
 import { ConnectionIndicator } from './connection-indicator';
 import { ContentHeader } from './content-header';
+import { RestartBanner } from './restart-banner';
 import { Sidebar } from './sidebar';
 import { TopBar } from './topbar';
 import { Icon } from './icon';
@@ -202,6 +204,9 @@ export function Shell() {
       <div class="main">
         <TopBar
           title={route.title}
+          {...(route.group === undefined
+            ? {}
+            : { group: GROUP_LABELS[route.group] })}
           version={version}
           indicator={shown}
           detail={detail}
@@ -209,6 +214,10 @@ export function Shell() {
           onToggleTheme={() => toggleTheme()}
           onSignOut={signOut}
         />
+        {/* Above the routed content on every screen: a pending restart is not a
+            fact about the Settings page, and it survives navigation because it
+            is module state rather than page state. */}
+        <RestartBanner />
         {/* A route that owns its header renders the header *and* the `.wrap`
             itself, because the two are siblings — `.hd` sits outside the
             padded content column. Until its chunk resolves the shell renders

@@ -30,11 +30,26 @@ export type { EventType };
 
 export type Section = 'overview' | 'filtering' | 'runtime' | 'system';
 
+/** The nested groups, and the one place their display name is written. */
+export type RouteGroup = 'diagnostics';
+
+/**
+ * The label the sidebar and the top bar both draw for a group.
+ *
+ * A `Record` over the union rather than a literal at each site: adding a second
+ * group now fails to compile until it is named here, where the top bar's
+ * `'diagnostics' → 'Diagnostics'` conditional would have dropped its prefix in
+ * silence.
+ */
+export const GROUP_LABELS: Record<RouteGroup, string> = {
+  diagnostics: 'Diagnostics',
+};
+
 export interface Route {
   path: string;
   title: string;
   section: Section;
-  group?: 'diagnostics';
+  group?: RouteGroup;
   /** Acquired on mount, released on unmount — by the shell's route transition
    *  and by nothing else. */
   events: readonly EventType[];
@@ -181,10 +196,15 @@ export const ROUTES: readonly Route[] = [
     path: '/settings',
     title: 'Settings',
     section: 'system',
+    // `config_changed` and nothing else. The page reads `/config` on entry and
+    // on that event; `/health` is read once on entry and only while the restart
+    // banner is armed, which is a revalidation rather than a poll — so no
+    // endpoint is declared and this route holds no timer.
     events: ['config_changed'],
     endpoints: [],
-    built: false,
-    load: () => import('../pages/system'),
+    built: true,
+    ownsHeader: true,
+    load: () => import('../pages/settings'),
   },
   {
     path: '/diagnostics/health',
@@ -192,29 +212,44 @@ export const ROUTES: readonly Route[] = [
     section: 'system',
     group: 'diagnostics',
     events: [],
-    endpoints: ['health', 'telemetry'],
-    built: false,
-    load: () => import('../pages/system'),
+    // `lists` joined in p5-09: the list-problem summary is `GET /lists`' items
+    // and lives nowhere else. Plus one `GET /config` on mount for the upstream
+    // strategy — boot-only, so a re-read would answer the same thing for ever.
+    endpoints: ['health', 'telemetry', 'lists'],
+    built: true,
+    ownsHeader: true,
+    load: () => import('../pages/diagnostics-health'),
   },
   {
+    // Three reads, none of them polled: `/debug/memory` on entry for the
+    // instant, `/telemetry` on entry for the compiled rule count and uptime
+    // that `/debug/memory` does not carry, and `/history/perf` as a range
+    // query. `endpoints` declares polled slots, so it stays empty — the page
+    // holds no timer.
     path: '/diagnostics/memory',
     title: 'Memory',
     section: 'system',
     group: 'diagnostics',
     events: [],
     endpoints: [],
-    built: false,
-    load: () => import('../pages/system'),
+    built: true,
+    ownsHeader: true,
+    load: () => import('../pages/diagnostics-memory'),
   },
   {
     path: '/diagnostics/live-feed',
     title: 'Live Feed',
     section: 'system',
     group: 'diagnostics',
+    // The only screen that subscribes to `query`, and it declares no polled
+    // endpoint: the feed's whole source is the socket. Leaving empties the
+    // union, which closes the connection — and the engine stops publishing per
+    // query once no socket asks for it at all.
     events: ['query'],
     endpoints: [],
-    built: false,
-    load: () => import('../pages/system'),
+    built: true,
+    ownsHeader: true,
+    load: () => import('../pages/live-feed'),
   },
 ];
 

@@ -48,6 +48,12 @@ function literalsIn(sheet: string): string[] {
  * | `.tile .ft` and its hover | `rgba(` × 2 |
  * | `.btn`, `.chip.on` | `#fff` × 2 |
  * | `.drawer` shadow (`layout.css`) | `rgba(` × 1 |
+ *
+ * `p5-09` adds one: `.seg-ruleset`'s label. It is white over the ruleset blue
+ * for the same reason as the six above — the text sits *on* a series colour, so
+ * it cannot be a text token, and a token for "white" would be a token that can
+ * never take a second value. The rule the sheet actually follows is that a
+ * literal is legal only when it is the ink on a filled mark.
  */
 const INHERITED: Record<string, string[]> = {
   'base.css': [],
@@ -59,6 +65,13 @@ const INHERITED: Record<string, string[]> = {
     'rgba(',
     '#fff',
     '#fff',
+    // `.seg-ruleset` — the composition bar's label, white on the ruleset blue.
+    '#fff',
+    // `.memory-tip` — the hover box's drop shadow. A shadow is a black at an
+    // alpha, not a surface: it has to read the same over every card colour, so
+    // a themed token would have to be two tokens that always resolve to the
+    // same value. The `.drawer` shadow in `layout.css` is the same case.
+    'rgb(',
   ],
   'layout.css': ['rgba('],
 };

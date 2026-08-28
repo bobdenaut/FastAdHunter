@@ -2,6 +2,12 @@ import { describe, expect, it } from 'vitest';
 import {
   OTHER_LABEL,
   blockedPercent,
+  extentOf,
+  faultRate,
+  listsNeedingAttention,
+  stackedMemory,
+  statsBytes,
+  upstreamStateCounts,
   budgetProximity,
   cacheHitRate,
   cacheLookups,
@@ -19,6 +25,7 @@ import {
   sumPerType,
   upstreamBar,
   upstreamMode,
+  windowTrend,
 } from './derive';
 import {
   compactCount,
@@ -32,6 +39,11 @@ import {
   qpsLabel,
 } from './charts/format';
 import { formatUptime, lastRefreshLabel } from './time';
+import {
+  WATCH_THRESHOLD,
+  latestRssState,
+  rssStates,
+} from './pages/memory/budgets';
 
 describe('compactCount', () => {
   it('prints the artboard’s figures exactly', () => {
@@ -417,5 +429,260 @@ describe('qpsLabel', () => {
   it('keeps the decimal on a whole figure, as the artboard draws it', () => {
     expect(qpsLabel(20)).toBe('20.0');
     expect(qpsLabel(0)).toBe('0.0');
+  });
+});
+
+describe('the Diagnostics derivations', () => {
+  it('counts the three upstream states and no fourth (D3)', () => {
+    const rows = [
+      { state: 'healthy' as const },
+      { state: 'penalized' as const },
+      { state: 'probing' as const },
+      { state: 'probing' as const },
+    ];
+    expect(upstreamStateCounts(rows)).toEqual({
+      healthy: 1,
+      penalized: 1,
+      probing: 2,
+    });
+    // The counts always sum to the rows, which the artboard's own figures do
+    // not.
+    const counts = upstreamStateCounts(rows);
+    expect(counts.healthy + counts.penalized + counts.probing).toBe(rows.length);
+  });
+
+  it('ignores a state outside the vocabulary rather than counting NaN', () => {
+    // `counts[unmodelled] += 1` wrote `NaN` **and** added the key. Invisible on
+    // screen, because the rendered line reads only the three known states —
+    // which is why the "invents no fourth state" test passed over it.
+    const counts = upstreamStateCounts([
+      { state: 'healthy' as const },
+      { state: 'recovering' } as unknown as { state: 'healthy' },
+    ]);
+    expect(counts).toEqual({ healthy: 1, penalized: 0, probing: 0 });
+    expect(Object.keys(counts)).toEqual(['healthy', 'penalized', 'probing']);
+    for (const value of Object.values(counts)) {
+      expect(Number.isNaN(value)).toBe(false);
+    }
+  });
+
+  it('counts only failed and rejected lists as needing attention (D4)', () => {
+    const items = [
+      { last_status: 'ok' as const },
+      { last_status: 'degraded' as const },
+      { last_status: 'failed' as const },
+      { last_status: 'rejected' as const },
+      { last_status: 'never' as const },
+    ];
+    expect(listsNeedingAttention(items).map((item) => item.last_status)).toEqual(
+      ['failed', 'rejected'],
+    );
+  });
+
+  it('sums the two stats structures into one slice (D5)', () => {
+    expect(
+      statsBytes({ stats_aggregates_bytes: 41_984, stats_clients_bytes: 9_216 }),
+    ).toBe(51_200);
+  });
+
+
+  it('reads the window extremes and skips absent rows (D7 / D11)', () => {
+    expect(
+      extentOf([{ v: 4 }, { v: undefined }, { v: 9 }, { v: 2 }], (item) => item.v),
+    ).toEqual({ min: 2, max: 9 });
+    expect(extentOf([], (item: { v: number }) => item.v)).toBeNull();
+  });
+
+  it('divides the fault delta by the elapsed seconds (D12)', () => {
+    const rate = faultRate(
+      { ts: '2026-08-01T00:00:00Z', minor_page_faults: 1_000 },
+      { ts: '2026-08-01T00:01:00Z', minor_page_faults: 8_080 },
+    );
+    expect(rate).toBe(118);
+  });
+
+  it('answers null for a pair that spans a restart (D12)', () => {
+    // A cumulative counter that fell is a new process, never a negative rate.
+    expect(
+      faultRate(
+        { ts: '2026-08-01T00:00:00Z', minor_page_faults: 8_000 },
+        { ts: '2026-08-01T00:01:00Z', minor_page_faults: 12 },
+      ),
+    ).toBeNull();
+    expect(
+      faultRate(
+        { ts: '2026-08-01T00:00:00Z' },
+        { ts: '2026-08-01T00:01:00Z', minor_page_faults: 12 },
+      ),
+    ).toBeNull();
+  });
+
+  it('stacks the bands so the top edge is `rss_bytes` itself (D13)', () => {
+    const item = {
+      rss_bytes: 100,
+      memory: {
+        ruleset_bytes: 40,
+        cache_estimated_bytes: 10,
+        stats_aggregates_bytes: 3,
+        stats_clients_bytes: 2,
+      },
+    };
+    const bands = stackedMemory([item]);
+    expect(bands.map((band) => band[0])).toEqual([40, 50, 55, 100]);
+    // The identity is the server's: `accounted + residual = rss`. The chart
+    // renders it rather than re-deriving the residual.
+    expect(bands[3]?.[0]).toBe(item.rss_bytes);
+  });
+
+  it('gaps the components of an over-accounted row rather than inverting the stack', () => {
+    // `fah-model`'s `over_accounted()` state: components claim more than RSS,
+    // which is an accounting bug and never a reading. Stacked, the top band
+    // falls below the one under it, which reads as a component shrinking.
+    expect(
+      stackedMemory([
+        {
+          rss_bytes: 50,
+          memory: {
+            ruleset_bytes: 40,
+            cache_estimated_bytes: 10,
+            stats_aggregates_bytes: 8,
+            stats_clients_bytes: 2,
+          },
+        },
+      ]),
+    ).toEqual([[null], [null], [null], [50]]);
+  });
+
+  it('keeps the RSS of an over-accounted row, which is not the figure in doubt', () => {
+    // RSS comes from `/proc/self/status`; it is what the components failed to
+    // add up to. It is also the series the page's RSS state is walked from, and
+    // the KPI card walks the same readings off the row itself — a gap in one
+    // and not the other is the card and the line disagreeing about a reading.
+    const bands = stackedMemory([
+      {
+        rss_bytes: 90,
+        memory: {
+          ruleset_bytes: 40,
+          cache_estimated_bytes: 10,
+          stats_aggregates_bytes: 8,
+          stats_clients_bytes: 2,
+        },
+      },
+      {
+        rss_bytes: 50,
+        memory: {
+          ruleset_bytes: 40,
+          cache_estimated_bytes: 10,
+          stats_aggregates_bytes: 8,
+          stats_clients_bytes: 2,
+        },
+      },
+    ]);
+    expect(bands[3]).toEqual([90, 50]);
+    expect(bands[2]).toEqual([60, null]);
+  });
+
+  /** A memory block whose four components sum to exactly `total`. */
+  function parts(total: number): {
+    ruleset_bytes: number;
+    cache_estimated_bytes: number;
+    stats_aggregates_bytes: number;
+    stats_clients_bytes: number;
+  } {
+    const share = Math.floor(total / 4);
+    return {
+      ruleset_bytes: total - 3 * share,
+      cache_estimated_bytes: share,
+      stats_aggregates_bytes: share,
+      stats_clients_bytes: share,
+    };
+  }
+
+  /** A well-accounted row: the components take `accounted` of `rss`. */
+  function row(rss: number, accountedShare: number) {
+    return { rss_bytes: rss, memory: parts(Math.floor(rss / accountedShare)) };
+  }
+
+  it('walks the same RSS readings the KPI card walks — U1, over an over-accounted row', () => {
+    // U1's invariant: the chart's line and the card's figure read one state
+    // walk, so they cannot disagree about a reading. The chart walks the stack's
+    // top band and the card walks the rows, so the two series have to hold the
+    // same values — which is why an over-accounted row keeps its RSS.
+    const rows = [
+      row(WATCH_THRESHOLD + 4_000_000, 10),
+      // Over-accounted: the components claim more than RSS.
+      { rss_bytes: WATCH_THRESHOLD - 1_000_000, memory: parts(WATCH_THRESHOLD) },
+      row(WATCH_THRESHOLD - 1_000_000, 10),
+    ];
+    const top = stackedMemory(rows)[3] as (number | null)[];
+    const fromRows = rows.map((item) => item.rss_bytes);
+    expect(top).toEqual(fromRows);
+    expect(rssStates(top)).toEqual(rssStates(fromRows));
+    // And the hysteresis still carries: 1 MiB under the watch point is inside
+    // the 3 MiB band, so a reading that arrived from `watch` stays there.
+    expect(rssStates(top)).toEqual(['watch', 'watch', 'watch']);
+    expect(latestRssState(top)).toBe('watch');
+  });
+
+  it('carries the state across a row that has no reading at all', () => {
+    // A gap is a row nobody wrote, not evidence that RSS fell — the sample
+    // after it is judged against the state before it.
+    const values = [WATCH_THRESHOLD + 1, null, WATCH_THRESHOLD - 1_000_000];
+    expect(rssStates(values)).toEqual(['watch', null, 'watch']);
+    expect(latestRssState(values)).toBe('watch');
+    // Without the carry the third reading is plainly under the threshold.
+    expect(rssStates([values[2] as number])).toEqual(['normal']);
+  });
+
+  it('keeps a row whose components sum to exactly RSS', () => {
+    // The boundary the gap must not swallow: equality is the identity holding,
+    // not the bug.
+    const bands = stackedMemory([
+      {
+        rss_bytes: 55,
+        memory: {
+          ruleset_bytes: 40,
+          cache_estimated_bytes: 10,
+          stats_aggregates_bytes: 3,
+          stats_clients_bytes: 2,
+        },
+      },
+    ]);
+    expect(bands.map((band) => band[0])).toEqual([40, 50, 55, 55]);
+  });
+
+  it('draws a gap rather than a zero column for a row with no memory (D13)', () => {
+    expect(stackedMemory([{ rss_bytes: 100 }])).toEqual([
+      [null],
+      [null],
+      [null],
+      [null],
+    ]);
+  });
+
+});
+
+describe('windowTrend (D14)', () => {
+  const flat = [100, 102, 99, 101, 100, 103];
+
+  it('answers null, not flat, on a window too short to have a shape', () => {
+    // The distinction the verdict pill and the fault rate both depend on:
+    // "not enough history" is not the same claim as "steady".
+    expect(windowTrend([100, 100, 100, 100, 100], 0.1)).toBeNull();
+    expect(windowTrend(flat, 0.1)).toBe('flat');
+  });
+
+  it('holds flat through jitter inside the tolerance', () => {
+    expect(windowTrend(flat, 0.1)).toBe('flat');
+  });
+
+  it('reads a climb past the tolerance as rising', () => {
+    expect(windowTrend([100, 100, 100, 130, 130, 130], 0.1)).toBe('rising');
+    // …and the same climb is flat under a tolerance wide enough to cover it.
+    expect(windowTrend([100, 100, 100, 130, 130, 130], 0.5)).toBe('flat');
+  });
+
+  it('reads a fall past the tolerance as falling', () => {
+    expect(windowTrend([130, 130, 130, 100, 100, 100], 0.1)).toBe('falling');
   });
 });

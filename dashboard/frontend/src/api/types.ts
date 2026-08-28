@@ -162,6 +162,59 @@ export interface Memory {
   process_rss_file: number | null;
 }
 
+/**
+ * `GET /api/v1/debug/memory` — `Memory` plus exactly the two allocator
+ * counters, flattened into the same object (`wire.rs` `DebugMemoryResponse`).
+ *
+ * **The two extra fields carry no compatibility promise.** They describe
+ * whichever allocator is linked in and would read near zero under another one,
+ * which is why they sit under `/debug/*`. `null` is "the allocator reported
+ * nothing", never zero — and it nulls only these two, because the kernel
+ * figures above come from `getrusage` and a different `Option`.
+ */
+export interface DebugMemory extends Memory {
+  allocator_committed_bytes: number | null;
+  allocator_committed_peak_bytes: number | null;
+}
+
+/* --------------------------------------------------------------- events */
+
+/**
+ * One `query` item off `WS /api/v1/events` — both pipelines, tagged by `kind`.
+ *
+ * **Every key is always present**, so a client never has to tell "absent" from
+ * "not applicable": a DNS event leaves the HTTP-only fields `null` and an HTTP
+ * event leaves `qtype` `null` and `cached` `false`.
+ *
+ * `endpoint` is the one exception: it is present **only** on a DNS item an
+ * upstream answered, and is that server's index in
+ * `[dns.upstreams.servers]` — so a fallback past a dead primary reads
+ * `"endpoint": 1`. Cache hits, blocks and HTTP items carry no key at all.
+ *
+ * `verdict` is `pass` | `allow` | `block` and there is no fourth value:
+ * `counters.http.refused` is counted on the proxy, not on this stream.
+ */
+export interface QueryEvent {
+  kind: string;
+  ts: string;
+  client: string;
+  client_name: string | null;
+  domain: string;
+  qtype: string | null;
+  verdict: string;
+  rule: string | null;
+  list: string | null;
+  duration_ms: number;
+  upstream: string | null;
+  endpoint?: number;
+  cached: boolean;
+  method: string | null;
+  path: string | null;
+  resource_type: string | null;
+  status: number | null;
+  bytes: number | null;
+}
+
 /* ---------------------------------------------------------------- statistics */
 
 export interface TopDomain {
@@ -264,6 +317,24 @@ export interface PerfLatency {
  * and `allowed_delta` is the real `allow` verdict the engine counted, never the
  * derived `permitted` band the Dashboard chart draws.
  */
+/**
+ * The persisted half of the memory breakdown: the six component figures, minus
+ * every live-only one — no RSS (`PerfItem.rss_bytes` is it) and no allocator
+ * counters.
+ *
+ * `residual_bytes` is derived server-side on read from the row's own
+ * `rss_bytes`, so it cannot disagree with the components beside it. Rows
+ * written before the field shipped read back as **zeros**, not nulls.
+ */
+export interface PerfMemory {
+  ruleset_bytes: number;
+  cache_estimated_bytes: number;
+  stats_aggregates_bytes: number;
+  stats_clients_bytes: number;
+  accounted_bytes: number;
+  residual_bytes: number;
+}
+
 export interface PerfItem {
   ts: string;
   qps?: number;
@@ -271,6 +342,18 @@ export interface PerfItem {
   blocked_delta?: number;
   allowed_delta?: number;
   latency?: PerfLatency;
+  rss_bytes?: number;
+  /**
+   * `getrusage`'s high-water RSS, **monotone within one process lifetime** — a
+   * decrease between consecutive rows is a restart, never a reclaim. `0` means
+   * the row predates the field or `getrusage` was unavailable, not that the
+   * peak was zero.
+   */
+  peak_rss?: number;
+  memory?: PerfMemory;
+  /** Cumulative since process start. Charted as its derivative and never as
+   *  the counter, which would draw a ramp. */
+  minor_page_faults?: number;
 }
 
 export interface HistoryPerf {
@@ -380,17 +463,121 @@ export interface RefreshAllResponse {
 
 /* -------------------------------------------------------------------- config */
 
+/** `null` when unset. Required by a `dot` upstream, optional for `doh`, where
+ *  the certificate name comes from the URL host. */
+export interface UpstreamServerConfig {
+  address: string;
+  protocol: string;
+  hostname: string | null;
+}
+
+/** `refresh_hours: null` follows `rules.refresh_hours_default`. The array is
+ *  read-only here: `POST /config` answers `422` for `rules.lists`. */
+export interface RuleListConfig {
+  id: string;
+  url: string;
+  enabled: boolean;
+  refresh_hours: number | null;
+}
+
+export interface ConfigAssignment {
+  client: string;
+  days?: string | null;
+  start?: string | null;
+  end?: string | null;
+}
+
+/** The `[[policies]]` entry as the **config tree** carries it, which is not the
+ *  `/policies` response shape: `name` defaults to `id` there and is optional
+ *  here. Rendered by the raw panel and by nothing else. */
+export interface ConfigPolicy {
+  id: string;
+  name?: string | null;
+  lists?: string[] | null;
+  blocking_mode?: string | null;
+  assignments?: ConfigAssignment[];
+}
+
 /**
- * Deliberately **narrow**. `GET /api/v1/config` returns the whole configuration
- * tree; typing all of it here would duplicate CONFIGURATION.md in TypeScript
- * and rot against it. Only the two keys this phase's built pages read are
- * declared, and `p5-09` owns the full shape.
+ * The whole configuration tree `GET /api/v1/config` returns — every section of
+ * `fah-config`'s `Config`, under the same key names.
+ *
+ * **Values, and nothing else.** The response carries no types, no bounds, no
+ * enums and no mutability classes, so nothing may be built as though it did:
+ * `pages/settings/metadata.ts` is where every constraint lives, hand-carried
+ * from CONFIGURATION.md and `crates/fah-config/src/schema/`.
+ *
+ * `policies` is the one optional key — `skip_serializing_if = "Vec::is_empty"`
+ * drops it when none is configured, which the raw panel renders as "none
+ * configured" rather than leaving as an absence.
+ *
+ * There is no `auth` key and there never will be: auth material is not part of
+ * the config tree at all (API.md §Configuration).
  */
 export interface Config {
-  /** `enabled` is runtime-mutable; `sample_interval_seconds` is boot-only and
-   *  is what one persisted perf row covers (API.md §History). */
-  history?: { enabled?: boolean; sample_interval_seconds?: number };
-  dns?: { upstreams?: { strategy?: string } };
+  engine: { mode: string };
+  dns: {
+    listen: { address: string; port: number };
+    blocking: { mode: string; ttl_seconds: number };
+    cache: {
+      max_entries: number;
+      max_bytes: number;
+      min_ttl_seconds: number;
+      max_ttl_seconds: number;
+      negative_ttl_max_seconds: number;
+      serve_stale: boolean;
+      swr_workers: number;
+      cleanup_interval_seconds: number;
+    };
+    upstreams: {
+      strategy: string;
+      timeout_ms: number;
+      penalty_failures: number;
+      servers: UpstreamServerConfig[];
+    };
+  };
+  http: {
+    listen: { address: string; port: number };
+    max_connections: number;
+    idle_timeout_ms: number;
+    header_timeout_ms: number;
+  };
+  egress: { allow_destinations: string[]; allow_ip_literal_hosts: boolean };
+  rules: { refresh_hours_default: number; lists: RuleListConfig[] };
+  schedule: { timezone: string };
+  policies?: ConfigPolicy[];
+  stats: { snapshot_interval_seconds: number };
+  /** `enabled` and `retention_days` are runtime-mutable;
+   *  `sample_interval_seconds` is boot-only and is what one persisted perf row
+   *  covers (API.md §History). */
+  history: {
+    enabled: boolean;
+    sample_interval_seconds: number;
+    retention_days: number;
+  };
+  api: { address: string; port: number; tls: boolean };
+  log: { level: string; format: string };
+}
+
+/** `POST /api/v1/config`. Both flags are read verbatim: `applied` means at
+ *  least one runtime key is live, `restart_required` that at least one boot key
+ *  is persisted and waiting. */
+export interface ConfigUpdateResponse {
+  applied: boolean;
+  restart_required: boolean;
+}
+
+/** `POST /api/v1/config/apikey/rotate`. Returned **once**; the UI renders it
+ *  and stores it nowhere. */
+export interface ApiKeyResponse {
+  api_key: string;
+}
+
+/** `POST /api/v1/auth/password`. `204` on success, and every session dies with
+ *  it — the caller's included, with no replacement cookie. */
+export interface PasswordChangeBody {
+  current_password: string;
+  new_password: string;
 }
 
 /* ------------------------------------------------------------------ policies */

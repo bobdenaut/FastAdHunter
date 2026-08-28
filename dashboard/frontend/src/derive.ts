@@ -1,4 +1,9 @@
-import type { PerfItem, PerfLatency } from './api/types';
+import type {
+  ListStatus,
+  PerfItem,
+  PerfLatency,
+  UpstreamState,
+} from './api/types';
 
 /**
  * **The derived display values of the shipped pages live here**, keyed to the
@@ -305,4 +310,196 @@ export function upstreamMode(strategy: string | null | undefined): UpstreamMode 
   if (strategy === 'adaptive') return 'adaptive';
   if (strategy === 'fallback') return 'fallback';
   return 'unknown';
+}
+
+/* ─────────────────────────────────────────── p5-09 · Diagnostics · Health ── */
+
+/**
+ * D3 — how many endpoints are in each state, from `telemetry.upstreams[]`.
+ *
+ * **Read only under `adaptive`.** The caller gates on `upstreamMode`: under
+ * `fallback` every row publishes `state: healthy` because no health state
+ * exists to report, and counting those would state the opposite of the truth.
+ * The three keys are the whole vocabulary — `UpstreamState` has no fourth
+ * value, so a "recovering" count has nothing behind it.
+ */
+export function upstreamStateCounts(
+  upstreams: readonly { state: UpstreamState }[],
+): Record<UpstreamState, number> {
+  const counts: Record<UpstreamState, number> = {
+    healthy: 0,
+    penalized: 0,
+    probing: 0,
+  };
+  // A state outside the vocabulary is ignored rather than counted. `counts[x]`
+  // on an unmodelled key is `undefined`, so `+= 1` wrote `NaN` **and** added
+  // the key — invisible, because the rendered line reads only the three known
+  // states, which is exactly why the "invents no fourth state" test passed.
+  for (const upstream of upstreams) {
+    if (upstream.state in counts) counts[upstream.state] += 1;
+  }
+  return counts;
+}
+
+/**
+ * D4 — the rule lists that need attention: `failed` (the fetch broke) and
+ * `rejected` (the content gate refused the body).
+ *
+ * `degraded` is deliberately **not** among them here: it means the fetch
+ * succeeded and most of the body failed to parse, which the Lists page reports
+ * with the tier breakdown that makes it readable. Neither of the two counted
+ * here is an outage — a failed refresh keeps the previous copy serving.
+ */
+export function listsNeedingAttention<T extends { last_status: ListStatus }>(
+  items: readonly T[],
+): T[] {
+  return items.filter(
+    (item) => item.last_status === 'failed' || item.last_status === 'rejected',
+  );
+}
+
+/* ─────────────────────────────────────────── p5-09 · Diagnostics · Memory ── */
+
+/**
+ * D5 — the two stats structures as one slice. They are drawn together on the
+ * artboard because they are one subject: the 24 h aggregates and the bounded
+ * per-client records are both what `/stats` answers from.
+ */
+export function statsBytes(components: {
+  stats_aggregates_bytes: number;
+  stats_clients_bytes: number;
+}): number {
+  return components.stats_aggregates_bytes + components.stats_clients_bytes;
+}
+
+export interface Extent {
+  min: number;
+  max: number;
+}
+
+/** D7 / D11 — the window's own extremes. `null` when the window holds no
+ *  reading, which is an absence rather than a zero. */
+export function extentOf<T>(
+  items: readonly T[],
+  of: (item: T) => number | undefined,
+): Extent | null {
+  let min: number | null = null;
+  let max: number | null = null;
+  for (const item of items) {
+    const value = of(item);
+    if (value === undefined) continue;
+    min = min === null ? value : Math.min(min, value);
+    max = max === null ? value : Math.max(max, value);
+  }
+  return min === null || max === null ? null : { min, max };
+}
+
+/**
+ * D12 — the minor-fault **rate**, from the latest adjacent pair.
+ *
+ * The counter is cumulative since process start, so charting it draws a ramp
+ * and says nothing; its derivative is the purge-thrash detector. A negative
+ * delta is a restart rather than a negative rate, and answers `null`.
+ */
+export function faultRate(
+  previous: { ts: string; minor_page_faults?: number },
+  next: { ts: string; minor_page_faults?: number },
+): number | null {
+  const before = previous.minor_page_faults;
+  const after = next.minor_page_faults;
+  if (before === undefined || after === undefined || after < before) return null;
+  const seconds = (Date.parse(next.ts) - Date.parse(previous.ts)) / 1000;
+  if (!Number.isFinite(seconds) || seconds <= 0) return null;
+  return (after - before) / seconds;
+}
+
+/**
+ * D13 — the stacked bands, bottom-up: ruleset, cache, stats, residual.
+ *
+ * Each series is the running total up to and including its own band, which is
+ * what an area chart needs to render a stack. **The top edge is `rss_bytes` by
+ * the server-side identity** `accounted_bytes + residual_bytes = process_rss`,
+ * so it is never re-derived here — a row with no `memory` block contributes a
+ * gap rather than a zero column.
+ */
+export function stackedMemory(
+  items: readonly {
+    rss_bytes?: number;
+    memory?: {
+      ruleset_bytes: number;
+      cache_estimated_bytes: number;
+      stats_aggregates_bytes: number;
+      stats_clients_bytes: number;
+    };
+  }[],
+): Array<Array<number | null>> {
+  const bands: Array<Array<number | null>> = [[], [], [], []];
+  for (const item of items) {
+    const memory = item.memory;
+    if (memory === undefined || item.rss_bytes === undefined) {
+      for (const band of bands) band.push(null);
+      continue;
+    }
+    const ruleset = memory.ruleset_bytes;
+    const cache = ruleset + memory.cache_estimated_bytes;
+    const stats = cache + statsBytes(memory);
+    // **An over-accounted row draws no components, and keeps its RSS.**
+    // `fah-model`'s `over_accounted()` names the state: components claiming
+    // more than RSS is an accounting bug, never a real reading. Stacked, it
+    // inverts — the top band falls below the one under it — which reads as a
+    // component shrinking rather than as the bug it is, so the three component
+    // bands take the gap a row with no `memory` block takes.
+    //
+    // **RSS itself stays**, because it is not the figure in doubt: it is read
+    // from `/proc/self/status` and is what the components failed to add up to.
+    // Dropping it would break the one series the page's RSS state is walked
+    // from, and the KPI card walks the same readings straight off the row — so
+    // a gap here and no gap there is the card and the line disagreeing about a
+    // reading, which is exactly what the single state walk exists to prevent.
+    if (stats > item.rss_bytes) {
+      bands[0]?.push(null);
+      bands[1]?.push(null);
+      bands[2]?.push(null);
+      bands[3]?.push(item.rss_bytes);
+      continue;
+    }
+    bands[0]?.push(ruleset);
+    bands[1]?.push(cache);
+    bands[2]?.push(stats);
+    // The top band is RSS itself, which is the identity rather than a sum.
+    bands[3]?.push(item.rss_bytes);
+  }
+  return bands;
+}
+
+/** What a window's shape says, once it is long enough to have one. */
+export type WindowTrend = 'rising' | 'falling' | 'flat';
+
+/**
+ * D14 — the shape of a window, as a word.
+ *
+ * **A statement about the window, never about its current value.** It compares
+ * the mean of the first third against the mean of the last third and answers
+ * `rising` or `falling` only when the move clears `tolerance` of the opening
+ * level, so allocator jitter on a flat series does not read as a trend.
+ *
+ * `null` is "this window is too short to have a shape", which is a different
+ * answer from `flat` and must stay one: the residual verdict and the fault rate
+ * both have to say *not enough history* rather than claim steadiness they have
+ * not observed. Six is the floor — three per third, so neither mean is a single
+ * reading.
+ */
+export function windowTrend(
+  values: readonly number[],
+  tolerance: number,
+): WindowTrend | null {
+  if (values.length < 6) return null;
+  const third = Math.floor(values.length / 3);
+  const mean = (slice: readonly number[]) =>
+    slice.reduce((sum, value) => sum + value, 0) / slice.length;
+  const first = mean(values.slice(0, third));
+  const last = mean(values.slice(-third));
+  if (last > first * (1 + tolerance)) return 'rising';
+  if (last < first * (1 - tolerance)) return 'falling';
+  return 'flat';
 }

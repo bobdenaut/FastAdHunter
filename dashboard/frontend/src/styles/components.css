@@ -3295,3 +3295,1401 @@ table.t.counters td.bad {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
+
+/* ═══════════════════════════════════ p5-09 · Settings and Diagnostics ═════ */
+
+/* The restart banner is shell-owned and sits above the routed content on every
+   screen, so it takes the page gutter rather than the card grid's. */
+.restart-banner {
+  margin: 16px 20px 0;
+}
+
+/* ── Settings ───────────────────────────────────────────────────────────── */
+
+/* Anchor nav beside the sections at desktop width; below 1200 px the nav
+   collapses to a horizontal scroller above them. */
+.set-layout {
+  display: grid;
+  grid-template-columns: 200px minmax(0, 1fr);
+  gap: var(--gap);
+  align-items: start;
+}
+
+.set-nav {
+  display: flex;
+  flex-direction: column;
+  position: sticky;
+  top: 12px;
+}
+
+.set-nav a {
+  padding: 7px 12px;
+  font-size: 12.5px;
+  border-left: 2px solid transparent;
+  color: var(--text-control);
+}
+
+.set-nav a:hover {
+  border-left-color: var(--accent);
+  background: var(--surface-sunken);
+  text-decoration: none;
+}
+
+.set-sections {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap);
+  min-width: 0;
+}
+
+/* Label column, control column — the artboard's 260 px against the rest. */
+.set-field {
+  display: grid;
+  grid-template-columns: 260px minmax(0, 1fr);
+  gap: 16px;
+  padding: 11px 0;
+  border-top: 1px solid var(--border-row);
+  align-items: start;
+}
+
+.set-field:first-child {
+  border-top: 0;
+  padding-top: 0;
+}
+
+/* A dirty field is marked by an accent rule on its own row, not by a colour on
+   the control: the control still has to render its own focus and error states,
+   and two meanings on one border cannot both be read. */
+.set-field.is-dirty {
+  box-shadow: inset 2px 0 0 var(--accent);
+  padding-left: 10px;
+}
+
+.set-field-name {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.set-field-label {
+  font-size: 12.5px;
+  color: var(--text);
+}
+
+.set-field-name .note {
+  flex: 1 0 100%;
+  margin: 0;
+}
+
+.set-field-control {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.set-field-control .field-input {
+  max-width: 320px;
+}
+
+.set-field-control select.field-input {
+  max-width: 240px;
+}
+
+.set-field-aside {
+  white-space: nowrap;
+}
+
+.set-field-error {
+  flex: 1 0 100%;
+  margin: 0;
+  font-size: 12.5px;
+  color: var(--pill-bad-fg);
+  background: var(--pill-bad-bg);
+  border-radius: 3px;
+  padding: 7px 9px;
+}
+
+.upstream-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+}
+
+/* Index · address · protocol · hostname · remove. The index is meaning, not
+   decoration: it is what a query reports as its answering endpoint. */
+.upstream-row {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr) 92px minmax(0, 1fr) 44px;
+  gap: 8px;
+  align-items: center;
+}
+
+.upstream-row .field-input {
+  max-width: none;
+}
+
+.upstream-rows-foot {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.set-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 12px 14px;
+  position: sticky;
+  bottom: 0;
+}
+
+.access-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px 0;
+  border-top: 1px solid var(--border-row);
+}
+
+.access-row:first-child {
+  border-top: 0;
+  padding-top: 0;
+}
+
+.access-title {
+  margin: 0 0 3px;
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+.access-row .note {
+  margin: 0;
+  max-width: 60ch;
+}
+
+/* Shown once and stored nowhere: selectable, so a copy failure still leaves the
+   operator a way to take it. */
+.api-key {
+  user-select: all;
+  overflow-wrap: anywhere;
+  background: var(--surface-sunken);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 10px;
+  font-size: 12.5px;
+  margin: 10px 0 0;
+}
+
+.raw-rows {
+  display: flex;
+  flex-direction: column;
+  margin-top: 10px;
+}
+
+.raw-row {
+  display: grid;
+  grid-template-columns: minmax(0, 320px) minmax(0, 1fr);
+  gap: 12px;
+  padding: 5px 0;
+  border-top: 1px solid var(--border-row);
+  font-size: 12px;
+}
+
+.raw-row > span:first-child {
+  color: var(--text-muted);
+  overflow-wrap: anywhere;
+}
+
+.raw-row > span:last-child {
+  overflow-wrap: anywhere;
+}
+
+.raw-foot {
+  margin-top: 12px;
+}
+
+/* ── Diagnostics · Health ───────────────────────────────────────────────── */
+
+.health-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.health-figure .note {
+  margin: 2px 0 0;
+}
+
+.health-endpoints {
+  margin-top: 12px;
+}
+
+.health-problems {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.health-problem {
+  display: grid;
+  grid-template-columns: 160px 90px minmax(0, 1fr);
+  gap: 10px;
+  align-items: center;
+}
+
+.health-problem .note {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.health-never .row > div {
+  min-width: 0;
+}
+
+/* ── Diagnostics · Memory ───────────────────────────────────────────────── */
+
+/* Four figures across the top, then four cards, then the chart full width. The
+   order is deliberate: the figures answer "is this fine", the cards answer
+   "made of what", and the chart — the widest and last — answers "going where".
+   A reader who stops after the first row has still had the question answered. */
+/* Both rows are `row c4` — the layout grid's own four-across, not a private
+   template. A private `grid-template-columns` here loses to
+   `.row > * { grid-column: span 12 }`, which is why the first attempt rendered
+   eight full-width cards stacked. */
+.memory-row-4 {
+  align-items: start;
+}
+
+/* The artboard sets every card title on this page in caps. Scoped to the page
+   rather than applied to `.ch`, because `.ch` is shared with twelve other
+   screens that were drawn in sentence case. */
+.memory-page .ch {
+  font-size: 12px;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  /* Four cards to a row leaves ~300 px, and a capitalised title plus its
+     aggregate do not both fit. Wrapping the *row* drops the aggregate onto its
+     own line and leaves the title whole; without it the title broke instead,
+     and `MINOR PAGE FAULTS` set over three lines at 1296 px. */
+  flex-wrap: wrap;
+  row-gap: 2px;
+}
+
+/* The **title** holds its line; the aggregate beside it gives way. Titles set in
+   caps with letter-spacing are wider than the sentence-case ones `.ch` was laid
+   out for, and an unshrinkable aggregate pushed `MINOR PAGE FAULTS` onto three
+   lines at 1296 px. The title is the card's name and is what a reader scans, so
+   it is the part that must not break. */
+.memory-page .ch > span:first-child {
+  flex: 1 0 auto;
+  white-space: nowrap;
+}
+
+/* `.ch-right` is a flex container, so `text-align` cannot move its children —
+   the chips drifted to the middle. `justify-content` is what right-aligns them,
+   and `margin-left: auto` holds them there once the row wraps. */
+.memory-page .ch-right {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin-left: auto;
+  justify-content: flex-end;
+  text-align: right;
+  text-transform: none;
+  letter-spacing: normal;
+}
+
+/* `.hd-actions` aligns to the **bottom** of the header, which is right for the
+   pages whose actions are buttons — `Discard` / `Validate and save` sit level
+   with the last line of the description. Memory's actions are not buttons: they
+   are a status read-out, and the artboard puts them level with the title, where
+   a reader looks first. A header carrying one aligns them to the top. */
+.hd-actions:has(.hd-updated) {
+  align-self: flex-start;
+  align-items: center;
+}
+
+/* The artboard's header runs a point larger than the shared one and its two
+   description lines need the leading. Selected on the icon tile, which only
+   this header has — the shared `.h1` and `.sub` serve twelve other pages and
+   are not this task's to resize. */
+.hd:has(.hd-glyph) .h1 {
+  font-size: 21px;
+  letter-spacing: 0.01em;
+}
+
+.hd:has(.hd-glyph) .sub {
+  line-height: 1.5;
+}
+
+/* The page's verdict badge. `.dot` carries no colour of its own — it takes the
+   pill's, so the badge reads as one object in whichever state it is in. */
+/* The artboard's pill: fully rounded, bordered and larger than the table pills
+   `.pill` was sized for. It is the page's verdict, read at a glance from across
+   the room, not a cell decoration — so it takes the artboard's own measurements
+   rather than inheriting a chip built for a row.
+
+   The border is mixed from the pill's own foreground rather than given a token:
+   it is the same hue at a lower lightness in both themes, which is exactly what
+   a mix expresses and what two more tokens would only restate. */
+.memory-verdict {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 13px;
+  border: 1px solid color-mix(in srgb, currentcolor 45%, transparent);
+  border-radius: 999px;
+  font-size: 11.5px;
+  letter-spacing: 0.07em;
+}
+
+.memory-verdict .dot {
+  width: 7px;
+  height: 7px;
+  background: currentcolor;
+}
+
+/* `no contract` is a chip, not a word: it is a classification of the row it
+   sits on, and set as running text it reads as part of the label. */
+.tagq {
+  background: var(--pill-special-bg);
+  color: var(--pill-special-fg);
+  font-size: 9px;
+  font-weight: 600;
+  padding: 2px 6px;
+  border-radius: 3px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.kpi {
+  padding: 14px 15px 13px;
+  display: flex;
+  flex-direction: column;
+}
+
+.kpil {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 10.5px;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+
+.kpil .l {
+  color: var(--text-control);
+  font-weight: 600;
+}
+
+.kpil .t {
+  color: var(--text-faint);
+  white-space: nowrap;
+}
+
+.kpi-figure {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 8px;
+  min-height: 38px;
+}
+
+.kpiv {
+  font-family: var(--font-mono);
+  font-size: 30px;
+  font-weight: 600;
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+}
+
+/* The figure wears its state, and the states are the same three the chart's
+   RSS line uses — ink, watch, over. Peak and committed are neither: peak is a
+   transient and committed has no contract, so neither can be "good" or "bad". */
+.kpiv-ink {
+  color: var(--text);
+}
+
+.kpiv-watch {
+  color: var(--memory-watch);
+}
+
+.kpiv-over {
+  color: var(--memory-over);
+}
+
+.kpiv-residual {
+  color: var(--text);
+}
+
+.kpiv-peak {
+  color: var(--memory-peak);
+}
+
+.kpiv-muted {
+  color: var(--text-muted);
+}
+
+.kpiu {
+  font-size: 12.5px;
+  color: var(--text-muted);
+  margin-left: 5px;
+  font-weight: 500;
+}
+
+.kpid {
+  font-size: 11.5px;
+  color: var(--text-muted);
+  margin: 5px 0 0;
+  line-height: 1.5;
+}
+
+.kpi-spark-wrap {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+}
+
+/* Wraps rather than runs on: the caption is as wide as the mark it belongs to,
+   and `nowrap` pushed it past the card edge on a four-up row below ~1400 px,
+   where it was clipped mid-word. */
+.kpi-spark-note {
+  font-size: 9.5px;
+  color: var(--text-faint);
+  max-width: 140px;
+  text-align: right;
+  line-height: 1.3;
+}
+
+/* Sized, not flexed. Inside a **column** wrapper a `flex-basis` sets the
+   cross-axis — `flex: 0 0 140px` made the sparkline 140 px *tall*. */
+.kpi-spark {
+  width: 140px;
+  height: 38px;
+  display: block;
+}
+
+.kpi-spark-ink .spark-line {
+  stroke: var(--text);
+}
+
+.kpi-spark-residual .spark-line {
+  stroke: var(--memory-residual-line);
+}
+
+/* Peak is a step, not a curve — it holds a value and drops at a restart — so it
+   wears the same dash as its line on the chart. */
+.kpi-spark-peak .spark-line {
+  stroke: var(--memory-peak);
+  stroke-dasharray: 4 3;
+}
+
+/* The restart dot on the peak step. Solid, because the drop is the one event
+   in this mark and a dashed line is easy to lose at 38 px. */
+.spark-drop {
+  fill: var(--memory-peak);
+}
+
+/* The area under a spark: the line's own colour at the top, faded out entirely
+   before the floor. `--spark-shade` is lighter in the light theme, where the
+   same alpha reads considerably heavier against white. */
+.spark-stop-top {
+  stop-opacity: var(--spark-shade);
+}
+
+.spark-stop-base {
+  stop-opacity: 0;
+}
+
+.kpi-spark-ink .spark-stop-top,
+.kpi-spark-ink .spark-stop-base {
+  stop-color: var(--text);
+}
+
+.kpi-spark-residual .spark-stop-top,
+.kpi-spark-residual .spark-stop-base {
+  stop-color: var(--memory-residual-line);
+}
+
+.marks-track {
+  fill: var(--track);
+}
+
+.marks-budget {
+  stroke: var(--memory-peak);
+  stroke-width: 3;
+}
+
+.marks-peak {
+  fill: var(--memory-peak);
+}
+
+.railx-budget {
+  font-family: var(--font);
+  color: var(--memory-peak);
+  white-space: nowrap;
+}
+
+/* `margin-top: auto` is what keeps the four cards' feet aligned when their
+   descriptions wrap to different heights. */
+.kpi-foot {
+  margin-top: auto;
+  padding-top: 11px;
+}
+
+.kpi-figures {
+  border-top: 1px solid var(--border-row);
+}
+
+.kpi-footer-row {
+  display: flex;
+  justify-content: space-between;
+  font-size: 11.5px;
+  color: var(--text-muted);
+}
+
+.kpi-footnote {
+  margin: 5px 0 0;
+  font-size: 10.5px;
+}
+
+.rail {
+  height: 9px;
+  border-radius: 3px;
+  background: var(--track);
+  overflow: hidden;
+}
+
+.rail-fill {
+  height: 100%;
+}
+
+.rail-ink {
+  background: var(--text-muted);
+}
+
+.rail-watch {
+  background: var(--memory-watch);
+}
+
+.rail-over {
+  background: var(--memory-over);
+}
+
+/* Residual wears its texture on the rail too, so the page has exactly one
+   visual for it — bar segment, swatch, chart band and rail all the same hatch. */
+.rail-residual {
+  background-color: var(--memory-residual-fill);
+  background-image: repeating-linear-gradient(
+    45deg,
+    var(--memory-residual-line) 0,
+    var(--memory-residual-line) 2.6px,
+    var(--memory-residual-fill) 2.6px,
+    var(--memory-residual-fill) 7px
+  );
+}
+
+/* The peak card's rail is a marker, not a fill: a track with the budget tick
+   and the peak's own dot on it. Peak measured as a percentage of budget is the
+   reading that invites someone to set `memory-high`. */
+.rail-marks {
+  display: block;
+  width: 100%;
+  height: 12px;
+}
+
+.railx {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 10px;
+  color: var(--text-faint);
+  margin-top: 6px;
+  font-family: var(--font-mono);
+}
+
+.railx-mid {
+  font-family: var(--font);
+}
+
+/* The composition bar. Segments butt together with no gap because the card's
+   claim is that they sum to RSS exactly, and a gap would spend that claim on
+   decoration. Cache and stats are separated by a lightness step instead. */
+.composition-bar {
+  display: flex;
+  height: 30px;
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.composition-seg {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10.5px;
+  min-width: 2px;
+}
+
+.seg-ruleset {
+  background: var(--memory-ruleset);
+  color: #fff;
+}
+
+.seg-cache {
+  background: var(--memory-cache);
+}
+
+.seg-stats {
+  background: var(--memory-stats);
+}
+
+/* Residual is the one band that never takes a hue — it is a remainder, not a
+   structure. The texture says so without claiming it is a thing. */
+.seg-residual,
+.sw-residual {
+  background-color: var(--memory-residual-fill);
+  background-image: repeating-linear-gradient(
+    45deg,
+    var(--memory-residual-line) 0,
+    var(--memory-residual-line) 2.6px,
+    var(--memory-residual-fill) 2.6px,
+    var(--memory-residual-fill) 7px
+  );
+  color: var(--text);
+}
+
+.composition-tiles {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.composition-tile {
+  border: 1px solid var(--border-row);
+  border-radius: var(--radius);
+  padding: 11px 12px;
+  background: var(--surface-sunken);
+}
+
+.composition-tile .tl {
+  font-size: 11.5px;
+  color: var(--text-control);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.composition-tile .tv {
+  font-size: 19px;
+  font-weight: 600;
+  margin-top: 5px;
+}
+
+.composition-tile .tu {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.tv-ruleset {
+  color: var(--memory-ruleset);
+}
+
+.tv-cache {
+  color: var(--memory-cache);
+}
+
+.tv-stats {
+  color: var(--memory-stats);
+}
+
+.tv-residual {
+  color: var(--text);
+}
+
+.composition-detail {
+  font-size: 10.5px;
+  margin-top: 2px;
+}
+
+.composition-accounted {
+  display: flex;
+  justify-content: space-between;
+  font-size: 11.5px;
+  color: var(--text-control);
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border-row);
+}
+
+.composition-note {
+  margin: 12px 0 0;
+}
+
+/* Swatches. Every one is paired with a label in the markup — colour never
+   carries identity on its own here, which is also what lets cache and stats
+   share a hue in two steps. */
+.sw-ruleset {
+  background: var(--memory-ruleset);
+}
+
+.sw-cache {
+  background: var(--memory-cache);
+}
+
+.sw-stats {
+  background: var(--memory-stats);
+}
+
+.sw-peak {
+  background: var(--memory-peak);
+}
+
+.sw-watch {
+  background: var(--memory-watch);
+}
+
+.sw-over {
+  background: var(--memory-over);
+}
+
+.sw-ink {
+  background: var(--text);
+}
+
+.sw-line,
+.sw-dash {
+  width: 16px;
+  height: 0;
+  display: inline-block;
+  vertical-align: 3px;
+  margin-right: 5px;
+}
+
+.sw-line {
+  border-top: 2px solid var(--text);
+}
+
+.sw-dash {
+  border-top: 2px dashed var(--memory-peak);
+}
+
+.memory-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 17px;
+  font-size: 11.5px;
+  color: var(--text-control);
+  margin-bottom: 10px;
+}
+
+.memory-legend .note {
+  font-size: inherit;
+}
+
+/* The hovered sample, under the plot rather than floating over it: no
+   positioning, no edge flipping, no teardown — and it is still there on a
+   phone, which has no pointer to hover with. */
+.memory-readout {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 16px;
+  font-size: 11.5px;
+  color: var(--text-control);
+  border-top: 1px solid var(--border-row);
+  margin-top: 10px;
+  padding-top: 10px;
+  min-height: 34px;
+}
+
+.memory-readout-idle {
+  color: var(--text-faint);
+}
+
+.memory-readout-ts {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.memory-readout-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.memory-readout-item .num {
+  margin-left: 4px;
+  color: var(--text);
+}
+
+.faults-figure {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.faults-value {
+  font-size: 24px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+/* The window's two ends, under a plot that draws no x ticks. */
+.faults-xends {
+  display: flex;
+  justify-content: space-between;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-faint);
+  margin-top: 4px;
+}
+
+.kv-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12.5px;
+}
+
+.kv-table td {
+  padding: 8px 0;
+  border-top: 1px solid var(--border-row);
+  color: var(--text-control);
+}
+
+.kv-table tr:first-child td {
+  border-top: none;
+}
+
+.kv-table td:last-child {
+  text-align: right;
+}
+
+.kv-good {
+  color: var(--state-live);
+}
+
+.kv-note {
+  margin: 12px 0 0;
+}
+
+/* `.row.c4` already collapses to two across at 1199 px. Below 768 px the
+   layout grid leaves it at two, which is right for four short figures and
+   wrong for four cards carrying tables and a plot. */
+@media (max-width: 767px) {
+  .row.c4.memory-row-4 > * {
+    grid-column: span 12;
+  }
+
+  .composition-tiles {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  /* The sparkline is the first thing to go on a phone: it is the gesture, the
+     figure beside it is the reading, and the chart below is where the trend is
+     actually read. */
+  .kpi-spark,
+  /* The caption belongs to the mark — "restart resets it" describes a step
+     that is no longer on screen, so it goes with it. */
+  .kpi-spark-note {
+    display: none;
+  }
+}
+
+/* The hovered sample, in a box over the plot — the artboard's treatment. DOM
+   rather than canvas: canvas text cannot be selected or reached by a screen
+   reader, and two aligned columns on canvas means re-implementing font metrics. */
+.memory-plot {
+  position: relative;
+}
+
+.memory-tip {
+  position: absolute;
+  z-index: 2;
+  width: 196px;
+  padding: 9px 11px 10px;
+  border: 1px solid var(--border-control);
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: 0 6px 18px rgb(0 0 0 / 18%);
+  /* The pointer is over the plot, not over this: a box that swallows the
+     pointer would fight the crosshair it exists to explain. */
+  pointer-events: none;
+}
+
+.memory-tip-ts {
+  font-size: 10px;
+  color: var(--text-muted);
+  margin-bottom: 6px;
+}
+
+.memory-tip-row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 11px;
+  line-height: 1.75;
+  color: var(--text);
+}
+
+.memory-tip-row.muted {
+  color: var(--text-muted);
+}
+
+.memory-tip-label {
+  flex: 1 1 auto;
+}
+
+.memory-tip-row .num {
+  font-variant-numeric: tabular-nums;
+}
+
+.memory-tip-split {
+  height: 1px;
+  background: var(--border-row);
+  margin: 6px 0 5px;
+}
+
+/* The icon tile beside the page title, and the two header affordances that
+   follow the verdict pill. */
+.hd-lead {
+  display: flex;
+  gap: 13px;
+  align-items: flex-start;
+  min-width: 0;
+}
+
+.hd-glyph {
+  width: 40px;
+  height: 40px;
+  flex: 0 0 40px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border-control);
+  background: var(--surface-raised, var(--surface));
+  color: var(--state-live);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.hd-updated {
+  white-space: nowrap;
+}
+
+.hd-refresh {
+  background: none;
+  border: 0;
+  padding: 0;
+  color: var(--text-muted);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+}
+
+.hd-refresh:hover {
+  color: var(--text);
+}
+
+@media (max-width: 767px) {
+  /* The tile is decoration at this width and the title needs the row. */
+  .hd-glyph,
+  .hd-updated {
+    display: none;
+  }
+
+  /* No pointer, so nothing can hover the plot: the box would never appear, and
+     reserving z-index for it is pointless. */
+  .memory-tip {
+    display: none;
+  }
+}
+
+
+/* ── Diagnostics · Live Feed ────────────────────────────────────────────── */
+
+.feed-notice {
+  border-left-color: var(--accent);
+}
+
+.feed-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px 20px;
+  align-items: flex-end;
+}
+
+.feed-chipset {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.feed-chipset .note {
+  margin: 0;
+}
+
+.feed-text {
+  display: grid;
+  grid-template-columns: auto minmax(0, 180px) auto minmax(0, 180px);
+  gap: 6px 10px;
+  align-items: center;
+}
+
+.feed-text .field-label {
+  margin: 0;
+  white-space: nowrap;
+}
+
+.feed-actions {
+  display: flex;
+  gap: 8px;
+  margin-left: auto;
+}
+
+/* Desktop shows both text filters inline, so the toggle has nothing to do. */
+.feed-filter-toggle {
+  display: none;
+}
+
+.bd.feed-body {
+  padding: 0;
+}
+
+.bd.feed-body > .note {
+  padding: 0 14px 14px;
+}
+
+.feed-body .empty-state {
+  padding: 24px 14px;
+}
+
+.feed-scroll {
+  overflow-x: auto;
+}
+
+.feed-table {
+  min-width: 900px;
+}
+
+.feed-table td {
+  vertical-align: top;
+}
+
+.feed-kind {
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  border: 1px solid var(--border);
+  border-radius: 2px;
+  padding: 1px 5px;
+}
+
+.feed-domain {
+  overflow-wrap: anywhere;
+}
+
+.feed-path {
+  color: var(--text-faint);
+  margin-left: 5px;
+  overflow-wrap: anywhere;
+}
+
+.feed-detail {
+  color: var(--text-control);
+  font-size: 11.5px;
+}
+
+/* A marker on a row, not a verdict — deliberately unlike a pill. */
+.feed-marker {
+  margin-left: 6px;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--text-muted);
+  border-bottom: 1px dotted var(--border-control);
+}
+
+.feed-unknown-verdict {
+  color: var(--text-muted);
+}
+
+/* The phone card list: hidden at desktop, and hidden means out of the tree. */
+.feed-cards {
+  display: none;
+}
+
+.ev {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+/* The verdict-coloured left border, so the feed is scannable at a glance. The
+   pill on the first line carries the word, so colour never carries it alone. */
+.ev-pass {
+  border-left: 3px solid var(--border-control);
+}
+
+.ev-allow {
+  border-left: 3px solid var(--pill-good-fg);
+}
+
+.ev-block {
+  border-left: 3px solid var(--pill-bad-fg);
+}
+
+.ev-top {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.ev-top .note {
+  margin: 0;
+  margin-left: auto;
+}
+
+.ev-domain {
+  font-size: 13px;
+  word-break: break-all;
+  line-height: 1.35;
+}
+
+.ev-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  margin: 0;
+}
+
+@media (max-width: 1199px) {
+  /* The anchor nav becomes a horizontal scroller above the sections: a sticky
+     200 px column is most of a tablet's width. */
+  .set-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .set-nav {
+    position: static;
+    flex-direction: row;
+    overflow-x: auto;
+    gap: 4px;
+  }
+
+  .set-nav a {
+    border-left: 0;
+    border-bottom: 2px solid transparent;
+    white-space: nowrap;
+  }
+
+  .set-nav a:hover {
+    border-left: 0;
+    border-bottom-color: var(--accent);
+  }
+}
+
+@media (max-width: 767px) {
+  .restart-banner {
+    margin: 12px 12px 0;
+  }
+
+  /* Label over control, per the task. */
+  .set-field {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 8px;
+  }
+
+  .set-field-control .field-input,
+  .set-field-control select.field-input {
+    max-width: none;
+  }
+
+  /* Address and hostname take the full width; index, protocol and remove share
+     the line above them. */
+  .upstream-row {
+    grid-template-columns: 28px minmax(0, 1fr) 44px;
+  }
+
+  .upstream-row > *:nth-child(2),
+  .upstream-row > *:nth-child(4) {
+    grid-column: 1 / -1;
+  }
+
+  .set-bar,
+  .access-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .raw-row {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 2px;
+  }
+
+  .health-problem {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 4px;
+  }
+
+  /* One card per event, never the nine-column table. */
+  .feed-scroll {
+    display: none;
+  }
+
+  .feed-cards {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 12px;
+  }
+
+  /* The chip rows scroll sideways in their own container; the body never does. */
+  .feed-chipset .chips {
+    overflow-x: auto;
+    padding-bottom: 2px;
+  }
+
+  .feed-chipset .chip {
+    height: 44px;
+    display: flex;
+    align-items: center;
+    padding: 0 14px;
+    flex: 0 0 auto;
+    white-space: nowrap;
+  }
+
+  .feed-controls {
+    gap: 12px;
+  }
+
+  .feed-actions {
+    margin-left: 0;
+    width: 100%;
+  }
+
+  .feed-actions .btn {
+    flex: 1;
+    min-height: 44px;
+  }
+
+  .feed-filter-toggle {
+    display: flex;
+  }
+
+  /* Collapsed until `Filter…` is pressed, and collapsed means out of the tab
+     order rather than merely out of sight. */
+  .feed-text {
+    display: none;
+  }
+
+  .feed-text.on {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    width: 100%;
+  }
+}
+
+@media (pointer: coarse) {
+  .set-nav a,
+  .feed-actions .btn,
+  .feed-chipset .chip {
+    min-height: 44px;
+    display: flex;
+    align-items: center;
+  }
+}
+
+
+
+/* A grid item's `min-width` is `auto`, so the anchor nav grew past its own
+   track at 900 px and pushed the page 676 px sideways instead of scrolling
+   inside itself. The track is already `minmax(0, 1fr)`; the item needs saying
+   too. */
+.set-nav {
+  min-width: 0;
+}
+
+.set-section-note {
+  margin: 0 0 4px;
+}
+
+/* The feed's pager. Page 1 is the newest, so `Newer` is the way back toward
+   the live edge and sits first. */
+.feed-pager {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border-row);
+}
+
+.feed-pager .note {
+  margin: 0;
+}
+
+.feed-page-sizes {
+  margin-left: auto;
+}
+
+.feed-page-nav {
+  display: flex;
+  gap: 6px;
+}
+
+.feed-page-nav .btn[disabled] {
+  opacity: 0.45;
+  cursor: default;
+}
+
+@media (max-width: 767px) {
+  .feed-pager {
+    padding: 10px 12px;
+  }
+
+  .feed-pager .note {
+    flex: 1 0 100%;
+  }
+
+  .feed-page-sizes {
+    margin-left: 0;
+  }
+
+  .feed-page-sizes .chip {
+    height: 44px;
+    display: flex;
+    align-items: center;
+    padding: 0 14px;
+  }
+
+  .feed-page-nav {
+    margin-left: auto;
+  }
+
+  .feed-page-nav .btn {
+    min-height: 44px;
+  }
+}

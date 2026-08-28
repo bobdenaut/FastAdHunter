@@ -1,8 +1,10 @@
 // @vitest-environment jsdom
 import { render } from 'preact';
 import { afterEach, describe, expect, it } from 'vitest';
+import { GROUP_LABELS, ROUTES } from '../router/routes';
 import { ConnectionIndicator } from './connection-indicator';
 import { Sidebar } from './sidebar';
+import { TopBar } from './topbar';
 
 let host: HTMLElement | null = null;
 
@@ -75,6 +77,66 @@ describe('the sidebar', () => {
     const active = el.querySelector('[aria-current="page"]');
     expect(active?.textContent).toBe('Lists');
     expect(active?.classList.contains('on')).toBe(true);
+  });
+
+  it('draws every group in the route table, each under its own routes’ section', () => {
+    // The block used to be keyed on the literal `'diagnostics'`, so a second
+    // group would have compiled — `GROUP_LABELS` forces a label — and then been
+    // dropped from the sidebar in silence. Nothing here names a group.
+    const groups = new Set(
+      ROUTES.map((route) => route.group).filter((group) => group !== undefined),
+    );
+    for (const group of groups) {
+      const members = ROUTES.filter((route) => route.group === group);
+      const el = mount(
+        <Sidebar
+          path={members[0]?.path ?? '/'}
+          open={false}
+          onNavigate={() => {}}
+        />,
+      );
+      const labels = [...el.querySelectorAll('.it span')].map(
+        (node) => node.textContent,
+      );
+      expect(labels, group).toContain(GROUP_LABELS[group]);
+      expect(
+        [...el.querySelectorAll('.sub2')].map((node) => node.textContent),
+        group,
+      ).toEqual(members.map((route) => route.title));
+      render(null, el);
+      el.remove();
+      host = null;
+    }
+  });
+
+  it('names a group from GROUP_LABELS, which is what the top bar prefixes with', () => {
+    // One source for both. The top bar takes `GROUP_LABELS[route.group]` from
+    // the shell, so a label that differed here would be the same screen calling
+    // itself two things.
+    const el = mount(
+      <Sidebar path="/diagnostics/memory" open={false} onNavigate={() => {}} />,
+    );
+    const group = [...el.querySelectorAll('.it span')].find(
+      (node) => node.textContent === GROUP_LABELS.diagnostics,
+    );
+    expect(group).toBeDefined();
+    const top = mount(
+      <TopBar
+        title="Memory"
+        group={GROUP_LABELS.diagnostics}
+        version={null}
+        indicator="not-needed-here"
+        detail={null}
+        onToggleDrawer={() => {}}
+        onToggleTheme={() => {}}
+        onSignOut={() => {}}
+      />,
+    );
+    expect(top.querySelector('.nav-title')?.textContent).toBe(
+      `${GROUP_LABELS.diagnostics} · Memory`,
+    );
+    render(null, el);
+    el.remove();
   });
 
   it('carries the drawer state as a class, so the scrim and CSS agree', () => {

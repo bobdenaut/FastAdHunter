@@ -389,3 +389,116 @@ describe('the p5-08 chart legends', () => {
     ).toBe('baseline');
   });
 });
+
+/**
+ * Every `≤ 767 px` block's body, joined. There is more than one of them —
+ * `p5-06` opened the first and each later task has added its own — so slicing
+ * from the last occurrence reads whichever block happens to be last in the
+ * file, which is how four of these checks silently started reading the wrong
+ * one. Braces are balanced rather than matched by regex, because the blocks
+ * hold nested rules.
+ */
+function phoneRules(): string {
+  const source = withoutComments(CSS);
+  const marker = '@media (max-width: 767px)';
+  const bodies: string[] = [];
+  let at = source.indexOf(marker);
+  while (at !== -1) {
+    let depth = 0;
+    let cursor = source.indexOf('{', at);
+    const start = cursor + 1;
+    for (; cursor < source.length; cursor += 1) {
+      if (source[cursor] === '{') depth += 1;
+      else if (source[cursor] === '}') {
+        depth -= 1;
+        if (depth === 0) break;
+      }
+    }
+    bodies.push(source.slice(start, cursor));
+    at = source.indexOf(marker, cursor);
+  }
+  expect(bodies.length, 'no phone block found').toBeGreaterThan(0);
+  return bodies.join('\n');
+}
+
+describe('the p5-09 grids', () => {
+  it('gives Settings a label column and a control column, folding to one', () => {
+    // "Settings fields stack label-over-control" below 768 px is the task's
+    // wording, and jsdom resolves no media query — so the declaration is read.
+    expect(declaration('.set-field', 'grid-template-columns')).toBe(
+      '260px minmax(0, 1fr)',
+    );
+    const phone = phoneRules();
+    expect(phone).toContain('.set-field {');
+    expect(phone).toMatch(/\.set-field \{[^}]*minmax\(0, 1fr\)/);
+  });
+
+  it('sizes the upstream row from nothing its content decides', () => {
+    // Index, protocol and the remove target are fixed tracks; the two text
+    // cells share the slack. A content-sized track would make every row a
+    // different width, because each row is its own grid.
+    const tracks = declaration('.upstream-row {', 'grid-template-columns');
+    expect(tracks).toBe('28px minmax(0, 1fr) 92px minmax(0, 1fr) 44px');
+    // The remove glyph is a 44 px target, tiled rather than overlapping.
+    expect(tracks.endsWith('44px')).toBe(true);
+  });
+
+  it('gives the raw panel a key column that cannot be pushed out', () => {
+    expect(declaration('.raw-row {', 'grid-template-columns')).toBe(
+      'minmax(0, 320px) minmax(0, 1fr)',
+    );
+  });
+
+  it('folds the health problem row to one column on a phone', () => {
+    expect(declaration('.health-problem {', 'grid-template-columns')).toBe(
+      '160px 90px minmax(0, 1fr)',
+    );
+    const phone = phoneRules();
+    expect(phone).toMatch(/\.health-problem \{[^}]*minmax\(0, 1fr\)/);
+  });
+
+  it('scrolls the feed table inside its own container, never the page body', () => {
+    expect(declared('.feed-scroll', 'overflow-x')).toBe('auto');
+    // And the table has a floor, so the nine columns cannot be squeezed into
+    // an unreadable width instead of scrolling.
+    expect(declared('.feed-table', 'min-width')).toBe('900px');
+  });
+
+  it('swaps the feed table for one card per event below 768 px', () => {
+    // `display: none` rather than an off-screen position: the hidden half
+    // leaves the tab order and the accessibility tree.
+    const phone = phoneRules();
+    expect(phone).toMatch(/\.feed-scroll \{\s*display: none/);
+    expect(phone).toMatch(/\.feed-cards \{\s*display: flex/);
+    expect(declared('.feed-cards', 'display')).toBe('none');
+  });
+
+  it('gives the phone feed bar 44 px controls and its own chip scroller', () => {
+    const phone = phoneRules();
+    expect(phone).toMatch(/\.feed-actions \.btn \{[^}]*min-height: 44px/);
+    expect(phone).toMatch(/\.feed-chipset \.chip \{[^}]*height: 44px/);
+    expect(phone).toMatch(/\.feed-chipset \.chips \{[^}]*overflow-x: auto/);
+  });
+
+  it('draws the residual swatch and segment as a texture, not a second hue', () => {
+    // The residual is a remainder rather than a structure, so it is the one
+    // band that never takes a hue — which is also what frees the hue it would
+    // otherwise have spent, in a palette that has none to spare. The swatch and
+    // the bar segment share one rule so they cannot drift apart.
+    const rule = declared('.seg-residual,\n.sw-residual', 'background-image');
+    expect(rule).toContain('repeating-linear-gradient');
+    expect(rule).toContain('--memory-residual-line');
+  });
+
+  it('leaves the memory rows on the layout grid rather than a private track', () => {
+    // Both memory rows are `row c4`. A private `grid-template-columns` on them
+    // loses to `.row > * { grid-column: span 12 }` in `layout.css` and renders
+    // eight full-width cards stacked — which is exactly what the first attempt
+    // did, and what no unit test caught. Anything that reintroduces a private
+    // track here is the same bug returning.
+    expect(declared('.memory-row-4', 'grid-template-columns')).toBeNull();
+    // `.kpi-rail` carries no rule of its own at all — the layout grid is the
+    // whole of its geometry.
+    expect(CSS).not.toMatch(/\.kpi-rail[^{]*\{[^}]*grid-template-columns/);
+  });
+});

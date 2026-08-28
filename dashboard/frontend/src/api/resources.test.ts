@@ -2,12 +2,16 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { setUnauthorizedHandler } from './core';
 import { cleanCache } from './cache';
 import {
+  MEMORY_PERF_FIELDS,
   PERF_FIELDS,
   getHistoryPerf,
   getHistorySummary,
   historyPerfQuery,
   historySummaryQuery,
 } from './history';
+import { getDebugMemory } from './debug';
+import { changePassword, logoutAll } from './auth';
+import { postConfig, rotateApiKey } from './config';
 import {
   addList,
   deleteList,
@@ -19,7 +23,7 @@ import {
 import { getStats } from './stats';
 import { getClients } from './clients';
 import { getConfig } from './config';
-import type { PerfItem, RefreshAllResponse } from './types';
+import type { DebugMemory, PerfItem, RefreshAllResponse } from './types';
 
 function respond(status: number, body?: unknown): Response {
   return {
@@ -195,8 +199,8 @@ describe('the perf history query string', () => {
     );
   });
 
-  it('asks for exactly the five keys the page draws', () => {
-    // An unknown name is a `400`, and a memory key here would be a figure this
+  it('asks for exactly the five keys the Performance page draws', () => {
+    // An unknown name is a `400`, and a memory key here would be a figure that
     // page has no business rendering. Pinned, not merely typed.
     expect([...PERF_FIELDS]).toEqual([
       'qps',
@@ -205,6 +209,22 @@ describe('the perf history query string', () => {
       'allowed_delta',
       'latency',
     ]);
+  });
+
+  it('asks for exactly the four keys the Memory page draws', () => {
+    expect([...MEMORY_PERF_FIELDS]).toEqual([
+      'rss_bytes',
+      'peak_rss',
+      'memory',
+      'minor_page_faults',
+    ]);
+  });
+
+  it('keeps the two field lists disjoint, so neither page pays for the other', () => {
+    const shared = PERF_FIELDS.filter((field) =>
+      (MEMORY_PERF_FIELDS as readonly string[]).includes(field),
+    );
+    expect(shared).toEqual([]);
   });
 
   it('appends the query to the documented path', async () => {
@@ -236,5 +256,96 @@ describe('the cache clean', () => {
     fetchMock.mockResolvedValue(respond(200, {}));
     await cleanCache(true);
     expect(calledWith()[0]).toBe('/api/v1/cache/clean?stale=true');
+  });
+});
+
+describe('the memory diagnostics read', () => {
+  it('calls the documented debug path with no body', async () => {
+    fetchMock.mockResolvedValue(respond(200, {}));
+    await getDebugMemory();
+    const [url, init] = calledWith();
+    expect(url).toBe('/api/v1/debug/memory');
+    expect(init.method).toBe('GET');
+    expect(init.body).toBeUndefined();
+  });
+
+  it('reads the two allocator fields as nullable, never as zero', () => {
+    // A compile-time scenario: `null` is "the allocator reported nothing", and
+    // a consumer that types them `number` renders unavailable as a measurement.
+    const memory: Pick<
+      DebugMemory,
+      'allocator_committed_bytes' | 'allocator_committed_peak_bytes'
+    > = {
+      allocator_committed_bytes: null,
+      allocator_committed_peak_bytes: null,
+    };
+    expect(memory.allocator_committed_bytes).toBeNull();
+  });
+});
+
+describe('the config write', () => {
+  it('posts the patch verbatim, so only the changed keys travel', async () => {
+    fetchMock.mockResolvedValue(
+      respond(200, { applied: false, restart_required: true }),
+    );
+    await postConfig({ dns: { cache: { max_entries: 20000 } } });
+    const [url, init] = calledWith();
+    expect(url).toBe('/api/v1/config');
+    expect(init.method).toBe('POST');
+    expect(JSON.parse(String(init.body))).toEqual({
+      dns: { cache: { max_entries: 20000 } },
+    });
+  });
+
+  it('carries no abort signal — a write must land', async () => {
+    fetchMock.mockResolvedValue(
+      respond(200, { applied: true, restart_required: false }),
+    );
+    await postConfig({ history: { retention_days: 60 } });
+    expect(calledWith()[1].signal).toBeUndefined();
+  });
+
+  it('rotates the API key through its own route, with no body', async () => {
+    fetchMock.mockResolvedValue(respond(200, { api_key: 'fah_new' }));
+    const response = await rotateApiKey();
+    const [url, init] = calledWith();
+    expect(url).toBe('/api/v1/config/apikey/rotate');
+    expect(init.method).toBe('POST');
+    expect(init.body).toBeUndefined();
+    expect(response.api_key).toBe('fah_new');
+  });
+});
+
+describe('the two privileged auth writes', () => {
+  it('sends the password change under the documented key names', async () => {
+    fetchMock.mockResolvedValue(respond(204));
+    await changePassword('old-secret', 'a-much-longer-secret');
+    const [url, init] = calledWith();
+    expect(url).toBe('/api/v1/auth/password');
+    expect(JSON.parse(String(init.body))).toEqual({
+      current_password: 'old-secret',
+      new_password: 'a-much-longer-secret',
+    });
+  });
+
+  it('does not bounce to login when the current password is wrong', async () => {
+    // Its `401` means "wrong current password" on a page that is already
+    // signed in; the shared guard would report a typo as an expired session.
+    const bounced = vi.fn();
+    setUnauthorizedHandler(bounced);
+    fetchMock.mockResolvedValue(
+      respond(401, { error: { code: 'unauthorized', message: 'no' } }),
+    );
+    await expect(changePassword('wrong', 'a-much-longer-secret')).rejects.toThrow();
+    expect(bounced).not.toHaveBeenCalled();
+  });
+
+  it('signs every session out through the revocation route', async () => {
+    fetchMock.mockResolvedValue(respond(204));
+    await logoutAll();
+    const [url, init] = calledWith();
+    expect(url).toBe('/api/v1/auth/logout-all');
+    expect(init.method).toBe('POST');
+    expect(init.body).toBeUndefined();
   });
 });

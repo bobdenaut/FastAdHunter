@@ -58,3 +58,17 @@ export function subscribeAgeTick(listener: TickListener): Cancel {
 export function ageTickerRunning(): boolean {
   return ageTimer !== null;
 }
+
+/**
+ * One animation frame, and the third scheduler this module owns.
+ *
+ * It is what the Live Feed coalesces its rendering on: a burst of query events
+ * costs one render per frame rather than one per event, and **a hidden document
+ * does not fire frames at all** — so rendering stops while the page is hidden
+ * by construction rather than by a visibility handler of the feed's own. The
+ * ring behind it is bounded and keeps absorbing meanwhile.
+ */
+export function onNextFrame(run: () => void): Cancel {
+  const handle = requestAnimationFrame(run);
+  return () => cancelAnimationFrame(handle);
+}

@@ -85,3 +85,36 @@ describe('the dev gallery', () => {
     expect(GALLERY_ROUTE.endpoints).toEqual(['telemetry', 'cache']);
   });
 });
+
+describe('the p5-09 specimens', () => {
+  function mountGallery(): HTMLElement {
+    host = document.createElement('div');
+    document.body.append(host);
+    act(() => {
+      render(<DevGallery route={GALLERY_ROUTE} />, host as HTMLElement);
+    });
+    return host;
+  }
+
+  it('draws the restart banner without arming the real store', () => {
+    // The banner is global state: a gallery visit must not leave a
+    // pending-restart notice on every other screen.
+    const dom = mountGallery();
+    const banner = dom.querySelector('.banner.warn');
+    expect(banner?.textContent).toContain('needs a restart');
+    expect(banner?.querySelectorAll('button')).toHaveLength(0);
+  });
+
+  it('draws one feed card per verdict, each with its word beside its border', () => {
+    const dom = mountGallery();
+    const cards = [...dom.querySelectorAll('.gallery-feed-cards .ev')];
+    expect(cards.map((card) => card.className)).toEqual([
+      'ev ev-block',
+      'ev ev-allow',
+      'ev ev-pass',
+    ]);
+    for (const card of cards) {
+      expect(card.querySelector('.pill')?.textContent).not.toBe('');
+    }
+  });
+});

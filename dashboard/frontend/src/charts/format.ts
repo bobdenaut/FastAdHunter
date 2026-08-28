@@ -127,3 +127,21 @@ export function epochSeconds(ts: string): number {
 export function qpsLabel(qps: number): string {
   return qps.toFixed(1);
 }
+
+const KIB = 1024;
+
+/**
+ * `0 B`, `62.1 KiB`, `1.4 MiB` — the Live Feed's `bytes`, which is the response
+ * body relayed downstream. A block reads `0 B`, which is the figure that shows
+ * what filtering saved.
+ *
+ * **The units are binary because the divisor is.** `KB` and `MB` are decimal SI
+ * and this scales by 1024, so the earlier labels were 2.4 % and 4.9 % off what
+ * they claimed — on the one page-set whose header exists to teach that a budget
+ * in MB and a reading in MiB are not the same number.
+ */
+export function formatBytes(bytes: number): string {
+  if (bytes < KIB) return `${String(Math.round(bytes))} B`;
+  if (bytes < KIB * KIB) return `${oneDecimal(bytes / KIB)} KiB`;
+  return `${oneDecimal(bytes / (KIB * KIB))} MiB`;
+}

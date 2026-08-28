@@ -48,10 +48,10 @@ export const HISTORY_PERF_PATH = '/api/v1/history/perf';
  * names are a `const` list rather than free strings, and a typo is a type
  * error here instead of a rejected request in a browser.
  *
- * Nothing memory-shaped is requested: `rss_bytes`, `peak_rss`, `memory` and
- * `minor_page_faults` belong to the Diagnostics page, and `cache`, `upstreams`
- * and `answers_delta` are served live by endpoints the other runtime pages
- * already read.
+ * Nothing memory-shaped is requested here: `rss_bytes`, `peak_rss`, `memory`
+ * and `minor_page_faults` are the Diagnostics · Memory page's own list below,
+ * and `cache`, `upstreams` and `answers_delta` are served live by endpoints the
+ * other runtime pages already read.
  */
 export const PERF_FIELDS = [
   'qps',
@@ -61,25 +61,55 @@ export const PERF_FIELDS = [
   'latency',
 ] as const;
 
-export type PerfField = (typeof PERF_FIELDS)[number];
+/**
+ * What Diagnostics · Memory asks for, and the complete list of it. Two pinned
+ * lists rather than one union used loosely: each page's request is asserted
+ * against its own constant in `resources.test.ts`, so widening one cannot
+ * quietly widen the other's payload.
+ *
+ * `rss_bytes` is the stack's total and the rail's window maximum, `peak_rss`
+ * the dashed series beside it and the restart-boundary signal, `memory` the
+ * four bands, `minor_page_faults` the fault-rate derivative.
+ */
+export const MEMORY_PERF_FIELDS = [
+  'rss_bytes',
+  'peak_rss',
+  'memory',
+  'minor_page_faults',
+] as const;
+
+export type PerfField =
+  | (typeof PERF_FIELDS)[number]
+  | (typeof MEMORY_PERF_FIELDS)[number];
 
 export interface HistoryPerfQuery {
   /** RFC 3339. The window is half-open, `[from, to)`. */
   from: string;
   /** Comma-joined into `fields`. Omitting it takes the whole row, which is
-   *  several times the payload this page draws. */
+   *  several times the payload either page draws. */
   fields: readonly PerfField[];
+  /**
+   * Optional. Omit it and the endpoint's default of 1000 stands, which is what
+   * Performance wants — its charts are shaped by the range, not by the sample.
+   *
+   * **Memory sends it, because for that page the default silently lies.** 1000
+   * against a 24 h window of 60 s samples decimates to a stride of 2, so a
+   * chart captioned "every sample" would be drawing every other minute.
+   * Capped at 5000 server-side; a larger request is rejected, not clamped.
+   */
+  maxPoints?: number;
 }
 
 /**
- * `to` is never sent — the server's now is the honest end of the window — and
- * neither is `max_points`, so the perf default of 1000 stands and `stride > 1`
- * is real at the wider ranges.
+ * `to` is never sent — the server's now is the honest end of the window.
  */
 export function historyPerfQuery(query: HistoryPerfQuery): string {
   const params = new URLSearchParams();
   params.set('from', query.from);
   params.set('fields', query.fields.join(','));
+  if (query.maxPoints !== undefined) {
+    params.set('max_points', String(query.maxPoints));
+  }
   return params.toString();
 }
 

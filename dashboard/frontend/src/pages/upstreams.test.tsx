@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Telemetry, Upstream } from '../api/types';
 import type { Route } from '../router/routes';
 import Upstreams from './upstreams';
-import { DegradedBanner } from './upstreams/degraded-banner';
+import { DegradedBanner } from '../components/degraded-banner';
 import { EndpointRow } from './upstreams/endpoint-row';
 import { StatesCard } from './upstreams/states-card';
 

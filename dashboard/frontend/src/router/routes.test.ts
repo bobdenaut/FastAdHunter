@@ -1,7 +1,10 @@
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import {
   EVENT_TYPES,
   GALLERY_ROUTE,
+  GROUP_LABELS,
   LOGIN_ROUTE,
   REFRESH_ENDPOINTS,
   ROUTES,
@@ -113,6 +116,10 @@ describe('what a route actually acquires', () => {
       '/cache',
       '/performance',
       '/upstreams',
+      '/settings',
+      '/diagnostics/health',
+      '/diagnostics/memory',
+      '/diagnostics/live-feed',
     ]);
     const dashboard = ROUTES.find((r) => r.path === '/');
     expect(effectiveEvents(dashboard!)).toEqual(['stats']);
@@ -145,5 +152,101 @@ describe('lazy loading', () => {
     for (const route of system) {
       expect(route.load).not.toBeNull();
     }
+  });
+});
+
+describe('the System section’s declarations', () => {
+  it('gives Health the three endpoints its cards read, and no event', () => {
+    // The list-problem summary is `GET /lists`, which lives nowhere else; the
+    // strategy is one `/config` read on mount, boot-only and never re-read.
+    const health = ROUTES.find((r) => r.path === '/diagnostics/health');
+    expect(health?.endpoints).toEqual(['health', 'telemetry', 'lists']);
+    expect(health?.events).toEqual([]);
+  });
+
+  it('polls nothing on Memory — both of its reads are one-shots', () => {
+    const memory = ROUTES.find((r) => r.path === '/diagnostics/memory');
+    expect(memory?.endpoints).toEqual([]);
+    expect(memory?.events).toEqual([]);
+  });
+
+  it('gives Settings its event and no polled endpoint', () => {
+    // `/config` is an entry read plus one per `config_changed`; `/health` is
+    // read on entry only while the restart banner is armed. Neither is a poll,
+    // so declaring an endpoint here would put a timer on this page.
+    const settings = ROUTES.find((r) => r.path === '/settings');
+    expect(settings?.events).toEqual(['config_changed']);
+    expect(settings?.endpoints).toEqual([]);
+    expect(settings?.built).toBe(true);
+    expect(settings?.ownsHeader).toBe(true);
+  });
+});
+
+describe('the System section, now that all four ship', () => {
+  it('builds every one of them and lets each own its header', () => {
+    const system = ROUTES.filter((r) => r.section === 'system');
+    expect(system.map((r) => r.path)).toEqual([
+      '/settings',
+      '/diagnostics/health',
+      '/diagnostics/memory',
+      '/diagnostics/live-feed',
+    ]);
+    for (const route of system) {
+      expect(route.built, route.path).toBe(true);
+      expect(route.ownsHeader, route.path).toBe(true);
+    }
+  });
+
+  it('leaves no route on the not-yet-built placeholder', () => {
+    // `pages/system.tsx` is deleted with its last consumer: every one of the
+    // thirteen screens is a page now.
+    expect(ROUTES.filter((r) => !r.built)).toEqual([]);
+  });
+
+  it('gives the Live Feed the query subscription and nothing polled', () => {
+    const feed = ROUTES.find((r) => r.path === '/diagnostics/live-feed');
+    expect(feed?.events).toEqual(['query']);
+    expect(feed?.endpoints).toEqual([]);
+  });
+});
+
+describe('the nested group label', () => {
+  it('names every group a route declares', () => {
+    // The top bar built its prefix from a literal `'diagnostics' → 'Diagnostics'`
+    // conditional, so a second nested group would have lost its prefix in
+    // silence. The label now comes from a `Record` over the union: adding a
+    // group fails to compile until it is named, and this asserts the table is
+    // complete for the routes that exist.
+    for (const route of ROUTES) {
+      if (route.group === undefined) continue;
+      expect(GROUP_LABELS[route.group], route.path).toBeTruthy();
+    }
+    expect(Object.keys(GROUP_LABELS)).toEqual(['diagnostics']);
+  });
+
+  it('gives every group a sprite symbol, because the key is the glyph name', () => {
+    // The sidebar draws `<Icon name={group} />`, so a group without a symbol
+    // ships a blank tile beside its label. The sidebar no longer names a group
+    // in its own source — this is what the generic block rests on.
+    const sprite = readFileSync(
+      fileURLToPath(new URL('../assets/sprite.svg', import.meta.url)),
+      'utf8',
+    );
+    for (const group of Object.keys(GROUP_LABELS)) {
+      expect(sprite, group).toContain(`id="${group}"`);
+    }
+  });
+
+  it('keeps every group’s routes in one section, which is where it is drawn', () => {
+    // The sidebar places a group under the section of its first route. Members
+    // spread across two sections would silently draw the whole group under the
+    // first one's.
+    const sections = new Map<string, Set<string>>();
+    for (const route of ROUTES) {
+      if (route.group === undefined) continue;
+      const seen = sections.get(route.group) ?? new Set<string>();
+      sections.set(route.group, seen.add(route.section));
+    }
+    for (const [group, seen] of sections) expect(seen.size, group).toBe(1);
   });
 });

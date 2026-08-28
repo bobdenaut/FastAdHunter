@@ -21,18 +21,51 @@ import type { Client, Policy } from '../api/types';
 import { StatusPill } from '../components/status-pill';
 import { FrequencyBar, Table } from '../components/table';
 import { Tile } from '../components/tile';
-import { VerdictPill } from '../components/verdict-pill';
+import { VerdictPill, type Verdict } from '../components/verdict-pill';
 import { ApiError } from '../api/core';
 import { DEV_GALLERY_MARKER } from '../constants';
 import { queryTypeSlices } from '../derive';
 import { refresh } from '../services';
 import { currentTheme, setTheme } from '../theme/theme';
 import type { PageProps } from '../router/routes';
+import { Icon } from '../shell/icon';
 
 interface DomainRow {
   domain: string;
   hits: number;
 }
+
+/** One card per verdict, so the three left-border tones can be read against
+ *  each other — the phone feed's whole scanning cue, with the word beside it. */
+const GALLERY_FEED: ReadonlyArray<{
+  verdict: Verdict;
+  kind: string;
+  domain: string;
+  client: string;
+  detail: string;
+}> = [
+  {
+    verdict: 'block',
+    kind: 'dns',
+    domain: 'telemetry.example.io',
+    client: 'tv',
+    detail: 'AAAA',
+  },
+  {
+    verdict: 'allow',
+    kind: 'dns',
+    domain: 'goodsite.example.com',
+    client: 'desktop',
+    detail: 'A',
+  },
+  {
+    verdict: 'pass',
+    kind: 'http',
+    domain: 'cdn.example.net',
+    client: 'liviu-phone',
+    detail: 'GET · script · 200 · 62.1 KB',
+  },
+];
 
 /** Fixtures for the chip row. The classification is the real function, so the
  *  gallery draws what the Clients page draws and cannot drift from it. */
@@ -348,6 +381,48 @@ export function DevGallery(_props: PageProps) {
               new ApiError(422, 'validation_failed', 'line 14: invalid rule syntax', null)
             }
           />
+        </Card>
+      </div>
+
+      <div class="row c2">
+        <Card title="The restart banner" secondary="shell-owned, no Dismiss">
+          {/* The specimen renders the markup rather than arming the real store:
+              the banner is global state, and a gallery visit must not leave a
+              pending-restart notice on every other screen. */}
+          <div class="banner warn" role="status">
+            <Icon name="warning" size={16} className="warning" />
+            <div>
+              <b>One saved change needs a restart.</b>{' '}
+              <span class="mono">dns.cache.max_entries</span> is written to the
+              configuration file and will apply on the next start. The running
+              engine is unchanged until then.
+              <span class="footnote-line">
+                It clears when a <span class="mono">/health</span> reading shows
+                the process booted after the change was saved. There is no
+                Dismiss: a dismissed banner leaves a boot-only change pending
+                with nothing left to say so.
+              </span>
+            </div>
+          </div>
+        </Card>
+
+        <Card title="Feed cards" secondary="the phone Live Feed row">
+          <div class="feed-cards gallery-feed-cards">
+            {GALLERY_FEED.map((row) => (
+              <article class={`ev ev-${row.verdict}`} key={row.domain}>
+                <div class="ev-top">
+                  <VerdictPill verdict={row.verdict} />
+                  <span class="feed-kind">{row.kind}</span>
+                  <span class="note mono">10:41:03</span>
+                </div>
+                <div class="mono ev-domain">{row.domain}</div>
+                <div class="ev-meta note">
+                  <span>{row.client}</span>
+                  <span class="feed-detail">{row.detail}</span>
+                </div>
+              </article>
+            ))}
+          </div>
         </Card>
       </div>
 

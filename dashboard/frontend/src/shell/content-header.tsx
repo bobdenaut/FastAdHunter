@@ -1,4 +1,5 @@
 import type { ComponentChildren } from 'preact';
+import { Icon } from './icon';
 
 /**
  * Page name plus a short line of context. `cluster` is the refresh cluster a
@@ -16,18 +17,39 @@ export function ContentHeader({
   context,
   cluster,
   actions,
+  glyph,
 }: {
   title: string;
   context?: ComponentChildren;
   cluster?: ComponentChildren;
   actions?: ComponentChildren;
+  /** A sprite name. Draws the artboard's icon tile beside the title — the
+   *  treatment `Diagnostics · Memory` uses. Omitted, the header is unchanged. */
+  glyph?: string;
 }) {
+  // The title block is wrapped **only** when a glyph asks for the row. Twelve
+  // pages pass no glyph and their markup stays byte-identical to what it was
+  // before this slot existed, which is what `content-header.test.tsx` pins —
+  // a new slot must not reflow the pages that did not ask for it.
+  const lead = (
+    <div>
+      <p class="h1">{title}</p>
+      {context !== undefined && <p class="sub">{context}</p>}
+    </div>
+  );
+
   return (
     <div class="hd">
-      <div>
-        <p class="h1">{title}</p>
-        {context !== undefined && <p class="sub">{context}</p>}
-      </div>
+      {glyph === undefined ? (
+        lead
+      ) : (
+        <div class="hd-lead">
+          <span class="hd-glyph">
+            <Icon name={glyph} size={21} />
+          </span>
+          {lead}
+        </div>
+      )}
       {cluster}
       {actions !== undefined && <div class="hd-actions">{actions}</div>}
     </div>
