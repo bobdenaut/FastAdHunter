@@ -3300,7 +3300,8 @@ table.t.counters td.bad {
 
 /* The restart banner is shell-owned and sits above the routed content on every
    screen, so it takes the page gutter rather than the card grid's. */
-.restart-banner {
+.restart-banner,
+.signout-banner {
   margin: 16px 20px 0;
 }
 

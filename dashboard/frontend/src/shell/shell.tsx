@@ -1,7 +1,7 @@
 import type { ComponentType } from 'preact';
 import { useEffect, useLayoutEffect, useState } from 'preact/hooks';
 import { getHealth } from '../api/health';
-import { apiReach, subscribeApiReach, type ApiReach } from '../api/core';
+import { ApiError, apiReach, subscribeApiReach, type ApiReach } from '../api/core';
 import type { IndicatorState } from '../events/types';
 import { subscribeVisibility } from '../lifecycle/visibility';
 import { currentPath, navigate, subscribeRoute } from '../router/router';
@@ -17,7 +17,7 @@ import { routeLifecycle, socket } from '../services';
 import { LOGIN_PATH } from '../session/session';
 import { useSessionGuard } from '../session/guard';
 import { toggleTheme } from '../theme/theme';
-import { NotYetBuilt } from '../pages/not-yet-built';
+import { NotFound } from '../pages/not-found';
 import { ErrorState } from '../components/error-state';
 import { useFocusTrap } from '../components/focus-trap';
 import { ConnectionIndicator } from './connection-indicator';
@@ -52,6 +52,7 @@ export function Shell() {
   const [version, setVersion] = useState<string | null>(null);
   const [drawer, setDrawer] = useState(false);
   const [loadFailed, setLoadFailed] = useState(false);
+  const [signOutError, setSignOutError] = useState<Error | null>(null);
 
   useEffect(() => subscribeRoute(setPath), []);
   useSessionGuard();
@@ -96,10 +97,23 @@ export function Shell() {
           ? 'api-unreachable'
           : 'not-needed-here';
 
+  /**
+   * Navigates only on an answer. A `401` is one — the session is already gone
+   * and the shared guard has bounced to the login page. A request that never
+   * reached the server is not: the cookie it failed to clear is still valid,
+   * and landing on the login page anyway would report a sign-out that did not
+   * happen.
+   */
   const signOut = () => {
+    setSignOutError(null);
     void logout()
-      .catch(() => undefined)
-      .then(() => navigate(LOGIN_PATH, { replace: true }));
+      .then(() => navigate(LOGIN_PATH, { replace: true }))
+      .catch((cause: unknown) => {
+        if (cause instanceof ApiError && cause.status === 401) return;
+        setSignOutError(
+          cause instanceof Error ? cause : new Error(String(cause)),
+        );
+      });
   };
 
   // The transition is the only caller of acquire/release, and it runs before
@@ -134,7 +148,10 @@ export function Shell() {
     };
   }, [route]);
 
-  useEffect(() => setDrawer(false), [path]);
+  useEffect(() => {
+    setDrawer(false);
+    setSignOutError(null);
+  }, [path]);
 
   // The drawer is a modal overlay on the phone: focus moves in, cycles inside,
   // `Escape` closes it, and focus returns to the burger. Below 768 px the
@@ -151,9 +168,11 @@ export function Shell() {
     return Page === null ? <div class="boot" /> : <Page route={LOGIN_ROUTE} />;
   }
 
+  // `load: null` means the path is not in the route table (every declared
+  // route is built): the not-found screen, never a placeholder.
   const body =
     route.load === null ? (
-      <NotYetBuilt route={route} />
+      <NotFound />
     ) : loadFailed ? (
       <ErrorState error={CHUNK_FAILED} />
     ) : Page === null ? (
@@ -218,6 +237,15 @@ export function Shell() {
             fact about the Settings page, and it survives navigation because it
             is module state rather than page state. */}
         <RestartBanner />
+        {signOutError !== null && (
+          <div class="banner bad signout-banner" role="alert">
+            <div>
+              <b>Sign out failed — you are still signed in.</b> The request did
+              not complete ({signOutError.message}), so this browser&rsquo;s
+              session cookie was not cleared. Try again.
+            </div>
+          </div>
+        )}
         {/* A route that owns its header renders the header *and* the `.wrap`
             itself, because the two are siblings — `.hd` sits outside the
             padded content column. Until its chunk resolves the shell renders

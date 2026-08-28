@@ -161,6 +161,15 @@ export function Settings(_props: PageProps) {
 
   const change = (key: string, value: FieldValue) => {
     setEdits((current) => setEdit(baseline, current, key, value));
+    // The message described the value that is being replaced; Save revalidates
+    // and produces a fresh one. Only this key's — a second field's rejection
+    // still stands.
+    setErrors((current) => {
+      if (!current.has(key)) return current;
+      const next = new Map(current);
+      next.delete(key);
+      return next;
+    });
     setOutcome(null);
   };
 

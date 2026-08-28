@@ -201,7 +201,13 @@ export class SocketManager {
 
   private connect(): void {
     if (this.disposed || this.suspended) return;
-    if (this.union().length === 0) return;
+    if (this.union().length === 0) {
+      // Declining is not enough: called from the backoff timer, a bare return
+      // leaves `backoff` standing with no timer armed, and `onUnionChanged`
+      // reconnects only from `closed` — the manager would be stranded.
+      this.settleClosed();
+      return;
+    }
     this.cancelBackoff();
     this.teardown(1000);
 
@@ -313,6 +319,14 @@ export class SocketManager {
   }
 
   private scheduleBackoff(): void {
+    if (this.union().length === 0) {
+      // The probe outlives the route that wanted the socket: the union emptied
+      // while it was in flight, `onUnionChanged` already tore down and reset,
+      // and arming a retry for nobody would only re-enter `backoff` — a state
+      // nothing leaves once its timer has fired against an empty union.
+      this.settleClosed();
+      return;
+    }
     this.connectionState = 'backoff';
     this.announce();
     if (this.suspended) return;
@@ -322,6 +336,15 @@ export class SocketManager {
       this.backoffCancel = null;
       this.connect();
     });
+  }
+
+  /** Nobody wants the socket: the only state that may stand is `closed`, with
+   *  no detail line left to make the indicator read `reconnecting`. */
+  private settleClosed(): void {
+    this.detailLine = null;
+    if (this.connectionState === 'closed') return;
+    this.connectionState = 'closed';
+    this.announce();
   }
 
   private armGraceClose(): void {

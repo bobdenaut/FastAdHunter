@@ -55,9 +55,10 @@ export interface Route {
   events: readonly EventType[];
   endpoints: readonly RefreshEndpoint[];
   /**
-   * `false` while the screen is the not-yet-built empty state. An unbuilt route
-   * renders no events and no figures, so it must hold no subscription — the
-   * columns below are what the row declares once the task that owns it lands.
+   * `false` while the screen is an unbuilt placeholder, which renders no events
+   * and no figures and so must hold no subscription. Every declared route is
+   * built since p5-09 — the flag survives for the shell's not-found sentinel
+   * and for whatever screen a later phase adds unbuilt.
    */
   built: boolean;
   /**

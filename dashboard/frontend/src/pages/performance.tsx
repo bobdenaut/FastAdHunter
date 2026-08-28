@@ -1,10 +1,10 @@
-import { useCallback, useEffect, useRef, useState } from 'preact/hooks';
-import { getConfig } from '../api/config';
+import { useEffect, useState } from 'preact/hooks';
 import type { Config } from '../api/types';
 import { EmptyState } from '../components/empty-state';
 import type { PageProps } from '../router/routes';
 import { ContentHeader } from '../shell/content-header';
 import type { RangeKey } from './dashboard/ranges';
+import { useConfigReader } from './recorded';
 import { LatencyChart } from './performance/latency-chart';
 import { QpsCard } from './performance/qps-card';
 import { ReadingCard } from './performance/reading-card';
@@ -31,26 +31,11 @@ const DEFAULT_SAMPLE_SECONDS = 60;
 export function Performance(_props: PageProps) {
   const [config, setConfig] = useState<Config | null>(null);
   const [range, setRange] = useState<RangeKey>('24h');
-  const inFlight = useRef<Promise<Config> | null>(null);
 
-  /**
-   * One reader for both the mount snapshot and the disambiguation re-read. An
-   * empty first answer can land before the mount read does, and issuing a
-   * second concurrent `GET /config` for the same document is exactly what
-   * p5-06's F11 asked this page not to do — so a caller arriving while one is
-   * in flight joins it.
-   */
-  const readConfig = useCallback((signal: AbortSignal): Promise<Config> => {
-    const pending = inFlight.current;
-    if (pending !== null) return pending;
-    const run = getConfig(signal);
-    inFlight.current = run;
-    const clear = () => {
-      if (inFlight.current === run) inFlight.current = null;
-    };
-    run.then(clear, clear);
-    return run;
-  }, []);
+  // One reader for both the mount snapshot and the disambiguation re-read
+  // (p5-06's F11): the join lives in `pages/recorded.ts`, shared with the
+  // Dashboard.
+  const readConfig = useConfigReader();
 
   useEffect(() => {
     const controller = new AbortController();

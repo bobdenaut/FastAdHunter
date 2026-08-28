@@ -1,5 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'preact/hooks';
-import { getConfig } from '../api/config';
+import { useCallback, useEffect, useState } from 'preact/hooks';
 import { getHistorySummary } from '../api/history';
 import { getStats } from '../api/stats';
 import type {
@@ -7,7 +6,6 @@ import type {
   ClientsResponse,
   Config,
   Health,
-  HistorySummary,
   ListsResponse,
   Stats,
   Telemetry,
@@ -25,6 +23,7 @@ import { TopClients } from './dashboard/top-clients';
 import { TopDomains } from './dashboard/top-domains';
 import { UpstreamHealth } from './dashboard/upstream-health';
 import { rangeQuery, type RangeKey } from './dashboard/ranges';
+import { useConfigReader, useRecordedRange } from './recorded';
 
 /**
  * The landing page, and the one that proves the shell: tiles, a chart, a donut,
@@ -72,18 +71,33 @@ export function Dashboard(_props: PageProps) {
     [],
   );
 
+  // One reader for the mount snapshot and the disambiguation re-read (p5-06's
+  // F11, closed): the single-flight join lives in `pages/recorded.ts`, shared
+  // with Performance.
+  const readConfig = useConfigReader();
+
   useEffect(() => {
     const controller = new AbortController();
-    getConfig(controller.signal)
+    readConfig(controller.signal)
       .then(setConfig)
       // `/config` failing costs the page two secondary readings — the history
       // state and the upstream strategy — and nothing else, so it is not an
       // error state for the whole page.
       .catch(() => undefined);
     return () => controller.abort();
-  }, []);
+  }, [readConfig]);
 
-  const history = useHistory(range, config, setConfig);
+  /**
+   * `useRecordedRange` over `/history/summary` — the protocol (one request per
+   * range selection, the `/config` disambiguation of an empty answer, the
+   * three failure paths) is `pages/recorded.ts`, shared with Performance.
+   */
+  const readSummary = useCallback(
+    (now: number, signal: AbortSignal) =>
+      getHistorySummary(rangeQuery(range, now), signal),
+    [range],
+  );
+  const history = useRecordedRange(readSummary, config, setConfig, readConfig);
 
   // R12 — the count of enabled lists, which `/telemetry.ruleset` does not
   // carry.
@@ -110,7 +124,7 @@ export function Dashboard(_props: PageProps) {
       <QueriesOverTime
         range={range}
         onRange={setRange}
-        summary={history.summary}
+        summary={history.data}
         error={history.error}
         loading={history.loading}
         recording={history.recording}
@@ -122,7 +136,7 @@ export function Dashboard(_props: PageProps) {
       <div class="row c2 z-cards">
         <QueryTypes
           range={range}
-          summary={history.summary}
+          summary={history.data}
           recording={history.recording}
           loading={history.loading}
           className="z-query-types"
@@ -169,82 +183,6 @@ export function Dashboard(_props: PageProps) {
       </p>
     </>
   );
-}
-
-export interface HistoryState {
-  summary: HistorySummary | null;
-  error: Error | null;
-  loading: boolean;
-  /** `false` only once `/config` has actually said so. */
-  recording: boolean;
-}
-
-/**
- * The range query, and the one place the two empty states are told apart.
- *
- * `history.enabled` is runtime-mutable and this page does not subscribe to
- * `config_changed` (it renders nothing such an event would change), so a mount
- * snapshot can go stale in exactly one way that matters: Settings switches
- * recording off in another tab and `/history/*` then answers `200` with empty
- * `items` for ever. An empty response with a snapshot of `enabled: true` is
- * therefore worth **one** extra `/config` read before choosing between "history
- * disabled" and "no data in this range" — a one-shot triggered by a specific
- * response, not a poll.
- */
-function useHistory(
-  range: RangeKey,
-  config: Config | null,
-  setConfig: (config: Config) => void,
-): HistoryState {
-  const [summary, setSummary] = useState<HistorySummary | null>(null);
-  const [error, setError] = useState<Error | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [recheck, setRecheck] = useState(false);
-
-  const snapshotEnabled = config?.history?.enabled ?? true;
-  const enabledRef = useRef(snapshotEnabled);
-  enabledRef.current = snapshotEnabled;
-
-  const disambiguate = useCallback(
-    (signal: AbortSignal) => {
-      if (!enabledRef.current) return;
-      setRecheck(true);
-      getConfig(signal)
-        .then((fresh) => {
-          setConfig(fresh);
-          setRecheck(false);
-        })
-        .catch(() => setRecheck(false));
-    },
-    [setConfig],
-  );
-
-  useEffect(() => {
-    const controller = new AbortController();
-    setLoading(true);
-    setError(null);
-    getHistorySummary(rangeQuery(range, Date.now()), controller.signal)
-      .then((response) => {
-        setSummary(response);
-        setLoading(false);
-        if (response.items.length === 0) disambiguate(controller.signal);
-      })
-      .catch((error: unknown) => {
-        if (error instanceof Error && error.name === 'AbortError') return;
-        setError(error instanceof Error ? error : new Error(String(error)));
-        setLoading(false);
-      });
-    return () => controller.abort();
-  }, [range, disambiguate]);
-
-  return {
-    summary,
-    error,
-    // The chart holds its loading state across the disambiguation round trip
-    // rather than flashing the wrong empty state for one frame.
-    loading: loading || recheck,
-    recording: snapshotEnabled,
-  };
 }
 
 export default Dashboard;

@@ -323,6 +323,61 @@ describe('the probe', () => {
   });
 });
 
+describe('a probe that outlives the union', () => {
+  /**
+   * The harness's probe resolves on the spot; this failure needs one that is
+   * still in flight when the last route releases its events, so the manager
+   * here gets a deferred probe of its own.
+   */
+  it('collapses to closed rather than stranding in backoff, and the next acquire reconnects', async () => {
+    const registry = new SubscriptionRegistry();
+    const sockets: FakeSocket[] = [];
+    let resolveProbe: (outcome: ProbeOutcome) => void = () => undefined;
+    const manager = new SocketManager({
+      subscriptions: registry,
+      url: 'wss://box/api/v1/events',
+      open: () => {
+        const socket = new FakeSocket();
+        sockets.push(socket);
+        return socket;
+      },
+      onAuthFailure: () => undefined,
+      probe: () =>
+        new Promise<ProbeOutcome>((resolve) => {
+          resolveProbe = resolve;
+        }),
+      random: () => 0.5,
+    });
+
+    const release = registry.acquire(['stats']);
+    for (let i = 0; i < PROBE_AFTER_FAILURES; i += 1) {
+      latest(sockets).onclose?.();
+      if (manager.state() === 'backoff') vi.advanceTimersToNextTimer();
+    }
+    expect(manager.state()).toBe('probing');
+
+    release();
+    expect(manager.state()).toBe('closed');
+
+    resolveProbe('unreachable');
+    await vi.advanceTimersByTimeAsync(0);
+    vi.runAllTimers();
+
+    // Un-fixed, the resolved probe re-entered `backoff`, its timer fired
+    // against the empty union, and the manager was stranded: `reconnecting`
+    // on routes that want no socket, and no reconnect ever again.
+    expect(manager.state()).toBe('closed');
+    expect(manager.indicator()).toBe('not-needed-here');
+    expect(manager.detail()).toBeNull();
+
+    const opened = sockets.length;
+    registry.acquire(['stats']);
+    expect(sockets.length).toBe(opened + 1);
+    expect(manager.state()).toBe('connecting');
+    manager.dispose();
+  });
+});
+
 describe('visibility', () => {
   it('closes only after the grace period', () => {
     const h = harness();

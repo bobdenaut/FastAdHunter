@@ -1,5 +1,6 @@
 import { useState } from 'preact/hooks';
 import { logoutAll } from '../../api/auth';
+import { ApiError } from '../../api/core';
 import { Card } from '../../components/card';
 import { ConfirmDialog } from '../../components/confirm-dialog';
 import { ErrorState } from '../../components/error-state';
@@ -23,16 +24,25 @@ export function AccessCard() {
   );
   const [error, setError] = useState<Error | null>(null);
 
+  /**
+   * Navigates only on an answer. A request that never reached the server
+   * rotated nothing — every session, this browser's included, is still valid —
+   * and landing on the login page anyway would report a revocation that did
+   * not happen. A `401` is an answer: the session is already gone and the
+   * shared guard has bounced to the login page.
+   */
   const signOutEverywhere = () => {
     setDialog(null);
     setError(null);
     logoutAll()
+      .then(() => navigate(LOGIN_PATH, { replace: true }))
       .catch((cause: unknown) => {
+        if (cause instanceof ApiError && cause.status === 401) {
+          navigate(LOGIN_PATH, { replace: true });
+          return;
+        }
         setError(cause instanceof Error ? cause : new Error(String(cause)));
-      })
-      // The secret is rotated server-side either way; landing on the login page
-      // is correct even when the response never arrived.
-      .finally(() => navigate(LOGIN_PATH, { replace: true }));
+      });
   };
 
   return (
@@ -79,7 +89,15 @@ export function AccessCard() {
         </button>
       </div>
 
-      {error !== null && <ErrorState error={error} />}
+      {error !== null && (
+        <>
+          <ErrorState error={error} />
+          <p class="note" role="alert">
+            Nothing was revoked — every session, this one included, is still
+            valid. Try again.
+          </p>
+        </>
+      )}
 
       {dialog === 'password' && (
         <PasswordDialog

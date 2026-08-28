@@ -102,6 +102,8 @@ function install(options: {
   document?: Record<string, unknown>;
   postStatus?: number;
   postBody?: unknown;
+  /** The request never reaches the server — `fetch` itself rejects. */
+  logoutAllFails?: boolean;
 }): Harness {
   const posts: unknown[] = [];
   const requests: string[] = [];
@@ -129,7 +131,11 @@ function install(options: {
         respond(200, { status: 'ok', version: '0.2.20', uptime_seconds: 5 }),
       );
     }
-    if (url === '/api/v1/auth/logout-all') return Promise.resolve(respond(204));
+    if (url === '/api/v1/auth/logout-all') {
+      return options.logoutAllFails === true
+        ? Promise.reject(new TypeError('network down'))
+        : Promise.resolve(respond(204));
+    }
     if (url === '/api/v1/config/apikey/rotate') {
       return Promise.resolve(respond(200, { api_key: 'fah_rotated_secret' }));
     }
@@ -508,6 +514,60 @@ describe('the Access panel', () => {
     expect(settled[settled.length - 1]).toBe('POST /api/v1/auth/password');
     await click(button(done, 'Sign in again'));
     expect(harness?.requests()).toEqual(settled);
+  });
+});
+
+describe('sign out everywhere', () => {
+  it('stays on Settings and says nothing was revoked when the request never reached the server', async () => {
+    vi.stubGlobal('scrollTo', () => undefined);
+    window.history.replaceState(null, '', '/settings');
+    const dom = await mountPage({ logoutAllFails: true });
+    await click(button(dom, 'Sign out everywhere'));
+    const confirm = dom.querySelector('[role="dialog"]') as HTMLElement;
+    await click(button(confirm, 'Sign out everywhere'));
+
+    expect(window.location.pathname).toBe('/settings');
+    expect(dom.textContent).toContain('Nothing was revoked');
+  });
+
+  it('navigates to the login page once the server has answered', async () => {
+    vi.stubGlobal('scrollTo', () => undefined);
+    window.history.replaceState(null, '', '/settings');
+    const dom = await mountPage();
+    await click(button(dom, 'Sign out everywhere'));
+    const confirm = dom.querySelector('[role="dialog"]') as HTMLElement;
+    await click(button(confirm, 'Sign out everywhere'));
+
+    expect(window.location.pathname).toBe(LOGIN_PATH);
+  });
+});
+
+describe('a field’s error message', () => {
+  it('clears the moment that field is edited again', async () => {
+    const dom = await mountPage();
+    await type(dom, 'dns.upstreams.timeout_ms', '20000');
+    await click(button(dom, 'Save changes'));
+    expect(dom.querySelector('.set-field-error')).not.toBeNull();
+
+    await type(dom, 'dns.upstreams.timeout_ms', '900');
+    expect(dom.querySelector('.set-field-error')).toBeNull();
+  });
+
+  it('leaves another field’s message standing', async () => {
+    const dom = await mountPage();
+    await type(dom, 'dns.upstreams.timeout_ms', '20000');
+    await type(dom, 'dns.upstreams.penalty_failures', '999');
+    await click(button(dom, 'Save changes'));
+    expect(dom.querySelectorAll('.set-field-error')).toHaveLength(2);
+
+    await type(dom, 'dns.upstreams.timeout_ms', '900');
+    const remaining = [...dom.querySelectorAll('.set-field-error')];
+    expect(remaining).toHaveLength(1);
+    expect(
+      field(dom, 'dns.upstreams.penalty_failures').parentElement?.querySelector(
+        '.set-field-error',
+      ),
+    ).not.toBeNull();
   });
 });
 
