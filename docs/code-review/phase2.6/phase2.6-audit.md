@@ -544,3 +544,43 @@ RSS across two pulls:
 
 Flag only if device "used" keeps climbing after the fah floor has
 plateaued and faster than the ~0.4 MiB/day history growth.
+
+## Soak termination — owner decision, 2026-08-29 (day ~5 of 7): NOT a PASS
+
+The owner terminated the L.3 soak early: the excursion cause is found,
+reproduced and judged benign (section above), so days 6–7 add observation,
+not information. Recorded per the F2 ruling's point 4 — an ops decision
+taken openly in the face of a failed gate, never a pass. The plan forward
+is [plan/resoak-orchestration.md](../../../plan/resoak-orchestration.md):
+fix (conditional GET + observability), then a 7-day re-soak on the
+repaired build under pre-declared, stricter gates. That re-soak — not this
+soak — carries the `adaptive` acceptance.
+
+Final state, from the final read-only pull
+([soak/pull5-final-*](p2.6-11-session/soak/), uptime 362 660 s, no restart
+ever, `0.2.20` throughout; committed raw covers the full series, closing
+F7 completely):
+
+| Window | n | floor MiB | ceil MiB | half-to-half drift | Gate |
+| --- | --- | --- | --- | --- | --- |
+| W1 | 240 | 41.92 | 62.94 | −0.514 | pass |
+| W2 | 240 | 51.86 | 71.32 | −0.547 | pass |
+| W3 | 240 | 54.84 | 81.52 | **+5.702** | **FAIL — stands** |
+| W4 | 240 | 55.37 | 75.06 | −2.067 | pass |
+| W5 | 48 (partial at termination) | 54.31 | 60.56 | — | no figure |
+
+- **W3 = FAIL stands** exactly as the F2 ruling fixed it. The declared-gate
+  verdict for this soak is **FAIL**, and it is closed as
+  **terminated-early / not-a-PASS**.
+- The F2 classification (transient iff W4–W7 all pass and
+  `floor(W7) − floor(W4) < 2 MiB`) can no longer complete — W5–W7 were
+  never observed. What the data through termination shows: W4 passed, and
+  the floor series 41.92 → 51.86 → 54.84 → 55.37 → 54.31 (partial) had
+  plateaued and turned down. Combined with the reproduced benign cause,
+  the excursion is *judged* transient by evidence outside the declared
+  rule — recorded as a judgement, not as the rule's output.
+- Counter gates at termination: `events_dropped` 0, `swr.dropped` 0,
+  `penalties` 0, 8 isolated upstream failures (no run ≥ 2), and the cache
+  invariant closes exactly (`hits+misses = pass+allow = 100 817`).
+- `fah-next` keeps serving unchanged until the single Stage-4
+  intervention (deploy of the repaired build + p2.6 cleanup).
