@@ -78,6 +78,7 @@ const TELEMETRY = {
       bytes_freed: 0,
       last_duration_micros: 0,
     },
+    lists: { bodies: 17, not_modified: 3, bytes_fetched: 27_580_000 },
   },
   upstreams: [
     endpoint(),
@@ -260,7 +261,7 @@ describe('the endpoint summary', () => {
 
 describe('the rule-lists summary', () => {
   it('counts only failed and rejected as needing attention', () => {
-    const dom = mount(<RuleListsCard lists={LISTS} />);
+    const dom = mount(<RuleListsCard lists={LISTS} counters={null} />);
     expect(dom.textContent).toContain('2 of 3 need attention');
     expect(dom.textContent).toContain('fetch timed out');
     expect(dom.textContent).toContain('1 other is ok');
@@ -270,6 +271,7 @@ describe('the rule-lists summary', () => {
     const dom = mount(
       <RuleListsCard
         lists={{ ...LISTS, items: [LISTS.items[0]!] }}
+        counters={null}
       />,
     );
     expect(dom.textContent).toContain('0 of 1 need attention');
@@ -277,8 +279,24 @@ describe('the rule-lists summary', () => {
   });
 
   it('states that neither state is an outage', () => {
-    const dom = mount(<RuleListsCard lists={LISTS} />);
+    const dom = mount(<RuleListsCard lists={LISTS} counters={null} />);
     expect(dom.textContent).toContain('Neither is an outage');
+  });
+
+  it('renders the three refresh counters, bytes formatted', () => {
+    const dom = mount(
+      <RuleListsCard lists={LISTS} counters={TELEMETRY.counters.lists} />,
+    );
+    const text = (dom.textContent ?? '').replace(/\s+/g, ' ');
+    expect(text).toContain('17 refreshes downloaded a body');
+    expect(text).toContain('26.3 MiB total');
+    expect(text).toContain('3 answered 304');
+    expect(text).toContain('cost no download, no recompile');
+  });
+
+  it('renders no counters line before telemetry is read', () => {
+    const dom = mount(<RuleListsCard lists={LISTS} counters={null} />);
+    expect(dom.textContent).not.toContain('304');
   });
 });
 

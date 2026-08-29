@@ -530,6 +530,16 @@ describe('the KPI rail', () => {
     expect(committed?.querySelector('.tagq')?.textContent).toBe('no contract');
   });
 
+  it('claims no monotone committed — mimalloc v3 was observed decreasing it', async () => {
+    const dom = await mountPage();
+    const committed = [...dom.querySelectorAll('.kpi')].find((card) =>
+      (card.textContent ?? '').includes('Allocator committed'),
+    );
+    expect(committed?.textContent).not.toContain('only rises');
+    expect(committed?.textContent).not.toContain('Equal is the normal state');
+    expect(committed?.textContent).toContain('a purge, not a restart');
+  });
+
   it('renders an em dash, never a zero, for a figure nobody reported', () => {
     const dom = mount(
       <KpiRail

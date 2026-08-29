@@ -1,4 +1,5 @@
-import type { ListsResponse } from '../../api/types';
+import type { ListsCounters, ListsResponse } from '../../api/types';
+import { formatBytes } from '../../charts/format';
 import { Card } from '../../components/card';
 import { EmptyState } from '../../components/empty-state';
 import { RefreshCluster } from '../../components/refresh-cluster';
@@ -14,8 +15,17 @@ import { refresh } from '../../services';
  * serving, and a **rejected** one was refused by the content gate before it
  * could commit. Filtering is unaffected either way, and the card says so rather
  * than colouring the page red.
+ *
+ * `counters` is `telemetry.counters.lists` — the route already polls
+ * `/telemetry`, so the line costs zero new reads.
  */
-export function RuleListsCard({ lists }: { lists: ListsResponse | null }) {
+export function RuleListsCard({
+  lists,
+  counters,
+}: {
+  lists: ListsResponse | null;
+  counters: ListsCounters | null;
+}) {
   const items = lists?.items ?? null;
   const problems = items === null ? [] : listsNeedingAttention(items);
 
@@ -54,6 +64,15 @@ export function RuleListsCard({ lists }: { lists: ListsResponse | null }) {
             {items.length - problems.length === 1 ? 'other is' : 'others are'} ok.
           </p>
         </>
+      )}
+      {counters !== null && (
+        <p class="note">
+          {counters.bodies.toLocaleString()}{' '}
+          {counters.bodies === 1 ? 'refresh' : 'refreshes'} downloaded a body (
+          {formatBytes(counters.bytes_fetched)} total),{' '}
+          {counters.not_modified.toLocaleString()} answered 304 — unchanged
+          lists answer 304 and cost no download, no recompile.
+        </p>
       )}
       <p class="note">
         Neither is an outage: a failed refresh keeps the previous copy serving,

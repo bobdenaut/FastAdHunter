@@ -107,7 +107,10 @@ export function DiagnosticsHealth(_props: PageProps) {
           <BackpressureCard telemetry={telemetry.data} />
         </div>
 
-        <RuleListsCard lists={lists.data} />
+        <RuleListsCard
+          lists={lists.data}
+          counters={telemetry.data?.counters.lists ?? null}
+        />
 
         <EngineCard telemetry={telemetry.data} />
 

@@ -14,10 +14,13 @@ import { RANGES, type RangeKey } from '../dashboard/ranges';
  * compatibility promise, and are labelled `no contract` for that reason rather
  * than for looking cautious.
  *
- * **None of them is charted, and that is the same decision three times.** Every
- * one is cumulative or monotone within a process lifetime, so a chart of it
- * draws a ramp — and a ramp that resets on restart reads as a fall that never
- * happened. The one that moves is the fault *rate*, which is a card of its own.
+ * **None of them is charted, and that is the same decision three times.** The
+ * kernel figures are cumulative or monotone within a process lifetime, so a
+ * chart of one draws a ramp — and a ramp that resets on restart reads as a
+ * fall that never happened. The committed pair is not monotone — mimalloc v3
+ * accounts purges, and the p2.6 audit observed it decreasing — but charting it
+ * would need a design pass this page has not opened. The one that moves is the
+ * fault *rate*, which is a card of its own.
  */
 export function AllocatorCard({
   memory,

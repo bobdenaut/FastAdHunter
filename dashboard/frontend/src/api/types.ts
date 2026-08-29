@@ -77,12 +77,25 @@ export interface CacheCleanupCounters {
   last_duration_micros: number;
 }
 
+/**
+ * List-refresh network truth. `bodies` counts refreshes that downloaded a full
+ * body (its size lands in `bytes_fetched`); `not_modified` counts refreshes
+ * answered `304 Not Modified` (or byte-identical), which move no body and
+ * trigger no recompile.
+ */
+export interface ListsCounters {
+  bodies: number;
+  not_modified: number;
+  bytes_fetched: number;
+}
+
 export interface Counters {
   dns: DnsCounters;
   http: HttpCounters;
   events_dropped: number;
   swr: SwrCounters;
   cache_cleanup: CacheCleanupCounters;
+  lists: ListsCounters;
 }
 
 /** `count` and `sum_seconds`, never an average: a lifetime mean flattens
@@ -354,6 +367,14 @@ export interface PerfItem {
   /** Cumulative since process start. Charted as its derivative and never as
    *  the counter, which would draw a ramp. */
   minor_page_faults?: number;
+  /** The allocator's own committed-bytes reading at capture — `0` where
+   *  unavailable or the row predates the field. No compatibility promise,
+   *  like the `DebugMemory` pair. No page requests it yet. */
+  allocator_committed_bytes?: number;
+  /** The persisted, cumulative half of `/telemetry`'s `counters.lists` —
+   *  row-to-row deltas attribute an RSS excursion to a list refresh. Rows
+   *  written before the field read back all-zero. No page requests it yet. */
+  list_fetch?: ListsCounters;
 }
 
 export interface HistoryPerf {

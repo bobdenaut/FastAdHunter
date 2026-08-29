@@ -23,11 +23,12 @@ type Tone = 'ink' | 'watch' | 'over' | 'residual' | 'peak' | 'muted';
  *   never sampled. Drawing it as "115 % of budget" invites treating a transient
  *   as a violation and setting `memory-high`, which has already OOM-killed this
  *   household's resolver once.
- * - **Committed carries no contract.** It is whatever allocator is linked in,
- *   it is never decremented on a purge so it only rises, and it runs several
- *   times RSS as a matter of course. RSS is the authority on footprint; a
- *   budget bar under committed would make the honest number look like the
- *   alarming one.
+ * - **Committed carries no contract.** It is whatever allocator is linked in
+ *   reports, and it runs several times RSS as a matter of course. It is not
+ *   monotone: the p2.6 audit observed it decreasing under mimalloc v3, so a
+ *   fall is the allocator accounting a purge, not a restart. RSS is the
+ *   authority on footprint; a budget bar under committed would make the honest
+ *   number look like the alarming one.
  */
 export function KpiRail({
   memory,
@@ -125,7 +126,7 @@ export function KpiRail({
         badge="no contract"
         value={memory.allocator_committed_bytes}
         tone="muted"
-        description="never decremented on purge, so it only rises — several times RSS is the expected state, not a problem"
+        description="several times RSS is the expected state, not a problem — and a fall is the allocator accounting a purge, not a restart"
         footer={
           <>
             <FooterRow
@@ -137,9 +138,8 @@ export function KpiRail({
               }
             />
             <p class="note kpi-footnote">
-              Equal is the normal state. If the two ever diverge the allocator
-              has started accounting purges, and the live figure becomes worth
-              reading as one. Not charted — it would draw a ramp.
+              The two can diverge: mimalloc v3 accounts purges, so the live
+              figure falls below the peak after a reclaim. Not charted here.
             </p>
           </>
         }

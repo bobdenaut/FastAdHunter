@@ -697,3 +697,81 @@ instants. The seam was there.
 
 **PASS.** All twelve checks hold. Open, unchanged and non-blocking: **N5**,
 **N6**, **N8**, **N9**, **N12**, **N16**, **N21**–**N24**, **T2**–**T4**, **M2**.
+
+---
+
+## Addendum — 2026-08-29: surface `counters.lists` (plan §Addendum 2026-08-29)
+
+### Implementation Summary
+
+Scope: R17 (Health lists-counters line), R18 (allocator-copy check), U10.
+No Rust change, no new chart, no new route; API.md already documents the
+fields (`c042840`).
+
+- **R17** — `rule-lists-card.tsx` gains a `counters: ListsCounters | null`
+  prop and renders one line under the D4 problem summary:
+  `<bodies> refreshes downloaded a body (<formatBytes(bytes_fetched)> total),
+  <not_modified> answered 304 — unchanged lists answer 304 and cost no
+  download, no recompile.` `diagnostics-health.tsx` passes
+  `telemetry.data?.counters.lists ?? null` — `/telemetry` is already polled by
+  this route, zero new reads. `null` (telemetry not yet read) renders no line.
+- **R18** — the "monotone, never decreases" claim on allocator committed is
+  dropped everywhere it appeared: `kpi-rail.tsx` KPI description
+  ("never decremented on purge, so it only rises" → "a fall is the allocator
+  accounting a purge, not a restart"), its footer ("Equal is the normal
+  state…" → "The two can diverge: mimalloc v3 accounts purges…"), and the doc
+  comments in `kpi-rail.tsx` / `allocator-card.tsx` (kernel figures keep the
+  monotone claim; the committed pair explicitly does not — p2.6 audit observed
+  339.8 → 324.1 MiB). Rendered `allocator-card.tsx` copy had no such claim;
+  its NO CONTRACT note stands. No chart added (per plan).
+- **Types** — `types.ts`: `ListsCounters { bodies, not_modified,
+  bytes_fetched }`, required `lists` key on `Counters` (the API always serves
+  it since `c042840`); optional `allocator_committed_bytes?` / `list_fetch?:
+  ListsCounters` on `PerfItem` for type completeness — no page requests them,
+  `MEMORY_PERF_FIELDS` unchanged.
+- **U10 tests** — `diagnostics-health.test.tsx`: telemetry stub gains
+  `counters.lists`; two new cases (three figures render with
+  `formatBytes(27_580_000)` → `26.3 MiB`; `counters={null}` renders no line);
+  existing card mounts updated for the new prop.
+  `diagnostics-memory.test.tsx`: one new copy check — committed KPI contains
+  no "only rises" / "Equal is the normal state", does contain "a purge, not a
+  restart".
+- **Visual check** — both cards rendered light + dark via a throwaway vite
+  harness (deleted); screenshots in the session scratchpad, not committed.
+
+### Files changed
+
+| File | Change |
+| ---- | ------ |
+| `dashboard/frontend/src/api/types.ts` | `ListsCounters`; `Counters.lists`; optional `PerfItem` keys |
+| `dashboard/frontend/src/pages/health/rule-lists-card.tsx` | `counters` prop + counters line |
+| `dashboard/frontend/src/pages/diagnostics-health.tsx` | passes `counters.lists` |
+| `dashboard/frontend/src/pages/memory/kpi-rail.tsx` | copy: monotone claim dropped |
+| `dashboard/frontend/src/pages/memory/allocator-card.tsx` | doc comment: monotone claim scoped to kernel figures |
+| `dashboard/frontend/src/pages/diagnostics-health.test.tsx` | fixture + 2 tests |
+| `dashboard/frontend/src/pages/diagnostics-memory.test.tsx` | 1 copy-check test |
+
+### Gates
+
+| Gate | Result |
+| ---- | ------ |
+| `cargo fmt --check` / `clippy -D warnings` / `cargo test --workspace` | clean (no Rust change) |
+| `npm run typecheck` | clean |
+| `npx vitest run` | 54 files, **931 passed**, 0 failed (+3 tests) |
+| `npm run build` | budget green, 83.9 % |
+
+### Measurements — bundle delta (dev box, clean `main` baseline same day)
+
+| | raw | gzip | brotli |
+| --- | --- | --- | --- |
+| before | 371,491 B | 128,730 B | 114,097 B |
+| after | 371,785 B | 128,847 B | 114,197 B |
+| delta | +294 B | **+117 B** | +100 B |
+
+Within the plan's expected ≪ 1 kB.
+
+### Known limitations / deferred
+
+- `PerfItem.allocator_committed_bytes` / `list_fetch` are typed but unread —
+  they exist for the re-soak's server-side attribution; charting them needs a
+  design pass this addendum did not open (plan §Addendum, out of scope).
