@@ -1,0 +1,151 @@
+{
+ "cache": {
+  "byte_load_percent": 3.93,
+  "bytes": 2635200,
+  "capacity": 10000,
+  "entries": 6100,
+  "evictions": 0,
+  "expired": 0,
+  "fresh": 100,
+  "hits": 1523911,
+  "load_percent": 61.0,
+  "max_bytes": 67108864,
+  "misses": 6100,
+  "stale": 6000
+ },
+ "counters": {
+  "cache_cleanup": {
+   "bytes_freed": 0,
+   "entries_removed": 0,
+   "last_duration_micros": 86,
+   "runs": 3
+  },
+  "dns": {
+   "allow": 0,
+   "answers": {
+    "refused_relayed": 0,
+    "servfail_relayed": 0,
+    "servfail_synthesized": 0
+   },
+   "block": 0,
+   "cache_hits": 1523911,
+   "cache_misses": 6100,
+   "cache_stale": 504005,
+   "pass": 1530011
+  },
+  "events_dropped": 0,
+  "http": {
+   "allow": 0,
+   "block": 0,
+   "pass": 0,
+   "refused": 0,
+   "response_bytes": 0
+  },
+  "lists": {
+   "bodies": 0,
+   "bytes_fetched": 0,
+   "not_modified": 0
+  },
+  "swr": {
+   "completed": 504005,
+   "deduplicated": 0,
+   "dropped": 0,
+   "enqueued": 504005,
+   "failed": 0
+  }
+ },
+ "latency": {
+  "dns": {
+   "block": {
+    "count": 0,
+    "sum_seconds": 0.0
+   },
+   "cache_hit": {
+    "count": 1523911,
+    "sum_seconds": 8.889360265
+   },
+   "forward": {
+    "count": 6100,
+    "sum_seconds": 1.939034904
+   }
+  },
+  "http": {
+   "block": {
+    "count": 0,
+    "sum_seconds": 0.0
+   },
+   "forward": {
+    "count": 0,
+    "sum_seconds": 0.0
+   }
+  }
+ },
+ "memory": {
+  "accounted_bytes": 4871334,
+  "cache_entries": 6100,
+  "cache_estimated_bytes": 4834336,
+  "major_page_faults": 1,
+  "minor_page_faults": 7226,
+  "process_peak_rss": 59170816,
+  "process_rss": 60035072,
+  "process_rss_anon": 51036160,
+  "process_rss_file": 8998912,
+  "residual_bytes": 55163738,
+  "ruleset_bytes": 68,
+  "stats_aggregates_bytes": 34862,
+  "stats_clients_bytes": 2068
+ },
+ "process": {
+  "uptime_seconds": 1397,
+  "version": "0.2.20"
+ },
+ "ruleset": {
+  "compile_duration_seconds": 0.000536,
+  "duplicates_removed": 0,
+  "rules": 0
+ },
+ "upstreams": [
+  {
+   "address": "172.30.1.11:5301",
+   "attempts": 510105,
+   "consecutive_failures": 0,
+   "failure_runs": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "failures": 0,
+   "family": "v4",
+   "penalized_seconds_total": 0,
+   "penalties": 0,
+   "penalty_round": 0,
+   "probe_successes": 0,
+   "probes": 0,
+   "protocol": "udp",
+   "state": "healthy",
+   "tls_handshakes": 0
+  },
+  {
+   "address": "172.30.1.12:5302",
+   "attempts": 0,
+   "consecutive_failures": 0,
+   "failure_runs": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "failures": 0,
+   "family": "v4",
+   "penalized_seconds_total": 0,
+   "penalties": 0,
+   "penalty_round": 0,
+   "probe_successes": 0,
+   "probes": 0,
+   "protocol": "udp",
+   "state": "healthy",
+   "tls_handshakes": 0
+  }
+ ]
+}

@@ -1,0 +1,40 @@
+[dns.listen]
+address = "::"
+port = 53
+
+[dns.cache]
+max_entries = 10000
+min_ttl_seconds = 0
+serve_stale = true
+swr_workers = 3
+cleanup_interval_seconds = 360
+
+[dns.upstreams]
+strategy = "fallback"
+timeout_ms = 800
+penalty_failures = 2
+
+[[dns.upstreams.servers]]
+address = "172.30.1.11:5301"
+protocol = "udp"
+
+[[dns.upstreams.servers]]
+address = "172.30.1.12:5302"
+protocol = "udp"
+
+[history]
+enabled = true
+sample_interval_seconds = 30
+retention_days = 30
+
+[api]
+address = "0.0.0.0"
+port = 8443
+tls = true
+
+[rules]
+lists = []
+
+[log]
+level = "info"
+format = "text"

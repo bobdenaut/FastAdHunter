@@ -1,0 +1,17 @@
+{
+ "drain_seconds": 30,
+ "elapsed_seconds": 332.219051361084,
+ "label": "B",
+ "load_command": "python e:/FastAdHunter/docs/code-review/phase2.6/p2.6-11-session/tools/gen.py --server 127.0.0.1 --port 25353 --qfile C:/Users/liviu/AppData/Local/Temp/claude/e--FastAdHunter/285521c3-817e-4400-8079-2b03ae41928c/scratchpad/l1s/config/l1s-fwd.txt --ctlfile C:/Users/liviu/AppData/Local/Temp/claude/e--FastAdHunter/285521c3-817e-4400-8079-2b03ae41928c/scratchpad/l1s/config/l1s-ctl.txt --qps 500 --ctl-qps 1000 --seconds 300",
+ "load_returncode": 0,
+ "load_seconds": 302.181720495224,
+ "load_t0_utc": "2026-08-29T17:18:23Z",
+ "load_t1_utc": "2026-08-29T17:23:26Z",
+ "process_version_t0": "0.2.20",
+ "process_version_t1": "0.2.20",
+ "rep": 1,
+ "t0_utc": "2026-08-29T17:18:23Z",
+ "t1_utc": "2026-08-29T17:23:56Z",
+ "uptime_t0": 280,
+ "uptime_t1": 612
+}

@@ -1,0 +1,26 @@
+{
+ "offered_qps": 1500,
+ "sent": 450002,
+ "fwd_sent": 150001,
+ "ctl_sent": 300001,
+ "fwd_unique_touched": 6000,
+ "ctl_unique_touched": 100,
+ "fwd_per_name_min_max": [
+  25,
+  26
+ ],
+ "ctl_per_name_min_max": [
+  3000,
+  3001
+ ],
+ "send_errors": 0,
+ "received": 450002,
+ "lost": 0,
+ "elapsed_send_seconds": 300.002,
+ "achieved_send_qps": 1500.0,
+ "achieved_answer_qps": 1500.0,
+ "client_p50_ms": 0.867,
+ "client_p99_ms": 1.583,
+ "client_max_ms": 8.484,
+ "latency_samples": 450002
+}

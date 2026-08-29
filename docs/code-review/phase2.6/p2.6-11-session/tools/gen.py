@@ -123,9 +123,17 @@ def main():
     def q(x):
         return lat[min(len(lat) - 1, int(x * len(lat)))] * 1000 if lat else float("nan")
 
+    fwd_full, fwd_rem = divmod(n_fwd, len(fwd))
+    ctl_full, ctl_rem = divmod(n_ctl, len(ctl))
     out = {
         "offered_qps": total_rate,
         "sent": sent,
+        "fwd_sent": n_fwd,
+        "ctl_sent": n_ctl,
+        "fwd_unique_touched": len(fwd) if fwd_full else fwd_rem,
+        "ctl_unique_touched": len(ctl) if ctl_full else ctl_rem,
+        "fwd_per_name_min_max": [fwd_full, fwd_full + (1 if fwd_rem else 0)],
+        "ctl_per_name_min_max": [ctl_full, ctl_full + (1 if ctl_rem else 0)],
         "send_errors": errors,
         "received": stats["recv"],
         "lost": sent - stats["recv"],
