@@ -54,7 +54,20 @@ everything learned. Verification closes it against the budgets.
 | 7 | `p5-07-filtering-pages.md` | Custom Rules, Policies, Clients, Rule Tester | Opus | DONE |
 | 8 | `p5-08-runtime-pages.md` | Cache, Performance, Upstreams | Opus | DONE |
 | 9 | `p5-09-settings-and-diagnostics.md` | Settings (curated + raw), Health, Memory, Live Feed | Opus | DONE |
-| 10 | `p5-10-phase5-verification.md` | Bundle and image budgets, RB5009 validation, e2e against a live API | Opus | WAITING |
+| 10 | `p5-10-phase5-verification.md` | Bundle and image budgets, RB5009 validation, e2e against a live API | Opus | AWAITING SOAK — **Stage B, on-device** |
+
+**What flips task 10.** Stage A is complete and recorded in
+[p5-10-phase5-verification-review.md](../../../docs/code-review/phase5/p5-10-phase5-verification-review.md)
+— e2e, route ordering, bundle, image, figure trace, route-scoped fetching,
+socket load and the emulated mobile pass, all measured on the dev box with no
+router contact. **Stage B needs the RB5009** and cannot start before the
+p2.6-11 day-7 acceptance is written, because deploying a phase-5 image restarts
+`fah-next`. Stage B is: the deploy itself, the three RSS readings, Argon2id cost
+on the device, the polled-endpoint costs for `/health`, `/telemetry` and
+`/cache`, the resulting `constants.ts` refresh-default correction, and the
+certificate re-confirmation on the shipped image. One further item is owner-run
+rather than on-device: the real-phone leg of the mobile pass (review §10.1).
+The sequencing is [plan/resoak-orchestration.md](../../resoak-orchestration.md).
 
 ## Phase ordering — decided 2026-08-25
 
