@@ -1,0 +1,458 @@
+import { useMemo, useState } from 'preact/hooks';
+import type uPlot from 'uplot';
+import { Card } from '../components/card';
+import {
+  barLabelsPlugin,
+  createHoverState,
+  hoverPlugin,
+  stackedBarsOptions,
+} from '../charts/stacked-bars';
+import { readChartTheme } from '../charts/theme';
+import { Chart } from '../components/chart';
+import { ConfirmDialog } from '../components/confirm-dialog';
+import { Donut } from '../components/donut';
+import { EmptyState } from '../components/empty-state';
+import { ErrorState } from '../components/error-state';
+import { RefreshCluster } from '../components/refresh-cluster';
+import { StageBar } from '../components/stage-bar';
+import { PolicyChip } from '../components/policy-chip';
+import { classifyAssignment } from '../policy/assignment';
+import type { Client, Policy } from '../api/types';
+import { StatusPill } from '../components/status-pill';
+import { FrequencyBar, Table } from '../components/table';
+import { Tile } from '../components/tile';
+import { VerdictPill, type Verdict } from '../components/verdict-pill';
+import { ApiError } from '../api/core';
+import { DEV_GALLERY_MARKER } from '../constants';
+import { queryTypeSlices } from '../derive';
+import { refresh } from '../services';
+import { currentTheme, setTheme } from '../theme/theme';
+import type { PageProps } from '../router/routes';
+import { Icon } from '../shell/icon';
+
+interface DomainRow {
+  domain: string;
+  hits: number;
+}
+
+/** One card per verdict, so the three left-border tones can be read against
+ *  each other — the phone feed's whole scanning cue, with the word beside it. */
+const GALLERY_FEED: ReadonlyArray<{
+  verdict: Verdict;
+  kind: string;
+  domain: string;
+  client: string;
+  detail: string;
+}> = [
+  {
+    verdict: 'block',
+    kind: 'dns',
+    domain: 'telemetry.example.io',
+    client: 'tv',
+    detail: 'AAAA',
+  },
+  {
+    verdict: 'allow',
+    kind: 'dns',
+    domain: 'goodsite.example.com',
+    client: 'desktop',
+    detail: 'A',
+  },
+  {
+    verdict: 'pass',
+    kind: 'http',
+    domain: 'cdn.example.net',
+    client: 'liviu-phone',
+    detail: 'GET · script · 200 · 62.1 KB',
+  },
+];
+
+/** Fixtures for the chip row. The classification is the real function, so the
+ *  gallery draws what the Clients page draws and cannot drift from it. */
+function galleryClient(overrides: Partial<Client> & Pick<Client, 'ip'>): Client {
+  return {
+    name: null,
+    first_seen: '2026-08-27T09:00:00Z',
+    last_seen: '2026-08-27T10:00:00Z',
+    queries_24h: 0,
+    blocked_24h: 0,
+    policy: 'default',
+    ...overrides,
+  };
+}
+
+const GALLERY_POLICIES: Policy[] = [
+  {
+    id: 'kids',
+    name: 'Kids',
+    lists: null,
+    blocking_mode: null,
+    assignments: [
+      {
+        client: '192.168.10.50',
+        days: 'mon-fri',
+        start: '21:00',
+        end: '07:00',
+      },
+      { client: '192.168.10.22', days: 'sat-sun' },
+    ],
+  },
+  {
+    id: 'guest',
+    name: 'Guest Wi-Fi',
+    lists: null,
+    blocking_mode: null,
+    assignments: [{ client: '192.168.20.0/24' }],
+  },
+];
+
+const DIRECT_CHIP = classifyAssignment(
+  galleryClient({
+    ip: '192.168.10.50',
+    name: 'tv',
+    policy: 'kids',
+    assignment_source: 'direct',
+  }),
+  GALLERY_POLICIES,
+);
+
+const SHUT_CHIP = classifyAssignment(
+  galleryClient({ ip: '192.168.10.22', assignment_source: 'direct' }),
+  GALLERY_POLICIES,
+);
+
+const INHERITED_CHIP = classifyAssignment(
+  galleryClient({ ip: '192.168.20.11', policy: 'guest' }),
+  GALLERY_POLICIES,
+);
+
+const UNASSIGNED_CHIP = classifyAssignment(
+  galleryClient({ ip: '192.168.10.15', name: 'liviu-phone' }),
+  GALLERY_POLICIES,
+);
+
+const TOP: DomainRow[] = [
+  { domain: 'api.example.org', hits: 4021 },
+  { domain: 'cdn.example.net', hits: 3140 },
+  { domain: 'time.example.com', hits: 2884 },
+];
+
+const QUERY_TYPES = queryTypeSlices({
+  A: 114224,
+  AAAA: 44216,
+  HTTPS: 14738,
+  PTR: 7369,
+  NS: 2400,
+  SOA: 1286,
+});
+
+/**
+ * A static 24-bucket series in the real aligned shape — `[xs, queries,
+ * blocked]` — so the gallery exercises the option factory the Dashboard uses,
+ * axes and both bar series included, without a live API. It is also where a
+ * missing uPlot structural rule would show up, now that the vendor stylesheet
+ * is gone.
+ */
+const HOURLY = [
+  4000, 3200, 2600, 2400, 2200, 2500, 3700, 6100, 8200, 9200, 9500, 9700, 10000,
+  9900, 9600, 10000, 10800, 11900, 13169, 12800, 11600, 9500, 6800, 5000,
+];
+
+const GALLERY_START = Date.UTC(2026, 7, 20, 10, 0, 0) / 1000;
+
+const SERIES: uPlot.AlignedData = [
+  HOURLY.map((_, index) => GALLERY_START + index * 3600),
+  HOURLY,
+  HOURLY.map((queries) => Math.round(queries * 0.14)),
+];
+
+/**
+ * Dev-only. It renders every vocabulary component with static props and
+ * declares `stats`, `/telemetry` and `/cache`, so an `npm run dev` session
+ * against a live API exercises the socket, the union re-send after a forced
+ * disconnect, the REST probe and the refresh refcount in a browser rather than
+ * only in vitest.
+ *
+ * Two cards read the same endpoint on purpose: that is what proves request
+ * dedupe, selector sync and one-request-per-manual-Refresh.
+ *
+ * The marker below is what the postbuild grep looks for. A dev-only route that
+ * survives tree-shaking is exactly what reaches production unnoticed, so its
+ * absence is asserted rather than trusted.
+ */
+export function DevGallery(_props: PageProps) {
+  const [dialog, setDialog] = useState(false);
+  // Memoised on nothing here because the gallery's range and theme never
+  // change within a render pass; the Dashboard keys the same factory on
+  // `(range, theme)`, which is what finding m4 requires.
+  const chartOptions = useMemo(() => {
+    const theme = readChartTheme();
+    const hover = createHoverState();
+    return stackedBarsOptions({
+      resolution: 'hour',
+      theme,
+      hover,
+      plugins: [
+        barLabelsPlugin(theme, hover),
+        hoverPlugin({
+          resolution: 'hour',
+          hover,
+          item: (index) => {
+            const queries = HOURLY[index];
+            if (queries === undefined) return null;
+            const blocked = Math.round(queries * 0.14);
+            return {
+              ts: new Date((GALLERY_START + index * 3600) * 1000).toISOString(),
+              queries,
+              blocked,
+              blockedPercent: 14,
+            };
+          },
+        }),
+      ],
+    });
+  }, []);
+
+  return (
+    <div data-marker={DEV_GALLERY_MARKER}>
+      <div class="row c4">
+        <Tile
+          label="Total queries"
+          figure="184,233"
+          accent="volume"
+          glyph="dashboard"
+          footer="6 active clients"
+          href="/clients"
+        />
+        <Tile
+          label="Queries blocked"
+          figure="23,411"
+          accent="blocked"
+          glyph="policies"
+          footer="watch the live feed"
+          href="/diagnostics/live-feed"
+        />
+        <Tile
+          label="Percentage blocked"
+          figure="12.7%"
+          accent="ratio"
+          glyph="performance"
+        />
+        <Tile
+          label="HTTP refused"
+          figure="0"
+          accent="zero"
+          glyph="upstreams"
+        />
+      </div>
+
+      <div class="row c2">
+        <Card
+          title="Cache state"
+          secondary="entries 7,261 / 10,000"
+          tools={<RefreshCluster registry={refresh} endpoint="cache" />}
+        >
+          <StageBar
+            segments={[
+              { label: 'fresh', value: 7026, colour: 'var(--accent)' },
+              { label: 'stale', value: 52, colour: '#6f5fbe' },
+              { label: 'expired', value: 183, colour: '#d6dde5' },
+            ]}
+          />
+        </Card>
+
+        {/* The second card on the same endpoint carries no cluster: one cluster
+            per distinct polled endpoint on a page, never one per card. */}
+        <Card title="Cache, read again" secondary="same endpoint, no cluster">
+          <p class="note">
+            This card shares the one `/cache` request the cluster above
+            controls. Refreshing there updates here, from one request.
+          </p>
+        </Card>
+      </div>
+
+      <div class="row c2">
+        <Card
+          title="Engine"
+          tools={
+            <RefreshCluster
+              registry={refresh}
+              endpoint="telemetry"
+              secondary="since boot"
+            />
+          }
+        >
+          <Table
+            columns={[
+              { key: 'domain', header: 'Domain', cell: (row) => <span class="mono">{row.domain}</span> },
+              { key: 'hits', header: 'Hits', numeric: true, cell: (row) => row.hits.toLocaleString() },
+              {
+                key: 'frequency',
+                header: 'Frequency',
+                width: '34%',
+                cell: (row) => <FrequencyBar share={row.hits / 4021} />,
+              },
+            ]}
+            rows={TOP}
+            rowKey={(row) => row.domain}
+          />
+        </Card>
+
+        <Card title="Verdicts and statuses">
+          <p>
+            <VerdictPill verdict="pass" /> <VerdictPill verdict="allow" />{' '}
+            <VerdictPill verdict="block" />
+          </p>
+          <p>
+            <StatusPill status="ok" /> <StatusPill status="degraded" />{' '}
+            <StatusPill status="failed" /> <StatusPill status="rejected" />{' '}
+            <StatusPill status="never" /> <StatusPill status="disabled" />{' '}
+            <StatusPill status="penalized" /> <StatusPill status="probing" />
+          </p>
+          <p class="note">
+            `permitted` is the derived `queries − blocked` band and is never a
+            verdict, so it has no pill.
+          </p>
+        </Card>
+
+        <Card title="Policy chips" secondary="solid vs dashed, both themes">
+          <p>
+            <PolicyChip classification={DIRECT_CHIP} />
+          </p>
+          <p>
+            <PolicyChip classification={SHUT_CHIP} />
+          </p>
+          <p>
+            <PolicyChip classification={INHERITED_CHIP} />
+          </p>
+          <p>
+            <PolicyChip classification={UNASSIGNED_CHIP} />
+          </p>
+          <p class="note">
+            Solid means an assignment names this address. The difference is
+            border style, weight and the words — never hue, so switching the
+            theme changes nothing about which chip is which.
+          </p>
+        </Card>
+      </div>
+
+      <div class="row c2">
+        <Card title="Queries over time" secondary="static series">
+          <Chart data={SERIES} options={chartOptions} decimatedBy={4} />
+          <div class="chart-legend">
+            <span>
+              <span class="sw" style={{ background: 'var(--series-permitted)' }} />
+              permitted
+            </span>
+            <span>
+              <span class="sw" style={{ background: 'var(--series-blocked)' }} />
+              blocked
+            </span>
+          </div>
+        </Card>
+
+        <Card title="Query types" bodyClass="donut-body">
+          <Donut
+            segments={QUERY_TYPES.map((slice, index) => ({
+              label: slice.label,
+              value: slice.value,
+              colour: `var(--series-${String(index + 1)})`,
+            }))}
+            label="Query types by share"
+          />
+          <table class="donut-legend">
+            <tbody>
+              {QUERY_TYPES.map((slice) => (
+                <tr key={slice.label}>
+                  <td>{slice.label}</td>
+                  <td class="num">{slice.value.toLocaleString()}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </Card>
+      </div>
+
+      <div class="row c2">
+        <Card title="Empty and error states">
+          <EmptyState>An empty result is not an error.</EmptyState>
+          <ErrorState
+            error={
+              new ApiError(422, 'validation_failed', 'line 14: invalid rule syntax', null)
+            }
+          />
+        </Card>
+      </div>
+
+      <div class="row c2">
+        <Card title="The restart banner" secondary="shell-owned, no Dismiss">
+          {/* The specimen renders the markup rather than arming the real store:
+              the banner is global state, and a gallery visit must not leave a
+              pending-restart notice on every other screen. */}
+          <div class="banner warn" role="status">
+            <Icon name="warning" size={16} className="warning" />
+            <div>
+              <b>One saved change needs a restart.</b>{' '}
+              <span class="mono">dns.cache.max_entries</span> is written to the
+              configuration file and will apply on the next start. The running
+              engine is unchanged until then.
+              <span class="footnote-line">
+                It clears when a <span class="mono">/health</span> reading shows
+                the process booted after the change was saved. There is no
+                Dismiss: a dismissed banner leaves a boot-only change pending
+                with nothing left to say so.
+              </span>
+            </div>
+          </div>
+        </Card>
+
+        <Card title="Feed cards" secondary="the phone Live Feed row">
+          <div class="feed-cards gallery-feed-cards">
+            {GALLERY_FEED.map((row) => (
+              <article class={`ev ev-${row.verdict}`} key={row.domain}>
+                <div class="ev-top">
+                  <VerdictPill verdict={row.verdict} />
+                  <span class="feed-kind">{row.kind}</span>
+                  <span class="note mono">10:41:03</span>
+                </div>
+                <div class="mono ev-domain">{row.domain}</div>
+                <div class="ev-meta note">
+                  <span>{row.client}</span>
+                  <span class="feed-detail">{row.detail}</span>
+                </div>
+              </article>
+            ))}
+          </div>
+        </Card>
+      </div>
+
+      <div class="row">
+        <Card title="Controls">
+          <button type="button" class="btn" onClick={() => setDialog(true)}>
+            Open confirm dialog
+          </button>{' '}
+          <button
+            type="button"
+            class="btn g"
+            onClick={() => setTheme(currentTheme() === 'dark' ? 'light' : 'dark')}
+          >
+            Toggle theme
+          </button>
+        </Card>
+      </div>
+
+      {dialog && (
+        <ConfirmDialog
+          title="Clear the cache?"
+          confirmLabel="Clear"
+          onConfirm={() => setDialog(false)}
+          onCancel={() => setDialog(false)}
+        >
+          Nothing is actually cleared — this is the gallery.
+        </ConfirmDialog>
+      )}
+    </div>
+  );
+}
+
+export default DevGallery;

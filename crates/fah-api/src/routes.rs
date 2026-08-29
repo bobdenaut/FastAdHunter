@@ -2,23 +2,29 @@
 //! handle, map to the wire shape — all the logic lives in `fah-rules` and
 //! behind the [`crate::ports`] traits.
 
-use std::collections::HashMap;
-use std::net::IpAddr;
+use std::collections::{HashMap, HashSet};
+use std::net::{IpAddr, SocketAddr};
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 
-use axum::extract::{Path, Query, State, WebSocketUpgrade};
-use axum::http::StatusCode;
-use axum::response::Response;
-use axum::routing::{get, post, put};
-use axum::{Json, Router};
-use fah_config::{AssignmentConfig, PolicyConfig, RuleListConfig};
+use axum::extract::rejection::JsonRejection;
+use axum::extract::{ConnectInfo, Path, Query, State, WebSocketUpgrade};
+use axum::http::header::{CACHE_CONTROL, HOST, ORIGIN, SET_COOKIE};
+use axum::http::{HeaderMap, HeaderValue, StatusCode, Uri};
+use axum::response::{IntoResponse, Response};
+use axum::routing::{any, get, post, put, MethodRouter};
+use axum::{Extension, Json, Router};
+use fah_config::{AssignmentConfig, Config, PolicyConfig, RuleListConfig};
 use fah_model::{HistoryRange, HistoryResolution, TopKind};
 use fah_rules::{ListPatch, ListStatus, RefreshResult};
+use tower_http::set_header::SetResponseHeaderLayer;
 
+use crate::auth::AuthMethod;
 use crate::error::{ApiError, ApiResult};
 use crate::events::{self, Event};
-use crate::ports::HistorySource;
+use crate::password::{self, Argon2Permit, RateDecision};
+use crate::ports::{ClientEntry, HistorySource};
+use crate::session;
 use crate::state::AppState;
 use crate::telemetry::{MemorySnapshot, TelemetryResponse, TelemetrySnapshot};
 use crate::timestamp;
@@ -81,21 +87,36 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/config", get(get_config).post(post_config))
         .route("/config/apikey/rotate", post(rotate_api_key))
         .route("/debug/memory", get(debug_memory))
-        .route("/events", get(events_socket));
+        .route("/events", get(events_socket))
+        .route("/auth/login", no_store(post(auth_login)))
+        .route("/auth/logout", no_store(post(auth_logout)))
+        .route("/auth/logout-all", no_store(post(auth_logout_all)))
+        .route("/auth/password", no_store(post(auth_password)))
+        .fallback(not_found);
+
+    let api = Router::new().nest("/v1", v1).fallback(not_found);
 
     Router::new()
         .route("/health", get(health))
-        .nest("/api/v1", v1)
-        .fallback(not_found)
+        .route("/api/", any(not_found))
+        .nest("/api", api)
         .layer(axum::middleware::from_fn_with_state(
             Arc::clone(&state),
-            crate::auth::require_api_key,
+            crate::auth::require_auth,
         ))
         .with_state(state)
+        .merge(crate::web::mounted())
 }
 
 async fn not_found() -> ApiError {
     ApiError::NotFound("no such endpoint".to_string())
+}
+
+fn no_store(method: MethodRouter<Arc<AppState>>) -> MethodRouter<Arc<AppState>> {
+    method.layer(SetResponseHeaderLayer::if_not_present(
+        CACHE_CONTROL,
+        HeaderValue::from_static("no-store"),
+    ))
 }
 
 // ─── Health & telemetry ────────────────────────────────────────────────
@@ -340,13 +361,40 @@ fn parse_perf_fields(params: &HashMap<String, String>) -> ApiResult<PerfFields> 
 
 // ─── Clients ───────────────────────────────────────────────────────────
 
+const DIRECT_ASSIGNMENT: &str = "direct";
+
+fn client_response(
+    entry: ClientEntry,
+    policy: String,
+    assignment_source: Option<&'static str>,
+) -> ClientResponse {
+    ClientResponse {
+        policy,
+        assignment_source,
+        ip: entry.ip,
+        name: entry.name,
+        first_seen: entry.first_seen,
+        last_seen: entry.last_seen,
+        queries_24h: entry.queries_24h,
+        blocked_24h: entry.blocked_24h,
+    }
+}
+
 async fn clients(State(state): State<Arc<AppState>>) -> Json<ClientsResponse> {
+    let resolver = PolicyResolver::build(&state);
     Json(ClientsResponse {
         items: state
             .stats
             .clients(SystemTime::now())
             .into_iter()
-            .map(Into::into)
+            .map(|entry| {
+                let ip = entry.ip;
+                client_response(
+                    entry,
+                    resolver.policy_of(ip),
+                    resolver.is_direct(ip).then_some(DIRECT_ASSIGNMENT),
+                )
+            })
             .collect(),
     })
 }
@@ -370,7 +418,14 @@ async fn set_client_name(
     // A rename can move the client into or out of a name assignment, and the
     // snapshot resolved names when it was built.
     republish_policies(&state);
-    Ok(Json(entry.into()))
+
+    let config = state.config.current();
+    let key = assignment_key(ip);
+    Ok(Json(client_response(
+        entry,
+        policy_in_force(&state.policies.current(), ip),
+        direct_assignment(&config, &key).map(|_| DIRECT_ASSIGNMENT),
+    )))
 }
 
 // ─── Rule lists ────────────────────────────────────────────────────────
@@ -982,26 +1037,60 @@ async fn clear_client_policy(
     Ok(StatusCode::NO_CONTENT)
 }
 
-/// What the client is judged under *now* — read from the live snapshot, not
-/// re-derived, so it reflects an open or closed schedule window.
-fn client_policy_response(state: &AppState, ip: IpAddr) -> ClientPolicyResponse {
-    let active = state.policies.current();
-    let policy = active
+fn assignment_key(ip: IpAddr) -> String {
+    ip.to_string()
+}
+
+fn policy_in_force(active: &fah_rules::ActivePolicies, ip: IpAddr) -> String {
+    active
         .id_of(active.policy_for(ip))
-        .map_or_else(|| DEFAULT_POLICY.to_string(), |id| id.to_string());
-    let client = ip.to_string();
-    let assignment = state
-        .config
-        .current()
+        .map_or_else(|| DEFAULT_POLICY.to_string(), |id| id.to_string())
+}
+
+fn direct_assignment<'a>(config: &'a Config, key: &str) -> Option<&'a AssignmentConfig> {
+    config
         .policies
         .iter()
         .flat_map(|policy| &policy.assignments)
-        .find(|existing| existing.client == client)
-        .map(assignment_response);
+        .find(|assignment| assignment.client == key)
+}
+
+struct PolicyResolver {
+    active: Arc<fah_rules::ActivePolicies>,
+    direct: HashSet<String>,
+}
+
+impl PolicyResolver {
+    fn build(state: &AppState) -> Self {
+        let direct = state
+            .config
+            .current()
+            .policies
+            .iter()
+            .flat_map(|policy| &policy.assignments)
+            .map(|assignment| assignment.client.clone())
+            .collect();
+        Self {
+            active: state.policies.current(),
+            direct,
+        }
+    }
+
+    fn policy_of(&self, ip: IpAddr) -> String {
+        policy_in_force(&self.active, ip)
+    }
+
+    fn is_direct(&self, ip: IpAddr) -> bool {
+        self.direct.contains(&assignment_key(ip))
+    }
+}
+
+fn client_policy_response(state: &AppState, ip: IpAddr) -> ClientPolicyResponse {
+    let config = state.config.current();
     ClientPolicyResponse {
         ip,
-        policy,
-        assignment,
+        policy: policy_in_force(&state.policies.current(), ip),
+        assignment: direct_assignment(&config, &assignment_key(ip)).map(assignment_response),
     }
 }
 
@@ -1091,6 +1180,16 @@ async fn put_user_rules(
     State(state): State<Arc<AppState>>,
     Json(body): Json<UserRulesBody>,
 ) -> ApiResult<Json<UserRulesBody>> {
+    let sent = body
+        .rules
+        .iter()
+        .map(String::as_str)
+        .collect::<Vec<_>>()
+        .join("\n");
+    if let Some(message) = validate_user_rules(&sent) {
+        return Err(ApiError::ValidationFailed(message));
+    }
+
     // Drop exact-duplicate rule lines (keep the first, preserve order). Storing
     // the same rule twice only clutters the list — the matcher already dedups,
     // so the copy blocks nothing new (a self-duplicate, unlike a user rule that
@@ -1112,10 +1211,6 @@ async fn put_user_rules(
         .map(String::as_str)
         .collect::<Vec<_>>()
         .join("\n");
-
-    if let Some(message) = validate_user_rules(&text) {
-        return Err(ApiError::ValidationFailed(message));
-    }
 
     // Trailing newline so appending later never joins two rules onto a line.
     state.rules.set_user_rules(format!("{text}\n")).await;
@@ -1279,6 +1374,16 @@ async fn post_config(
         ));
     }
 
+    if patch.get("auth").is_some() {
+        return Err(ApiError::ValidationFailed(
+            "auth is not settable here: the dashboard password is changed through \
+             POST /api/v1/auth/password, which requires the current password and \
+             invalidates every existing session. The Argon2id hash lives in \
+             /config/auth-hash and never travels through this endpoint"
+                .to_string(),
+        ));
+    }
+
     let outcome = state
         .config
         .apply_patch(&patch)
@@ -1327,17 +1432,260 @@ async fn rotate_api_key(State(state): State<Arc<AppState>>) -> ApiResult<Json<Ap
     Ok(Json(ApiKeyResponse { api_key }))
 }
 
+fn no_content_with_cookie(cookie: String) -> Response {
+    match HeaderValue::from_str(&cookie) {
+        Ok(value) => {
+            let mut response = StatusCode::NO_CONTENT.into_response();
+            response.headers_mut().insert(SET_COOKIE, value);
+            response
+        }
+        Err(_) => ApiError::Internal("building the session cookie".to_string()).into_response(),
+    }
+}
+
+fn spend_argon2(state: &AppState, client: IpAddr) -> ApiResult<Argon2Permit> {
+    match state.auth.check_rate(client) {
+        RateDecision::Limited { retry_after } => Err(ApiError::RateLimited {
+            message: "too many password attempts; try again shortly".to_string(),
+            retry_after,
+        }),
+        RateDecision::Allowed => state.auth.try_argon2_permit().ok_or(ApiError::Unavailable {
+            message: "password verification is busy; retry in a moment".to_string(),
+            retry_after: Some(1),
+        }),
+    }
+}
+
+async fn auth_login(
+    State(state): State<Arc<AppState>>,
+    ConnectInfo(peer): ConnectInfo<SocketAddr>,
+    body: Result<Json<LoginRequest>, JsonRejection>,
+) -> ApiResult<Response> {
+    if !state.tls {
+        return Err(ApiError::Unavailable {
+            message: "session authentication requires TLS: set [api] tls = true and \
+                      restart. Bearer-key authentication is unaffected"
+                .to_string(),
+            retry_after: None,
+        });
+    }
+
+    let Json(request) = body.map_err(|err| ApiError::BadRequest(err.body_text()))?;
+    let permit = spend_argon2(&state, peer.ip())?;
+
+    let minted = state
+        .auth
+        .verify_and_mint(permit, request.password)
+        .await
+        .map_err(ApiError::Internal)?;
+
+    match minted {
+        Some(token) => Ok(no_content_with_cookie(session::set_cookie(&token))),
+        None => Err(ApiError::Unauthorized),
+    }
+}
+
+async fn auth_logout() -> Response {
+    no_content_with_cookie(session::clear_cookie())
+}
+
+async fn auth_logout_all(State(state): State<Arc<AppState>>) -> ApiResult<Response> {
+    state
+        .auth
+        .rotate_secret()
+        .await
+        .map_err(|err| ApiError::Internal(format!("rotating the session secret: {err}")))?;
+    Ok(no_content_with_cookie(session::clear_cookie()))
+}
+
+async fn auth_password(
+    State(state): State<Arc<AppState>>,
+    ConnectInfo(peer): ConnectInfo<SocketAddr>,
+    body: Result<Json<PasswordChangeRequest>, JsonRejection>,
+) -> ApiResult<Response> {
+    let Json(request) = body.map_err(|err| ApiError::BadRequest(err.body_text()))?;
+    if request.new_password.chars().count() < password::MIN_PASSWORD_CHARS {
+        return Err(ApiError::ValidationFailed(format!(
+            "new_password must be at least {} characters",
+            password::MIN_PASSWORD_CHARS
+        )));
+    }
+
+    let permit = spend_argon2(&state, peer.ip())?;
+    let (correct, permit) = state
+        .auth
+        .verify_only(permit, request.current_password)
+        .await
+        .map_err(ApiError::Internal)?;
+    if !correct {
+        return Err(ApiError::Unauthorized);
+    }
+
+    let new_hash = password::hash_password_off_runtime(permit, request.new_password)
+        .await
+        .map_err(ApiError::Internal)?;
+
+    state
+        .auth
+        .replace_password(new_hash)
+        .await
+        .map_err(|err| ApiError::Internal(format!("persisting the new password: {err}")))?;
+
+    state.events.publish(Event::ConfigChanged {
+        restart_required: false,
+    });
+
+    Ok(no_content_with_cookie(session::clear_cookie()))
+}
+
 // ─── Events ────────────────────────────────────────────────────────────
 
-async fn events_socket(State(state): State<Arc<AppState>>, upgrade: WebSocketUpgrade) -> Response {
-    let receiver = state.events.subscribe();
+async fn events_socket(
+    State(state): State<Arc<AppState>>,
+    method: Option<Extension<AuthMethod>>,
+    headers: HeaderMap,
+    uri: Uri,
+    upgrade: WebSocketUpgrade,
+) -> Response {
+    let method = method.map_or(AuthMethod::Session, |Extension(method)| method);
+    if method == AuthMethod::Session && !same_origin(&headers, &uri, state.tls) {
+        return ApiError::Unauthorized.into_response();
+    }
+
+    let (receiver, subscription) = state.events.subscribe_socket();
     let stats = Arc::clone(&state.stats);
-    upgrade.on_upgrade(move |socket| events::run_socket(socket, receiver, stats))
+    upgrade
+        .max_message_size(events::MAX_CLIENT_MESSAGE_BYTES)
+        .max_frame_size(events::MAX_CLIENT_MESSAGE_BYTES)
+        .on_upgrade(move |socket| events::run_socket(socket, receiver, stats, subscription))
+}
+
+fn same_origin(headers: &HeaderMap, uri: &Uri, tls: bool) -> bool {
+    let Some(origin) = headers.get(ORIGIN).and_then(|value| value.to_str().ok()) else {
+        return false;
+    };
+    let Some((scheme, authority)) = origin.split_once("://") else {
+        return false;
+    };
+    if !scheme.eq_ignore_ascii_case(if tls { "https" } else { "http" }) {
+        return false;
+    }
+    let authority = authority.strip_suffix('/').unwrap_or(authority);
+    if authority.contains('/') || authority.contains('@') {
+        return false;
+    }
+
+    let target = headers
+        .get(HOST)
+        .and_then(|value| value.to_str().ok())
+        .or_else(|| uri.authority().map(|authority| authority.as_str()));
+    let Some(target) = target else {
+        return false;
+    };
+
+    let (origin_host, origin_port) = split_authority(authority, tls);
+    let (target_host, target_port) = split_authority(target, tls);
+    origin_host.eq_ignore_ascii_case(target_host) && origin_port == target_port
+}
+
+fn split_authority(authority: &str, tls: bool) -> (&str, u16) {
+    let default = if tls { 443 } else { 80 };
+    if let Some(rest) = authority.strip_prefix('[') {
+        if let Some((host, tail)) = rest.split_once(']') {
+            let port = tail
+                .strip_prefix(':')
+                .and_then(|port| port.parse().ok())
+                .unwrap_or(default);
+            return (host, port);
+        }
+    }
+    match authority.rsplit_once(':') {
+        Some((host, port)) => (host, port.parse().unwrap_or(default)),
+        None => (authority, default),
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn headers(origin: Option<&str>, host: Option<&str>) -> HeaderMap {
+        let mut headers = HeaderMap::new();
+        if let Some(origin) = origin {
+            headers.insert(ORIGIN, HeaderValue::from_str(origin).unwrap());
+        }
+        if let Some(host) = host {
+            headers.insert(HOST, HeaderValue::from_str(host).unwrap());
+        }
+        headers
+    }
+
+    #[test]
+    fn an_origin_matching_the_requests_own_target_is_accepted() {
+        let uri = Uri::from_static("/api/v1/events");
+        for (origin, host) in [
+            ("https://fah.lan:8443", "fah.lan:8443"),
+            ("https://FAH.lan:8443", "fah.lan:8443"),
+            ("https://fah.lan:8443/", "fah.lan:8443"),
+            ("https://fah.lan", "fah.lan:443"),
+            ("https://fah.lan:443", "fah.lan"),
+            ("https://[fd00::1]:8443", "[fd00::1]:8443"),
+        ] {
+            assert!(
+                same_origin(&headers(Some(origin), Some(host)), &uri, true),
+                "{origin} against {host}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_foreign_missing_or_downgraded_origin_is_rejected() {
+        let uri = Uri::from_static("/api/v1/events");
+        for (origin, host) in [
+            (Some("https://evil.example.com"), Some("fah.lan:8443")),
+            (Some("https://fah.lan:9443"), Some("fah.lan:8443")),
+            (Some("http://fah.lan:8443"), Some("fah.lan:8443")),
+            (Some("https://user@fah.lan:8443"), Some("fah.lan:8443")),
+            (Some("null"), Some("fah.lan:8443")),
+            (None, Some("fah.lan:8443")),
+            (Some("https://fah.lan:8443"), None),
+        ] {
+            assert!(
+                !same_origin(&headers(origin, host), &uri, true),
+                "{origin:?} against {host:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn the_h2_authority_stands_in_when_no_host_header_is_present() {
+        let uri = Uri::from_static("https://fah.lan:8443/api/v1/events");
+        assert!(same_origin(
+            &headers(Some("https://fah.lan:8443"), None),
+            &uri,
+            true
+        ));
+        assert!(!same_origin(
+            &headers(Some("https://other.lan:8443"), None),
+            &uri,
+            true
+        ));
+    }
+
+    #[test]
+    fn the_scheme_follows_api_tls_rather_than_the_presented_origin() {
+        let uri = Uri::from_static("/api/v1/events");
+        assert!(same_origin(
+            &headers(Some("http://fah.lan:8080"), Some("fah.lan:8080")),
+            &uri,
+            false
+        ));
+        assert!(!same_origin(
+            &headers(Some("https://fah.lan:8080"), Some("fah.lan:8080")),
+            &uri,
+            false
+        ));
+    }
 
     #[test]
     fn a_bad_timestamp_is_rejected_rather_than_ignored() {

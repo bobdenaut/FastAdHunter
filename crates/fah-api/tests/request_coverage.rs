@@ -14,11 +14,19 @@ use std::path::PathBuf;
 
 /// Routes deliberately outside the suite, each with the reason the README
 /// gives. Adding an entry here is a decision; forgetting a file is not.
-const UNCOVERED: [(&str, &str); 1] = [(
-    "/api/v1/events",
-    "a WebSocket — the REST Client extension cannot open one \
-     (requests/README.md §Not covered)",
-)];
+const UNCOVERED: [(&str, &str); 2] = [
+    (
+        "/api/v1/events",
+        "a WebSocket — the REST Client extension cannot open one \
+         (requests/README.md §Not covered)",
+    ),
+    (
+        "/api/",
+        "not an endpoint — the trailing-slash form axum's `nest(\"/api\")` \
+         cannot match, kept inside the JSON world instead of falling to the \
+         SPA shell (review finding R2)",
+    ),
+];
 
 #[test]
 fn every_route_the_api_serves_has_a_request_in_the_suite() {

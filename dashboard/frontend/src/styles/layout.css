@@ -1,0 +1,477 @@
+/* Shell chrome. Measurements come from the artboards in
+   docs/dashboard/sketch/ — sidebar 230 px, bars 58 px, the 12-column grid. */
+
+.app {
+  display: flex;
+  min-height: 100vh;
+}
+
+/* Sidebar — dark in both themes, per visual-system.md §Layout. */
+.sb {
+  width: var(--rail-width);
+  flex: 0 0 var(--rail-width);
+  background: var(--rail);
+  color: var(--rail-text);
+  display: flex;
+  flex-direction: column;
+}
+
+.brand {
+  height: var(--bar-height);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 16px;
+  background: var(--rail-brand);
+  color: var(--rail-text-strong);
+  font-weight: 600;
+  font-size: 15px;
+  letter-spacing: 0.01em;
+  flex: 0 0 auto;
+}
+
+.brand svg {
+  color: var(--rail-accent);
+  flex: 0 0 auto;
+}
+
+.sb-nav {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding-bottom: 12px;
+}
+
+.sec {
+  padding: 18px 16px 6px;
+  font-size: 10px;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+  color: var(--rail-section);
+}
+
+.it {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 16px;
+  font-size: 13.5px;
+  color: inherit;
+  text-decoration: none;
+}
+
+.it:hover {
+  color: var(--rail-text-strong);
+  text-decoration: none;
+}
+
+.it.on {
+  background: var(--rail-active);
+  color: var(--rail-text-strong);
+  box-shadow: inset 3px 0 0 var(--rail-accent);
+}
+
+.sub2 {
+  display: flex;
+  align-items: center;
+  padding: 7px 16px 7px 41px;
+  font-size: 12.5px;
+  color: inherit;
+  text-decoration: none;
+}
+
+.sub2:hover {
+  color: var(--rail-text-strong);
+  text-decoration: none;
+}
+
+.sub2.on {
+  color: var(--rail-text-strong);
+}
+
+.main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Top bar — page title left, connection state and version right. */
+.nav {
+  height: var(--bar-height);
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 0 20px;
+  flex: 0 0 auto;
+}
+
+.nav-title {
+  font-size: 14px;
+  font-weight: 600;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.navr {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  font-size: 12.5px;
+  color: var(--text-muted);
+  flex: 0 0 auto;
+}
+
+.navr button {
+  background: none;
+  border: 0;
+  padding: 0;
+  font-size: 12.5px;
+  color: var(--text-muted);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.navr button:hover {
+  color: var(--text);
+}
+
+.dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  display: inline-block;
+  flex: 0 0 auto;
+}
+
+.conn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.conn-detail {
+  color: var(--text-faint);
+  font-size: 11.5px;
+}
+
+.conn.live .dot {
+  background: var(--state-live);
+}
+
+.conn.not-needed-here .dot {
+  background: var(--state-idle);
+}
+
+.conn.reconnecting .dot,
+.conn.api-unreachable .dot {
+  background: var(--state-problem);
+}
+
+/* Content header — page name plus a short line of context, and the refresh
+   cluster when the route reads exactly one polled endpoint. */
+.hd {
+  padding: 18px 20px 0;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.h1 {
+  font-size: 20px;
+  font-weight: 600;
+  margin: 0;
+}
+
+.sub {
+  font-size: 12.5px;
+  color: var(--text-muted);
+  margin: 5px 0 0;
+}
+
+.wrap {
+  padding: 16px 20px 28px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap);
+  flex: 1;
+}
+
+/* 12-column card grid: quarters for the tile row, halves for paired charts and
+   tables, full width for a primary time series. */
+.row {
+  display: grid;
+  gap: var(--gap);
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+}
+
+.row > * {
+  grid-column: span 12;
+}
+
+.c4 > * {
+  grid-column: span 3;
+}
+
+.c3 > * {
+  grid-column: span 4;
+}
+
+.c2 > * {
+  grid-column: span 6;
+}
+
+/* Mobile chrome: burger, drawer, scrim. */
+.burger,
+.drawer-close {
+  display: none;
+  width: 44px;
+  height: 44px;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: 0;
+  color: inherit;
+  cursor: pointer;
+  flex: 0 0 auto;
+}
+
+.scrim {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: var(--scrim);
+  border: 0;
+  padding: 0;
+  z-index: 20;
+}
+
+.sb-foot {
+  margin-top: auto;
+  border-top: 1px solid var(--rail-divider);
+  padding: 12px 16px 16px;
+  font-size: 11.5px;
+  color: var(--rail-foot);
+  display: none;
+  flex-direction: column;
+  gap: 9px;
+}
+
+.sb-foot .conn {
+  color: inherit;
+}
+
+.sb-foot-actions {
+  display: flex;
+  gap: 16px;
+}
+
+.sb-foot button {
+  background: none;
+  border: 0;
+  padding: 0;
+  color: inherit;
+  font-size: 11.5px;
+  cursor: pointer;
+  min-height: 44px;
+}
+
+@media (max-width: 1199px) {
+  .row.c4 > * {
+    grid-column: span 6;
+  }
+
+  .row.c3 > *,
+  .row.c2 > * {
+    grid-column: span 12;
+  }
+
+  /* Sidebar collapses to icons. */
+  .sb {
+    width: var(--rail-width-compact);
+    flex-basis: var(--rail-width-compact);
+  }
+
+  .sb .brand span,
+  .sb .sec,
+  .sb .it span,
+  .sb .sub2 {
+    display: none;
+  }
+
+  .sb .brand,
+  .sb .it {
+    justify-content: center;
+    padding-left: 0;
+    padding-right: 0;
+  }
+}
+
+@media (max-width: 767px) {
+  /* `MobileNav`: burger then title, both left. */
+  .nav {
+    background: var(--rail);
+    border-bottom: 0;
+    color: var(--rail-text-strong);
+    padding: 0 8px 0 4px;
+    height: 52px;
+    justify-content: flex-start;
+    gap: 10px;
+  }
+
+  .nav-title,
+  .navr,
+  .navr button {
+    color: var(--rail-text);
+  }
+
+  .nav-title {
+    color: var(--rail-text-strong);
+    font-size: 15px;
+  }
+
+  .burger {
+    display: inline-flex;
+  }
+
+  /* `MobileNav` draws burger + title only: connection state, version, theme
+     and sign-out all move into the drawer footer. */
+  .navr {
+    display: none;
+  }
+
+  .sb {
+    position: fixed;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    width: 288px;
+    flex-basis: 288px;
+    z-index: 30;
+    transform: translateX(-100%);
+    /* `visibility`, not `transform` alone: an off-screen drawer that is still
+       visible keeps its thirteen links in the tab order and the accessibility
+       tree. It is transitioned so the close animation still plays. */
+    visibility: hidden;
+    transition:
+      transform 0.18s ease-out,
+      visibility 0.18s;
+    box-shadow: 2px 0 14px rgba(0, 0, 0, 0.35);
+  }
+
+  .sb.open {
+    transform: translateX(0);
+    visibility: visible;
+  }
+
+  .sb .brand span,
+  .sb .sec,
+  .sb .it span,
+  .sb .sub2 {
+    display: flex;
+  }
+
+  .sb .brand,
+  .sb .it {
+    justify-content: flex-start;
+    padding-left: 16px;
+    padding-right: 16px;
+  }
+
+  .sb .brand span {
+    display: inline;
+  }
+
+  /* 44 px on the smallest axis of every interactive control. */
+  .sb .it,
+  .sb .sub2 {
+    min-height: 44px;
+  }
+
+  .sb-foot {
+    display: flex;
+  }
+
+  .sb.open ~ .scrim,
+  .scrim.open {
+    display: block;
+  }
+
+  .drawer-close {
+    display: inline-flex;
+    position: fixed;
+    top: 4px;
+    left: 292px;
+    z-index: 31;
+    color: var(--rail-text-strong);
+  }
+
+  .hd,
+  .wrap {
+    padding-left: 12px;
+    padding-right: 12px;
+  }
+
+  .wrap {
+    gap: 10px;
+  }
+}
+
+/* The phone Dashboard is `MobileDashboard.dc.html`, not a shrunken desktop
+   grid. It drops three cards, moves the HTTP tile row below the chart and
+   reorders what is left. `.wrap` is a flex column and `.row.c2` a grid, so both
+   take `order` — no viewport listener and no second component tree. */
+.z-phone-note {
+  display: none;
+}
+
+@media (max-width: 767px) {
+  .wrap > .z-tiles-dns {
+    order: 1;
+  }
+  .wrap > .z-chart {
+    order: 2;
+  }
+  .wrap > .z-tiles-http {
+    order: 3;
+  }
+  .wrap > .z-caption {
+    order: 4;
+  }
+  .wrap > .z-cards {
+    order: 5;
+  }
+  .wrap > .z-phone-note {
+    order: 6;
+    display: block;
+  }
+
+  /* Dropped, with the reason rendered in `.z-phone-note`: each is one tap away
+     on its own page. */
+  .z-upstreams,
+  .z-top-queried,
+  .wrap > .z-ruleset {
+    display: none;
+  }
+
+  .z-top-blocked {
+    order: 1;
+  }
+  .z-top-clients {
+    order: 2;
+  }
+  .z-query-types {
+    order: 3;
+  }
+  .z-cache {
+    order: 4;
+  }
+}

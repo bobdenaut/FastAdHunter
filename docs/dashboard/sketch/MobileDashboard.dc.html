@@ -27,6 +27,10 @@
     .bd { padding: 12px; }
     .note { font-size: 11px; color: #6b7785; line-height: 1.5; }
     .mono { font-family: 'IBM Plex Mono', monospace; }
+    .ctl { display: flex; align-items: center; gap: 8px; }
+    .age { font-size: 11.5px; color: #6b7785; white-space: nowrap; font-variant-numeric: tabular-nums; flex: 1; }
+    .sel { border: 1px solid #cfd8e3; background: #fff; border-radius: 4px; padding: 0 10px; font-size: 12.5px; color: #47535f; display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 44px; min-width: 72px; }
+    .mini { border: 1px solid #cfd8e3; background: #fff; border-radius: 4px; min-width: 44px; min-height: 44px; display: inline-flex; align-items: center; justify-content: center; color: #47535f; }
     .num { font-variant-numeric: tabular-nums; font-family: 'IBM Plex Mono', monospace; }
     .chips { display: flex; gap: 6px; }
     .chip { border: 1px solid #cfd8e3; background: #fff; border-radius: 4px; min-height: 44px; min-width: 56px; display: flex; align-items: center; justify-content: center; font-size: 12.5px; color: #47535f; flex: 1; }
@@ -72,21 +76,75 @@
     <h3 class="ch"><span>Queries over time</span></h3>
     <div class="bd" style="padding: 12px 12px 10px;">
       <div class="chips" style="margin-bottom: 10px;"><span class="chip on">24 h</span><span class="chip">7 d</span><span class="chip">30 d</span></div>
-      <svg viewBox="0 0 342 130" style="width: 100%; height: 130px; display: block;">
-        <line x1="0" y1="20" x2="342" y2="20" stroke="#eef2f6"></line>
-        <line x1="0" y1="60" x2="342" y2="60" stroke="#eef2f6"></line>
-        <line x1="0" y1="100" x2="342" y2="100" stroke="#eef2f6"></line>
-        <polygon fill="#1f9dbb" fill-opacity="0.22" stroke="#1f9dbb" stroke-width="1.5" points="0,88 30,92 60,96 89,98 119,86 149,66 178,50 208,44 238,40 268,52 297,72 327,86 342,92 342,116 0,116"></polygon>
-        <polygon fill="#d1504b" fill-opacity="0.32" stroke="#d1504b" stroke-width="1.5" points="0,110 30,111 60,112 89,112 119,110 149,106 178,103 208,102 238,101 268,104 297,108 327,110 342,111 342,116 0,116"></polygon>
-        <line x1="0" y1="116" x2="342" y2="116" stroke="#cfd8e3"></line>
-        <text x="0" y="128" font-size="9" fill="#8a95a3" font-family="IBM Plex Mono">10:00</text>
-        <text x="342" y="128" font-size="9" fill="#8a95a3" font-family="IBM Plex Mono" text-anchor="end">10:00</text>
+      <svg viewBox="0 0 342 150" style="width: 100%; height: 150px; display: block;">
+        <line x1="0" y1="10" x2="308" y2="10" stroke="#eef2f6"></line>
+        <text x="342" y="13.5" font-size="10" fill="#b6bfc9" text-anchor="end" font-family="IBM Plex Mono">15k</text>
+        <line x1="0" y1="39.5" x2="308" y2="39.5" stroke="#eef2f6"></line>
+        <text x="342" y="43" font-size="10" fill="#b6bfc9" text-anchor="end" font-family="IBM Plex Mono">11.3k</text>
+        <line x1="0" y1="69" x2="308" y2="69" stroke="#eef2f6"></line>
+        <text x="342" y="72.5" font-size="10" fill="#b6bfc9" text-anchor="end" font-family="IBM Plex Mono">7.5k</text>
+        <line x1="0" y1="98.5" x2="308" y2="98.5" stroke="#eef2f6"></line>
+        <text x="342" y="102" font-size="10" fill="#b6bfc9" text-anchor="end" font-family="IBM Plex Mono">3.8k</text>
+        <line x1="0" y1="128" x2="308" y2="128" stroke="#eef2f6"></line>
+        <text x="342" y="131.5" font-size="10" fill="#b6bfc9" text-anchor="end" font-family="IBM Plex Mono">0</text>
+        <rect x="0" y="96.9" width="11.3" height="27.6" fill="#1f9dbb" fill-opacity="0.9"></rect>
+        <rect x="0" y="124.5" width="11.3" height="3.5" fill="#d1504b" fill-opacity="0.9"></rect>
+        <rect x="12.8" y="103.1" width="11.3" height="22.3" fill="#1f9dbb" fill-opacity="0.9"></rect>
+        <rect x="12.8" y="125.4" width="11.3" height="2.6" fill="#d1504b" fill-opacity="0.9"></rect>
+        <rect x="25.7" y="107.3" width="11.3" height="18.7" fill="#1f9dbb" fill-opacity="0.9"></rect>
+        <rect x="25.7" y="126" width="11.3" height="2" fill="#d1504b" fill-opacity="0.9"></rect>
+        <rect x="38.5" y="109.4" width="11.3" height="16.9" fill="#1f9dbb" fill-opacity="0.9"></rect>
+        <rect x="38.5" y="126.2" width="11.3" height="1.8" fill="#d1504b" fill-opacity="0.9"></rect>
+        <rect x="51.3" y="110.4" width="11.3" height="15.9" fill="#1f9dbb" fill-opacity="0.9"></rect>
+        <rect x="51.3" y="126.3" width="11.3" height="1.7" fill="#d1504b" fill-opacity="0.9"></rect>
+        <rect x="64.2" y="108.3" width="11.3" height="17.6" fill="#1f9dbb" fill-opacity="0.9"></rect>
+        <rect x="64.2" y="125.9" width="11.3" height="2.1" fill="#d1504b" fill-opacity="0.9"></rect>
+        <rect x="77" y="99" width="11.3" height="25.5" fill="#1f9dbb" fill-opacity="0.9"></rect>
+        <rect x="77" y="124.5" width="11.3" height="3.5" fill="#d1504b" fill-opacity="0.9"></rect>
+        <rect x="89.8" y="80.3" width="11.3" height="41.3" fill="#1f9dbb" fill-opacity="0.9"></rect>
+        <rect x="89.8" y="121.6" width="11.3" height="6.4" fill="#d1504b" fill-opacity="0.9"></rect>
+        <rect x="102.7" y="63.8" width="11.3" height="55.3" fill="#1f9dbb" fill-opacity="0.9"></rect>
+        <rect x="102.7" y="119.1" width="11.3" height="8.9" fill="#d1504b" fill-opacity="0.9"></rect>
+        <rect x="115.5" y="55.5" width="11.3" height="63" fill="#1f9dbb" fill-opacity="0.9"></rect>
+        <rect x="115.5" y="118.5" width="11.3" height="9.5" fill="#d1504b" fill-opacity="0.9"></rect>
+        <rect x="128.3" y="53.4" width="11.3" height="65.2" fill="#1f9dbb" fill-opacity="0.9"></rect>
+        <rect x="128.3" y="118.6" width="11.3" height="9.4" fill="#d1504b" fill-opacity="0.9"></rect>
+        <rect x="141.2" y="51.3" width="11.3" height="67.3" fill="#1f9dbb" fill-opacity="0.9"></rect>
+        <rect x="141.2" y="118.6" width="11.3" height="9.4" fill="#d1504b" fill-opacity="0.9"></rect>
+        <rect x="154" y="49.3" width="11.3" height="69.3" fill="#1f9dbb" fill-opacity="0.9"></rect>
+        <rect x="154" y="118.6" width="11.3" height="9.4" fill="#d1504b" fill-opacity="0.9"></rect>
+        <rect x="166.8" y="50.3" width="11.3" height="68.1" fill="#1f9dbb" fill-opacity="0.9"></rect>
+        <rect x="166.8" y="118.4" width="11.3" height="9.6" fill="#d1504b" fill-opacity="0.9"></rect>
+        <rect x="179.7" y="52.4" width="11.3" height="65.9" fill="#1f9dbb" fill-opacity="0.9"></rect>
+        <rect x="179.7" y="118.2" width="11.3" height="9.8" fill="#d1504b" fill-opacity="0.9"></rect>
+        <rect x="192.5" y="49.3" width="11.3" height="68" fill="#1f9dbb" fill-opacity="0.9"></rect>
+        <rect x="192.5" y="117.3" width="11.3" height="10.7" fill="#d1504b" fill-opacity="0.9"></rect>
+        <rect x="205.3" y="43" width="11.3" height="72.9" fill="#1f9dbb" fill-opacity="0.9"></rect>
+        <rect x="205.3" y="115.9" width="11.3" height="12.1" fill="#d1504b" fill-opacity="0.9"></rect>
+        <rect x="218.2" y="34.8" width="11.3" height="79.4" fill="#1f9dbb" fill-opacity="0.9"></rect>
+        <rect x="218.2" y="114.2" width="11.3" height="13.8" fill="#d1504b" fill-opacity="0.9"></rect>
+        <rect x="231" y="24.4" width="11.3" height="87.9" fill="#1f9dbb" fill-opacity="0.9"></rect>
+        <rect x="231" y="112.4" width="11.3" height="15.6" fill="#d1504b" fill-opacity="0.9"></rect>
+        <rect x="243.8" y="27.5" width="11.3" height="86" fill="#1f9dbb" fill-opacity="0.9"></rect>
+        <rect x="243.8" y="113.5" width="11.3" height="14.5" fill="#d1504b" fill-opacity="0.9"></rect>
+        <rect x="256.7" y="36.8" width="11.3" height="78.9" fill="#1f9dbb" fill-opacity="0.9"></rect>
+        <rect x="256.7" y="115.7" width="11.3" height="12.3" fill="#d1504b" fill-opacity="0.9"></rect>
+        <rect x="269.5" y="53.4" width="11.3" height="65.3" fill="#1f9dbb" fill-opacity="0.9"></rect>
+        <rect x="269.5" y="118.7" width="11.3" height="9.3" fill="#d1504b" fill-opacity="0.9"></rect>
+        <rect x="282.3" y="74.1" width="11.3" height="47.6" fill="#1f9dbb" fill-opacity="0.9"></rect>
+        <rect x="282.3" y="121.8" width="11.3" height="6.2" fill="#d1504b" fill-opacity="0.9"></rect>
+        <rect x="295.2" y="88.6" width="11.3" height="35.1" fill="#1f9dbb" fill-opacity="0.9"></rect>
+        <rect x="295.2" y="123.7" width="11.3" height="4.3" fill="#d1504b" fill-opacity="0.9"></rect>
+        <line x1="0" y1="128" x2="308" y2="128" stroke="#cfd8e3"></line>
+        <text x="0" y="144" font-size="10" fill="#8a95a3" font-family="IBM Plex Mono">10:00</text>
+        <text x="102.7" y="144" font-size="10" fill="#8a95a3" font-family="IBM Plex Mono">18:00</text>
+        <text x="205.3" y="144" font-size="10" fill="#8a95a3" font-family="IBM Plex Mono">02:00</text>
       </svg>
       <div style="display: flex; gap: 14px; font-size: 11px; color: #47535f; margin-top: 8px;">
-        <span><span class="sw" style="background: #1f9dbb;"></span> allowed</span>
+        <span><span class="sw" style="background: #1f9dbb;"></span> permitted</span>
         <span><span class="sw" style="background: #d1504b;"></span> blocked</span>
       </div>
-      <p class="note" style="margin: 8px 0 0;">Pinch to zoom is off — the range chips do the work. One tap, no gesture to discover.</p>
+      <p class="note" style="margin: 8px 0 0;">Pinch to zoom is off — the range chips do the work. One tap, no gesture to discover. Bars carry no printed figures at this width: 11 px per bar is under the label floor, so the numbers come from tapping a bar.</p>
     </div>
   </div>
 
@@ -148,6 +206,7 @@
   <div class="card">
     <h3 class="ch"><span>Cache</span><span class="note num">1,108 / 50,000</span></h3>
     <div class="bd">
+      <div class="ctl" style="margin-bottom: 11px;"><span class="age">updated 2 m ago</span><span class="sel">5 m<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M5 8l7 7 7-7"></path></svg></span><span class="mini" title="Refresh now"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20.5 11.5a8.5 8.5 0 1 0-2.5 6.4"></path><path d="M20.5 4v7.5H13"></path></svg></span></div>
       <div style="display: flex; height: 22px; border-radius: 3px; overflow: hidden; border: 1px solid #e2e8ee;">
         <div style="flex: 155; background: #3d9a63;"></div>
         <div style="flex: 953; background: #dd9a2f;"></div>

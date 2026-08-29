@@ -27,6 +27,30 @@
 # A C compiler *is* required, for mimalloc (see `crates/fastadhunter/src/allocator.rs`). Both halves of that are
 # already in this stage — see the `apk add` below.
 
+# The web UI (`/web`), built on the *build host's* architecture. Its output is
+# static files with no architecture, and without --platform=$BUILDPLATFORM the
+# arm64 build would run the whole Node toolchain under QEMU for nothing.
+#
+# Node is a build-time dependency only: nothing from this stage reaches the
+# runtime image except the emitted files.
+#
+# The bundle carries no version string: the top bar reads `version` from
+# `GET /health` at runtime, so nothing here needs a build argument.
+FROM --platform=$BUILDPLATFORM node:22.21.1-alpine AS frontend
+
+WORKDIR /app
+
+# Manifest first, so `npm ci` caches across every source-only edit.
+COPY dashboard/frontend/package.json dashboard/frontend/package-lock.json ./
+RUN npm ci
+
+COPY dashboard/frontend/ ./
+
+# `npm run build` typechecks, builds, writes the `.gz`/`.br` siblings and
+# enforces the 150 KB gzip budget. A bundle over budget fails the image build,
+# not merely a local check.
+RUN npm run build && mkdir -p /web && cp -R dist/. /web/
+
 # Keep this tag's Rust version in sync with rust-toolchain.toml.
 FROM rust:1.96.0-alpine AS builder
 
@@ -38,7 +62,14 @@ FROM rust:1.96.0-alpine AS builder
 RUN apk add --no-cache musl-dev
 
 WORKDIR /build
-COPY . .
+# Scoped rather than `COPY . .`, so an edit under `dashboard/` cannot invalidate
+# this stage's layer cache and force a full Rust rebuild. These four entries are
+# everything `cargo build --locked -p fastadhunter` reads: the workspace
+# manifest and lockfile, the toolchain pin, and both `members` globs
+# (`crates/*`, `tui-monitor`).
+COPY Cargo.toml Cargo.lock rust-toolchain.toml ./
+COPY crates ./crates
+COPY tui-monitor ./tui-monitor
 
 RUN cargo build --release --locked -p fastadhunter
 
@@ -54,6 +85,10 @@ FROM gcr.io/distroless/static-debian12:nonroot
 COPY --from=builder /build/target/release/fastadhunter /fastadhunter
 COPY --from=builder --chown=65532:65532 /seed/config /config
 COPY --from=builder --chown=65532:65532 /seed/data /data
+# Image content, never a volume (VOLUME below stays /config + /data): the UI and
+# the API version and deploy as one artifact, so a rollback can never pair an
+# older binary with a newer UI. Left root-owned — the serving uid only reads it.
+COPY --from=frontend /web /web
 
 # Root at entry, by design (ADR-0004): the process binds port 53 — which
 # RouterOS permits no other way, having no `cap-add`, no lowered

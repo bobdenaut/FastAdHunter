@@ -15,9 +15,13 @@ Single API key (bearer token), generated on first boot, rotatable.
 Authorization: Bearer <api-key>
 ```
 
-Required for everything under `/api/v1/`. `GET /health` is the one exemption.
-Missing/invalid key → `401`, and auth answers before routing does — an unknown
-path under `/api/v1/` is `401` without a key, `404` with one.
+Required for everything under `/api/v1/`. `GET /health` and
+`POST /api/v1/auth/login` are the two exemptions. Missing/invalid credential →
+`401`, and auth answers before routing does — an unknown path under `/api/v1/`
+is `401` without a credential, `404` with one.
+
+A request may present **either** the bearer key **or** a session cookie
+(§Session authentication). The bearer path is unchanged for existing clients.
 
 ## Error format
 
@@ -33,8 +37,23 @@ Every non-2xx response:
 ```
 
 `code` is a stable machine-readable slug; `message` is human-readable.
-The full code set: `unauthorized` (401), `bad_request` (400), `not_found`
-(404), `conflict` (409), `validation_failed` (422), `internal` (500).
+The full code set: `bad_request` (400), `unauthorized` (401), `not_found`
+(404), `conflict` (409), `validation_failed` (422), `rate_limited` (429),
+`unavailable` (503), `internal` (500).
+
+`Retry-After` rides the same envelope and is the discriminator between a
+transient and a persistent condition:
+
+| Response | `Retry-After` | Clears when |
+| -------- | ------------- | ----------- |
+| `429 rate_limited` | seconds until the bucket frees | the rate-limit window rolls |
+| `503 unavailable` — password verification saturated | `1` | a verification permit frees |
+| `503 unavailable` — `api.tls = false` | **absent** | the operator changes configuration and restarts |
+
+`api.tls` is a boot key, so the third row never clears on its own; a client that
+sees `503 unavailable` with no `Retry-After` must not retry on a timer.
+
+`401`, `429` and `503` also carry `Cache-Control: no-store`.
 
 ---
 
@@ -441,11 +460,21 @@ Observed clients (by source IP) with stats and optional names.
       "first_seen": "2026-07-01T08:00:00Z",
       "last_seen": "2026-07-17T10:41:03Z",
       "queries_24h": 30122,
-      "blocked_24h": 3020
+      "blocked_24h": 3020,
+      "policy": "kids",
+      "assignment_source": "direct"
     }
   ]
 }
 ```
+
+`policy` is the policy in force for that address at this instant, `default` when
+nothing is assigned — the same value `GET /api/v1/clients/{ip}/policy` reports,
+resolved from the same snapshot. `assignment_source` is `direct` and **present
+only** when an assignment names that exact address; it is absent when the client
+is covered by a subnet or name assignment, and absent when it is unassigned —
+mirroring the presence or absence of that endpoint's `assignment` field. The
+full assignment (schedule included) stays on the per-client endpoint.
 
 ### `PUT /api/v1/clients/{ip}`
 
@@ -801,6 +830,10 @@ assignment rather than one naming its address.
 
 Effective configuration (all sources merged), secrets redacted.
 
+Auth material is **omitted**, not redacted: the Argon2id password hash and the
+session secret are not part of the config tree at all (`/config/auth-hash` and
+`/data/session-secret`), so no `auth` key appears in the response.
+
 ### `POST /api/v1/config`
 
 Partial update (deep-merge of provided keys). Changes are validated, written
@@ -835,6 +868,11 @@ also works.
 more: only the [`/policies`](#policies) endpoints know when an edit needs the
 ruleset recompiled. `schedule.timezone` *is* accepted here and applies live.
 
+**A top-level `auth` key is not accepted here — 422**, and the message names
+`POST /api/v1/auth/password`. Same one-writer reason: the password endpoint
+requires the current password and invalidates every session, and a deep-merge
+patch would set a hash while bypassing both.
+
 ### `POST /api/v1/config/apikey/rotate`
 
 Generates a new API key, returns it **once**, invalidates the old one.
@@ -863,6 +901,31 @@ Server → client messages:
 `list_refreshed.status` is `ok` | `failed` | `rejected`, the vocabulary of
 `POST /api/v1/lists/refresh`. The event carries no reason — it is a nudge to
 re-read `GET /api/v1/lists`, where `last_error` has it.
+
+**Client → server.** One message, the only one the socket accepts:
+
+```json
+{ "subscribe": ["stats", "query"] }
+```
+
+Names are `query`, `stats`, `config_changed`, `list_refreshed`. No wildcards.
+**Subscribe replaces** — one message sets the whole set, so unsubscribing is
+sending a smaller list and there is no `unsubscribe` verb. **The default is
+every event**, so a client that sends nothing sees today's behaviour unchanged.
+An unknown name, or a text frame that is not a usable `subscribe` message,
+leaves the previous set standing and never closes the socket; it is logged at
+`debug`. Binary frames and `Pong` are ignored silently. An empty list is valid.
+
+**Frames are capped at 4096 bytes.** A `subscribe` message is tens of bytes, so
+the cap is unreachable in normal use. It is enforced by the WebSocket layer, not
+by this contract: an oversized frame is a protocol error and **does close the
+connection** — unlike a malformed message inside the cap, which does not.
+Reconnect and send a valid subscription.
+
+Filtering is server-side and happens before the send. A subscription that omits
+`stats` would otherwise leave an idle socket silent, so the server sends a
+WebSocket `Ping` on the same ~2 s cadence instead — the traffic that lets a peer
+which vanished without closing be detected.
 
 A `query` event carries both pipelines (p2-04), tagged by `kind`:
 
@@ -910,7 +973,16 @@ reads `0`. `resource_type` is the `$option` vocabulary (`script`, `image`,
 The `stats` push is byte-for-byte the `GET /api/v1/stats` payload. That endpoint
 is still worth calling once on connect: the first push is up to ~2 s away.
 
-Slow consumers are disconnected rather than back-pressuring the engine.
+Slow consumers are disconnected rather than back-pressuring the engine. A
+subscriber that does not ask for `query` is not sent it.
+
+That is delivery, not exemption. While **any** connected socket still asks for
+`query`, the engine publishes those events and every socket — including one that
+filtered them out — receives them into its buffer and must drain them. Draining
+is cheap and the filtered socket does no work per event beyond it, but a peer
+stalled long enough can still fall behind the buffer and be disconnected. Only
+when **no** socket asks for `query` does the engine stop producing the events at
+all.
 
 ---
 
@@ -1034,3 +1106,108 @@ this endpoint serves one instant.
 
 `/api/v1/certificates` — import PEM, import PFX, generate CA, export CA,
 status. Endpoints specified when Phase 3 begins; namespace reserved now.
+
+---
+
+## Session authentication
+
+The dashboard signs in with a password and carries a session cookie. Shipped in
+`p5-04`.
+
+The bearer key above is unchanged and stays the path every existing client uses.
+
+### Routes
+
+| Route | Auth | Success | Body |
+| ----- | ---- | ------- | ---- |
+| `POST /api/v1/auth/login` | **exempt** | `204`, `Set-Cookie` | `{"password":"…"}` |
+| `POST /api/v1/auth/logout` | required | `204`, cookie cleared | — |
+| `POST /api/v1/auth/logout-all` | required | `204`, cookie cleared, secret rotated | — |
+| `POST /api/v1/auth/password` | required | `204`, cookie cleared | `{"current_password":"…","new_password":"…"}` |
+
+**`POST /api/v1/auth/login`**
+
+| Outcome | Response |
+| ------- | -------- |
+| Correct password | `204`, `Set-Cookie: __Host-fah_session=…` |
+| Wrong password | `401` `unauthorized`, no `Set-Cookie` |
+| Rate limited | `429` `rate_limited` + `Retry-After` |
+| Verification saturated | `503` `unavailable` + `Retry-After: 1` |
+| `api.tls = false` | `503` `unavailable`, **no** `Retry-After`, no `Set-Cookie` |
+| Malformed or missing body | `400` `bad_request` |
+
+**No response body on success** — the cookie is the entire result, so the token
+never lands anywhere a body can be logged, cached or copied into browser
+storage. The two `401` causes are byte-identical: same status, same body, same
+headers.
+
+**`POST /api/v1/auth/password`** requires the current password (`401` on
+mismatch, nothing written), enforces a `new_password` of at least 12 characters
+(`422` `validation_failed`), rotates the session secret and then replaces the
+hash. Every session dies, the caller's included, and no replacement cookie is
+issued. It emits `config_changed` with `restart_required: false`.
+
+**`logout` is client-side** — it clears the cookie, and the token itself stays
+valid until its expiry. **`logout-all` is the only revocation**: it rotates
+`/data/session-secret`, so every session everywhere ends immediately.
+
+**Only `login` is gated on TLS.** With `api.tls = false` the other three routes
+stay reachable over the bearer key, `logout-all` still rotates the secret, and
+`password` still requires the current password.
+
+### Token and cookie
+
+```text
+payload = [ver:u8 = 1][expiry_unix_secs:u64 BE][nonce:16 CSPRNG bytes]
+token   = hex(payload ‖ HMAC-SHA256(secret, payload))          114 characters
+```
+
+**Cookie.** `__Host-fah_session`, `Secure`, `HttpOnly`, `SameSite=Strict`,
+`Path=/`, explicit `Max-Age`. The nonce is 128 bits from a CSPRNG.
+
+**Expiry.** **7 days, absolute, no sliding renewal and no inactivity timeout.**
+The authoritative expiry lives inside the signed token and is enforced
+server-side; the cookie's `Expires`/`Max-Age` is a client-side convenience, not
+the security boundary. Verification order is length → version → MAC → expiry;
+an unknown version byte is `401`.
+
+### First run and recovery
+
+A box with no password generates one at first boot, prints it **once** to the
+container log beside the API key, and persists only its Argon2id hash. **The
+generated password is never returned by any route**, not by login and not in an
+error message — the log line is its only channel.
+
+Recovery is filesystem-side, not an endpoint: delete `/config/auth-hash` and
+restart. That also rotates `/data/session-secret`, so no session issued before
+the reset survives it. See SECURITY.md §Password recovery.
+
+### Middleware
+
+A request authenticates with a valid session cookie **or** a bearer key. `401`
+reuses the existing `unauthorized` code, and a failure message never reveals
+which half was wrong.
+
+### WebSocket upgrade
+
+On a cookie-authenticated upgrade, `Origin` must be present and must match the
+request's own effective target origin — scheme, host and port. On a
+bearer-authenticated upgrade `Origin` is irrelevant and its absence is normal;
+`?token=` counts as bearer. Mismatch or missing → `401`.
+
+There is no configured origin allowlist: the dashboard is same-origin by
+construction, and a list would break the moment the box is reached by a name
+other than the configured one.
+
+### Configuration
+
+`GET /api/v1/config` **omits** every `auth.*` field — auth material is not part
+of the config tree at all, it lives in `/config/auth-hash` and
+`/data/session-secret`. `POST /api/v1/config` carrying a top-level `auth` key
+returns `422` `validation_failed` naming `POST /api/v1/auth/password`.
+
+### Caching
+
+Every response from the four auth routes carries `Cache-Control: no-store`,
+including the `400`, `401`, `422`, `429` and both `503` paths, and including the
+`401` the middleware generates above the routes.

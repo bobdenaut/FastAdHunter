@@ -90,6 +90,25 @@ fn collect_internal(table: &toml::Value, out: &mut Vec<String>) {
     }
 }
 
+fn shipping_deps(doc: &toml::Value) -> Vec<String> {
+    let mut out = Vec::new();
+    for table in ["dependencies", "build-dependencies"] {
+        if let Some(deps) = doc.get(table) {
+            collect_internal(deps, &mut out);
+        }
+    }
+    if let Some(targets) = doc.get("target").and_then(toml::Value::as_table) {
+        for cfg in targets.values() {
+            for table in ["dependencies", "build-dependencies"] {
+                if let Some(deps) = cfg.get(table) {
+                    collect_internal(deps, &mut out);
+                }
+            }
+        }
+    }
+    out
+}
+
 fn internal_deps(doc: &toml::Value) -> Vec<String> {
     let mut out = Vec::new();
     for table in DEP_TABLES {
@@ -133,7 +152,12 @@ fn internal_dependencies_point_strictly_downward() {
         } else {
             let this =
                 layer(name).unwrap_or_else(|| panic!("unknown crate `{name}` — add it to layer()"));
-            for dep in &deps {
+            assert!(
+                !shipping_deps(&doc).iter().any(|dep| dep == name),
+                "layering violation: {name} depends on itself outside [dev-dependencies]; \
+                 a self-edge is only ever a test-only feature switch"
+            );
+            for dep in deps.iter().filter(|dep| dep.as_str() != name) {
                 let dep_layer =
                     layer(dep).unwrap_or_else(|| panic!("{name} depends on unknown crate `{dep}`"));
                 assert!(

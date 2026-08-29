@@ -1,7 +1,3 @@
-//! Bearer-key authentication (API.md §Authentication, SECURITY.md §API
-//! access): required for everything under `/api/v1/`, with `GET /health`
-//! exempt.
-
 use std::sync::Arc;
 
 use axum::extract::{Request, State};
@@ -9,14 +5,20 @@ use axum::middleware::Next;
 use axum::response::{IntoResponse, Response};
 
 use crate::error::ApiError;
+use crate::session;
 use crate::state::AppState;
 
-/// Liveness only — status, version, uptime. Every other path requires the key.
-const PUBLIC_PATHS: [&str; 1] = ["/health"];
+const PUBLIC_PATHS: [&str; 2] = ["/health", "/api/v1/auth/login"];
 
-pub async fn require_api_key(
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AuthMethod {
+    Bearer,
+    Session,
+}
+
+pub async fn require_auth(
     State(state): State<Arc<AppState>>,
-    request: Request,
+    mut request: Request,
     next: Next,
 ) -> Response {
     let path = request.uri().path();
@@ -25,10 +27,30 @@ pub async fn require_api_key(
     }
 
     let presented = bearer_token(&request).or_else(|| query_token(&request));
-    match presented {
-        Some(token) if state.keys.matches(&token) => next.run(request).await,
-        _ => ApiError::Unauthorized.into_response(),
+    if let Some(token) = presented {
+        if state.keys.matches(&token) {
+            request.extensions_mut().insert(AuthMethod::Bearer);
+            return next.run(request).await;
+        }
     }
+
+    if let Some(token) = session_token(&request) {
+        if state.auth.verify_session(&token).await {
+            request.extensions_mut().insert(AuthMethod::Session);
+            return next.run(request).await;
+        }
+    }
+
+    ApiError::Unauthorized.into_response()
+}
+
+fn session_token(request: &Request) -> Option<String> {
+    let header = request
+        .headers()
+        .get(axum::http::header::COOKIE)?
+        .to_str()
+        .ok()?;
+    session::token_from_cookies(header).map(str::to_string)
 }
 
 /// `Authorization: Bearer <key>`. The scheme is compared case-insensitively
@@ -159,5 +181,21 @@ mod tests {
         );
         assert_eq!(percent_decode("a%2Bb"), "a+b");
         assert_eq!(percent_decode("plain"), "plain");
+    }
+
+    #[test]
+    fn the_session_cookie_is_read_from_the_cookie_header_only() {
+        let with_cookie = Request::builder()
+            .uri("/api/v1/stats")
+            .header(axum::http::header::COOKIE, "a=1; __Host-fah_session=tok")
+            .body(Body::empty())
+            .unwrap();
+        assert_eq!(session_token(&with_cookie).as_deref(), Some("tok"));
+        assert_eq!(session_token(&request("/api/v1/stats", None)), None);
+    }
+
+    #[test]
+    fn login_is_the_only_path_added_to_the_public_set() {
+        assert_eq!(PUBLIC_PATHS, ["/health", "/api/v1/auth/login"]);
     }
 }

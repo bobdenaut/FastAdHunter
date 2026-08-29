@@ -18,7 +18,8 @@
     { "file": "MobileNav.dc.html", "title": "Phone · Navigation drawer", "x": 0, "y": 3660, "w": 390, "h": 844 },
     { "file": "MobileDashboard.dc.html", "title": "Phone · Dashboard", "x": 510, "y": 3660, "w": 390, "h": 2010 },
     { "file": "MobileLiveFeed.dc.html", "title": "Phone · Live Feed", "x": 1020, "y": 3660, "w": 390, "h": 1560 },
-    { "file": "MobileClients.dc.html", "title": "Phone · Clients", "x": 1530, "y": 3660, "w": 390, "h": 1500 }
+    { "file": "MobileClients.dc.html", "title": "Phone · Clients", "x": 1530, "y": 3660, "w": 390, "h": 1500 },
+    { "file": "MobileLists.dc.html", "title": "Phone · Lists", "x": 2040, "y": 3660, "w": 390, "h": 1760 }
   ],
   "annotations": [
     { "id": "row-filtering", "x": 0, "y": -300, "w": 700, "text": "ROW 1 — Overview & Filtering\nDashboard · Lists · Custom Rules · Policies · Clients · Rule Tester\n\nSketch: layout and interaction only. Every panel maps to a route in capability-matrix.md — nothing is drawn without an endpoint behind it. Figures are the real box where they exist: 752,585 rules, 89.7 % hit, 1,108/50,000 entries." },
@@ -30,7 +31,8 @@
     { "id": "note-memory", "x": 7800, "y": 1680, "w": 640, "text": "Peak is NOT a slice of the donut — it is a lifetime high-water mark, not part of current RSS. It gets the budget rail instead.\n\nBudgets are drawn as markers, never as walls: nothing enforces memory at runtime, the container runs memory-high=unlimited." },
     { "id": "row-phone", "x": 0, "y": 3340, "w": 900, "text": "ROW 3 — Phone, 390 × 844\nNavigation drawer · Dashboard · Live Feed · Clients\n\nThese are the source of truth for the mobile acceptance criteria in p5-04, p5-05 and p5-07 — not a smaller copy of the desktop layout.\n\nRules they settle: 44 px minimum touch targets; the body never scrolls sideways; the sidebar becomes an overlay drawer below 768 px; table-heavy views become one card per row, never a horizontal table; the Live Feed holds a smaller ring and stops rendering while the page is hidden.\n\nThe frames are drawn taller than 844 so the whole page is visible. The Dashboard artboard marks where the fold actually falls." },
     { "id": "note-phone-feed", "x": 1020, "y": 3340, "w": 420, "text": "Nine columns do not survive a phone. One card per event instead: verdict, pipeline and time on the first line, the domain given room to wrap, everything else as metadata.\n\nRing is 200 here against 500 on desktop, and rendering pauses when the page is hidden — no battery spent drawing rows nobody is watching, and no history to backfill from anyway." },
-    { "id": "note-phone-clients", "x": 1530, "y": 3340, "w": 420, "text": "The page most likely to be opened from a phone, usually to answer one question: why is that device blocked.\n\nSo the policy chip is on the card, the solid-versus-dashed distinction survives, and rename plus change-policy are the only actions — both one round trip." }
+    { "id": "note-phone-clients", "x": 1530, "y": 3340, "w": 420, "text": "The page most likely to be opened from a phone, usually to answer one question: why is that device blocked.\n\nSo the policy chip is on the card, the solid-versus-dashed distinction survives, and rename plus change-policy are the only actions — both one round trip." },
+    { "id": "note-phone-lists", "x": 2040, "y": 3340, "w": 420, "text": "Drawn in p5-06, which is also where it was built.\n\nOne card per list, never a horizontal table — the rule the other phone frames already establish. A failed, rejected or degraded card grows an explanation block between the header and the partition, and a rejected card replaces Refresh with Delete and re-add: the content gate refuses a body against the cached copy, so neither a refresh nor a disable/enable can clear it." }
   ],
   "launch": { "view": "canvas" }
 }

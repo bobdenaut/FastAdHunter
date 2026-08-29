@@ -408,12 +408,13 @@ Everything that answers "is it healthy and where is the memory".
 `config_changed` refreshes Settings, `list_refreshed` re-reads `GET /lists` — the
 event is a nudge and carries no reason, so the reason comes from `last_error`.
 
-**The socket subscribes; it does not simply listen.** The baseline is `stats`,
-`config_changed` and `list_refreshed`; the Live Feed adds `query` while it is
-open. The subscription is re-sent after every reconnect. Server-side filtering is
-what makes this worth doing: it removes the bandwidth *and* the lag — a
-stats-only socket sends one message every two seconds and cannot fall behind on
-query volume the way an unfiltered one does.
+**The socket subscribes; it does not simply listen.** There is no shell
+baseline: each route declares the event types it renders, and the union of the
+mounted route's declarations is the subscription. It is re-sent after every
+reconnect, and when the union is empty the connection is closed rather than
+idled. Server-side filtering is what makes this worth doing: it removes the
+bandwidth *and* the lag — a stats-only socket sends one message every two
+seconds and cannot fall behind on query volume the way an unfiltered one does.
 
 Reconnect with backoff; a disconnect banner appears because slow consumers are
 dropped by design. **A rejected upgrade is not a reconnect loop.** A browser

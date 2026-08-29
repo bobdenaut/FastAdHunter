@@ -6,16 +6,18 @@
 //! ARCHITECTURE.md §Dependency Layering). Everything else is real: real
 //! rustls, real axum routing, the real `ListManager`, the real config store.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 use std::net::{IpAddr, Ipv4Addr};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime};
 
 use fah_api::{
-    ApiKeyStore, ApiServer, AppStateBuilder, BucketCount, CacheClean, CacheSource, CacheStats,
-    ClientCount, ClientEntry, ConfigStore, DomainCount, HistorySource, PolicyCount, StatsOverview,
-    StatsSource, TelemetrySource,
+    ApiKeyStore, ApiServer, AppStateBuilder, AuthState, BucketCount, CacheClean, CacheSource,
+    CacheStats, ClientCount, ClientEntry, ConfigStore, DomainCount, HistorySource, PolicyCount,
+    RateLimits, StatsOverview, StatsSource, TelemetrySource,
 };
+
+const PASSWORD: &str = "correct-horse-battery-staple";
 use fah_config::{Config, RulesConfig};
 use fah_model::{
     CacheStatsSample, ClientHits, DecisiveRule, DomainHits, HistoryPoint, HistoryRange,
@@ -437,8 +439,9 @@ struct Harness {
     rules: Arc<ListManager>,
     stats: Arc<FakeStats>,
     history: Arc<FakeHistory>,
+    auth: Arc<AuthState>,
     _config_dir: tempfile::TempDir,
-    _data_dir: tempfile::TempDir,
+    data_dir: tempfile::TempDir,
 }
 
 impl Drop for Harness {
@@ -450,6 +453,7 @@ impl Drop for Harness {
 struct HarnessOptions {
     tls: bool,
     degraded: bool,
+    limits: RateLimits,
 }
 
 impl Default for HarnessOptions {
@@ -457,6 +461,7 @@ impl Default for HarnessOptions {
         Self {
             tls: true,
             degraded: false,
+            limits: AuthState::relaxed_limits(),
         }
     }
 }
@@ -485,10 +490,13 @@ async fn start_with(options: HarnessOptions) -> Harness {
 
     let (keys, generated) = ApiKeyStore::load_or_create(config_dir.path()).unwrap();
     let key = generated.expect("first boot generates a key");
+    let auth = Arc::new(
+        AuthState::for_tests(config_dir.path(), data_dir.path(), PASSWORD, options.limits).unwrap(),
+    );
 
     let tls_config = options
         .tls
-        .then(|| fah_api::load_or_generate_tls(config_dir.path()).unwrap());
+        .then(|| fah_api::load_or_generate_tls(config_dir.path(), "127.0.0.1", None).unwrap());
 
     let stats = Arc::new(FakeStats::with_client(IpAddr::V4(Ipv4Addr::new(
         192, 168, 10, 15,
@@ -505,6 +513,7 @@ async fn start_with(options: HarnessOptions) -> Harness {
         cache: Arc::new(FakeCache),
         config: Arc::new(ConfigStore::new(config, config_path.clone())),
         keys: Arc::new(keys),
+        auth: Arc::clone(&auth),
     };
 
     let server = ApiServer::bind("127.0.0.1", 0, tls_config, state)
@@ -528,8 +537,9 @@ async fn start_with(options: HarnessOptions) -> Harness {
         rules,
         stats,
         history,
+        auth,
         _config_dir: config_dir,
-        _data_dir: data_dir,
+        data_dir,
     }
 }
 
@@ -604,7 +614,7 @@ async fn every_v1_route_requires_the_key() {
 }
 
 #[tokio::test]
-async fn health_is_public_and_every_other_route_is_not() {
+async fn health_is_public_and_every_api_route_is_not() {
     let harness = start().await;
 
     let health = harness
@@ -631,7 +641,6 @@ async fn an_unknown_route_is_a_json_not_found() {
     let body: Value = response.json().await.unwrap();
     assert_eq!(body["error"]["code"], "not_found");
 
-    // Auth wraps the whole router, so it answers before routing does.
     let anonymous = harness
         .client
         .get(harness.url("/api/v1/nope"))
@@ -639,6 +648,59 @@ async fn an_unknown_route_is_a_json_not_found() {
         .await
         .unwrap();
     assert_eq!(anonymous.status(), 401);
+    assert!(
+        anonymous.headers().get("vary").is_none(),
+        "the API surface must not be answered by the static service"
+    );
+}
+
+#[tokio::test]
+async fn every_path_under_api_is_json_never_the_shell() {
+    let harness = start().await;
+
+    for path in ["/api", "/api/", "/api/v2/stats", "/api/v1/nope"] {
+        let response = harness.get(path).await;
+        assert_eq!(response.status(), 404, "{path}");
+        assert!(
+            response.headers().get("vary").is_none(),
+            "{path} was answered by the static service"
+        );
+
+        let body: Value = response.json().await.unwrap();
+        assert_eq!(body["error"]["code"], "not_found", "{path}");
+
+        let anonymous = harness.client.get(harness.url(path)).send().await.unwrap();
+        assert_eq!(anonymous.status(), 401, "{path} must stay behind the key");
+    }
+}
+
+#[tokio::test]
+async fn the_static_paths_are_outside_the_api_key_boundary() {
+    let harness = start().await;
+
+    for path in ["/", "/assets/app.deadbeef.js", "/lists/oisd-basic"] {
+        let response = harness.client.get(harness.url(path)).send().await.unwrap();
+        assert_ne!(response.status(), 401, "{path} must not require the key");
+        assert_eq!(
+            response.headers().get("vary").and_then(|v| v.to_str().ok()),
+            Some("accept-encoding"),
+            "{path} must be answered by the static service"
+        );
+        assert_ne!(
+            response
+                .headers()
+                .get("content-type")
+                .and_then(|v| v.to_str().ok()),
+            Some("application/json"),
+            "{path} must not be answered by the API router"
+        );
+
+        let body = response.text().await.unwrap();
+        assert!(
+            !body.contains("\"error\""),
+            "{path} was answered by the API, not the static service: {body}"
+        );
+    }
 }
 
 // ─── TLS ───────────────────────────────────────────────────────────────
@@ -1267,6 +1329,11 @@ async fn clients_list_and_naming_round_trip() {
     assert_eq!(item["first_seen"], "1970-01-01T00:00:00Z");
     assert_eq!(item["queries_24h"], 30_122);
     assert_eq!(item["blocked_24h"], 3_020);
+    assert_eq!(item["policy"], "default");
+    assert!(
+        item.get("assignment_source").is_none(),
+        "an unassigned client carries no assignment source: {item}"
+    );
 
     let response = harness
         .client
@@ -1279,6 +1346,14 @@ async fn clients_list_and_naming_round_trip() {
     assert_eq!(response.status(), 200);
     let updated: Value = response.json().await.unwrap();
     assert_eq!(updated["name"], "liviu-phone");
+    assert_eq!(
+        updated["policy"], "default",
+        "the naming response carries the same policy fields as the list: {updated}"
+    );
+    assert!(
+        updated.get("assignment_source").is_none(),
+        "an unassigned client carries no assignment source here either: {updated}"
+    );
 
     // `{"name": null}` clears it (API.md).
     let cleared: Value = harness
@@ -1293,6 +1368,96 @@ async fn clients_list_and_naming_round_trip() {
         .await
         .unwrap();
     assert!(cleared["name"].is_null());
+}
+
+#[tokio::test]
+async fn clients_carry_the_in_force_policy_and_agree_with_the_per_client_endpoint() {
+    let harness = start().await;
+
+    let direct: IpAddr = "192.168.10.15".parse().unwrap();
+    let by_subnet: IpAddr = "10.1.0.5".parse().unwrap();
+    let by_name: IpAddr = "172.16.0.7".parse().unwrap();
+    let unassigned: IpAddr = "203.0.113.9".parse().unwrap();
+
+    for ip in [by_subnet, by_name, unassigned] {
+        harness.stats.clients.lock().unwrap().push(ClientEntry {
+            ip,
+            name: None,
+            first_seen: SystemTime::UNIX_EPOCH,
+            last_seen: SystemTime::UNIX_EPOCH,
+            queries_24h: 1,
+            blocked_24h: 0,
+        });
+    }
+
+    let response = harness
+        .client
+        .put(harness.url(&format!("/api/v1/clients/{by_name}")))
+        .bearer_auth(&harness.key)
+        .json(&json!({"name": "guest-tv"}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(
+        response.status(),
+        200,
+        "a name assignment resolves only once the client carries that name"
+    );
+
+    for (id, client) in [
+        ("kids", direct.to_string()),
+        ("lan", "10.1.0.0/24".to_string()),
+        ("guests", "guest-tv".to_string()),
+    ] {
+        let response = harness
+            .client
+            .post(harness.url("/api/v1/policies"))
+            .bearer_auth(&harness.key)
+            .json(&json!({
+                "id": id,
+                "lists": [],
+                "assignments": [{"client": client}],
+            }))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), 201, "creating the {id} policy");
+    }
+
+    let listed: HashMap<String, Value> = harness.get_json("/api/v1/clients").await["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|item| (item["ip"].as_str().unwrap().to_string(), item.clone()))
+        .collect();
+
+    for (ip, policy, source) in [
+        (direct, "kids", Some("direct")),
+        (by_subnet, "lan", None),
+        (by_name, "guests", None),
+        (unassigned, "default", None),
+    ] {
+        let item = &listed[&ip.to_string()];
+        assert_eq!(item["policy"], policy, "the policy in force for {ip}");
+        assert_eq!(
+            item.get("assignment_source").and_then(Value::as_str),
+            source,
+            "the assignment source for {ip}: {item}"
+        );
+
+        let per_client = harness
+            .get_json(&format!("/api/v1/clients/{ip}/policy"))
+            .await;
+        assert_eq!(
+            item["policy"], per_client["policy"],
+            "the two endpoints must agree on the policy for {ip}"
+        );
+        assert_eq!(
+            item.get("assignment_source").is_some(),
+            per_client.get("assignment").is_some(),
+            "the two endpoints must agree on what is direct for {ip}"
+        );
+    }
 }
 
 #[tokio::test]
@@ -1537,7 +1702,7 @@ async fn the_same_source_cannot_be_added_twice_under_different_ids() {
 async fn a_local_file_list_can_be_added_by_path_and_refreshed() {
     let harness = start().await;
     // A file under the manager's own /data dir, as a mounted list would be.
-    let list_path = harness._data_dir.path().join("local.txt");
+    let list_path = harness.data_dir.path().join("local.txt");
     tokio::fs::write(&list_path, "ads.example.com\n")
         .await
         .unwrap();
@@ -1584,7 +1749,7 @@ async fn overlapping_lists_report_compiled_rules_net_of_duplicates() {
     // that motivated dedup, in miniature. The per-list counts stay parse-based
     // (each list still *has* those rules); the envelope reports the merge.
     let harness = start().await;
-    let data = harness._data_dir.path();
+    let data = harness.data_dir.path();
     tokio::fs::write(data.join("a.txt"), "ads.example.com\ntracker.example.org\n")
         .await
         .unwrap();
@@ -1671,7 +1836,7 @@ async fn operating_on_an_unknown_list_is_a_not_found() {
 #[tokio::test]
 async fn refresh_all_refreshes_every_list_best_effort_and_reports_each() {
     let harness = start().await;
-    let data = harness._data_dir.path();
+    let data = harness.data_dir.path();
     // One good local list and one whose file is missing, so its fetch fails —
     // the failure must not stop the good one from refreshing (best-effort).
     tokio::fs::write(data.join("good.txt"), "ads.example.com\n")
@@ -1823,6 +1988,31 @@ async fn invalid_user_rules_are_rejected_with_per_line_messages() {
     assert!(message.contains("line 2"), "got: {message}");
 
     // Nothing was applied.
+    assert_eq!(
+        harness.get_json("/api/v1/rules/user").await["rules"],
+        json!([])
+    );
+}
+
+#[tokio::test]
+async fn user_rules_422_line_numbers_index_the_document_as_sent() {
+    let harness = start().await;
+    let response = harness
+        .client
+        .put(harness.url("/api/v1/rules/user"))
+        .bearer_auth(&harness.key)
+        .json(&json!({"rules": ["||dup.example^", "||dup.example^", "||^"]}))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), 422);
+    let body: Value = response.json().await.unwrap();
+    assert_eq!(body["error"]["code"], "validation_failed");
+    let message = body["error"]["message"].as_str().unwrap();
+    assert!(message.contains("line 3"), "got: {message}");
+    assert!(!message.contains("line 2"), "got: {message}");
+
     assert_eq!(
         harness.get_json("/api/v1/rules/user").await["rules"],
         json!([])
@@ -2519,6 +2709,252 @@ async fn the_event_socket_pushes_periodic_stats() {
     assert_eq!(event["data"]["queries_total"], 184_233);
 }
 
+type EventSocket =
+    tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>;
+
+async fn connect_events(harness: &Harness) -> EventSocket {
+    let url = format!(
+        "{}/api/v1/events?token={}",
+        harness.base.replace("https://", "wss://"),
+        harness.key
+    );
+    let connector = tokio_tungstenite::Connector::Rustls(Arc::new(insecure_client_config()));
+    tokio_tungstenite::connect_async_tls_with_config(&url, None, false, Some(connector))
+        .await
+        .expect("the events socket must accept a ?token= upgrade")
+        .0
+}
+
+async fn subscribe(socket: &mut EventSocket, frame: &str) {
+    use futures_util::SinkExt;
+    socket
+        .send(tokio_tungstenite::tungstenite::Message::Text(frame.into()))
+        .await
+        .unwrap();
+}
+
+async fn wait_for_query_subscribers(harness: &Harness, expected: bool) {
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(10);
+    while harness.server.events().has_query_subscribers() != expected {
+        assert!(
+            tokio::time::Instant::now() < deadline,
+            "the server never reached has_query_subscribers() == {expected}"
+        );
+        tokio::task::yield_now().await;
+    }
+}
+
+#[tokio::test]
+async fn the_default_subscription_delivers_every_event_kind() {
+    use futures_util::StreamExt;
+
+    let harness = start().await;
+    let mut socket = connect_events(&harness).await;
+
+    let events = harness.server.events();
+    events.publish_query(
+        fah_model::Event::dns(blocked_event(IpAddr::V4(Ipv4Addr::new(192, 168, 10, 15)))),
+        None,
+    );
+    events.publish(fah_api::Event::ConfigChanged {
+        restart_required: true,
+    });
+    events.publish(fah_api::Event::ListRefreshed {
+        id: "oisd-basic".to_string(),
+        status: "ok",
+    });
+
+    let mut seen = BTreeMap::new();
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(10);
+    while seen.len() < 4 {
+        let message = tokio::time::timeout_at(deadline, socket.next())
+            .await
+            .expect("timed out before all four event kinds arrived")
+            .expect("socket closed")
+            .expect("websocket error");
+        let Ok(text) = message.into_text() else {
+            continue;
+        };
+        let event: Value = serde_json::from_str(&text).unwrap();
+        seen.insert(event["type"].as_str().unwrap().to_string(), event);
+    }
+
+    assert_eq!(
+        seen.keys().cloned().collect::<Vec<_>>(),
+        vec![
+            "config_changed".to_string(),
+            "list_refreshed".to_string(),
+            "query".to_string(),
+            "stats".to_string()
+        ],
+        "a client that sends nothing still receives everything"
+    );
+}
+
+#[tokio::test]
+async fn a_stats_only_socket_receives_no_query_and_costs_the_engine_nothing() {
+    use futures_util::StreamExt;
+
+    let harness = start().await;
+    let mut socket = connect_events(&harness).await;
+    assert!(
+        harness.server.events().has_query_subscribers(),
+        "a fresh socket is counted from the instant it connects"
+    );
+
+    subscribe(&mut socket, r#"{"subscribe":["stats"]}"#).await;
+    wait_for_query_subscribers(&harness, false).await;
+
+    let events = harness.server.events();
+    let burst = IpAddr::V4(Ipv4Addr::new(192, 168, 10, 15));
+    for _ in 0..50 {
+        events.publish_query(fah_model::Event::dns(blocked_event(burst)), None);
+    }
+    events.publish(fah_api::Event::ConfigChanged {
+        restart_required: true,
+    });
+
+    subscribe(&mut socket, r#"{"subscribe":["query","stats"]}"#).await;
+    wait_for_query_subscribers(&harness, true).await;
+    let marker = IpAddr::V4(Ipv4Addr::new(10, 9, 9, 9));
+    events.publish_query(fah_model::Event::dns(blocked_event(marker)), None);
+
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(10);
+    loop {
+        let message = tokio::time::timeout_at(deadline, socket.next())
+            .await
+            .expect("timed out waiting for the query that follows the widened subscription")
+            .expect("socket closed")
+            .expect("websocket error");
+        let Ok(text) = message.into_text() else {
+            continue;
+        };
+        let event: Value = serde_json::from_str(&text).unwrap();
+        match event["type"].as_str() {
+            Some("query") => {
+                assert_eq!(
+                    event["data"]["client"], "10.9.9.9",
+                    "the burst published while stats-only must never reach this socket"
+                );
+                break;
+            }
+            Some("stats") => continue,
+            other => panic!("a stats-only socket received {other:?}"),
+        }
+    }
+}
+
+#[tokio::test]
+async fn an_unusable_subscription_frame_leaves_the_previous_set_standing() {
+    let harness = start().await;
+    let mut socket = connect_events(&harness).await;
+
+    subscribe(&mut socket, r#"{"subscribe":["stats"]}"#).await;
+    wait_for_query_subscribers(&harness, false).await;
+
+    subscribe(&mut socket, r#"{"subscribe":["query","nonsense"]}"#).await;
+    subscribe(&mut socket, "not json at all").await;
+    assert!(
+        !harness.server.events().has_query_subscribers(),
+        "neither unusable frame may be partially applied: the previous \
+         stats-only set stands until a usable frame replaces it"
+    );
+
+    subscribe(&mut socket, r#"{"subscribe":["query","stats"]}"#).await;
+    wait_for_query_subscribers(&harness, true).await;
+    assert!(
+        harness.server.events().has_query_subscribers(),
+        "the socket survived both unusable frames and still applies a valid one"
+    );
+}
+
+#[tokio::test]
+async fn a_socket_that_does_not_want_stats_is_kept_alive_by_a_ping() {
+    use futures_util::StreamExt;
+
+    let harness = start().await;
+    let mut socket = connect_events(&harness).await;
+    subscribe(&mut socket, r#"{"subscribe":["query"]}"#).await;
+
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(10);
+    loop {
+        let message = tokio::time::timeout_at(deadline, socket.next())
+            .await
+            .expect("a socket without stats must still be fed a ping")
+            .expect("socket closed")
+            .expect("websocket error");
+        if matches!(message, tokio_tungstenite::tungstenite::Message::Ping(_)) {
+            break;
+        }
+    }
+}
+
+#[tokio::test]
+async fn an_oversized_frame_is_refused_and_releases_the_subscription() {
+    use futures_util::StreamExt;
+
+    let harness = start().await;
+    let mut socket = connect_events(&harness).await;
+    assert!(
+        harness.server.events().has_query_subscribers(),
+        "the default subscription counts against the engine gate"
+    );
+
+    let oversized = format!(r#"{{"subscribe":["{}"]}}"#, "q".repeat(2 * 4096));
+    assert!(
+        oversized.len() > 2 * 4096,
+        "one unfragmented frame well past the 4096-byte cap"
+    );
+    subscribe(&mut socket, &oversized).await;
+
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(10);
+    loop {
+        let message = tokio::time::timeout_at(deadline, socket.next())
+            .await
+            .expect("the server must not leave an oversized frame unanswered");
+        match message {
+            None | Some(Err(_)) => break,
+            Some(Ok(tokio_tungstenite::tungstenite::Message::Close(_))) => break,
+            Some(Ok(_)) => continue,
+        }
+    }
+
+    wait_for_query_subscribers(&harness, false).await;
+}
+
+#[tokio::test]
+async fn a_frame_header_declaring_a_huge_payload_is_refused_before_the_payload() {
+    use futures_util::StreamExt;
+    use tokio::io::AsyncWriteExt;
+
+    let harness = start().await;
+    let mut socket = connect_events(&harness).await;
+
+    let mut header = vec![0x81u8, 0xFF];
+    header.extend_from_slice(&(8u64 * 1024 * 1024).to_be_bytes());
+    header.extend_from_slice(&[0xAA, 0xBB, 0xCC, 0xDD]);
+    let stream = socket.get_mut();
+    stream.write_all(&header).await.unwrap();
+    stream.flush().await.unwrap();
+
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+    loop {
+        let message = tokio::time::timeout_at(deadline, socket.next())
+            .await
+            .expect(
+                "a header declaring 8 MiB must be refused from the header alone, \
+                 never buffered while the payload is awaited",
+            );
+        match message {
+            None | Some(Err(_)) => break,
+            Some(Ok(tokio_tungstenite::tungstenite::Message::Close(_))) => break,
+            Some(Ok(_)) => continue,
+        }
+    }
+
+    wait_for_query_subscribers(&harness, false).await;
+}
+
 #[tokio::test]
 async fn the_event_socket_rejects_a_bad_token() {
     let harness = start().await;
@@ -2586,4 +3022,663 @@ fn insecure_client_config() -> rustls::ClientConfig {
         .dangerous()
         .with_custom_certificate_verifier(Arc::new(AcceptAny))
         .with_no_client_auth()
+}
+
+fn session_cookie(response: &reqwest::Response) -> String {
+    let value = response
+        .headers()
+        .get(reqwest::header::SET_COOKIE)
+        .expect("this response must set the session cookie")
+        .to_str()
+        .unwrap();
+    value.split(';').next().unwrap().trim().to_string()
+}
+
+async fn login(harness: &Harness, password: &str) -> reqwest::Response {
+    harness
+        .client
+        .post(harness.url("/api/v1/auth/login"))
+        .json(&json!({ "password": password }))
+        .send()
+        .await
+        .unwrap()
+}
+
+async fn login_cookie(harness: &Harness) -> String {
+    let response = login(harness, PASSWORD).await;
+    assert_eq!(response.status(), 204);
+    session_cookie(&response)
+}
+
+fn cookie_for(token: &str) -> String {
+    format!("__Host-fah_session={token}")
+}
+
+async fn get_with_cookie(harness: &Harness, path: &str, cookie: &str) -> reqwest::Response {
+    harness
+        .client
+        .get(harness.url(path))
+        .header(reqwest::header::COOKIE, cookie)
+        .send()
+        .await
+        .unwrap()
+}
+
+fn secret_file(harness: &Harness) -> String {
+    std::fs::read_to_string(harness.data_dir.path().join("session-secret")).unwrap()
+}
+
+#[tokio::test]
+async fn login_returns_an_empty_204_and_sets_the_host_prefixed_cookie() {
+    let harness = start().await;
+    let response = login(&harness, PASSWORD).await;
+
+    assert_eq!(response.status(), 204);
+    assert_eq!(response.headers().get("cache-control").unwrap(), "no-store");
+    let cookie = response
+        .headers()
+        .get(reqwest::header::SET_COOKIE)
+        .unwrap()
+        .to_str()
+        .unwrap()
+        .to_string();
+    for attribute in ["Secure", "HttpOnly", "SameSite=Strict", "Path=/"] {
+        assert!(cookie.contains(attribute), "{cookie}");
+    }
+    assert!(cookie.starts_with("__Host-fah_session="));
+
+    let body = response.bytes().await.unwrap();
+    assert!(body.is_empty(), "the token must never travel in a body");
+}
+
+#[tokio::test]
+async fn a_wrong_password_is_byte_identical_to_a_password_whose_hash_was_replaced() {
+    let harness = start().await;
+
+    let wrong = login(&harness, "not-the-password").await;
+    let wrong_status = wrong.status();
+    let wrong_headers = wrong.headers().clone();
+    let wrong_body = wrong.text().await.unwrap();
+
+    assert_eq!(wrong_status, 401);
+    assert!(wrong_headers.get(reqwest::header::SET_COOKIE).is_none());
+    assert_eq!(wrong_headers.get("cache-control").unwrap(), "no-store");
+
+    let permit = harness.auth.try_argon2_permit().unwrap();
+    let replacement = AuthState::hash_for_tests(permit, "a-different-password")
+        .await
+        .unwrap();
+    harness.auth.replace_password(replacement).await.unwrap();
+
+    let stale = login(&harness, PASSWORD).await;
+    let stale_status = stale.status();
+    let stale_headers = stale.headers().clone();
+    let stale_body = stale.text().await.unwrap();
+
+    assert_eq!(stale_status, wrong_status);
+    assert_eq!(stale_body, wrong_body);
+    assert_eq!(comparable(&stale_headers), comparable(&wrong_headers));
+}
+
+fn comparable(headers: &reqwest::header::HeaderMap) -> Vec<(String, String)> {
+    let mut pairs: Vec<(String, String)> = headers
+        .iter()
+        .filter(|(name, _)| name.as_str() != "date")
+        .map(|(name, value)| {
+            (
+                name.as_str().to_string(),
+                value.to_str().unwrap().to_string(),
+            )
+        })
+        .collect();
+    pairs.sort();
+    pairs
+}
+
+#[tokio::test]
+async fn a_session_cookie_authenticates_the_rest_surface() {
+    let harness = start().await;
+    let cookie = login_cookie(&harness).await;
+
+    let response = get_with_cookie(&harness, "/api/v1/stats", &cookie).await;
+    assert_eq!(response.status(), 200);
+
+    let bare = harness
+        .client
+        .get(harness.url("/api/v1/stats"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(bare.status(), 401);
+}
+
+#[tokio::test]
+async fn expiry_is_enforced_from_the_token_not_the_cookie_attributes() {
+    let harness = start().await;
+    let expired = harness
+        .auth
+        .mint_for_tests(1, SystemTime::now() - Duration::from_secs(1))
+        .await;
+
+    let response = harness
+        .client
+        .get(harness.url("/api/v1/stats"))
+        .header(reqwest::header::COOKIE, cookie_for(&expired))
+        .header("expires", "Tue, 01 Jan 2999 00:00:00 GMT")
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), 401);
+    assert_eq!(response.headers().get("cache-control").unwrap(), "no-store");
+    let body: Value = response.json().await.unwrap();
+    assert_eq!(body["error"]["code"], "unauthorized");
+}
+
+#[tokio::test]
+async fn a_tampered_or_unknown_version_token_is_rejected() {
+    let harness = start().await;
+    let cookie = login_cookie(&harness).await;
+
+    let mut tampered = cookie.clone().into_bytes();
+    let last = tampered.len() - 1;
+    tampered[last] = if tampered[last] == b'a' { b'b' } else { b'a' };
+    let tampered = String::from_utf8(tampered).unwrap();
+    assert_eq!(
+        get_with_cookie(&harness, "/api/v1/stats", &tampered)
+            .await
+            .status(),
+        401
+    );
+
+    let version_two = harness
+        .auth
+        .mint_for_tests(2, SystemTime::now() + Duration::from_secs(3600))
+        .await;
+    let response = get_with_cookie(&harness, "/api/v1/stats", &cookie_for(&version_two)).await;
+    assert_eq!(response.status(), 401);
+    let body: Value = response.json().await.unwrap();
+    assert_eq!(body["error"]["code"], "unauthorized");
+
+    assert_eq!(
+        get_with_cookie(&harness, "/api/v1/stats", &cookie)
+            .await
+            .status(),
+        200,
+        "the untouched cookie still works"
+    );
+}
+
+#[tokio::test]
+async fn logout_clears_the_cookie_and_logout_all_rotates_the_secret() {
+    let harness = start().await;
+    let cookie = login_cookie(&harness).await;
+
+    let response = harness
+        .client
+        .post(harness.url("/api/v1/auth/logout"))
+        .header(reqwest::header::COOKIE, &cookie)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), 204);
+    assert!(session_cookie(&response).ends_with('='));
+    assert_eq!(
+        get_with_cookie(&harness, "/api/v1/stats", &cookie)
+            .await
+            .status(),
+        200,
+        "logout is client-side: the token stays valid until expiry"
+    );
+
+    let before = secret_file(&harness);
+    let response = harness
+        .client
+        .post(harness.url("/api/v1/auth/logout-all"))
+        .header(reqwest::header::COOKIE, &cookie)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), 204);
+    assert_ne!(secret_file(&harness), before);
+    assert_eq!(
+        get_with_cookie(&harness, "/api/v1/stats", &cookie)
+            .await
+            .status(),
+        401,
+        "logout-all is the revocation"
+    );
+}
+
+#[tokio::test]
+async fn a_password_change_requires_the_current_password_and_kills_every_session() {
+    let harness = start().await;
+    let cookie = login_cookie(&harness).await;
+    let secret_before = secret_file(&harness);
+
+    let wrong = harness
+        .client
+        .post(harness.url("/api/v1/auth/password"))
+        .header(reqwest::header::COOKIE, &cookie)
+        .json(&json!({
+            "current_password": "not-the-password",
+            "new_password": "a-perfectly-long-replacement",
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(wrong.status(), 401);
+    assert_eq!(wrong.headers().get("cache-control").unwrap(), "no-store");
+    assert_eq!(
+        secret_file(&harness),
+        secret_before,
+        "a failed change rotates nothing"
+    );
+
+    let short = harness
+        .client
+        .post(harness.url("/api/v1/auth/password"))
+        .header(reqwest::header::COOKIE, &cookie)
+        .json(&json!({ "current_password": PASSWORD, "new_password": "short" }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(short.status(), 422);
+    assert_eq!(short.headers().get("cache-control").unwrap(), "no-store");
+    let body: Value = short.json().await.unwrap();
+    assert_eq!(body["error"]["code"], "validation_failed");
+    assert_eq!(secret_file(&harness), secret_before);
+
+    let changed = harness
+        .client
+        .post(harness.url("/api/v1/auth/password"))
+        .header(reqwest::header::COOKIE, &cookie)
+        .json(&json!({
+            "current_password": PASSWORD,
+            "new_password": "a-perfectly-long-replacement",
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(changed.status(), 204);
+    assert!(session_cookie(&changed).ends_with('='));
+    assert_ne!(secret_file(&harness), secret_before);
+
+    assert_eq!(
+        get_with_cookie(&harness, "/api/v1/stats", &cookie)
+            .await
+            .status(),
+        401,
+        "the caller's own session dies too"
+    );
+    assert_eq!(login(&harness, PASSWORD).await.status(), 401);
+    assert_eq!(
+        login(&harness, "a-perfectly-long-replacement")
+            .await
+            .status(),
+        204
+    );
+}
+
+#[tokio::test]
+async fn no_auth_response_ever_carries_the_password_or_the_secret() {
+    let harness = start().await;
+    let cookie = login_cookie(&harness).await;
+    let secret = secret_file(&harness);
+
+    let mut bodies = Vec::new();
+    for (path, payload) in [
+        ("/api/v1/auth/login", json!({ "password": PASSWORD })),
+        ("/api/v1/auth/login", json!({ "password": "wrong" })),
+        ("/api/v1/auth/logout", json!({})),
+        (
+            "/api/v1/auth/password",
+            json!({ "current_password": "wrong", "new_password": "a-long-replacement" }),
+        ),
+    ] {
+        let response = harness
+            .client
+            .post(harness.url(path))
+            .header(reqwest::header::COOKIE, &cookie)
+            .json(&payload)
+            .send()
+            .await
+            .unwrap();
+        bodies.push(response.text().await.unwrap());
+    }
+    bodies.push(harness.get("/api/v1/config").await.text().await.unwrap());
+
+    for body in bodies {
+        assert!(!body.contains(PASSWORD), "{body}");
+        assert!(!body.contains(secret.trim()), "{body}");
+        assert!(!body.contains("$argon2"), "{body}");
+    }
+}
+
+#[tokio::test]
+async fn get_config_omits_auth_material_and_post_config_refuses_it() {
+    let harness = start().await;
+
+    let body = harness.get("/api/v1/config").await.text().await.unwrap();
+    assert!(!body.contains("$argon2"), "{body}");
+    let parsed: Value = serde_json::from_str(&body).unwrap();
+    assert!(parsed.get("auth").is_none());
+
+    let response = harness
+        .client
+        .post(harness.url("/api/v1/config"))
+        .bearer_auth(&harness.key)
+        .json(&json!({ "auth": { "password_hash": "$argon2id$v=19$m=19456,t=2,p=1$x$y" } }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), 422);
+    let body: Value = response.json().await.unwrap();
+    assert_eq!(body["error"]["code"], "validation_failed");
+    assert!(
+        body["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("/api/v1/auth/password"),
+        "the guard names the endpoint that owns the password"
+    );
+}
+
+#[tokio::test]
+async fn a_saturated_verifier_answers_503_with_a_retry_after_of_one() {
+    let harness = start().await;
+
+    let mut held = Vec::new();
+    while let Some(permit) = harness.auth.try_argon2_permit() {
+        held.push(permit);
+    }
+    assert_eq!(held.len(), 2, "ARGON2_PERMITS is the documented bound");
+
+    let response = login(&harness, PASSWORD).await;
+    assert_eq!(response.status(), 503);
+    assert_eq!(response.headers().get("retry-after").unwrap(), "1");
+    assert_eq!(response.headers().get("cache-control").unwrap(), "no-store");
+    assert!(response
+        .headers()
+        .get(reqwest::header::SET_COOKIE)
+        .is_none());
+    let body: Value = response.json().await.unwrap();
+    assert_eq!(body["error"]["code"], "unavailable");
+
+    drop(held);
+    assert_eq!(login(&harness, PASSWORD).await.status(), 204);
+}
+
+#[tokio::test]
+async fn a_malformed_login_body_is_a_400_carrying_no_store() {
+    let harness = start().await;
+    let response = harness
+        .client
+        .post(harness.url("/api/v1/auth/login"))
+        .header(reqwest::header::CONTENT_TYPE, "application/json")
+        .body("{\"password\":")
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), 400);
+    assert_eq!(response.headers().get("cache-control").unwrap(), "no-store");
+}
+
+#[tokio::test]
+async fn the_middleware_401_also_carries_no_store() {
+    let harness = start().await;
+    let response = harness
+        .client
+        .post(harness.url("/api/v1/auth/logout"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), 401);
+    assert_eq!(response.headers().get("cache-control").unwrap(), "no-store");
+}
+
+#[tokio::test]
+async fn the_production_limiter_rejects_a_burst_with_429_and_retry_after() {
+    let harness = start_with(HarnessOptions {
+        limits: AuthState::production_limits(),
+        ..HarnessOptions::default()
+    })
+    .await;
+
+    for attempt in 1..=5 {
+        assert_eq!(
+            login(&harness, "wrong").await.status(),
+            401,
+            "attempt {attempt} is a normal failure"
+        );
+    }
+
+    let response = login(&harness, PASSWORD).await;
+    assert_eq!(response.status(), 429);
+    let retry_after: u64 = response
+        .headers()
+        .get("retry-after")
+        .expect("a rate-limit rejection advertises when to retry")
+        .to_str()
+        .unwrap()
+        .parse()
+        .unwrap();
+    assert!((1..=60).contains(&retry_after));
+    assert_eq!(response.headers().get("cache-control").unwrap(), "no-store");
+    assert!(response
+        .headers()
+        .get(reqwest::header::SET_COOKIE)
+        .is_none());
+    let body: Value = response.json().await.unwrap();
+    assert_eq!(body["error"]["code"], "rate_limited");
+}
+
+#[tokio::test]
+async fn patching_the_api_tls_boot_key_does_not_move_the_auth_decision() {
+    let harness = start().await;
+    assert_eq!(login(&harness, PASSWORD).await.status(), 204);
+
+    let body: Value = harness
+        .client
+        .post(harness.url("/api/v1/config"))
+        .bearer_auth(&harness.key)
+        .json(&json!({"api": {"tls": false}}))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(body["restart_required"], true);
+    assert_eq!(
+        harness.get_json("/api/v1/config").await["api"]["tls"],
+        false,
+        "the patched value is published live, which is why auth must not read it"
+    );
+
+    let response = login(&harness, PASSWORD).await;
+    assert_eq!(
+        response.status(),
+        204,
+        "the listener is still TLS, so session login stays available until a restart"
+    );
+    assert!(response
+        .headers()
+        .get(reqwest::header::SET_COOKIE)
+        .is_some());
+
+    let cookie = session_cookie(&response);
+    let origin = own_origin(&harness);
+    assert!(
+        connect_socket(&harness, Some(&cookie), Some(&origin), false, false)
+            .await
+            .is_ok(),
+        "the Origin scheme must still be derived from the live listener, not the patch"
+    );
+}
+
+#[tokio::test]
+async fn with_tls_off_only_login_is_refused_and_it_advertises_no_retry() {
+    let harness = start_with(HarnessOptions {
+        tls: false,
+        ..HarnessOptions::default()
+    })
+    .await;
+
+    let response = login(&harness, PASSWORD).await;
+    assert_eq!(response.status(), 503);
+    assert!(
+        response.headers().get("retry-after").is_none(),
+        "a boot-key condition never clears on its own, so it advertises no interval"
+    );
+    assert!(response
+        .headers()
+        .get(reqwest::header::SET_COOKIE)
+        .is_none());
+    assert_eq!(response.headers().get("cache-control").unwrap(), "no-store");
+    let body: Value = response.json().await.unwrap();
+    assert_eq!(body["error"]["code"], "unavailable");
+    assert!(
+        body["error"]["message"].as_str().unwrap().contains("TLS"),
+        "the message names the requirement"
+    );
+
+    let logout = harness
+        .client
+        .post(harness.url("/api/v1/auth/logout"))
+        .bearer_auth(&harness.key)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(logout.status(), 204);
+
+    let before = secret_file(&harness);
+    let logout_all = harness
+        .client
+        .post(harness.url("/api/v1/auth/logout-all"))
+        .bearer_auth(&harness.key)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(logout_all.status(), 204);
+    assert_ne!(secret_file(&harness), before);
+
+    let wrong = harness
+        .client
+        .post(harness.url("/api/v1/auth/password"))
+        .bearer_auth(&harness.key)
+        .json(&json!({ "current_password": "wrong", "new_password": "a-long-replacement" }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(wrong.status(), 401);
+
+    let right = harness
+        .client
+        .post(harness.url("/api/v1/auth/password"))
+        .bearer_auth(&harness.key)
+        .json(&json!({ "current_password": PASSWORD, "new_password": "a-long-replacement" }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(right.status(), 204);
+}
+
+async fn connect_socket(
+    harness: &Harness,
+    cookie: Option<&str>,
+    origin: Option<&str>,
+    token: bool,
+    bearer: bool,
+) -> Result<EventSocket, tokio_tungstenite::tungstenite::Error> {
+    use tokio_tungstenite::tungstenite::client::IntoClientRequest;
+    use tokio_tungstenite::tungstenite::http::HeaderValue;
+
+    let base = harness.base.replace("https://", "wss://");
+    let url = if token {
+        format!("{base}/api/v1/events?token={}", harness.key)
+    } else {
+        format!("{base}/api/v1/events")
+    };
+    let mut request = url.into_client_request().unwrap();
+    if let Some(cookie) = cookie {
+        request
+            .headers_mut()
+            .insert("cookie", HeaderValue::from_str(cookie).unwrap());
+    }
+    if let Some(origin) = origin {
+        request
+            .headers_mut()
+            .insert("origin", HeaderValue::from_str(origin).unwrap());
+    }
+    if bearer {
+        request.headers_mut().insert(
+            "authorization",
+            HeaderValue::from_str(&format!("Bearer {}", harness.key)).unwrap(),
+        );
+    }
+    let connector = tokio_tungstenite::Connector::Rustls(Arc::new(insecure_client_config()));
+    tokio_tungstenite::connect_async_tls_with_config(request, None, false, Some(connector))
+        .await
+        .map(|(socket, _)| socket)
+}
+
+fn own_origin(harness: &Harness) -> String {
+    harness.base.clone()
+}
+
+#[tokio::test]
+async fn the_socket_upgrades_with_only_the_cookie_and_a_matching_origin() {
+    let harness = start().await;
+    let cookie = login_cookie(&harness).await;
+    let origin = own_origin(&harness);
+
+    let socket = connect_socket(&harness, Some(&cookie), Some(&origin), false, false).await;
+    assert!(socket.is_ok(), "a same-origin cookie upgrade must succeed");
+    drop(socket);
+    wait_for_query_subscribers(&harness, false).await;
+}
+
+#[tokio::test]
+async fn the_socket_rejects_a_cookie_upgrade_with_a_foreign_or_absent_origin() {
+    let harness = start().await;
+    let cookie = login_cookie(&harness).await;
+
+    assert!(
+        connect_socket(
+            &harness,
+            Some(&cookie),
+            Some("https://evil.example.com"),
+            false,
+            false
+        )
+        .await
+        .is_err(),
+        "a foreign Origin must not open a cookie-authenticated socket"
+    );
+    assert!(
+        connect_socket(&harness, Some(&cookie), None, false, false)
+            .await
+            .is_err(),
+        "a missing Origin is not acceptable from a browser"
+    );
+    assert!(
+        !harness.server.events().has_query_subscribers(),
+        "a rejected upgrade must never have taken a subscription slot"
+    );
+}
+
+#[tokio::test]
+async fn a_bearer_upgrade_with_no_origin_succeeds_in_both_forms() {
+    let harness = start().await;
+
+    let header_form = connect_socket(&harness, None, None, false, true).await;
+    assert!(header_form.is_ok(), "Authorization header form");
+    drop(header_form);
+    wait_for_query_subscribers(&harness, false).await;
+
+    let query_form = connect_socket(&harness, None, None, true, false).await;
+    assert!(query_form.is_ok(), "?token= form");
+    drop(query_form);
+    wait_for_query_subscribers(&harness, false).await;
 }

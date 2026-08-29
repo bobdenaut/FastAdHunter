@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="light dark" />
+    <link rel="icon" href="/favicon.svg" />
+    <title>FastAdHunter</title>
+    <script>
+      // Before first paint: applied from the bundle instead, every load flashes
+      // the wrong theme. The try/catch is load-bearing — a browser with site
+      // data blocked throws on the read, and an uncaught throw here stops the
+      // parser before the stylesheet.
+      try {
+        var t = localStorage.getItem('fah-theme');
+        if (t !== 'light' && t !== 'dark') {
+          t = matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+        }
+        document.documentElement.dataset.theme = t;
+        document.documentElement.style.colorScheme = t;
+      } catch (e) {}
+    </script>
+  </head>
+  <body>
+    <div id="app"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

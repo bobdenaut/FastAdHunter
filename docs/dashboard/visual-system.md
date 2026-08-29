@@ -3,6 +3,13 @@
 How the FastAdHunter dashboard looks and is built. Pi-hole's interface is the
 reference for *appearance and interaction*; none of its code is used.
 
+**The built dashboard looks exactly like [sketch/](sketch/).** Those artboards
+are the specification for layout, chrome, density, control placement and
+interaction — not a mood board. This file settles the rules behind them
+(tokens, budget, breakpoints, accessibility); where the two disagree, the
+artboard is what ships and this file is corrected. Where an artboard is silent,
+this file decides. Neither is ever imported from.
+
 ## Stack
 
 | Choice | Why |
@@ -67,6 +74,22 @@ Pi-hole's AdminLTE arrangement, reproduced:
   then a 12-column card grid
 - cards are white (dark-mode: raised surface) with a title bar, an optional
   tool button, and a body
+- a **refresh cluster** — data age, a bounded interval selector, a mini Refresh
+  button, in that order — appears **once per polled endpoint on a page**, not
+  once per card. Where a page reads exactly one polled endpoint the cluster sits
+  in the content header; where it reads several, each gets its own cluster
+  anchored to the zone that owns it, and a second card reading an endpoint that
+  already has one carries nothing. Zones fed by the `stats` push or by
+  `/history/*` carry no cluster: there is no timer to control. On the phone the
+  cluster becomes a full-width row at the top of that card's body with 44 px
+  targets, the same relocation the range selector already uses
+- the interval is a browser-local preference **per endpoint** — changing it
+  anywhere changes it everywhere that endpoint is read. Options are fixed and
+  few; there is no free-text interval and no "off". The cluster is drawn from
+  the same tokens as the chips and the secondary button: `#cfd8e3` border, 4 px
+  radius, 11.5 px `#47535f`. See
+  [sketch/](sketch/) — `Cache` (one endpoint), `Upstreams` and `Health` (two),
+  `Main` (mixed), `MobileDashboard` (phone)
 
 Grid columns follow Pi-hole's: full width for a primary time series, halves for
 paired charts and tables, quarters for the tile row.
@@ -88,13 +111,34 @@ Accent roles are fixed and never reused for another meaning:
 
 ## Charts
 
-- **Time series** — stacked area for permitted/blocked, line for rates and
-  latency. Shared range selector: 24 h · 7 d · 30 d. Zoom and pan on the
-  primary chart, as Pi-hole does. `permitted` is `queries − blocked` and is never
-  labelled "allowed": `allow` is the explicit exception verdict and a different,
-  far smaller number (capability-matrix.md §Vocabulary).
+- **Time series** — **stacked bars** for permitted/blocked, one bar per bucket,
+  as Pi-hole draws it; line for rates and latency. Shared range selector:
+  24 h · 7 d · 30 d. Bars are honest about the data being discrete rollups,
+  where a filled area implies a continuous signal the API does not provide, and
+  a common baseline is what makes the blocked segment comparable bar to bar at
+  around 12 %. `permitted` is `queries − blocked` and is never labelled
+  "allowed": `allow` is the explicit exception verdict and a different, far
+  smaller number (capability-matrix.md §Vocabulary).
+- **7 d requests `resolution=day`.** 168 hourly bars is unreadable at any
+  width; 24 h stays hourly (24 bars) and 30 d is daily (30 bars).
+- **Every time-series chart carries a y-axis.** Gridline labels, right-aligned
+  outside the plot, 10 px mono in the muted tick colour — the treatment
+  `Performance` already uses. A chart with no vertical scale cannot answer "is
+  that a lot".
+- **Figures are printed on bars when they fit, and dropped by rule when they do
+  not.** A bar at least **50 px** wide carries its total above it; a blocked
+  segment at least **15 px** tall carries its own figure inside it, in white.
+  Below either floor the label is simply not drawn — which is what makes the
+  phone work with no phone-specific code, and what keeps 30 daily bars from
+  becoming a wall of digits. The floors are pixel measurements, tuned once.
+- **Exact per-bucket figures come from hover**, not from the printed labels: a
+  dark tooltip carrying the bucket window, `queries`, `blocked` and
+  `blocked_percent`, with the hovered bar held at full opacity and the rest
+  dimmed. This is the only hover state in the system, and the artboards draw it.
+- **Aggregates live in the card title bar**, in the secondary-text slot —
+  totals a bar chart structurally cannot show.
 - **Decimation is visible.** When the API returns `stride > 1`, the chart
-  footnote states the series is decimated and that every plotted point is a
+  footnote states the series is decimated and that every bar is a
   real reading, never an average.
 - **Donuts** — query types only. Legend beside the ring, not inside it.
 - **Bars** — upstream attempts with failures overlaid; cache stages stacked;
@@ -103,6 +147,39 @@ Accent roles are fixed and never reused for another meaning:
   Averages hide the tail the budget cares about.
 - Axes carry units. Bytes are binary-prefixed and labelled. Durations are ms
   under a second, s above.
+
+### The categorical palette is capped, and Memory is where it binds
+
+The series ramp carries five hues. That is enough for every chart in the system
+except one, and rather than stretch it, `Diagnostics · Memory` spends encodings
+that are not hue.
+
+- **A chart gets at most three categorical hues when a status colour is also on
+  it.** Measured against both surfaces, a fourth hue does not clear the
+  colour-blind separation floor beside the first three plus an amber and a red:
+  magenta lands 1.6 from the aqua under deuteranopia, violet 1.9 from the blue
+  under protanopia, lime 2.4 from the amber. The floor is Delta E 8 for
+  simulated vision and 15 for normal vision, OKLab ×100.
+- **Past three, the encoding changes rather than the hue.** Memory draws five
+  series and two thresholds at once, and does it with three hues, a **texture**
+  for the residual, the **ink of the stack's top edge** for RSS, and a second
+  **step of one hue** for the smaller of two related bands. Cache and stats are
+  2 % and 3 % of RSS — bands a few pixels tall, where lightness separates and
+  hue would not have anyway.
+- **A remainder is drawn as a texture, never as a hue.** Residual is
+  `process_rss − accounted_bytes`: real, measured, and not one structure. A hue
+  would promise it is a thing.
+- **A total that is the top of its own stack wears ink, not a hue.** In a stack
+  summing to RSS, the top edge *is* RSS, so a hue for it would be a sixth colour
+  describing a line the geometry already names.
+- **Status colours stay reserved and never appear alone.** The over-budget red
+  is drawn only alongside the labelled rule that names its threshold, and the
+  watch band is a shaded zone with a caption. A status colour a reader cannot
+  check against a number is an alarm, not information.
+- **Page-scoped tokens are legitimate when a page has a constraint the system
+  does not.** Memory's ramp lives beside the shared one in `tokens.css` rather
+  than replacing it: repainting every other chart is a larger change than the
+  page that needs it. `series-palette.test.ts` pins the separations of both.
 
 ## Tables
 

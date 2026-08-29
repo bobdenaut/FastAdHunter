@@ -428,7 +428,8 @@ impl Harness {
 
         let (keys, generated) = ApiKeyStore::load_or_create(config_dir.path()).unwrap();
         let key = generated.expect("first boot generates a key");
-        let tls = Some(fah_api::load_or_generate_tls(config_dir.path()).unwrap());
+        let tls =
+            Some(fah_api::load_or_generate_tls(config_dir.path(), "127.0.0.1", None).unwrap());
 
         let port = Arc::new(StatsPort(Arc::clone(&stats)));
         let state = AppStateBuilder {
@@ -440,6 +441,15 @@ impl Harness {
             cache: Arc::new(NoCache),
             config: Arc::new(ConfigStore::new(config, config_path)),
             keys: Arc::new(keys),
+            auth: Arc::new(
+                fah_api::AuthState::for_tests(
+                    config_dir.path(),
+                    data_dir.path(),
+                    "history-e2e-password",
+                    fah_api::AuthState::relaxed_limits(),
+                )
+                .unwrap(),
+            ),
         };
         let server = ApiServer::bind("127.0.0.1", 0, tls, state).await.unwrap();
         let base = server.base_url();

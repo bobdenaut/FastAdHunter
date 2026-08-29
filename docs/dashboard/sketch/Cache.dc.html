@@ -20,7 +20,7 @@
     .main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
     .nav { height: 58px; background: #fff; border-bottom: 1px solid #dde3ea; display: flex; align-items: center; justify-content: space-between; padding: 0 20px; }
     .navr { display: flex; align-items: center; gap: 16px; font-size: 12.5px; color: #6b7785; }
-    .hd { padding: 18px 20px 0; }
+    .hd { padding: 18px 20px 0; display: flex; align-items: flex-end; justify-content: space-between; gap: 20px; }
     .h1 { font-size: 20px; font-weight: 600; margin: 0; }
     .sub { font-size: 12.5px; color: #6b7785; margin: 5px 0 0; }
     .wrap { padding: 16px 20px 28px; display: flex; flex-direction: column; gap: 16px; }
@@ -38,6 +38,10 @@
     td { padding: 7px 0; border-top: 1px solid #f2f5f8; }
     td:last-child { text-align: right; }
     .cb { width: 15px; height: 15px; border: 1px solid #cfd8e3; border-radius: 3px; display: inline-block; vertical-align: -3px; background: #fff; }
+    .ctl { display: flex; align-items: center; gap: 8px; flex: 0 0 auto; }
+    .age { font-size: 11.5px; color: #6b7785; white-space: nowrap; font-variant-numeric: tabular-nums; }
+    .sel { border: 1px solid #cfd8e3; background: #fff; border-radius: 4px; padding: 3px 6px 3px 8px; font-size: 11.5px; color: #47535f; display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
+    .mini { border: 1px solid #cfd8e3; background: #fff; border-radius: 4px; width: 26px; height: 24px; display: inline-flex; align-items: center; justify-content: center; color: #47535f; flex: 0 0 auto; }
   </style>
 </helmet>
 
@@ -57,8 +61,11 @@
     </div>
 
     <div class="hd">
-      <p class="h1">DNS cache</p>
-      <p class="sub">Bounded by entries <b>and</b> bytes — <span class="mono">GET /api/v1/cache</span></p>
+      <div>
+        <p class="h1">DNS cache</p>
+        <p class="sub">Bounded by entries <b>and</b> bytes — <span class="mono">GET /api/v1/cache</span></p>
+      </div>
+      <span class="ctl"><span class="age">updated 12 s ago</span><span class="sel">5 m<svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M5 8l7 7 7-7"></path></svg></span><span class="mini" title="Refresh now"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20.5 11.5a8.5 8.5 0 1 0-2.5 6.4"></path><path d="M20.5 4v7.5H13"></path></svg></span></span>
     </div>
 
     <div class="wrap">

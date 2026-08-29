@@ -433,11 +433,46 @@ impl Engine {
             // Printed exactly once, on first boot (SECURITY.md §API access).
             tracing::info!(api_key = %key, "generated API key — store it now; it is not shown again");
         }
+
+        let (auth, generated_password) = {
+            let config_dir = config_dir.to_path_buf();
+            let data_dir = data_dir.to_path_buf();
+            tokio::task::spawn_blocking(move || {
+                #[cfg(feature = "test-harness")]
+                {
+                    tracing::warn!(
+                        "built with the p5-04 measurement feature: login rate limiting is \
+                         relaxed. This build must never be shipped"
+                    );
+                    fah_api::AuthState::load_or_create_with_limits(
+                        &config_dir,
+                        &data_dir,
+                        fah_api::AuthState::relaxed_limits(),
+                    )
+                }
+                #[cfg(not(feature = "test-harness"))]
+                fah_api::AuthState::load_or_create(&config_dir, &data_dir)
+            })
+            .await??
+        };
+        if let Some(password) = generated_password {
+            tracing::info!(
+                dashboard_password = %password,
+                "generated dashboard password — store it now; it is not shown again"
+            );
+        }
         let tls = if config.api.tls {
-            Some(fah_api::load_or_generate_tls(config_dir)?)
+            Some(fah_api::load_or_generate_tls(
+                config_dir,
+                &config.api.address,
+                fah_api::probe_local_address(),
+            )?)
         } else {
             tracing::warn!(
-                "api.tls is disabled — the API key travels in plaintext; see SECURITY.md"
+                "api.tls is disabled — the API key travels in plaintext, and dashboard \
+                 session login is unavailable because the session cookie requires a \
+                 Secure __Host- prefix; bearer-key authentication is unaffected and the \
+                 other three /api/v1/auth routes stay usable. See SECURITY.md"
             );
             None
         };
@@ -463,6 +498,7 @@ impl Engine {
                 cache: Arc::new(adapters::CacheAdapter::new(Arc::clone(&pipeline))),
                 config: Arc::new(fah_api::ConfigStore::new(config, config_path.to_path_buf())),
                 keys: Arc::new(keys),
+                auth: Arc::new(auth),
             },
         )
         .await?;
@@ -632,10 +668,7 @@ fn spawn_event_fanout(
                 fah_model::Event::Dns(query) => metrics.record(query),
                 fah_model::Event::Http(request) => metrics.record_http(request),
             }
-            // The WS publish work (a clone, a boxed record, a client-name
-            // lookup) is only bought when a dashboard is actually connected —
-            // no-subscribers is the appliance's idle state ~24h/day.
-            let publish = hub.has_subscribers();
+            let publish = hub.has_query_subscribers();
             let for_hub = publish.then(|| event.clone());
             match event {
                 fah_model::Event::Dns(query) => stats.record(*query),

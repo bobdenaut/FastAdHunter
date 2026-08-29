@@ -17,8 +17,6 @@ Prefer:
 - bullet lists over paragraphs;
 - facts over explanations.
 
-Maximum: **100–300 lines** per document.
-
 Required structure:
 
 1. Summary (5–10 lines)

@@ -40,3 +40,42 @@ Authorization: Bearer {{apiKey}}
 ### stored value. Expect 401, not 404.
 GET {{probe}}
 Authorization: Bearer {{apiKey}}
+
+### ─── Session authentication (dashboard) ───────────────────────────────
+###
+### The browser dashboard signs in with a password and rides a `__Host-`
+### cookie; the bearer key above is unchanged and stays the scripting path.
+### `login` is the only route exempt from authentication, and the only one
+### refused when `[api] tls = false` (503 `unavailable`, no `Retry-After`).
+###
+### These are fixtures for the route-coverage gate as much as probes: nothing
+### below is destructive except `logout-all` and `password`, and neither is
+### issued by the test suite.
+
+### Sign in. Expect 204 with `Set-Cookie: __Host-fah_session=…` and
+### `Cache-Control: no-store`, and an empty body — the token is never in one.
+### A wrong password is 401 `unauthorized` with no cookie; the two answers
+### reveal nothing about which half was wrong.
+POST {{base}}/api/v1/auth/login
+Content-Type: application/json
+
+{"password": "the-dashboard-password"}
+
+### Sign out this browser. Clears the cookie; the token itself stays valid
+### until its absolute expiry — `logout-all` is the only real revocation.
+POST {{base}}/api/v1/auth/logout
+Authorization: Bearer {{apiKey}}
+
+### Revoke EVERY session by rotating /data/session-secret. Every signed-in
+### browser, including this one, is signed out immediately.
+POST {{base}}/api/v1/auth/logout-all
+Authorization: Bearer {{apiKey}}
+
+### Change the dashboard password. Requires the current one (401 on
+### mismatch, nothing written), enforces at least 12 characters (422), and
+### invalidates every existing session on success (204).
+POST {{base}}/api/v1/auth/password
+Authorization: Bearer {{apiKey}}
+Content-Type: application/json
+
+{"current_password": "the-dashboard-password", "new_password": "a-longer-replacement"}

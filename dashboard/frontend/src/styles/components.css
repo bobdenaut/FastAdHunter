@@ -1,0 +1,4730 @@
+/* Component vocabulary. Built once here and used by every later task; the
+   measurements are the artboards' (docs/dashboard/sketch/). */
+
+/* Tile — a large figure, a label, a translucent corner glyph, a solid accent
+   background, and a footer strip that links deeper. */
+.tile {
+  border-radius: var(--radius-tile);
+  color: #fff;
+  position: relative;
+  overflow: hidden;
+}
+
+.tile .in {
+  padding: 13px 16px 12px;
+  position: relative;
+  z-index: 1;
+}
+
+.tile .lb {
+  font-size: 13.5px;
+  font-weight: 500;
+}
+
+.tile .n {
+  font-size: 33px;
+  font-weight: 600;
+  line-height: 1.14;
+  margin-top: 2px;
+  font-variant-numeric: tabular-nums;
+}
+
+.tile .ic {
+  position: absolute;
+  right: 10px;
+  top: 10px;
+  opacity: 0.28;
+  z-index: 0;
+  color: #fff;
+}
+
+.tile .ft {
+  background: rgba(0, 0, 0, 0.13);
+  padding: 6px 14px;
+  font-size: 11.5px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  position: relative;
+  z-index: 1;
+  color: #fff;
+}
+
+.tile .ft:hover {
+  text-decoration: none;
+  background: rgba(0, 0, 0, 0.2);
+}
+
+.tile .ft-short,
+.tile .lb-short {
+  display: none;
+}
+
+/* Accent roles are fixed and never reused for another meaning. */
+.tile.volume {
+  background: var(--tile-volume);
+}
+.tile.blocked {
+  background: var(--tile-blocked);
+}
+.tile.ratio {
+  background: var(--tile-ratio);
+}
+.tile.healthy {
+  background: var(--tile-healthy);
+}
+.tile.zero {
+  background: var(--tile-zero);
+}
+
+/* Card — title bar, optional tool button, body. */
+.card {
+  background: var(--surface-raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  min-width: 0;
+}
+
+.ch {
+  margin: 0;
+  font-size: 13.5px;
+  font-weight: 600;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--border-soft);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+
+.ch-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 0 0 auto;
+  font-weight: 400;
+}
+
+.bd {
+  padding: 14px;
+}
+
+/* Table — right-aligned tabular figures, a translucent frequency bar behind a
+   count, zebra off, hover on, horizontal scroll inside its own container. */
+.table-scroll {
+  overflow-x: auto;
+}
+
+table.t {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12.5px;
+}
+
+table.t th {
+  text-align: left;
+  font-weight: 600;
+  color: var(--text-muted);
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding: 0 10px 8px;
+  white-space: nowrap;
+}
+
+table.t th.num,
+table.t td.num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  font-family: var(--font-mono);
+}
+
+table.t td {
+  padding: 7px 10px;
+  border-top: 1px solid var(--border-row);
+}
+
+table.t tbody tr:hover td {
+  background: var(--surface-sunken);
+}
+
+.bar {
+  height: 4px;
+  border-radius: 2px;
+  background: var(--track);
+  overflow: hidden;
+}
+
+.bar > span {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+}
+
+/* Pills — always with their word, never colour alone. */
+.pill {
+  display: inline-block;
+  padding: 1px 8px;
+  border-radius: 3px;
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+.pill.neutral {
+  background: var(--pill-neutral-bg);
+  color: var(--pill-neutral-fg);
+}
+.pill.good {
+  background: var(--pill-good-bg);
+  color: var(--pill-good-fg);
+}
+.pill.bad {
+  background: var(--pill-bad-bg);
+  color: var(--pill-bad-fg);
+}
+.pill.warn {
+  background: var(--pill-warn-bg);
+  color: var(--pill-warn-fg);
+}
+.pill.special {
+  background: var(--pill-special-bg);
+  color: var(--pill-special-fg);
+}
+
+/* Stage bar — a segmented proportion bar with the legend beside it. */
+.seg {
+  display: flex;
+  height: 7px;
+  border-radius: 3px;
+  overflow: hidden;
+  background: var(--track);
+}
+
+.seg-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 9px;
+  font-size: 11.5px;
+  color: var(--text-muted);
+}
+
+.sw {
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  display: inline-block;
+  vertical-align: -1px;
+  margin-right: 6px;
+}
+
+/* Donut — query types only, legend beside the ring and never inside it. */
+.donut {
+  flex: 0 0 auto;
+  display: block;
+}
+
+.bd.donut-body {
+  display: flex;
+  align-items: center;
+  gap: 26px;
+}
+
+/* Pointing at a slice marks its legend row, and pointing at a row lights its
+   slice. No tooltip: a bar carries no figures of its own so the chart has to
+   raise one, but this ring is drawn beside a legend that already prints every
+   count and share — an overlay here would cover the numbers it repeats. */
+.donut-seg {
+  cursor: default;
+  transition: opacity 120ms ease;
+}
+
+.donut-legend tr {
+  transition: background 120ms ease;
+}
+
+/* The mark is the slice's **own colour**, not a neutral band: a grey row says
+   only that something is marked, where a cyan one says which arc it belongs to
+   — and a neutral tint dark enough to see in one theme is a pale grey slab in
+   the other. `--slice` is set per row from the token the swatch already uses,
+   so the tint and the accent bar move with the palette. */
+/* Mixed over the card colour, never over `transparent`: mixing with a fully
+   transparent colour premultiplies, and `18%, transparent` computes to about
+   1.8 % alpha — a tint that is not there. */
+.donut-legend tr.on {
+  background: color-mix(in srgb, var(--slice) 14%, var(--surface));
+}
+
+.donut-legend tr.on td:first-child {
+  box-shadow: inset 3px 0 0 var(--slice);
+  font-weight: 500;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .donut-seg,
+  .donut-legend tr {
+    transition: none;
+  }
+}
+
+.donut-legend {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12.5px;
+}
+
+.donut-legend td {
+  padding: 4px 0 4px 10px;
+  white-space: nowrap;
+}
+
+/* The gutter the marked row's accent bar lives in, held open at every row so
+   marking one shifts no text. */
+.donut-legend td:first-child {
+  padding-left: 9px;
+  width: 100%;
+}
+
+.donut-legend .share {
+  color: var(--text-muted);
+}
+
+/* Empty and error states. An empty result is not an error. */
+.empty-state,
+.error-state {
+  padding: 22px 14px;
+  text-align: center;
+}
+
+.empty-state-title,
+.error-state-title {
+  margin: 0 0 4px;
+  font-size: 13.5px;
+  font-weight: 600;
+}
+
+.error-state {
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--state-problem);
+  border-radius: var(--radius);
+  background: var(--surface-raised);
+  text-align: left;
+  display: flex;
+  gap: 11px;
+  align-items: flex-start;
+}
+
+.error-state .warning {
+  color: var(--pill-warn-fg);
+  flex: 0 0 auto;
+  margin-top: 1px;
+}
+
+.error-state-message {
+  margin: 0;
+  font-size: 12.5px;
+}
+
+.error-state-code {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--text-muted);
+}
+
+/* Buttons and chips. */
+.btn {
+  background: var(--accent);
+  color: #fff;
+  border: 1px solid var(--accent);
+  border-radius: 3px;
+  padding: 7px 13px;
+  font-size: 12.5px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.btn.g {
+  background: var(--surface-raised);
+  color: var(--text-control);
+  border-color: var(--border-control);
+}
+
+.btn:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.chips {
+  display: flex;
+  gap: 6px;
+}
+
+/* The same control at two placements. Exactly one is `display: none` at any
+   width, which keeps it out of the tab order and the accessibility tree
+   rather than merely out of sight. */
+.chips-mobile {
+  display: none;
+  margin-bottom: 10px;
+}
+
+.chip {
+  border: 1px solid var(--border-control);
+  background: var(--surface-raised);
+  border-radius: 3px;
+  padding: 3px 10px;
+  font-size: 11.5px;
+  color: var(--text-control);
+  cursor: pointer;
+}
+
+.chip.on {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+/* Refresh cluster — data age, interval selector, mini Refresh, in that order. */
+.ctl {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 0 0 auto;
+}
+
+.age {
+  font-size: 11.5px;
+  color: var(--text-muted);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.sel {
+  border: 1px solid var(--border-control);
+  background: var(--surface-raised);
+  border-radius: var(--radius);
+  padding: 3px 6px 3px 8px;
+  font-size: 11.5px;
+  color: var(--text-control);
+  white-space: nowrap;
+}
+
+.mini {
+  border: 1px solid var(--border-control);
+  background: var(--surface-raised);
+  border-radius: var(--radius);
+  width: 26px;
+  height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-control);
+  flex: 0 0 auto;
+  cursor: pointer;
+  padding: 0;
+}
+
+.mini:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+/* Confirm dialog. */
+.dialog-scrim {
+  position: fixed;
+  inset: 0;
+  background: var(--scrim);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  z-index: 40;
+}
+
+.dialog {
+  background: var(--surface-raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  max-width: 420px;
+  width: 100%;
+  padding: 18px;
+}
+
+.dialog h2 {
+  margin: 0 0 6px;
+  font-size: 15px;
+}
+
+.dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+/* Chart wrapper. */
+.chart {
+  position: relative;
+  min-height: 160px;
+}
+
+/*
+ * uPlot's layout contract, written here instead of importing its stylesheet.
+ *
+ * WHY: `build.cssCodeSplit` is `false`, so a vendor stylesheet imported by the
+ * lazily-loaded chart module still lands in the single stylesheet the login
+ * path fetches — the JS split is real, the CSS one is not. Roughly half of
+ * `uPlot.min.css` is unreachable here anyway (legend, drag-select, cursor
+ * points, title), and its font and cursor colour would be overridden by tokens
+ * the moment the chart is themed. So the reachable half is written once, from
+ * our own tokens, rather than layered over vendor defaults.
+ *
+ * WHAT IT COVERS: plot structure (`.uplot`, `.u-wrap`, `.u-over`, `.u-under`,
+ * the canvas, `.u-axis`) and the **x cursor** only.
+ *
+ * BEFORE ENABLING ANYTHING ELSE — the legend (`legend.show`), drag-select
+ * (`cursor.drag`) or cursor points (`cursor.points.show`) — restore the
+ * corresponding rules from `node_modules/uplot/dist/uPlot.min.css`. p5-06 turns
+ * all three off; a later page that turns one on gets an unstyled element, not a
+ * broken build. Class names are uPlot's documented DOM contract and the version
+ * is pinned at 1.6.32.
+ */
+.chart .uplot {
+  font-family: var(--font);
+  line-height: 1.5;
+  width: min-content;
+}
+
+.chart .u-wrap {
+  position: relative;
+  user-select: none;
+}
+
+.chart .u-over,
+.chart .u-under {
+  position: absolute;
+}
+
+.chart .u-under {
+  overflow: hidden;
+}
+
+.chart .uplot canvas {
+  display: block;
+  position: relative;
+  width: 100%;
+  height: 100%;
+}
+
+.chart .u-axis {
+  position: absolute;
+}
+
+.chart .u-select {
+  position: absolute;
+  pointer-events: none;
+}
+
+.chart .u-cursor-x,
+.chart .u-cursor-y {
+  position: absolute;
+  left: 0;
+  top: 0;
+  pointer-events: none;
+  will-change: transform;
+}
+
+.chart .u-hz .u-cursor-x {
+  height: 100%;
+  border-right: 1px dashed var(--text-faint);
+}
+
+.chart .u-hz .u-cursor-y {
+  width: 100%;
+  border-bottom: 1px dashed var(--text-faint);
+}
+
+.chart .u-axis.u-off,
+.chart .u-select.u-off,
+.chart .u-cursor-x.u-off,
+.chart .u-cursor-y.u-off,
+.chart .u-cursor-pt.u-off {
+  display: none;
+}
+
+/* The hover tooltip — the only hover state in the system. It reads as an
+   overlay rather than as a card, which on a light page is the dark slab
+   `Main.dc.html` draws and in the dark theme is a surface raised above the card
+   plus a border: the artboard's slab is within a few units of the dark card
+   behind it, so value alone stops separating it. The border and the shadow do
+   that work in both themes; the tokens carry the difference. */
+.chart-tip {
+  position: absolute;
+  z-index: 2;
+  pointer-events: none;
+  background: var(--tip-surface);
+  border: 1px solid var(--tip-border);
+  box-shadow: 0 4px 14px var(--tip-shadow);
+  border-radius: var(--radius);
+  padding: 9px 11px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.55;
+  color: var(--tip-text);
+  white-space: nowrap;
+  min-width: 150px;
+}
+
+.chart-tip-head {
+  margin-bottom: 4px;
+}
+
+.chart-tip-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 18px;
+}
+
+.chart-tip-row span:first-child {
+  color: var(--tip-label);
+}
+
+.chart-tip-row .blocked {
+  color: var(--tip-blocked);
+}
+
+/* The chart's own legend, below the plot — uPlot's is disabled. */
+.chart-legend {
+  display: flex;
+  gap: 16px;
+  margin-top: 10px;
+  font-size: 11.5px;
+  color: var(--text-control);
+}
+
+.chart-footnote {
+  margin: 8px 0 0;
+  font-size: 11.5px;
+  color: var(--text-muted);
+}
+
+.boot {
+  min-height: 120px;
+}
+
+@media (max-width: 767px) {
+  /* `MobileDashboard.dc.html`: 54 px tiles, a 24 px figure and an 11.5 px
+     label, two-up. The footer strip keeps its arrow and takes the short
+     wording; the long one is what a wider viewport gets. */
+  .tile .in {
+    padding: 10px 12px;
+  }
+
+  .tile .lb {
+    font-size: 11.5px;
+  }
+
+  .tile .n {
+    font-size: 24px;
+  }
+
+  .tile .ic {
+    display: none;
+  }
+
+  .tile .ft {
+    padding: 5px 12px;
+    font-size: 10.5px;
+    justify-content: space-between;
+    min-height: 22px;
+  }
+
+  /* `MobileDashboard.dc.html` shortens the label as well as the footer strip —
+     `Blocked`, `Cache hit` — because a half-width tile has no room for the
+     desktop wording beside a 24 px figure. */
+  .tile .ft-long,
+  .tile .lb-long {
+    display: none;
+  }
+
+  .tile .ft-short,
+  .tile .lb-short {
+    display: inline;
+  }
+
+  /* The range selector leaves the title bar and becomes full-height chips
+     above the plot. */
+  .ch .chips {
+    display: none;
+  }
+
+  .chips-mobile {
+    display: block;
+  }
+
+  .chips-mobile .chip {
+    flex: 1;
+    min-height: 44px;
+    border-radius: var(--radius);
+    font-size: 12.5px;
+  }
+
+  /* The cluster becomes a full-width row at the top of that card's body, with
+     44 px targets — the relocation the range selector already uses. */
+  .ctl.in-card {
+    width: 100%;
+    justify-content: space-between;
+    padding: 10px 14px 0;
+    flex-wrap: wrap;
+  }
+
+  /* A cluster carrying a secondary note (the Endpoints card's configured-order
+     sentence) puts it on its own line: sharing the row with the age, the
+     selector and the button squeezed it into a four-line column. */
+  .ctl.in-card > .note {
+    flex: 1 0 100%;
+  }
+
+  /* The header placement gets the same treatment. `p5-06` sized the in-card
+     cluster only, because every cluster it shipped was in a card; `/cache` and
+     `/upstreams` are the first routes to use the header placement, and its
+     select and mini button arrived 55 × 25 and 26 × 24 at 390 px. */
+  .ctl.in-card .sel,
+  .ctl.in-card .mini,
+  .hd .ctl .sel,
+  .hd .ctl .mini {
+    min-height: 44px;
+  }
+
+  .ctl.in-card .mini,
+  .hd .ctl .mini {
+    min-width: 44px;
+  }
+
+  .hd {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  /* Stretched by `align-items: stretch` above, the header cluster's row would
+     otherwise be as tall as its 44 px controls make it and pushed to one side. */
+  .hd .ctl {
+    justify-content: space-between;
+  }
+}
+
+/* Login — no artboard draws this screen, so visual-system.md decides: the same
+   card, tokens and control shapes as everywhere else. */
+.login {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+
+.login-card {
+  background: var(--surface-raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 22px;
+  width: 100%;
+  max-width: 340px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.login-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-weight: 600;
+  font-size: 16px;
+  margin-bottom: 6px;
+}
+
+.login-brand svg {
+  color: var(--accent);
+}
+
+.login-label {
+  font-size: 11.5px;
+  color: var(--text-muted);
+}
+
+.login-input {
+  border: 1px solid var(--border-control);
+  background: var(--surface);
+  border-radius: var(--radius);
+  padding: 9px 10px;
+  font-size: 13.5px;
+  min-height: 44px;
+}
+
+.login-error {
+  margin: 0;
+  font-size: 12.5px;
+  color: var(--pill-bad-fg);
+  background: var(--pill-bad-bg);
+  border-radius: 3px;
+  padding: 8px 10px;
+}
+
+.login-version {
+  margin: 2px 0 0;
+  text-align: right;
+}
+
+/* The "since restart" caption under tile row 2. A rendered element, not a
+   tooltip: two visually identical rows over different windows is a trap, and a
+   trap nobody hovers is not closed. */
+.tile-caption {
+  margin: -6px 0 0;
+}
+
+/* The chart's range totals, beside the card title as the artboard draws them
+   rather than in the right-hand group with the range chips. */
+.ch-aside {
+  font-weight: 400;
+  margin-left: 8px;
+  font-family: var(--font-mono);
+}
+
+/* Top-N list — one DOM at both widths. Desktop is the artboard's three-column
+   table; below 768 px the same three cells become a 44 px row with the name
+   given the space, the bar next and the count right-aligned. */
+.toplist-head,
+.toplist-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 90px 34%;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 14px;
+}
+
+.toplist-head:has(.x),
+.toplist-row:has(.x) {
+  grid-template-columns: minmax(0, 1fr) 80px 80px 26%;
+}
+
+.toplist-head {
+  font-weight: 600;
+  color: var(--text-muted);
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding-bottom: 8px;
+}
+
+.toplist-row {
+  border-top: 1px solid var(--border-row);
+  font-size: 12.5px;
+}
+
+.toplist-row:hover {
+  background: var(--surface-sunken);
+}
+
+.toplist .d {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.toplist .d-sec,
+.toplist .cname {
+  color: var(--text-muted);
+  margin-left: 6px;
+}
+
+.toplist .n,
+.toplist .x {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  font-family: var(--font-mono);
+}
+
+.toplist .x-short {
+  display: none;
+}
+
+.toplist .bar > span.blocked {
+  background: var(--series-blocked);
+}
+
+/* Desktop shows five rows and no trailing row; the phone shows three and the
+   artboards' "Show all" / "Open Clients" row. */
+.toplist-rows > .toplist-row:nth-child(n + 6) {
+  display: none;
+}
+
+.toplist-more {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  border-top: 1px solid var(--border-row);
+  font-size: 12.5px;
+}
+
+.linky {
+  background: none;
+  border: 0;
+  padding: 0;
+  color: var(--link);
+  cursor: pointer;
+  font-size: 12.5px;
+  position: relative;
+}
+
+/* The link stays inline in its sentence at 12.5 px; the *target* grows to the
+   44 px the artboards require. Vertical only, deliberately: these sit at the
+   end of a sentence, so a horizontal overhang would reach into the prose on
+   either side for no gain, while the lines above and below hold nothing
+   interactive. Widths already clear 44 px on their own. */
+.linky::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 50%;
+  height: 44px;
+  transform: translateY(-50%);
+}
+
+/* Upstream health — the D4/A encoding. The bar is workload; the inner band is
+   the failure rate within it and is never widened to be visible. */
+.bd.upstreams {
+  display: flex;
+  flex-direction: column;
+  gap: 13px;
+}
+
+.upstream-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 12.5px;
+  margin-bottom: 5px;
+  flex-wrap: wrap;
+}
+
+.upstream-figures {
+  color: var(--text-control);
+}
+
+.upstream .bar {
+  height: 6px;
+}
+
+.upstream .bar > span.upstream-work {
+  background: var(--accent);
+  display: block;
+  height: 100%;
+  position: relative;
+}
+
+.upstream .bar > span.upstream-work > i {
+  position: absolute;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  background: var(--series-blocked);
+  display: block;
+}
+
+/* Figure blocks — the Ruleset card's four, and Cache state's 2×2. */
+.bd.figure-row {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 20px;
+}
+
+.figure {
+  font-size: 21px;
+  font-weight: 600;
+}
+
+.figure-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px 20px;
+  margin-top: 14px;
+  font-size: 12.5px;
+}
+
+.figure-grid > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.card-more {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  border-top: 1px solid var(--border-row);
+  font-size: 12.5px;
+}
+
+@media (max-width: 767px) {
+  .toplist-head {
+    display: none;
+  }
+
+  .toplist-head,
+  .toplist-row,
+  .toplist-head:has(.x),
+  .toplist-row:has(.x) {
+    grid-template-columns: minmax(0, 1fr) 70px 52px;
+    min-height: 44px;
+    padding: 0 12px;
+  }
+
+  /* The phone artboard puts the bar before the count. */
+  .toplist .d {
+    order: 1;
+  }
+  .toplist .f {
+    order: 2;
+  }
+  .toplist .n {
+    order: 3;
+  }
+  .toplist .x {
+    order: 4;
+    grid-column: 3;
+    color: var(--pill-bad-fg);
+  }
+
+  /* A named client shows its name alone; an unnamed one still shows its
+     address. */
+  .toplist .has-name .ip {
+    display: none;
+  }
+  .toplist .cname {
+    margin-left: 0;
+    color: inherit;
+  }
+
+  .toplist .x-long {
+    display: none;
+  }
+  .toplist .x-short {
+    display: inline;
+  }
+
+  .toplist-rows > .toplist-row:nth-child(n + 4) {
+    display: none;
+  }
+
+  .toplist.is-expanded .toplist-rows > .toplist-row {
+    display: grid;
+  }
+
+  .toplist-more,
+  .card-more {
+    display: flex;
+  }
+
+  .bd.figure-row {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  /* Cache state keeps its bar and legend on a phone; the 2×2 figure grid is
+     what `MobileDashboard.dc.html` drops. */
+  .z-cache .figure-grid,
+  .z-cache .bd > .note {
+    display: none;
+  }
+
+  /* p5-06 F5, closed here. `MobileDashboard.dc.html` draws three segments and
+     three legend entries — `fresh`, `stale`, `expired` — and the shipped card
+     passed four at every width.
+
+     A selector rather than a conditional prop: `free` is a legitimate R7
+     figure and dropping it is a width decision, and this application has no
+     viewport listener anywhere — passing the segment conditionally would add
+     the first one, to drop one band from one card. The bar is laid out with
+     `flex` weights, so removing the fourth child lets the other three fill the
+     track, which is exactly what the phone artboard draws. The full four-band
+     reading is one tap away on the Cache page. */
+  .z-cache .seg > div:nth-child(4),
+  .z-cache .seg-legend > span:nth-child(4) {
+    display: none;
+  }
+}
+
+@media (max-width: 767px) {
+  /* The card title bar is three things at 390 px — title, secondary text and
+     the refresh cluster — and they do not fit on one line: the mini Refresh
+     button runs off the right edge on a phone. The artboards put the cluster in
+     the card body instead, so the bar wraps and the cluster takes its own
+     full-width row with 44 px targets. */
+  .ch {
+    flex-wrap: wrap;
+    row-gap: 10px;
+  }
+
+  .ch-right {
+    width: 100%;
+    justify-content: flex-start;
+    gap: 8px;
+  }
+
+  .ch-right .ctl {
+    flex: 1;
+    justify-content: flex-end;
+  }
+
+  .ch-right .age {
+    flex: 1;
+  }
+
+  .ch-right .sel,
+  .ch-right .mini {
+    min-height: 44px;
+  }
+
+  .ch-right .mini {
+    min-width: 44px;
+  }
+
+  /* Top clients drops its frequency bar on a phone: `MobileDashboard.dc.html`
+     draws name, queries and the blocked percentage, and three figures plus a
+     bar do not fit at 390 px. */
+  .toplist-clients .f {
+    display: none;
+  }
+
+  .toplist-clients .toplist-row,
+  .toplist-clients .toplist-head {
+    grid-template-columns: minmax(0, 1fr) 62px 52px;
+  }
+
+  .toplist-clients .n {
+    order: 2;
+  }
+
+  .toplist-clients .x {
+    order: 3;
+    grid-column: auto;
+  }
+}
+
+@media (max-width: 767px) {
+  /* Every interactive control is at least 44 px on its smallest axis. The
+     artboards draw a 22 px tile footer strip and 18 px trailing links, but a
+     drawn height is not a measurement (phase constraint 8) and the acceptance
+     criterion is explicit — so the hit areas grow while the type does not. */
+  .tile .ft {
+    min-height: 44px;
+  }
+
+  .toplist-more > *,
+  .card-more > * {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    min-height: 44px;
+  }
+}
+
+/* Lists — one grid, two layouts. Desktop flows the cells as the artboard's
+   eight table columns; below 768 px the same cells become one card per list.
+   A seven-column horizontal scroller is not an answer on the page an operator
+   opens when a list has failed. */
+.bd.lists-body {
+  padding: 12px 0 0;
+}
+
+.list-head,
+.list-row {
+  display: grid;
+  /* The last track is a FIXED width, never `auto` and never `fr`. Each row is
+     its own grid, so a content-sized track is measured per row, and as text
+     labels the actions cell was 130 px normally, 186 px while a refresh was
+     pending and 189 px on a `rejected` row — a difference that came straight
+     off the three `fr` tracks, put the header up to 130 px right of its own
+     column and shifted a row's other five cells sideways the moment its
+     Refresh was clicked.
+     Now that the actions are three tiled 44 px glyphs the content cannot vary
+     at all: 3 × 44 = 132 px in every row state. The track is still declared
+     rather than `auto`, because the header's cell is empty and two separate
+     grids agree only when no track is content-sized. */
+  /* The four soft floors are the only slack in the row, and they were set well
+     above what their content needs: Status holds a pill over a wrapping note,
+     Rules a bar over two mono lines, List an id over an ellipsised source, and
+     Last refresh a `HH:MM`. Trimming them, and the actions track with them, is
+     what keeps the internal scrollbar out of the widths visual-system.md
+     §Responsive calls the full grid.
+
+     Rules carries the largest `fr` weight because its minimum is already above
+     its proportional share, so under the old weights every pixel of slack went
+     to List and Status and the mono partition line wrapped to three lines at
+     every desktop width. Weight, not floor: this costs no width at all. */
+  grid-template-columns:
+    minmax(130px, 1fr) 46px 62px 78px minmax(110px, 1fr)
+    minmax(150px, 2fr) 84px 132px;
+  gap: 10px;
+  align-items: start;
+  padding: 9px 14px;
+}
+
+/* The eight columns stop fitting somewhere above 1300 px, so the table scrolls
+   inside its own container rather than the page body, which never scrolls
+   sideways at any width (visual-system.md §Responsive).
+
+   The scroller is the **table**, not the card body. A horizontal scroll
+   container is a scroll container on both axes — CSS computes a `visible`
+   companion to `auto`, and there is no way to ask for one axis — so the
+   smallest element that can carry it should. On the card body it also swept in
+   the footnote, which is prose and belongs wrapped rather than scrolled
+   sideways with the rows. On the table it holds only the head and the rows,
+   whose height is their content's, so nothing is ever clipped or scrolled
+   vertically; `grid-tracks.test.ts` pins that no height is imposed on it.
+
+   The per-row floor is what keeps the columns at their widths inside the
+   scroller instead of collapsing. It sits on the rows rather than on the
+   container so the container is free to be the scrollport. Desktop only: the
+   phone card layout has no column minimums, and a long unbreakable
+   `last_error` URL would otherwise set the floor. */
+@media (min-width: 768px) {
+  .lists-table {
+    overflow-x: auto;
+  }
+
+  .list-head,
+  .list-row {
+    min-width: min-content;
+  }
+}
+
+/* The three metadata cells are their own element so the phone can group them
+   into one 44 px row; on desktop they are three columns of the parent grid. */
+.l-meta {
+  display: contents;
+}
+
+.list-head {
+  font-weight: 600;
+  color: var(--text-muted);
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding-bottom: 8px;
+}
+
+.list-row {
+  border-top: 1px solid var(--border-row);
+  font-size: 12.5px;
+}
+
+.list-row.is-alert {
+  background: var(--pill-warn-bg);
+}
+
+.l-name {
+  font-weight: 500;
+}
+
+.l-source {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-faint);
+}
+
+.l-total {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.l-rules .seg {
+  height: 7px;
+}
+
+/* The tier legend belongs to the card title bar, where `Lists.dc.html` draws it
+   once for the whole table. `StageBar` renders its own beside every bar, which
+   printed the three figures a second time directly above the mono partition
+   line that already carries them — two wasted lines in the narrowest cell on
+   the row. Colour is still not the only signal: the partition line names each
+   tier with its count. */
+.l-rules .seg-legend {
+  display: none;
+}
+
+.l-partition {
+  margin-top: 4px;
+}
+
+.l-total-inline,
+.list-status-secondary {
+  display: none;
+}
+
+/* `last_error` is a server string and routinely carries a bare URL, which has
+   no break opportunity: at the Status column's floor a 145 px token in a 110 px
+   cell painted 35 px into the gutter beside it. Breaking mid-token is the right
+   answer for an address — it is read, not scanned — and it is what lets the
+   column keep a floor narrow enough to hold the whole table inside the widths
+   visual-system.md §Responsive calls the full grid. */
+.l-status .note {
+  overflow-wrap: anywhere;
+}
+
+.list-status-alert {
+  color: var(--pill-warn-fg);
+  margin-top: 5px;
+}
+
+.list-status-secondary {
+  margin-top: 4px;
+}
+
+.list-legend {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
+  font-family: var(--font);
+}
+
+.list-legend .sw {
+  margin-left: 10px;
+  margin-right: 2px;
+}
+
+.list-legend .sw:first-child {
+  margin-left: 0;
+}
+
+.lists-footnote {
+  margin: 0;
+  padding: 12px 14px;
+  border-top: 1px solid var(--border-row);
+}
+
+.lists-footnote-second {
+  display: block;
+  margin-top: 4px;
+}
+
+.page-sub {
+  margin: 0;
+}
+
+@media (max-width: 767px) {
+  /* `MobileLists.dc.html`: one card per list. Header with the id and the status
+     pill, the partition block, a 44 px metadata row, then the actions. */
+  .list-head {
+    display: none;
+  }
+
+  .list-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 0;
+    padding: 0;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    margin: 0 12px 10px;
+  }
+
+  .l-id,
+  .l-rules,
+  .l-meta,
+  .l-actions {
+    padding: 10px 12px;
+  }
+
+  .l-id {
+    grid-column: 1;
+    grid-row: 1;
+  }
+
+  /* The status cell becomes two grid items: the pill belongs beside the id in
+     the card header, and the explanation belongs in a full-width block under
+     it. `display: contents` is what lets one component supply both without a
+     phone-specific render. */
+  .l-status {
+    display: contents;
+  }
+
+  .l-status > .pill {
+    grid-column: 2;
+    grid-row: 1;
+    justify-self: end;
+    align-self: start;
+    margin: 12px 12px 0;
+  }
+
+  .l-status > .note {
+    grid-column: 1 / -1;
+    padding: 0 12px 8px;
+  }
+
+  .l-rules,
+  .l-meta,
+  .l-actions {
+    grid-column: 1 / -1;
+    border-top: 1px solid var(--border-row);
+  }
+
+  .l-meta {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    min-height: 44px;
+  }
+
+  .l-rules-bar {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .l-rules-bar > div:first-child {
+    flex: 1;
+  }
+
+  .l-total-inline {
+    display: inline;
+    white-space: nowrap;
+  }
+
+  /* The card carries its total beside the partition bar, so the desktop
+     column is redundant rather than merely narrow. */
+  .l-total {
+    display: none;
+  }
+
+  .l-parse {
+    display: block;
+  }
+
+  .l-parse-sep {
+    display: none;
+  }
+
+  .list-status-secondary {
+    display: block;
+  }
+}
+
+/* The list toggle — the artboard's pill switch over a real checkbox, so the
+   keyboard and the accessibility tree keep working. */
+.switch {
+  display: inline-flex;
+  align-items: center;
+  width: 32px;
+  height: 18px;
+  border-radius: 9px;
+  background: var(--border-control);
+  position: relative;
+  cursor: pointer;
+  flex: 0 0 auto;
+}
+
+/* The drawn pill is 32 × 18 — `MobileLists.dc.html`'s figure, and it stays that
+   size. What grows is the *target*: a 44 × 44 pseudo-element centred on the
+   pill, which is the acceptance criterion's number and cannot be met by an
+   18 px-tall control. Centred rather than inset from the pill so the box is
+   44 px whatever the pill becomes.
+
+   It overhangs the pill by 6 px each side and 13 px above and below. Both stay
+   inside their surroundings: the desktop `On` column is a 46 px track, the
+   phone metadata row is a 44 px flex line with a 14 px gap, and neither
+   neighbour is interactive — so nothing else loses a click to it. */
+.switch::before {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 44px;
+  height: 44px;
+  transform: translate(-50%, -50%);
+}
+
+.switch.on {
+  background: var(--cache-fresh);
+}
+
+.switch input {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  margin: 0;
+  cursor: pointer;
+}
+
+.switch i {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--switch-knob);
+  transition: left 0.12s ease-out;
+}
+
+.switch.on i {
+  left: 16px;
+}
+
+.switch:has(input:focus-visible) {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+/* Three tiled 44 px targets and no gap between them: 132 px exactly, the same
+   in every row state. The gap is inside each button rather than between them,
+   so the targets meet edge to edge — adjacent 44 px boxes tile, they must not
+   overlap, or the topmost silently takes its neighbour's taps. */
+.row-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.iconbtn {
+  width: 44px;
+  height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: 0;
+  padding: 0;
+  border-radius: var(--radius);
+  color: var(--link);
+  cursor: pointer;
+}
+
+.iconbtn:hover {
+  background: var(--surface-sunken);
+  color: var(--link-hover);
+}
+
+.iconbtn.danger {
+  color: var(--pill-bad-fg);
+}
+
+.iconbtn:disabled {
+  color: var(--text-faint);
+  cursor: default;
+  background: none;
+}
+
+.iconbtn:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: -2px;
+}
+
+/* The 202's pending state. It is the same button, so it costs no width and
+   cannot move a column — the whole reason the labels went. */
+.iconbtn.is-busy svg {
+  animation: iconbtn-spin 1.1s linear infinite;
+}
+
+@keyframes iconbtn-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .iconbtn.is-busy svg {
+    animation: none;
+    opacity: 0.55;
+  }
+}
+
+.linky.danger {
+  color: var(--pill-bad-fg);
+}
+
+.linky:disabled {
+  color: var(--text-faint);
+  cursor: default;
+}
+
+/* Page-level actions, which the artboard draws in the page header. */
+.page-actions {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.page-buttons {
+  display: flex;
+  gap: 8px;
+  flex: 0 0 auto;
+}
+
+/* Refresh all — a blocking wait with no fake per-list progress, then the
+   per-list outcomes the response actually carries. */
+.progress-indeterminate {
+  height: 4px;
+  border-radius: 2px;
+  background: var(--track);
+  overflow: hidden;
+  position: relative;
+  margin-top: 12px;
+}
+
+.progress-indeterminate::after {
+  content: '';
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 40%;
+  background: var(--accent);
+  animation: indeterminate 1.1s ease-in-out infinite;
+}
+
+@keyframes indeterminate {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(250%);
+  }
+}
+
+.refresh-results {
+  margin-top: 10px;
+  max-height: 40vh;
+  overflow-y: auto;
+}
+
+.refresh-result {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 7px 0;
+  border-top: 1px solid var(--border-row);
+  font-size: 12.5px;
+}
+
+.refresh-result-error {
+  flex-basis: 100%;
+  color: var(--pill-warn-fg);
+}
+
+.radio {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12.5px;
+  min-height: 44px;
+  cursor: pointer;
+}
+
+@media (max-width: 767px) {
+  .page-actions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .page-buttons .btn {
+    flex: 1;
+    min-height: 44px;
+  }
+
+  /* `MobileLists.dc.html` draws the three actions filling the card's width.
+     The glyph stays 44 px tall and centres in whatever share it is given. */
+  .row-actions {
+    justify-content: space-around;
+  }
+
+  .row-actions .iconbtn {
+    flex: 1;
+  }
+}
+
+/* Form fields. The login card lays its own fields out with a flex column and
+   its `.login-*` classes lean on that; a dialog has no such column, so the two
+   overlapped. Fields have their own vocabulary here and the login page keeps
+   its own. */
+.form {
+  display: flex;
+  flex-direction: column;
+}
+
+.field-label {
+  display: block;
+  font-size: 11.5px;
+  color: var(--text-muted);
+  margin: 12px 0 4px;
+}
+
+.field-label .note {
+  font-size: 11.5px;
+}
+
+.field-input {
+  display: block;
+  width: 100%;
+  border: 1px solid var(--border-control);
+  background: var(--surface);
+  border-radius: var(--radius);
+  padding: 9px 10px;
+  font-size: 13.5px;
+  min-height: 44px;
+}
+
+.field-error {
+  margin: 12px 0 0;
+  font-size: 12.5px;
+  color: var(--pill-bad-fg);
+  background: var(--pill-bad-bg);
+  border-radius: 3px;
+  padding: 8px 10px;
+}
+
+.field-error .note {
+  color: inherit;
+  margin-top: 4px;
+}
+
+.field-set {
+  border: 0;
+  padding: 0;
+  margin: 6px 0 0;
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.field-set legend {
+  padding: 0;
+  font-size: 11.5px;
+  color: var(--text-muted);
+}
+
+/* ── p5-07 · filtering pages ─────────────────────────────────────────────── */
+
+/* The page's own header buttons, in the header the artboards draw them in.
+   Only a route declaring `ownsHeader` reaches this; Lists keeps its pair in
+   the page body, which is a shipped layout this task does not retrofit. */
+.hd-actions {
+  display: flex;
+  gap: 8px;
+  flex: 0 0 auto;
+  align-self: flex-end;
+}
+
+/* Policy chip. Solid = an assignment names this address; dashed = inherited.
+   Border style and weight carry it, and the note carries it in words — no hue
+   difference at all, so it survives both themes and a monochrome rendering. */
+.pol {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 7px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+.pchip {
+  display: inline-block;
+  border: 1px solid var(--border-control);
+  background: var(--surface-sunken);
+  color: var(--text);
+  font-weight: 500;
+  border-radius: 3px;
+  padding: 1px 8px;
+  font-size: 11.5px;
+  font-family: var(--font-mono);
+  white-space: nowrap;
+}
+
+.pchip.inh {
+  background: var(--surface);
+  border-style: dashed;
+  color: var(--text-muted);
+  font-weight: 400;
+}
+
+.pol-note {
+  min-width: 0;
+}
+
+/* A shut window is a state worth noticing, so it takes the warn foreground —
+   over words that already say it, never instead of them. */
+.pol-note.warn {
+  color: var(--pill-warn-fg);
+}
+
+@media (max-width: 767px) {
+  /* Scoped with `:has` so a header without actions — every screen p5-06
+     shipped — keeps the exact box it already had. */
+  .hd:has(.hd-actions) {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+  }
+
+  .hd-actions {
+    align-self: stretch;
+  }
+
+  .hd-actions .btn {
+    flex: 1;
+    min-height: 44px;
+  }
+}
+
+/* Custom Rules — the document editor. `CustomRules.dc.html` puts the editor
+   beside two static cards; below 1200 px the pair stacks under it. */
+.rules-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 330px;
+  gap: var(--gap);
+  align-items: start;
+}
+
+.rules-side {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap);
+}
+
+.bd.rules-body {
+  padding: 10px 14px 14px;
+}
+
+/* The three layers are positioned arithmetically against one line height, so
+   nothing here may set `line-height` in CSS alone — `EDITOR_LINE_HEIGHT` in
+   `line-editor.tsx` is applied inline to every layer instead. */
+.editor {
+  position: relative;
+  padding-left: 44px;
+  font-size: 12.5px;
+}
+
+.editor-gutter {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 44px;
+  overflow: hidden;
+  border-right: 1px solid var(--border-row);
+}
+
+.editor-gutter-inner {
+  position: absolute;
+  left: 0;
+  right: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.editor-gutter-inner span {
+  color: var(--text-faint);
+  text-align: right;
+  padding-right: 10px;
+  user-select: none;
+  font-size: 12.5px;
+  line-height: 22px;
+  height: 22px;
+}
+
+.editor-bands,
+.editor-callouts {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 44px;
+  right: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.editor-bands {
+  z-index: 0;
+}
+
+.editor-callouts {
+  z-index: 2;
+}
+
+.editor-band {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 22px;
+  background: var(--pill-bad-bg);
+}
+
+/* The artboard draws the message *between* two lines. A textarea cannot host
+   content between its own lines without changing the document, so the callout
+   shares the offending line's row and starts after that line's text — the row
+   carries the editor's own monospace face and size, which is what makes `ch`
+   an exact column. Overlaying the row beneath (the first shipped treatment)
+   hid that line's text completely. The anchored list under the editor is what
+   makes the message reachable when the row runs out of width. */
+.editor-callout-row {
+  position: absolute;
+  left: 0;
+  right: 0;
+  display: flex;
+  align-items: center;
+  height: 22px;
+  font-size: 12.5px;
+  line-height: 22px;
+  padding-right: 4px;
+}
+
+.editor-callout {
+  min-width: 0;
+  font-size: 11.5px;
+  line-height: 18px;
+  color: var(--pill-bad-fg);
+  background: var(--pill-bad-bg);
+  border-left: 2px solid var(--pill-bad-fg);
+  padding: 1px 8px;
+  border-radius: 0 3px 3px 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.editor-area {
+  position: relative;
+  z-index: 1;
+  display: block;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  padding: 0 4px;
+  margin: 0;
+  resize: none;
+  background: transparent;
+  color: var(--text);
+  font-size: 12.5px;
+  line-height: 22px;
+  white-space: pre;
+  overflow: auto;
+  tab-size: 4;
+}
+
+.editor-area:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+.editor-area:disabled {
+  color: var(--text-muted);
+}
+
+/* The anchored list. Each entry is a button, because tapping it is how the
+   message reaches its line on a phone. */
+.rule-errors {
+  margin-top: 12px;
+  border-top: 1px solid var(--border-row);
+}
+
+.rule-error {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: 0;
+  border-bottom: 1px solid var(--border-row);
+  padding: 12px 4px;
+  min-height: 44px;
+  font-size: 12.5px;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.rule-error:hover {
+  background: var(--surface-sunken);
+}
+
+.rule-error:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: -2px;
+}
+
+.rule-error-line {
+  color: var(--pill-bad-fg);
+  flex: 0 0 auto;
+}
+
+.rule-error-detail {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.rule-error-more {
+  padding: 10px 4px 0;
+}
+
+/* A page-level banner: the failure notice, and the duplicate-lines report. */
+.banner {
+  display: flex;
+  gap: 11px;
+  align-items: flex-start;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--text-faint);
+  border-radius: var(--radius);
+  background: var(--surface);
+  padding: 11px 14px;
+  font-size: 12.5px;
+  line-height: 1.55;
+}
+
+.banner.bad {
+  background: var(--pill-bad-bg);
+  border-color: var(--pill-bad-fg);
+  color: var(--pill-bad-fg);
+}
+
+.banner.bad b {
+  color: inherit;
+}
+
+.stacked {
+  display: block;
+  margin-top: 6px;
+}
+
+/* Precedence, drawn as three ranked rows. */
+.rank-list {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  font-size: 12.5px;
+}
+
+.rank-row {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+
+.rank {
+  width: 20px;
+  height: 20px;
+  border-radius: 3px;
+  font-size: 11px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+}
+
+.rank-1 {
+  background: var(--pill-good-bg);
+  color: var(--pill-good-fg);
+}
+
+.rank-2 {
+  background: var(--pill-bad-bg);
+  color: var(--pill-bad-fg);
+}
+
+.rank-3 {
+  background: var(--pill-neutral-bg);
+  color: var(--pill-neutral-fg);
+}
+
+.rank-footnote {
+  margin: 10px 0 0;
+}
+
+@media (max-width: 1199px) {
+  .rules-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 767px) {
+  /* §9.2 — the gutter stays, narrowed to a three-digit number, and the error
+     anchoring stays with it. The editor scrolls inside itself; the page body
+     does not scroll sideways. */
+  .editor {
+    padding-left: 34px;
+  }
+
+  .editor-gutter {
+    width: 34px;
+  }
+
+  .editor-gutter-inner span {
+    padding-right: 6px;
+  }
+
+  .editor-bands,
+  .editor-callouts {
+    left: 34px;
+  }
+}
+
+/* Clients — ONE grid for the header and every row. `p5-06`'s F1 was two grids
+   given the same template, and they drifted; here the rows are `subgrid`
+   children of the table's own tracks, so there is one definition and the
+   columns cannot disagree.
+
+   The last track is a fixed 44 px glyph, never a label: a text action cell is
+   content-sized per row, so a row whose action set varies with its state pulls
+   every other cell sideways the moment it changes. */
+.bd.clients-body {
+  padding: 12px 0 0;
+}
+
+.clients-scroll {
+  overflow-x: auto;
+}
+
+.clients-table {
+  display: grid;
+  /* The row padding lives HERE, not on the rows. A `subgrid` item's own
+     padding shortens the inherited tracks — measured at 1400 px, the 44 px
+     action track came out 25 px wide and the glyph with it. Padding the parent
+     leaves every track exactly as declared. */
+  padding: 0 14px;
+  /* The gutter is declared HERE and nowhere else. A subgrid that declares its
+     own `gap` overrides the parent's and takes the space out of the inherited
+     tracks — measured at 1400 px, 70 px of gutter came off the eight columns
+     and the 44 px action track arrived 39 px wide. Declared on the parent, the
+     tracks are sized around it and the subgrid inherits it unchanged. */
+  gap: 10px;
+  grid-template-columns:
+    minmax(118px, 1.1fr) minmax(96px, 1fr) minmax(196px, 2.2fr)
+    88px 74px 92px 76px 44px;
+  align-items: start;
+  min-width: min-content;
+}
+
+.client-head,
+.client-row {
+  display: grid;
+  grid-column: 1 / -1;
+  grid-template-columns: subgrid;
+  align-items: center;
+  padding: 6px 0;
+}
+
+.client-head {
+  font-weight: 600;
+  color: var(--text-muted);
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding-bottom: 8px;
+  white-space: nowrap;
+}
+
+.client-row {
+  border-top: 1px solid var(--border-row);
+  font-size: 12.5px;
+}
+
+.client-row:hover {
+  background: var(--surface-sunken);
+}
+
+.client-row.is-open {
+  background: var(--surface-sunken);
+}
+
+.c-queries,
+.c-blocked,
+.c-seen {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.client-head .c-queries,
+.client-head .c-blocked {
+  text-align: right;
+}
+
+.c-seen {
+  color: var(--text-muted);
+  text-align: left;
+  white-space: nowrap;
+}
+
+.client-head .c-seen {
+  text-align: left;
+}
+
+.c-name.unnamed {
+  color: var(--text-faint);
+}
+
+/* Qualified by the track it lives in: `.bar > span` sets the accent and is one
+   type selector more specific than a bare class, so the blocked hue this rule
+   asks for never reached the screen — the bar was painted `--series-permitted`
+   while claiming to show the blocked share. */
+.bar > span.c-share-fill {
+  background: var(--series-blocked);
+}
+
+.c-share-figure {
+  margin-top: 3px;
+  text-align: right;
+}
+
+.c-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+/* The label a cell carries only in card form. */
+.c-label {
+  display: none;
+}
+
+.c-expand {
+  grid-column: 1 / -1;
+  padding: 10px 0 12px;
+  border-top: 1px dashed var(--border-control);
+  margin-top: 6px;
+}
+
+.row-expand-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.row-expand-actions .btn {
+  min-height: 44px;
+  padding-left: 18px;
+  padding-right: 18px;
+}
+
+.rename-controls {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.rename-controls .field-input {
+  flex: 1 1 180px;
+  min-width: 0;
+}
+
+.rename-controls .btn {
+  min-height: 44px;
+}
+
+.rename .field-label {
+  margin-top: 0;
+}
+
+.search-input {
+  width: 220px;
+  min-height: 34px;
+  padding: 5px 10px;
+  font-size: 12.5px;
+}
+
+.clients-footnote {
+  margin: 0;
+  padding: 12px 14px;
+  border-top: 1px solid var(--border-row);
+}
+
+.window-pair {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.window-pair .field-input {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.assign-note {
+  margin: 14px 0 0;
+}
+
+@media (max-width: 767px) {
+  /* `MobileClients.dc.html`: one card per client — name and address, the chip
+     row, one stats row, last-seen, and the two actions when it is open. The
+     same cells, re-laid; no second component tree and no viewport listener. */
+  .client-head {
+    display: none;
+  }
+
+  .clients-scroll {
+    overflow-x: visible;
+  }
+
+  .clients-table {
+    grid-template-columns: minmax(0, 1fr);
+    min-width: 0;
+    padding: 0 12px;
+  }
+
+  .client-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 6px 10px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    margin-bottom: 10px;
+    padding: 10px 12px;
+    align-items: baseline;
+  }
+
+  .client-row:hover {
+    background: var(--surface-raised);
+  }
+
+  .client-row.is-open {
+    background: var(--surface-raised);
+    border-color: var(--border-control);
+  }
+
+  .c-name {
+    grid-column: 1;
+    grid-row: 1;
+    font-weight: 600;
+    font-size: 13px;
+  }
+
+  .c-ip {
+    grid-column: 1;
+    grid-row: 2;
+    color: var(--text-muted);
+    font-size: 11.5px;
+  }
+
+  .c-actions {
+    grid-column: 2;
+    grid-row: 1 / span 2;
+    align-self: center;
+  }
+
+  .c-policy {
+    grid-column: 1 / -1;
+    grid-row: 3;
+  }
+
+  /* The stats row: count, label, bar, percentage — one line, as drawn. */
+  .c-queries,
+  .c-blocked {
+    grid-row: 4;
+    display: flex;
+    align-items: baseline;
+    gap: 5px;
+    text-align: left;
+    white-space: nowrap;
+  }
+
+  .c-queries {
+    grid-column: 1;
+  }
+
+  .c-blocked {
+    grid-column: 2;
+    justify-self: end;
+  }
+
+  .c-label {
+    display: inline;
+    color: var(--text-muted);
+    font-size: 11.5px;
+    font-family: var(--font);
+  }
+
+  .c-share {
+    grid-column: 1 / -1;
+    grid-row: 5;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .c-share .bar {
+    flex: 1;
+  }
+
+  .c-share-figure {
+    margin-top: 0;
+    color: var(--pill-bad-fg);
+    flex: 0 0 auto;
+  }
+
+  .c-seen {
+    grid-column: 1 / -1;
+    grid-row: 6;
+  }
+
+  .c-expand {
+    grid-row: 7;
+    margin-top: 2px;
+  }
+
+  .row-expand-actions .btn {
+    flex: 1;
+  }
+
+  .search-input {
+    width: 100%;
+    min-height: 44px;
+  }
+
+  .card:has(.clients-table) .ch {
+    flex-wrap: wrap;
+  }
+
+  .card:has(.clients-table) .ch-right {
+    flex: 1 1 100%;
+  }
+}
+
+/* Policies — one card per policy, plus the synthetic Default card and the
+   empty-slot card the artboard draws at the end of the grid. */
+.policy-id {
+  font-weight: 400;
+}
+
+.policy-card .bd {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.policy-tools {
+  display: flex;
+  gap: 6px;
+}
+
+.policy-tools .btn {
+  padding: 3px 9px;
+}
+
+.danger-btn {
+  color: var(--pill-bad-fg);
+}
+
+.policy-lists {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.lchip {
+  display: inline-block;
+  background: var(--surface-sunken);
+  border: 1px solid var(--border);
+  color: var(--text-control);
+  border-radius: 3px;
+  padding: 1px 8px;
+  font-size: 11.5px;
+  font-family: var(--font-mono);
+}
+
+/* `lists: []` — a policy the engine gives no list at all. The warn foreground
+   over words that already say it, the same rule as `.pol-note.warn`. */
+.lchip-warn {
+  color: var(--pill-warn-fg);
+  border-color: var(--pill-warn-fg);
+}
+
+.policy-note {
+  margin: 0;
+}
+
+.assignments {
+  display: flex;
+  flex-direction: column;
+}
+
+.assignment {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+  font-size: 12.5px;
+  padding: 6px 0;
+  border-top: 1px solid var(--border-row);
+}
+
+.assignment-schedule {
+  margin-left: auto;
+}
+
+.assignments-empty {
+  margin: 0;
+}
+
+.policy-traffic-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 12.5px;
+  margin-bottom: 5px;
+  flex-wrap: wrap;
+}
+
+/* Same specificity trap as `.c-share-fill`. */
+.bar > span.policy-traffic-fill {
+  background: var(--series-blocked);
+}
+
+.policy-slot {
+  border-style: dashed;
+  background: var(--surface-sunken);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  min-height: 150px;
+  padding: 14px;
+}
+
+.policy-slot .btn {
+  margin-top: 8px;
+  min-height: 44px;
+}
+
+.figure-small {
+  font-size: 15px;
+  padding-top: 4px;
+}
+
+.bd.cost-body {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 24px;
+}
+
+.cost-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12.5px;
+  font-weight: 500;
+  margin-bottom: 6px;
+}
+
+.cost-footnote {
+  margin: 0;
+}
+
+/* The policy form is wider than a confirm: it holds a subset picker and a
+   variable number of assignment rows. */
+.dialog-wide {
+  max-width: 620px;
+  max-height: 86vh;
+  overflow-y: auto;
+}
+
+.field-set-block {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0;
+  margin-top: 12px;
+}
+
+.subset-picker {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 4px 10px;
+  max-height: 30vh;
+  overflow-y: auto;
+}
+
+.assignment-editor-row {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(0, 1.3fr) 76px 76px 44px;
+  gap: 6px;
+  align-items: center;
+  margin-top: 8px;
+}
+
+.assignment-editor-row .field-input {
+  min-height: 44px;
+  padding: 6px 8px;
+  font-size: 12.5px;
+}
+
+.add-assignment {
+  margin-top: 10px;
+  align-self: flex-start;
+  min-height: 44px;
+}
+
+@media (max-width: 1199px) {
+  .bd.cost-body {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 767px) {
+  /* §9.2 — cards stack one per row with their assignment rows intact, and the
+     summary card goes two-up. */
+  .assignment-editor-row {
+    grid-template-columns: minmax(0, 1fr) 44px;
+  }
+
+  .assignment-schedule {
+    margin-left: 0;
+    flex-basis: 100%;
+  }
+
+  .policy-tools .btn {
+    min-height: 44px;
+    padding: 6px 12px;
+  }
+}
+
+/* Rule Tester — `RuleTester.dc.html`'s form beside its result. At 390 px the
+   result sits directly beneath the form, so a phone sees the answer without
+   scrolling back past what it just filled in. */
+.tester-grid {
+  display: grid;
+  grid-template-columns: 400px minmax(0, 1fr);
+  gap: var(--gap);
+  align-items: start;
+}
+
+.tester-column {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap);
+  min-width: 0;
+}
+
+.tester-fields {
+  gap: 14px;
+}
+
+.tester-label {
+  margin-top: 0;
+}
+
+.tester-chips {
+  flex-wrap: wrap;
+  margin-top: 6px;
+}
+
+.tester-chips .chip {
+  /* Both axes: `A` is two glyphs wide and measured 38 px at 390 px, which is
+     under the 44 px the acceptance criterion names. */
+  min-height: 44px;
+  min-width: 44px;
+  padding: 6px 14px;
+  font-size: 12.5px;
+}
+
+.tester-decide {
+  border-top: 1px solid var(--border-row);
+  padding-top: 14px;
+}
+
+.tester-decide .field-input {
+  margin-top: 10px;
+}
+
+.tester-note {
+  margin: 7px 0 0;
+}
+
+.tester-submit {
+  margin-top: 14px;
+  min-height: 44px;
+}
+
+.tester-verdict {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--border-row);
+  flex-wrap: wrap;
+}
+
+.tester-verdict-line {
+  font-size: 13.5px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+/* The verdict slab. It carries the word, so the colour is never the signal —
+   the same rule the pills follow. */
+.verdict-slab {
+  font-size: 17px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  padding: 9px 20px;
+  border-radius: var(--radius);
+  text-transform: uppercase;
+  flex: 0 0 auto;
+}
+
+.verdict-slab.block {
+  background: var(--pill-bad-bg);
+  color: var(--pill-bad-fg);
+}
+
+.verdict-slab.allow {
+  background: var(--pill-good-bg);
+  color: var(--pill-good-fg);
+}
+
+.verdict-slab.pass {
+  background: var(--pill-neutral-bg);
+  color: var(--pill-neutral-fg);
+}
+
+.kv {
+  display: grid;
+  grid-template-columns: 120px minmax(0, 1fr);
+  gap: 9px 14px;
+  font-size: 12.5px;
+  align-items: baseline;
+  margin-top: 14px;
+}
+
+.kv > span:nth-child(odd) {
+  color: var(--text-muted);
+}
+
+.kv > span:nth-child(even) {
+  overflow-wrap: anywhere;
+}
+
+.ring {
+  display: flex;
+  flex-direction: column;
+  gap: 11px;
+}
+
+.ring-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 12.5px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+.ring-detail {
+  margin-left: auto;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.ambiguous-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.ambiguous-choice {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  min-height: 44px;
+  text-align: left;
+}
+
+@media (max-width: 1199px) {
+  .tester-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 767px) {
+  .kv {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 2px 0;
+  }
+
+  .kv > span:nth-child(odd) {
+    margin-top: 8px;
+  }
+
+  .ring-detail {
+    margin-left: 0;
+    flex-basis: 100%;
+  }
+}
+
+/* Touch targets follow the pointer, not the width. The 44 px rules live in the
+   ≤ 767 px blocks, so a tablet in the 768–1199 px range takes the desktop
+   layout and the desktop sizes with it — measured at 768 px and at 1024 px,
+   both iPad orientations: `Edit` and `Delete` arrived 41.3 × 25.6, `New
+   policy` 33.6 tall and the client search box 34. Nothing here changes layout;
+   it raises the controls a finger has to hit. */
+@media (pointer: coarse) {
+  .btn,
+  .field-input,
+  .search-input,
+  .rename-controls .btn,
+  .row-expand-actions .btn,
+  .policy-tools .btn,
+  .policy-slot .btn,
+  .hd-actions .btn,
+  .page-buttons .btn,
+  /* The top bar is already 58 px tall, so these two only gain hit area. */
+  .navr-theme,
+  .navr-signout {
+    min-height: 44px;
+  }
+
+  .policy-tools .btn {
+    padding: 6px 12px;
+  }
+}
+
+/* ═══════════════════════════════════════════════════ p5-08 · Cache ═══════ */
+
+/* Two cards stacked into one half of the `.row c2` pair, so the SWR and
+   cleanup cards together balance the taller Clean card beside them. */
+.stack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap);
+}
+
+/* The lifetime bar is the artboard's 32 px slab rather than the 7 px partition
+   line a list row draws. `StageBar` renders its own inline legend; this page
+   needs the four stages as a grid with a sentence each, so the built-in one is
+   suppressed exactly as the Lists row suppresses it. */
+.cache-stage .seg {
+  height: 32px;
+  border-radius: 3px;
+}
+
+.cache-stage .seg-legend {
+  display: none;
+}
+
+.stage-notes {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 16px;
+  margin-top: 14px;
+}
+
+.stage-name {
+  font-size: 12.5px;
+  font-weight: 500;
+}
+
+.stage-name .mono {
+  margin-left: 4px;
+}
+
+.stage-notes .note {
+  margin: 4px 0 0;
+}
+
+/* The two bounds. */
+.bound + .bound {
+  margin-top: 16px;
+}
+
+.bound-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 12.5px;
+  margin-bottom: 6px;
+}
+
+.bound-figure {
+  font-weight: 600;
+}
+
+.bar.bound-bar {
+  height: 12px;
+  border-radius: 3px;
+}
+
+/* The "closest to evicting" statement. A tinted panel, from tokens: the
+   surface and the border move with the theme rather than being an alpha wash
+   that survives only one of them. */
+.callout {
+  margin: 14px 0 0;
+  background: var(--surface-sunken);
+  border: 1px solid var(--border-soft);
+  border-left: 3px solid var(--accent);
+  border-radius: var(--radius);
+  padding: 10px 12px;
+  font-size: 12.5px;
+  line-height: 1.55;
+}
+
+.callout + .note {
+  margin-top: 12px;
+}
+
+/* Headerless label/value list — the artboards' counter tables. */
+table.t.counters td {
+  padding: 7px 0;
+}
+
+table.t.counters td.good {
+  color: var(--pill-good-fg);
+}
+
+table.t.counters td.bad {
+  color: var(--pill-bad-fg);
+}
+
+.hit-rate {
+  margin-top: 14px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.hit-rate .note {
+  margin: 0;
+}
+
+/* The percentage sits inside the ring, as the artboard draws it. `Donut` is
+   one shape and carries no text; overlaying it here keeps it that way. */
+.hit-ring {
+  position: relative;
+  display: inline-flex;
+  flex: 0 0 auto;
+}
+
+.hit-figure {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+/* The clean action. The checkbox is the deliberate choice this write needs, so
+   its target is the whole label rather than the 15 px box the artboard draws. */
+.clean-choice {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  font-size: 12.5px;
+  min-height: 44px;
+  padding: 4px 0;
+  cursor: pointer;
+}
+
+/* Same shape as the list toggle's target: the box stays the artboard's size
+   and an absolutely-positioned 44 × 44 box centred on it is what a finger
+   actually hits. It sits inside the `<label>`, so a tap on it toggles. */
+.cb-target {
+  position: relative;
+  display: inline-flex;
+  flex: 0 0 auto;
+  margin-top: 3px;
+}
+
+.cb-target::before {
+  content: '';
+  position: absolute;
+  width: 44px;
+  height: 44px;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+}
+
+.clean-choice input {
+  width: 18px;
+  height: 18px;
+  margin: 0;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.clean-choice > span {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.clean-choice-title {
+  line-height: 1.5;
+}
+
+.clean-choice .note {
+  margin: 0;
+}
+
+.clean-card .page-buttons {
+  margin-top: 14px;
+}
+
+/* The Clean card and the two counter cards beside it are different heights and
+   should stay so: stretched to match, the Clean card is mostly empty space
+   before its first result lands. */
+.row.cache-actions {
+  align-items: start;
+}
+
+.clean-result {
+  margin-top: 14px;
+  border-top: 1px solid var(--border-row);
+  padding-top: 12px;
+}
+
+.clean-result .note:first-child {
+  margin-bottom: 7px;
+}
+
+.clean-result .note:last-child {
+  margin: 10px 0 0;
+}
+
+@media (max-width: 767px) {
+  /* One card per row already; the bars stay full width and only the four-up
+     stage legend folds. */
+  .stage-notes {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+/* ═══════════════════════════════════════════ p5-08 · Performance ═════════ */
+
+/* The three stage tiles are cards rather than `.tile`s: the artboard draws a
+   label, a figure with its unit, a budget chip and a proximity bar, which is a
+   different object from the Dashboard's accented tile. */
+.stage-tile .big {
+  font-size: 26px;
+  font-weight: 600;
+}
+
+.stage-figure {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin-top: 3px;
+}
+
+/* The pill's tone and shape, but not its casing: the artboard writes the unit
+   as `ms`, and `.pill`'s `text-transform` turned it into `MS`. */
+.stage-budget {
+  margin-left: auto;
+  align-self: center;
+  text-transform: none;
+}
+
+/* The proximity bar is the neutral accent for the whole span under the budget:
+   there is no documented threshold between zero and it, so an amber tier would
+   invent one. The tone flips at the budget itself and nowhere else. */
+.bar.stage-bar-track {
+  height: 6px;
+  border-radius: 3px;
+  margin-top: 9px;
+}
+
+.bar > span.stage-bar-fill {
+  background: var(--accent);
+}
+
+.bar > span.stage-bar-fill.over {
+  background: var(--series-blocked);
+}
+
+.stage-idle {
+  margin: 8px 0 0;
+}
+
+.stage-tiles-note {
+  margin: -4px 0 0;
+}
+
+/* The window's two ends, in place of x ticks. */
+.axis-ends {
+  display: flex;
+  justify-content: space-between;
+  border-top: 1px solid var(--border-control);
+  padding-top: 6px;
+  margin-top: 2px;
+  font-size: 10px;
+  color: var(--text-faint);
+}
+
+/* Scoped to this page's two legends, never to `.chart-legend` itself: that base
+   rule is p5-06's and the Dashboard's own legend renders through it. Both of
+   these carry more than three entries and, on the latency card, a right-aligned
+   aside beside them, so they wrap where the Dashboard's does not need to. */
+.latency-legend,
+.verdicts-legend {
+  flex-wrap: wrap;
+  align-items: baseline;
+}
+
+.latency-legend .legend-aside {
+  margin-left: auto;
+  text-align: right;
+}
+
+.footnote-line {
+  display: block;
+  margin-top: 5px;
+}
+
+.stat-row {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+  margin-top: 10px;
+}
+
+.stat-figure {
+  font-size: 17px;
+  font-weight: 600;
+}
+
+.bd.reading-body {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 22px;
+}
+
+.reading-title {
+  font-size: 12.5px;
+  font-weight: 500;
+  margin-bottom: 5px;
+}
+
+.bd.reading-body .note {
+  margin: 0;
+}
+
+@media (max-width: 1199px) {
+  .bd.reading-body {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 767px) {
+  /* The tiles already stack: `layout.css` spans a `.row.c3` child to twelve
+     columns below 1200 px, and the range chips already leave the title bar for
+     a full-height row above the plot. Only the legend aside and the explainer
+     columns need saying. */
+  .stage-tiles-note {
+    margin: 0;
+  }
+
+  .latency-legend .legend-aside {
+    margin-left: 0;
+    text-align: left;
+  }
+
+  .bd.reading-body {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .stat-row {
+    gap: 10px;
+  }
+}
+
+/* ═══════════════════════════════════════════════ p5-08 · Upstreams ═══════ */
+
+.banner.warn {
+  background: var(--pill-warn-bg);
+  border-color: var(--pill-warn-fg);
+  border-left-color: var(--pill-warn-fg);
+}
+
+.banner .warning {
+  color: var(--pill-warn-fg);
+  flex: 0 0 auto;
+  margin-top: 1px;
+}
+
+.bd.upstreams-body {
+  padding: 0;
+}
+
+/* Three zones per endpoint: identity, the counter grid, the histogram. One
+   grid rather than a row and a header that have to agree — there is no header
+   here at all, because every cell carries its own label. */
+.ep {
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) minmax(0, 2fr) minmax(0, 0.9fr);
+  gap: 20px;
+  align-items: start;
+  padding: 14px;
+  border-top: 1px solid var(--border-row);
+}
+
+.ep:first-child {
+  border-top: 0;
+}
+
+/* The artboard's penalized-row tint, from the token pair the Lists alert row
+   already uses — a background that exists in both palettes rather than an
+   alpha wash that survives only one. */
+.ep.is-penalized {
+  background: var(--pill-warn-bg);
+}
+
+.ep-head {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+
+.ep-index {
+  background: var(--pill-neutral-bg);
+  color: var(--pill-neutral-fg);
+  font-size: 11px;
+  font-weight: 600;
+  padding: 1px 7px;
+  border-radius: 3px;
+}
+
+.ep-address {
+  font-size: 13.5px;
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+
+.ep-state {
+  margin-top: 6px;
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.ep-counters {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px 16px;
+  font-size: 12.5px;
+}
+
+.ep-counters .k {
+  font-size: 11px;
+}
+
+.ep-counters .good {
+  color: var(--pill-good-fg);
+}
+
+.ep-counters .bad {
+  color: var(--pill-bad-fg);
+}
+
+/* Four buckets, neutral at every state: the printed counts carry the figures
+   and the card footer carries the reading guide, so the bars do not have to
+   assert a severity the histogram alone cannot support. */
+.runs {
+  display: flex;
+  align-items: flex-end;
+  gap: 4px;
+  height: 34px;
+  margin-bottom: 4px;
+}
+
+.run-track {
+  flex: 1;
+  height: 100%;
+  display: flex;
+  align-items: flex-end;
+  background: var(--track);
+  border-radius: 2px;
+}
+
+.run-bar {
+  width: 100%;
+  background: var(--series-4);
+  border-radius: 2px;
+}
+
+.run-legend {
+  color: var(--text-faint);
+}
+
+.ep-foot {
+  margin: 0;
+  padding: 12px 14px;
+  border-top: 1px solid var(--border-row);
+}
+
+.state-legend {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+
+.state-legend > div {
+  display: flex;
+  gap: 11px;
+  align-items: flex-start;
+}
+
+.state-legend .pill {
+  flex: 0 0 auto;
+}
+
+.state-legend-foot {
+  margin: 4px 0 0;
+  border-top: 1px solid var(--border-row);
+  padding-top: 9px;
+}
+
+@media (max-width: 1199px) {
+  .ep {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.6fr);
+  }
+
+  .ep-runs {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 767px) {
+  /* One card per endpoint: identity, then the counter grid at two columns,
+     then the histogram full width beneath. */
+  .ep {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 12px;
+  }
+
+  .ep-counters {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+/* ═══════════════════════════════════ p5-09 · Settings and Diagnostics ═════ */
+
+/* The restart banner is shell-owned and sits above the routed content on every
+   screen, so it takes the page gutter rather than the card grid's. */
+.restart-banner,
+.signout-banner {
+  margin: 16px 20px 0;
+}
+
+/* ── Settings ───────────────────────────────────────────────────────────── */
+
+/* Anchor nav beside the sections at desktop width; below 1200 px the nav
+   collapses to a horizontal scroller above them. */
+.set-layout {
+  display: grid;
+  grid-template-columns: 200px minmax(0, 1fr);
+  gap: var(--gap);
+  align-items: start;
+}
+
+.set-nav {
+  display: flex;
+  flex-direction: column;
+  position: sticky;
+  top: 12px;
+}
+
+.set-nav a {
+  padding: 7px 12px;
+  font-size: 12.5px;
+  border-left: 2px solid transparent;
+  color: var(--text-control);
+}
+
+.set-nav a:hover {
+  border-left-color: var(--accent);
+  background: var(--surface-sunken);
+  text-decoration: none;
+}
+
+.set-sections {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap);
+  min-width: 0;
+}
+
+/* Label column, control column — the artboard's 260 px against the rest. */
+.set-field {
+  display: grid;
+  grid-template-columns: 260px minmax(0, 1fr);
+  gap: 16px;
+  padding: 11px 0;
+  border-top: 1px solid var(--border-row);
+  align-items: start;
+}
+
+.set-field:first-child {
+  border-top: 0;
+  padding-top: 0;
+}
+
+/* A dirty field is marked by an accent rule on its own row, not by a colour on
+   the control: the control still has to render its own focus and error states,
+   and two meanings on one border cannot both be read. */
+.set-field.is-dirty {
+  box-shadow: inset 2px 0 0 var(--accent);
+  padding-left: 10px;
+}
+
+.set-field-name {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.set-field-label {
+  font-size: 12.5px;
+  color: var(--text);
+}
+
+.set-field-name .note {
+  flex: 1 0 100%;
+  margin: 0;
+}
+
+.set-field-control {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.set-field-control .field-input {
+  max-width: 320px;
+}
+
+.set-field-control select.field-input {
+  max-width: 240px;
+}
+
+.set-field-aside {
+  white-space: nowrap;
+}
+
+.set-field-error {
+  flex: 1 0 100%;
+  margin: 0;
+  font-size: 12.5px;
+  color: var(--pill-bad-fg);
+  background: var(--pill-bad-bg);
+  border-radius: 3px;
+  padding: 7px 9px;
+}
+
+.upstream-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+}
+
+/* Index · address · protocol · hostname · remove. The index is meaning, not
+   decoration: it is what a query reports as its answering endpoint. */
+.upstream-row {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr) 92px minmax(0, 1fr) 44px;
+  gap: 8px;
+  align-items: center;
+}
+
+.upstream-row .field-input {
+  max-width: none;
+}
+
+.upstream-rows-foot {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.set-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 12px 14px;
+  position: sticky;
+  bottom: 0;
+}
+
+.access-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px 0;
+  border-top: 1px solid var(--border-row);
+}
+
+.access-row:first-child {
+  border-top: 0;
+  padding-top: 0;
+}
+
+.access-title {
+  margin: 0 0 3px;
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+.access-row .note {
+  margin: 0;
+  max-width: 60ch;
+}
+
+/* Shown once and stored nowhere: selectable, so a copy failure still leaves the
+   operator a way to take it. */
+.api-key {
+  user-select: all;
+  overflow-wrap: anywhere;
+  background: var(--surface-sunken);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 10px;
+  font-size: 12.5px;
+  margin: 10px 0 0;
+}
+
+.raw-rows {
+  display: flex;
+  flex-direction: column;
+  margin-top: 10px;
+}
+
+.raw-row {
+  display: grid;
+  grid-template-columns: minmax(0, 320px) minmax(0, 1fr);
+  gap: 12px;
+  padding: 5px 0;
+  border-top: 1px solid var(--border-row);
+  font-size: 12px;
+}
+
+.raw-row > span:first-child {
+  color: var(--text-muted);
+  overflow-wrap: anywhere;
+}
+
+.raw-row > span:last-child {
+  overflow-wrap: anywhere;
+}
+
+.raw-foot {
+  margin-top: 12px;
+}
+
+/* ── Diagnostics · Health ───────────────────────────────────────────────── */
+
+.health-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.health-figure .note {
+  margin: 2px 0 0;
+}
+
+.health-endpoints {
+  margin-top: 12px;
+}
+
+.health-problems {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.health-problem {
+  display: grid;
+  grid-template-columns: 160px 90px minmax(0, 1fr);
+  gap: 10px;
+  align-items: center;
+}
+
+.health-problem .note {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.health-never .row > div {
+  min-width: 0;
+}
+
+/* ── Diagnostics · Memory ───────────────────────────────────────────────── */
+
+/* Four figures across the top, then four cards, then the chart full width. The
+   order is deliberate: the figures answer "is this fine", the cards answer
+   "made of what", and the chart — the widest and last — answers "going where".
+   A reader who stops after the first row has still had the question answered. */
+/* Both rows are `row c4` — the layout grid's own four-across, not a private
+   template. A private `grid-template-columns` here loses to
+   `.row > * { grid-column: span 12 }`, which is why the first attempt rendered
+   eight full-width cards stacked. */
+.memory-row-4 {
+  align-items: start;
+}
+
+/* The artboard sets every card title on this page in caps. Scoped to the page
+   rather than applied to `.ch`, because `.ch` is shared with twelve other
+   screens that were drawn in sentence case. */
+.memory-page .ch {
+  font-size: 12px;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  /* Four cards to a row leaves ~300 px, and a capitalised title plus its
+     aggregate do not both fit. Wrapping the *row* drops the aggregate onto its
+     own line and leaves the title whole; without it the title broke instead,
+     and `MINOR PAGE FAULTS` set over three lines at 1296 px. */
+  flex-wrap: wrap;
+  row-gap: 2px;
+}
+
+/* The **title** holds its line; the aggregate beside it gives way. Titles set in
+   caps with letter-spacing are wider than the sentence-case ones `.ch` was laid
+   out for, and an unshrinkable aggregate pushed `MINOR PAGE FAULTS` onto three
+   lines at 1296 px. The title is the card's name and is what a reader scans, so
+   it is the part that must not break. */
+.memory-page .ch > span:first-child {
+  flex: 1 0 auto;
+  white-space: nowrap;
+}
+
+/* `.ch-right` is a flex container, so `text-align` cannot move its children —
+   the chips drifted to the middle. `justify-content` is what right-aligns them,
+   and `margin-left: auto` holds them there once the row wraps. */
+.memory-page .ch-right {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin-left: auto;
+  justify-content: flex-end;
+  text-align: right;
+  text-transform: none;
+  letter-spacing: normal;
+}
+
+/* `.hd-actions` aligns to the **bottom** of the header, which is right for the
+   pages whose actions are buttons — `Discard` / `Validate and save` sit level
+   with the last line of the description. Memory's actions are not buttons: they
+   are a status read-out, and the artboard puts them level with the title, where
+   a reader looks first. A header carrying one aligns them to the top. */
+.hd-actions:has(.hd-updated) {
+  align-self: flex-start;
+  align-items: center;
+}
+
+/* The artboard's header runs a point larger than the shared one and its two
+   description lines need the leading. Selected on the icon tile, which only
+   this header has — the shared `.h1` and `.sub` serve twelve other pages and
+   are not this task's to resize. */
+.hd:has(.hd-glyph) .h1 {
+  font-size: 21px;
+  letter-spacing: 0.01em;
+}
+
+.hd:has(.hd-glyph) .sub {
+  line-height: 1.5;
+}
+
+/* The page's verdict badge. `.dot` carries no colour of its own — it takes the
+   pill's, so the badge reads as one object in whichever state it is in. */
+/* The artboard's pill: fully rounded, bordered and larger than the table pills
+   `.pill` was sized for. It is the page's verdict, read at a glance from across
+   the room, not a cell decoration — so it takes the artboard's own measurements
+   rather than inheriting a chip built for a row.
+
+   The border is mixed from the pill's own foreground rather than given a token:
+   it is the same hue at a lower lightness in both themes, which is exactly what
+   a mix expresses and what two more tokens would only restate. */
+.memory-verdict {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 13px;
+  border: 1px solid color-mix(in srgb, currentcolor 45%, transparent);
+  border-radius: 999px;
+  font-size: 11.5px;
+  letter-spacing: 0.07em;
+}
+
+.memory-verdict .dot {
+  width: 7px;
+  height: 7px;
+  background: currentcolor;
+}
+
+/* `no contract` is a chip, not a word: it is a classification of the row it
+   sits on, and set as running text it reads as part of the label. */
+.tagq {
+  background: var(--pill-special-bg);
+  color: var(--pill-special-fg);
+  font-size: 9px;
+  font-weight: 600;
+  padding: 2px 6px;
+  border-radius: 3px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.kpi {
+  padding: 14px 15px 13px;
+  display: flex;
+  flex-direction: column;
+}
+
+.kpil {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 10.5px;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+
+.kpil .l {
+  color: var(--text-control);
+  font-weight: 600;
+}
+
+.kpil .t {
+  color: var(--text-faint);
+  white-space: nowrap;
+}
+
+.kpi-figure {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 8px;
+  min-height: 38px;
+}
+
+.kpiv {
+  font-family: var(--font-mono);
+  font-size: 30px;
+  font-weight: 600;
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+}
+
+/* The figure wears its state, and the states are the same three the chart's
+   RSS line uses — ink, watch, over. Peak and committed are neither: peak is a
+   transient and committed has no contract, so neither can be "good" or "bad". */
+.kpiv-ink {
+  color: var(--text);
+}
+
+.kpiv-watch {
+  color: var(--memory-watch);
+}
+
+.kpiv-over {
+  color: var(--memory-over);
+}
+
+.kpiv-residual {
+  color: var(--text);
+}
+
+.kpiv-peak {
+  color: var(--memory-peak);
+}
+
+.kpiv-muted {
+  color: var(--text-muted);
+}
+
+.kpiu {
+  font-size: 12.5px;
+  color: var(--text-muted);
+  margin-left: 5px;
+  font-weight: 500;
+}
+
+.kpid {
+  font-size: 11.5px;
+  color: var(--text-muted);
+  margin: 5px 0 0;
+  line-height: 1.5;
+}
+
+.kpi-spark-wrap {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+}
+
+/* Wraps rather than runs on: the caption is as wide as the mark it belongs to,
+   and `nowrap` pushed it past the card edge on a four-up row below ~1400 px,
+   where it was clipped mid-word. */
+.kpi-spark-note {
+  font-size: 9.5px;
+  color: var(--text-faint);
+  max-width: 140px;
+  text-align: right;
+  line-height: 1.3;
+}
+
+/* Sized, not flexed. Inside a **column** wrapper a `flex-basis` sets the
+   cross-axis — `flex: 0 0 140px` made the sparkline 140 px *tall*. */
+.kpi-spark {
+  width: 140px;
+  height: 38px;
+  display: block;
+}
+
+.kpi-spark-ink .spark-line {
+  stroke: var(--text);
+}
+
+.kpi-spark-residual .spark-line {
+  stroke: var(--memory-residual-line);
+}
+
+/* Peak is a step, not a curve — it holds a value and drops at a restart — so it
+   wears the same dash as its line on the chart. */
+.kpi-spark-peak .spark-line {
+  stroke: var(--memory-peak);
+  stroke-dasharray: 4 3;
+}
+
+/* The restart dot on the peak step. Solid, because the drop is the one event
+   in this mark and a dashed line is easy to lose at 38 px. */
+.spark-drop {
+  fill: var(--memory-peak);
+}
+
+/* The area under a spark: the line's own colour at the top, faded out entirely
+   before the floor. `--spark-shade` is lighter in the light theme, where the
+   same alpha reads considerably heavier against white. */
+.spark-stop-top {
+  stop-opacity: var(--spark-shade);
+}
+
+.spark-stop-base {
+  stop-opacity: 0;
+}
+
+.kpi-spark-ink .spark-stop-top,
+.kpi-spark-ink .spark-stop-base {
+  stop-color: var(--text);
+}
+
+.kpi-spark-residual .spark-stop-top,
+.kpi-spark-residual .spark-stop-base {
+  stop-color: var(--memory-residual-line);
+}
+
+.marks-track {
+  fill: var(--track);
+}
+
+.marks-budget {
+  stroke: var(--memory-peak);
+  stroke-width: 3;
+}
+
+.marks-peak {
+  fill: var(--memory-peak);
+}
+
+.railx-budget {
+  font-family: var(--font);
+  color: var(--memory-peak);
+  white-space: nowrap;
+}
+
+/* `margin-top: auto` is what keeps the four cards' feet aligned when their
+   descriptions wrap to different heights. */
+.kpi-foot {
+  margin-top: auto;
+  padding-top: 11px;
+}
+
+.kpi-figures {
+  border-top: 1px solid var(--border-row);
+}
+
+.kpi-footer-row {
+  display: flex;
+  justify-content: space-between;
+  font-size: 11.5px;
+  color: var(--text-muted);
+}
+
+.kpi-footnote {
+  margin: 5px 0 0;
+  font-size: 10.5px;
+}
+
+.rail {
+  height: 9px;
+  border-radius: 3px;
+  background: var(--track);
+  overflow: hidden;
+}
+
+.rail-fill {
+  height: 100%;
+}
+
+.rail-ink {
+  background: var(--text-muted);
+}
+
+.rail-watch {
+  background: var(--memory-watch);
+}
+
+.rail-over {
+  background: var(--memory-over);
+}
+
+/* Residual wears its texture on the rail too, so the page has exactly one
+   visual for it — bar segment, swatch, chart band and rail all the same hatch. */
+.rail-residual {
+  background-color: var(--memory-residual-fill);
+  background-image: repeating-linear-gradient(
+    45deg,
+    var(--memory-residual-line) 0,
+    var(--memory-residual-line) 2.6px,
+    var(--memory-residual-fill) 2.6px,
+    var(--memory-residual-fill) 7px
+  );
+}
+
+/* The peak card's rail is a marker, not a fill: a track with the budget tick
+   and the peak's own dot on it. Peak measured as a percentage of budget is the
+   reading that invites someone to set `memory-high`. */
+.rail-marks {
+  display: block;
+  width: 100%;
+  height: 12px;
+}
+
+.railx {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 10px;
+  color: var(--text-faint);
+  margin-top: 6px;
+  font-family: var(--font-mono);
+}
+
+.railx-mid {
+  font-family: var(--font);
+}
+
+/* The composition bar. Segments butt together with no gap because the card's
+   claim is that they sum to RSS exactly, and a gap would spend that claim on
+   decoration. Cache and stats are separated by a lightness step instead. */
+.composition-bar {
+  display: flex;
+  height: 30px;
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.composition-seg {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10.5px;
+  min-width: 2px;
+}
+
+.seg-ruleset {
+  background: var(--memory-ruleset);
+  color: #fff;
+}
+
+.seg-cache {
+  background: var(--memory-cache);
+}
+
+.seg-stats {
+  background: var(--memory-stats);
+}
+
+/* Residual is the one band that never takes a hue — it is a remainder, not a
+   structure. The texture says so without claiming it is a thing. */
+.seg-residual,
+.sw-residual {
+  background-color: var(--memory-residual-fill);
+  background-image: repeating-linear-gradient(
+    45deg,
+    var(--memory-residual-line) 0,
+    var(--memory-residual-line) 2.6px,
+    var(--memory-residual-fill) 2.6px,
+    var(--memory-residual-fill) 7px
+  );
+  color: var(--text);
+}
+
+.composition-tiles {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.composition-tile {
+  border: 1px solid var(--border-row);
+  border-radius: var(--radius);
+  padding: 11px 12px;
+  background: var(--surface-sunken);
+}
+
+.composition-tile .tl {
+  font-size: 11.5px;
+  color: var(--text-control);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.composition-tile .tv {
+  font-size: 19px;
+  font-weight: 600;
+  margin-top: 5px;
+}
+
+.composition-tile .tu {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.tv-ruleset {
+  color: var(--memory-ruleset);
+}
+
+.tv-cache {
+  color: var(--memory-cache);
+}
+
+.tv-stats {
+  color: var(--memory-stats);
+}
+
+.tv-residual {
+  color: var(--text);
+}
+
+.composition-detail {
+  font-size: 10.5px;
+  margin-top: 2px;
+}
+
+.composition-accounted {
+  display: flex;
+  justify-content: space-between;
+  font-size: 11.5px;
+  color: var(--text-control);
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border-row);
+}
+
+.composition-note {
+  margin: 12px 0 0;
+}
+
+/* Swatches. Every one is paired with a label in the markup — colour never
+   carries identity on its own here, which is also what lets cache and stats
+   share a hue in two steps. */
+.sw-ruleset {
+  background: var(--memory-ruleset);
+}
+
+.sw-cache {
+  background: var(--memory-cache);
+}
+
+.sw-stats {
+  background: var(--memory-stats);
+}
+
+.sw-peak {
+  background: var(--memory-peak);
+}
+
+.sw-watch {
+  background: var(--memory-watch);
+}
+
+.sw-over {
+  background: var(--memory-over);
+}
+
+.sw-ink {
+  background: var(--text);
+}
+
+.sw-line,
+.sw-dash {
+  width: 16px;
+  height: 0;
+  display: inline-block;
+  vertical-align: 3px;
+  margin-right: 5px;
+}
+
+.sw-line {
+  border-top: 2px solid var(--text);
+}
+
+.sw-dash {
+  border-top: 2px dashed var(--memory-peak);
+}
+
+.memory-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 17px;
+  font-size: 11.5px;
+  color: var(--text-control);
+  margin-bottom: 10px;
+}
+
+.memory-legend .note {
+  font-size: inherit;
+}
+
+/* The hovered sample, under the plot rather than floating over it: no
+   positioning, no edge flipping, no teardown — and it is still there on a
+   phone, which has no pointer to hover with. */
+.memory-readout {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 16px;
+  font-size: 11.5px;
+  color: var(--text-control);
+  border-top: 1px solid var(--border-row);
+  margin-top: 10px;
+  padding-top: 10px;
+  min-height: 34px;
+}
+
+.memory-readout-idle {
+  color: var(--text-faint);
+}
+
+.memory-readout-ts {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.memory-readout-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.memory-readout-item .num {
+  margin-left: 4px;
+  color: var(--text);
+}
+
+.faults-figure {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.faults-value {
+  font-size: 24px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+/* The window's two ends, under a plot that draws no x ticks. */
+.faults-xends {
+  display: flex;
+  justify-content: space-between;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-faint);
+  margin-top: 4px;
+}
+
+.kv-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12.5px;
+}
+
+.kv-table td {
+  padding: 8px 0;
+  border-top: 1px solid var(--border-row);
+  color: var(--text-control);
+}
+
+.kv-table tr:first-child td {
+  border-top: none;
+}
+
+.kv-table td:last-child {
+  text-align: right;
+}
+
+.kv-good {
+  color: var(--state-live);
+}
+
+.kv-note {
+  margin: 12px 0 0;
+}
+
+/* `.row.c4` already collapses to two across at 1199 px. Below 768 px the
+   layout grid leaves it at two, which is right for four short figures and
+   wrong for four cards carrying tables and a plot. */
+@media (max-width: 767px) {
+  .row.c4.memory-row-4 > * {
+    grid-column: span 12;
+  }
+
+  .composition-tiles {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  /* The sparkline is the first thing to go on a phone: it is the gesture, the
+     figure beside it is the reading, and the chart below is where the trend is
+     actually read. */
+  .kpi-spark,
+  /* The caption belongs to the mark — "restart resets it" describes a step
+     that is no longer on screen, so it goes with it. */
+  .kpi-spark-note {
+    display: none;
+  }
+}
+
+/* The hovered sample, in a box over the plot — the artboard's treatment. DOM
+   rather than canvas: canvas text cannot be selected or reached by a screen
+   reader, and two aligned columns on canvas means re-implementing font metrics. */
+.memory-plot {
+  position: relative;
+}
+
+.memory-tip {
+  position: absolute;
+  z-index: 2;
+  width: 196px;
+  padding: 9px 11px 10px;
+  border: 1px solid var(--border-control);
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: 0 6px 18px rgb(0 0 0 / 18%);
+  /* The pointer is over the plot, not over this: a box that swallows the
+     pointer would fight the crosshair it exists to explain. */
+  pointer-events: none;
+}
+
+.memory-tip-ts {
+  font-size: 10px;
+  color: var(--text-muted);
+  margin-bottom: 6px;
+}
+
+.memory-tip-row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 11px;
+  line-height: 1.75;
+  color: var(--text);
+}
+
+.memory-tip-row.muted {
+  color: var(--text-muted);
+}
+
+.memory-tip-label {
+  flex: 1 1 auto;
+}
+
+.memory-tip-row .num {
+  font-variant-numeric: tabular-nums;
+}
+
+.memory-tip-split {
+  height: 1px;
+  background: var(--border-row);
+  margin: 6px 0 5px;
+}
+
+/* The icon tile beside the page title, and the two header affordances that
+   follow the verdict pill. */
+.hd-lead {
+  display: flex;
+  gap: 13px;
+  align-items: flex-start;
+  min-width: 0;
+}
+
+.hd-glyph {
+  width: 40px;
+  height: 40px;
+  flex: 0 0 40px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border-control);
+  background: var(--surface-raised, var(--surface));
+  color: var(--state-live);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.hd-updated {
+  white-space: nowrap;
+}
+
+.hd-refresh {
+  background: none;
+  border: 0;
+  padding: 0;
+  color: var(--text-muted);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  position: relative;
+}
+
+/* 15 px of drawn glyph, 44 px of target — the artboards' number, met the way
+   `.switch` meets it rather than by growing the icon. Its only neighbours in
+   the header's actions slot are the residual badge and the `hd-updated`
+   timestamp, and neither is interactive, so nothing loses a tap to the
+   overhang. Every other refresh control in the application is a `.mini` inside
+   a `.refresh-cluster` and already clears 44 px; this one stood alone and did
+   not. */
+.hd-refresh::before {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 44px;
+  height: 44px;
+  transform: translate(-50%, -50%);
+}
+
+.hd-refresh:hover {
+  color: var(--text);
+}
+
+@media (max-width: 767px) {
+  /* The tile is decoration at this width and the title needs the row. */
+  .hd-glyph,
+  .hd-updated {
+    display: none;
+  }
+
+  /* No pointer, so nothing can hover the plot: the box would never appear, and
+     reserving z-index for it is pointless. */
+  .memory-tip {
+    display: none;
+  }
+}
+
+
+/* ── Diagnostics · Live Feed ────────────────────────────────────────────── */
+
+.feed-notice {
+  border-left-color: var(--accent);
+}
+
+.feed-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px 20px;
+  align-items: flex-end;
+}
+
+.feed-chipset {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.feed-chipset .note {
+  margin: 0;
+}
+
+.feed-text {
+  display: grid;
+  grid-template-columns: auto minmax(0, 180px) auto minmax(0, 180px);
+  gap: 6px 10px;
+  align-items: center;
+}
+
+.feed-text .field-label {
+  margin: 0;
+  white-space: nowrap;
+}
+
+.feed-actions {
+  display: flex;
+  gap: 8px;
+  margin-left: auto;
+}
+
+/* Desktop shows both text filters inline, so the toggle has nothing to do. */
+.feed-filter-toggle {
+  display: none;
+}
+
+.bd.feed-body {
+  padding: 0;
+}
+
+.bd.feed-body > .note {
+  padding: 0 14px 14px;
+}
+
+.feed-body .empty-state {
+  padding: 24px 14px;
+}
+
+.feed-scroll {
+  overflow-x: auto;
+}
+
+.feed-table {
+  min-width: 900px;
+}
+
+.feed-table td {
+  vertical-align: top;
+}
+
+.feed-kind {
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  border: 1px solid var(--border);
+  border-radius: 2px;
+  padding: 1px 5px;
+}
+
+.feed-domain {
+  overflow-wrap: anywhere;
+}
+
+.feed-path {
+  color: var(--text-faint);
+  margin-left: 5px;
+  overflow-wrap: anywhere;
+}
+
+.feed-detail {
+  color: var(--text-control);
+  font-size: 11.5px;
+}
+
+/* A marker on a row, not a verdict — deliberately unlike a pill. */
+.feed-marker {
+  margin-left: 6px;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--text-muted);
+  border-bottom: 1px dotted var(--border-control);
+}
+
+.feed-unknown-verdict {
+  color: var(--text-muted);
+}
+
+/* The phone card list: hidden at desktop, and hidden means out of the tree. */
+.feed-cards {
+  display: none;
+}
+
+.ev {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+/* The verdict-coloured left border, so the feed is scannable at a glance. The
+   pill on the first line carries the word, so colour never carries it alone. */
+.ev-pass {
+  border-left: 3px solid var(--border-control);
+}
+
+.ev-allow {
+  border-left: 3px solid var(--pill-good-fg);
+}
+
+.ev-block {
+  border-left: 3px solid var(--pill-bad-fg);
+}
+
+.ev-top {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.ev-top .note {
+  margin: 0;
+  margin-left: auto;
+}
+
+.ev-domain {
+  font-size: 13px;
+  word-break: break-all;
+  line-height: 1.35;
+}
+
+.ev-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  margin: 0;
+}
+
+@media (max-width: 1199px) {
+  /* The anchor nav becomes a horizontal scroller above the sections: a sticky
+     200 px column is most of a tablet's width. */
+  .set-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .set-nav {
+    position: static;
+    flex-direction: row;
+    overflow-x: auto;
+    gap: 4px;
+  }
+
+  .set-nav a {
+    border-left: 0;
+    border-bottom: 2px solid transparent;
+    white-space: nowrap;
+  }
+
+  .set-nav a:hover {
+    border-left: 0;
+    border-bottom-color: var(--accent);
+  }
+}
+
+@media (max-width: 767px) {
+  .restart-banner {
+    margin: 12px 12px 0;
+  }
+
+  /* Label over control, per the task. */
+  .set-field {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 8px;
+  }
+
+  .set-field-control .field-input,
+  .set-field-control select.field-input {
+    max-width: none;
+  }
+
+  /* Address and hostname take the full width; index, protocol and remove share
+     the line above them. */
+  .upstream-row {
+    grid-template-columns: 28px minmax(0, 1fr) 44px;
+  }
+
+  .upstream-row > *:nth-child(2),
+  .upstream-row > *:nth-child(4) {
+    grid-column: 1 / -1;
+  }
+
+  .set-bar,
+  .access-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .raw-row {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 2px;
+  }
+
+  .health-problem {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 4px;
+  }
+
+  /* One card per event, never the nine-column table. */
+  .feed-scroll {
+    display: none;
+  }
+
+  .feed-cards {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 12px;
+  }
+
+  /* The chip rows scroll sideways in their own container; the body never does. */
+  .feed-chipset .chips {
+    overflow-x: auto;
+    padding-bottom: 2px;
+  }
+
+  .feed-chipset .chip {
+    height: 44px;
+    display: flex;
+    align-items: center;
+    padding: 0 14px;
+    flex: 0 0 auto;
+    white-space: nowrap;
+  }
+
+  .feed-controls {
+    gap: 12px;
+  }
+
+  .feed-actions {
+    margin-left: 0;
+    width: 100%;
+  }
+
+  .feed-actions .btn {
+    flex: 1;
+    min-height: 44px;
+  }
+
+  .feed-filter-toggle {
+    display: flex;
+  }
+
+  /* Collapsed until `Filter…` is pressed, and collapsed means out of the tab
+     order rather than merely out of sight. */
+  .feed-text {
+    display: none;
+  }
+
+  .feed-text.on {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    width: 100%;
+  }
+}
+
+@media (pointer: coarse) {
+  .set-nav a,
+  .feed-actions .btn,
+  .feed-chipset .chip {
+    min-height: 44px;
+    display: flex;
+    align-items: center;
+  }
+}
+
+
+
+/* A grid item's `min-width` is `auto`, so the anchor nav grew past its own
+   track at 900 px and pushed the page 676 px sideways instead of scrolling
+   inside itself. The track is already `minmax(0, 1fr)`; the item needs saying
+   too. */
+.set-nav {
+  min-width: 0;
+}
+
+.set-section-note {
+  margin: 0 0 4px;
+}
+
+/* The feed's pager. Page 1 is the newest, so `Newer` is the way back toward
+   the live edge and sits first. */
+.feed-pager {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border-row);
+}
+
+.feed-pager .note {
+  margin: 0;
+}
+
+.feed-page-sizes {
+  margin-left: auto;
+}
+
+.feed-page-nav {
+  display: flex;
+  gap: 6px;
+}
+
+.feed-page-nav .btn[disabled] {
+  opacity: 0.45;
+  cursor: default;
+}
+
+@media (max-width: 767px) {
+  .feed-pager {
+    padding: 10px 12px;
+  }
+
+  .feed-pager .note {
+    flex: 1 0 100%;
+  }
+
+  .feed-page-sizes {
+    margin-left: 0;
+  }
+
+  .feed-page-sizes .chip {
+    height: 44px;
+    display: flex;
+    align-items: center;
+    padding: 0 14px;
+  }
+
+  .feed-page-nav {
+    margin-left: auto;
+  }
+
+  .feed-page-nav .btn {
+    min-height: 44px;
+  }
+}
