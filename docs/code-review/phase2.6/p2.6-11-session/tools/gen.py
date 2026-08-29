@@ -70,12 +70,13 @@ def main():
     rx.start()
 
     total_rate = a.qps + a.ctl_qps
-    ctl_every = max(1, round(total_rate / a.ctl_qps)) if a.ctl_qps else 0
     burst = max(1, total_rate // 200)          # 5 ms pacing granularity
     interval = burst / float(total_rate)
 
     qid = 0
-    n = 0
+    n_fwd = 0
+    n_ctl = 0
+    ctl_acc = 0
     sent = 0
     errors = 0
     t_start = time.perf_counter()
@@ -89,11 +90,21 @@ def main():
             time.sleep(min(next_send - now, 0.002))
             continue
         for _ in range(burst):
-            n += 1
-            if ctl_every and n % ctl_every == 0:
-                name = ctl[n % len(ctl)]
+            # Bresenham interleave: exact ctl_qps/total_rate control fraction
+            # for any integer ratio, with independent per-stream counters so
+            # both name sets are covered fully regardless of the ratio's
+            # parity. The old shared-counter modulo (`round(total/ctl)`, then
+            # `n % ctl_every` / `n % len`) halved the L.1s split to 750/750
+            # and aliased even splits onto half of each name set — p2.6 audit
+            # finding F1.
+            ctl_acc += a.ctl_qps
+            if ctl_acc >= total_rate:
+                ctl_acc -= total_rate
+                name = ctl[n_ctl % len(ctl)]
+                n_ctl += 1
             else:
-                name = fwd[n % len(fwd)]
+                name = fwd[n_fwd % len(fwd)]
+                n_fwd += 1
             qid = (qid + 1) & 0xFFFF
             sent_at[qid] = time.perf_counter()
             try:

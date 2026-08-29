@@ -212,6 +212,8 @@ impl HistorySource for FakeHistory {
         Ok(PerfSeries {
             samples: vec![PerfSample {
                 ts: 3_600,
+                allocator_committed_bytes: 0,
+                list_fetch: Default::default(),
                 answers_delta: fah_model::AnswerCounters {
                     servfail_synthesized: 9,
                     servfail_relayed: 4,
@@ -391,6 +393,11 @@ impl TelemetrySource for FakeTelemetry {
                     entries_removed: 44_120,
                     bytes_freed: 9_871_232,
                     last_duration: Duration::from_micros(1_842),
+                },
+                lists: fah_model::ListFetchCounters {
+                    bodies: 17,
+                    not_modified: 3,
+                    bytes_fetched: 27_580_000,
                 },
             },
             latency: fah_model::LatencyTotals {

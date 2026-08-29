@@ -83,6 +83,15 @@ pub struct EngineCounters {
     pub events_dropped: u64,
     pub swr: SwrCounters,
     pub cache_cleanup: CacheCleanupCounters,
+    #[serde(default)]
+    pub lists: ListFetchCounters,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ListFetchCounters {
+    pub bodies: u64,
+    pub not_modified: u64,
+    pub bytes_fetched: u64,
 }
 
 /// DNS questions answered, by outcome.

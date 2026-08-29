@@ -728,6 +728,12 @@ fn spawn_telemetry_poll(
                 last_duration_micros: cleanup.last_duration_micros,
             });
             metrics.set_upstreams(upstreams.status());
+            let fetches = rules.fetch_stats();
+            metrics.set_lists(fah_model::ListFetchCounters {
+                bodies: fetches.bodies,
+                not_modified: fetches.not_modified,
+                bytes_fetched: fetches.bytes_fetched,
+            });
 
             // `len` and `duplicates_removed` are field reads. The ruleset's
             // *size* is deliberately not read here: `heap_bytes()` is a walk,
@@ -973,6 +979,8 @@ fn build_perf_sample(
         rss_anon_bytes: memory.rss_anon.unwrap_or(0),
         rss_file_bytes: memory.rss_file.unwrap_or(0),
         answers_delta,
+        allocator_committed_bytes: memory.allocator.map_or(0, |a| a.current_commit),
+        list_fetch: current.lists,
         latency: latency_summary(current, prev),
         // One type end to end (`fah_model::UpstreamSample`), so this is a clone
         // rather than a field-by-field remap into a structurally identical
@@ -1125,6 +1133,7 @@ mod tests {
             response_bytes: 0,
             swr: fah_metrics::SwrSnapshot::default(),
             cleanup: fah_metrics::CleanupSnapshot::default(),
+            lists: fah_model::ListFetchCounters::default(),
             block: empty_stage(),
             cache_hit: empty_stage(),
             forward: empty_stage(),

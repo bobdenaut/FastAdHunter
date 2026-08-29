@@ -54,8 +54,16 @@ pub(crate) fn parse(text: &str) -> ParsedRuleList {
             continue;
         }
 
-        if COSMETIC_MARKERS.iter().any(|marker| line.contains(marker)) {
-            rules.push(inactive(InactiveReason::Cosmetic));
+        if let Some(at) = COSMETIC_MARKERS
+            .iter()
+            .filter_map(|marker| line.find(marker))
+            .min()
+        {
+            if line[..at].bytes().any(|byte| byte.is_ascii_whitespace()) {
+                errors.record(index);
+            } else {
+                rules.push(inactive(InactiveReason::Cosmetic));
+            }
             continue;
         }
 
@@ -95,7 +103,11 @@ pub(crate) fn parse(text: &str) -> ParsedRuleList {
             }),
             DomainVerdict::Malformed => errors.record(index),
             DomainVerdict::NotADomainRule => {
-                rules.push(url_rule(pattern, exception, &options));
+                if pattern.bytes().any(|byte| byte.is_ascii_whitespace()) {
+                    errors.record(index);
+                } else {
+                    rules.push(url_rule(pattern, exception, &options));
+                }
             }
         }
     }
@@ -834,5 +846,23 @@ mod tests {
         let result = parse("! comment\n[Adblock Plus 2.0]\n\n");
         assert_eq!(result.rules.len(), 0);
         assert_eq!(result.parse_errors, 0);
+    }
+
+    #[test]
+    fn a_pattern_containing_whitespace_is_a_parse_error() {
+        let result = parse("||valid.example^\nthis is not a rule at all\n");
+        assert_eq!(result.parse_errors, 1);
+        assert_eq!(result.parse_error_lines, vec![2]);
+        assert_eq!(result.active_count(), 1);
+
+        let result = parse("||a.example^\n!!x\nbad line ###\n");
+        assert_eq!(result.parse_errors, 1);
+    }
+
+    #[test]
+    fn whitespace_in_option_payload_is_not_the_pattern_error_path() {
+        let result = parse("||ads.example.com^$dnsrewrite=NOERROR\n");
+        assert_eq!(result.parse_errors, 0);
+        assert_eq!(result.active_count(), 1);
     }
 }

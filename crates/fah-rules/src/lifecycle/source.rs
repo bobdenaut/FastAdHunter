@@ -7,6 +7,26 @@ use std::time::Duration;
 
 use super::LifecycleError;
 
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub(super) struct Validators {
+    pub(super) etag: Option<String>,
+    pub(super) last_modified: Option<String>,
+}
+
+impl Validators {
+    pub(super) fn is_empty(&self) -> bool {
+        self.etag.is_none() && self.last_modified.is_none()
+    }
+}
+
+pub(super) enum FetchOutcome {
+    NotModified,
+    Body {
+        text: String,
+        validators: Validators,
+    },
+}
+
 /// One list's origin: a remote URL or a file under the manager's data
 /// directory (RULE_ENGINE.md: remote lists vs local lists). Detected from the
 /// configured `url` string — `http://`/`https://` is remote, anything else is
@@ -38,19 +58,45 @@ impl ListSource {
         http: &reqwest::Client,
         timeout: Duration,
         max_bytes: usize,
-    ) -> Result<String, LifecycleError> {
+        cached: &Validators,
+    ) -> Result<FetchOutcome, LifecycleError> {
         match self {
             ListSource::Remote(url) => {
-                let mut response = http
-                    .get(url)
-                    .timeout(timeout)
+                let mut request = http.get(url).timeout(timeout);
+                if let Some(etag) = &cached.etag {
+                    request = request.header(reqwest::header::IF_NONE_MATCH, etag);
+                }
+                if let Some(when) = &cached.last_modified {
+                    request = request.header(reqwest::header::IF_MODIFIED_SINCE, when);
+                }
+                let response = request
                     .send()
                     .await
-                    .and_then(reqwest::Response::error_for_status)
                     .map_err(|source| LifecycleError::Fetch {
                         url: url.clone(),
                         source,
                     })?;
+                if response.status() == reqwest::StatusCode::NOT_MODIFIED {
+                    return Ok(FetchOutcome::NotModified);
+                }
+                let header = |name: reqwest::header::HeaderName| {
+                    response
+                        .headers()
+                        .get(name)
+                        .and_then(|value| value.to_str().ok())
+                        .map(str::to_owned)
+                };
+                let validators = Validators {
+                    etag: header(reqwest::header::ETAG),
+                    last_modified: header(reqwest::header::LAST_MODIFIED),
+                };
+                let mut response =
+                    response
+                        .error_for_status()
+                        .map_err(|source| LifecycleError::Fetch {
+                            url: url.clone(),
+                            source,
+                        })?;
 
                 // Grown by doubling rather than pre-sized from `Content-Length`.
                 // A declared length is server-controlled and unverified, so
@@ -81,8 +127,9 @@ impl ListSource {
                 }
                 // Rule lists are ASCII/UTF-8 in practice; lossy replacement of
                 // stray bytes just turns the affected lines into parse errors.
-                Ok(String::from_utf8(body)
-                    .unwrap_or_else(|err| String::from_utf8_lossy(err.as_bytes()).into_owned()))
+                let text = String::from_utf8(body)
+                    .unwrap_or_else(|err| String::from_utf8_lossy(err.as_bytes()).into_owned());
+                Ok(FetchOutcome::Body { text, validators })
             }
             ListSource::LocalFile(path) => {
                 let len = tokio::fs::metadata(path)
@@ -98,12 +145,16 @@ impl ListSource {
                         limit: max_bytes,
                     });
                 }
-                tokio::fs::read_to_string(path)
-                    .await
-                    .map_err(|source| LifecycleError::LocalRead {
+                let text = tokio::fs::read_to_string(path).await.map_err(|source| {
+                    LifecycleError::LocalRead {
                         path: path.clone(),
                         source,
-                    })
+                    }
+                })?;
+                Ok(FetchOutcome::Body {
+                    text,
+                    validators: Validators::default(),
+                })
             }
         }
     }

@@ -417,6 +417,21 @@ pub struct ListManager {
     /// `Duration` is two fields and could not be read without tearing. u64 µs
     /// covers ~584,000 years, and compiles are seconds.
     last_compile_micros: std::sync::atomic::AtomicU64,
+    fetch_bodies: std::sync::atomic::AtomicU64,
+    fetch_not_modified: std::sync::atomic::AtomicU64,
+    fetch_bytes: std::sync::atomic::AtomicU64,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct ListFetchStats {
+    pub bodies: u64,
+    pub not_modified: u64,
+    pub bytes_fetched: u64,
+}
+
+enum CommitOutcome {
+    Committed,
+    Unchanged,
 }
 
 impl ListManager {
@@ -486,7 +501,19 @@ impl ListManager {
             policies: ArcSwap::from_pointee(PolicySet::single_default()),
             compiles: std::sync::atomic::AtomicU64::new(0),
             last_compile_micros: std::sync::atomic::AtomicU64::new(0),
+            fetch_bodies: std::sync::atomic::AtomicU64::new(0),
+            fetch_not_modified: std::sync::atomic::AtomicU64::new(0),
+            fetch_bytes: std::sync::atomic::AtomicU64::new(0),
         })
+    }
+
+    pub fn fetch_stats(&self) -> ListFetchStats {
+        use std::sync::atomic::Ordering;
+        ListFetchStats {
+            bodies: self.fetch_bodies.load(Ordering::Relaxed),
+            not_modified: self.fetch_not_modified.load(Ordering::Relaxed),
+            bytes_fetched: self.fetch_bytes.load(Ordering::Relaxed),
+        }
     }
 
     /// The current compiled ruleset. Allocation-free beyond an atomic
@@ -660,9 +687,19 @@ impl ListManager {
         // string is the only diagnostic available, and the outermost layer
         // cannot tell a DNS failure from a refused connection or a rejected
         // certificate.
-        if let Err(err) = self.fetch_and_commit(&entry).await {
-            self.record_status(id, RefreshResult::from_error(&err), false);
-            return Err(err);
+        let outcome = match self.fetch_and_commit(&entry).await {
+            Ok(outcome) => outcome,
+            Err(err) => {
+                self.record_status(id, RefreshResult::from_error(&err), false);
+                return Err(err);
+            }
+        };
+        if let CommitOutcome::Unchanged = outcome {
+            if let Some(list_stats) = self.status(id).and_then(|status| status.compiled) {
+                tracing::info!(list = %id, "list unchanged at source; serving ruleset kept");
+                self.record_status(id, RefreshResult::Ok(list_stats.clone()), true);
+                return Ok(list_stats);
+            }
         }
 
         let _guard = self.compile_lock.lock().await;
@@ -679,7 +716,8 @@ impl ListManager {
         Ok(list_stats)
     }
 
-    async fn fetch_and_commit(&self, entry: &ListEntry) -> Result<(), LifecycleError> {
+    async fn fetch_and_commit(&self, entry: &ListEntry) -> Result<CommitOutcome, LifecycleError> {
+        use std::sync::atomic::Ordering;
         let _list_guard = entry.refresh_lock.lock().await;
         // Every path that fetches records the attempt here, so a manual refresh
         // moves the next due time exactly as a scheduled one does. Before the
@@ -690,10 +728,32 @@ impl ListManager {
             .unwrap()
             .insert(Arc::clone(&entry.id), Instant::now());
         let baseline = self.status(&entry.id).and_then(|status| status.compiled);
-        let text = entry
+        let stored = cache::read_validators(&self.data_dir, &entry.id).await;
+        let outcome = entry
             .source
-            .fetch(&self.http, self.fetch_timeout, MAX_LIST_BYTES)
+            .fetch(&self.http, self.fetch_timeout, MAX_LIST_BYTES, &stored)
             .await?;
+        let (text, validators) = match outcome {
+            source::FetchOutcome::NotModified => {
+                self.fetch_not_modified.fetch_add(1, Ordering::Relaxed);
+                return Ok(CommitOutcome::Unchanged);
+            }
+            source::FetchOutcome::Body { text, validators } => (text, validators),
+        };
+        self.fetch_bodies.fetch_add(1, Ordering::Relaxed);
+        self.fetch_bytes
+            .fetch_add(text.len() as u64, Ordering::Relaxed);
+        let cached = {
+            let pending = self.pending_cache.lock().unwrap().get(&*entry.id).cloned();
+            match pending {
+                Some(pending) => Some(pending),
+                None => cache::read(&self.data_dir, &entry.id).await,
+            }
+        };
+        if cached.as_deref() == Some(text.as_str()) {
+            cache::write_validators(&self.data_dir, &entry.id, &validators).await;
+            return Ok(CommitOutcome::Unchanged);
+        }
         let _guard = self.compile_lock.lock().await;
         let still_registered = self
             .find(&entry.id)
@@ -713,7 +773,8 @@ impl ListManager {
             return Err(LifecycleError::RejectedContent(reason));
         }
         self.commit_raw(&entry.id, text).await;
-        Ok(())
+        cache::write_validators(&self.data_dir, &entry.id, &validators).await;
+        Ok(CommitOutcome::Committed)
     }
 
     /// Refreshes every enabled list in one pass and recompiles the combined
@@ -750,7 +811,7 @@ impl ListManager {
         // expensive compile is deferred to one pass after the whole batch is on
         // disk. `Ok(())` marks a committed list, `Err` a failed fetch whose old
         // cached copy keeps serving.
-        let mut committed: Vec<(Arc<str>, Result<(), RefreshResult>)> =
+        let mut committed: Vec<(Arc<str>, Result<CommitOutcome, RefreshResult>)> =
             Vec::with_capacity(entries.len());
         for entry in &entries {
             let outcome = self
@@ -759,13 +820,21 @@ impl ListManager {
                 .map_err(|err| RefreshResult::from_error(&err));
             committed.push((entry.id.clone(), outcome));
         }
+        let changed = committed
+            .iter()
+            .any(|(_, r)| matches!(r, Ok(CommitOutcome::Committed)));
 
         // One compile for the whole batch, then map each list to its share of
         // the result and record status.
-        let _guard = self.compile_lock.lock().await;
-        let (matcher, mut stats) = self.compile().await;
-        let rules = matcher.len();
-        self.swap_in(matcher, &stats);
+        let mut stats: HashMap<Arc<str>, RefreshStats> = HashMap::new();
+        let mut rules = self.matcher().len();
+        if changed {
+            let _guard = self.compile_lock.lock().await;
+            let (matcher, compiled) = self.compile().await;
+            rules = matcher.len();
+            self.swap_in(matcher, &compiled);
+            stats = compiled;
+        }
         let refreshed = committed.iter().filter(|(_, r)| r.is_ok()).count();
 
         // Per-list lines before the summary, as in `refresh_due_lists` — this
@@ -775,7 +844,7 @@ impl ListManager {
             .into_iter()
             .map(|(id, outcome)| {
                 let result = match outcome {
-                    Ok(()) => {
+                    Ok(CommitOutcome::Committed) => {
                         let list_stats = stats.remove(&id).unwrap_or_default();
                         tracing::info!(
                             list = %id,
@@ -784,6 +853,16 @@ impl ListManager {
                             parse_errors = list_stats.parse_errors,
                             "list refreshed"
                         );
+                        self.record_status(&id, RefreshResult::Ok(list_stats.clone()), true);
+                        RefreshResult::Ok(list_stats)
+                    }
+                    Ok(CommitOutcome::Unchanged) => {
+                        let list_stats = self
+                            .status(&id)
+                            .and_then(|status| status.compiled)
+                            .or_else(|| stats.remove(&id))
+                            .unwrap_or_default();
+                        tracing::info!(list = %id, "list unchanged at source");
                         self.record_status(&id, RefreshResult::Ok(list_stats.clone()), true);
                         RefreshResult::Ok(list_stats)
                     }
@@ -1059,9 +1138,19 @@ impl ListManager {
         // Successes cannot be: their `RefreshStats` only exist once the compile
         // has parsed the new text.
         let mut committed: Vec<Arc<str>> = Vec::with_capacity(due.len());
+        let mut unchanged = 0usize;
         for entry in &due {
             match self.fetch_and_commit(entry).await {
-                Ok(()) => committed.push(entry.id.clone()),
+                Ok(CommitOutcome::Committed) => committed.push(entry.id.clone()),
+                Ok(CommitOutcome::Unchanged) => {
+                    unchanged += 1;
+                    let list_stats = self
+                        .status(&entry.id)
+                        .and_then(|status| status.compiled)
+                        .unwrap_or_default();
+                    tracing::info!(list = %entry.id, "list unchanged at source");
+                    self.record_status(&entry.id, RefreshResult::Ok(list_stats), true);
+                }
                 Err(err) => {
                     let result = RefreshResult::from_error(&err);
                     let error = result.failure_message().unwrap_or_default();
@@ -1075,6 +1164,14 @@ impl ListManager {
         // Recompiling would rebuild a byte-identical matcher and pay the whole
         // multi-second, >100 MiB transient for it.
         if committed.is_empty() {
+            if unchanged > 0 {
+                tracing::info!(
+                    lists = due.len(),
+                    unchanged,
+                    failed = due.len() - unchanged,
+                    "scheduled refresh complete — no content change, compile skipped"
+                );
+            }
             return;
         }
 
@@ -1107,7 +1204,8 @@ impl ListManager {
         tracing::info!(
             lists = due.len(),
             refreshed,
-            failed = due.len() - refreshed,
+            unchanged,
+            failed = due.len() - refreshed - unchanged,
             rules,
             "scheduled refresh complete"
         );
@@ -3080,8 +3178,14 @@ mod tests {
         let source = ListSource::from_url(&url, std::path::Path::new("/data"));
         let http = reqwest::Client::new();
         let err = source
-            .fetch(&http, Duration::from_secs(5), 16)
+            .fetch(
+                &http,
+                Duration::from_secs(5),
+                16,
+                &source::Validators::default(),
+            )
             .await
+            .map(|_| ())
             .unwrap_err();
         assert!(matches!(err, LifecycleError::TooLarge { limit: 16, .. }));
     }
@@ -3098,10 +3202,151 @@ mod tests {
         let source = ListSource::from_url("big.txt", data_dir.path());
         let http = reqwest::Client::new();
         let err = source
-            .fetch(&http, Duration::from_secs(5), 16)
+            .fetch(
+                &http,
+                Duration::from_secs(5),
+                16,
+                &source::Validators::default(),
+            )
             .await
+            .map(|_| ())
             .unwrap_err();
         assert!(matches!(err, LifecycleError::TooLarge { limit: 16, .. }));
+    }
+
+    async fn serve_with_validators(listener: TcpListener, body: String, etag: String) {
+        loop {
+            let Ok((mut stream, _)) = listener.accept().await else {
+                return;
+            };
+            let mut buf = [0u8; 2048];
+            let n = stream.read(&mut buf).await.unwrap_or(0);
+            let request = String::from_utf8_lossy(&buf[..n]).to_ascii_lowercase();
+            let response = if request.contains(&format!("if-none-match: {etag}")) {
+                format!("HTTP/1.1 304 Not Modified\r\nETag: {etag}\r\nConnection: close\r\n\r\n")
+            } else {
+                format!(
+                    "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nETag: {etag}\r\nConnection: close\r\n\r\n{}",
+                    body.len(),
+                    body
+                )
+            };
+            let _ = stream.write_all(response.as_bytes()).await;
+        }
+    }
+
+    #[tokio::test]
+    async fn an_unchanged_list_answers_304_and_skips_the_recompile() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("http://{}/list.txt", listener.local_addr().unwrap());
+        tokio::spawn(serve_with_validators(
+            listener,
+            "||ads.example.com^\n".into(),
+            "\"v1\"".into(),
+        ));
+
+        let data_dir = tempfile::tempdir().unwrap();
+        let manager = ListManager::new(
+            &config_with(vec![list("a", &url)]),
+            data_dir.path().to_path_buf(),
+        )
+        .unwrap();
+        manager.boot().await;
+
+        let first = manager.refresh_list("a").await.unwrap();
+        assert_eq!(first.active, 1);
+        let after_first = manager.compile_count();
+        let stats = manager.fetch_stats();
+        assert_eq!(stats.bodies, 1);
+        assert_eq!(stats.not_modified, 0);
+        assert_eq!(stats.bytes_fetched, 19);
+
+        let second = manager.refresh_list("a").await.unwrap();
+        assert_eq!(second.active, 1);
+        assert_eq!(manager.compile_count(), after_first);
+        let stats = manager.fetch_stats();
+        assert_eq!(stats.bodies, 1);
+        assert_eq!(stats.not_modified, 1);
+        assert_eq!(stats.bytes_fetched, 19);
+        assert!(matches!(
+            manager.matcher().lookup("ads.example.com", &QueryType::A),
+            MatchDecision::Block(_)
+        ));
+    }
+
+    async fn serve_sequence(listener: TcpListener, bodies: Vec<String>) {
+        let mut served = 0usize;
+        loop {
+            let Ok((mut stream, _)) = listener.accept().await else {
+                return;
+            };
+            let mut buf = [0u8; 2048];
+            let _ = stream.read(&mut buf).await;
+            let body = &bodies[served.min(bodies.len() - 1)];
+            served += 1;
+            let response = format!(
+                "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                body.len(),
+                body
+            );
+            let _ = stream.write_all(response.as_bytes()).await;
+        }
+    }
+
+    #[tokio::test]
+    async fn an_identical_body_without_validators_skips_the_recompile() {
+        let body = "||ads.example.com^\n".to_string();
+        let data_dir = tempfile::tempdir().unwrap();
+
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("http://{}/list.txt", listener.local_addr().unwrap());
+        tokio::spawn(serve_sequence(listener, vec![body]));
+        let manager = ListManager::new(
+            &config_with(vec![list("a", &url)]),
+            data_dir.path().to_path_buf(),
+        )
+        .unwrap();
+        manager.boot().await;
+        manager.refresh_list("a").await.unwrap();
+        let after_first = manager.compile_count();
+
+        let second = manager.refresh_list("a").await.unwrap();
+        assert_eq!(second.active, 1);
+        assert_eq!(manager.compile_count(), after_first);
+        let stats = manager.fetch_stats();
+        assert_eq!(stats.bodies, 2);
+        assert_eq!(stats.not_modified, 0);
+    }
+
+    #[tokio::test]
+    async fn a_changed_body_still_recompiles_and_updates_the_ruleset() {
+        let data_dir = tempfile::tempdir().unwrap();
+
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("http://{}/list.txt", listener.local_addr().unwrap());
+        tokio::spawn(serve_sequence(
+            listener,
+            vec![
+                "||ads.example.com^\n".into(),
+                "||ads.example.com^\n||new.example.com^\n".into(),
+            ],
+        ));
+        let manager = ListManager::new(
+            &config_with(vec![list("a", &url)]),
+            data_dir.path().to_path_buf(),
+        )
+        .unwrap();
+        manager.boot().await;
+        manager.refresh_list("a").await.unwrap();
+        let after_first = manager.compile_count();
+
+        let second = manager.refresh_list("a").await.unwrap();
+        assert_eq!(second.active, 2);
+        assert_eq!(manager.compile_count(), after_first + 1);
+        assert!(matches!(
+            manager.matcher().lookup("new.example.com", &QueryType::A),
+            MatchDecision::Block(_)
+        ));
     }
 
     #[tokio::test]

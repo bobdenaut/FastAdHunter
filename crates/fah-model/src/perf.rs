@@ -67,6 +67,10 @@ pub struct PerfSample {
     pub rss_file_bytes: u64,
     #[serde(default)]
     pub answers_delta: crate::engine::AnswerCounters,
+    #[serde(default)]
+    pub allocator_committed_bytes: u64,
+    #[serde(default)]
+    pub list_fetch: crate::engine::ListFetchCounters,
 }
 
 /// A range of [`PerfSample`]s plus the decimation applied to fit the caller's
@@ -182,6 +186,12 @@ mod tests {
         let sample = PerfSample {
             ts: 1_695_600_000,
             answers_delta: crate::engine::AnswerCounters::default(),
+            allocator_committed_bytes: 210_100_224,
+            list_fetch: crate::engine::ListFetchCounters {
+                bodies: 17,
+                not_modified: 3,
+                bytes_fetched: 27_580_000,
+            },
             rss_bytes: 55_000_000,
             peak_rss: 123_539_456,
             qps: 12.5,

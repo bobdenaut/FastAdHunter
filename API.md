@@ -126,7 +126,8 @@ Top-level blocks: `process`, `ruleset`, `counters`, `latency`, `upstreams`,
     "swr": { "enqueued": 12044, "deduplicated": 3311, "dropped": 0,
              "completed": 8702, "failed": 31 },
     "cache_cleanup": { "runs": 308, "entries_removed": 44120,
-                       "bytes_freed": 9871232, "last_duration_micros": 1842 }
+                       "bytes_freed": 9871232, "last_duration_micros": 1842 },
+    "lists": { "bodies": 17, "not_modified": 3, "bytes_fetched": 27580000 }
   },
   "latency": {
     "dns":  { "block":     { "count": 96318,  "sum_seconds": 2.114 },
@@ -160,6 +161,12 @@ Reading it correctly:
 - `counters.dns.cache_hits + cache_misses` equals `pass + allow`, never
   `+ block` — a blocked query never reaches the cache (ADR-0001). A hit ratio
   divides by resolved queries, not by every query.
+- **`counters.lists` is list-refresh network truth.** `bodies` counts
+  refreshes that downloaded a full list body (its size lands in
+  `bytes_fetched`); `not_modified` counts refreshes answered `304 Not
+  Modified` (or byte-identical to the cached copy), which move no body and
+  trigger no recompile. A `bodies` delta beside an RSS excursion attributes
+  the excursion to a refresh without any out-of-band graph.
 - **`counters.dns.answers` counts what the *client* saw, on its own axis.**
   `servfail_synthesized` is a failure FastAdHunter minted itself because every
   upstream failed and no stale entry could cover it; `servfail_relayed` and
@@ -326,7 +333,7 @@ single day is 1440 samples, so this is the endpoint `stride` usually applies to.
 `rss_bytes`, `peak_rss`, `qps`, `queries_delta`, `blocked_delta`,
 `allowed_delta`, `cache`, `latency`, `upstreams`, `memory`,
 `minor_page_faults`, `rss_anon_bytes`, `rss_file_bytes`,
-`answers_delta` — and drops the rest
+`answers_delta`, `allocator_committed_bytes`, `list_fetch` — and drops the rest
 (**absent**, not null). `ts` is always present. An unknown name is a `400`
 rather than being ignored, so a typo cannot silently remove the series a chart
 wanted. `fields` trims the response, not the read.
@@ -364,6 +371,9 @@ wanted. `fields` trims the response, not the read.
       "minor_page_faults": 4211337,
       "answers_delta": { "servfail_synthesized": 9, "servfail_relayed": 4,
                          "refused_relayed": 1 },
+      "allocator_committed_bytes": 210100224,
+      "list_fetch": { "bodies": 17, "not_modified": 3,
+                      "bytes_fetched": 27580000 },
       "upstreams": [
         { "address": "1.1.1.1", "protocol": "dot",
           "attempts": 12000, "failures": 3,
@@ -384,6 +394,12 @@ per-interval; the `cache` counters `hits`/`misses`/`evictions` are
 process-lifetime totals, the rest of `cache` — `bytes` against `max_bytes`
 included — is point-in-time. Rows written before the byte cap existed carry
 neither field and read back as `0`.
+
+`allocator_committed_bytes` is the allocator's own committed-bytes reading at
+capture (0 where unavailable) and `list_fetch` is the persisted, cumulative
+half of `/telemetry`'s `counters.lists` — row-to-row deltas attribute an RSS
+excursion to a list refresh from this series alone. Rows written before
+either field existed read back as `0`/all-zero.
 
 `answers_delta` is per-interval like `queries_delta`, and is the persisted half
 of `/telemetry`'s `counters.dns.answers` — the same three figures, deltaed

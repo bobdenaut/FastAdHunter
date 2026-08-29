@@ -39,6 +39,7 @@ pub struct MetricsSnapshot {
     /// Scheduled cache-sweep counters, read off
     /// `fah_dns::Pipeline::cache_cleanup_stats()` on each poll.
     pub cleanup: CleanupSnapshot,
+    pub lists: fah_model::ListFetchCounters,
     /// In-engine blocked-query latency (PERFORMANCE.md <1 ms p99 budget).
     pub block: StageHistogram,
     /// In-engine cache-hit latency (PERFORMANCE.md <1 ms p99 budget).

@@ -12,6 +12,45 @@ fn cache_path(data_dir: &Path, id: &str) -> PathBuf {
     data_dir.join("lists").join(format!("{id}.raw"))
 }
 
+fn validators_path(data_dir: &Path, id: &str) -> PathBuf {
+    data_dir.join("lists").join(format!("{id}.validators"))
+}
+
+pub(super) async fn read_validators(data_dir: &Path, id: &str) -> super::source::Validators {
+    let Ok(text) = fs::read_to_string(validators_path(data_dir, id)).await else {
+        return super::source::Validators::default();
+    };
+    let mut lines = text.lines();
+    let field = |line: Option<&str>| line.map(str::to_owned).filter(|value| !value.is_empty());
+    super::source::Validators {
+        etag: field(lines.next()),
+        last_modified: field(lines.next()),
+    }
+}
+
+pub(super) async fn write_validators(
+    data_dir: &Path,
+    id: &str,
+    validators: &super::source::Validators,
+) {
+    let path = validators_path(data_dir, id);
+    if validators.is_empty() {
+        let _ = fs::remove_file(&path).await;
+        return;
+    }
+    let text = format!(
+        "{}\n{}\n",
+        validators.etag.as_deref().unwrap_or(""),
+        validators.last_modified.as_deref().unwrap_or("")
+    );
+    if let Some(parent) = path.parent() {
+        let _ = fs::create_dir_all(parent).await;
+    }
+    if let Err(err) = fs::write(&path, text).await {
+        tracing::debug!(list = id, error = %err, "failed to persist list validators");
+    }
+}
+
 /// Reads a list's cached raw text, if a cache file exists yet. First-ever
 /// boot before any successful fetch has none — the caller treats that list as
 /// absent from the initial ruleset until the async refresh lands
@@ -65,6 +104,7 @@ pub(super) async fn age(data_dir: &Path, id: &str, now: SystemTime) -> Option<Du
 /// that never fetched successfully has no cache file — that is not an error,
 /// so a missing file reports success.
 pub(super) async fn remove(data_dir: &Path, id: &str) -> std::io::Result<()> {
+    let _ = fs::remove_file(validators_path(data_dir, id)).await;
     match fs::remove_file(cache_path(data_dir, id)).await {
         Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(()),
         other => other,
@@ -109,13 +149,18 @@ pub(super) async fn remove_orphans(
         };
 
         let path = entry.path();
-        if path.extension().and_then(|ext| ext.to_str()) != Some("raw") {
-            continue;
-        }
+        let extension = path.extension().and_then(|ext| ext.to_str());
         let Some(id) = path.file_stem().and_then(|stem| stem.to_str()) else {
             continue;
         };
         if keep.contains(id) {
+            continue;
+        }
+        if extension == Some("validators") {
+            let _ = fs::remove_file(&path).await;
+            continue;
+        }
+        if extension != Some("raw") {
             continue;
         }
 

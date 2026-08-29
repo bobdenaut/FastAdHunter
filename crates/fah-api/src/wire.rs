@@ -376,6 +376,10 @@ pub struct PerfSampleResponse {
     pub rss_file_bytes: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub answers_delta: Option<AnswerCounters>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub allocator_committed_bytes: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub list_fetch: Option<fah_model::ListFetchCounters>,
 }
 
 /// Which [`PerfSampleResponse`] keys `?fields=` kept. Names match the response
@@ -398,6 +402,8 @@ pub struct PerfFields {
     pub rss_anon_bytes: bool,
     pub rss_file_bytes: bool,
     pub answers_delta: bool,
+    pub allocator_committed_bytes: bool,
+    pub list_fetch: bool,
 }
 
 impl PerfFields {
@@ -417,6 +423,8 @@ impl PerfFields {
         rss_anon_bytes: true,
         rss_file_bytes: true,
         answers_delta: true,
+        allocator_committed_bytes: true,
+        list_fetch: true,
     };
 
     pub const NONE: Self = Self {
@@ -434,11 +442,13 @@ impl PerfFields {
         rss_anon_bytes: false,
         rss_file_bytes: false,
         answers_delta: false,
+        allocator_committed_bytes: false,
+        list_fetch: false,
     };
 
     /// The accepted `?fields=` names, in response order — also what a rejection
     /// message lists back.
-    pub const NAMES: [&'static str; 14] = [
+    pub const NAMES: [&'static str; 16] = [
         "rss_bytes",
         "peak_rss",
         "qps",
@@ -453,6 +463,8 @@ impl PerfFields {
         "rss_anon_bytes",
         "rss_file_bytes",
         "answers_delta",
+        "allocator_committed_bytes",
+        "list_fetch",
     ];
 
     /// Turns one `?fields=` name on; `false` for a name that is not a key.
@@ -472,6 +484,8 @@ impl PerfFields {
             "rss_anon_bytes" => self.rss_anon_bytes = true,
             "rss_file_bytes" => self.rss_file_bytes = true,
             "answers_delta" => self.answers_delta = true,
+            "allocator_committed_bytes" => self.allocator_committed_bytes = true,
+            "list_fetch" => self.list_fetch = true,
             _ => return false,
         }
         true
@@ -513,6 +527,10 @@ impl HistoryPerfResponse {
                     rss_anon_bytes: fields.rss_anon_bytes.then_some(sample.rss_anon_bytes),
                     rss_file_bytes: fields.rss_file_bytes.then_some(sample.rss_file_bytes),
                     answers_delta: fields.answers_delta.then_some(sample.answers_delta),
+                    allocator_committed_bytes: fields
+                        .allocator_committed_bytes
+                        .then_some(sample.allocator_committed_bytes),
+                    list_fetch: fields.list_fetch.then_some(sample.list_fetch),
                     upstreams: fields.upstreams.then_some(sample.upstreams),
                 })
                 .collect(),

@@ -72,6 +72,7 @@ pub struct Metrics {
     /// mid-update could otherwise show bytes freed by a run that has not been
     /// counted yet.
     pub(crate) cleanup: ArcSwap<CleanupSnapshot>,
+    pub(crate) lists: ArcSwap<fah_model::ListFetchCounters>,
     pub(crate) upstreams: ArcSwap<Vec<UpstreamSample>>,
     pub(crate) ruleset: ArcSwap<RulesetSnapshot>,
 }
@@ -107,6 +108,7 @@ impl Metrics {
             dropped_events: AtomicU64::new(0),
             swr: ArcSwap::new(Arc::new(SwrSnapshot::default())),
             cleanup: ArcSwap::new(Arc::new(CleanupSnapshot::default())),
+            lists: ArcSwap::new(Arc::new(fah_model::ListFetchCounters::default())),
             upstreams: ArcSwap::new(Arc::new(Vec::new())),
             ruleset: ArcSwap::new(Arc::new(RulesetSnapshot::default())),
         }
@@ -219,6 +221,10 @@ impl Metrics {
         self.cleanup.store(Arc::new(snapshot));
     }
 
+    pub fn set_lists(&self, snapshot: fah_model::ListFetchCounters) {
+        self.lists.store(Arc::new(snapshot));
+    }
+
     pub fn set_upstreams(&self, snapshot: Vec<UpstreamSample>) {
         self.upstreams.store(Arc::new(snapshot));
     }
@@ -282,6 +288,7 @@ impl Metrics {
                     bytes_freed: cleanup.bytes_freed,
                     last_duration: std::time::Duration::from_micros(cleanup.last_duration_micros),
                 },
+                lists: **self.lists.load(),
             },
             latency: fah_model::LatencyTotals {
                 dns: fah_model::DnsLatency {
@@ -320,6 +327,7 @@ impl Metrics {
             response_bytes: self.response_bytes.load(Ordering::Relaxed),
             swr: **self.swr.load(),
             cleanup: **self.cleanup.load(),
+            lists: **self.lists.load(),
             block: stage_histogram(&self.duration_block),
             cache_hit: stage_histogram(&self.duration_cache_hit),
             forward: stage_histogram(&self.duration_forward),
