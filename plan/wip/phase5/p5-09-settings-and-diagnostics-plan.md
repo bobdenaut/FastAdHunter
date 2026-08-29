@@ -815,6 +815,45 @@ None left for the implementer. Time-zone display (open-questions §3) does not
 bind here: Memory axis captions reuse the p5-08 window-end idiom; feed rows
 show browser-local clock time via `clockLabel`, matching every existing page.
 
+## Addendum — 2026-08-29: surface `counters.lists` (reopened after `c042840`)
+
+The task closed with "No API.md change: the task adds no route, field or
+event." Commit `c042840` (Stage 2 of
+[plan/resoak-orchestration.md](../../resoak-orchestration.md)) changed that
+from the Rust side: list refreshes are now conditional (304 short-circuit)
+and export `counters.lists = { bodies, not_modified, bytes_fetched }` on
+`GET /telemetry`, plus `allocator_committed_bytes` and `list_fetch` on each
+`GET /history/perf` sample (both `?fields=`-selectable). API.md already
+documents them. This addendum surfaces them; everything else in this plan is
+done and stays closed.
+
+**R17 (Health).** The "Rule lists" card gains one line under the D4 problem
+summary: refresh downloads vs 304s and total bytes fetched —
+`telemetry.counters.lists.bodies`, `.not_modified`, `.bytes_fetched`
+(formatBytes *(format)*). Provenance: `/telemetry`, already polled by this
+route; zero new reads. Wording states the point: "unchanged lists answer
+304 and cost no download, no recompile".
+
+**R18 (Memory).** The kernel/allocator table's NO CONTRACT note stays, but
+the `allocator_committed_bytes` row drops the "monotone, never decreases"
+claim if present anywhere in copy — the p2.6 audit observed it decreasing
+under mimalloc v3 (339.8 → 324.1 MiB). No chart change: the per-sample
+`allocator_committed_bytes` / `list_fetch` series exist server-side for the
+re-soak's attribution and are **not** charted here — a chart would need a
+design pass this addendum does not open. `MEMORY_PERF_FIELDS` is unchanged.
+
+**Unit U10.** Health card line + tests (stubbed telemetry renders the three
+figures; formatBytes on `bytes_fetched`); copy check on the Memory allocator
+row; `types.ts` gains the `lists` key on the telemetry counters type (and
+optional `allocator_committed_bytes?`/`list_fetch?` on `PerfItem` for type
+completeness, unrequested by any page). Gates per phase CLAUDE.md; bundle
+delta recorded gzip + brotli (expected ≪ 1 kB). Review file: append a dated
+addendum section to the existing
+`p5-09-settings-and-diagnostics-review.md`, same handoff protocol.
+
+Out of scope: any new chart, any Settings surface, any Live Feed change,
+`request_coverage.rs` (no new route).
+
 ## Appendix — research anchors
 
 `config_store.rs:35` (`BOOT_KEYS`), `:108` (`apply_patch`), `:151` (`merge`,
