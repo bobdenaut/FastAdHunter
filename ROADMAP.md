@@ -13,10 +13,16 @@ RB5009, not merely written.
 | 1 — DNS + API + Docker | ✅ done | `v0.2.0-phase1` |
 | 1.5 — observability persistence | ✅ done | `v0.3.0-phase1.5` |
 | 2 — HTTP | ✅ done | `v0.2.17-phase2` |
-| 2.5 — pre-Adaptive hardening | 🚧 in progress | — |
-| 2.6 — Adaptive DNS Stage 1 | 📋 planned, spec frozen | — |
+| 2.5 — pre-Adaptive hardening | ✅ done | `v0.2.19-phase2.5` |
+| 2.6 — Adaptive DNS Stage 1 | 🚧 built, deployed opt-in; default flip pending | `soak-p2.6-11` |
+| 5 — web dashboard | 🚧 all ten tasks built and merged; on-device leg pending | `0.3.0` |
 | 3 — HTTPS | ⬜ not started | — |
 | 4 — HTML filtering | ⬜ not started | — |
+
+Phases 2.6 and 5 both sit on the same open item: the **7-day re-soak of 0.3.0**
+on the RB5009, started 2026-08-29T19:18 Z. It carries 2.6's `adaptive`
+acceptance and Phase 5's Stage-B on-device measurements at once, because
+deploying either restarts the same container.
 
 ---
 
@@ -182,7 +188,7 @@ Failure-aware upstream selection, behind `strategy = "adaptive"`, opt-in.
 Specification frozen: [docs/design/adaptive-upstream-selection.md](docs/design/adaptive-upstream-selection.md)
 with its benchmark protocol
 [adaptive-upstream-selection-benchmarks.md](docs/design/adaptive-upstream-selection-benchmarks.md).
-Twelve tasks, each with an implementation plan; validated and frozen for
+Thirteen tasks, each with an implementation plan; validated and frozen for
 implementation on 2026-08-23.
 
 What Stage 1 does: per-endpoint health (64-byte packed word), penalty after
@@ -197,30 +203,55 @@ Two tiers of acceptance:
 
 - **Merge tier** (dev box) — `adaptive` ships opt-in: correctness gates
   S1-G1 #1–#17, the pinned microbench (S1-G2 tier 1) and the injected-failure
-  bench (S1-G3). Fully mechanical.
+  bench (S1-G3). Fully mechanical. **All passed**; `adaptive` has been opt-in
+  in production since 2026-08-25.
 - **Deployment tier** (RB5009) — `adaptive` becomes the default and `fallback`
-  is deleted: the null A/B noise band, tier 2 count invariants, the 7-day
-  opt-in soak, and gates S1-G4 / S1-G5 read from the `failure_runs` window
-  collecting since 0.2.18. Two decisions stay the owner's, explicitly:
-  the `penalty_failures` value derived from the observed run-length data, and
-  whether a short window is extended rather than read. If the window shows
-  only isolated single losses, **not shipping the default flip is the
-  correct outcome** — Stage 1 has to earn it.
+  is deleted. **S1-G2 tiers 2 and 3 passed** (`attempts/miss = 1.000000`;
+  +0.036 % against the frozen 5.00 % band). **S1-G4 and S1-G5 route 2 closed
+  unvalidated**, by owner decision: the `fallback` run-length window ended with
+  three closed runs, all of length 1, over 42 639 primary attempts — far too
+  few to calibrate `penalty_failures`, which stays at its compiled default of
+  **2, provisional and empirically uncalibrated**. Do not later describe
+  Stage 1's constants as calibrated on this deployment. The window cannot be
+  reopened without reverting the strategy.
 
-Starts when Phase 2.5 closes. Phase 5 follows, then Phase 3 restarts from the
-Phase 2 + proven Stage 1 baseline.
+Tasks 1–10 and 13 are `DONE`. **p2.6-11's 7-day soak was terminated on day 5**
+(owner decision, 2026-08-29): its RSS excursions were traced to list refreshes
+re-downloading unchanged bodies — not to the adaptive path — and two more
+observation days added no information. That defect is fixed in 0.3.0
+(conditional GET, below), and the **re-soak of 0.3.0** now carries the
+acceptance the terminated run no longer can. Sequencing:
+[plan/resoak-orchestration.md](plan/resoak-orchestration.md).
 
-## Phase 5 — Web Dashboard 📋 **PLANNED** (`plan/open/phase5/`)
+**p2.6-12 — the default flip — remains open, and its precondition is weaker
+than the plan assumed.** The flip was gated on every deployment-tier gate
+passing; two closed unvalidated instead. The spec's narrow rejection route
+still stands: if this deployment only ever produces isolated single losses,
+Stage 1 at `penalty_failures = 2` never engages and **not flipping the default
+is the correct outcome**. Three length-1 runs are equally consistent with that
+and with too small a sample; nothing measured distinguishes them. That call is
+an explicit owner decision, not an inference from the other gates.
 
-**Numbered 5, scheduled next.** Execution order is
+### Shipped alongside — list refresh, conditional GET (0.3.0)
+
+Not a Stage 1 feature; the repair the terminated soak paid for.
+
+- [x] `If-None-Match` / `If-Modified-Since` with a 304 short-circuit —
+      validators persisted beside the cached `.raw` files; a 304 refresh
+      allocates O(1), touches no list buffer and does not recompile
+- [x] `counters.lists` on `/telemetry` — `bodies`, `not_modified`,
+      `bytes_fetched` — plus the allocator-commit figure in the perf sample, so
+      a future RSS step is attributable from `/history/perf` alone. The
+      2026-08-29 hunt only closed because the owner opened the router's
+      bandwidth graph; that dependency is now removed.
+
+## Phase 5 — Web Dashboard 🚧 **BUILT, on-device leg pending** (`plan/wip/phase5/`)
+
+**Numbered 5, scheduled ahead of 3 and 4.** Execution order is
 2.5 → 2.6 → **5** → 3 → 4: the number follows the capability roadmap, the
 position follows what the household needs (owner decision, 2026-08-25).
-Implementation runs **in parallel** with Phase 2.6's L.3 soak, on the `phase5-NN`
-cumulative branch chain (owner decision, 2026-08-26) — the soak runs a deployed
-artifact on the RB5009 and does not depend on branch topology. Phase 2.6 keeps
-`plan/wip/` and closes first; Phase 5 merges to `main` only when the phase is
-complete. Track and rules: [plan/open/phase5/CLAUDE.md](plan/open/phase5/CLAUDE.md)
-§Parallel track.
+Implementation ran **in parallel** with Phase 2.6, on the `phase5-NN` cumulative
+branch chain (owner decision, 2026-08-26), and merged to `main` as **0.3.0**.
 
 A static, API-only web interface served by `fah-api` itself on the existing TLS
 listener. No second container, no Node in the runtime image, no new port. Pi-hole
@@ -229,25 +260,33 @@ Design record: [docs/dashboard/](docs/dashboard/) — the capability matrix is t
 gate for what gets built, and a screen with no endpoint behind it is cut, never
 faked.
 
-- [ ] **p5-01** static serving — `fah-api` serves the baked `/web`; route
+- [x] **p5-01** static serving — `fah-api` serves the baked `/web`; route
       ordering, cache split, pre-compressed assets, multi-stage image
-- [ ] **p5-02** certificate and browser spike — real desktop/phone evidence, the
+- [x] **p5-02** certificate and browser spike — real desktop/phone evidence, the
       SAN decision, the regeneration migration
-- [ ] **p5-03** API contract additions — `/events` subscription protocol,
+- [x] **p5-03** API contract additions — `/events` subscription protocol,
       `GET /clients` policy fields, reserved API.md sections
-- [ ] **p5-04** authentication — Argon2id, session cookie, cookie on REST and the
+- [x] **p5-04** authentication — Argon2id, session cookie, cookie on REST and the
       WebSocket upgrade
-- [ ] **p5-05** frontend foundation — Vite/TS/Preact shell, typed client, socket
+- [x] **p5-05** frontend foundation — Vite/TS/Preact shell, typed client, socket
       manager, bundle-size gate
-- [ ] **p5-06 … p5-09** pages — Dashboard and Lists · filtering · runtime ·
-      Settings and Diagnostics
-- [ ] **p5-10** verification — bundle, image and device budgets, mobile pass,
-      every rendered figure traced to an API field
+- [x] **p5-06 … p5-09** thirteen screens — Dashboard · Lists · Custom Rules ·
+      Policies · Clients · Rule Tester · Cache · Performance · Upstreams ·
+      Settings · Health · Memory · Live Feed
+- [ ] **p5-10** verification — **Stage A passed** on the dev box: e2e, route
+      ordering, bundle, image, per-figure API trace, route-scoped fetching,
+      socket load, emulated mobile pass. **Stage B needs the RB5009** — the
+      deploy itself, three RSS readings, Argon2id cost on-device, polled-endpoint
+      costs, the `constants.ts` refresh-default correction and the certificate
+      re-check — and rides the 0.3.0 re-soak
 
-Three things decide whether it succeeds: the bundle stays under 150 KB gzip, an
-inactive page performs approximately zero API work, and the image stays inside
-30 MB. Performance is the product, and a dashboard that contradicts it is worse
-than no dashboard.
+Three things decided whether it succeeds, and all three are measured:
+**128,730 B gzip against the 150 KB budget** (83.8 %), an inactive page performs
+approximately zero API work, and the **arm64 rootfs is 14.07 MiB against 30 MB**
+(the dashboard's own share is ~4.24 MB). Performance is the product, and a
+dashboard that contradicts it is worse than no dashboard.
+
+Evidence: [docs/code-review/phase5/](docs/code-review/phase5/).
 
 **Phase 3 and Phase 4 each trigger a dashboard re-review** when they land — Phase
 3 adds certificate UI and per-client HTTPS-interception controls, Phase 4 moves
@@ -256,7 +295,10 @@ is designed for in advance.
 
 ## Phase 3 — HTTPS
 
-After Phase 5 closes.
+After Phase 5 closes, and conditional on §5.7–14 of the reconciled architecture
+review (certificate machinery home, connector redesign, DoH/DoT listener
+placement, telemetry taxonomy, memory caps per new state owner, 443 steering
+v4+v6, on-device TLS measurements, opt-in bound to a stable identity).
 
 - HTTPS interception for managed environments (opt-in, per-client)
 - Certificate management: generate CA, import PEM/PFX, export CA, status —

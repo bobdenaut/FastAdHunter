@@ -30,9 +30,9 @@ numbers below are measured on the target hardware, not estimated.
 | 1 | DNS + REST API + Docker | ✅ done | `v0.2.0-phase1` |
 | 1.5 | Observability persistence | ✅ done | `v0.3.0-phase1.5` |
 | 2 | HTTP engine + Policies | ✅ done | `v0.2.17-phase2` |
-| 2.5 | Pre-Adaptive hardening | ✅ done | — |
-| 2.6 | Adaptive DNS Stage 1 | 🚧 in progress, soaking | — |
-| 5 | Web dashboard | 📋 next, plan frozen | — |
+| 2.5 | Pre-Adaptive hardening | ✅ done | `v0.2.19-phase2.5` |
+| 2.6 | Adaptive DNS Stage 1 | 🚧 built and deployed opt-in; default flip pending | — |
+| 5 | Web dashboard | 🚧 all ten tasks built and merged; on-device verification in the re-soak | `0.3.0` |
 | 3 | HTTPS interception | ⬜ not started | — |
 | 4 | HTML filtering | ⬜ not started | — |
 
@@ -41,8 +41,9 @@ numbered 5 by capability and scheduled ahead of HTTPS and HTML filtering because
 that is what the household needs next.
 
 Running in production on a MikroTik RB5009 as the household's only resolver, in
-`dns+http` mode. Phase 2's engine work is deployed — the transparent HTTP proxy,
-URL-path rules, per-client Policies and the single JSON telemetry surface.
+`dns+http` mode, on **0.3.0** since 2026-08-29. Phase 2's engine work is deployed
+— the transparent HTTP proxy, URL-path rules, per-client Policies and the single
+JSON telemetry surface — and so is the Phase 5 dashboard.
 
 Phase 2.5 was hardening, not features: the live-resolver defects an architecture
 review found (a DNS listener that could die silently, a 200-OK garbage list body
@@ -56,48 +57,66 @@ Phase 2.6 is the first adaptive step, specified and frozen before a line of it
 was written: an upstream that stops answering is penalized after a few
 consecutive transport failures, skipped at the cost of one relaxed atomic load,
 and probed for recovery on the query path — no background task, no timer, no
-RTT ranking, no hedging. Build 0.2.20 has been on the device since 2026-08-25
-with `strategy = "adaptive"` opted in, and a **7-day soak** decides the rest. It
-earns the default flip or it does not: if the failure telemetry shows only
-isolated single losses, the honest outcome is to leave it off. The pass/fail is
-RSS drift under 2 MB; nothing about the feature's appeal is allowed to substitute
-for that reading.
+RTT ranking, no hedging. It has run in production under `strategy = "adaptive"`
+since 2026-08-25. Its first 7-day soak was **terminated on day 5** once the RSS
+excursions it was watching were traced to their real cause — list refreshes
+downloading unchanged bodies, not the adaptive code — and two more observation
+days would have added nothing. The fix (conditional GET, `If-None-Match` /
+`If-Modified-Since` with a 304 short-circuit) shipped in 0.3.0, and the re-soak
+that judges it started **2026-08-29T19:18 Z** against six gates fixed in writing
+before any evidence was read. The default flip has to be earned: two deployment
+gates closed **unvalidated** — the observed failure window held three runs, all
+of length 1, too few to calibrate `penalty_failures`, which therefore stays at
+its compiled default of 2, provisional and uncalibrated. If the deployment only
+ever produces isolated single losses, not flipping the default is the correct
+outcome.
 
-Phase 5 is the web dashboard, planned and frozen but not started — ten tasks,
-reviewed against the running code before any of it is written. A static bundle
-under 150 KB gzip, served by `fah-api` itself from the same image and the same
-TLS listener: no second container, no Node in the runtime image, no new port.
-Design record: [docs/dashboard/](docs/dashboard/).
+Phase 5 is the web dashboard, and it is **built** — thirteen screens across all
+ten tasks, merged and released as 0.3.0. The shipped bundle is **128,730 B
+gzip**, 83.8 % of the 150 KB budget, served by `fah-api` itself from the same
+image and the same TLS listener: no second container, no Node in the runtime
+image, no new port. On-device verification (Stage B — Argon2id cost, polled
+endpoint costs, three RSS readings) rides the same re-soak. Design record:
+[docs/dashboard/](docs/dashboard/).
 
 ### Measured, on the RB5009
 
 Quad-core ARMv8 @ 1.4 GHz, 1 GB RAM shared with RouterOS. Every figure comes off
 the deployed container, not a dev box. **Measurements are binary (MiB);**
 PERFORMANCE.md writes its budgets in decimal MB, which runs ~4.9 % higher for the
-same reading.
+same reading. **Each row carries the build it was measured on.** The ruleset and
+boot rows are 0.3.0; the steady-state memory, refresh transient, latency and
+throughput rows still describe 0.2.x, because the equivalent 0.3.0 readings need
+a warm cache and a list refresh that the running deployment has not reached yet
+— the re-soak closing 2026-09-05 produces them.
 
-| | Measured | Budget |
-| --- | ---: | ---: |
-| Resident memory, 799 k rules + 50 k-entry cache | **53.6 MiB** | ≤ 128 MB |
-| Peak RSS at boot | **117.8 MiB** | ≤ 128 MB |
-| Peak RSS during a list refresh | **171.7 MiB** | see below |
-| Ruleset compile, 1.15 M parsed rules | **2.85 s** | < 3 s |
-| Ruleset heap, resident | **25.8 MiB** | ≤ 40 MB |
-| Blocked verdict, in-engine | **0.045 ms** mean | < 1 ms p99 |
-| Cache hit, fresh + stale-while-refresh | **0.227 ms** mean | < 1 ms p99 |
-| HTTP proxy, added latency | **+161 µs** min · **+344 µs** p50 | < 1 ms |
-| HTTP proxy, opaque throughput | **271 / 208 MiB/s** | ≥ 100 MiB/s |
-| URL verdict, 8 KiB URL, full EasyList+EasyPrivacy | **554 µs** | < 1 ms |
-| Sustained DNS throughput, deployed path | **20 k+ QPS** | ≥ 10 k QPS |
-| Container image | **13.0 MiB** | ≤ 30 MB |
-| Dropped events under real load | **0** | 0 |
+| | Measured | Build | Budget |
+| --- | ---: | :---: | ---: |
+| Resident memory, 50 k-entry cache warm | **53.6 MiB** | 0.2.x | ≤ 128 MB |
+| Peak RSS at boot, compiling from cached lists | **88.6 MiB** | 0.3.0 | ≤ 128 MB |
+| Peak RSS during a list refresh | **171.7 MiB** | 0.2.x | see below |
+| Ruleset compile, 1.20 M parsed rules | **2.87 s** | 0.3.0 | < 3 s |
+| Ruleset heap, resident | **24.06 MiB** | 0.3.0 | ≤ 40 MB |
+| Blocked verdict, in-engine | **0.045 ms** mean | 0.2.x | < 1 ms p99 |
+| Cache hit, fresh + stale-while-refresh | **0.227 ms** mean | 0.2.x | < 1 ms p99 |
+| HTTP proxy, added latency | **+161 µs** min · **+344 µs** p50 | 0.2.x | < 1 ms |
+| HTTP proxy, opaque throughput | **271 / 208 MiB/s** | 0.2.x | ≥ 100 MiB/s |
+| URL verdict, 8 KiB URL, full EasyList+EasyPrivacy | **554 µs** | 0.2.x | < 1 ms |
+| Sustained DNS throughput, deployed path | **20 k+ QPS** | 0.2.x | ≥ 10 k QPS |
+| Container image, arm64 rootfs, with dashboard | **14.07 MiB** | 0.3.0 | ≤ 30 MB |
+| Dashboard bundle, gzip | **128,730 B** | 0.3.0 | ≤ 150 KB |
+| Dropped events under real load | **0** | both | 0 |
 
-Rule lists compile **1 148 024 parsed rules into 798 760** after deduplication —
-349 264 duplicates, 30 % of the input across 16 public lists. Deduplication is
-paid once at compile time and keeps the matcher smaller for the life of the
+Rule lists compile **1 200 902 parsed rules into 753 270** after deduplication —
+447 632 duplicates, **37.3 % of the input** across 16 public lists. Deduplication
+is paid once at compile time and keeps the matcher smaller for the life of the
 process. It also shortens probe chains: a domain carried by two lists occupies
 one slot instead of two that hash to the same place, worth **46 % on lookups for
 shared domains**.
+
+Those counts move with the lists, not with the code: the same 16 sources parsed
+1 148 024 rules into 798 760 at 30 % duplication a month earlier. The overlap
+between public lists is what grew.
 
 The 20 k+ QPS figure is `/tool profile` on the live box under a synthetic hammer,
 with all four cores sharing evenly — reception is not the bottleneck, so
@@ -185,7 +204,7 @@ and the cache never stores verdicts
 ![FastAdHunter architecture](docs/diagrams/architecture.svg)
 
 ```text
-             Dashboard (Phase 5 — served by fah-api,
+             Dashboard (served by fah-api,
                         talks only to the API)
                      │
           REST / WebSocket API  (fah-api)
@@ -435,10 +454,16 @@ swap, and no lock on the path that answers a query.
 ## API
 
 Everything the engine can do is reachable over REST + WebSocket. HTTPS by
-default, bearer-key auth. `/health` is the only unauthenticated route.
+default. Two authenticators sit side by side: a bearer key for programs, and an
+Argon2id password issuing an HMAC-signed session cookie for the dashboard —
+accepted on REST and on the WebSocket upgrade alike. `/health` and the login
+route are the only unauthenticated ones.
 
 ```text
 GET   /health
+POST  /api/v1/auth/login            password → session cookie
+POST  /api/v1/auth/{logout,logout-all}
+PUT   /api/v1/auth/password
 GET   /api/v1/telemetry             whole engine state as JSON: counters,
                                     latency stages, upstreams, cache, memory
 GET   /api/v1/stats                 aggregates, top domains/clients
@@ -470,12 +495,44 @@ Full request/response shapes: [API.md](API.md).
 
 ---
 
+## Web dashboard
+
+Served by `fah-api` itself as pre-compressed static files baked into the same
+image, on the existing TLS listener. No second container, no Node in the runtime
+image, no new port. Login is an Argon2id password; the session is an HMAC-signed
+cookie, carried on REST calls and on the WebSocket upgrade.
+
+![FastAdHunter dashboard](docs/images/web-0.3.0-ver.PNG)
+
+Thirteen screens: Dashboard · Lists · Custom Rules · Policies · Clients · Rule
+Tester · Cache · Performance · Upstreams · Settings · Health · Memory · Live
+Feed. **Every rendered figure traces to an API field** — the capability matrix
+was the gate, and a screen with no endpoint behind it was cut rather than faked.
+That is why the upstream panel above says *endpoint health, not share of
+traffic*: per-query upstream attribution does not exist in the telemetry, so a
+traffic-share chart would be invented data.
+
+An inactive page performs approximately zero API work; fetching is route-scoped,
+and the polling interval is per-panel rather than global.
+
+![FastAdHunter memory diagnostics](docs/images/web-memory.PNG)
+
+The Memory screen is the clearest example of the rule. It renders the same
+identity the engine exports — `RSS − Σ(components) = residual` — rather than a
+prettier approximation of it, labels every reading binary against decimal
+budgets, and says out loud which numbers cannot be compared: peak RSS resets on
+restart, and the allocator's committed figure carries no compatibility promise,
+so it is parked as a figure instead of charted beside the kernel readings.
+
+---
+
 ## Terminal monitor
 
-`fah-tui-monitor` is a live console dashboard for a running instance. It ships in
-this workspace and is the proof that the API-first rule holds: it reads
-**nothing** but REST and WebSocket, has no privileged access to the engine, and
-would work unchanged against a remote appliance.
+`fah-tui-monitor` is a live console dashboard for a running instance, and it
+predates the web one. It ships in this workspace and is the proof that the
+API-first rule holds: it reads **nothing** but REST and WebSocket, has no
+privileged access to the engine, and would work unchanged against a remote
+appliance.
 
 ![FastAdHunter TUI monitor](docs/images/tui-monitor.png)
 
@@ -579,7 +636,8 @@ FastAdHunter/
 ├── plan/                 # task orchestration: open / wip / closed phases
 ├── docs/                 # decisions/, design/, diagrams/, images/,
 │                         # code-review/, solutions/
-└── dashboard/            # empty until Phase 5 scaffolds the frontend
+└── dashboard/
+    └── frontend/         # Vite + TypeScript + Preact; built into the image
 ```
 
 ---
@@ -594,6 +652,8 @@ FastAdHunter/
 | DNS | Hickory | pure-Rust wire format and upstream clients |
 | TLS | rustls | no OpenSSL, no C dependency |
 | Certificates | rcgen · x509-parser | generation and parsing only |
+| Password / session | argon2 · aws-lc-rs | Argon2id hash; constant-time HMAC-SHA256 cookie |
+| Dashboard | Vite · TypeScript · Preact · uPlot | build-time only — nothing of it enters the runtime image but static files |
 | Allocator | mimalloc | +27 % throughput, −17 % CPU/query vs mallocng |
 | Scanning | memchr | SIMD single-byte search — not regex |
 | Terminal UI | ratatui | the monitor only; the engine has no UI dependency |
@@ -622,8 +682,8 @@ firewall · a replacement for a good browser extension.
 | **1.5** ✅ | Persisted history, perf series, byte-bounded cache |
 | **2** ✅ | HTTP proxy, URL-path rules, Policies, telemetry consolidation, compile-transient attribution |
 | **2.5** ✅ | Listener resilience, list-refresh integrity, encrypted-transport fixes, outcome telemetry, failure run-length telemetry — hardening before adaptive upstream selection |
-| **2.6** 🚧 | Adaptive DNS Stage 1 — per-endpoint health, penalty and skip on repeated transport failure, on-path recovery probing; deployed opt-in, default only after the 7-day soak and the gates in `docs/design/` |
-| **5** 📋 | Web dashboard — static bundle served by `fah-api` on one origin, session-cookie auth, every screen backed by an endpoint that exists |
+| **2.6** 🚧 | Adaptive DNS Stage 1 — per-endpoint health, penalty and skip on repeated transport failure, on-path recovery probing; deployed opt-in since 2026-08-25, default flip still unearned |
+| **5** 🚧 | Web dashboard — thirteen screens, 128,730 B gzip, served by `fah-api` on one origin, session-cookie auth, every figure backed by an endpoint that exists; released as 0.3.0, on-device verification in the re-soak |
 | **3** | HTTPS interception, certificate management, DoT/DoH listeners |
 | **4** | HTML filtering with `lol_html`, cosmetic rules |
 
@@ -657,8 +717,8 @@ if the decision is being reversed.
     ├── decisions/            ADRs 0001–0005
     ├── design/               accepted designs not yet built, with their
     │                         benchmark protocols
-    ├── dashboard/            Phase 5: capability matrix, information
-    │                         architecture, visual system, sketches
+    ├── dashboard/            capability matrix, information architecture,
+    │                         visual system, sketches
     ├── diagrams/             architecture SVG + HTML
     ├── code-review/          per-task review notes with measured results
     ├── solutions/            documented learnings — patterns and bugs worth
@@ -677,6 +737,12 @@ No CI service — deliberately. Gates run locally before every commit:
 cargo fmt --all -- --check
 cargo clippy --workspace --all-targets --message-format=short -- -D warnings
 cargo test --all-features --workspace
+```
+
+The dashboard adds one more, and it fails the build rather than warning:
+
+```sh
+cd dashboard/frontend && npm run build   # typecheck + build + gzip size gate
 ```
 
 A >10 % regression on a hot-path bench needs an explicit justification.
