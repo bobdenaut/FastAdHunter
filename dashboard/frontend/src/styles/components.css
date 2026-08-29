@@ -878,6 +878,22 @@ table.t tbody tr:hover td {
   color: var(--link);
   cursor: pointer;
   font-size: 12.5px;
+  position: relative;
+}
+
+/* The link stays inline in its sentence at 12.5 px; the *target* grows to the
+   44 px the artboards require. Vertical only, deliberately: these sit at the
+   end of a sentence, so a horizontal overhang would reach into the prose on
+   either side for no gain, while the lines above and below hold nothing
+   interactive. Widths already clear 44 px on their own. */
+.linky::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 50%;
+  height: 44px;
+  transform: translateY(-50%);
 }
 
 /* Upstream health — the D4/A encoding. The bar is workload; the inner band is
@@ -4303,6 +4319,24 @@ table.t.counters td.bad {
   cursor: pointer;
   display: inline-flex;
   align-items: center;
+  position: relative;
+}
+
+/* 15 px of drawn glyph, 44 px of target — the artboards' number, met the way
+   `.switch` meets it rather than by growing the icon. Its only neighbours in
+   the header's actions slot are the residual badge and the `hd-updated`
+   timestamp, and neither is interactive, so nothing loses a tap to the
+   overhang. Every other refresh control in the application is a `.mini` inside
+   a `.refresh-cluster` and already clears 44 px; this one stood alone and did
+   not. */
+.hd-refresh::before {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 44px;
+  height: 44px;
+  transform: translate(-50%, -50%);
 }
 
 .hd-refresh:hover {

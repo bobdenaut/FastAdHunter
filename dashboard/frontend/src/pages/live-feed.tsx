@@ -156,10 +156,9 @@ export function LiveFeed(_props: PageProps) {
               Rendering stops while this page is hidden. Switch apps or lock the
               screen and the feed pauses; it resumes on return, having missed
               whatever arrived meanwhile — there is no stored history to backfill
-              from. The ring is {capacity} on{' '}
-              {capacity === 200 ? 'a narrow viewport' : 'a desktop one'} against
-              500 on desktop and 200 on a phone — same bound, sized to the
-              device, and fixed at the moment this page opened.
+              from. The ring holds {capacity} rows here — the bound is sized to
+              the device, 500 on a desktop viewport and 200 on a phone, and
+              fixed at the moment this page opened.
             </span>
           </div>
         </div>

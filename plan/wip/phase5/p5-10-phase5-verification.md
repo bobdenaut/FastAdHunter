@@ -16,6 +16,37 @@ steady-state at most 128 MB; the frontend bundle at most 150 KB gzip. Budgets
 are compared against a pre-change checkout, never against a stored baseline —
 see [docs/measurement-traps.md](../../../docs/measurement-traps.md).
 
+## Execution split — decided 2026-08-29
+
+The p2.6-11 L.3 soak runs on the production container until
+**2026-09-01T07:57Z** plus its day-7 acceptance. Deploying a phase-5 image
+restarts `fah-next` and voids the soak, so this task executes in two stages.
+The scope below is unchanged; only its ordering is constrained.
+
+| Stage | When | Scope items |
+| ----- | ---- | ----------- |
+| **A — dev box, now** | during the soak, no router contact | end-to-end tests; route-ordering regression; bundle measurement (gzip + brotli, chunks, uPlot, login path); image build + size + no-Node check; page-by-page trace; route-scoped fetching table (against a local `fah-api`); socket-load run (local); mobile pass over the LAN against the dev-box server |
+| **B — on-device, after p2.6-11 closes** | after the day-7 acceptance is written, one router intervention | deploy; the three RSS readings; Argon2id cost on the device; polled-endpoint cost (`/health`, `/telemetry`, `/cache`); refresh-default correction in `constants.ts`; certificate re-confirmation on the shipped image |
+
+Rules:
+
+- **No deploy proposal before the p2.6-11 day-7 acceptance exists.** The
+  Stage B deploy is proposed together with the p2.6 post-soak cleanup
+  (old-container removal, comment swap) so the router is touched once, not
+  twice. All commands are owner-run, per root CLAUDE.md.
+- If Stage A completes first, the task sits **`AWAITING SOAK`** in the phase
+  table, cell naming Stage B as what flips it.
+- Stage A results are recorded in the task's review file as they land;
+  Stage B appends to the same file. One review file, two dated sections.
+- **RAM budget caveat for Stage B:** the ≤ 128 MB row is steady-state. The
+  p2.6 audit ([phase2.6-audit.md](../../../docs/code-review/phase2.6/phase2.6-audit.md),
+  F9) recorded transient peaks to 150.6 MiB on the soaking build from
+  boot-compile/list-refresh, invisible at the 360 s sample cadence. Read the
+  three RSS readings against steady-state, and record `process_peak_rss`
+  separately — a peak above 128 MB is the known transient, not an automatic
+  budget failure, and gets attributed (F3's dropped p2.5 criterion) rather
+  than averaged away.
+
 ## Scope
 
 - **End-to-end tests** against a running `fah-api`: sign in, load every page,
