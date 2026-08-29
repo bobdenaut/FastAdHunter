@@ -1,12 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import type { QueryEvent } from '../api/types';
 import { Card } from '../components/card';
+import { Chip } from '../components/chip';
 import { EmptyState } from '../components/empty-state';
 import type { PageProps } from '../router/routes';
 import { socket } from '../services';
 import { ContentHeader } from '../shell/content-header';
 import { clockLabel } from '../time';
-import { Detail, FeedVerdict } from './live-feed/detail';
+import { Detail, FeedCache, FeedVerdict } from './live-feed/detail';
 import {
   EMPTY_FILTERS,
   KINDS,
@@ -342,7 +343,7 @@ export function LiveFeed(_props: PageProps) {
 
               {/* **One tree, not both.** The CSS hides whichever does not
                   belong at this width, but `display: none` is not "out of the
-                  tree": every flush was building the nine-column table *and*
+                  tree": every flush was building the ten-column table *and*
                   the card list for every visible row, doubling exactly the
                   per-flush cost the frame coalescing exists to bound. Which one
                   is built follows the breakpoint live — the CSS would otherwise
@@ -357,6 +358,7 @@ export function LiveFeed(_props: PageProps) {
                       <th>Pipe</th>
                       <th>Client</th>
                       <th>Domain / path</th>
+                      <th>Cache</th>
                       <th>Verdict</th>
                       <th>Rule</th>
                       <th>List</th>
@@ -377,6 +379,9 @@ export function LiveFeed(_props: PageProps) {
                           )}
                         </td>
                         <td>
+                          <FeedCache row={row} />
+                        </td>
+                        <td>
                           <FeedVerdict verdict={row.verdict} />
                         </td>
                         <td class="mono">{row.rule ?? '—'}</td>
@@ -384,7 +389,7 @@ export function LiveFeed(_props: PageProps) {
                         <td>
                           <Detail row={row} />
                         </td>
-                        <td class="num mono">{row.duration_ms.toFixed(1)}</td>
+                        <td class="num mono">{row.duration_ms.toFixed(3)}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -394,7 +399,7 @@ export function LiveFeed(_props: PageProps) {
 
               {/* The phone layout, per `MobileLiveFeed.dc.html`: one card per
                   event with a verdict-coloured left border, never the
-                  nine-column table. */}
+                  ten-column table. */}
               {!narrow ? null : (
               <div class="feed-cards">
                 {shown.map(({ row, seq }) => (
@@ -416,8 +421,9 @@ export function LiveFeed(_props: PageProps) {
                         <span class="mono">{row.rule}</span>
                       )}
                       {row.list !== null && <span>{row.list}</span>}
+                      <FeedCache row={row} />
                       <Detail row={row} />
-                      <span class="mono">{row.duration_ms.toFixed(1)} ms</span>
+                      <span class="mono">{row.duration_ms.toFixed(3)} ms</span>
                     </div>
                   </article>
                 ))}
@@ -426,8 +432,11 @@ export function LiveFeed(_props: PageProps) {
             </>
           )}
           <p class="note">
-            <span class="mono">cached</span> is a marker on a row, not a verdict
-            — a cache hit is still a <span class="mono">pass</span>.
+            <span class="mono">Cache</span> says where the answer came from, not
+            what was decided — a <span class="mono">HIT</span> is still a
+            <span class="mono">pass</span>. It reads
+            <span class="mono">—</span> on an HTTP row, which has no cache, and
+            on a blocked DNS row, which never reaches one.
             <span class="footnote-line">
               <span class="mono">endpoint N</span> is the answering server&rsquo;s
               index and appears only on a forwarded DNS answer.
@@ -452,27 +461,6 @@ export function LiveFeed(_props: PageProps) {
         </Card>
       </main>
     </>
-  );
-}
-
-function Chip({
-  label,
-  on,
-  onPick,
-}: {
-  label: string;
-  on: boolean;
-  onPick: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      class={on ? 'chip on' : 'chip'}
-      aria-pressed={on}
-      onClick={onPick}
-    >
-      {label}
-    </button>
   );
 }
 

@@ -9,6 +9,7 @@ import { ApiError } from '../api/core';
 import { getPolicies } from '../api/policies';
 import type { Client, ClientPolicyBody, PoliciesResponse } from '../api/types';
 import { Card } from '../components/card';
+import { Chip } from '../components/chip';
 import { EmptyState } from '../components/empty-state';
 import { ErrorState } from '../components/error-state';
 import { nowMs } from '../lifecycle/timers';
@@ -16,6 +17,7 @@ import { classifyAssignment } from '../policy/assignment';
 import type { PageProps } from '../router/routes';
 import { ContentHeader } from '../shell/content-header';
 
+import { compareAddressesDesc, isV6 } from './clients/address';
 import { AssignDialog } from './clients/assign-dialog';
 import { ClientRow } from './clients/client-row';
 import {
@@ -49,12 +51,52 @@ import { RenameField } from './clients/rename-field';
  * detail. No timer, no event subscription, no clock: every "in force" and
  * "window shut" statement is read off `client.policy` rather than evaluated.
  */
+type Family = 'all' | 'v4' | 'v6';
+
+const FAMILIES: readonly { value: Family; label: string }[] = [
+  { value: 'all', label: 'all' },
+  { value: 'v4', label: 'IPv4' },
+  { value: 'v6', label: 'IPv6' },
+];
+
+function familyOf(ip: string): Family {
+  return isV6(ip) ? 'v6' : 'v4';
+}
+
+function familyLabel(family: Family): string {
+  return FAMILIES.find((entry) => entry.value === family)?.label ?? family;
+}
+
+/**
+ * The "none matching …" tail in one place, one shape per filter combination —
+ * both filters, family only, search only, or (belt and braces) neither.
+ */
+function NoMatchDescription({
+  family,
+  needle,
+}: {
+  family: Family;
+  needle: string;
+}) {
+  const familyPart = family === 'all' ? null : familyLabel(family);
+  const needlePart = needle === '' ? null : <span class="mono">{needle}</span>;
+  if (familyPart !== null && needlePart !== null) {
+    return (
+      <>
+        {familyPart} {needlePart}
+      </>
+    );
+  }
+  return needlePart ?? <>{familyPart ?? 'the filters'}</>;
+}
+
 export function Clients(_props: PageProps) {
   const [clients, setClients] = useState<readonly Client[] | null>(null);
   const [policies, setPolicies] = useState<PoliciesResponse | null>(null);
   const [loadError, setLoadError] = useState<Error | null>(null);
   const [mutationError, setMutationError] = useState<Error | null>(null);
   const [search, setSearch] = useState('');
+  const [family, setFamily] = useState<Family>('all');
   const [openIp, setOpenIp] = useState<string | null>(null);
   const [renamingIp, setRenamingIp] = useState<string | null>(null);
   const [assigningIp, setAssigningIp] = useState<string | null>(null);
@@ -161,15 +203,28 @@ export function Clients(_props: PageProps) {
   const items = clients ?? [];
   const policyItems = policies?.items ?? [];
 
+  /**
+   * Family filter, then search, then order — and the order is **descending by
+   * address**, on the numeric key rather than the string
+   * ([`addressKey`](./clients/address)).
+   *
+   * The filter earns its place because the registry keys on the address, not
+   * the device ([`client_registry.rs`](../../../crates/fah-stats/src/client_registry.rs)):
+   * one dual-stack machine is two rows, and on a dual-stack LAN that doubles
+   * the table for no new information.
+   */
   const visible = useMemo(() => {
     const needle = search.trim().toLowerCase();
-    if (needle === '') return items;
-    return items.filter(
-      (client) =>
-        client.ip.toLowerCase().includes(needle) ||
-        (client.name ?? '').toLowerCase().includes(needle),
-    );
-  }, [items, search]);
+    return items
+      .filter((client) => family === 'all' || familyOf(client.ip) === family)
+      .filter(
+        (client) =>
+          needle === '' ||
+          client.ip.toLowerCase().includes(needle) ||
+          (client.name ?? '').toLowerCase().includes(needle),
+      )
+      .sort((left, right) => compareAddressesDesc(left.ip, right.ip));
+  }, [items, search, family]);
 
   const assigning = items.find((client) => client.ip === assigningIp) ?? null;
 
@@ -196,14 +251,26 @@ export function Clients(_props: PageProps) {
         <Card
           title="Observed clients"
           tools={
-            <input
-              type="search"
-              class="field-input search-input"
-              placeholder="search address or name…"
-              aria-label="Search clients by address or name"
-              value={search}
-              onInput={(event) => setSearch(event.currentTarget.value)}
-            />
+            <>
+              <span class="chips" role="group" aria-label="Filter by address family">
+                {FAMILIES.map(({ value, label }) => (
+                  <Chip
+                    key={value}
+                    label={label}
+                    on={family === value}
+                    onPick={() => setFamily(value)}
+                  />
+                ))}
+              </span>
+              <input
+                type="search"
+                class="field-input search-input"
+                placeholder="search address or name…"
+                aria-label="Search clients by address or name"
+                value={search}
+                onInput={(event) => setSearch(event.currentTarget.value)}
+              />
+            </>
           }
           bodyClass="clients-body"
         >
@@ -215,10 +282,10 @@ export function Clients(_props: PageProps) {
               inventory to read from.
             </EmptyState>
           ) : visible.length === 0 ? (
-            <EmptyState title="No client matches that search">
+            <EmptyState title="No client matches those filters">
               {items.length} observed{' '}
               {items.length === 1 ? 'client' : 'clients'}, none matching{' '}
-              <span class="mono">{search.trim()}</span>.
+              <NoMatchDescription family={family} needle={search.trim()} />.
             </EmptyState>
           ) : (
             <div class="clients-scroll">

@@ -5,12 +5,11 @@ import { VerdictPill, type Verdict } from '../../components/verdict-pill';
 /**
  * D20 — the Detail cell, from documented fields only.
  *
- * DNS: the record type, the `cached` marker when it was a hit, and
- * `endpoint N` when the key is present — which is only on an item an upstream
- * answered. HTTP: method, resource type, status and relayed bytes.
+ * DNS: the record type and `endpoint N` when the key is present — which is
+ * only on an item an upstream answered. HTTP: method, resource type, status
+ * and relayed bytes.
  *
- * **`cached` is a marker, not a verdict.** A cache hit is still a `pass`, and
- * the two are drawn differently for exactly that reason.
+ * The cache outcome lives in its own cell ([`FeedCache`]), not here.
  */
 export function Detail({ row }: { row: QueryEvent }) {
   if (row.kind === 'http') {
@@ -30,10 +29,33 @@ export function Detail({ row }: { row: QueryEvent }) {
   return (
     <span class="feed-detail">
       {row.qtype ?? '—'}
-      {row.cached && <span class="feed-marker">cached</span>}
       {row.endpoint !== undefined && (
         <span class="feed-marker">endpoint {row.endpoint}</span>
       )}
+    </span>
+  );
+}
+
+/**
+ * The cache outcome for one row — `HIT`, `MISS`, or `—` where the question was
+ * never asked of the cache.
+ *
+ * Two rows carry no outcome rather than a false `MISS`: an HTTP request, which
+ * has no cache to consult, and a blocked DNS query, which never reaches the
+ * cache at all (ADR-0001 — which is also why `cache_hits + cache_misses`
+ * counts `pass + allow` and never `block`). Drawing either as a miss would
+ * invent a lookup that did not happen.
+ *
+ * **A hit is not a verdict.** A cache hit is still a `pass`; the verdict cell
+ * says what was decided and this one says where the answer came from.
+ */
+export function FeedCache({ row }: { row: QueryEvent }) {
+  if (row.kind === 'http' || row.verdict === 'block') {
+    return <span class="note">—</span>;
+  }
+  return (
+    <span class={`mono feed-cache feed-cache-${row.cached ? 'hit' : 'miss'}`}>
+      {row.cached ? 'HIT' : 'MISS'}
     </span>
   );
 }

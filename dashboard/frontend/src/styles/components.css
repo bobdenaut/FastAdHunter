@@ -4467,6 +4467,22 @@ table.t.counters td.bad {
   color: var(--text-muted);
 }
 
+/* Where the answer came from, not what was decided — so this is deliberately
+   quieter than a verdict pill. HIT reads as the good outcome, MISS as neutral
+   rather than as a failure; a miss is ordinary. */
+.feed-cache {
+  font-size: 10.5px;
+  letter-spacing: 0.04em;
+}
+
+.feed-cache-hit {
+  color: var(--pill-good-fg);
+}
+
+.feed-cache-miss {
+  color: var(--text-muted);
+}
+
 /* The phone card list: hidden at desktop, and hidden means out of the tree. */
 .feed-cards {
   display: none;
@@ -4589,7 +4605,7 @@ table.t.counters td.bad {
     gap: 4px;
   }
 
-  /* One card per event, never the nine-column table. */
+  /* One card per event, never the ten-column table. */
   .feed-scroll {
     display: none;
   }

@@ -6,7 +6,7 @@ import type { QueryEvent } from '../api/types';
 import type { Route } from '../router/routes';
 import { socket } from '../services';
 import LiveFeed from './live-feed';
-import { Detail, FeedVerdict } from './live-feed/detail';
+import { Detail, FeedCache, FeedVerdict } from './live-feed/detail';
 import { applyFilters, EMPTY_FILTERS } from './live-feed/filters';
 import {
   BoundedRing,
@@ -18,8 +18,8 @@ import {
 
 /**
  * The three properties the ring exists for: it is bounded, it starts empty, and
- * it retains nothing. Plus the two the vocabulary depends on — `cached` is a
- * marker rather than a verdict, and the verdict set is closed.
+ * it retains nothing. Plus the two the vocabulary depends on — the cache
+ * outcome is its own cell rather than a verdict, and the verdict set is closed.
  */
 
 const ROUTE: Route = {
@@ -261,10 +261,28 @@ describe('the row vocabulary', () => {
     expect(dom.textContent).toBe('refused');
   });
 
-  it('draws `cached` as a marker rather than as a verdict', () => {
-    const dom = mount(<Detail row={event({ cached: true })} />);
-    expect(dom.querySelector('.feed-marker')?.textContent).toBe('cached');
-    expect(dom.querySelector('.pill')).toBeNull();
+  it('draws the cache outcome in its own cell, never as a verdict', () => {
+    const hit = mount(<FeedCache row={event({ cached: true })} />);
+    expect(hit.textContent).toBe('HIT');
+    expect(hit.querySelector('.pill')).toBeNull();
+
+    const miss = mount(<FeedCache row={event({ cached: false })} />);
+    expect(miss.textContent).toBe('MISS');
+  });
+
+  /**
+   * A lookup that never happened is not a miss. HTTP has no cache to consult,
+   * and a blocked DNS query never reaches one (ADR-0001) — which is the same
+   * reason `cache_hits + cache_misses` counts `pass + allow` and never `block`.
+   */
+  it('shows no cache outcome where the cache was never asked', () => {
+    const http = mount(<FeedCache row={event({ kind: 'http', cached: false })} />);
+    expect(http.textContent).toBe('—');
+
+    const blocked = mount(
+      <FeedCache row={event({ verdict: 'block', cached: false })} />,
+    );
+    expect(blocked.textContent).toBe('—');
   });
 
   it('shows `endpoint N` only when the key is present', () => {
@@ -464,7 +482,7 @@ describe('the page', () => {
   });
 
   it('builds one tree, not both — the table at a wide viewport', () => {
-    // `display: none` is not "out of the tree": building the nine-column table
+    // `display: none` is not "out of the tree": building the ten-column table
     // *and* the card list for every visible row doubled exactly the per-flush
     // cost the frame coalescing exists to bound.
     const feed = live();

@@ -138,6 +138,13 @@ function rows(dom: HTMLElement): HTMLElement[] {
   return [...dom.querySelectorAll<HTMLElement>('.client-row')];
 }
 
+/** A row by the address it is about, so a test never encodes the sort order. */
+function rowFor(dom: HTMLElement, ip: string): HTMLElement | undefined {
+  return rows(dom).find(
+    (row) => row.querySelector('.c-ip')?.textContent?.trim() === ip,
+  );
+}
+
 async function click(node: Element | null | undefined): Promise<void> {
   if (node === null || node === undefined) throw new Error('nothing to click');
   await act(async () => {
@@ -200,12 +207,9 @@ describe('the policy column', () => {
       dashed: row.querySelector('.pchip')?.classList.contains('inh'),
       note: row.querySelector('.pol-note')?.textContent,
     }));
+    // Descending by address, so `192.168.20.11` leads and `192.168.10.7` ends.
     expect(chips).toEqual([
-      {
-        chip: 'default',
-        dashed: true,
-        note: 'inherited · no assignment',
-      },
+      { chip: 'guest', dashed: true, note: 'via 192.168.20.0/24' },
       {
         chip: 'kids',
         dashed: false,
@@ -216,7 +220,11 @@ describe('the policy column', () => {
         dashed: false,
         note: 'sat–sun · all day · window shut now — default in force',
       },
-      { chip: 'guest', dashed: true, note: 'via 192.168.20.0/24' },
+      {
+        chip: 'default',
+        dashed: true,
+        note: 'inherited · no assignment',
+      },
       { chip: 'default', dashed: true, note: 'inherited · no assignment' },
     ]);
   });
@@ -265,7 +273,9 @@ describe('the three mutations', () => {
 
   it('assigns a policy with a schedule, and validates before the API does', async () => {
     const dom = await mount();
-    await click(rows(dom)[0]?.querySelector('.iconbtn'));
+    // By address, not by index: the table orders descending, so a row's
+    // position is a rendering decision this test does not depend on.
+    await click(rowFor(dom, '192.168.10.15')?.querySelector('.iconbtn'));
     await click(
       [...dom.querySelectorAll('button')].find(
         (button) => button.textContent === 'Change policy',

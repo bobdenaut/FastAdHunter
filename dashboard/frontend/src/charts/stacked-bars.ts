@@ -443,12 +443,26 @@ export function hoverPlugin(input: HoverPluginInput): uPlot.Plugin {
         const centre = u.valToPos(u.data[0][index] ?? 0, 'x', true) / ratio;
         const plotWidth = u.bbox.width / ratio;
         const left = u.bbox.left / ratio;
-        const flip = centre + TOOLTIP_OFFSET_PX + node.offsetWidth > left + plotWidth;
-        node.style.left = `${String(
-          flip
-            ? centre - left - TOOLTIP_OFFSET_PX - node.offsetWidth
-            : centre - left + TOOLTIP_OFFSET_PX,
-        )}px`;
+        // **The side is chosen by the midpoint, not by whether the box would
+        // fit** — the same rule the memory trend uses, for the same reasons. A
+        // fit test flips at whatever x the box happens to stop fitting at,
+        // which moves with the card width and with the box's own contents; the
+        // midpoint is one rule at every size, and the half the box moves into
+        // is by construction the half with more room. The box's width never
+        // enters the decision, so it cannot flip into a position that makes it
+        // want to flip back.
+        const offset = centre - left;
+        const preferred =
+          offset > plotWidth / 2
+            ? offset - TOOLTIP_OFFSET_PX - node.offsetWidth
+            : offset + TOOLTIP_OFFSET_PX;
+        // The clamp is the safety net for a plot too narrow for either side,
+        // not the placement rule.
+        const x = Math.max(
+          0,
+          Math.min(preferred, plotWidth - node.offsetWidth),
+        );
+        node.style.left = `${String(x)}px`;
         node.style.top = '8px';
 
         if (changed) u.redraw(true, false);
