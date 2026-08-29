@@ -1,0 +1,20 @@
+.:5301 {
+    forward . tls://1.1.1.1 {
+        tls_servername cloudflare-dns.com
+    }
+}
+.:5302 {
+    forward . tls://9.9.9.9 {
+        tls_servername dns.quad9.net
+    }
+}
+.:5303 {
+    forward . tls://1.0.0.1 {
+        tls_servername cloudflare-dns.com
+    }
+}
+.:5304 {
+    forward . tls://149.112.112.112 {
+        tls_servername dns.quad9.net
+    }
+}

@@ -90,6 +90,26 @@ unread. Consequences:
   `ctl_every = 11` and `gcd(11, len) = 1`, so both rates and full name
   coverage hold there.
 
+**Fix, proven off-repo (2026-08-29; repo `gen.py` untouched pending owner
+ruling).** Replace the shared-counter `ctl_every` modulo with a Bresenham
+interleave and independent per-stream counters (`ctl_acc += ctl_qps; if
+ctl_acc >= total: ctl_acc -= total → ctl[n_ctl++]` else `fwd[n_fwd++]`) —
+exact control fraction for any integer ratio, full coverage of both name
+sets at any set size. Two proofs, patched copy at the session scratchpad
+(`gen-fixed.py`, same dir as the raw pulls named under F11):
+
+| Proof | Old | Fixed |
+| --- | --- | --- |
+| Simulated 450 000 sends at L.1s args (500+1 000, 6 000/100 names) | 750/750 QPS, 3 000 fwd + 50 ctl names | **500/1 000 QPS exactly; all 6 000 fwd (25× each = 12 s cadence, the declared arithmetic); all 100 ctl (3 000× each)** |
+| Simulated 6.6 M sends at L.1/L.2 args (10 000+1 000, 300 000/100) | correct | identical — confirms those runs unaffected |
+
+Live wire smoke (patched file, real UDP against a local sink, 150 QPS × 12 s,
+60/10-name sets): 1 800 sent at 150.0 achieved QPS; sink decoded 600 fwd
+(50 QPS, all 60 names, exactly 10× each) + 1 200 ctl (100 QPS, all 10
+names, exactly 120× each). Zero send errors. The declared L.1s workload is
+producible; re-running L.1s with the fixed generator remains the owner's
+F1 ruling.
+
 What survives: SWR **was** exercised at load (111 000–114 000 refreshes per
 repetition), and the failed/dropped/penalty/probe zeros are real. The PASS
 rows stand as evidence about *a* sustained SWR workload — a weaker and
@@ -227,6 +247,9 @@ load (~1.6 QPS) cannot explain 37 in-flight queries. Possibly a
 counter-semantics change under stale/SWR accounting, possibly non-atomic
 snapshot skew accumulated elsewhere. Worth one line of attention at the
 final pull; the invariant is currently neither asserted nor satisfied.
+**Retracted — see the F11 resolution section at the end of this file: the
+audit assumed `allow 0` where the raw value is 37; the invariant holds
+exactly at all four pulls.**
 
 ## Cross-checks with no finding
 
@@ -296,3 +319,228 @@ already lost. Nothing below is revised after the day-7 pull.
    never as a pass.
 5. This ruling gains its pre-declaration force only from a commit timestamp
    before 2026-09-01T07:57Z.
+
+## F11 resolution — RETRACTED, no bug (2026-08-29, read-only follow-up)
+
+The invariant holds exactly. The audit's pull-1 `allow 0` was an assumption,
+not a measurement — the review prints pass/block/hits/misses/stale but never
+`allow` (F7's uncommitted raw made the gap invisible). The interim pulls' raw
+telemetry JSON was found intact in a prior session's scratchpad and recomputed:
+
+| Pull | uptime s | pass | allow | hits + misses | pass + allow | diff |
+| --- | --- | --- | --- | --- | --- | --- |
+| 1 | 84 748 | 42 374 | **37** | 39 116 + 3 295 = 42 411 | 42 411 | 0 |
+| 2 | 167 094 | 68 528 | 132 | 64 072 + 4 588 = 68 660 | 68 660 | 0 |
+| 3 | 250 511 | 89 042 | 138 | 82 408 + 6 772 = 89 180 | 89 180 | 0 |
+| 4 | 315 123 | 95 108 | 138 | 88 044 + 7 202 = 95 246 | 95 246 | 0 |
+
+Code corroborates: `Metrics::record`
+([registry.rs:128–152](../../../crates/fah-metrics/src/registry.rs)) is the
+only increment site for both counter families; the verdict match is
+exhaustive, the cache branch excludes `Block` symmetrically, so every
+non-blocked event increments exactly one of hits/misses and exactly one of
+pass/allow. The event fan-out is a single consumer (`spawn_event_fanout`),
+so snapshot skew is bounded by one in-flight event. `fah-metrics` and
+`fah-dns` are byte-identical between the deployed `1c430aa` and HEAD.
+
+Knock-on facts:
+
+- The soaking appliance serves real `Allow` verdicts (37 → 138 across pulls)
+  — the review's counter table omits the column entirely; worth adding at
+  the day-7 write-up.
+- F7's cost is now demonstrated twice: the missing raw made the review
+  unverifiable *and* induced a false finding in the audit itself. The four
+  interim telemetry pulls (2.5 KB each) and perf pulls exist at
+  `%LOCALAPPDATA%\Temp\claude\e--FastAdHunter\06364f7b-…\scratchpad\` —
+  ephemeral location; committing them into `p2.6-11-session/soak/` at day 7
+  closes F7 for the whole soak, not only the final pull.
+- Live cross-check during this follow-up: `/health` reports 0.2.20,
+  uptime 319 524 s — still monotone, no restart.
+
+## Perf-series follow-up — F9 attribution closed, W3 mechanism identified (2026-08-29, read-only)
+
+Source: the pull-4 `/history/perf` raw JSON (same scratchpad as above) —
+876 rows at 360 s covering boot 2026-08-25T07:57:05Z through
+2026-08-28T23:27:40Z, the full soak to date in one series. All figures below
+recompute from it; the review's transcribed W1–W3 floors (+9.94, +2.98,
++0.53 MiB), ceilings and the W3 drift **+5.702 MiB** match the raw exactly,
+so F7 narrows to "raw uncommitted", not "figures wrong".
+
+### List-refresh cadence, witnessed
+
+`ruleset_bytes` changes at exactly two sample instants per day —
+**10:39:40Z and 22:39:40Z** (12 h cadence; first tick boot + 2h42m) — each
+with a minor-page-fault spike (38 k–205 k vs ~1 k background). These are the
+recompiles.
+
+### Every peak-RSS step lands on a refresh tick — p2.5 criterion satisfied 5/5
+
+| Instant | peak_rss step | Refresh witness at same row |
+| --- | --- | --- |
+| 08-25T10:39:40 | 94.09 → 133.66 (+39.57) | ruleset −0.8 KiB, 38 518 faults |
+| 08-25T22:39:40 | → 137.17 (+3.51) | +5.6 KiB, 103 512 faults |
+| 08-26T22:39:40 | → 142.80 (+5.63) | −62.2 KiB, 192 215 faults |
+| 08-27T22:39:40 | → 142.83 (+0.03) | +27.2 KiB, 101 074 faults |
+| 08-28T10:39:40 | → 150.61 (+7.78) | +2.4 KiB, 47 275 faults |
+
+No peak movement occurs anywhere else. The p2.5-09 criterion F3 said was
+dropped — "peak steps only at a list refresh, each step attributed" — turns
+out to **hold** on this soak; it was satisfied, not violated, just never
+checked. F9's ~150 MiB "invisible transient" is the recompile
+(double-buffered ~25 MiB ruleset + parse/download buffers), the same
+mechanism as the boot transient. F9 and the F3 peak-attribution half are
+closed; the F3 governance point (criteria silently dropped) stands.
+
+### W3's failed gate: one decaying anonymous excursion, not a ratchet
+
+The RSS series is a sawtooth: irregular anon-only jumps of +12–23 MiB that
+decay back over 0.5–5 h, on flat cache, flat ruleset, normal traffic, and
+**not** on refresh ticks — 08-26T13:09 (+16.6), 08-26T14:45 (+14.1),
+08-27T19:21 (+23.1), 08-28T05:21 (+12.9), 08-28T15:33 (+12.3 MiB residual).
+
+W3's +5.702 MiB half-to-half drift decomposes exactly: the 08-28T05:21:40
+excursion (60.93 → 76.81 MiB, decayed only to ~67 by window end) sits in the
+final third's second half; excluding its 26 elevated samples the drift is
+**−0.121 MiB**. The gate fired on one transient landing in its comparison
+half — the shape it is built to catch — not on monotone growth.
+
+Knock-ons:
+
+- **F3's "+20.86 MiB monotone residual across pulls 1–3" is pull-instant
+  aliasing.** Pull 3 (boot + 250 511 s = 08-28T05:32) landed 11 minutes
+  after the 05:21 excursion peak. The underlying series is a sawtooth
+  around a rising-but-decelerating floor, not monotone growth.
+- **Floor series decelerates**: +9.94, +2.98, +0.53 MiB — consistent with
+  allocator retention (mimalloc v3) approaching a plateau, not a linear
+  ratchet. If it continues, the F2 ruling's transient-classification
+  condition `floor(W7) − floor(W4) < 2 MiB` is plausible. Stated as a
+  prediction, falsifiable at day 7; the W3 FAIL and the ruling are
+  unchanged by any of this.
+- **Open**: the excursions' allocator-level cause (what allocates 12–23 MiB
+  anon off-refresh at ~1 QPS, released over hours) is not identifiable from
+  this series. Candidates worth one look at day 7: SWR burst + mimalloc
+  segment retention; stats rollup. Sizes and decay argue allocator arena,
+  not a leak.
+
+## F8 resolution — stale `to` parameter on pull 2, no truncation, no sampler gap (2026-08-29, read-only)
+
+The raw pull files carry the request windows. Pull 1 and pull 2 were both
+issued with **`to=2026-08-27T00:00:00Z`**; pull 2 (taken 06:21:56Z per its
+uptime) simply reused pull 1's query window, so its rows stop at
+2026-08-26T23:57:40Z — the last sample before its own `to` bound. Not the
+`max_points` cap (401 < 1 000), not a sampler stall, not a snapshot skew:
+an operator-side stale parameter.
+
+| Pull | requested `to` | rows | last row | pull instant | gap explained |
+| --- | --- | --- | --- | --- | --- |
+| 1 | 08-27T00:00 | 236 | 08-26T07:27:40 | 08-26T07:29 | natural (2 min) |
+| 2 | 08-27T00:00 | 401 | 08-26T23:57:40 | 08-27T06:21 | **`to` bound** |
+| 3 | 08-29T00:00 | 696 | 08-28T05:27:40 | 08-28T05:32 | natural (5 min) |
+| 4 | 08-30T00:00 | 876 | 08-28T23:27:40 | 08-28T23:29 | natural (2 min) |
+
+The 64 rows pull 2 did not fetch exist: pull 3 covers 08-26T23:03 →
+08-27T09:57 with a maximum inter-row gap of exactly 360 s. No data was ever
+missing; the review's no-restart argument needs no repair beyond citing
+uptime deltas, as F8 already recommended.
+
+## Excursion cause hunt — every exported counter ruled out; unattributable from outside (2026-08-29, read-only)
+
+Twelve single-sample RSS jumps ≥ 6 MiB over the soak (6.2–23.1 MiB). What
+the raw series and the pull counters exclude:
+
+- **Not scheduled.** Onset times are aperiodic: inter-arrival 0.4–20.7 h;
+  offsets modulo 1 h and modulo 12 h are scattered. Rules out the perf
+  sampler (360 s), cache cleanup (360 s — 875 runs, µs-scale, 4 MB freed
+  *total*), snapshot/history flush (fixed cadence), and list refresh (12 h
+  ticks; exactly one excursion, 08-26T22:39, coincides — the rest miss both
+  daily ticks).
+- **Not traffic.** Onset-row qps 0.7–2.8 at seven of nine major onsets (the
+  two others 2.8/10.5); `queries_delta`, hit/miss deltas, forward p99 all
+  unremarkable; the largest excursion (+23.1 MiB, 08-27T19:21) sits at
+  2.6 qps.
+- **Not the cache.** Zero evictions at every onset; `cache_estimated_bytes`
+  flat; entry counts flat.
+- **Not SWR.** Production SWR averages ~0.15 refreshes/s (47 233 completed
+  over 3.6 days), `dropped = 0`, `failed = 0` — three orders of magnitude
+  below the dev-box arms that stayed flat.
+- **Not upstreams.** No TLS handshakes (plain UDP), attempt deltas normal,
+  no failures at onsets.
+
+What the data does say: each onset row carries a minor-page-fault burst of
+~3 000–7 500 pages — roughly the jump size at 4 KiB/page — so something
+touches 12–23 MiB of fresh anonymous memory once, inside one 360 s
+interval, then frees it; RSS decays back over 0.5–5 h in 2–5 MiB steps.
+That profile — one-shot commit, slow stepped release — matches mimalloc v3
+segment commit followed by delayed purge, triggered by a transient
+allocation that no exported counter measures.
+
+~~Terminus: unattributable from outside the process.~~ **Superseded the
+same day — cause found and reproduced on demand; see the next section.**
+
+For the F2 ruling nothing changes: the excursions are transient by
+observation (they decay), the floor series decelerates, and the
+classification rule already written covers both outcomes.
+
+## Excursion cause — FOUND: scheduled list re-downloads, buffered whole in RAM (2026-08-29, dev-box repro)
+
+**Mechanism.** Every list refresh re-downloads the full body — there is no
+conditional GET (no ETag/If-Modified-Since anywhere in
+`fah-rules/src/lifecycle/`) — and accumulates it in a growing `Vec<u8>`
+([source.rs:64–85](../../../crates/fah-rules/src/lifecycle/source.rs)),
+converts to `String`, parses, and writes `/data/lists/*.raw`. Per-list
+schedules are seeded from cache-file mtimes
+(`lifecycle/mod.rs`), so the 48 h lists fire at phases scattered across the
+day — the aperiodicity that ruled out every fixed-cadence suspect. A
+download whose content is unchanged does **not** recompile (no
+`ruleset_bytes` witness, no peak step); only the frequently-changing lists
+(`phishdestroy` 12 h, `tif-mini` 24 h) land recompiles on the 10:39/22:39
+grid. The router's own `veth1` graph corroborates: inbound spikes of
+~8–20 MB at excursion-shaped times against a ~17 Kb/s baseline.
+
+**Reproduced on demand** (dev box, x86_64 build of `1c430aa`, identical
+config/lists, strace + 1 s `smaps_rollup` sidecar): `POST
+/api/v1/lists/refresh` produced within seconds RSS jumps of **+16.5 MiB**
+(download buffers), **+23.1 MiB** (further downloads — equal to the largest
+production excursion), then **+116.7 MiB** (the 16-list recompile — the
+production peak-step/boot-transient scale). Full-smaps diffs put **all** of
+the growth in a single 1 GiB anonymous mapping — mimalloc v3's arena — i.e.
+pure in-heap allocation, no thread stacks, no kernel-side surprise. The
+slow 0.5–5 h decay is mimalloc returning committed arena pages.
+
+**Judgement.** Not a leak — bounded transients from a by-design (if
+uneconomical) full re-download path. Improvement candidates, each a
+post-soak decision, not a soak repair: conditional GET (ETag), streaming
+parse instead of whole-body buffering, or hash-compare before parse. On the
+RB5009's 1 GiB the transient coexists with the 128 MB budget only because
+the floors stay low; a list growing to 30 MB would push the recompile
+transient proportionally.
+
+**Observability lesson.** The counter hunt ruled out every exported
+observable and stalled precisely because the refresh download path exports
+none — the breakthrough witness was the router's *bandwidth* graph
+(owner-supplied), not the process. Whatever fix is chosen should export a
+counter for the next hunt to find — `lists.bytes_fetched` (and ideally the
+allocator-commit figure in the perf sample), so a memory excursion can be
+correlated with its cause from `/history/perf` alone, without needing
+someone to think of opening the interface graph.
+
+Raw evidence in the session scratchpad (`repro/out/`): `smaps.log` (1 s),
+`smaps-full-*/maps-*` dumps at each jump, `strace.log`, `memwatch-repro.jsonl`.
+
+## Device-level memory creep — day-7 check item (2026-08-29)
+
+RouterOS graphs show device "used" creeping ~260 → ~288 MiB since the
+Tuesday deploy; the daily graph is already flat (286–304 MiB band, ~28 % of
+1 GiB — no OOM trajectory). Expected decomposition, to be verified at the
+day-7 close with `/system/resource/print` free-memory against container
+RSS across two pulls:
+
+| Term | Size | Basis |
+| --- | --- | --- |
+| fah RSS floor climb | ~13 MiB, decelerating | audited floor series (perf-series follow-up above) |
+| Blocklist files on `/data` + their page cache | ~27 MiB, rewritten per refresh | measured on the dev-box repro of the same build/config |
+| Perf history file | 1 621 B/row = 380 KiB/day, caps at ~11 MiB at 30-day retention (~1.5 MiB by day 4) | measured on the repro |
+| Remainder | RouterOS internals, container layer | unattributed |
+
+Flag only if device "used" keeps climbing after the fah floor has
+plateaued and faster than the ~0.4 MiB/day history growth.

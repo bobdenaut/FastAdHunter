@@ -1,0 +1,145 @@
+[engine]
+mode = "dns+http"
+
+[dns.listen]
+address = "::"
+port = 53
+
+[dns.blocking]
+mode = "null_ip"
+ttl_seconds = 10
+
+[dns.cache]
+max_entries = 50000
+max_bytes = 67108864
+min_ttl_seconds = 600
+max_ttl_seconds = 86400
+negative_ttl_max_seconds = 60
+serve_stale = true
+swr_workers = 3
+cleanup_interval_seconds = 360
+
+[dns.upstreams]
+strategy = "adaptive"
+timeout_ms = 800
+penalty_failures = 2
+
+[[dns.upstreams.servers]]
+address = "172.30.0.10:5301"
+protocol = "udp"
+
+[[dns.upstreams.servers]]
+address = "172.30.0.10:5302"
+protocol = "udp"
+
+[[dns.upstreams.servers]]
+address = "172.30.0.10:5303"
+protocol = "udp"
+
+[[dns.upstreams.servers]]
+address = "172.30.0.10:5304"
+protocol = "udp"
+
+[http.listen]
+address = "::"
+port = 8080
+
+[stats]
+snapshot_interval_seconds = 300
+
+[history]
+enabled = true
+sample_interval_seconds = 360
+retention_days = 30
+
+[api]
+address = "0.0.0.0"
+port = 8443
+tls = true
+
+[log]
+level = "info"
+format = "text"
+
+[rules]
+refresh_hours_default = 48
+
+[[rules.lists]]
+id = "big.oisd.nl"
+url = "https://big.oisd.nl"
+refresh_hours = 48
+
+[[rules.lists]]
+id = "filter_1"
+url = "https://adguardteam.github.io/HostlistsRegistry/assets/filter_1.txt"
+refresh_hours = 48
+
+[[rules.lists]]
+id = "filter_2"
+url = "https://adguardteam.github.io/HostlistsRegistry/assets/filter_2.txt"
+refresh_hours = 48
+
+[[rules.lists]]
+id = "filter_3"
+url = "https://adguardteam.github.io/HostlistsRegistry/assets/filter_3.txt"
+refresh_hours = 48
+
+[[rules.lists]]
+id = "filter_11"
+url = "https://adguardteam.github.io/HostlistsRegistry/assets/filter_11.txt"
+refresh_hours = 48
+
+[[rules.lists]]
+id = "filter_18"
+url = "https://adguardteam.github.io/HostlistsRegistry/assets/filter_18.txt"
+refresh_hours = 48
+
+[[rules.lists]]
+id = "filter_30"
+url = "https://adguardteam.github.io/HostlistsRegistry/assets/filter_30.txt"
+refresh_hours = 48
+
+[[rules.lists]]
+id = "filter_43"
+url = "https://adguardteam.github.io/HostlistsRegistry/assets/filter_43.txt"
+refresh_hours = 48
+
+[[rules.lists]]
+id = "filter_48"
+url = "https://adguardteam.github.io/HostlistsRegistry/assets/filter_48.txt"
+refresh_hours = 48
+
+[[rules.lists]]
+id = "filter_50"
+url = "https://adguardteam.github.io/HostlistsRegistry/assets/filter_50.txt"
+refresh_hours = 48
+
+[[rules.lists]]
+id = "filter_59"
+url = "https://adguardteam.github.io/HostlistsRegistry/assets/filter_59.txt"
+refresh_hours = 48
+
+[[rules.lists]]
+id = "filter_63"
+url = "https://adguardteam.github.io/HostlistsRegistry/assets/filter_63.txt"
+refresh_hours = 48
+
+[[rules.lists]]
+id = "dyndns"
+url = "https://gitlab.com/hagezi/mirror/-/raw/main/dns-blocklists/adblock/dyndns.txt"
+refresh_hours = 48
+
+[[rules.lists]]
+id = "doh-vpn-proxy-bypass"
+url = "https://gitlab.com/hagezi/mirror/-/raw/main/dns-blocklists/adblock/doh-vpn-proxy-bypass.txt"
+refresh_hours = 48
+
+[[rules.lists]]
+id = "tif-mini"
+url = "https://gitlab.com/hagezi/mirror/-/raw/main/dns-blocklists/adblock/tif.mini.txt"
+refresh_hours = 24
+
+[[rules.lists]]
+id = "phishdestroy"
+url = "https://cdn.jsdelivr.net/gh/phishdestroy/destroylist@main/rootlist/formats/primary_active/hosts.txt"
+refresh_hours = 12
