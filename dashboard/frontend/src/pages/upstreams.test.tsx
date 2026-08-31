@@ -447,7 +447,6 @@ describe('the round-trip cells on an endpoint row', () => {
     // 12.5 s over 1000 answers is 12.5 ms, the one exact figure in the group.
     expect(text).toContain('12.5 ms');
     expect(text).toContain('1,000');
-    expect(text).toContain('answered attempts only');
   });
 
   // An engine predating the field serves no `rtt` at all, and a fresh one that

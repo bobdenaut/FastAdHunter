@@ -103,7 +103,6 @@ export function EndpointRow({
       </div>
 
       <div class="ep-rtt">
-        <div class="note">round trip, answered attempts only</div>
         <div class="ep-rtt-cells">
           <Cell label="p50" value={rttLabel(rtt?.p50)} />
           <Cell label="p99" value={rttLabel(rtt?.p99)} />

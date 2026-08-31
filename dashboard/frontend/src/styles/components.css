@@ -3173,10 +3173,25 @@ table.t.counters td.bad {
 .ep {
   display: grid;
   grid-template-columns: minmax(0, 1.1fr) minmax(0, 2fr) minmax(0, 0.9fr);
-  gap: 20px;
+  /* Row gap tighter than the column gap: the second row is the round-trip
+     group continuing the counters directly above it, not a separate band, and
+     the first row's height comes from the identity block rather than from the
+     counters it has to sit under. */
+  gap: 8px 20px;
   align-items: start;
   padding: 14px;
-  border-top: 1px solid var(--border-row);
+  /* One endpoint per row and the row is two grid rows tall, so the separator
+     is what says where one ends. `--border-row` was the table-row hairline and
+     read as noise at that height; `--border-control` is the strongest border
+     token in both palettes and still sits under the dashed divider inside a
+     row, which keeps the two levels distinguishable. Drawn per row rather than
+     per gap, so any number of endpoints separates itself.
+
+     A text token, not a border one: every border token is a hairline tuned to
+     disappear against the surface, and at this height the separator has to be
+     seen. `--text-faint` is the quietest value that still reads as a line in
+     both palettes. */
+  border-top: 1px solid var(--text-faint);
 }
 
 .ep:first-child {
@@ -3249,19 +3264,17 @@ table.t.counters td.bad {
 .ep-rtt {
   grid-column: 2;
   border-top: 1px dashed var(--border-row);
-  padding-top: 10px;
+  padding-top: 8px;
 }
 
-/* Explicit on both axes, so the histogram keeps the third column *and* the
-   first row. Auto placement runs in document order, so it followed `.ep-rtt`
-   into the second row and sat a group lower than the counters it reads with. */
+/* Explicit on both axes, so the histogram keeps the third column and starts on
+   the first row — document order alone put it after `.ep-rtt`, a row lower than
+   the counters it reads with. It spans both rows rather than sitting in one:
+   pinned to row 1 it made that row as tall as itself, and the round-trip band
+   beneath the counters started below the histogram instead of below them. */
 .ep-runs {
   grid-column: 3;
-  grid-row: 1;
-}
-
-.ep-rtt > .note {
-  margin-bottom: 8px;
+  grid-row: 1 / span 2;
 }
 
 .ep-counters .good {
@@ -3283,12 +3296,17 @@ table.t.counters td.bad {
   margin-bottom: 4px;
 }
 
+/* Outlined rather than only filled: `--track` sits a few points off the card
+   surface, so on the common row — every bucket zero — the four slots were
+   invisible and the group read as blank space rather than as "no failure runs".
+   The outline states the slots exist; the fill still states the count. */
 .run-track {
   flex: 1;
   height: 100%;
   display: flex;
   align-items: flex-end;
   background: var(--track);
+  border: 1px solid var(--border-control);
   border-radius: 2px;
 }
 
