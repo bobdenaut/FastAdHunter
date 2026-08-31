@@ -571,8 +571,13 @@ impl HistorySource for StatsPort {
         self.0.history_summary(range, resolution, max_points)
     }
 
-    fn perf(&self, range: HistoryRange, max_points: usize) -> io::Result<PerfSeries> {
-        self.0.history_perf(range, max_points)
+    fn perf(
+        &self,
+        range: HistoryRange,
+        max_points: usize,
+        include_upstreams: bool,
+    ) -> io::Result<PerfSeries> {
+        self.0.history_perf(range, max_points, include_upstreams)
     }
 
     fn top(&self, range: HistoryRange, kind: TopKind, limit: usize) -> io::Result<TopItems> {

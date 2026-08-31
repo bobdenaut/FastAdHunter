@@ -25,9 +25,11 @@ use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use fah_model::{
-    ClientHits, DailyTopN, DomainHits, HistoryPoint, HistoryRange, HistoryResolution,
-    HistorySeries, HourRollup, PerfSample, PerfSeries, TopItems, TopKind,
+    AnswerCounters, CacheStatsSample, ClientHits, DailyTopN, DomainHits, HistoryPoint,
+    HistoryRange, HistoryResolution, HistorySeries, HourRollup, LatencySummary, ListFetchCounters,
+    MemoryComponents, PerfSample, PerfSeries, TopItems, TopKind,
 };
+use serde::Deserialize;
 
 const SECONDS_PER_HOUR: u64 = 3_600;
 const SECONDS_PER_DAY: u64 = 86_400;
@@ -114,7 +116,12 @@ impl HistoryReader {
     }
 
     /// The perf sample series within the range, decimated to `max_points`.
-    pub(crate) fn perf(&self, range: HistoryRange, max_points: usize) -> io::Result<PerfSeries> {
+    pub(crate) fn perf(
+        &self,
+        range: HistoryRange,
+        max_points: usize,
+        include_upstreams: bool,
+    ) -> io::Result<PerfSeries> {
         let Some((from, to)) = window(range) else {
             return Ok(PerfSeries {
                 samples: Vec::new(),
@@ -125,11 +132,19 @@ impl HistoryReader {
 
         let mut samples = Decimator::new(max_points);
         for path in &files {
-            for_each_row(path, |sample: PerfSample| {
-                if (from..to).contains(&sample.ts) {
-                    samples.push(sample);
-                }
-            })?;
+            if include_upstreams {
+                for_each_row(path, |sample: PerfSample| {
+                    if (from..to).contains(&sample.ts) {
+                        samples.push(sample);
+                    }
+                })?;
+            } else {
+                for_each_row(path, |sample: SlimPerfSample| {
+                    if (from..to).contains(&sample.ts) {
+                        samples.push(sample.into());
+                    }
+                })?;
+            }
         }
         let (samples, stride) = samples.finish();
         Ok(PerfSeries { samples, stride })
@@ -312,6 +327,58 @@ fn read_object<T: serde::de::DeserializeOwned>(path: &Path) -> io::Result<Option
         Ok(text) => Ok(serde_json::from_str(&text).ok()),
         Err(err) if err.kind() == io::ErrorKind::NotFound => Ok(None),
         Err(err) => Err(err),
+    }
+}
+
+#[derive(Deserialize)]
+struct SlimPerfSample {
+    ts: u64,
+    rss_bytes: u64,
+    #[serde(default)]
+    peak_rss: u64,
+    qps: f64,
+    queries_delta: u64,
+    blocked_delta: u64,
+    allowed_delta: u64,
+    cache: CacheStatsSample,
+    latency: LatencySummary,
+    #[serde(default)]
+    memory: MemoryComponents,
+    #[serde(default)]
+    minor_page_faults: u64,
+    #[serde(default)]
+    rss_anon_bytes: u64,
+    #[serde(default)]
+    rss_file_bytes: u64,
+    #[serde(default)]
+    answers_delta: AnswerCounters,
+    #[serde(default)]
+    allocator_committed_bytes: u64,
+    #[serde(default)]
+    list_fetch: ListFetchCounters,
+}
+
+impl From<SlimPerfSample> for PerfSample {
+    fn from(slim: SlimPerfSample) -> Self {
+        PerfSample {
+            ts: slim.ts,
+            rss_bytes: slim.rss_bytes,
+            peak_rss: slim.peak_rss,
+            qps: slim.qps,
+            queries_delta: slim.queries_delta,
+            blocked_delta: slim.blocked_delta,
+            allowed_delta: slim.allowed_delta,
+            cache: slim.cache,
+            latency: slim.latency,
+            upstreams: Vec::new(),
+            memory: slim.memory,
+            minor_page_faults: slim.minor_page_faults,
+            rss_anon_bytes: slim.rss_anon_bytes,
+            rss_file_bytes: slim.rss_file_bytes,
+            answers_delta: slim.answers_delta,
+            allocator_committed_bytes: slim.allocator_committed_bytes,
+            list_fetch: slim.list_fetch,
+        }
     }
 }
 
@@ -568,7 +635,7 @@ mod tests {
             .summary(range(0, SECONDS_PER_DAY), HistoryResolution::Hour, 100)
             .unwrap();
         assert!(series.points.is_empty());
-        let perf = reader.perf(range(0, SECONDS_PER_DAY), 100).unwrap();
+        let perf = reader.perf(range(0, SECONDS_PER_DAY), 100, true).unwrap();
         assert!(perf.samples.is_empty());
         assert_eq!(
             reader
@@ -607,12 +674,120 @@ mod tests {
         write_samples(dir.path(), DAY + 1, &[sample(second + 60)]);
 
         let series = reader(dir.path())
-            .perf(range(first, second + SECONDS_PER_DAY), 5_000)
+            .perf(range(first, second + SECONDS_PER_DAY), 5_000, true)
             .unwrap();
 
         assert_eq!(series.stride, 1);
         let timestamps: Vec<u64> = series.samples.iter().map(|s| s.ts).collect();
         assert_eq!(timestamps, [first + 60, first + 120, second + 60]);
+    }
+
+    fn maximal_sample(ts: u64) -> PerfSample {
+        PerfSample {
+            ts,
+            rss_bytes: 55_000_001,
+            peak_rss: 140_000_002,
+            qps: 12.5,
+            queries_delta: 750,
+            blocked_delta: 210,
+            allowed_delta: 5,
+            cache: CacheStatsSample {
+                entries: 10_000,
+                capacity: 16_384,
+                fresh: 9_000,
+                stale: 800,
+                expired: 200,
+                hits: 500_000,
+                misses: 120_000,
+                evictions: 3_400,
+                bytes: 21_000_000,
+                max_bytes: 67_108_864,
+            },
+            latency: LatencySummary {
+                block_p50: 0.0001,
+                block_p99: 0.0005,
+                cache_hit_p50: 0.0002,
+                cache_hit_p99: 0.00025,
+                forward_p50: 0.005,
+                forward_p99: 0.05,
+            },
+            upstreams: vec![fah_model::UpstreamSample {
+                address: "1.1.1.1".to_string(),
+                protocol: fah_model::Protocol::Dot,
+                attempts: 12_000,
+                failures: 3,
+                consecutive_failures: 1,
+                tls_handshakes: 4,
+                failure_runs: [2, 1, 3, 4],
+                state: fah_model::UpstreamState::Penalized,
+                penalty_round: 2,
+                penalties: 5,
+                penalized_seconds_total: 96,
+                probes: 4,
+                probe_successes: 1,
+                family: Some(fah_model::AddressFamily::V4),
+                rtt: fah_model::UpstreamRtt {
+                    count: 9,
+                    sum_seconds: 1.5,
+                    p50: 0.01,
+                    p99: 0.2,
+                    buckets: Default::default(),
+                },
+            }],
+            memory: MemoryComponents {
+                ruleset: 23_440_198,
+                cache: 1_445_728,
+                stats: fah_model::StatsHeap {
+                    aggregates: 271_090,
+                    clients: 132_352,
+                },
+            },
+            minor_page_faults: 4_211_337,
+            rss_anon_bytes: 30_000_003,
+            rss_file_bytes: 19_942_528,
+            answers_delta: AnswerCounters {
+                servfail_synthesized: 7,
+                servfail_relayed: 8,
+                refused_relayed: 9,
+            },
+            allocator_committed_bytes: 210_100_224,
+            list_fetch: ListFetchCounters {
+                bodies: 17,
+                not_modified: 3,
+                bytes_fetched: 27_580_000,
+            },
+        }
+    }
+
+    #[test]
+    fn the_slim_read_matches_the_full_read_except_upstreams() {
+        let dir = tempfile::tempdir().unwrap();
+        let start = DAY * SECONDS_PER_DAY;
+        write_samples(
+            dir.path(),
+            DAY,
+            &[maximal_sample(start + 60), maximal_sample(start + 120)],
+        );
+
+        let full = reader(dir.path())
+            .perf(range(start, start + SECONDS_PER_DAY), 100, true)
+            .unwrap();
+        let slim = reader(dir.path())
+            .perf(range(start, start + SECONDS_PER_DAY), 100, false)
+            .unwrap();
+
+        assert_eq!(full.stride, slim.stride);
+        assert_eq!(full.samples.len(), slim.samples.len());
+        assert!(full.samples.iter().all(|s| !s.upstreams.is_empty()));
+        let stripped: Vec<PerfSample> = full
+            .samples
+            .into_iter()
+            .map(|mut s| {
+                s.upstreams = Vec::new();
+                s
+            })
+            .collect();
+        assert_eq!(stripped, slim.samples);
     }
 
     #[test]
@@ -624,7 +799,7 @@ mod tests {
         write_samples(dir.path(), DAY, &samples);
 
         let series = reader(dir.path())
-            .perf(range(start, start + SECONDS_PER_DAY), 100)
+            .perf(range(start, start + SECONDS_PER_DAY), 100, true)
             .unwrap();
 
         assert!(

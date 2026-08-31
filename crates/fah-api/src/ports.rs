@@ -63,7 +63,12 @@ pub trait HistorySource: Send + Sync + 'static {
         resolution: HistoryResolution,
         max_points: usize,
     ) -> io::Result<HistorySeries>;
-    fn perf(&self, range: HistoryRange, max_points: usize) -> io::Result<PerfSeries>;
+    fn perf(
+        &self,
+        range: HistoryRange,
+        max_points: usize,
+        include_upstreams: bool,
+    ) -> io::Result<PerfSeries>;
     fn top(&self, range: HistoryRange, kind: TopKind, limit: usize) -> io::Result<TopItems>;
 }
 

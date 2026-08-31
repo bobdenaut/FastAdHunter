@@ -241,8 +241,9 @@ async fn history_perf(
     let fields = parse_perf_fields(&params)?;
     let max_points = parse_bounded(&params, "max_points", DEFAULT_PERF_POINTS, MAX_PERF_POINTS)?;
 
+    let include_upstreams = fields.upstreams;
     let series = read_history(&state.history, move |history| {
-        history.perf(range, max_points)
+        history.perf(range, max_points, include_upstreams)
     })
     .await?;
     Ok(Json(HistoryPerfResponse::new(

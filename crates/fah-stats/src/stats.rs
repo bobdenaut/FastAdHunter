@@ -285,8 +285,14 @@ impl Stats {
 
     /// The perf sample series within `range` (`GET /api/v1/history/perf`),
     /// bounded to `max_points`. Blocking, like [`Self::history_summary`].
-    pub fn history_perf(&self, range: HistoryRange, max_points: usize) -> io::Result<PerfSeries> {
-        self.history_reader.perf(range, max_points)
+    pub fn history_perf(
+        &self,
+        range: HistoryRange,
+        max_points: usize,
+        include_upstreams: bool,
+    ) -> io::Result<PerfSeries> {
+        self.history_reader
+            .perf(range, max_points, include_upstreams)
     }
 
     /// Top-N over `range`, merged from the daily top-N files

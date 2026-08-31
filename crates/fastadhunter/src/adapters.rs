@@ -154,8 +154,14 @@ impl HistorySource for StatsAdapter {
         self.stats.history_summary(range, resolution, max_points)
     }
 
-    fn perf(&self, range: HistoryRange, max_points: usize) -> std::io::Result<PerfSeries> {
-        self.stats.history_perf(range, max_points)
+    fn perf(
+        &self,
+        range: HistoryRange,
+        max_points: usize,
+        include_upstreams: bool,
+    ) -> std::io::Result<PerfSeries> {
+        self.stats
+            .history_perf(range, max_points, include_upstreams)
     }
 
     fn top(&self, range: HistoryRange, kind: TopKind, limit: usize) -> std::io::Result<TopItems> {

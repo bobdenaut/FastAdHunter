@@ -154,6 +154,7 @@ struct FakeHistory {
     /// Every `(from, to, resolution, max_points)` a summary read was called with.
     summary_calls: Mutex<Vec<(SystemTime, SystemTime, HistoryResolution, usize)>>,
     top_calls: Mutex<Vec<(TopKind, usize)>>,
+    perf_calls: Mutex<Vec<bool>>,
     /// Makes every read answer with nothing — the "range with no data" case.
     empty: Mutex<bool>,
 }
@@ -202,7 +203,13 @@ impl HistorySource for FakeHistory {
         })
     }
 
-    fn perf(&self, _range: HistoryRange, _max_points: usize) -> std::io::Result<PerfSeries> {
+    fn perf(
+        &self,
+        _range: HistoryRange,
+        _max_points: usize,
+        include_upstreams: bool,
+    ) -> std::io::Result<PerfSeries> {
+        self.perf_calls.lock().unwrap().push(include_upstreams);
         if self.is_empty() {
             return Ok(PerfSeries {
                 samples: vec![],
@@ -1101,6 +1108,25 @@ async fn history_perf_serves_the_sample_series_and_fields_trim_it() {
     keys.sort_unstable();
     assert_eq!(keys, ["answers_delta", "ts"]);
     assert_eq!(item["answers_delta"]["servfail_synthesized"], 9);
+}
+
+#[tokio::test]
+async fn history_perf_reads_upstream_rows_only_when_the_fields_ask_for_them() {
+    let harness = start().await;
+
+    harness.get_json("/api/v1/history/perf").await;
+    harness
+        .get_json("/api/v1/history/perf?fields=rss_bytes,cache")
+        .await;
+    harness
+        .get_json("/api/v1/history/perf?fields=upstreams")
+        .await;
+    harness
+        .get_json("/api/v1/history/perf?fields=rss_bytes,upstreams")
+        .await;
+
+    let calls = harness.history.perf_calls.lock().unwrap();
+    assert_eq!(*calls, [true, false, true, true]);
 }
 
 /// A typo must name every accepted key back, or the caller cannot discover the
