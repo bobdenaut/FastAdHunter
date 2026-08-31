@@ -135,6 +135,13 @@ export function TrendCard({
           proportion, not a rendering fault — their exact figures are in the
           composition card and in the readout above.
         </span>
+        <span class="footnote-line">
+          <b>A dashed rule marks a restart</b>, with the process's new peak on
+          it. Peak is a high-water mark over a process lifetime, so a fall in
+          that line is always a restart and never a reclaim — and the new
+          process's first peak is its startup compile, which lasts seconds
+          against the sampling interval and so never appears in the area below.
+        </span>
       </p>
     </Card>
   );

@@ -46,6 +46,31 @@ function ySplits(max: number): number[] {
 }
 
 /**
+ * The MiB scale, drawn on `side` — 3 for the left edge, 1 for the right.
+ *
+ * One definition for both edges. The two axes have to agree on their splits and
+ * their formatting or the plot reads differently depending on which edge you
+ * look at, and two copies of the same object is exactly how they would stop
+ * agreeing. `scale` is stated rather than inferred because uPlot only infers it
+ * for the first two axes, and only the left one draws the grid: a second set of
+ * lines over identical splits doubles every rule.
+ */
+function mibAxis(theme: ChartTheme, side: 1 | 3): uPlot.Axis {
+  return {
+    side,
+    scale: 'y',
+    stroke: theme.tick,
+    grid: side === 3 ? { stroke: theme.grid, width: 1 } : { show: false },
+    ticks: { show: false },
+    font: `12px ${theme.mono}`,
+    size: 62,
+    splits: (u) => ySplits(u.scales['y']?.max ?? 0),
+    values: (_u, splits) =>
+      splits.map((value) => (value === 0 ? '' : `${(value / MIB).toFixed(0)} MiB`)),
+  };
+}
+
+/**
  * The plot's column layout, named once.
  *
  * `u.data` is positional and every reader of it was writing its own index —
@@ -297,6 +322,80 @@ function plate(
   );
 }
 
+/**
+ * The last sampled RSS and peak, printed against the right scale in the colour
+ * of the line each belongs to — peak in its own amber, and RSS in whichever of
+ * the three state colours its line is wearing at that sample: ink under the
+ * watch line, amber above it, red above the steady-state budget.
+ *
+ * The state comes from `rssStates`, the page's one state decision, so the
+ * reading carries the same 3 MiB hysteresis the line does and the two can never
+ * disagree about a sample. Re-deriving it from the value alone would strobe on
+ * the boundary the line is steady on, which is the bug the walk exists to stop.
+ *
+ * The last point can be null on either series: a sample that recorded one and
+ * not the other is a gap in that line, and a reading printed for a line that is
+ * not there would be the older value wearing the current one's place.
+ *
+ * When the two are within a line of each other the peak is nudged up, so the
+ * pair never overprints — which is exactly the case that matters, a process
+ * sitting at its own high-water mark.
+ */
+function currentReadings(u: uPlot, theme: ChartTheme, ratio: number): void {
+  const ctx = u.ctx;
+  const right = u.bbox.left + u.bbox.width;
+  const last = (u.data[SERIES.x]?.length ?? 0) - 1;
+  if (last < 0) return;
+
+  const rss = u.data[SERIES.rss];
+  const state = rss === undefined ? null : (rssStates(rss)[last] ?? null);
+  const statePaint: Record<RssState, string> = {
+    normal: theme.ink,
+    watch: theme.memoryWatch,
+    over: theme.memoryOver,
+  };
+
+  const readings = [
+    {
+      value: rss?.[last],
+      colour: state === null ? theme.ink : statePaint[state],
+    },
+    { value: u.data[SERIES.peak]?.[last], colour: theme.memoryPeak },
+  ]
+    .filter(
+      (entry): entry is { value: number; colour: string } =>
+        typeof entry.value === 'number',
+    )
+    .map((entry) => ({
+      ...entry,
+      // The figure alone. The axis beside it is already labelled in MiB, and
+      // repeating the unit on every reading says nothing the scale has not.
+      text: (entry.value / MIB).toFixed(1),
+      y: Math.round(u.valToPos(entry.value, 'y', true)),
+    }))
+    .sort((a, b) => a.y - b.y);
+
+  const minGap = (LABEL_PX + 3) * ratio;
+  if (readings.length === 2 && readings[1]!.y - readings[0]!.y < minGap) {
+    readings[0]!.y = readings[1]!.y - minGap;
+  }
+
+  ctx.font = `600 ${String(LABEL_PX * ratio)}px ${theme.mono}`;
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'middle';
+  for (const reading of readings) {
+    const x = right + 6 * ratio;
+    plate(ctx, theme, ratio, {
+      text: reading.text,
+      x,
+      y: reading.y + LABEL_PX * ratio * 0.5,
+      align: 'left',
+    });
+    ctx.fillStyle = reading.colour;
+    ctx.fillText(reading.text, x, reading.y);
+  }
+}
+
 function thresholdPlugin(theme: ChartTheme, range: RangeKey): uPlot.Plugin {
   return {
     hooks: {
@@ -442,6 +541,16 @@ function thresholdPlugin(theme: ChartTheme, range: RangeKey): uPlot.Plugin {
           );
         }
 
+        // The two current readings, against the right scale and each in the
+        // colour of the line it belongs to. They sit in the gutter the right
+        // axis draws, over its tick labels — the plate clears one, which is the
+        // trade: a tick is a round number the reader can infer from its
+        // neighbours, and these two are the figures the chart exists to report.
+        //
+        // Drawn from the last sample rather than from the readout above, so the
+        // number and the line it names cannot disagree.
+        currentReadings(u, theme, ratio);
+
         const restarts = restartsOf(u);
         if (restarts.length === 0) {
           ctx.restore();
@@ -466,49 +575,12 @@ function thresholdPlugin(theme: ChartTheme, range: RangeKey): uPlot.Plugin {
             ctx.arc(x, y, 3.5 * ratio, 0, Math.PI * 2);
             ctx.fill();
 
-            ctx.font = `${String(LABEL_PX * ratio)}px ${theme.font}`;
-            ctx.textAlign = 'right';
-            ctx.textBaseline = 'alphabetic';
-            ctx.fillStyle = theme.barLabel;
-            // Each caption clears its own ground: the peak line runs level with
-            // them on either side of the drop, and a dashed rule through the
-            // words is the one thing that made this annotation unreadable.
-            const say = (
-              text: string,
-              colour: string,
-              at: { x: number; y: number; align: 'left' | 'right' },
-            ) => {
-              ctx.textAlign = at.align;
-              plate(ctx, theme, ratio, { text, x: at.x, y: at.y, align: at.align });
-              ctx.fillStyle = colour;
-              ctx.fillText(text, at.x, at.y);
-            };
-
-            say('restart — the peak line drops here', theme.barLabel, {
-              x: x - 8 * ratio,
-              y: y - 22 * ratio,
-              align: 'right',
-            });
-            say(
-              'a fall in this line is always a restart, never a reclaim',
-              theme.tick,
-              { x: x - 8 * ratio, y: y - 8 * ratio, align: 'right' },
-            );
-            // Clamped to the plot's right edge. A restart near the end of the
-            // window put this caption's tail outside the canvas, where it was
-            // cut mid-word — the annotation that explains the drop is the last
-            // thing that should be unreadable.
-            const newPeak = `new peak ${(peak / MIB).toFixed(1)} — the startup compile, never sampled`;
-            ctx.font = `${String(LABEL_PX * ratio)}px ${theme.font}`;
-            const right = u.bbox.left + u.bbox.width;
-            say(newPeak, theme.tick, {
-              x: Math.min(
-                x + 8 * ratio,
-                right - ctx.measureText(newPeak).width - 4 * ratio,
-              ),
-              y: y + 22 * ratio,
-              align: 'left',
-            });
+            // The marker is the dashed rule and this dot, and no more. Three
+            // sentences used to be drawn over the plot at every restart — what
+            // the drop means, that it is never a reclaim, and the new peak's
+            // figure — and a window with several restarts in it was more
+            // caption than series. The footnote under the chart carries the
+            // same facts once, where they do not sit on the data.
           }
         }
         ctx.restore();
@@ -624,19 +696,13 @@ export function memoryTrendOptions({
           });
         },
       },
-      {
-        side: 3,
-        stroke: theme.tick,
-        grid: { stroke: theme.grid, width: 1 },
-        ticks: { show: false },
-        font: `12px ${theme.mono}`,
-        size: 62,
-        splits: (u) => ySplits(u.scales['y']?.max ?? 0),
-        values: (_u, splits) =>
-          splits.map((value) =>
-            value === 0 ? '' : `${(value / MIB).toFixed(0)} MiB`,
-          ),
-      },
+      // The MiB scale on both edges. The plot is wide enough that a value near
+      // the right edge is a long way from the axis that reads it, and the eye
+      // has to track back across the whole series to place it. One definition,
+      // called twice: the two have to agree on splits and formatting, and two
+      // copies is how they would stop agreeing.
+      mibAxis(theme, 3),
+      mibAxis(theme, 1),
     ],
     // Assigned by name rather than written in order: the slot each series
     // occupies is now stated where the series is defined, and it is the same
