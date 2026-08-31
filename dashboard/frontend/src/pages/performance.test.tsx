@@ -340,9 +340,46 @@ describe('the stage tiles', () => {
     expect(text).toContain('block stage, p99');
     expect(text).toContain('0.039');
     expect(text).toContain('0.051');
-    expect(text).toContain('forward stage, engine overhead p99');
+    expect(text).toContain('forward stage, p99 — upstream round trip included');
     expect(text).toContain('0.412');
-    expect(dom.querySelectorAll('.stage-budget')).toHaveLength(3);
+    expect(dom.querySelectorAll('.stage-budget')).toHaveLength(2);
+  });
+
+  // `duration_forward` is timed end to end, upstream round trip included, so
+  // the `< 1 ms` row cannot be drawn beside it — a borrowed budget reads as a
+  // permanent breach on a tile that is measuring the network.
+  it('gives the forward tile no budget chip and no proximity bar', () => {
+    const dom = mount(<StageTiles error={null} items={[sample()]} />);
+    expect(dom.querySelectorAll('.stage-nobudget')).toHaveLength(1);
+    expect(dom.querySelectorAll('.stage-bar-track')).toHaveLength(2);
+    const text = (dom.textContent ?? '').replace(/\s+/g, ' ');
+    expect(text).toContain('Network time, not engine time');
+    expect(text).not.toContain('engine overhead');
+  });
+
+  // The stage quantile saturates at the histogram's last finite bucket
+  // (0.1 s): a percentile equal to it is a floor, not an exact reading.
+  it('prints a saturated percentile as a floor, not as an exact figure', () => {
+    const dom = mount(
+      <StageTiles error={null}
+        items={[
+          sample({
+            latency: {
+              block_p50: 0.000_02,
+              block_p99: 0.000_039,
+              cache_hit_p50: 0.000_03,
+              cache_hit_p99: 0.000_051,
+              forward_p50: 0.025,
+              forward_p99: 0.1,
+            },
+          }),
+        ]}
+      />,
+    );
+    const text = (dom.textContent ?? '').replace(/\s+/g, ' ');
+    expect(text).toContain('≥ 100.000');
+    expect(text).toContain('0.039');
+    expect(text).not.toContain('≥ 0.039');
   });
 
   it('keeps the neutral tone for every reading under the budget', () => {
@@ -527,7 +564,7 @@ describe('the budget chip', () => {
   it('is neutral, so it cannot read as a verdict on the tile', () => {
     const dom = mount(<StageTiles error={null} items={[OVER]} />);
     const chips = [...dom.querySelectorAll('.stage-budget')];
-    expect(chips).toHaveLength(3);
+    expect(chips).toHaveLength(2);
     for (const chip of chips) {
       expect(chip.className).toContain('neutral');
       // `good` beside a bar that has flipped to the blocked tone states the

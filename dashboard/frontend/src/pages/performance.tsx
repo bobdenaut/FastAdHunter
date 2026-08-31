@@ -18,7 +18,8 @@ import { usePerfHistory } from './performance/use-perf-history';
 const DEFAULT_SAMPLE_SECONDS = 60;
 
 /**
- * What the engine adds, per sample.
+ * Latency by stage, per sample. Two of the three stages are what the engine
+ * adds; `forward` is the whole round trip and says so on its own tile.
  *
  * **Its data lifecycle, in one place.** This page polls nothing and holds no
  * timer: `/history/perf` is a range query issued once per range selection, and
@@ -58,7 +59,7 @@ export function Performance(_props: PageProps) {
         title="Performance"
         context={
           <>
-            What the engine adds, per sample —{' '}
+            Latency by stage, per sample —{' '}
             <span class="mono">GET /api/v1/history/perf</span>, one row per{' '}
             {seconds} s
           </>

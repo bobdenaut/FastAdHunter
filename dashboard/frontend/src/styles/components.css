@@ -3023,10 +3023,17 @@ table.t.counters td.bad {
 
 /* The pill's tone and shape, but not its casing: the artboard writes the unit
    as `ms`, and `.pill`'s `text-transform` turned it into `MS`. */
-.stage-budget {
+.stage-budget,
+.stage-nobudget {
   margin-left: auto;
   align-self: center;
   text-transform: none;
+}
+
+/* The forward tile carries no bar, so its note takes the vertical space the
+   bar would have held — otherwise the three tiles stop lining up. */
+.stage-nobudget-note {
+  margin: 9px 0 0;
 }
 
 /* The proximity bar is the neutral accent for the whole span under the budget:

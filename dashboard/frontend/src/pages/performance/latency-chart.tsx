@@ -100,7 +100,7 @@ export function LatencyChart({
   );
 
   return (
-    <Card title="In-engine latency, p50 and p99 by stage" tools={chips}>
+    <Card title="Latency, p50 and p99 by stage" tools={chips}>
       <div class="chips-mobile">{chips}</div>
       {body()}
       <div class="chart-legend latency-legend">
@@ -114,7 +114,7 @@ export function LatencyChart({
         </span>
         <span>
           <span class="sw" style={{ background: 'var(--series-5)' }} />
-          forward (engine only)
+          forward (incl. upstream RTT)
         </span>
         <span class="note">solid p99 · dashed p50</span>
         <span class="note legend-aside">
@@ -123,14 +123,15 @@ export function LatencyChart({
         </span>
       </div>
       <p class="chart-footnote">
-        Forward excludes upstream round-trip time: these three stages measure
-        only what FastAdHunter adds. Block and cache-hit sit so near the axis
-        that they read as flat — which is the point of the chart, not a failure
-        of it.
+        Block and cache-hit never wait on the network, so they measure what
+        FastAdHunter adds and sit so near the axis that they read as flat —
+        which is the point of the chart, not a failure of it. Forward is timed
+        end to end: it carries the upstream round trip, and the budget line
+        below does not apply to it.
         <span class="footnote-line">
           Percentiles are bucket-granularity estimates over each sampling
-          interval and saturate at the top finite bucket. Good for a trend line,
-          not exact quantiles.
+          interval and saturate at the top finite bucket, 100 ms — a value
+          sitting there is a floor. Good for a trend line, not exact quantiles.
         </span>
       </p>
     </Card>

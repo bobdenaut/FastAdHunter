@@ -49,14 +49,19 @@ breach.
 | Container image size | ≤ 30 MB | 13.0 MiB |
 | Blocked query, in-engine p99 | < 1 ms | — |
 | `cache_hit` stage, in-engine p99 | < 1 ms | — |
-| `forward` stage overhead added by engine, p99 | < 1 ms | — |
+| `forward` stage overhead added by engine, p99 | < 1 ms | not measured — see note under the table |
 | **DNS** sustained throughput | ≥ 10 000 QPS | 20 k+ QPS |
 | **HTTP** added latency, head path | < 1 ms | +161 µs min · +344 µs p50 |
 | **HTTP** throughput, opaque body | ≥ 100 MiB/s | 271 MiB/s min · 208 MiB/s p50 at 1 MiB |
 | **HTTP** request verdict (URL tier), p99 | < 1 ms | 569.5 µs at 8 KiB, EasyList + EasyPrivacy |
 | **HTTP** concurrent connections | bounded by `[http] max_connections` (1024) | unmeasured |
 
-In-engine latency excludes upstream RTT — we measure what we add. Budgets are
+In-engine latency excludes upstream RTT — we measure what we add. The served
+`forward` histogram (`duration_forward`; `forward_p50/p99` on `/history/perf`)
+is the exception: it is timed end-to-end, upstream round trip and the RFC 8767
+failed attempt included, so the `forward` overhead row has no measured
+counterpart until a timer isolates the engine's share around the upstream
+await. The dashboard's forward tile carries no budget for that reason. Budgets are
 compared against `main` on every perf-relevant change; a >10 % regression on a
 hot-path bench needs an explicit justification ([CONTRIBUTING.md](CONTRIBUTING.md)).
 
