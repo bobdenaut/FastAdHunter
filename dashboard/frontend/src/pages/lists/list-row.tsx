@@ -1,7 +1,11 @@
 import type { ComponentChildren } from 'preact';
 import type { ListItem } from '../../api/types';
 import { StageBar } from '../../components/stage-bar';
-import { lastRefreshLabel } from '../../time';
+import {
+  lastRefreshLabel,
+  nextRefreshLabel,
+  type RefreshLabel,
+} from '../../time';
 import { ListStatus } from './list-status';
 
 /**
@@ -48,9 +52,17 @@ export function ListRow({
         <div class="l-every mono">
           {item.enabled ? `${String(item.refresh_hours)} h` : '—'}
         </div>
-        <div class="l-last mono note">
-          {lastRefreshLabel(item.last_refresh, now)}
-        </div>
+        <RefreshCell class="l-last" label={lastRefreshLabel(item.last_refresh, now)} />
+        {/* Disabled lists are not scheduled at all, which the dash says and a
+            stale due time would contradict. */}
+        <RefreshCell
+          class="l-next"
+          label={
+            item.enabled
+              ? nextRefreshLabel(item.last_refresh, item.refresh_hours, now)
+              : { day: '—', time: null }
+          }
+        />
       </div>
 
       <div class="l-status">
@@ -104,6 +116,27 @@ export function ListRow({
 
       <div class="l-total mono">{item.rules_total.toLocaleString()}</div>
       <div class="l-actions">{actions}</div>
+    </div>
+  );
+}
+
+/**
+ * The day over the clock, so a refresh time costs one narrow column instead of
+ * one wide one. A label with no timestamp — `never`, `due`, `unscheduled` —
+ * carries the whole answer on the day line and renders no second line at all,
+ * rather than a blank one that would make the row taller for nothing.
+ */
+function RefreshCell({
+  class: className,
+  label,
+}: {
+  class: string;
+  label: RefreshLabel;
+}) {
+  return (
+    <div class={`${className} mono note`}>
+      <div>{label.day}</div>
+      {label.time !== null && <div>{label.time}</div>}
     </div>
   );
 }

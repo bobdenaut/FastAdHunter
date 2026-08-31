@@ -14,8 +14,6 @@ const DAY = new Intl.DateTimeFormat(undefined, {
   month: 'short',
 });
 
-const DAY_MS = 86_400_000;
-
 /**
  * `2 s ago` / `4 m ago` / `3 h ago` / `9 d ago` — the age of a reading, and the
  * age of a client's last query. Both artboards print the same four forms, so
@@ -48,25 +46,55 @@ export function formatUptime(seconds: number): string {
   return `${minutes}m`;
 }
 
-function startOfLocalDay(at: Date): number {
-  return new Date(at.getFullYear(), at.getMonth(), at.getDate()).getTime();
+/**
+ * A refresh time as the day over the clock, which is how the Lists table stacks
+ * them: two short lines in a narrow column rather than one wide line.
+ *
+ * `time` is `null` where there is no timestamp to print — the day line then
+ * carries the whole answer and stands alone.
+ */
+export interface RefreshLabel {
+  day: string;
+  time: string | null;
 }
 
 /**
- * `04:00` today, `yesterday 04:00` the day before, `12 Aug 04:00` further back
- * — the three forms `Lists.dc.html` draws. `null` is `never`, which the API
- * uses for a list not yet refreshed **in this process**: a boot from the cached
- * copy is a load, not a refresh.
+ * `12 Aug` over `04:00`. The date always, never `today` or `yesterday`: two
+ * refresh columns side by side are read against each other, and a word in one
+ * beside a date in the other cannot be compared at a glance.
+ *
+ * `null` is `never`, which the API uses for a list not yet refreshed **in this
+ * process**: a boot from the cached copy is a load, not a refresh.
  */
-export function lastRefreshLabel(ts: string | null, now: number): string {
-  if (ts === null) return 'never';
+export function lastRefreshLabel(ts: string | null, _now: number): RefreshLabel {
+  if (ts === null) return { day: 'never', time: null };
   const at = new Date(ts);
-  if (Number.isNaN(at.getTime())) return ts;
-  const today = startOfLocalDay(new Date(now));
-  const day = startOfLocalDay(at);
-  if (day === today) return CLOCK.format(at);
-  if (day === today - DAY_MS) return `yesterday ${CLOCK.format(at)}`;
-  return `${DAY.format(at)} ${CLOCK.format(at)}`;
+  if (Number.isNaN(at.getTime())) return { day: ts, time: null };
+  return { day: DAY.format(at), time: CLOCK.format(at) };
+}
+
+/**
+ * When the scheduler comes back to a list, in the same forms
+ * [`lastRefreshLabel`] prints so the two read as one pair.
+ *
+ * Derived, not served: the API carries `last_refresh` and `refresh_hours` and
+ * no next-refresh field, so this is their sum. Two consequences the column has
+ * to state rather than hide — `last_refresh` is `null` until the first
+ * successful refresh **in this process**, so a list that has not refreshed
+ * since boot has no schedule to show, and a due time already past means the
+ * scheduler has not reached it yet rather than that it was missed.
+ */
+export function nextRefreshLabel(
+  ts: string | null,
+  refreshHours: number,
+  now: number,
+): RefreshLabel {
+  if (ts === null) return { day: 'unscheduled', time: null };
+  const at = new Date(ts).getTime();
+  if (Number.isNaN(at)) return { day: ts, time: null };
+  const due = new Date(at + refreshHours * 60 * 60 * 1000);
+  if (due.getTime() <= now) return { day: 'due', time: null };
+  return { day: DAY.format(due), time: CLOCK.format(due) };
 }
 
 /**

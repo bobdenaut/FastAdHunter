@@ -272,7 +272,17 @@ export function Lists(_props: PageProps) {
               <span class="l-meta">
                 <span class="l-on">On</span>
                 <span class="l-every">Every</span>
-                <span class="l-last">Last refresh</span>
+                {/* Two lines each, so the two refresh columns are as narrow as
+                    the values they carry rather than as wide as their own
+                    labels. */}
+                <span class="l-last">
+                  <div>Last</div>
+                  <div>Refresh</div>
+                </span>
+                <span class="l-next">
+                  <div>Next</div>
+                  <div>Refresh</div>
+                </span>
               </span>
               <span class="l-status">Status</span>
               <span class="l-rules">Rules</span>

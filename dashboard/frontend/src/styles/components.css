@@ -1190,7 +1190,7 @@ table.t tbody tr:hover td {
      to List and Status and the mono partition line wrapped to three lines at
      every desktop width. Weight, not floor: this costs no width at all. */
   grid-template-columns:
-    minmax(130px, 1fr) 46px 62px 78px minmax(110px, 1fr)
+    minmax(130px, 1fr) 46px 60px 62px 62px 78px
     minmax(150px, 2fr) 84px 132px;
   gap: 10px;
   align-items: start;
@@ -1232,20 +1232,31 @@ table.t tbody tr:hover td {
   display: contents;
 }
 
-.list-head {
-  font-weight: 600;
-  color: var(--text-muted);
-  font-size: 10.5px;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  padding-bottom: 8px;
+/* The card's own ground, as on the Live Feed and Clients: the header stands
+   level with the card and a hovered row rises to meet it. */
+.list-head,
+.list-row:hover {
+  background: var(--surface-raised);
 }
 
+.list-head {
+  font-weight: 600;
+  color: var(--text);
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+/* The rows take the sunken ground, so the block of data reads as one panel let
+   into the card beneath the header. */
 .list-row {
   border-top: 1px solid var(--border-row);
   font-size: 12.5px;
+  background: var(--surface-sunken);
 }
 
+/* Declared after the hover so it survives it: a list that needs attention says
+   so whether or not the pointer happens to be over it. */
 .list-row.is-alert {
   background: var(--pill-warn-bg);
 }
@@ -1254,10 +1265,12 @@ table.t tbody tr:hover td {
   font-weight: 500;
 }
 
+/* Wraps rather than ellipsising: a source URL is what identifies a list, and
+   the tail is the part that distinguishes two lists from the same host — an
+   ellipsis cut exactly that off. The row grows downwards instead, which is what
+   the column can afford now that it is the narrowest it has been. */
 .l-source {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
   color: var(--text-faint);
 }
 
@@ -1401,6 +1414,33 @@ table.t tbody tr:hover td {
     align-items: center;
     gap: 14px;
     min-height: 44px;
+  }
+
+  /* The header is hidden on a card, so the two refresh times name themselves.
+     One unlabelled date was readable; two side by side are not — nothing said
+     which was the last and which the next.
+
+     A row, not the desktop's stack: the day and the clock are two block
+     children, so an inline `::before` took a line of its own above them and the
+     label read three lines tall. */
+  .l-last,
+  .l-next {
+    display: flex;
+    align-items: baseline;
+    gap: 4px;
+  }
+
+  .l-last::before {
+    content: 'last';
+  }
+
+  .l-next::before {
+    content: 'next';
+  }
+
+  .l-last::before,
+  .l-next::before {
+    color: var(--text-faint);
   }
 
   .l-rules-bar {

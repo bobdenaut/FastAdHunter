@@ -53,16 +53,16 @@ describe('the Lists table grid', () => {
     .split(' ')
     .filter((token) => token !== '');
 
-  it('is eight columns, matching the artboard', () => {
-    // List · On · Every · Last refresh · Status · Rules · Total · actions.
-    // `minmax(a, b)` survives the split as three tokens, so count the
-    // separators rather than the tokens.
+  it('is nine columns', () => {
+    // List · On · Every · Last refresh · Next refresh · Status · Rules · Total
+    // · actions. `minmax(a, b)` survives the split as three tokens, so count
+    // the separators rather than the tokens.
     const columns = tracks
       .join(' ')
       .replace(/minmax\([^)]*\)/g, 'T')
       .split(' ')
       .filter((token) => token !== '');
-    expect(columns).toHaveLength(8);
+    expect(columns).toHaveLength(9);
   });
 
   it('sizes its actions column from nothing the content decides', () => {
@@ -81,7 +81,7 @@ describe('the Lists table grid', () => {
   });
 
   it('floors narrow enough to fit the smallest desktop width', () => {
-    // The row cannot be narrower than the sum of its track minimums, its seven
+    // The row cannot be narrower than the sum of its track minimums, its eight
     // gaps and its padding, and that sum is what decides whether the table
     // needs an internal scrollbar. Measured: the card gives the table the
     // viewport less 271 px of chrome, so at visual-system.md §Responsive's
@@ -89,10 +89,17 @@ describe('the Lists table grid', () => {
     //
     // With text actions the floor was 958 px and the table scrolled at every
     // desktop width below 1247 px. Glyph actions took the last track from
-    // 200 px to 132 px and the floor to 890, which clears 912 — so the table
+    // 200 px to 132 px and the floor to 890, which cleared 912 — so the table
     // fits across the whole desktop range and no exception has to be
     // documented. Pinned: anything above 912 brings that band back.
-    const GAPS = 7 * 10;
+    //
+    // The Next refresh column and its gap cost 72 px of that clearance, and
+    // Status paid for it: it was `minmax(110px, 1fr)` where the widest pill it
+    // can hold — `degraded` — measures 73 px, so it is a fixed 78 px now and
+    // the failure prose beneath the pill wraps a little sooner. `Every` gave
+    // up the last 2 px. Measured at 1200 px on the built page: the row is
+    // 913 px in a 913 px card, spilling nothing.
+    const GAPS = 8 * 10;
     const ROW_PADDING = 2 * 14;
     const DESKTOP_CARD_PX = 1200 - 271 - 17;
     const floor = tracks
@@ -101,7 +108,7 @@ describe('the Lists table grid', () => {
       .split(' ')
       .filter((token) => token.endsWith('px'))
       .reduce((sum, token) => sum + Number.parseInt(token, 10), 0);
-    expect(floor + GAPS + ROW_PADDING).toBe(890);
+    expect(floor + GAPS + ROW_PADDING).toBe(912);
     expect(floor + GAPS + ROW_PADDING).toBeLessThanOrEqual(DESKTOP_CARD_PX);
   });
 
@@ -110,13 +117,16 @@ describe('the Lists table grid', () => {
     // weights every pixel of slack went to List and Status and the mono
     // partition line wrapped to three lines at every desktop width. Weight,
     // not floor — this costs no width at all.
+    //
+    // Two weights, not three: Status stopped taking a share when it was fixed
+    // at the width of its widest pill, so the slack is now split between List
+    // and Rules alone.
     const weights = [...tracks.join(' ').matchAll(/([\d.]+)fr/g)].map((hit) =>
       Number.parseFloat(hit[1] ?? '0'),
     );
-    expect(weights).toHaveLength(3);
-    const rules = weights[2] ?? 0;
+    expect(weights).toHaveLength(2);
+    const rules = weights[1] ?? 0;
     expect(rules).toBeGreaterThan(weights[0] ?? 0);
-    expect(rules).toBeGreaterThan(weights[1] ?? 0);
   });
 
   it('has no other content-sized track', () => {

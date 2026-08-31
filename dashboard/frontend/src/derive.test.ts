@@ -38,7 +38,7 @@ import {
   percent1,
   qpsLabel,
 } from './charts/format';
-import { formatUptime, lastRefreshLabel } from './time';
+import { formatUptime, lastRefreshLabel, nextRefreshLabel } from './time';
 import {
   WATCH_THRESHOLD,
   latestRssState,
@@ -166,25 +166,50 @@ describe('durations and timestamps', () => {
     expect(formatUptime(3 * 86400 + 4 * 3600)).toBe('3d 4h');
   });
 
+  // No `time`: the day line carries the whole answer, and the cell renders no
+  // second line rather than a blank one that would make the row taller.
   it('says `never` for a list not yet refreshed in this process', () => {
-    expect(lastRefreshLabel(null, Date.now())).toBe('never');
+    expect(lastRefreshLabel(null, Date.now())).toEqual({
+      day: 'never',
+      time: null,
+    });
   });
 
-  it('names yesterday, and dates anything older', () => {
+  // The date always, never `today` or `yesterday`: the two refresh columns sit
+  // side by side and are read against each other, and a word in one beside a
+  // date in the other cannot be compared at a glance.
+  it('dates every refresh, however recent', () => {
     const now = new Date(2026, 7, 20, 12, 0, 0);
-    const today = new Date(2026, 7, 20, 4, 0, 0);
-    const yesterday = new Date(2026, 7, 19, 4, 0, 0);
-    const older = new Date(2026, 7, 12, 4, 0, 0);
-    expect(lastRefreshLabel(today.toISOString(), now.getTime())).toBe('04:00');
-    expect(lastRefreshLabel(yesterday.toISOString(), now.getTime())).toBe(
-      'yesterday 04:00',
-    );
-    expect(lastRefreshLabel(older.toISOString(), now.getTime())).toContain(
-      '04:00',
-    );
-    expect(lastRefreshLabel(older.toISOString(), now.getTime())).not.toContain(
-      'yesterday',
-    );
+    for (const at of [
+      new Date(2026, 7, 20, 4, 0, 0),
+      new Date(2026, 7, 19, 4, 0, 0),
+      new Date(2026, 7, 12, 4, 0, 0),
+    ]) {
+      const label = lastRefreshLabel(at.toISOString(), now.getTime());
+      expect(label.time).toBe('04:00');
+      expect(label.day).not.toBe('today');
+      expect(label.day).not.toBe('yesterday');
+      expect(label.day).toMatch(/\d/);
+    }
+  });
+
+  it('adds the interval to the last refresh for the next one', () => {
+    const now = new Date(2026, 7, 20, 12, 0, 0).getTime();
+    const at = new Date(2026, 7, 20, 4, 0, 0);
+    // 4:00 plus 24 h is the next day; plus 2 h is already past, so it is due.
+    const next = nextRefreshLabel(at.toISOString(), 24, now);
+    expect(next.time).toBe('04:00');
+    expect(next.day).toMatch(/\d/);
+    expect(nextRefreshLabel(at.toISOString(), 2, now)).toEqual({
+      day: 'due',
+      time: null,
+    });
+    // `last_refresh` is null until the first successful refresh in a process,
+    // which is a schedule that cannot be computed rather than one that is late.
+    expect(nextRefreshLabel(null, 24, now)).toEqual({
+      day: 'unscheduled',
+      time: null,
+    });
   });
 });
 
