@@ -42,6 +42,7 @@ describe('the sidebar', () => {
       .filter((label) => label !== 'Component gallery');
     expect(labels).toEqual([
       'Dashboard',
+      'Live Feed',
       'Lists',
       'Custom Rules',
       'Policies',
@@ -60,14 +61,13 @@ describe('the sidebar', () => {
     expect(el.querySelectorAll('.sub2')).toHaveLength(0);
   });
 
-  it('expands it on a diagnostics route, as Memory and LiveFeed draw it', () => {
+  it('expands it on a diagnostics route, as Memory draws it', () => {
     const el = mount(
       <Sidebar path="/diagnostics/memory" open={false} onNavigate={() => {}} />,
     );
     expect([...el.querySelectorAll('.sub2')].map((n) => n.textContent)).toEqual([
       'Health',
       'Memory',
-      'Live Feed',
     ]);
     expect(el.querySelector('.sub2.on')?.textContent).toBe('Memory');
   });

@@ -4394,11 +4394,7 @@ table.t.counters td.bad {
 }
 
 
-/* ── Diagnostics · Live Feed ────────────────────────────────────────────── */
-
-.feed-notice {
-  border-left-color: var(--accent);
-}
+/* ── Live Feed ──────────────────────────────────────────────────────────── */
 
 .feed-controls {
   display: flex;

@@ -145,25 +145,6 @@ export function LiveFeed(_props: PageProps) {
         }
       />
       <main class="wrap">
-        <div class="banner feed-notice" role="status">
-          <div>
-            This is a live tail, <b>not a query log</b>. FastAdHunter keeps no
-            per-query records — the feed starts empty when the page opens, holds
-            the last {capacity} rows in this tab, and retains nothing when you
-            leave. Filters below apply to those rows only. There is no history to
-            search, by design: no per-query store means no per-query memory
-            growth.
-            <span class="footnote-line">
-              Rendering stops while this page is hidden. Switch apps or lock the
-              screen and the feed pauses; it resumes on return, having missed
-              whatever arrived meanwhile — there is no stored history to backfill
-              from. The ring holds {capacity} rows here — the bound is sized to
-              the device, 500 on a desktop viewport and 200 on a phone, and
-              fixed at the moment this page opened.
-            </span>
-          </div>
-        </div>
-
         <Card
           title="Filters"
           secondary="applied in the browser, over the rows held here"

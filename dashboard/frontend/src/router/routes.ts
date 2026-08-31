@@ -93,6 +93,25 @@ export const ROUTES: readonly Route[] = [
     load: () => import('../pages/dashboard'),
   },
   {
+    path: '/live-feed',
+    title: 'Live Feed',
+    // Overview, beside the Dashboard, and outside the Diagnostics group: the
+    // feed is what the Dashboard's tiles link into, not a diagnostic. The path
+    // moved with it — the sidebar marks a group open by the shared path prefix,
+    // so a `/diagnostics/` path would have held that group expanded while the
+    // active entry sits in another section.
+    section: 'overview',
+    // The only screen that subscribes to `query`, and it declares no polled
+    // endpoint: the feed's whole source is the socket. Leaving empties the
+    // union, which closes the connection — and the engine stops publishing per
+    // query once no socket asks for it at all.
+    events: ['query'],
+    endpoints: [],
+    built: true,
+    ownsHeader: true,
+    load: () => import('../pages/live-feed'),
+  },
+  {
     path: '/lists',
     title: 'Lists',
     section: 'filtering',
@@ -237,21 +256,6 @@ export const ROUTES: readonly Route[] = [
     ownsHeader: true,
     load: () => import('../pages/diagnostics-memory'),
   },
-  {
-    path: '/diagnostics/live-feed',
-    title: 'Live Feed',
-    section: 'system',
-    group: 'diagnostics',
-    // The only screen that subscribes to `query`, and it declares no polled
-    // endpoint: the feed's whole source is the socket. Leaving empties the
-    // union, which closes the connection — and the engine stops publishing per
-    // query once no socket asks for it at all.
-    events: ['query'],
-    endpoints: [],
-    built: true,
-    ownsHeader: true,
-    load: () => import('../pages/live-feed'),
-  },
 ];
 
 export const LOGIN_ROUTE: Route = {
@@ -278,6 +282,16 @@ export const GALLERY_ROUTE: Route = {
   // import with it. An unguarded `import()` here would still be emitted, since
   // reachability is decided statically.
   load: import.meta.env.DEV ? () => import('../pages/dev-gallery') : null,
+};
+
+/**
+ * Paths a route used to live at, mapped to where it lives now. The shell
+ * replace-redirects on entry, so a bookmark or a shared link from before the
+ * move lands on the screen instead of the not-found sentinel. The history
+ * entry is replaced, never pushed — Back does not bounce through the old path.
+ */
+export const MOVED: Record<string, string> = {
+  '/diagnostics/live-feed': '/live-feed',
 };
 
 export function navigableRoutes(): readonly Route[] {

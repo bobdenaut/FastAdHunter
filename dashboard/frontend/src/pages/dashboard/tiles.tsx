@@ -43,7 +43,7 @@ export function DnsTiles({
         glyph="hand"
         footer="watch the live feed"
         footerShort="live feed"
-        href="/diagnostics/live-feed"
+        href="/live-feed"
       />
       <Tile
         label="Percentage blocked"

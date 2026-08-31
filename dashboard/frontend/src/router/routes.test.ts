@@ -6,6 +6,7 @@ import {
   GALLERY_ROUTE,
   GROUP_LABELS,
   LOGIN_ROUTE,
+  MOVED,
   REFRESH_ENDPOINTS,
   ROUTES,
   SECTION_LABELS,
@@ -48,9 +49,16 @@ describe('the route table', () => {
     ]);
   });
 
+  it('maps every moved path to a route that exists', () => {
+    expect(MOVED).toEqual({ '/diagnostics/live-feed': '/live-feed' });
+    for (const target of Object.values(MOVED)) {
+      expect(ROUTES.map((r) => r.path)).toContain(target);
+    }
+  });
+
   it('puts `query` on exactly one screen, and it is the Live Feed', () => {
     const withQuery = ROUTES.filter((r) => r.events.includes('query'));
-    expect(withQuery.map((r) => r.path)).toEqual(['/diagnostics/live-feed']);
+    expect(withQuery.map((r) => r.path)).toEqual(['/live-feed']);
   });
 
   it('gives the Dashboard the stats push and the five polled endpoints', () => {
@@ -81,13 +89,9 @@ describe('the route table', () => {
     expect(performance?.endpoints).toEqual([]);
   });
 
-  it('groups the three diagnostics screens and nothing else', () => {
+  it('groups the two diagnostics screens and nothing else', () => {
     expect(ROUTES.filter((r) => r.group === 'diagnostics').map((r) => r.path))
-      .toEqual([
-        '/diagnostics/health',
-        '/diagnostics/memory',
-        '/diagnostics/live-feed',
-      ]);
+      .toEqual(['/diagnostics/health', '/diagnostics/memory']);
   });
 
   it('labels every section it uses', () => {
@@ -108,6 +112,7 @@ describe('what a route actually acquires', () => {
   it('is the declaration for the screens built so far, and only those', () => {
     expect(ROUTES.filter((r) => r.built).map((r) => r.path)).toEqual([
       '/',
+      '/live-feed',
       '/lists',
       '/rules',
       '/policies',
@@ -119,7 +124,6 @@ describe('what a route actually acquires', () => {
       '/settings',
       '/diagnostics/health',
       '/diagnostics/memory',
-      '/diagnostics/live-feed',
     ]);
     const dashboard = ROUTES.find((r) => r.path === '/');
     expect(effectiveEvents(dashboard!)).toEqual(['stats']);
@@ -148,7 +152,7 @@ describe('what a route actually acquires', () => {
 describe('lazy loading', () => {
   it('splits the Settings and Diagnostics group into its own chunk', () => {
     const system = ROUTES.filter((r) => r.section === 'system');
-    expect(system).toHaveLength(4);
+    expect(system).toHaveLength(3);
     for (const route of system) {
       expect(route.load).not.toBeNull();
     }
@@ -189,7 +193,6 @@ describe('the System section, now that all four ship', () => {
       '/settings',
       '/diagnostics/health',
       '/diagnostics/memory',
-      '/diagnostics/live-feed',
     ]);
     for (const route of system) {
       expect(route.built, route.path).toBe(true);
@@ -204,7 +207,7 @@ describe('the System section, now that all four ship', () => {
   });
 
   it('gives the Live Feed the query subscription and nothing polled', () => {
-    const feed = ROUTES.find((r) => r.path === '/diagnostics/live-feed');
+    const feed = ROUTES.find((r) => r.path === '/live-feed');
     expect(feed?.events).toEqual(['query']);
     expect(feed?.endpoints).toEqual([]);
   });

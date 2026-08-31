@@ -23,10 +23,9 @@ import {
  */
 
 const ROUTE: Route = {
-  path: '/diagnostics/live-feed',
+  path: '/live-feed',
   title: 'Live Feed',
-  section: 'system',
-  group: 'diagnostics',
+  section: 'overview',
   events: ['query'],
   endpoints: [],
   built: true,
@@ -431,17 +430,8 @@ describe('the page', () => {
     expect(dom.querySelector('.feed-table')).toBeNull();
   });
 
-  it('states the capacity in force and the hidden-page behaviour', () => {
+  it('never calls itself a query log', () => {
     const dom = mountPage();
-    const notice = dom.querySelector('.feed-notice')?.textContent ?? '';
-    expect(notice).toContain('holds the last 500 rows in this tab');
-    expect(notice).toContain('Rendering stops while this page is hidden');
-    expect(notice).toContain('no stored history to backfill from');
-  });
-
-  it('calls it a live tail, never a query log', () => {
-    const dom = mountPage();
-    expect(dom.textContent).toContain('not a query log');
     expect(dom.textContent).not.toContain('Query Log');
   });
 

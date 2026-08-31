@@ -20,6 +20,7 @@ const ICONS: Record<string, string> = {
   '/cache': 'cache',
   '/performance': 'performance',
   '/upstreams': 'upstreams',
+  '/live-feed': 'live-feed',
   '/settings': 'settings',
   '/dev/gallery': 'diagnostics',
 };
@@ -49,8 +50,9 @@ function groupNest(members: readonly Route[]): { root: string; prefix: string } 
 /**
  * All thirteen entries, four labelled sections, the nested Diagnostics group.
  * The group expands while a diagnostics route is active and is one line
- * otherwise — the state the artboards draw (`Memory`, `LiveFeed`, `MobileNav`
- * expanded; `Main`, `Cache`, `Upstreams`, `Settings` collapsed).
+ * otherwise — the state the artboards draw (`Memory`, `MobileNav` expanded;
+ * `Main`, `Cache`, `Upstreams`, `Settings` collapsed). The Live Feed left the
+ * group for Overview, so its artboard no longer shows the group expanded.
  */
 export function Sidebar({
   path,

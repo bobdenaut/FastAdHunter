@@ -8,6 +8,7 @@ import { currentPath, navigate, subscribeRoute } from '../router/router';
 import {
   GROUP_LABELS,
   LOGIN_ROUTE,
+  MOVED,
   routeFor,
   type PageProps,
   type Route,
@@ -83,7 +84,14 @@ export function Shell() {
     return () => controller.abort();
   }, []);
 
-  const route = routeFor(path) ?? NOT_FOUND;
+  // A moved path renders its new route on the very first frame — the redirect
+  // effect only rewrites the address bar, so nothing flashes not-found.
+  const target = MOVED[path];
+  useEffect(() => {
+    if (target !== undefined) navigate(target, { replace: true });
+  }, [target]);
+
+  const route = routeFor(target ?? path) ?? NOT_FOUND;
 
   // A route with a subscription reports its socket; one without reports the
   // API, because "no socket here" is not an answer to the question the pill

@@ -230,7 +230,7 @@ export function DevGallery(_props: PageProps) {
           accent="blocked"
           glyph="policies"
           footer="watch the live feed"
-          href="/diagnostics/live-feed"
+          href="/live-feed"
         />
         <Tile
           label="Percentage blocked"
