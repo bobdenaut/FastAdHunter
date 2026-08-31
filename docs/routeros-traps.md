@@ -212,6 +212,30 @@ A generator that uses **one UDP socket** keeps the router at a single conntrack
 entry for the whole stream and gets fastpathed after the first packet. One that
 opens a fresh source port per query pays conntrack setup at the query rate.
 
+## `SO_ORIGINAL_DST` does not work from the container
+
+**Measured 2026-08-31.** A transparent proxy usually recovers the pre-dst-nat
+destination with `getsockopt(SO_ORIGINAL_DST)`. It does **not** work here — not
+because RouterOS lacks the option, but because the dst-nat and its conntrack run
+in the **router's** network namespace, while the container's socket sees only the
+post-NAT flow arriving across the veth.
+
+Test: a probe container on `veth3`, a temporary `dstnat` rule redirecting
+`dst-port=4443` → `172.17.0.4:4443`, and a LAN host (`192.168.10.10`) aiming at
+`1.1.1.1:4443`. The probe's `getsockopt(SO_ORIGINAL_DST)` returned **`ENOENT`
+(errno 2)**, with `accept_local=172.17.0.4:4443` confirming the redirect fired.
+`ENOENT`, **not** `ENOPROTOOPT`: the option is supported, but the container's
+netns holds no conntrack record of the router-side NAT, so the original
+destination is unrecoverable from inside.
+
+**Consequence.** Any transparent interception in the container must derive the
+destination from an L7 claim, never the socket: HTTP reads the `Host` header
+(`crates/fah-http/src/claim.rs`), and Phase 3's HTTPS path must read SNI. A
+no-SNI / ECH TLS connection therefore has no recoverable destination and cannot
+be forwarded — a hard transport limit, not a policy choice. The probe was a
+throwaway libc `getsockopt(SO_ORIGINAL_DST)` listener in a scratch container on
+`veth3`, not kept in-tree.
+
 ## IPv6 — verify before acting
 
 These entries were written across several sessions and partly supersede each

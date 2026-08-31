@@ -147,5 +147,8 @@ promises verified (CA key never leaves `/config`, public-only export).
 interception is opt-in per client + exclusion list ships with known pinned
 domains; SNI path is the default and breaks nothing); Android CA install
 friction (mitigation: p3-06 walkthrough with screenshots; DoT needs no CA);
-encrypted ClientHello (ECH) hides SNI on some traffic (documented limitation —
-DNS layer still catches those domains).
+encrypted ClientHello (ECH) hides SNI on some traffic, and with no recoverable
+original destination inside the container (measured on-device: `SO_ORIGINAL_DST`
+returns `ENOENT`, `docs/routeros-traps.md`) such a connection is closed, not
+forwarded (mitigation: `[https.sni] no_sni` classifies it; the DNS layer still
+catches those domains).
