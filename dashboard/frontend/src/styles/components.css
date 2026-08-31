@@ -2121,10 +2121,17 @@ table.t tbody tr:hover td {
      own `gap` overrides the parent's and takes the space out of the inherited
      tracks — measured at 1400 px, 70 px of gutter came off the eight columns
      and the 44 px action track arrived 39 px wide. Declared on the parent, the
-     tracks are sized around it and the subgrid inherits it unchanged. */
-  gap: 10px;
+     tracks are sized around it and the subgrid inherits it unchanged.
+
+     Columns only. A row gap put 10px of card between every row, which was
+     invisible while the rows had no ground of their own and became a gap in
+     the panel once they did. */
+  gap: 0 10px;
+  /* The address track's floor is a full IPv6: 39 monospace characters at
+     6.87px. At 118px the cell overflowed its track by 25px and the address ran
+     under the Name column — a grid item does not clip, so nothing stopped it. */
   grid-template-columns:
-    minmax(118px, 1.1fr) minmax(96px, 1fr) minmax(196px, 2.2fr)
+    minmax(268px, 1.1fr) minmax(96px, 1.7fr) minmax(196px, 1.5fr)
     88px 74px 92px 76px 44px;
   align-items: start;
   min-width: min-content;
@@ -2139,26 +2146,31 @@ table.t tbody tr:hover td {
   padding: 6px 0;
 }
 
+/* The card's own ground, as on the Live Feed: the header stands level with the
+   card and a hovered or expanded row rises to meet it. `is-open` is in here
+   because it was `--surface-sunken`, which the rows now sit on — left alone it
+   would have stopped reading as expanded. */
+.client-head,
+.client-row:hover,
+.client-row.is-open {
+  background: var(--surface-raised);
+}
+
 .client-head {
   font-weight: 600;
-  color: var(--text-muted);
-  font-size: 10.5px;
+  color: var(--text);
+  font-size: 12px;
   text-transform: uppercase;
   letter-spacing: 0.06em;
-  padding-bottom: 8px;
+  padding: 8px 0;
   white-space: nowrap;
 }
 
+/* The rows take the sunken ground, so the block of data reads as one panel let
+   into the card beneath the header. */
 .client-row {
   border-top: 1px solid var(--border-row);
   font-size: 12.5px;
-}
-
-.client-row:hover {
-  background: var(--surface-sunken);
-}
-
-.client-row.is-open {
   background: var(--surface-sunken);
 }
 
