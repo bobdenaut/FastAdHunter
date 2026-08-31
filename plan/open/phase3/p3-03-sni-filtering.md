@@ -23,9 +23,13 @@ This is the default HTTPS path; interception (p3-04) is the opt-in exception.
 - Block ⇒ close the TCP connection immediately (browsers show a network
   error; cheap and unambiguous). Pass ⇒ splice bytes both directions
   (tokio copy_bidirectional), bounded buffers, no inspection past the hello.
-- No SNI / ECH-encrypted SNI ⇒ configurable: `pass` (default) or `block`
-  (CONFIGURATION.md `[https.sni]` — doc updated same change; note the ECH
-  limitation in SECURITY.md).
+- No SNI / ECH-encrypted SNI ⇒ the connection is **closed either way** — the
+  container cannot recover the pre-DNAT destination (measured on-device:
+  `SO_ORIGINAL_DST` returns `ENOENT`, `docs/routeros-traps.md`), so there is
+  nothing to splice to. `[https.sni] no_sni = "pass"` (default) `| "block"`
+  controls only how the closed connection is **classified** in events/metrics
+  (CONFIGURATION.md — doc updated same change; note the ECH limitation in
+  SECURITY.md).
 - Events: RequestEvent with `kind: https-sni`, host, verdict (query-log +
   metrics dimensions extended; API.md filter values updated).
 - Operating mode: active in `dns+http+https` only.

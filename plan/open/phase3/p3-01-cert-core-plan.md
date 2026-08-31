@@ -60,24 +60,35 @@ precedent (p2-01) or the p5-02 SAN design.
    days; caller-overridable arguments (p3-02 exposes them on
    `POST …/ca/generate`). **No new TOML section in this task** — nothing here
    needs a boot key, and p3-04 owns the interception config surface.
-6. **Leaf parameters:** validity 7 days, SAN = the requested host (DNS name, or
-   IP SAN when the host parses as an address), signed by the CA. Re-mint on
-   expiry is a cache miss.
+6. **Leaf parameters:** validity 7 days, `not_before` backdated 24 h (clock
+   skew between the container and client devices must not make a fresh leaf
+   "not yet valid"; the CA gets the same backdate), SAN = the requested host
+   (DNS name, or IP SAN when the host parses as an address), signed by the CA.
+   Re-mint on expiry is a cache miss.
 7. **Leaf cache:** LRU, compiled capacity **512 entries**, keyed by host
    (`Arc<str>`), value `Arc<rustls::sign::CertifiedKey>`. ~2–3 KB per entry ⇒
    ≤ ~1.5 MB at cap — the GAR §5.11 memory cap for this state owner, bounded
-   by count. `std::sync::Mutex` around the map; **minting happens outside the
+   by count. No reusable LRU exists at L1/L2 and none is imported: a
+   `HashMap<Arc<str>, (u64, Arc<CertifiedKey>)>` with a monotonic use counter,
+   evict-min on insert at capacity (O(capacity) scan on the mint path only,
+   O(1) on hit) — 512 entries make the scan trivial and the mint already
+   dwarfs it. `std::sync::Mutex` around the map; **minting happens outside the
    lock** (lock → miss → drop lock → mint → lock → insert; a lost race
    re-inserts an identical leaf, harmless). This is not the DNS hot path;
    it is the per-TLS-handshake path, and p3-04 decides pre-warming.
 8. **PFX/PKCS#12 import — owner decision required before implementation.**
    SECURITY.md's fixed set contains no PKCS#12 parser, and hand-rolling one is
-   forbidden.
-   - **Option A (recommended):** add the RustCrypto `pkcs12` parser for
-     decode-only use, amend SECURITY.md's set in the same change, record it in
-     ADR-0006.
-   - **Option B:** descope PFX from p3-01/p3-02 to PEM-only import and note the
-     deferral in the task and API.md.
+   forbidden. Real-world PFX files are **encrypted** (PBES1/PBES2 + 3DES or
+   AES), so a decode-only ASN.1 parser is not enough — import needs parsing
+   *and* decryption. The honest dependency surface is `p12-keystore` (or
+   RustCrypto `pkcs12` plus its PBKDF/cipher crates), i.e. several new crypto
+   crates, not one parser.
+   - **Option A:** add `p12-keystore` (decode+decrypt), amend SECURITY.md's
+     fixed set in the same change, record the widened surface in ADR-0006.
+   - **Option B (recommended):** descope PFX from p3-01/p3-02 to PEM-only
+     import and note the deferral in the task and API.md. Every OS/browser
+     exports PEM (or `openssl pkcs12` converts), and hard rule 5 favors the
+     smallest crypto surface.
    Present both to the owner at task start; implement whichever is chosen. All
    other steps are independent of this decision.
 
@@ -86,7 +97,9 @@ precedent (p2-01) or the p5-02 SAN design.
 ### Step 1 — crate skeleton and layering
 
 - `crates/fah-certs/`: `Cargo.toml` (deps: `rcgen` {aws_lc_rs, pem},
-  `rustls`, `rustls-pemfile`, `x509-parser`, `thiserror`, `tracing`; no tokio),
+  `rustls`, `rustls-pemfile`, `x509-parser`, `aws-lc-rs` (direct — the
+  fingerprint digest in Step 3 calls its API, transitive linkage is not
+  enough), `thiserror`, `tracing`; no tokio),
   `src/lib.rs` with modules `store`, `ca`, `leaf`, `import`, `export`.
 - Workspace member added; `crates/fastadhunter/tests/layering.rs` gains the L2
   assignment for `fah-certs`. `fah-api` adds the dependency (L3 → L2, legal).
@@ -139,11 +152,22 @@ precedent (p2-01) or the p5-02 SAN design.
   LRU as decided above; expired entry = miss. Minting builds an rcgen leaf
   signed by the CA, converts to `rustls::sign::CertifiedKey` once, and shares
   it by `Arc` — no PEM round-trip on the mint path.
+- **`generate_ca` (and any CA-replacing import) clears the leaf cache** —
+  p3-02's generate route needs no restart, so without the purge, leaves
+  signed by the archived CA would be served for up to 7 days to clients that
+  already trust the new one.
 - `LeafCacheStats { size, capacity, hits, misses, minted_total, evictions }` —
   relaxed atomics beside the mutex, read by p3-02 status.
-- The rustls integration point (`ResolvesServerCert` implementation) is
-  **p3-04's**, not this task's; p3-01 delivers the `get_or_mint` seam and
-  proves it with the round-trip test.
+- **`MintingResolver`** (`struct MintingResolver { cache: Arc<LeafCache> }`
+  implementing `rustls::server::ResolvesServerCert`: read
+  `hello.server_name()`, `cache.get_or_mint(name)`, `None` on no-SNI or mint
+  failure) lives **here**, not in a consumer. Two L3 consumers need it —
+  p3-04 (interception `ServerConfig`) and p3-05 (DoT with a CA present) — and
+  they are siblings; two implementations diverging on expiry re-mint or
+  no-SNI handling is a silent bug (the p2-01 admission test). It is a pure
+  type over the cache — no I/O, no async — so it belongs at L2. **Wiring it
+  into any `ServerConfig` stays p3-04's / p3-05's work**; p3-01 delivers the
+  seam and proves it with the round-trip test (which may use it directly).
 
 ### Step 5 — import (`import.rs`)
 
@@ -207,6 +231,10 @@ p3-06 from measured data.
 - `san_entries` suite moves intact from `fah-api` (p5-02 assertions unchanged).
 - Fingerprint is stable across load/generate for the same DER.
 - LRU: eviction at capacity, expired-leaf re-mint, stats counters.
+- `MintingResolver`: returns a leaf for a hello carrying SNI; `None` on a
+  hello without SNI; expired cached leaf is re-minted, not served.
+- CA regeneration purges the cache: mint, `generate_ca`, next `get_or_mint`
+  chains to the new CA (verified against the new root, rejected by the old).
 - Import rejections, one test per named variant: garbage → `Parse`, expired
   cert → `Expired`, mismatched key → `KeyMismatch`, leaf-where-CA-expected →
   `NotACa`. (PFX: wrong passphrase → named error, if Option A.)
@@ -267,9 +295,10 @@ p3-06 from measured data.
 
 ## Non-goals
 
-- No API endpoints (p3-02), no SNI path (p3-03), no interception wiring or
-  `ResolvesServerCert` (p3-04), no DoT/DoH (p3-05), no PERFORMANCE.md budget
-  rows (p3-06), no config keys, no comments in Rust code (hard rule 7).
+- No API endpoints (p3-02), no SNI path (p3-03), no interception or listener
+  wiring (p3-04/p3-05 — the `MintingResolver` *type* ships here, its
+  `ServerConfig` wiring does not), no DoT/DoH (p3-05), no PERFORMANCE.md
+  budget rows (p3-06), no config keys, no comments in Rust code (hard rule 7).
 
 ## Acceptance criteria (from the task file)
 

@@ -49,13 +49,37 @@ reused for the client-side dimension — its doc comment says why).
    reuse `TCP_IDLE_TIMEOUT` (10 s) — Android holds DoT connections open with
    keepalive queries; if soak evidence shows churn, raising it is a one-const
    change noted for p3-06.
-3. **DoT serves the API server certificate** (imported or self-signed) — one
-   `Arc<rustls::ServerConfig>` built by the binary and handed to both the API
-   server and the DoT listener. Document (API.md/CONFIGURATION.md text, and
-   the p3-06 walkthrough) that Android Private DNS hostname-validates: it
-   needs a hostname whose name is in the cert SAN and a cert the device
-   trusts — the CA-install route or a real imported cert. No code branches on
-   this; it is a client-side truth.
+3. **DoT certificate — CA-minted per SNI when a CA exists, API pair as the
+   fallback.** The self-signed API pair alone cannot satisfy Android Private
+   DNS hostname mode: its SANs are the bind/probed *addresses*
+   (`fah-api/src/tls.rs` `san_entries`), it names no hostname, and it chains
+   to nothing a device trusts — so "serve the API cert and document it" would
+   leave the phase's own definition of done undeliverable. Two client routes,
+   both must work:
+   - **Imported real certificate** (p3-01/p3-02): hostname SAN + a chain the
+     device already trusts — the shared API pair serves DoT as-is, no CA
+     install.
+   - **FAH CA route**: the device installs the exported CA (p3-06
+     walkthrough), and DoT presents a leaf for the hostname the phone was
+     pointed at: the DoT `ServerConfig` uses `fah_certs::MintingResolver`
+     (p3-01) when a CA exists — leaf minted for the SNI the client sends,
+     hostname SAN correct by construction, chained to the installed CA — with
+     the API pair as the static fallback when no CA exists or the hello
+     carries no SNI. Minting for arbitrary SNI is harmless (the leaf only
+     means something to a device that installed our CA) and the p3-01 cache
+     bound (512) caps the state.
+   The binary builds **one dedicated `Arc<ServerConfig>` for DoT** (the API
+   server keeps its own — the minting resolver lives on 853 only). No new
+   config key: the operator picks the hostname (a DNS record plus the phone
+   setting); the resolver serves whatever name arrives.
+   **Bootstrap:** while the phone validates, the Private DNS hostname must
+   resolve to the container over plain DNS — a local answer for that name
+   (e.g. a `$dnsrewrite` rule mapping it to the container address) is part of
+   the p3-06 walkthrough, not code.
+   **Explicitly-tested assumption (recorded in p3-06 either way):** the test
+   device consults the user CA store when validating Private DNS. Vendor
+   behaviour varies; if it fails on the household's devices, the
+   imported-real-cert route is the remaining path and the walkthrough says so.
 4. **DoH is a route on the existing API server** (`/dns-query`, RFC 8484,
    GET + POST wireformat), reached through a **new port trait in
    `fah-api/src/ports.rs`** implemented by the binary over
@@ -64,6 +88,17 @@ reused for the client-side dimension — its doc comment says why).
    carry bearer keys or cookies. This amends SECURITY.md's "two exemptions"
    sentence and is called out as a doc change; the route is outside `/api/v1/`
    precisely so the admin-surface auth statement stays clean (GAR §5.9).
+   Two consequences of sharing the listener, stated because GAR §3.5 flagged
+   them: **(a)** DoH connections draw from the API server's 64-permit
+   semaphore (`fah-api/src/server.rs:33`), so browsers holding persistent h2
+   DoH sessions share capacity with the dashboard — acceptable at household
+   scale, but it is a coupling, so p3-06's soak records peak concurrent DoH
+   sessions against the ceiling and a const bump / separate semaphore is the
+   named escape hatch if measurement demands it (measure before tuning);
+   **(b)** h2 needs no work — the API `ServerConfig` already offers ALPN
+   `[h2, http/1.1]` (`fah-api/src/tls.rs:226`) and hyper-util's auto builder
+   serves both, so RFC 8484's SHOULD-h2 is met; record it as verified, not
+   assumed.
 5. **Config:** `[dns.listen]` gains `dot_enabled` (default **true**),
    `dot_port` (default **853**), `doh_enabled` (default **true**). All three
    boot-class. Rationale for enabled-by-default: the phase's definition of
@@ -110,9 +145,10 @@ reused for the client-side dimension — its doc comment says why).
   `udp|tcp|dot|doh` per the task, and TCP/53 exists today.
 - `QueryEvent` += `pub transport: ClientTransport`; constructor threading.
   QueryEvents are not persisted per-row (SECURITY.md: aggregates only), so
-  the only compatibility surface is the WS JSON: the key is always present on
-  DNS events, `null` on HTTP events (API.md event-shape contract "every key
-  always present"), which lands in `fah-api`'s `QueryRecord`/wire mapping.
+  the only compatibility surface is the WS JSON: `transport` becomes a field
+  of the **DNS record shape** (`fah-api`'s `QueryRecord`/wire mapping), always
+  present on `kind: dns` events; HTTP-side record shapes are untouched — the
+  API.md event-shape note says which kind carries the key.
 
 ### Step 3 — pipeline (`crates/fah-dns/src/pipeline.rs`)
 
@@ -149,9 +185,11 @@ reused for the client-side dimension — its doc comment says why).
 - `Server::serve` gains `dot_tls: Option<Arc<rustls::ServerConfig>>`; when the
   socket exists it spawns `dot::run` with its own `fatal_tx` clone — DoT death
   reaches the same supervision path as UDP/TCP.
-- `main.rs`: the `Arc<ServerConfig>` already built for the API server is
-  cloned to `Server::serve`. When `api.tls = false` **and** DoT is enabled, a
-  config is still built from the same cert pair for DoT alone (DoT without TLS
+- `main.rs`: build the **dedicated DoT `Arc<ServerConfig>`** per decision 3 —
+  `fah_certs::MintingResolver` over the `CertStore`'s leaf cache when a CA
+  exists (API pair as the resolver's fallback), plain API pair otherwise —
+  and hand it to `Server::serve`. When `api.tls = false` **and** DoT is
+  enabled, the config is still built from the same cert pair (DoT without TLS
   does not exist); only if the cert pair itself cannot load does DoT fail
   startup, explicitly (rule 11: explicit failure over silent downgrade —
   never a plaintext fallback on 853).

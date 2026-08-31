@@ -45,10 +45,14 @@ extension of `fah-common`. Decide explicitly and record it.
   (old CA archived, warning logged).
 - Leaf minting: per-host certs signed by the CA, SAN-correct (host + SNI),
   short validity, in-memory bounded cache (LRU) — minting off the connection
-  hot path where possible (pre-warm on SNI first-sight).
-- Import: user PEM (cert+key) and PFX/PKCS#12 for the **API server cert**
-  (replaces the self-signed from Phase 1); validation via x509-parser with
-  precise errors (expired, key mismatch, not CA where CA expected).
+  hot path where possible (pre-warm on SNI first-sight). The rustls
+  `ResolvesServerCert` type over the cache ships here (pure, shared by
+  p3-04 and p3-05); its wiring does not.
+- Import: user PEM (cert+key) and — subject to the owner decision in the
+  plan (§Decisions 8: crypto-set amendment vs PEM-only descope) — PFX/PKCS#12
+  for the **API server cert** (replaces the self-signed from Phase 1);
+  validation via x509-parser with precise errors (expired, key mismatch, not
+  CA where CA expected).
 - Export: CA public certificate as PEM and DER (Android wants DER).
 - Status introspection: CA fingerprint, validity window, leaf-cache stats.
 - Tests: mint → rustls client with CA trusted verifies successfully; import

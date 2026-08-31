@@ -25,7 +25,9 @@ fah-api on top of p3-01 — same change, doc and code together.
   - `POST /api/v1/certificates/import` — API server cert, PEM (cert+key) or
     PFX+passphrase; applied via listener rebind or documented
     `restart_required: true` (pick one, document in API.md).
-- Auth: everything requires the bearer key (no exemptions here).
+- Auth: the standard middleware — bearer key or session cookie, like every
+  other `/api/v1` route (no exemptions here). SECURITY.md's model is binding;
+  "bearer key" alone predates the Phase 5 sessions.
 - Secrets hygiene: passphrases never logged; request bodies with key material
   excluded from any debug logging.
 - Integration tests: full lifecycle over HTTPS — generate, export, verify

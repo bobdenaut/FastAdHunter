@@ -20,10 +20,19 @@
 6. `docs/measurement-traps.md` — binding for every figure this task produces.
 7. `docs/routeros-traps.md` and `docs/deploy-rb5009.md` (§3.2 firewall, §5,
    §5b) — before proposing any router command.
-8. `docs/code-review/Global Architecture Review-Reconciled.md` §5 items 11–14
-   (memory caps, 443 steering v4+v6, on-device TLS measurements, opt-in bound
-   to stable identity) — this task is where 12 and 13 are discharged; confirm
-   11 and 14 were closed by p3-04 or record them as findings.
+8. `docs/code-review/Global Architecture Review-Reconciled.md` §5 items 7–14
+   — the full Phase 3 gate. This task closes the map: **7** cert home /
+   ADR-0006 (p3-01), **8** connector redesign — `connect_verified_upstream`,
+   hostname-verified upstream TLS (p3-04 decision 4), **9** DoH/DoT placement
+   (p3-05 decision 4, incl. the shared-64-permit consequence), **10**
+   event/telemetry taxonomy — `EventKind::{HttpsSni, Https}` +
+   `ClientTransport` (p3-03/04/05), **11** memory caps per new state owner
+   (leaf LRU p3-01, splice buffers p3-03, per-connection bounds p3-04/05),
+   **12** 443 steering v4+v6 and **13** on-device TLS measurements
+   (discharged here), **14** opt-in bound to stable identity — the p3-04
+   owner decision (static-lease precondition), verified per device below.
+   Confirm each against the review files; any gap is recorded as a finding,
+   not waved through.
 9. `docs/project-state.md` — current deployment/container naming before
    proposing anything (the `fah-next` vs `fastadhunter` comment-selector trap).
 
@@ -61,8 +70,11 @@ criterion's stored baseline — measurement-traps rule):
 Every number recorded with corpus, workload and device
 (`docs/code-review/phase3/p3-06-phase3-verification-review.md` §Measurements;
 root docs get a pointer, never the narrative — root CLAUDE.md rule 19).
-Dev-box latency figures convert with the measured ~9× factor only; no clock
-readings. Budget values are **derived from these measurements plus headroom,
+Dev-box latency figures convert with the measured ~9× factor only for
+CPU-bound in-engine work; **TLS and HTTP-path figures do not convert** —
+p2-08 measured 4.5–10× spread for HTTP work — so every TLS/splice/handshake
+budget row rests on the step-4 on-device measurements, with the dev-box run
+as the A/B sanity check. No clock readings. Budget values are **derived from these measurements plus headroom,
 proposed to the owner in the review file** — this plan invents none; each
 PERFORMANCE.md row is `TBD — must be measured during verification` until then.
 
@@ -117,7 +129,9 @@ command, what it does, when it takes effect, and the rollback.
 1. **dst-nat 443 (v4) + the v6 story (GAR §5.12).** Read the owner's live
    firewall/NAT chains first (read-only `print`), then propose rule text with
    explicit placement — never a bare `add` (it appends behind any final
-   drop). Rollback = remove the one rule. The v6 half: propose either the
+   drop). Target is the container's `[https.listen]` port — default **8444**
+   (8443 is the API's; p3-03 rejects the collision at startup). Rollback =
+   remove the one rule. The v6 half: propose either the
    equivalent v6 steering or an explicit, recorded owner decision that v6/443
    stays unsteered this phase (record which traffic that leaves uncovered).
    **Separately — a distinct concern from v6 steering — warn the owner that
@@ -132,12 +146,20 @@ command, what it does, when it takes effect, and the rollback.
    export DER via the API, install, screenshots into `docs/images/`
    (image files are not `.md` — still list them for the owner since they land
    in the repo). Then browse; record what the device shows.
-3. **Private DNS**: the hostname-validation prerequisite from p3-05 decision 3
-   (device-trusted cert whose SAN covers the DoT hostname) walked end-to-end;
-   record the exact Android path (Settings → Network → Private DNS →
-   hostname).
+3. **Private DNS**: p3-05 decision 3 walked end-to-end — pick the hostname,
+   propose the local answer for it (a `$dnsrewrite` rule mapping it to the
+   container address — the bootstrap: the phone resolves the Private DNS
+   hostname over plain DNS while validating), set Settings → Network →
+   Private DNS → hostname, confirm the SNI-minted leaf validates. **Record
+   the explicitly-tested assumption either way:** whether this device's
+   Private DNS validation consults the user CA store (vendor behaviour
+   varies; if it refuses, the imported-real-cert route is the remaining path
+   and the walkthrough documents that outcome).
 4. **Pinned-app spot check**: one banking app on the test device with
    interception active for it excluded/not opted in — must work unchanged.
+   For every intercepted client, **verify the static-lease precondition**
+   (p3-04's GAR §5.14 owner decision): confirm on the router (read-only) that
+   the listed IP is a static lease/address before calling §5.14 closed.
 5. **Measurements on-device (GAR §5.13):** TLS handshake cost, splice
    throughput, interception CPU+RSS under browsing, DoT/DoH latency vs UDP —
    via the probe-container procedure (`docs/routeros-traps.md`; the
@@ -148,6 +170,9 @@ command, what it does, when it takes effect, and the rollback.
 6. **24 h soak in full mode** on the production container — this is a deploy
    and needs its own owner approval; numbers vs the budget rows; RAM ≤ 128 MB
    steady (budget in decimal MB, readings in MiB — compare like with like).
+   Watch item from p3-05 decision 4: peak concurrent DoH sessions against the
+   shared 64-permit API ceiling — the recorded number decides whether the
+   named escape hatch (const bump / separate semaphore) is ever built.
 
 ### Step 5 — documentation sweep (all proposed, landed on approval)
 

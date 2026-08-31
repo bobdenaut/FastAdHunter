@@ -16,11 +16,12 @@ shared).
 
 ## Scope
 
-- DoT listener (tokio-rustls, port 853, RFC 7858): TLS with the API server
-  certificate (imported or self-signed; document that Android Private DNS
-  requires a cert the device trusts — hostname-validated, so a real
-  hostname + imported cert, or the CA route); 2-byte length framing;
-  connection reuse; idle timeouts; bounded concurrent connections.
+- DoT listener (tokio-rustls, port 853, RFC 7858): certificate per the plan's
+  decision 3 — CA-minted leaf for the client's SNI when a CA exists (Android
+  Private DNS hostname-validates, and the self-signed API pair names no
+  hostname and chains to nothing), API server pair as the fallback and as the
+  imported-real-cert route; 2-byte length framing; connection reuse; idle
+  timeouts; bounded concurrent connections.
 - DoH endpoint (RFC 8484): `POST/GET /dns-query` (wireformat) served by the
   existing axum server (fah-api hosts the route, handler delegates to a
   fah-dns handle — layering respected: both are L3, wiring via the binary's
@@ -28,8 +29,9 @@ shared).
 - Config: `[dns.listen] dot_enabled/dot_port`, `doh_enabled`
   (CONFIGURATION.md updated); client IP for policy resolution = TLS peer
   address.
-- Query log/metrics: transport dimension (`udp|tcp|dot|doh`) on QueryEvent
-  (API.md filter updated).
+- Events/metrics: transport dimension (`udp|tcp|dot|doh`) on QueryEvent,
+  surfaced on the WS events feed (API.md updated; the persisted query log was
+  removed in p2-09 — the live feed is the surface).
 - Tests: hickory client over DoT and DoH against ephemeral listeners —
   blocked/allowed verdicts identical to UDP; policy resolution uses the
   right client IP; concurrent-connection bound enforced.

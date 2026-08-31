@@ -6,8 +6,8 @@
 
 Read, in this order, before writing any code:
 
-1. `plan/open/phase3/p3-03-sni-filtering.md` — the task file, completely.
-2. `plan/open/phase3/CLAUDE.md` — the phase table.
+1. `plan/wip/phase3/p3-03-sni-filtering.md` — the task file, completely.
+2. `plan/wip/phase3/CLAUDE.md` — the phase table.
 3. PERFORMANCE.md §Golden rules (1–9) and §Budgets — hot-path and memory law.
 4. `docs/code-review/phase2/p2-02-review.md` §Implementation Summary — the
    `HostResolver` port, the L1 egress guard (`DestinationPolicy`), and the
@@ -209,7 +209,7 @@ HttpsConfig`, `#[serde(default)]` so existing configs parse unchanged:
 ```rust
 #[serde(deny_unknown_fields, default)]
 pub struct HttpsConfig {
-    pub listen: HttpsListenConfig,   // default "::" / 8443 (dst-nat target of :443)
+    pub listen: HttpsListenConfig,   // default "::" / 8444 (dst-nat target of :443)
     pub max_connections: usize,      // default 1024, mirrors [http]
     pub hello_timeout_ms: u64,       // ClientHello read deadline; default 10_000
     pub idle_timeout_ms: u64,        // spliced-session idle close; default 60_000
@@ -217,13 +217,19 @@ pub struct HttpsConfig {
 }
 ```
 
-- `[https.listen] port` default **8443**, not 443: the container is unprivileged
+- `[https.listen] port` default **8444**, not 443: the container is unprivileged
   after ADR-0004's drop; the router dst-nats 443 here, exactly as 80 → 8080
-  (`schema/http.rs:66-71`).
+  (`schema/http.rs:66-71`). **Not 8443** — `[api] port` already defaults to
+  8443 (`schema/api.rs:31-32`), and two listeners on one default port would
+  make `dns+http+https` fail to boot on a default config (every key ships a
+  working compiled-in default). A startup validation rejects
+  `https.listen.port == api.port` so the collision is a named config error,
+  never a bind race.
 - `[egress]` is **not** duplicated — reused at port 443 (`schema/egress.rs:5-8`
   already reserves it for this path).
 - Validation in `fah-config/src/lib.rs`: reject `max_connections == 0`
-  (mirror the existing `http.max_connections` check).
+  (mirror the existing `http.max_connections` check) and reject
+  `https.listen.port == api.port` (named error; see the 8444 default above).
 - Config classification: `listen`/`max_connections` are `boot`; timeouts follow
   `[http]`'s `boot` precedent (no live-reload consumer).
 
@@ -253,6 +259,12 @@ Frame walk (no allocation beyond the returned host `Box<str>`):
    (name type `0x00`); return it. No SNI extension → `NoSni`. (An
    `encrypted_client_hello` extension present with no plaintext SNI → `NoSni`;
    we make no attempt to read ECH.)
+5. **Normalize and validate the extracted name before returning it** — the
+   bytes are attacker-controlled and flow into the matcher, the resolver and
+   logs: ASCII-lowercase it (DNS names are case-insensitive; the matcher
+   stores lowercase); reject as `NoSni` anything non-ASCII, containing NUL or
+   other control bytes, longer than 253 bytes, or not LDH-and-dots shaped
+   (IDN arrives already punycoded, so rejecting raw non-ASCII loses nothing).
 
 **Bounded** (hard rule 4): the caller reads into a `Vec` capped at
 `MAX_HELLO_BYTES = 16 KiB` (comfortably fits ClientHellos incl. ECH/PQ key
@@ -275,7 +287,9 @@ Ruleset>>`, `Arc<PolicyState>`, `Option<mpsc::Sender<Event>>`, counters,
    v4-mapped-v6 and one log identity).
 2. Read the ClientHello under `hello_timeout` into a bounded buffer; run
    `scan_client_hello`. `NotTls` → `non_tls` counter, close. `Incomplete` past
-   the cap → treat per `NoSni`.
+   the cap → treat per `NoSni`. EOF or the `hello_timeout` deadline before a
+   complete hello → close, `non_tls` counter (nothing parseable arrived; no
+   event — there is no host and no client intent to classify).
 3. Verdict:
    - SNI present: `matcher.lookup_host_in(&host, &ctx)` with `ctx =
      matcher.context_for(peer.ip(), &policies.current())`. `Block` → close now,
@@ -292,10 +306,12 @@ Ruleset>>`, `Arc<PolicyState>`, `Option<mpsc::Sender<Event>>`, counters,
    upstream→client total. Resolve/connect failures → close, `resolve_failures`/
    `upstream_failures` counters (reuse the `ProxyCounters` names; see Step 5).
 
-`copy_bidirectional` buffer size `BUF` (e.g. 16 KiB each direction) is bounded
-and per-connection; total splice memory is `2 × BUF × active_splices`, and
-`active_splices ≤ https.max_connections` (semaphore) — bounded by config, not
-traffic (hard rule 4).
+`copy_bidirectional` buffer size `BUF` (const `SPLICE_BUF = 16 KiB` each
+direction) is bounded and per-connection; total splice memory is
+`2 × BUF × active_splices`, and `active_splices ≤ https.max_connections`
+(semaphore) — worst case 2 × 16 KiB × 1024 = **32 MiB** at the default cap,
+the GAR §5.11 figure for this state owner — bounded by config, not traffic
+(hard rule 4).
 
 ### Step 4 — listener (`fah-http/src/tls_server.rs`)
 
@@ -387,6 +403,8 @@ convention, **no core-pinning**).
 - Every length field overrun (fuzz a few hundred mutations) → `NotTls`, never a
   panic, never an out-of-bounds read.
 - Oversized (> `MAX_HELLO_BYTES`) → `NoSni`, bounded.
+- Normalization: mixed-case SNI comes back lowercased; names with NUL,
+  control bytes, non-ASCII, or length > 253 → `NoSni`.
 
 ### Integration (`fah-http/tests/`, new `sni.rs`)
 
@@ -465,7 +483,8 @@ convention, **no core-pinning**).
 1. `crates/fah-config/src/schema/https.rs` — new config types + defaults +
    tests.
 2. `crates/fah-config/src/schema/mod.rs` + `Config` — wire `https`, re-export.
-3. `crates/fah-config/src/lib.rs` — `max_connections != 0` validation.
+3. `crates/fah-config/src/lib.rs` — `max_connections != 0` and
+   `https.listen.port != api.port` validations.
 4. `crates/fah-rules/src/matcher.rs` — `lookup_host` / `lookup_host_in` (+ test).
 5. `crates/fah-model/src/request_event.rs` — `Event::HttpsSni`,
    `EventKind::HttpsSni`, constructors, match arms, serde rename (+ tests).

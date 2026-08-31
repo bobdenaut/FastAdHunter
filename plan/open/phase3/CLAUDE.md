@@ -146,7 +146,10 @@ promises verified (CA key never leaves `/config`, public-only export).
 **Key risks:** certificate-pinned apps break under interception (mitigation:
 interception is opt-in per client + exclusion list ships with known pinned
 domains; SNI path is the default and breaks nothing); Android CA install
-friction (mitigation: p3-06 walkthrough with screenshots; DoT needs no CA);
+friction (mitigation: p3-06 walkthrough with screenshots, and the
+imported-real-cert route needs no CA install; Private DNS **hostname mode
+does validate** — the CA route serves an SNI-minted leaf, p3-05 decision 3;
+only Android's "automatic" mode validates nothing);
 encrypted ClientHello (ECH) hides SNI on some traffic, and with no recoverable
 original destination inside the container (measured on-device: `SO_ORIGINAL_DST`
 returns `ENOENT`, `docs/routeros-traps.md`) such a connection is closed, not

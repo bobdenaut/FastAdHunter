@@ -7,18 +7,20 @@
 
 Read, in this order, before writing any code:
 
-1. `plan/open/phase3/p3-04-tls-interception.md` — the task file, completely.
+1. `plan/wip/phase3/p3-04-tls-interception.md` — the task file, completely.
 2. **SECURITY.md in full** — §"Later phases" (interception is opt-in, per-client,
    never default; CA key never leaves `/config`; export public-only), §"Data at
    rest" (the redaction/no-Debug-on-key precedent), §"Container hardening"
    (webpki-roots because distroless has no system store). These are **hard law**,
    not guidance.
-3. `plan/open/phase3/p3-01-cert-core-plan.md` — the **seam this task consumes**:
-   `LeafCache::get_or_mint(host) -> Arc<rustls::sign::CertifiedKey>`, `CertStore`,
-   and the explicit note that *"the `ResolvesServerCert` implementation is
-   p3-04's, not this task's"*. When p3-01 lands, read its Implementation Summary
+3. `plan/wip/phase3/p3-01-cert-core-plan.md` — the **seams this task consumes**:
+   `LeafCache::get_or_mint(host) -> Arc<rustls::sign::CertifiedKey>`,
+   `CertStore`, and `fah_certs::MintingResolver` (the `ResolvesServerCert`
+   implementation ships in `fah-certs` because p3-05's DoT listener needs the
+   identical resolver and siblings cannot share code — p3-04 only wires it
+   into a `ServerConfig`). When p3-01 lands, read its Implementation Summary
    to confirm the final names.
-4. `plan/open/phase3/p3-03-sni-filtering-plan.md` — the SNI parse + close-or-
+4. `plan/wip/phase3/p3-03-sni-filtering-plan.md` — the SNI parse + close-or-
    splice handler this task **branches from**: interception is a per-client
    branch taken *instead of* splicing, after the same `scan_client_hello`.
 5. `docs/code-review/phase2/p2-04-review.md` §Implementation Summary — the
@@ -81,6 +83,20 @@ Per-policy interception flag (task's "or per-policy flag"): **deferred.** It
 couples interception to the `PolicyState` schema; the `clients` list satisfies
 the acceptance criteria with less surface. Flagged as optional follow-up.
 
+**GAR §5.14 ("opt-in bound to stable identity, not bare IPs") — owner decision
+required at task start.** The container's only per-connection identity is the
+source IP: the client MAC is not readable from an unprivileged TCP accept, and
+no other stable identifier crosses the socket. An IP list therefore satisfies
+§5.14 only under an operational precondition: **every listed client holds a
+static DHCP lease (or static address) on the router.** Present that to the
+owner as the decision — (a) accept IP/CIDR with the static-lease precondition,
+documented in CONFIGURATION.md's `[https.interception]` text and verified per
+device in the p3-06 walkthrough, or (b) defer interception until a stronger
+binding exists. A DHCP reassignment otherwise silently moves interception to
+whichever device inherits the address — the exact failure §5.14 names. Record
+the decision in the review file; p3-06 confirms §5.14 closed or carries it as
+a finding.
+
 ### 3. Exclusions — shipped baseline + user list, matched on SNI before terminate
 
 - **Existing mechanism:** none reusable directly; the domain matcher is
@@ -126,6 +142,13 @@ the exact thing forbidden.
 - **Reason:** this is the single most important security property of the task.
   Verifying first and closing on failure means "we never present a valid cert
   for an upstream we couldn't verify" is *structurally* true, not merely tested.
+- **This step discharges GAR §5.8** (retarget/connector redesign for upstream
+  TLS hostname verification): the plaintext `LiteralConnector` only ever sees
+  an IP literal and can never hostname-verify — the confirmed design conflict.
+  `connect_verified_upstream` is the redesign: socket to the policy-approved
+  IP, `ServerName` = the SNI hostname, webpki verification against the name.
+  `LiteralConnector` remains plaintext-only and is not touched. State this in
+  the review file so p3-06's gate map can point at it.
 - **Verification:** a self-signed upstream + listed client ⇒ the client's TLS
   handshake to us errors (assert the `tokio-rustls` client error); no minted
   leaf is served for that session.
@@ -178,11 +201,11 @@ transport is where they must diverge.
 
 ### 6. Certificate/TLS specifics (consuming p3-01)
 
-- **`ResolvesServerCert`** (`struct MintingResolver { cache: Arc<LeafCache> }`)
-  in `fah-http`: `resolve(hello) -> Option<Arc<CertifiedKey>>` reads
-  `hello.server_name()` and calls `cache.get_or_mint(name)`. rustls sees the
-  replayed ClientHello (see RewindStream below), so its SNI == ours. Minting is
-  outside the LRU lock (p3-01 contract).
+- **`fah_certs::MintingResolver`** (p3-01's `ResolvesServerCert` over the
+  `LeafCache` — shipped at L2 because p3-05's DoT listener needs the identical
+  resolver and siblings cannot import each other): p3-04 **consumes** it, no
+  local implementation. rustls sees the replayed ClientHello (see RewindStream
+  below), so its SNI == ours. Minting is outside the LRU lock (p3-01 contract).
 - **Downstream `ServerConfig`** built **once** per `TlsProxy`
   (`Arc<ServerConfig>`): the `MintingResolver`, ALPN `[h2, http/1.1]`, no client
   auth, aws-lc-rs provider (the one workspace backend, SECURITY.md). Cheap to
@@ -219,10 +242,13 @@ resource_type, status, bytes) exactly like `kind: http` — only the tag differs
 - Fan-out routes `Event::Https` into `metrics.record_http` / `stats.record_http`
   (reuse — a `RequestEvent`). Events socket serializes `kind: https`
   automatically; `?kind=https` filter works once the enum arm exists.
-- An `upstream-cert-failure` outcome (decision 4) is surfaced as a `https` event
-  with a block-style verdict/status so the operator sees refused interceptions;
-  exact encoding decided in review (a synthetic status like 526, or a dedicated
-  counter — recommend both: `upstream_cert_failures` counter + event).
+- An `upstream-cert-failure` outcome (decision 4) is surfaced as **both** a
+  counter and an event, encoding settled now: `upstream_cert_failures` counter
+  on the proxy's counter set, plus a `https` event with verdict `Pass`,
+  synthetic status **526** (the invalid-upstream-certificate convention),
+  `bytes = 0`. Not `Block` — `Verdict::Block(DecisiveRule)` carries a deciding
+  rule (`fah-model/src/verdict.rs:30-34`) and no rule fired here; fabricating
+  one would corrupt rule attribution in stats. API.md's event note names 526.
 
 ## Detailed implementation plan
 
@@ -254,7 +280,7 @@ legal). aws-lc-rs is the provider via rustls default features already in-tree.
 
 ### Step 3 — cert/TLS glue (`fah-http/src/tls.rs`, new)
 
-- `MintingResolver` (`ResolvesServerCert`), `Arc<ServerConfig>` builder,
+- `Arc<ServerConfig>` builder (over `fah_certs::MintingResolver`),
   `Arc<ClientConfig>` builder (webpki-roots), `RewindStream<S>`, and
   `connect_verified_upstream(client_config, sni, approved_ip) -> Result<TlsStream>`.
 - All crypto via rustls/tokio-rustls/webpki-roots — no hand-rolled anything
@@ -351,8 +377,8 @@ p2-08 found 4.5–10× — so p3-06 measures directly).
 
 - `ExclusionSet`: exact + suffix match; baseline present with no user config.
 - `intercepts`: empty list ⇒ false for every IP; CIDR membership.
-- `MintingResolver`: returns a leaf for a host; SNI read from the hello.
 - `RewindStream`: reads yield buffered bytes then socket bytes, in order.
+  (`MintingResolver` unit coverage lives in p3-01 with the type.)
 
 ### Integration (`fah-http/tests/interception.rs`)
 
@@ -426,8 +452,8 @@ its steps precede these.)*
    (additive; skip if p3-03 generalized the machinery — still add the arm).
 3. `crates/fah-http/Cargo.toml` — `tokio-rustls`, `webpki-roots`, `fah-certs`,
    hyper/hyper-util `http2` + `server-auto`.
-4. `crates/fah-http/src/tls.rs` — `MintingResolver`, server/client configs,
-   `RewindStream`, `connect_verified_upstream`.
+4. `crates/fah-http/src/tls.rs` — server/client config builders (resolver
+   imported from `fah_certs`), `RewindStream`, `connect_verified_upstream`.
 5. `crates/fah-http/src/exclusions.rs` — `ExclusionSet` + `BASELINE_EXCLUSIONS`.
 6. `crates/fah-http/src/proxy.rs` — extract the reusable verdict core
    (`filter`/`emit` reachable); `absolute_url` scheme param.
@@ -461,3 +487,5 @@ its steps precede these.)*
 | SECURITY.md + CONFIGURATION.md updated same change | 5 | proposed edits listed, owner-approved |
 | Gates green | 1, 2 | fmt/clippy/test |
 | Banking/pinned app keeps working; handshake budgets | 6 | p3-06 on-device (may hold at `AWAITING SOAK`) |
+| GAR §5.8 discharged — hostname-verified upstream connector | 3 | decision 4 (`connect_verified_upstream`); stated in review file |
+| GAR §5.14 decision recorded — static-lease precondition or deferral | 5, 6 | decision 2 owner decision; verified per device in p3-06 walkthrough |

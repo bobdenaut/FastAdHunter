@@ -18,7 +18,10 @@ Phase 2 filtering pipeline verbatim (fah-http does not grow a second pipeline).
 
 - Interception decision: client must be explicitly listed
   (`[https.interception] clients = [...]` or per-policy flag —
-  CONFIGURATION.md updated; default empty).
+  CONFIGURATION.md updated; default empty). Identity is IP/CIDR — the only
+  identity the container sees — so GAR §5.14 (stable identity, not bare IPs)
+  needs the owner decision the plan spells out: static DHCP lease as a
+  documented precondition, or defer interception.
 - Exclusions that always splice even for intercepted clients: shipped
   baseline list of known-pinned domains (banking hints, OS update hosts) +
   user-extendable; SNI matched before terminating.
