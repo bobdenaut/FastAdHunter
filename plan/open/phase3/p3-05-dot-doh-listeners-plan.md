@@ -106,7 +106,10 @@ reused for the client-side dimension — its doc comment says why).
    like :53; an untrusted cert makes an unused listener, not a vulnerability;
    and a disabled default would need a config edit, which the working
    agreement says features must not require. `doh_enabled = false` means the
-   route is **absent** (404 from the fallback), mirroring p2-01's
+   route is **absent** — the request falls through to the router's merged SPA
+   fallback (`web::mounted()`), so a GET returns the dashboard shell and a
+   POST is refused; the observable invariant is that no
+   `application/dns-message` response exists, not a 404. Mirrors p2-01's
    "don't bind what you won't serve"; `dot_enabled = false` means the socket
    is never bound.
 6. **Transport dimension:** new `fah-model` enum
@@ -174,7 +177,9 @@ reused for the client-side dimension — its doc comment says why).
   passes `Tcp`. No other body change — framing, idle timeout, malformed-close
   semantics are shared by construction (principle 4).
 - tokio-rustls moves from dev-dependency to dependency of `fah-dns`
-  (rustls already is one).
+  (rustls already is one), pinned like `fah-api`'s:
+  `default-features = false, features = ["aws_lc_rs", "tls12"]` — one crypto
+  provider across the workspace.
 
 ### Step 5 — DoT wiring (`crates/fah-dns/src/server.rs`, `crates/fastadhunter/src/main.rs`)
 
@@ -187,7 +192,9 @@ reused for the client-side dimension — its doc comment says why).
   reaches the same supervision path as UDP/TCP.
 - `main.rs`: build the **dedicated DoT `Arc<ServerConfig>`** per decision 3 —
   `fah_certs::MintingResolver` over the `CertStore`'s leaf cache when a CA
-  exists (API pair as the resolver's fallback), plain API pair otherwise —
+  exists, its `fallback` slot (p3-01's constructor parameter) holding the API
+  pair's `CertifiedKey` so a no-SNI hello still handshakes; plain API pair
+  otherwise —
   and hand it to `Server::serve`. When `api.tls = false` **and** DoT is
   enabled, the config is still built from the same cert pair (DoT without TLS
   does not exist); only if the cert pair itself cannot load does DoT fail
@@ -279,7 +286,9 @@ verification`.
 - Handshake timeout: a TCP connect to 853 that never speaks TLS is dropped
   after the timeout, slot freed.
 - `dot_enabled = false` ⇒ nothing listens on 853 (connect refused);
-  `doh_enabled = false` ⇒ `/dns-query` is 404 and everything else serves.
+  `doh_enabled = false` ⇒ `/dns-query` never answers
+  `application/dns-message` (a GET falls to the SPA shell, a POST is
+  refused) and everything else serves.
 - `/dns-query` requires no auth; `/api/v1/*` still does (exemption is exactly
   one route wide).
 

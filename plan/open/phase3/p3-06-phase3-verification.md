@@ -1,6 +1,6 @@
 # P3-06 — Phase 3 Verification
 
-**Phase:** 3 · **Depends on:** p3-02, p3-04, p3-05 · **Model:** Opus
+**Phase:** 3 · **Depends on:** p3-02, p3-04, p3-05 · **Model:** Fable
 
 ## Goal
 

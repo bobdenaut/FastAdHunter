@@ -158,10 +158,14 @@ precedent (p2-01) or the p5-02 SAN design.
   already trust the new one.
 - `LeafCacheStats { size, capacity, hits, misses, minted_total, evictions }` —
   relaxed atomics beside the mutex, read by p3-02 status.
-- **`MintingResolver`** (`struct MintingResolver { cache: Arc<LeafCache> }`
-  implementing `rustls::server::ResolvesServerCert`: read
-  `hello.server_name()`, `cache.get_or_mint(name)`, `None` on no-SNI or mint
-  failure) lives **here**, not in a consumer. Two L3 consumers need it —
+- **`MintingResolver`** (`struct MintingResolver { cache: Arc<LeafCache>,
+  fallback: Option<Arc<CertifiedKey>> }` implementing
+  `rustls::server::ResolvesServerCert`: read `hello.server_name()`,
+  `cache.get_or_mint(name)`; on no-SNI or mint failure return `fallback`
+  (`None` when unset, aborting the handshake)) lives **here**, not in a
+  consumer. The `fallback` slot is what lets p3-05's DoT listener serve the
+  API pair to a no-SNI client while p3-04 passes `None` and stays
+  fail-closed — one type, both postures. Two L3 consumers need it —
   p3-04 (interception `ServerConfig`) and p3-05 (DoT with a CA present) — and
   they are siblings; two implementations diverging on expiry re-mint or
   no-SNI handling is a silent bug (the p2-01 admission test). It is a pure
@@ -231,8 +235,9 @@ p3-06 from measured data.
 - `san_entries` suite moves intact from `fah-api` (p5-02 assertions unchanged).
 - Fingerprint is stable across load/generate for the same DER.
 - LRU: eviction at capacity, expired-leaf re-mint, stats counters.
-- `MintingResolver`: returns a leaf for a hello carrying SNI; `None` on a
-  hello without SNI; expired cached leaf is re-minted, not served.
+- `MintingResolver`: returns a leaf for a hello carrying SNI; on a hello
+  without SNI returns `None` when no fallback is set and the fallback key
+  when one is; expired cached leaf is re-minted, not served.
 - CA regeneration purges the cache: mint, `generate_ca`, next `get_or_mint`
   chains to the new CA (verified against the new root, rejected by the old).
 - Import rejections, one test per named variant: garbage → `Parse`, expired

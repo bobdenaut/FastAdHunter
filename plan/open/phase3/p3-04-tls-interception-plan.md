@@ -130,7 +130,7 @@ the exact thing forbidden.
 2. **Connect + TLS-handshake to the upstream first**, with `tokio-rustls`
    `connect(ServerName = sni_host, tcp_to_approved_ip)`. Critically, the
    **ServerName is the hostname, the socket is the pre-approved IP** — this
-   keeps p3-01/p2-02 rebind-hardening (we connect to the IP the policy approved)
+   keeps p2-02's rebind-hardening (we connect to the IP the policy approved)
    *and* verifies the certificate against the **name** (webpki-roots).
 3. Upstream verification fails ⇒ **close the client TCP without completing our
    TLS handshake.** The client sees a TLS/connection failure (as if the site
@@ -203,9 +203,10 @@ transport is where they must diverge.
 
 - **`fah_certs::MintingResolver`** (p3-01's `ResolvesServerCert` over the
   `LeafCache` — shipped at L2 because p3-05's DoT listener needs the identical
-  resolver and siblings cannot import each other): p3-04 **consumes** it, no
-  local implementation. rustls sees the replayed ClientHello (see RewindStream
-  below), so its SNI == ours. Minting is outside the LRU lock (p3-01 contract).
+  resolver and siblings cannot import each other): p3-04 **consumes** it with
+  `fallback: None`, no local implementation — a mint failure aborts the
+  handshake, fail-closed (the fallback slot exists for p3-05's DoT). rustls
+  sees the replayed ClientHello (see RewindStream below), so its SNI == ours. Minting is outside the LRU lock (p3-01 contract).
 - **Downstream `ServerConfig`** built **once** per `TlsProxy`
   (`Arc<ServerConfig>`): the `MintingResolver`, ALPN `[h2, http/1.1]`, no client
   auth, aws-lc-rs provider (the one workspace backend, SECURITY.md). Cheap to
@@ -274,8 +275,10 @@ pub struct InterceptionConfig {
 
 Add runtime deps (workspace-pinned): `tokio-rustls` (async accept/connect over
 rustls 0.23), `rustls` (already workspace), `webpki-roots` (upstream roots).
-`hyper` gains `http2`; `hyper-util` gains `http2` + `server-auto` (for the
-downstream auto h1/h2). `fah-certs` (p3-01, L2) added as a dependency (L3→L2,
+`hyper` gains `http2`; `hyper-util` gains `server`, `server-auto` and `http2`
+(it carries only `client`, `client-legacy`, `http1`, `tokio` today — the
+downstream auto h1/h2 builder needs the server half; mirror `fah-api`'s
+feature set). `fah-certs` (p3-01, L2) added as a dependency (L3→L2,
 legal). aws-lc-rs is the provider via rustls default features already in-tree.
 
 ### Step 3 — cert/TLS glue (`fah-http/src/tls.rs`, new)

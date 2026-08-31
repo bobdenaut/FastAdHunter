@@ -180,7 +180,8 @@ honest single-source model is a new `Event`/`EventKind` variant carrying a
   `path` = `""`, `method` = `""`, `resource_type = Unknown`, `status` = `0`
   (no HTTP status — connection-level outcome), `bytes` = upstream→client bytes
   from `copy_bidirectional` on pass / `0` on block, `duration` = hello→close,
-  `policy` = the deciding policy id.
+  `policy` = the deciding policy id. A no-SNI observation carries `host = ""`
+  (there is no name; the `no_sni` classification is the information).
 - **Reconciliation with the task text ("query-log … extended"):** p2-09
   **removed** the persisted query log and `GET /queries`
   (`plan/closed/phase2/CLAUDE.md` #9). The live feed is `WS /api/v1/events`;
@@ -304,7 +305,10 @@ Ruleset>>`, `Arc<PolicyState>`, `Option<mpsc::Sender<Event>>`, counters,
    then `tokio::io::copy_bidirectional_with_sizes(client, upstream, BUF, BUF)`
    under an idle deadline. On close, emit `https-sni`/`pass` with `bytes` =
    upstream→client total. Resolve/connect failures → close, `resolve_failures`/
-   `upstream_failures` counters (reuse the `ProxyCounters` names; see Step 5).
+   `upstream_failures` counters (reuse the `ProxyCounters` names; see Step 5),
+   **and** emit `https-sni`/`pass` with `status 0`, `bytes 0` — the HTTP path
+   emits its 502 analogue (`proxy.rs:376-380`), so the live feed sees failed
+   attempts on both paths.
 
 `copy_bidirectional` buffer size `BUF` (const `SPLICE_BUF = 16 KiB` each
 direction) is bounded and per-connection; total splice memory is

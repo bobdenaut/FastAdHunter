@@ -1,6 +1,6 @@
 # P3-01 — Certificate Core
 
-**Phase:** 3 · **Depends on:** phase2 · **Model:** Opus
+**Phase:** 3 · **Depends on:** phase2 · **Model:** Fable
 
 ## Goal
 

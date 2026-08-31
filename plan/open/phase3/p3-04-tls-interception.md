@@ -1,6 +1,6 @@
 # P3-04 — TLS Interception
 
-**Phase:** 3 · **Depends on:** p3-01, p3-03 · **Model:** Opus
+**Phase:** 3 · **Depends on:** p3-01, p3-03 · **Model:** Fable
 
 ## Goal
 

@@ -130,7 +130,10 @@ command, what it does, when it takes effect, and the rollback.
    firewall/NAT chains first (read-only `print`), then propose rule text with
    explicit placement — never a bare `add` (it appends behind any final
    drop). Target is the container's `[https.listen]` port — default **8444**
-   (8443 is the API's; p3-03 rejects the collision at startup). Rollback =
+   (8443 is the API's; p3-03 rejects the collision at startup). The rule is
+   **`protocol=tcp` only** — UDP/443 (QUIC) stays unsteered so browsers fall
+   back to TCP instead of black-holing HTTP/3 (the container listens on no
+   UDP 443; QUIC is a documented p3-03 non-goal). Rollback =
    remove the one rule. The v6 half: propose either the
    equivalent v6 steering or an explicit, recorded owner decision that v6/443
    stays unsteered this phase (record which traffic that leaves uncovered).
