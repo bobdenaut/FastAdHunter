@@ -65,42 +65,51 @@ export function DiagnosticsHealth(_props: PageProps) {
         }
       />
       <main class="wrap">
-        <Card
-          title={
-            status === null ? 'Serving' : <>Serving — status {status}</>
-          }
-          tools={
-            <RefreshCluster registry={refresh} endpoint="health" />
-          }
-          className="health-status"
-        >
-          <div class="health-head">
-            <div class="health-figure">
-              <div class="figure mono">
-                {health.data === null
-                  ? '—'
-                  : formatUptime(health.data.uptime_seconds)}
+        {/* Serving beside Engine: both answer "what is this process doing right
+            now" from one read each, and neither fills a row on its own — the
+            status card is a figure and a line, the engine card five short
+            pairs. Stacked they cost two rows and left the first mostly
+            empty. */}
+        <div class="row c2">
+          <Card
+            title={
+              status === null ? 'Serving' : <>Serving — status {status}</>
+            }
+            tools={
+              <RefreshCluster registry={refresh} endpoint="health" />
+            }
+            className="health-status"
+          >
+            <div class="health-head">
+              <div class="health-figure">
+                <div class="figure mono">
+                  {health.data === null
+                    ? '—'
+                    : formatUptime(health.data.uptime_seconds)}
+                </div>
+                <p class="note">
+                  uptime
+                  {health.data !== null && (
+                    <>
+                      {' · '}
+                      <span class="mono">v{health.data.version}</span>
+                    </>
+                  )}
+                </p>
               </div>
-              <p class="note">
-                uptime
-                {health.data !== null && (
-                  <>
-                    {' · '}
-                    <span class="mono">v{health.data.version}</span>
-                  </>
-                )}
-              </p>
+              {status !== null && <StatusPill status={status} />}
             </div>
-            {status !== null && <StatusPill status={status} />}
-          </div>
 
-          {status === 'degraded' && <DegradedBanner mode={mode} />}
+            {status === 'degraded' && <DegradedBanner mode={mode} />}
 
-          <EndpointSummary
-            mode={mode}
-            upstreams={telemetry.data?.upstreams ?? null}
-          />
-        </Card>
+            <EndpointSummary
+              mode={mode}
+              upstreams={telemetry.data?.upstreams ?? null}
+            />
+          </Card>
+
+          <EngineCard telemetry={telemetry.data} />
+        </div>
 
         <div class="row c2">
           <OutcomesCard telemetry={telemetry.data} />
@@ -111,8 +120,6 @@ export function DiagnosticsHealth(_props: PageProps) {
           lists={lists.data}
           counters={telemetry.data?.counters.lists ?? null}
         />
-
-        <EngineCard telemetry={telemetry.data} />
 
         <NeverCard />
       </main>

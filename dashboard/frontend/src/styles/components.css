@@ -86,8 +86,13 @@
   min-width: 0;
 }
 
+/* One height for every title bar, controls or not: 24px of control, the 12px
+   padding either side and the rule under it. A card carrying a refresh cluster
+   was 5px taller than one beside it, so two cards on the same row started their
+   bodies at different heights and their figures never lined up. */
 .ch {
   margin: 0;
+  min-height: 49px;
   font-size: 13.5px;
   font-weight: 600;
   padding: 12px 14px;
@@ -963,6 +968,13 @@ table.t tbody tr:hover td {
   gap: 10px 20px;
   margin-top: 14px;
   font-size: 12.5px;
+}
+
+/* The top margin separates the grid from prose above it. Opening the card body
+   there is nothing to separate from, and the 14px pushed the Engine card's
+   figures below the ones in the card beside it. */
+.bd > .figure-grid:first-child {
+  margin-top: 0;
 }
 
 .figure-grid > div {
