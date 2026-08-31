@@ -269,6 +269,17 @@ address: the address is an allocation the query path does not make, and
 `/api/v1/telemetry`'s `upstreams` array is published in the same configured
 order for the join.
 
+### Upstream RTT
+
+Time-to-answer of an Upstream's **answered** attempts, measured per Endpoint
+around the whole attempt: UDP retransmit legs and cold TCP/TLS connection
+setup are inside it. A Probe is a real round trip and is included; a timed-out
+or otherwise failed attempt is never observed — so a dead Endpoint cannot pin
+the percentiles at `timeout_ms`. This is network time, the part of the
+`forward` stage that is not FastAdHunter; served as `upstreams[].rtt` on
+`/api/v1/telemetry` (lifetime percentiles) and `/api/v1/history/perf`
+(per-interval percentiles).
+
 ### HTTP Engine
 
 The component that filters unencrypted HTTP by **URL**, not just by hostname —

@@ -356,6 +356,7 @@ mod tests {
                 probes: 0,
                 probe_successes: 0,
                 family: Some(crate::AddressFamily::V4),
+                rtt: crate::UpstreamRtt::default(),
             }],
         };
 

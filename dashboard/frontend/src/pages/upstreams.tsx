@@ -1,5 +1,4 @@
 import { useEffect, useState } from 'preact/hooks';
-import { getConfig } from '../api/config';
 import type { Config, Health, Telemetry } from '../api/types';
 import { Card } from '../components/card';
 import { EmptyState } from '../components/empty-state';
@@ -12,7 +11,11 @@ import { ContentHeader } from '../shell/content-header';
 import { DegradedBanner } from '../components/degraded-banner';
 import { EndpointRow } from './upstreams/endpoint-row';
 import { NoPieCard } from './upstreams/no-pie-card';
+import { RttChart } from './upstreams/rtt-chart';
 import { StatesCard } from './upstreams/states-card';
+import { useRttHistory } from './upstreams/use-rtt-history';
+import { useConfigReader } from './recorded';
+import type { RangeKey } from './dashboard/ranges';
 
 /**
  * Health and state of each configured server.
@@ -34,17 +37,26 @@ export function Upstreams(_props: PageProps) {
   const telemetry = useRefresh<Telemetry>(refresh, 'telemetry');
   const health = useRefresh<Health>(refresh, 'health');
   const [config, setConfig] = useState<Config | null>(null);
+  const [range, setRange] = useState<RangeKey>('24h');
+
+  // The single-flight reader, not a bare `getConfig`: the mount snapshot and
+  // the round-trip chart's disambiguation of an empty range answer are two
+  // callers for the same document, and without the join they are two
+  // concurrent requests (p5-06's F11).
+  const readConfig = useConfigReader();
 
   useEffect(() => {
     const controller = new AbortController();
-    getConfig(controller.signal)
+    readConfig(controller.signal)
       .then(setConfig)
       // A failed `/config` costs the strategy and nothing else. The counters
       // still render verbatim and the subtitle says what is missing, which is
       // the same stance the Dashboard takes on its own secondary readings.
       .catch(() => undefined);
     return () => controller.abort();
-  }, []);
+  }, [readConfig]);
+
+  const rtt = useRttHistory(range, config, setConfig, readConfig);
 
   const mode = upstreamMode(config?.dns?.upstreams?.strategy);
   const upstreams = telemetry.data?.upstreams ?? null;
@@ -127,6 +139,31 @@ export function Upstreams(_props: PageProps) {
             </>
           )}
         </Card>
+
+        {rtt.recording ? (
+          <RttChart
+            range={range}
+            onRange={setRange}
+            history={rtt.history}
+            error={rtt.error}
+            loading={rtt.loading}
+          />
+        ) : (
+          // Its own state, distinguishable by construction from an empty
+          // range: this one is read from `/config`, that one from an answer the
+          // recorder actually gave. The endpoint cards above are unaffected —
+          // they are live figures, not persisted ones.
+          <section class="card">
+            <div class="bd">
+              <EmptyState title="History is not being recorded">
+                Round-trip time over the range needs{' '}
+                <span class="mono">/data/history</span>, and nothing is written
+                there while <span class="mono">history.enabled</span> is off.
+                Turn it back on in Settings.
+              </EmptyState>
+            </div>
+          </section>
+        )}
 
         <div class="row c2">
           <NoPieCard />

@@ -1,6 +1,12 @@
-import type { Upstream } from '../../api/types';
+import type { Upstream, UpstreamRtt } from '../../api/types';
+import { millisLabel } from '../../charts/format';
 import { StatusPill } from '../../components/status-pill';
 import { failureRunShares, type UpstreamMode } from '../../derive';
+
+/** What a cell prints when the engine served no `rtt` block, or served one no
+ *  attempt has answered into yet. Distinct from `0.00 ms`, which would claim a
+ *  measurement. */
+const NO_RTT = '—';
 
 /** The word that goes where `v4` or `v6` would, and the reason it is not one.
  *  Nothing resolves a DoH URL's hostname to fill the field in — it is not a
@@ -36,6 +42,7 @@ export function EndpointRow({
   const health = mode !== 'fallback';
   const penalized = health && upstream.state === 'penalized';
   const runs = failureRunShares(upstream.failure_runs);
+  const rtt = upstream.rtt;
 
   return (
     <div
@@ -95,6 +102,19 @@ export function EndpointRow({
         )}
       </div>
 
+      <div class="ep-rtt">
+        <div class="note">round trip, answered attempts only</div>
+        <div class="ep-rtt-cells">
+          <Cell label="p50" value={rttLabel(rtt?.p50)} />
+          <Cell label="p99" value={rttLabel(rtt?.p99)} />
+          <Cell label="mean" value={meanLabel(rtt)} />
+          <Cell
+            label="answers timed"
+            value={rtt === undefined ? NO_RTT : rtt.count.toLocaleString()}
+          />
+        </div>
+      </div>
+
       <div class="ep-runs">
         <div class="note">failure-run histogram</div>
         <div class="runs">
@@ -118,6 +138,23 @@ export function EndpointRow({
       </div>
     </div>
   );
+}
+
+/** Seconds to a millisecond label. An exact `0` is "no attempt reached this
+ *  percentile", the same reading the Performance page's tiles take, so it
+ *  prints as nothing rather than as an impossibly fast endpoint. */
+function rttLabel(seconds: number | undefined): string {
+  if (seconds === undefined || seconds === 0) return NO_RTT;
+  return `${millisLabel(seconds * 1000)} ms`;
+}
+
+/** The one exact figure in the group: `sum / count`, both cumulative. A
+ *  lifetime mean flattens within hours, which is why the percentiles beside it
+ *  are per-interval on the chart — this is here to catch the case the buckets
+ *  cannot show, an endpoint whose every answer sits past the top bucket. */
+function meanLabel(rtt: UpstreamRtt | undefined): string {
+  if (rtt === undefined || rtt.count === 0) return NO_RTT;
+  return `${millisLabel((rtt.sum_seconds / rtt.count) * 1000)} ms`;
 }
 
 function Cell({

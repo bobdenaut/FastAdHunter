@@ -426,6 +426,7 @@ impl TelemetrySource for FakeTelemetry {
                 probes: 8,
                 probe_successes: 3,
                 family: Some(fah_model::AddressFamily::V4),
+                rtt: fah_model::UpstreamRtt::default(),
             }],
         }
     }

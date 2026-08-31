@@ -65,6 +65,13 @@ await. The dashboard's forward tile carries no budget for that reason. Budgets a
 compared against `main` on every perf-relevant change; a >10 % regression on a
 hot-path bench needs an explicit justification ([CONTRIBUTING.md](CONTRIBUTING.md)).
 
+Per-endpoint upstream RTT (p5-11) instruments the forward path itself: one
+`Instant` pair plus three relaxed RMWs per **answered** attempt, measured at
+~58 ns on the dev box (~0.5 µs at the 9× factor) with no A/B regression on
+the forward or pipeline benches — corpus, trees and the mock-forwarder trap
+in [docs/code-review/phase5/p5-11-upstream-rtt-review.md](docs/code-review/phase5/p5-11-upstream-rtt-review.md)
+§Measurements. It carries no budget: the figure it serves is network time.
+
 Nothing enforces a budget at runtime: the container runs `memory-high=unlimited`,
 so exceeding one is a budget breach, not a failure.
 

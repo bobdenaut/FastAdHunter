@@ -140,7 +140,9 @@ Top-level blocks: `process`, `ruleset`, `counters`, `latency`, `upstreams`,
                    "failures": 12, "consecutive_failures": 0, "tls_handshakes": 41,
                    "failure_runs": [5, 2, 0, 1], "state": "healthy",
                    "penalty_round": 0, "penalties": 0, "penalized_seconds_total": 0,
-                   "probes": 0, "probe_successes": 0, "family": "v4" } ]
+                   "probes": 0, "probe_successes": 0, "family": "v4",
+                   "rtt": { "count": 201871, "sum_seconds": 3021.7,
+                            "p50": 0.012, "p99": 0.087 } } ]
 }
 ```
 
@@ -186,6 +188,15 @@ Reading it correctly:
   a run counts *attempts*, and a penalized endpoint is attempted once per
   penalty round, so run length is never a duration there;
   `docs/measurement-traps.md` §Traffic and rates does the conversion.
+- **`upstreams[].rtt` is Upstream RTT** (CONTEXT.md): time-to-answer of that
+  endpoint's **answered** attempts only — probes included, timed-out and
+  failed attempts never observed, so a dead endpoint cannot pin `p99` at
+  `timeout_ms`. Retransmit legs and cold TCP/TLS setup are inside the figure;
+  this is the non-FastAdHunter part of `latency.dns.forward`. `count` and
+  `sum_seconds` are cumulative like the counters beside them; `p50`/`p99`
+  here are **process-lifetime**, in seconds, bucket-granularity estimates
+  saturating at the top finite bucket (2 s) — the per-interval form lives on
+  `/history/perf`. Not health-gated: served in every strategy mode.
 - **`address` is the row's stable identity** — the metrics label a dashboard
   joins on, and the rows are published in configured order, so the array index
   is the same one the query log records (CONTEXT.md §Answering Endpoint).
@@ -380,7 +391,9 @@ wanted. `fields` trims the response, not the read.
           "consecutive_failures": 0, "tls_handshakes": 4,
           "failure_runs": [2, 1, 0, 0], "state": "healthy",
           "penalty_round": 0, "penalties": 0, "penalized_seconds_total": 0,
-          "probes": 0, "probe_successes": 0, "family": "v4" }
+          "probes": 0, "probe_successes": 0, "family": "v4",
+          "rtt": { "count": 11997, "sum_seconds": 180.3,
+                   "p50": 0.01, "p99": 0.05 } }
       ]
     }
   ]
@@ -411,6 +424,15 @@ which charts as "not recorded" rather than "no failures".
 publishes, cumulative rather than per-interval — deltaing two rows gives the
 run-length distribution for that window. Rows written before it shipped read
 back as four zeros.
+
+`upstreams[].rtt` is Upstream RTT (CONTEXT.md) with **one interval exception**:
+`count` and `sum_seconds` stay cumulative like every counter on the row, but
+`rtt.p50`/`rtt.p99` cover **that row's interval alone** — `/telemetry`'s are
+process-lifetime, and an interval in which the endpoint answered nothing
+serves exact `0.0`, which charts as a gap rather than an instant answer. Same
+estimate caveats as `latency`: seconds, bucket granularity, saturating at the
+top finite bucket (2 s). Rows written before it shipped read back as all
+zeros, which charts as "not recorded".
 
 The rest of the row is `/telemetry`'s upstream sample verbatim, endpoint health
 included — same field names, same meanings, same cumulative counters. Rows

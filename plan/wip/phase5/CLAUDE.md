@@ -55,6 +55,7 @@ everything learned. Verification closes it against the budgets.
 | 8 | `p5-08-runtime-pages.md` | Cache, Performance, Upstreams | Opus | DONE |
 | 9 | `p5-09-settings-and-diagnostics.md` | Settings (curated + raw), Health, Memory, Live Feed | Opus | DONE — incl. 2026-08-29 addendum (`counters.lists` surfaced; review file §Addendum) |
 | 10 | `p5-10-phase5-verification.md` | Bundle and image budgets, RB5009 validation, e2e against a live API | Opus | AWAITING SOAK — **Stage B, on-device** |
+| 11 | `p5-11-upstream-rtt.md` | Per-endpoint upstream RTT — `fah-common` histogram primitive, `fah-dns` measurement, `/telemetry` + `/history/perf`, Upstreams row cells + range chart | Fable | DONE |
 
 **What flips task 10.** Stage A is complete and recorded in
 [p5-10-phase5-verification-review.md](../../../docs/code-review/phase5/p5-10-phase5-verification-review.md)

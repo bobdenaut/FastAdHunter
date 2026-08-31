@@ -112,6 +112,26 @@ export interface Latency {
 
 export type UpstreamState = 'healthy' | 'penalized' | 'probing';
 
+/**
+ * One endpoint's round-trip time, in **seconds**, over the attempts it
+ * actually answered — a timed-out attempt is a failure, not a slow answer, and
+ * counting it would pin `p99` at `timeout_ms` for as long as an endpoint stays
+ * down.
+ *
+ * `count` and `sum_seconds` are cumulative since process start, like
+ * `attempts` beside them. The percentiles are **not**: on `/telemetry` they
+ * are the process lifetime, on a `/history/perf` row they cover that row's
+ * interval alone, which is the only form that still moves after a day of
+ * uptime. Both are bucket-granularity estimates that saturate at the top
+ * finite bucket (2 s), so they are a trend line rather than exact quantiles.
+ */
+export interface UpstreamRtt {
+  count: number;
+  sum_seconds: number;
+  p50: number;
+  p99: number;
+}
+
 export interface Upstream {
   address: string;
   protocol: string;
@@ -127,6 +147,9 @@ export interface Upstream {
   probes: number;
   probe_successes: number;
   family: 'v4' | 'v6' | null;
+  /** Optional so a dashboard served beside an engine predating the field
+   *  renders "not recorded" instead of `NaN` ms. */
+  rtt?: UpstreamRtt;
 }
 
 export interface ProcessInfo {
@@ -375,6 +398,10 @@ export interface PerfItem {
    *  row-to-row deltas attribute an RSS excursion to a list refresh. Rows
    *  written before the field read back all-zero. No page requests it yet. */
   list_fetch?: ListsCounters;
+  /** The endpoints as they stood at capture. Every counter on the row is
+   *  cumulative except `rtt.p50` / `rtt.p99`, which cover this row's interval
+   *  — the Upstreams page's round-trip chart is that pair over time. */
+  upstreams?: Upstream[];
 }
 
 export interface HistoryPerf {

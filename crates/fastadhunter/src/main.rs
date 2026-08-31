@@ -727,7 +727,7 @@ fn spawn_telemetry_poll(
                 bytes_freed: cleanup.bytes_freed,
                 last_duration_micros: cleanup.last_duration_micros,
             });
-            metrics.set_upstreams(upstreams.status());
+            metrics.set_upstreams(lifetime_rtt(upstreams.status()));
             let fetches = rules.fetch_stats();
             metrics.set_lists(fah_model::ListFetchCounters {
                 bodies: fetches.bodies,
@@ -986,8 +986,63 @@ fn build_perf_sample(
         // rather than a field-by-field remap into a structurally identical
         // struct — which is what the pool status, the registry and this row
         // used to each have their own of.
-        upstreams: current.upstreams.clone(),
+        upstreams: interval_rtt(
+            &current.upstreams,
+            prev.map(|prev| prev.upstreams.as_slice()),
+        ),
     }
+}
+
+fn rtt_percentiles(rtt: &fah_model::UpstreamRtt) -> (f64, f64) {
+    let quantile = |q| {
+        fah_common::histogram::quantile(
+            &fah_model::UPSTREAM_RTT_BUCKETS_SECONDS,
+            &rtt.buckets,
+            rtt.count,
+            q,
+        )
+    };
+    (quantile(0.5), quantile(0.99))
+}
+
+fn lifetime_rtt(mut upstreams: Vec<fah_model::UpstreamSample>) -> Vec<fah_model::UpstreamSample> {
+    for upstream in &mut upstreams {
+        (upstream.rtt.p50, upstream.rtt.p99) = rtt_percentiles(&upstream.rtt);
+    }
+    upstreams
+}
+
+fn interval_rtt(
+    current: &[fah_model::UpstreamSample],
+    prev: Option<&[fah_model::UpstreamSample]>,
+) -> Vec<fah_model::UpstreamSample> {
+    let mut rows = current.to_vec();
+    for row in &mut rows {
+        let previous = prev.and_then(|prev| prev.iter().find(|prev| prev.address == row.address));
+        let interval = match previous {
+            Some(previous) => {
+                let mut buckets = [0u64; fah_model::UPSTREAM_RTT_BUCKETS_SECONDS.len()];
+                for (slot, value) in
+                    buckets
+                        .iter_mut()
+                        .zip(fah_common::histogram::saturating_delta(
+                            &row.rtt.buckets,
+                            &previous.rtt.buckets,
+                        ))
+                {
+                    *slot = value;
+                }
+                fah_model::UpstreamRtt {
+                    count: row.rtt.count.saturating_sub(previous.rtt.count),
+                    buckets,
+                    ..row.rtt
+                }
+            }
+            None => row.rtt,
+        };
+        (row.rtt.p50, row.rtt.p99) = rtt_percentiles(&interval);
+    }
+    rows
 }
 
 /// Per-stage p50/p99 over the interval since `prev` (or since boot for the
@@ -1345,5 +1400,104 @@ mod tests {
     fn rejects_config_flag_missing_value() {
         let err = parse_args(["--config"].into_iter().map(String::from)).unwrap_err();
         assert!(err.contains("--config"));
+    }
+}
+
+#[cfg(test)]
+mod upstream_rtt_tests {
+    use super::*;
+
+    fn endpoint(address: &str, rtt: fah_model::UpstreamRtt) -> fah_model::UpstreamSample {
+        fah_model::UpstreamSample {
+            address: address.to_string(),
+            protocol: fah_model::Protocol::Udp,
+            attempts: 0,
+            failures: 0,
+            consecutive_failures: 0,
+            tls_handshakes: 0,
+            failure_runs: [0; 4],
+            state: fah_model::UpstreamState::Healthy,
+            penalty_round: 0,
+            penalties: 0,
+            penalized_seconds_total: 0,
+            probes: 0,
+            probe_successes: 0,
+            family: Some(fah_model::AddressFamily::V4),
+            rtt,
+        }
+    }
+
+    fn rtt(count: u64, buckets: [u64; 11]) -> fah_model::UpstreamRtt {
+        fah_model::UpstreamRtt {
+            count,
+            sum_seconds: 0.0,
+            p50: 0.0,
+            p99: 0.0,
+            buckets,
+        }
+    }
+
+    #[test]
+    fn lifetime_percentiles_read_the_whole_histogram() {
+        let rows = lifetime_rtt(vec![endpoint(
+            "1.1.1.1",
+            rtt(10, [5, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10]),
+        )]);
+        assert_eq!(rows[0].rtt.p50, fah_model::UPSTREAM_RTT_BUCKETS_SECONDS[0]);
+        assert_eq!(rows[0].rtt.p99, fah_model::UPSTREAM_RTT_BUCKETS_SECONDS[1]);
+        assert_eq!(rows[0].rtt.count, 10);
+    }
+
+    #[test]
+    fn percentiles_describe_the_interval_not_the_process_lifetime() {
+        let prev = vec![endpoint("1.1.1.1", rtt(100, [100; 11]))];
+        let current = vec![endpoint(
+            "1.1.1.1",
+            rtt(110, [100, 100, 100, 100, 100, 100, 100, 100, 100, 110, 110]),
+        )];
+        let rows = interval_rtt(&current, Some(&prev));
+        assert_eq!(rows[0].rtt.p50, fah_model::UPSTREAM_RTT_BUCKETS_SECONDS[9]);
+        assert_eq!(rows[0].rtt.p99, fah_model::UPSTREAM_RTT_BUCKETS_SECONDS[9]);
+        assert_eq!(rows[0].rtt.count, 110);
+    }
+
+    #[test]
+    fn an_endpoint_idle_over_the_interval_reports_zero_not_a_bucket_bound() {
+        let prev = vec![endpoint("1.1.1.1", rtt(10, [10; 11]))];
+        let current = vec![endpoint("1.1.1.1", rtt(10, [10; 11]))];
+        let rows = interval_rtt(&current, Some(&prev));
+        assert_eq!(rows[0].rtt.p50, 0.0);
+        assert_eq!(rows[0].rtt.p99, 0.0);
+    }
+
+    #[test]
+    fn a_reordered_config_is_matched_by_address_rather_than_by_index() {
+        let prev = vec![
+            endpoint("1.1.1.1", rtt(10, [10; 11])),
+            endpoint("9.9.9.9", rtt(0, [0; 11])),
+        ];
+        let current = vec![
+            endpoint("9.9.9.9", rtt(0, [0; 11])),
+            endpoint("1.1.1.1", rtt(10, [10; 11])),
+        ];
+        let rows = interval_rtt(&current, Some(&prev));
+        assert_eq!(rows[0].rtt.p50, 0.0);
+        assert_eq!(rows[1].rtt.p50, 0.0);
+        assert_eq!(rows[1].rtt.p99, 0.0);
+    }
+
+    #[test]
+    fn a_replaced_endpoint_reads_its_own_lifetime_not_a_strangers_delta() {
+        let prev = vec![endpoint("8.8.8.8", rtt(50, [50; 11]))];
+        let current = vec![endpoint("1.1.1.1", rtt(10, [10; 11]))];
+        let rows = interval_rtt(&current, Some(&prev));
+        assert_eq!(rows[0].rtt.p50, fah_model::UPSTREAM_RTT_BUCKETS_SECONDS[0]);
+    }
+
+    #[test]
+    fn the_first_sample_after_boot_reads_the_whole_lifetime() {
+        let current = vec![endpoint("1.1.1.1", rtt(10, [10; 11]))];
+        let rows = interval_rtt(&current, None);
+        assert_eq!(rows[0].rtt.p50, fah_model::UPSTREAM_RTT_BUCKETS_SECONDS[0]);
     }
 }

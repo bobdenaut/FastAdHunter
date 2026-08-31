@@ -144,10 +144,24 @@ pub enum AddressFamily {
     V6,
 }
 
+pub const UPSTREAM_RTT_BUCKETS_SECONDS: [f64; 11] = [
+    0.001, 0.0025, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.0,
+];
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Serialize, Deserialize)]
+pub struct UpstreamRtt {
+    pub count: u64,
+    pub sum_seconds: f64,
+    pub p50: f64,
+    pub p99: f64,
+    #[serde(skip)]
+    pub buckets: [u64; UPSTREAM_RTT_BUCKETS_SECONDS.len()],
+}
+
 /// One upstream server's counters at sample time — the persisted mirror of
 /// `fah-metrics`' `UpstreamSnapshot`, and the same rows `GET /api/v1/telemetry`
 /// publishes live.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct UpstreamSample {
     pub address: String,
     pub protocol: crate::Protocol,
@@ -175,6 +189,8 @@ pub struct UpstreamSample {
     pub probe_successes: u64,
     #[serde(default)]
     pub family: Option<AddressFamily>,
+    #[serde(default)]
+    pub rtt: UpstreamRtt,
 }
 
 #[cfg(test)]
@@ -244,6 +260,7 @@ mod tests {
                 probes: 4,
                 probe_successes: 1,
                 family: Some(AddressFamily::V4),
+                rtt: UpstreamRtt::default(),
             }],
         };
         let json = serde_json::to_string(&sample).unwrap();
@@ -302,6 +319,7 @@ mod tests {
             probes: 0,
             probe_successes: 0,
             family: None,
+            rtt: UpstreamRtt::default(),
         };
         let json = serde_json::to_string(&sample).unwrap();
         assert!(
@@ -331,6 +349,7 @@ mod tests {
             probes: 6,
             probe_successes: 2,
             family: Some(AddressFamily::V6),
+            rtt: UpstreamRtt::default(),
         };
         let json: serde_json::Value =
             serde_json::from_str(&serde_json::to_string(&sample).unwrap()).unwrap();

@@ -50,8 +50,9 @@ export const HISTORY_PERF_PATH = '/api/v1/history/perf';
  *
  * Nothing memory-shaped is requested here: `rss_bytes`, `peak_rss`, `memory`
  * and `minor_page_faults` are the Diagnostics · Memory page's own list below,
- * and `cache`, `upstreams` and `answers_delta` are served live by endpoints the
- * other runtime pages already read.
+ * `upstreams` is the Upstreams page's own list below that, and `cache` and
+ * `answers_delta` are served live by endpoints the other runtime pages already
+ * read.
  */
 export const PERF_FIELDS = [
   'qps',
@@ -78,9 +79,19 @@ export const MEMORY_PERF_FIELDS = [
   'minor_page_faults',
 ] as const;
 
+/**
+ * What Upstreams asks for, and the complete list of it. `/telemetry` already
+ * carries the endpoints live, so the only thing this range read adds is the
+ * one figure on the row that is per-interval rather than cumulative: the
+ * round-trip percentiles. A whole row is several times the payload for the
+ * two series the chart draws.
+ */
+export const UPSTREAM_PERF_FIELDS = ['upstreams'] as const;
+
 export type PerfField =
   | (typeof PERF_FIELDS)[number]
-  | (typeof MEMORY_PERF_FIELDS)[number];
+  | (typeof MEMORY_PERF_FIELDS)[number]
+  | (typeof UPSTREAM_PERF_FIELDS)[number];
 
 export interface HistoryPerfQuery {
   /** RFC 3339. The window is half-open, `[from, to)`. */

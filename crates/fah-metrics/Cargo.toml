@@ -18,6 +18,7 @@ workspace = true
 # through `Metrics::set_*`, which is what keeps a scrape internally consistent.
 [dependencies]
 arc-swap = { workspace = true }
+fah-common = { path = "../fah-common" }
 fah-model = { path = "../fah-model" }
 
 [dev-dependencies]

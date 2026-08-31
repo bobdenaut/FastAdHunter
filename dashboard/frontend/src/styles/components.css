@@ -3226,8 +3226,33 @@ table.t.counters td.bad {
   font-size: 12.5px;
 }
 
-.ep-counters .k {
+/* Its own selector rather than a second class on the counter grid: the two
+   groups read the same but are not the same set, and a row test that counts
+   `.ep-counters` children must keep counting the counters. */
+.ep-rtt-cells {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px 16px;
+  font-size: 12.5px;
+}
+
+.ep-counters .k,
+.ep-rtt-cells .k {
   font-size: 11px;
+}
+
+/* Full width beneath the three columns: round-trip time is the one group on
+   the row that is network time rather than engine time, and reading it beside
+   the attempt counters is what makes a slow endpoint distinguishable from a
+   failing one. */
+.ep-rtt {
+  grid-column: 1 / -1;
+  border-top: 1px dashed var(--border-row);
+  padding-top: 10px;
+}
+
+.ep-rtt > .note {
+  margin-bottom: 8px;
 }
 
 .ep-counters .good {
@@ -3315,6 +3340,10 @@ table.t.counters td.bad {
   }
 
   .ep-counters {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .ep-rtt-cells {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }

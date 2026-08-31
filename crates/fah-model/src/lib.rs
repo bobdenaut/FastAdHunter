@@ -28,8 +28,8 @@ pub use http::{HttpRequest, ResourceType};
 pub use memory::{AllocatorStats, MemoryBreakdown, MemoryComponents, ProcessStats, StatsHeap};
 pub use operating_mode::{OperatingMode, ParseOperatingModeError};
 pub use perf::{
-    AddressFamily, CacheStatsSample, LatencySummary, PerfSample, PerfSeries, UpstreamSample,
-    UpstreamState,
+    AddressFamily, CacheStatsSample, LatencySummary, PerfSample, PerfSeries, UpstreamRtt,
+    UpstreamSample, UpstreamState, UPSTREAM_RTT_BUCKETS_SECONDS,
 };
 pub use policy::{Assignment, ClientSelector, Policy, PolicyId, Schedule};
 pub use protocol::Protocol;

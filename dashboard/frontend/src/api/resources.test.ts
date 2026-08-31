@@ -3,6 +3,7 @@ import { setUnauthorizedHandler } from './core';
 import { cleanCache } from './cache';
 import {
   MEMORY_PERF_FIELDS,
+  UPSTREAM_PERF_FIELDS,
   PERF_FIELDS,
   getHistoryPerf,
   getHistorySummary,
@@ -220,11 +221,21 @@ describe('the perf history query string', () => {
     ]);
   });
 
-  it('keeps the two field lists disjoint, so neither page pays for the other', () => {
-    const shared = PERF_FIELDS.filter((field) =>
-      (MEMORY_PERF_FIELDS as readonly string[]).includes(field),
-    );
+  it('asks for exactly the one key the Upstreams page draws', () => {
+    // The endpoints are already live on `/telemetry`; the only thing this read
+    // adds is the per-interval round-trip percentiles on the row.
+    expect([...UPSTREAM_PERF_FIELDS]).toEqual(['upstreams']);
+  });
+
+  it('keeps the three field lists disjoint, so no page pays for another', () => {
+    const others = [...MEMORY_PERF_FIELDS, ...UPSTREAM_PERF_FIELDS] as readonly string[];
+    const shared = PERF_FIELDS.filter((field) => others.includes(field));
     expect(shared).toEqual([]);
+    expect(
+      MEMORY_PERF_FIELDS.filter((field) =>
+        (UPSTREAM_PERF_FIELDS as readonly string[]).includes(field),
+      ),
+    ).toEqual([]);
   });
 
   it('appends the query to the documented path', async () => {

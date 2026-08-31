@@ -611,6 +611,7 @@ mod tests {
             probes: 0,
             probe_successes: 0,
             family: Some(fah_model::AddressFamily::V4),
+            rtt: fah_model::UpstreamRtt::default(),
         }]);
 
         let snap = metrics.snapshot();

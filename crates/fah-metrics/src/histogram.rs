@@ -7,65 +7,35 @@
 //! enough resolution below 1 ms to tell a healthy p99 from one creeping
 //! toward the budget.
 
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
-/// Upper bounds in seconds, ascending. Not cumulative — each observation
-/// increments exactly one slot ([`Histogram::observe`]); cumulative counts
-/// are computed at encode time ([`Histogram::cumulative_counts`]), matching
-/// Prometheus's own bucket semantics (`le` = "less than or equal").
-pub(crate) const BUCKETS_SECONDS: &[f64] = &[
+use fah_common::histogram::AtomicHistogram;
+
+pub(crate) const BUCKETS_SECONDS: [f64; 11] = [
     0.0001, 0.00025, 0.0005, 0.00075, 0.001, 0.0025, 0.005, 0.01, 0.025, 0.05, 0.1,
 ];
 
-pub(crate) struct Histogram {
-    /// One non-cumulative counter per [`BUCKETS_SECONDS`] entry.
-    buckets: [AtomicU64; BUCKETS_SECONDS.len()],
-    count: AtomicU64,
-    sum_nanos: AtomicU64,
-}
+pub(crate) struct Histogram(AtomicHistogram<{ BUCKETS_SECONDS.len() }>);
 
 impl Histogram {
     pub(crate) fn new() -> Self {
-        Self {
-            buckets: std::array::from_fn(|_| AtomicU64::new(0)),
-            count: AtomicU64::new(0),
-            sum_nanos: AtomicU64::new(0),
-        }
+        Self(AtomicHistogram::new(&BUCKETS_SECONDS))
     }
 
     pub(crate) fn observe(&self, duration: Duration) {
-        let secs = duration.as_secs_f64();
-        if let Some(idx) = BUCKETS_SECONDS.iter().position(|&bound| secs <= bound) {
-            self.buckets[idx].fetch_add(1, Ordering::Relaxed);
-        }
-        self.count.fetch_add(1, Ordering::Relaxed);
-        // u128 -> u64: a single duration would need to run ~584 years to
-        // overflow nanoseconds as u64; truncation is not a real-world risk.
-        self.sum_nanos
-            .fetch_add(duration.as_nanos() as u64, Ordering::Relaxed);
+        self.0.observe(duration);
     }
 
-    /// Running counts for each finite boundary, cumulative — bucket `i` is
-    /// the count of observations `<= BUCKETS_SECONDS[i]`. The implicit `+Inf`
-    /// bucket (every observation) is [`Histogram::count`].
     pub(crate) fn cumulative_counts(&self) -> Vec<u64> {
-        let mut running = 0u64;
-        self.buckets
-            .iter()
-            .map(|bucket| {
-                running += bucket.load(Ordering::Relaxed);
-                running
-            })
-            .collect()
+        self.0.cumulative().to_vec()
     }
 
     pub(crate) fn count(&self) -> u64 {
-        self.count.load(Ordering::Relaxed)
+        self.0.count()
     }
 
     pub(crate) fn sum_seconds(&self) -> f64 {
-        self.sum_nanos.load(Ordering::Relaxed) as f64 / 1_000_000_000.0
+        self.0.sum_seconds()
     }
 }
 

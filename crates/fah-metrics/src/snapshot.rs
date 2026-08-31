@@ -104,14 +104,9 @@ impl StageHistogram {
     /// window. `saturating_sub` guards the (racy-read) corner where a counter
     /// appears to have gone backwards.
     pub fn delta(&self, prev: &StageHistogram) -> StageHistogram {
-        let cumulative = self
-            .cumulative
-            .iter()
-            .zip(prev.cumulative.iter())
-            .map(|(cur, prev)| cur.saturating_sub(*prev))
-            .collect();
         StageHistogram {
-            cumulative,
+            cumulative: fah_common::histogram::saturating_delta(&self.cumulative, &prev.cumulative)
+                .collect(),
             count: self.count.saturating_sub(prev.count),
             sum_seconds: (self.sum_seconds - prev.sum_seconds).max(0.0),
         }
@@ -123,19 +118,7 @@ impl StageHistogram {
     /// quantile falls in the `+Inf` bucket. `0.0` when empty. `q` is a
     /// fraction in `[0, 1]`.
     pub fn quantile(&self, q: f64) -> f64 {
-        if self.count == 0 {
-            return 0.0;
-        }
-        // The q-th observation, 1-based: p99 of 100 samples is the 99th.
-        let target = ((q * self.count as f64).ceil() as u64).max(1);
-        for (idx, &cumulative) in self.cumulative.iter().enumerate() {
-            if cumulative >= target {
-                return BUCKETS_SECONDS[idx];
-            }
-        }
-        // Beyond the largest finite bucket (the `+Inf` region): report the top
-        // finite bound as a floor rather than inventing a value.
-        *BUCKETS_SECONDS.last().unwrap()
+        fah_common::histogram::quantile(&BUCKETS_SECONDS, &self.cumulative, self.count, q)
     }
 }
 

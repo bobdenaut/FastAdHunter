@@ -18,7 +18,9 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+use fah_common::histogram::AtomicHistogram;
 use fah_config::{DnsUpstreamsConfig, UpstreamProtocol, UpstreamServerConfig, UpstreamStrategy};
+use fah_model::UPSTREAM_RTT_BUCKETS_SECONDS;
 use hickory_proto::op::{Message, Query as WireQuery};
 use hickory_proto::rr::{Name, RData, RecordType};
 use rustls::pki_types::ServerName;
@@ -227,6 +229,13 @@ impl UpstreamPool {
                     probes: health.probes.load(Ordering::Relaxed),
                     probe_successes: health.probe_successes.load(Ordering::Relaxed),
                     family: server.family,
+                    rtt: fah_model::UpstreamRtt {
+                        count: server.rtt.count(),
+                        sum_seconds: server.rtt.sum_seconds(),
+                        p50: 0.0,
+                        p99: 0.0,
+                        buckets: server.rtt.cumulative(),
+                    },
                 }
             })
             .collect()
@@ -252,8 +261,10 @@ impl UpstreamPool {
                     self.servers.iter().zip(self.health.iter()).enumerate()
                 {
                     health.attempts.fetch_add(1, Ordering::Relaxed);
+                    let started = Instant::now();
                     match server.query(query, self.timeout).await {
                         Ok(response) => {
+                            server.rtt.observe(started.elapsed());
                             if server.consecutive_failures.load(Ordering::Relaxed) != 0 {
                                 let run = server.consecutive_failures.swap(0, Ordering::Relaxed);
                                 if run != 0 {
@@ -335,7 +346,11 @@ impl UpstreamPool {
             }
 
             let mut rollback = probe.then(|| ProbeGuard::new(health));
+            let started = Instant::now();
             let result = server.query(query, self.timeout).await;
+            if result.is_ok() {
+                server.rtt.observe(started.elapsed());
+            }
             if let Some(rollback) = rollback.as_mut() {
                 rollback.disarm();
             }
@@ -396,6 +411,7 @@ struct UpstreamServer {
     consecutive_failures: AtomicU64,
     run_buckets: [AtomicU64; 4],
     family: Option<fah_model::AddressFamily>,
+    rtt: AtomicHistogram<{ UPSTREAM_RTT_BUCKETS_SECONDS.len() }>,
 }
 
 enum Transport {
@@ -501,6 +517,7 @@ impl UpstreamServer {
             consecutive_failures: AtomicU64::new(0),
             run_buckets: std::array::from_fn(|_| AtomicU64::new(0)),
             family,
+            rtt: AtomicHistogram::new(&UPSTREAM_RTT_BUCKETS_SECONDS),
         })
     }
 
@@ -1001,6 +1018,45 @@ mod tests {
             assert_eq!(status.attempts, 1);
             assert_eq!(status.failures, 1);
         }
+    }
+
+    #[tokio::test]
+    async fn rtt_counts_only_answered_attempts() {
+        let pool = pool_of(
+            vec![
+                udp_server_config(dead_addr().await),
+                udp_server_config(answering_udp_server(1).await),
+            ],
+            200,
+        );
+        assert!(pool.forward(&a_query()).await.is_ok());
+        let status = pool.status();
+        assert_eq!(status[0].rtt.count, 0);
+        assert_eq!(status[0].rtt.buckets, [0; 11]);
+        assert_eq!(status[1].rtt.count, 1);
+        assert!(status[1].rtt.sum_seconds > 0.0);
+        assert_eq!(*status[1].rtt.buckets.last().unwrap(), 1);
+    }
+
+    #[tokio::test]
+    async fn rtt_ignores_an_attempt_that_ran_into_the_timeout() {
+        let silent = UdpSocket::bind("127.0.0.1:0").await.unwrap();
+        let silent_addr = silent.local_addr().unwrap();
+        let pool = pool_of(
+            vec![
+                udp_server_config(silent_addr),
+                udp_server_config(answering_udp_server(1).await),
+            ],
+            200,
+        );
+        assert!(pool.forward(&a_query()).await.is_ok());
+        let status = pool.status();
+        assert_eq!(status[0].failures, 1);
+        assert_eq!(status[0].rtt.count, 0);
+        assert_eq!(status[0].rtt.buckets, [0; 11]);
+        assert_eq!(status[0].rtt.sum_seconds, 0.0);
+        assert_eq!(status[1].rtt.count, 1);
+        drop(silent);
     }
 
     #[tokio::test]

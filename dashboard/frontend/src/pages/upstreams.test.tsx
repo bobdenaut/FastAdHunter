@@ -7,6 +7,7 @@ import type { Route } from '../router/routes';
 import Upstreams from './upstreams';
 import { DegradedBanner } from '../components/degraded-banner';
 import { EndpointRow } from './upstreams/endpoint-row';
+import { endpointOrder } from './upstreams/rtt-chart';
 import { StatesCard } from './upstreams/states-card';
 
 /**
@@ -425,5 +426,111 @@ describe('the page’s banner and footer', () => {
     expect(dom.querySelector('.ep-foot')?.textContent).not.toContain(
       'resolved at connect time',
     );
+  });
+});
+
+describe('the round-trip cells on an endpoint row', () => {
+  it('prints the percentiles and the exact mean in milliseconds', () => {
+    const dom = mount(
+      <EndpointRow
+        index={0}
+        upstream={endpoint({
+          rtt: { count: 1000, sum_seconds: 12.5, p50: 0.01, p99: 0.05 },
+        })}
+        mode="adaptive"
+      />,
+    );
+    const text = (dom.textContent ?? '').replace(/\s+/g, ' ');
+    expect(dom.querySelectorAll('.ep-rtt-cells > div')).toHaveLength(4);
+    expect(text).toContain('10.0 ms');
+    expect(text).toContain('50.0 ms');
+    // 12.5 s over 1000 answers is 12.5 ms, the one exact figure in the group.
+    expect(text).toContain('12.5 ms');
+    expect(text).toContain('1,000');
+    expect(text).toContain('answered attempts only');
+  });
+
+  // An engine predating the field serves no `rtt` at all, and a fresh one that
+  // has forwarded nothing serves zeros. Neither is a round trip of zero.
+  it('prints nothing rather than a zero when there is no measurement', () => {
+    const absent = mount(
+      <EndpointRow index={0} upstream={endpoint()} mode="adaptive" />,
+    );
+    expect(
+      [...absent.querySelectorAll('.ep-rtt-cells > div')].every((cell) =>
+        (cell.textContent ?? '').includes('—'),
+      ),
+    ).toBe(true);
+  });
+
+  it('reads an exact 0.0 percentile as no traffic, not as an instant answer', () => {
+    const dom = mount(
+      <EndpointRow
+        index={0}
+        upstream={endpoint({
+          rtt: { count: 0, sum_seconds: 0, p50: 0, p99: 0 },
+        })}
+        mode="adaptive"
+      />,
+    );
+    const text = (dom.textContent ?? '').replace(/\s+/g, ' ');
+    expect(text).not.toContain('0 ms');
+    expect(text).toContain('—');
+  });
+
+  it('keeps the round-trip group out of the counter grid', () => {
+    // The health cells are gated on the strategy; round trip is not, so a
+    // fallback row still carries it and the counter count stays four.
+    const dom = mount(
+      <EndpointRow
+        index={0}
+        upstream={endpoint({
+          rtt: { count: 10, sum_seconds: 0.1, p50: 0.01, p99: 0.01 },
+        })}
+        mode="fallback"
+      />,
+    );
+    expect(dom.querySelectorAll('.ep-counters > div')).toHaveLength(4);
+    expect(dom.querySelectorAll('.ep-rtt-cells > div')).toHaveLength(4);
+  });
+});
+
+describe('the endpoints the round-trip chart draws', () => {
+  const row = (ts: string, addresses: string[]) => ({
+    ts,
+    upstreams: addresses.map((address) => endpoint({ address })),
+  });
+
+  it('takes the newest row that carries endpoints, not the oldest', () => {
+    // A config reload mid-range changes the set; the newest row is the one
+    // whose endpoints still exist.
+    expect(
+      endpointOrder([
+        row('2026-08-01T00:00:00Z', ['1.1.1.1']),
+        row('2026-08-01T00:01:00Z', ['9.9.9.9', '8.8.8.8']),
+      ]),
+    ).toEqual(['9.9.9.9', '8.8.8.8']);
+  });
+
+  it('skips rows that carry no endpoints rather than reporting none', () => {
+    expect(
+      endpointOrder([
+        row('2026-08-01T00:00:00Z', ['1.1.1.1']),
+        { ts: '2026-08-01T00:01:00Z' },
+      ]),
+    ).toEqual(['1.1.1.1']);
+  });
+
+  it('reports none only when no row carries an endpoint', () => {
+    expect(endpointOrder([{ ts: '2026-08-01T00:00:00Z' }])).toEqual([]);
+    expect(endpointOrder([])).toEqual([]);
+  });
+
+  it('caps the plot at four endpoints, where the cards above carry them all', () => {
+    expect(
+      endpointOrder([
+        row('2026-08-01T00:00:00Z', ['a', 'b', 'c', 'd', 'e', 'f']),
+      ]),
+    ).toEqual(['a', 'b', 'c', 'd']);
   });
 });
