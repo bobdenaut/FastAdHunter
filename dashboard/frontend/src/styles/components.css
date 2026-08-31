@@ -3241,14 +3241,23 @@ table.t.counters td.bad {
   font-size: 11px;
 }
 
-/* Full width beneath the three columns: round-trip time is the one group on
-   the row that is network time rather than engine time, and reading it beside
-   the attempt counters is what makes a slow endpoint distinguishable from a
-   failing one. */
+/* A second group under the counters, in their column — reading round-trip time
+   beside the attempt counters is what makes a slow endpoint distinguishable
+   from a failing one, and this is the column the endpoint's other metric groups
+   are in. Full width instead would take a grid row of its own, which pushed
+   `.ep-runs` out of the third column and left that column empty on every row. */
 .ep-rtt {
-  grid-column: 1 / -1;
+  grid-column: 2;
   border-top: 1px dashed var(--border-row);
   padding-top: 10px;
+}
+
+/* Explicit on both axes, so the histogram keeps the third column *and* the
+   first row. Auto placement runs in document order, so it followed `.ep-rtt`
+   into the second row and sat a group lower than the counters it reads with. */
+.ep-runs {
+  grid-column: 3;
+  grid-row: 1;
 }
 
 .ep-rtt > .note {
@@ -3326,8 +3335,11 @@ table.t.counters td.bad {
     grid-template-columns: minmax(0, 1fr) minmax(0, 1.6fr);
   }
 
+  /* Back under both columns, and back into document order — the desktop rule
+     pins it to the first row, which here would put it above the counters. */
   .ep-runs {
     grid-column: 1 / -1;
+    grid-row: auto;
   }
 }
 
@@ -3341,6 +3353,12 @@ table.t.counters td.bad {
 
   .ep-counters {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  /* The second column is gone here, so the desktop placement would ask for a
+     track the grid does not have and get an implicit one. */
+  .ep-rtt {
+    grid-column: 1;
   }
 
   .ep-rtt-cells {
