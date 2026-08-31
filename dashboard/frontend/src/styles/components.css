@@ -913,8 +913,16 @@ table.t tbody tr:hover td {
   flex-wrap: wrap;
 }
 
+/* `ch` in the cells' own monospace face, so the three tracks are the same width
+   on every endpoint row and the figures read down the card as a column. Sized
+   for the widest realistic value: `9,999,999 attempts`, `99,999 failures` and
+   `2000.0 ms`, the top finite RTT bucket. */
 .upstream-figures {
   color: var(--text-control);
+  display: grid;
+  grid-template-columns: 18ch 14ch 9ch;
+  gap: 0 10px;
+  text-align: right;
 }
 
 .upstream .bar {

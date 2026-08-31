@@ -101,6 +101,25 @@ export function millisLabel(ms: number): string {
   return text.endsWith('0') ? text.slice(0, -1) : text;
 }
 
+/** What a round-trip figure prints when the engine served no `rtt` block, or
+ *  served one no attempt has answered into yet. Distinct from `0.00 ms`, which
+ *  would claim a measurement. */
+export const NO_RTT = '—';
+
+/**
+ * An upstream round-trip percentile, seconds to a millisecond label.
+ *
+ * An exact `0` is "no attempt reached this percentile", the same reading the
+ * Performance page's tiles take, so it prints as nothing rather than as an
+ * impossibly fast endpoint. Here rather than in a card because two screens
+ * print these figures — the Upstreams endpoint row and the Dashboard's health
+ * card — and a second copy is how the two would drift apart.
+ */
+export function rttLabel(seconds: number | undefined): string {
+  if (seconds === undefined || seconds === 0) return NO_RTT;
+  return `${millisLabel(seconds * 1000)} ms`;
+}
+
 /** `1.84` from `cache_cleanup.last_duration_micros` — the unit conversion and
  *  the formatting together, so neither happens in a card. */
 export function microsLabel(micros: number): string {

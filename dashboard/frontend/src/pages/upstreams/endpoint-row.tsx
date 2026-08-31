@@ -1,12 +1,7 @@
 import type { Upstream, UpstreamRtt } from '../../api/types';
-import { millisLabel } from '../../charts/format';
+import { NO_RTT, millisLabel, rttLabel } from '../../charts/format';
 import { StatusPill } from '../../components/status-pill';
 import { failureRunShares, type UpstreamMode } from '../../derive';
-
-/** What a cell prints when the engine served no `rtt` block, or served one no
- *  attempt has answered into yet. Distinct from `0.00 ms`, which would claim a
- *  measurement. */
-const NO_RTT = '—';
 
 /** The word that goes where `v4` or `v6` would, and the reason it is not one.
  *  Nothing resolves a DoH URL's hostname to fill the field in — it is not a
@@ -137,14 +132,6 @@ export function EndpointRow({
       </div>
     </div>
   );
-}
-
-/** Seconds to a millisecond label. An exact `0` is "no attempt reached this
- *  percentile", the same reading the Performance page's tiles take, so it
- *  prints as nothing rather than as an impossibly fast endpoint. */
-function rttLabel(seconds: number | undefined): string {
-  if (seconds === undefined || seconds === 0) return NO_RTT;
-  return `${millisLabel(seconds * 1000)} ms`;
 }
 
 /** The one exact figure in the group: `sum / count`, both cumulative. A
