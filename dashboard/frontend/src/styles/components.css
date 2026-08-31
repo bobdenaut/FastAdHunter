@@ -4508,12 +4508,112 @@ table.t.counters td.bad {
   overflow-x: auto;
 }
 
-.feed-table {
+table.feed-table {
+  /* The columns are sized from the header row alone. Under the default `auto`
+     layout the browser re-measures every held row on each flush, so the arrival
+     of one HTTP row — a path in the domain cell, `GET · xmlhttprequest · 200 ·
+     2.4 MiB` in the detail cell — redistributed all ten columns and the table
+     jumped sideways from Pipe rightward once a second. */
+  table-layout: fixed;
   min-width: 900px;
+}
+
+/* Widths in px, derived from the monospace cells rather than declared in `ch`:
+   `ch` resolves in the *header's* font, which is the 10.5px proportional face,
+   so a `ch` here would measure the wrong glyph. One mono character is 6.87px at
+   the 12.5px the cells use, and every figure below is that times the characters
+   it has to hold, plus the 20px of cell padding.
+
+   Domain is deliberately left out. It is the one column with no width, so fixed
+   layout hands it whatever the other nine do not claim — the table always ends
+   flush with its card, and the slack lands where a long value is read. */
+.feed-table th:nth-child(1) {
+  width: 54px;
+}
+
+/* Pipe: five characters, which is `HTTP` with one to spare. */
+.feed-table th:nth-child(2) {
+  width: 54px;
+}
+
+/* Client: 39 characters, a full IPv6 address on one line. Sized for IPv4 it was
+   half this and every v6 row wrapped to three — an address is one token and
+   reading it across a line break is worse than the width it costs. */
+.feed-table th:nth-child(3) {
+  width: 288px;
+}
+
+.feed-table th:nth-child(5) {
+  width: 60px;
+}
+
+.feed-table th:nth-child(6) {
+  width: 76px;
+}
+
+/* Rule: 32 characters, which holds the list rules actually seen —
+   `||pagead2.googlesyndication.com^` is exactly that. Trimmed from 40 to give
+   the width back to Domain once Client stopped wrapping. */
+.feed-table th:nth-child(7) {
+  width: 240px;
+}
+
+.feed-table th:nth-child(8) {
+  width: 140px;
+}
+
+.feed-table th:nth-child(9) {
+  width: 180px;
+}
+
+.feed-table th:nth-child(10) {
+  width: 75px;
+}
+
+/* The row grows downwards instead: a value past its column wraps at any
+   character rather than widening the cell, which fixed layout would ignore. */
+.feed-domain,
+.feed-table td:nth-child(3),
+.feed-table td:nth-child(7) {
+  overflow-wrap: anywhere;
 }
 
 .feed-table td {
   vertical-align: top;
+}
+
+/* Trial of a banded header, scoped to this table before it goes to the rest.
+   `table.t th` is 10.5px muted text with no ground of its own, which reads as a
+   caption rather than as the top of a column — on a feed that never stops
+   moving there is nothing holding the eye at the boundary. */
+table.feed-table th {
+  font-size: 12px;
+  color: var(--text);
+  /* The card's own ground: the header sits level with the card and the rows are
+     the recessed band beneath it, rather than the other way round. */
+  background: var(--surface-raised);
+  /* The base rule pads the bottom only, which is what a caption wants. A band
+     needs the same room on both sides of the text. */
+  padding: 8px 10px;
+}
+
+/* The rows carry the sunken ground instead — the block of data reads as one
+   panel let into the card, with the header standing on the card's surface. */
+.feed-table tbody td {
+  background: var(--surface-sunken);
+}
+
+/* Hover has to move with them: `--surface-sunken` was the highlight, and the
+   rows now sit on it, so hovering a row changed nothing. This is the one step
+   lighter than both grounds. */
+/* `table.` and the full descendant chain, not a bare `.feed-table`: the base
+   rule is `table.t tbody tr:hover td`, and four element names beat three, so a
+   shorter selector at the same class count lost and the hover did nothing. */
+table.feed-table tbody tr:hover td {
+  /* The header's ground. The rows sit one step below it, so hovering lifts a
+     row to the surface the card and the header are already on — the same two
+     tones the table is built from, no third colour introduced. */
+  background: var(--surface-raised);
 }
 
 .feed-kind {
@@ -4569,6 +4669,14 @@ table.t.counters td.bad {
 
 .feed-cache-miss {
   color: var(--text-muted);
+}
+
+/* The dash in the cache column is not a quiet version of a miss — it says the
+   cache was never consulted at all, which is true of every HTTP row and every
+   blocked DNS row. It shared `--text-muted` with `MISS`, so the one outcome
+   that did not happen looked like the one that did. */
+.feed-table td:nth-child(5) .note {
+  color: var(--text);
 }
 
 /* The phone card list: hidden at desktop, and hidden means out of the tree. */
