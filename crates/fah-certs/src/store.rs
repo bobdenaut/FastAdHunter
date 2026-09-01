@@ -361,8 +361,8 @@ impl CertStore {
 
         let summary = handle.summary().clone();
         *slot = Some(handle);
-        drop(slot);
         self.leaves.clear();
+        drop(slot);
         Ok(CaInstalled {
             summary,
             archived_previous: archive.is_some(),
@@ -431,21 +431,29 @@ impl CertStore {
     pub fn prewarm(&self, host: &str) -> Result<Arc<CertifiedKey>, CertError> {
         let host = normalize(host).ok_or(CertError::InvalidHost)?;
 
-        let ca = self.ca().ok_or(CertError::NoCa)?;
-        let now = unix_now();
-        let summary = ca.summary();
-        if now < summary.not_before {
-            return Err(CertError::NotYetValid {
-                not_before: summary.not_before,
-            });
-        }
-        if now > summary.not_after {
-            return Err(CertError::Expired {
-                not_after: summary.not_after,
-            });
-        }
+        loop {
+            let (ca, epoch) = {
+                let slot = self.lock_ca();
+                let ca = slot.clone().ok_or(CertError::NoCa)?;
+                (ca, self.leaves.epoch())
+            };
+            let now = unix_now();
+            let summary = ca.summary();
+            if now < summary.not_before {
+                return Err(CertError::NotYetValid {
+                    not_before: summary.not_before,
+                });
+            }
+            if now > summary.not_after {
+                return Err(CertError::Expired {
+                    not_after: summary.not_after,
+                });
+            }
 
-        self.leaves.prewarm(&ca, host.as_ref(), now)
+            if let Some(key) = self.leaves.prewarm(&ca, host.as_ref(), now, epoch)? {
+                return Ok(key);
+            }
+        }
     }
 
     pub fn cached_leaf(&self, host: &str) -> Option<Arc<CertifiedKey>> {

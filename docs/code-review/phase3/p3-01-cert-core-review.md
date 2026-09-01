@@ -1063,7 +1063,7 @@ low/minor finding was touched.
 | H2 CA cert/key match never verified | Fixed |
 | M1 `api_certified_key` skips the consistency check | Fixed |
 | M2 stale `LeafCache` references in p3-04's plan | Fixed |
-| M3 (p3-05 re-warm), L1–L6, m4/m7/m8/m10, nitpicks | Open, unchanged |
+| M3 (p3-05 re-warm), L1–L6, m4/m7/m8/m10, nitpicks | Open, unchanged (L1 and L5 later fixed by p3-02, `8dab9a5` — see the final review's F5) |
 
 ### H1 — an authority epoch gates the insert
 
@@ -1176,4 +1176,298 @@ pre-fix code. Still open and all deliberate: M3 (p3-05 must re-warm the DoT
 hostname inside the 7-day leaf lifetime — a p3-05 change, not a p3-01 one),
 L1–L6, m4, m7, m8, m10 and the nitpicks. None of them blocks p3-02, p3-04 or
 p3-05; the §Carried into later tasks table above still applies, minus the H1/H2
-rows.
+rows. (L1 and L5 were subsequently fixed in `8dab9a5`, p3-02.)
+
+---
+
+## Final independent review (2026-09-01, HEAD after p3-02)
+
+Fresh pass over the checkout at `HEAD` (`3a856ef`), not over commit `3337aab`
+alone: p3-02 (`8dab9a5`) changed `fah-certs` after the task closed (+728/−60,
+mostly `store.rs`), so the current crate is what p3-03..p3-06 will consume.
+Previous verdicts were not reused; every claim below was read from source.
+
+Gates on this box: `cargo fmt --all -- --check` clean;
+`cargo clippy -p fah-certs -p fah-api --all-targets -- -D warnings` clean;
+`cargo test -p fah-certs` = 84 unit + 8 integration, 0 failures. Windows, so
+the `#[cfg(unix)]` permission test did not run and `write_private` /
+`restrict_permissions` are no-ops here.
+
+### Re-verified from source
+
+- Layering: `fah-certs` declares no `fah-*` dependency; only `fah-api` consumes
+  it (`crates/*/Cargo.toml`); `layering.rs:12` assigns L2. Zero Rust comments
+  in the crate.
+- Handshake path: `MintingResolver::resolve` = `cached_leaf(sni).or_else(fallback)`;
+  `cached_leaf` = ≤253-byte ASCII scan, one `std::sync::Mutex`, one hash
+  lookup, one `Arc` clone, one relaxed atomic. No crypto, no CA mutex, no
+  disk, no allocation when the SNI is already lowercase (rustls guarantees
+  that). DNS hot path untouched — no `fah-dns`/`fah-http` edge exists.
+- Single-flight: `lease` loop re-checks under the lock after every wake, so
+  spurious and cross-host wakeups are harmless; `InflightGuard::drop` releases
+  the slot on `?` and on unwind; `store_minted` drops the inner guard before
+  the `InflightGuard` runs, so no re-entrant lock. A failed leader's waiter
+  becomes the next leader rather than blocking forever.
+- Regeneration: `install_ca` order is load → stage → archive-by-copy → commit
+  → assign slot → clear. Every failure branch was traced: stage failure
+  cleans its tmps; archive failure discards tmps; commit failure restores from
+  the archive (covers the second-rename case where `commit_pair` has already
+  deleted the new cert). Archive claim uses `fs::create_dir` so a same-second
+  collision cannot overwrite a key; `MAX_ARCHIVES` (8) bounds `/config` growth.
+- Every CA load path (`open`, `generate_ca`, `install_ca_pair`) goes through
+  `CaHandle::load` → `summarize`, which rejects non-CA and key-mismatched
+  pairs. Export (`ca_public_pem` / `ca_public_der`) is rebuilt from the parsed
+  DER; import rebuilds `cert_pem` from DER and drops any non-certificate block.
+- `api_certified_key` and `server_config` both go through rustls `keys_match`.
+- Memory: leaf cache bounded by count (512) and per-key length (253 bytes);
+  `inflight` bounded by the caller's concurrency; nothing else accumulates.
+- `CertStore` is `Send + Sync` — proven by the integration tests sharing an
+  `Arc<CertStore>` across `tokio::spawn`.
+- p3-02 wiring (regression check only): `CertStore::open` failure is
+  non-fatal (`main.rs:482-492` logs and disables the endpoint); every store
+  call in `fah-api/src/certs.rs` runs under `spawn_blocking` (`:189`). Round
+  three's m4 and the "must spawn_blocking" hand-off are honoured.
+
+### Findings
+
+#### Major
+
+**F1 — H1's epoch guard does not cover the CA handle it was meant to protect.**
+`store.rs::CertStore::prewarm` reads the CA under `lock_ca()` and releases it;
+`leaf.rs::LeafCache::lease` reads `epoch` under the *cache* mutex some time
+later. The two reads are not atomic with respect to `install_ca`, which
+assigns the slot, drops `lock_ca`, and only then calls `leaves.clear()`.
+
+Two orderings still publish a leaf signed by the archived authority under the
+**new** epoch, so nothing purges it:
+
+1. `prewarm` captures `ca_old`; the caller's thread is descheduled; a full
+   `install_ca` (stage, archive, commit, assign, clear ⇒ `epoch = E+1`)
+   completes; `lease` then captures `E+1`; mint with `ca_old`; `store_minted`
+   sees a matching epoch and inserts.
+2. Waiter W captures `ca_old`, enters `lease`, blocks on the condvar behind
+   leader L. `install_ca` completes while L is still minting (L's insert is
+   correctly superseded). L's guard notifies; W wakes, finds no entry and no
+   in-flight marker, becomes leader **with the new epoch**, mints with its
+   stale `ca_old`, and inserts.
+
+Ordering 2 needs only a regeneration to finish inside one mint (~0.5 ms on the
+RB5009, longer under CPU contention) while a second pre-warm for the same host
+is queued — a dashboard "regenerate" click during a burst of first-sight
+connections. Ordering 1 needs an OS descheduling of a few ms in a ~100 ns
+window; rarer, but real. Consequence is the one H1 named: up to 7 days of
+leaves no client can verify, invisible to `status()`.
+
+The fourth-round test
+`a_mint_started_under_a_replaced_authority_never_reaches_the_cache` drives
+lease → mint → clear → store, which the guard does cover; neither ordering
+above is exercised. Inferred from control flow; not empirically triggered.
+
+Fix (inside `fah-certs`, ~10 lines): make the CA handle and the epoch one
+read. Either `CertStore::prewarm` reads `(Arc<CaHandle>, epoch)` while
+holding `lock_ca` and `install_ca` bumps the epoch **before** releasing the
+slot (move `self.leaves.clear()` above `drop(slot)`), with `lease` taking the
+epoch as an argument instead of reading it; or `store_minted` compares the
+identity of the CA the leaf was signed with (`Arc::ptr_eq`, or the
+fingerprint) against the current slot. Add a test for ordering 1
+(capture → regenerate → lease → store) — it is deterministic with the same
+seam the existing test uses.
+
+**Fix before p3-04 wires `prewarm`.** p3-02 does not need re-opening: the only
+way to hit it today is a regeneration racing a pre-warm, and nothing pre-warms
+yet.
+
+#### Minor
+
+**F2 — a superseded mint is returned as `Ok`.** When `store_minted` drops a
+leaf for epoch mismatch, `LeafCache::prewarm` still returns that leaf and
+`CertStore::prewarm` returns `Ok(leaf)`. A consumer that uses the return value
+(rather than `cached_leaf`) holds a leaf signed by the archived CA with a
+success code. p3-04's plan reads through `cached_leaf`, so it is safe today;
+the contract is not. Fold into F1: on mismatch, re-lease under the current
+authority or return an error.
+
+**F3 — the CA path has no interrupted-regeneration completion; the API path
+does.** `api::complete_interrupted_replacement` (added in `8dab9a5`) heals a
+crash between `commit_pair`'s two renames by trying `cert` + `key_tmp` and
+renaming on success. The CA path — same crash, same file layout — surfaces
+`KeyMismatch` at `CertStore::open`, which `main.rs` turns into "endpoint
+unavailable until /config is repaired and the container restarted". On the
+RB5009 that repair is a manual rename of `ca-key.pem.tmp` through `/file`.
+The API-path shape transplants directly (`CaHandle::load(cert, key_tmp)`
+succeeds ⇒ rename). Recommend; not a blocker.
+
+**F4 — one stale plan reference survived the fourth-round sweep.**
+`p3-04-tls-interception-plan.md:141` still says "mint the leaf
+(`get_or_mint(sni)`)". Lines 19, 232 and 353 are correct. One-line edit;
+needs the owner's yes.
+
+**F5 — the "still open" ledger in this file is stale.** L1 (key file created
+with `mode(0o600)` via `write_private`) and L5 (`rustls` `aws_lc_rs` feature
+declared in `fah-certs/Cargo.toml`) are both **fixed at HEAD** — absent at
+`3337aab`, present since `8dab9a5`. Neither the fourth-round table nor the
+p3-02 review records that. Ledger correction only.
+
+**F6 — imported chain intermediates are decoded but never validated.**
+`import::validate` x509-parses and window-checks `chain[0]` only; the rest of
+a server chain is PEM-decoded by `rustls_pemfile::certs` and stored verbatim.
+`CertifiedKey::from_der` likewise checks only the end-entity. A malformed or
+expired intermediate passes validation and is served on every handshake. Cold
+path; a parse-only check per element is cheap. A root-first chain currently
+fails as `KeyMismatch`, which misdirects the operator — a "leaf must be first"
+`Parse` error would be more precise.
+
+**F7 — the SEC1/PKCS#1 acceptance claim is untested.** §Decisions justifies
+the rustls-based key match with "accepts PKCS#8, SEC1 and PKCS#1 keys", but
+every test key in the crate comes from `KeyPair::serialize_pem` (PKCS#8).
+rcgen 0.14 with `aws_lc_rs` does accept SEC1/PKCS#1 DER (verified,
+`key_pair.rs:565-580`), so the CA install path very likely works too — but
+nothing proves either. One fixture each closes it.
+
+**F8 — no renewal margin on leaves.** `take_fresh` serves an entry until
+`not_after > now` fails, so a leaf can be presented with one second of life
+and a fail-closed miss follows immediately after. p3-04 pre-warms per
+connection and self-heals; p3-05's single startup pre-warm does not (round
+three's M3 stands). A re-mint threshold (e.g. 1 h before expiry) would make
+both consumers indifferent. Recommendation, not a defect.
+
+#### Nitpick
+
+- `mint` backdates `not_before` by 24 h but does not clamp it to the CA's
+  `not_before`, unlike `not_after`; an imported CA issued minutes ago yields
+  leaves valid before their issuer. No mainstream validator enforces nesting.
+- `api::parse_pair` maps PEM parse failures to `CertError::Io` (moved code;
+  pre-existing).
+- The library reads the wall clock in `prewarm`, `cached_leaf`, `validate` and
+  `generate`; the plan accepted this, but an injected `now` would let the
+  expiry tests drop the `validity_days: 0` CA trick.
+- Still open from earlier rounds and re-checked as unchanged: m7 (zeroize —
+  owner decision), m8 (fsync), m10 (`with_capacity(0)`), L2, L3, L4, L6, and
+  the original nitpicks. m4 is effectively closed: the CA mutex is off the
+  handshake path and every admin call runs under `spawn_blocking`.
+
+### Plan compliance
+
+| Item | Verdict |
+| --- | --- |
+| L2 crate, no sibling edges, guard updated | Met |
+| `fah-api` machinery moved; `probe_local_address` stays | Met |
+| ECDSA P-256 via rcgen `aws_lc_rs` | Met |
+| CA files, 0600 key (at creation, since `8dab9a5`), tmp+rename, archive, `warn!` | Met |
+| CA defaults / overridable / no TOML key | Met |
+| Leaf 7 d, backdated, DNS/IP SAN, clamped to CA `not_after` | Met |
+| LRU 512, mint outside the lock, single-flight, stats | Met |
+| Regeneration purges leaves | Met sequentially; **F1** under concurrency |
+| `MintingResolver` at L2, fallback slot, no wiring, never mints | Met |
+| PFX descoped (Option B), fixed crypto set unchanged | Met — `pem` is encoding only |
+| Import rejections one variant each | Met |
+| Export public-only, generated and imported | Met, tested on both |
+| Round-trip acceptance test | Met |
+| Docs: ADR-0006, ARCHITECTURE.md, SECURITY.md | Met, text matches code |
+| No comments, no config keys, no endpoints | Met |
+
+Deviations: the four in §Decisions plus the two recorded in the first review
+still stand and are sound. p3-02's additions to this crate (`ArchiveFull`,
+`MAX_ARCHIVES`, API-pair archiving, fingerprint marker,
+`complete_interrupted_replacement`, `write_private`) are p3-02's scope; none
+alters a p3-01 contract, and `install_api_pair` still "only persists"
+(activation at restart).
+
+### Tests
+
+Proven at HEAD: acceptance round-trip, both no-SNI postures, resolve never
+mints, single-flight (`Barrier`, `minted_total == 1`), failure releases the
+slot, cap holds, export purity on both paths, CA/server type split, key match
+on every load path, one named rejection per variant, interrupted CA
+regeneration refused loudly. No sleeps or timing thresholds; nothing flaky.
+
+Gaps: F1's two orderings; F6 (bad intermediate); F7 (non-PKCS#8 fixtures);
+0600 permissions unrun on this box.
+
+### Carried forward
+
+| To | Item |
+| --- | --- |
+| before p3-04 | F1 (+F2) — one read for CA handle and epoch; deterministic test for capture → regenerate → lease |
+| p3-04 plan | F4 — line 141 `get_or_mint` |
+| p3-05 | M3 from round three (re-warm inside 7 d), or F8 here |
+| this file | F5 — mark L1/L5 fixed in `8dab9a5` |
+| any | F3, F6, F7 when the crate is next opened |
+
+### Verdict
+
+**PASS WITH DEFERRED FINDINGS.** F1 is a narrowed residual of an already-fixed
+class, unreachable until a consumer pre-warms, and confined to `fah-certs`; it
+must land before p3-04 wires `prewarm`. Nothing else blocks.
+
+---
+
+## Fifth fix round — F1, F2, F5
+
+Owner-approved scope: F1, F2 and the F5 ledger correction. Nothing else touched.
+
+| Finding | Status |
+| --- | --- |
+| F1 CA handle and epoch read non-atomically | Fixed |
+| F2 superseded mint returned as `Ok` | Fixed |
+| F5 stale "still open" ledger (L1/L5) | Fixed — two ledger lines annotated |
+| F4 stale `get_or_mint` in p3-04 plan | Fixed (owner-approved plan edit, same round) |
+| F8 / M3 leaf expiry vs startup-only pre-warm | Delegated — p3-05 plan now carries a mandatory 24 h re-warm bullet |
+| F3, F6, F7, nitpicks | Open, unchanged |
+
+### F1 — one read for the authority and the epoch
+
+`CertStore::prewarm` now reads `Arc<CaHandle>` **and** `leaves.epoch()` under a
+single `lock_ca()` hold; `install_ca` calls `leaves.clear()` (the epoch bump)
+**before** releasing the CA slot. A pre-warm therefore either sees the old
+authority with the old epoch, or the new authority with the new epoch — never a
+mixed pair. `LeafCache::prewarm` takes the epoch as an argument; `lease` no
+longer reads it. Lock order is `ca → inner` in both `prewarm` and `install_ca`;
+nothing takes `inner → ca`.
+
+### F2 — a superseded mint is retried, not returned
+
+`LeafCache::store_minted` returns whether the leaf was published;
+`LeafCache::prewarm` returns `Option<Arc<CertifiedKey>>` (`None` = superseded).
+`CertStore::prewarm` loops on `None`, re-reading `(ca, epoch)` under the lock,
+so the caller only ever receives a leaf that is in the cache under the current
+authority. Each extra iteration requires a regeneration to have landed in
+between, so the loop is bounded by admin actions. No new `CertError` variant.
+
+Public surface unchanged: `CertStore::prewarm(&str) -> Result<Arc<CertifiedKey>, CertError>`,
+`LeafCacheStats` fields identical. `fah-api` recompiled without edits.
+
+### Tests
+
+`leaf::an_authority_captured_before_a_regeneration_cannot_populate_the_cache_after_it`
+is the ordering the fourth-round test did not cover: epoch captured →
+`clear()` → `prewarm` with the stale authority. Asserts `None`, `size == 0`,
+`inflight == 0`, `minted_total == 1`, `superseded == 1`, then that a pre-warm
+under the current epoch populates. Reasoning for "fails on pre-fix code": the
+pre-fix `lease` read the epoch after `clear()`, so the insert matched and
+`size` would be 1; not run against the old binary. The two existing epoch
+tests now also assert `store_minted`'s return value. A test-only `warm` helper
+wraps the four-argument `prewarm` for the fourteen unchanged call sites.
+
+### Verification (fifth round)
+
+| Gate | Result |
+| --- | --- |
+| `cargo fmt --all -- --check` | clean |
+| `cargo clippy --workspace --all-targets -- -D warnings` | clean |
+| `cargo test --all-features --workspace` | 1332 passed, 0 failed |
+| `cargo test -p fah-certs` | 85 unit (was 84) + 8 integration |
+
+### Files changed (fifth round)
+
+| File | Change |
+| --- | --- |
+| `crates/fah-certs/src/store.rs` | `install_ca` clears before releasing the slot; `prewarm` reads `(ca, epoch)` under one lock and loops on a superseded mint |
+| `crates/fah-certs/src/leaf.rs` | `epoch()`; `prewarm(…, epoch) -> Result<Option<_>>`; `Lease::Mint(guard)`; `store_minted -> bool`; one new test, two tightened, `warm` helper |
+| this file | F5 ledger annotations |
+
+### Verdict after the fifth fix round
+
+**PASS WITH DEFERRED FINDINGS.** Open, all deliberate: F3,
+F6, F7, F8/M3 (now a p3-05 plan requirement), m7, m8, m10, L2–L4, L6 and the
+nitpicks. None blocks p3-03, p3-04 or p3-05.

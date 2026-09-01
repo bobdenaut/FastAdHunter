@@ -70,7 +70,7 @@ struct InflightGuard<'a> {
 
 enum Lease<'a> {
     Fresh(Arc<CertifiedKey>),
-    Mint(InflightGuard<'a>, u64),
+    Mint(InflightGuard<'a>),
 }
 
 impl Drop for InflightGuard<'_> {
@@ -107,6 +107,10 @@ impl LeafCache {
         let mut inner = self.lock();
         inner.entries.clear();
         inner.epoch += 1;
+    }
+
+    pub(crate) fn epoch(&self) -> u64 {
+        self.lock().epoch
     }
 
     pub(crate) fn stats(&self) -> LeafCacheStats {
@@ -153,15 +157,17 @@ impl LeafCache {
         ca: &CaHandle,
         host: &str,
         now: i64,
-    ) -> Result<Arc<CertifiedKey>, CertError> {
-        let (guard, epoch) = match self.lease(host, now) {
-            Lease::Fresh(key) => return Ok(key),
-            Lease::Mint(guard, epoch) => (guard, epoch),
+        epoch: u64,
+    ) -> Result<Option<Arc<CertifiedKey>>, CertError> {
+        let guard = match self.lease(host, now) {
+            Lease::Fresh(key) => return Ok(Some(key)),
+            Lease::Mint(guard) => guard,
         };
         let (key, not_after) = mint(ca, host)?;
         self.minted.fetch_add(1, Ordering::Relaxed);
-        self.store_minted(guard, epoch, &key, not_after);
-        Ok(key)
+        Ok(self
+            .store_minted(guard, epoch, &key, not_after)
+            .then_some(key))
     }
 
     fn lease(&self, host: &str, now: i64) -> Lease<'_> {
@@ -187,16 +193,12 @@ impl LeafCache {
 
         let owned: Arc<str> = Arc::from(host);
         inner.inflight.insert(Arc::clone(&owned));
-        let epoch = inner.epoch;
         drop(inner);
 
-        Lease::Mint(
-            InflightGuard {
-                cache: self,
-                host: owned,
-            },
-            epoch,
-        )
+        Lease::Mint(InflightGuard {
+            cache: self,
+            host: owned,
+        })
     }
 
     fn store_minted(
@@ -205,9 +207,10 @@ impl LeafCache {
         epoch: u64,
         key: &Arc<CertifiedKey>,
         not_after: i64,
-    ) {
+    ) -> bool {
         let mut inner = self.lock();
-        if inner.epoch == epoch {
+        let current = inner.epoch == epoch;
+        if current {
             if !inner.entries.contains_key(&guard.host) && inner.entries.len() >= self.capacity {
                 self.evict_one(&mut inner);
             }
@@ -226,6 +229,7 @@ impl LeafCache {
         }
         drop(inner);
         drop(guard);
+        current
     }
 
     fn evict_one(&self, inner: &mut Inner) {
@@ -350,18 +354,30 @@ mod tests {
         time::OffsetDateTime::now_utc().unix_timestamp()
     }
 
+    fn warm(
+        cache: &LeafCache,
+        ca: &CaHandle,
+        host: &str,
+        now: i64,
+    ) -> Result<Arc<CertifiedKey>, CertError> {
+        cache
+            .prewarm(ca, host, now, cache.epoch())
+            .map(|key| key.expect("no regeneration ran during this test"))
+    }
+
     #[test]
     fn a_mint_started_under_a_replaced_authority_never_reaches_the_cache() {
         let old = authority();
         let cache = LeafCache::with_capacity(4);
+        let epoch = cache.epoch();
 
-        let Lease::Mint(guard, epoch) = cache.lease("stale.example", now()) else {
+        let Lease::Mint(guard) = cache.lease("stale.example", now()) else {
             panic!("an empty cache must hand out a mint lease");
         };
         let (key, not_after) = mint(&old, "stale.example").unwrap();
 
         cache.clear();
-        cache.store_minted(guard, epoch, &key, not_after);
+        assert!(!cache.store_minted(guard, epoch, &key, not_after));
 
         assert!(
             cache.cached("stale.example", now()).is_none(),
@@ -374,15 +390,44 @@ mod tests {
     }
 
     #[test]
+    fn an_authority_captured_before_a_regeneration_cannot_populate_the_cache_after_it() {
+        let old = authority();
+        let cache = LeafCache::with_capacity(4);
+        let epoch = cache.epoch();
+
+        cache.clear();
+
+        let published = cache.prewarm(&old, "stale.example", now(), epoch).unwrap();
+        assert!(
+            published.is_none(),
+            "a pre-warm holding a replaced authority must report nothing cached"
+        );
+        assert!(cache.cached("stale.example", now()).is_none());
+        let stats = cache.stats();
+        assert_eq!(stats.size, 0);
+        assert_eq!(stats.inflight, 0);
+        assert_eq!(stats.minted_total, 1);
+        assert_eq!(stats.superseded, 1);
+
+        let fresh = authority();
+        assert!(cache
+            .prewarm(&fresh, "stale.example", now(), cache.epoch())
+            .unwrap()
+            .is_some());
+        assert_eq!(cache.stats().size, 1);
+    }
+
+    #[test]
     fn a_mint_that_wins_the_race_against_no_regeneration_is_cached() {
         let ca = authority();
         let cache = LeafCache::with_capacity(4);
+        let epoch = cache.epoch();
 
-        let Lease::Mint(guard, epoch) = cache.lease("fresh.example", now()) else {
+        let Lease::Mint(guard) = cache.lease("fresh.example", now()) else {
             panic!("an empty cache must hand out a mint lease");
         };
         let (key, not_after) = mint(&ca, "fresh.example").unwrap();
-        cache.store_minted(guard, epoch, &key, not_after);
+        assert!(cache.store_minted(guard, epoch, &key, not_after));
 
         assert!(cache.cached("fresh.example", now()).is_some());
         assert_eq!(cache.stats().superseded, 0);
@@ -397,7 +442,7 @@ mod tests {
         assert_eq!(cache.stats().minted_total, 0);
         assert_eq!(cache.stats().unwarmed_misses, 1);
 
-        let warmed = cache.prewarm(&ca, "a.example", now()).unwrap();
+        let warmed = warm(&cache, &ca, "a.example", now()).unwrap();
         let served = cache.cached("a.example", now()).unwrap();
         assert!(Arc::ptr_eq(&warmed, &served));
 
@@ -412,8 +457,8 @@ mod tests {
         let ca = authority();
         let cache = LeafCache::with_capacity(4);
 
-        let first = cache.prewarm(&ca, "a.example", now()).unwrap();
-        let second = cache.prewarm(&ca, "a.example", now()).unwrap();
+        let first = warm(&cache, &ca, "a.example", now()).unwrap();
+        let second = warm(&cache, &ca, "a.example", now()).unwrap();
         assert!(Arc::ptr_eq(&first, &second));
 
         let stats = cache.stats();
@@ -433,7 +478,7 @@ mod tests {
                 .map(|_| {
                     scope.spawn(|| {
                         barrier.wait();
-                        cache.prewarm(&ca, "shared.example", now()).unwrap()
+                        warm(&cache, &ca, "shared.example", now()).unwrap()
                     })
                 })
                 .collect::<Vec<_>>();
@@ -468,9 +513,7 @@ mod tests {
                 let (cache, ca, barrier) = (&cache, &ca, &barrier);
                 scope.spawn(move || {
                     barrier.wait();
-                    cache
-                        .prewarm(ca, &format!("host{index}.example"), now())
-                        .unwrap();
+                    warm(cache, ca, &format!("host{index}.example"), now()).unwrap();
                 });
             }
         });
@@ -486,22 +529,22 @@ mod tests {
         let ca = authority();
         let cache = LeafCache::with_capacity(2);
 
-        cache.prewarm(&ca, "old.example", now()).unwrap();
-        cache.prewarm(&ca, "kept.example", now()).unwrap();
-        cache.prewarm(&ca, "old.example", now()).unwrap();
-        cache.prewarm(&ca, "new.example", now()).unwrap();
+        warm(&cache, &ca, "old.example", now()).unwrap();
+        warm(&cache, &ca, "kept.example", now()).unwrap();
+        warm(&cache, &ca, "old.example", now()).unwrap();
+        warm(&cache, &ca, "new.example", now()).unwrap();
 
         let stats = cache.stats();
         assert_eq!(stats.size, 2);
         assert_eq!(stats.evictions, 1);
 
-        cache.prewarm(&ca, "old.example", now()).unwrap();
+        warm(&cache, &ca, "old.example", now()).unwrap();
         assert_eq!(
             cache.stats().evictions,
             1,
             "old.example must still be cached"
         );
-        cache.prewarm(&ca, "kept.example", now()).unwrap();
+        warm(&cache, &ca, "kept.example", now()).unwrap();
         assert_eq!(
             cache.stats().evictions,
             2,
@@ -514,11 +557,11 @@ mod tests {
         let ca = authority();
         let cache = LeafCache::with_capacity(4);
 
-        let fresh = cache.prewarm(&ca, "a.example", now()).unwrap();
+        let fresh = warm(&cache, &ca, "a.example", now()).unwrap();
         let past_expiry = now() + (LEAF_VALIDITY_DAYS + 1) * 24 * 60 * 60;
 
         assert!(cache.cached("a.example", past_expiry).is_none());
-        let reminted = cache.prewarm(&ca, "a.example", past_expiry).unwrap();
+        let reminted = warm(&cache, &ca, "a.example", past_expiry).unwrap();
         assert!(!Arc::ptr_eq(&fresh, &reminted));
 
         let stats = cache.stats();
@@ -531,7 +574,7 @@ mod tests {
         let ca = authority();
         let cache = LeafCache::with_capacity(4);
 
-        cache.prewarm(&ca, "a.example", now()).unwrap();
+        warm(&cache, &ca, "a.example", now()).unwrap();
         assert_eq!(cache.stats().size, 1);
 
         let past_expiry = now() + (LEAF_VALIDITY_DAYS + 1) * 24 * 60 * 60;
@@ -547,7 +590,7 @@ mod tests {
     fn a_leaf_is_signed_for_signature_use_only() {
         let ca = authority();
         let cache = LeafCache::with_capacity(4);
-        let leaf = cache.prewarm(&ca, "a.example", now()).unwrap();
+        let leaf = warm(&cache, &ca, "a.example", now()).unwrap();
 
         let (_, parsed) = x509_parser::parse_x509_certificate(&leaf.cert[0]).unwrap();
         let usage = parsed.key_usage().unwrap().unwrap().value;
@@ -563,7 +606,7 @@ mod tests {
         let ca = authority();
         let cache = LeafCache::with_capacity(4);
 
-        cache.prewarm(&ca, "a.example", now()).unwrap();
+        warm(&cache, &ca, "a.example", now()).unwrap();
         cache.clear();
 
         let stats = cache.stats();
@@ -576,7 +619,7 @@ mod tests {
         let ca = authority();
         let cache = LeafCache::with_capacity(4);
 
-        let key = cache.prewarm(&ca, "192.168.88.1", now()).unwrap();
+        let key = warm(&cache, &ca, "192.168.88.1", now()).unwrap();
         let (_, parsed) = x509_parser::parse_x509_certificate(&key.cert[0]).unwrap();
         let extension = parsed.subject_alternative_name().unwrap().unwrap();
         assert!(extension.value.general_names.iter().any(|name| matches!(
@@ -589,7 +632,7 @@ mod tests {
     fn a_minted_leaf_is_small_enough_for_the_cache_cap() {
         let ca = authority();
         let cache = LeafCache::with_capacity(4);
-        let key = cache.prewarm(&ca, "a.example", now()).unwrap();
+        let key = warm(&cache, &ca, "a.example", now()).unwrap();
 
         let der = key.cert[0].len();
         assert_eq!(key.cert.len(), 1);
