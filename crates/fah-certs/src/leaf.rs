@@ -256,22 +256,28 @@ impl LeafCache {
 }
 
 fn take_fresh(inner: &mut Inner, host: &str, now: i64, clock: u64) -> Option<Arc<CertifiedKey>> {
-    match inner.entries.get_mut(host) {
+    let stale = match inner.entries.get_mut(host) {
         Some(entry) if entry.not_after > now => {
             entry.used = clock;
-            Some(Arc::clone(&entry.key))
+            return Some(Arc::clone(&entry.key));
         }
-        _ => None,
+        Some(_) => true,
+        None => false,
+    };
+    if stale {
+        inner.entries.remove(host);
     }
+    None
 }
 
 fn mint(ca: &CaHandle, host: &str) -> Result<(Arc<CertifiedKey>, i64), CertError> {
-    let mut params = match host.parse::<IpAddr>() {
-        Ok(_) => rcgen::CertificateParams::new(Vec::<String>::new()),
-        Err(_) => rcgen::CertificateParams::new(vec![host.to_string()]),
+    let literal = host.parse::<IpAddr>().ok();
+    let mut params = match literal {
+        Some(_) => rcgen::CertificateParams::new(Vec::<String>::new()),
+        None => rcgen::CertificateParams::new(vec![host.to_string()]),
     }
     .map_err(CertError::Generate)?;
-    if let Ok(ip) = host.parse::<IpAddr>() {
+    if let Some(ip) = literal {
         params.subject_alt_names.push(rcgen::SanType::IpAddress(ip));
     }
 
@@ -283,10 +289,7 @@ fn mint(ca: &CaHandle, host: &str) -> Result<(Arc<CertifiedKey>, i64), CertError
         dn
     };
     params.is_ca = rcgen::IsCa::ExplicitNoCa;
-    params.key_usages = vec![
-        rcgen::KeyUsagePurpose::DigitalSignature,
-        rcgen::KeyUsagePurpose::KeyEncipherment,
-    ];
+    params.key_usages = vec![rcgen::KeyUsagePurpose::DigitalSignature];
     params.extended_key_usages = vec![rcgen::ExtendedKeyUsagePurpose::ServerAuth];
     let issued = time::OffsetDateTime::now_utc();
     params.not_before = issued - time::Duration::hours(CLOCK_SKEW_HOURS);
@@ -521,6 +524,38 @@ mod tests {
         let stats = cache.stats();
         assert_eq!(stats.minted_total, 2);
         assert_eq!(stats.size, 1, "the re-mint replaces the expired entry");
+    }
+
+    #[test]
+    fn an_expired_entry_stops_occupying_the_cache_when_it_is_read() {
+        let ca = authority();
+        let cache = LeafCache::with_capacity(4);
+
+        cache.prewarm(&ca, "a.example", now()).unwrap();
+        assert_eq!(cache.stats().size, 1);
+
+        let past_expiry = now() + (LEAF_VALIDITY_DAYS + 1) * 24 * 60 * 60;
+        assert!(cache.cached("a.example", past_expiry).is_none());
+        assert_eq!(
+            cache.stats().size,
+            0,
+            "a dead entry must not hold a slot or inflate the reported size"
+        );
+    }
+
+    #[test]
+    fn a_leaf_is_signed_for_signature_use_only() {
+        let ca = authority();
+        let cache = LeafCache::with_capacity(4);
+        let leaf = cache.prewarm(&ca, "a.example", now()).unwrap();
+
+        let (_, parsed) = x509_parser::parse_x509_certificate(&leaf.cert[0]).unwrap();
+        let usage = parsed.key_usage().unwrap().unwrap().value;
+        assert!(usage.digital_signature());
+        assert!(
+            !usage.key_encipherment(),
+            "keyEncipherment is meaningless for an ECDSA key"
+        );
     }
 
     #[test]

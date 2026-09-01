@@ -1,0 +1,50 @@
+# Certificates — API.md §Certificates
+#
+# The CA signs the leaves an intercepted HTTPS connection is served with
+# (Phase 3); the API-server pair is what the dashboard itself is reached over.
+# Import is PEM-only — PKCS#12/PFX is not offered (ADR-0006). Every response
+# in this namespace carries Cache-Control: no-store, and no export path can
+# reach a private key (SECURITY.md).
+
+@base = {{host}}
+
+### Status: is there a CA, what is its fingerprint and validity window, where
+### does the API-server certificate come from, and how is the leaf cache doing.
+GET {{base}}/api/v1/certificates
+Authorization: Bearer {{apiKey}}
+
+### Generate (or replace) the certificate authority. `confirm: true` is
+### required — a replacement invalidates every client that already trusts the
+### current root. The previous pair is copied to /config/ca-archive/<stamp>/,
+### never deleted, and archived_previous says whether that happened.
+POST {{base}}/api/v1/certificates/ca/generate
+Authorization: Bearer {{apiKey}}
+Content-Type: application/json
+
+{
+  "confirm": true,
+  "common_name": "FastAdHunter CA",
+  "validity_days": 3650
+}
+
+### Export the CA certificate as PEM (default). Public certificate only.
+GET {{base}}/api/v1/certificates/ca/export?format=pem
+Authorization: Bearer {{apiKey}}
+
+### Export as DER — application/pkix-cert, which is what Android expects from
+### a .crt download when installing a trusted root.
+GET {{base}}/api/v1/certificates/ca/export?format=der
+Authorization: Bearer {{apiKey}}
+
+### Replace the API-server certificate with your own PEM pair. The pair is
+### validated (window, key match) and written to /config; the running listener
+### keeps the old one, so the answer is restart_required: true.
+POST {{base}}/api/v1/certificates/import
+Authorization: Bearer {{apiKey}}
+Content-Type: application/json
+
+{
+  "format": "pem",
+  "cert_pem": "-----BEGIN CERTIFICATE-----\n...\n-----END CERTIFICATE-----\n",
+  "key_pem": "-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----\n"
+}

@@ -128,8 +128,10 @@ branch.
   certificate is generated with rcgen and stored in `/config`.
 - The browser shows a one-time warning for the self-signed certificate —
   expected for an appliance; the certificate is stable across restarts.
-- Users can replace it with their own certificate (**PEM**) in `/config`
-  (Phase 3 adds API-driven import). PKCS#12/PFX is **not** accepted: the fixed
+- Users can replace it with their own certificate (**PEM**) in `/config`, or
+  through `POST /api/v1/certificates/import` (API.md §Certificates) — the pair
+  is validated, the one it replaces is archived, and it takes effect at the
+  next restart. PKCS#12/PFX is **not** accepted: the fixed
   crypto set above has no PKCS#12 parser and real `.pfx` files are encrypted, so
   supporting them would mean adding several crypto crates. Convert first with
   `openssl pkcs12 -in cert.pfx -out cert.pem -nodes`
@@ -212,6 +214,11 @@ exactly the failure worth finding.
 
 - `/config` holds secrets (API key, TLS private key, `auth-hash`) — back it up
   accordingly; file permissions restricted to the container user.
+- `/config/ca-archive/` and `/config/api-archive/` retain **every** superseded
+  private key (CA regeneration, API-pair import), mode 0600, at most 8 each —
+  the cap refuses further replacements rather than pruning. A backup, a copy
+  of `/config`, or an SSD disposal covers those keys too; a retired CA key can
+  still sign leaves any device that trusted that root will accept.
 - `/config/auth-hash` is the Argon2id hash of the dashboard password. It is a
   hash, not a licence to publish it: it is offline-crackable material, so it
   never enters a response body and `GET /api/v1/config` omits it entirely.

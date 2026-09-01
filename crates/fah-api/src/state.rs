@@ -5,6 +5,7 @@
 use std::sync::Arc;
 use std::time::Instant;
 
+use fah_certs::CertStore;
 use fah_rules::{ListManager, PolicyState};
 
 use crate::config_store::ConfigStore;
@@ -25,6 +26,7 @@ pub struct AppState {
     pub config: Arc<ConfigStore>,
     pub keys: Arc<ApiKeyStore>,
     pub auth: Arc<AuthState>,
+    pub certs: Option<Arc<CertStore>>,
     pub tls: bool,
     pub events: EventHub,
     pub started_at: Instant,
@@ -57,6 +59,7 @@ pub struct AppStateBuilder {
     pub config: Arc<ConfigStore>,
     pub keys: Arc<ApiKeyStore>,
     pub auth: Arc<AuthState>,
+    pub certs: Option<Arc<CertStore>>,
 }
 
 impl AppStateBuilder {
@@ -71,6 +74,7 @@ impl AppStateBuilder {
             config: self.config,
             keys: self.keys,
             auth: self.auth,
+            certs: self.certs,
             tls,
             events,
             started_at: Instant::now(),

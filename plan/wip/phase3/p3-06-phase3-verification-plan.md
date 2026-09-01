@@ -149,6 +149,15 @@ command, what it does, when it takes effect, and the rollback.
    export DER via the API, install, screenshots into `docs/images/`
    (image files are not `.md` — still list them for the owner since they land
    in the repo). Then browse; record what the device shows.
+   **`GET /api/v1/certificates/ca/export` is authenticated** (p3-02 decision,
+   SECURITY.md's two-exemption rule stands — the public root is not secret,
+   but a third exemption widens the unauthenticated surface for one download
+   per device). The walkthrough is therefore: open the dashboard on the
+   device, log in, download `fastadhunter-ca.crt` (the session cookie carries
+   the request), install from Downloads. Not a bare URL. If the device's
+   browser drops cookies on download, fall back to `curl -H "Authorization:
+   Bearer …" -o fastadhunter-ca.crt` from another machine and transfer the
+   file; record which path the walkthrough used.
 3. **Private DNS**: p3-05 decision 3 walked end-to-end — pick the hostname,
    propose the local answer for it (a `$dnsrewrite` rule mapping it to the
    container address — the bootstrap: the phone resolves the Private DNS

@@ -49,9 +49,11 @@ transient and a persistent condition:
 | `429 rate_limited` | seconds until the bucket frees | the rate-limit window rolls |
 | `503 unavailable` — password verification saturated | `1` | a verification permit frees |
 | `503 unavailable` — `api.tls = false` | **absent** | the operator changes configuration and restarts |
+| `503 unavailable` — the certificate store did not open (§Certificates) | **absent** | the operator repairs `/config` and restarts |
 
-`api.tls` is a boot key, so the third row never clears on its own; a client that
-sees `503 unavailable` with no `Retry-After` must not retry on a timer.
+`api.tls` is a boot key and a corrupt `/config` is a boot condition, so the
+last two rows never clear on their own; a client that sees `503 unavailable`
+with no `Retry-After` must not retry on a timer.
 
 `401`, `429` and `503` also carry `Cache-Control: no-store`.
 
@@ -1149,16 +1151,204 @@ this endpoint serves one instant.
 
 ---
 
-## Certificates *(Phase 3 — reserved)*
+## Certificates
 
-`/api/v1/certificates` — import PEM, generate CA, export CA, status. Endpoints
-specified in p3-02; namespace reserved now.
+Two different certificates live behind this namespace, and confusing them is
+the one mistake worth guarding against:
+
+| | Certificate authority | API-server certificate |
+| --- | --- | --- |
+| What it is | The root that signs the leaves an intercepted HTTPS connection is served with (Phase 3) | What the dashboard and this API are reached over |
+| Files | `/config/ca-cert.pem`, `/config/ca-key.pem` | `/config/api-cert.pem`, `/config/api-key.pem` |
+| Created by | `POST …/ca/generate` — never automatic | Generated on first boot (SECURITY.md §TLS for the API) |
+| Replaced by | `POST …/ca/generate` again | `POST …/import` |
+| Exported by | `GET …/ca/export` — public certificate only | Not exported; it is what you already connected to |
+
+| Route | Method | Success |
+| ----- | ------ | ------- |
+| `/api/v1/certificates` | `GET` | `200` status |
+| `/api/v1/certificates/ca/generate` | `POST` | `200` |
+| `/api/v1/certificates/ca/export` | `GET` | `200`, the certificate itself |
+| `/api/v1/certificates/import` | `POST` | `200` |
+
+Authentication is the standard middleware — bearer key **or** session cookie,
+no exemption. Every response in this namespace carries `Cache-Control:
+no-store`, including the error paths. Both `POST` routes cap the request body
+at **256 KB**; a larger body is `400` `bad_request` naming the limit.
 
 **PFX/PKCS#12 import is not offered.** SECURITY.md's fixed crypto set contains
 no PKCS#12 parser and real `.pfx` files are encrypted, so import would need
 several new crypto crates. Import is PEM-only; convert with
 `openssl pkcs12 -in cert.pfx -out cert.pem -nodes`. See
 [ADR-0006](docs/decisions/0006-certificate-machinery-home.md).
+
+### `GET /api/v1/certificates`
+
+```json
+{
+  "ca": {
+    "present": true,
+    "fingerprint_sha256": "3F:A1:…:9C",
+    "not_before": "2026-08-31T09:12:44Z",
+    "not_after": "2036-08-28T09:12:44Z",
+    "subject": "CN=FastAdHunter CA"
+  },
+  "api_certificate": { "source": "self_signed" },
+  "leaf_cache": {
+    "size": 12, "capacity": 512, "inflight": 0,
+    "hits": 4013, "unwarmed_misses": 2, "prewarm_hits": 118,
+    "coalesced": 7, "minted_total": 19, "evictions": 0, "superseded": 0
+  }
+}
+```
+
+With no authority, `ca` is exactly `{"present": false}` — the other four keys
+are **absent**, not `null`.
+
+`api_certificate.source` is `"self_signed"` (generated on first boot) or
+`"imported"` (replaced through `POST …/import`, and reported the moment the
+import succeeds — before the restart that activates it).
+
+`leaf_cache` is the per-host minting cache. `unwarmed_misses` is the one to
+watch: a TLS handshake never mints, so a miss means the connection was served
+without a pre-warm and failed closed. `superseded` counts leaves dropped
+because a CA regeneration landed while they were being minted.
+
+### `POST /api/v1/certificates/ca/generate`
+
+```json
+{ "confirm": true, "common_name": "FastAdHunter CA", "validity_days": 3650 }
+```
+
+`confirm: true` is **required**: regenerating invalidates every client that
+already installed the current root. `common_name` (1–64 **bytes**, no control
+characters — RFC 5280's `ub-common-name` is a byte bound, so a non-ASCII name
+runs out sooner than it looks) and `validity_days` (`1`–`7300`) are optional and
+default to the values shown.
+
+```json
+{
+  "ca": { "present": true, "fingerprint_sha256": "…", "not_before": "…",
+          "not_after": "…", "subject": "CN=FastAdHunter CA" },
+  "archived_previous": true
+}
+```
+
+The previous pair is **copied** to `/config/ca-archive/<unix-seconds>/` before
+the new one is committed — nothing here ever deletes a private key. Colliding
+regenerations inside one second get their own directory.
+`archived_previous` says whether a predecessor existed. The leaf cache is
+purged, so every leaf minted afterwards chains to the new root only.
+
+**The archive holds at most 8 retired pairs.** A ninth regeneration is refused
+with `409` `conflict` (`archive_full:`) and changes nothing; move directories
+out of `/config/ca-archive/` to make room. Refusing is what keeps "never
+deletes a private key" true — nothing is pruned, and disk use in `/config`
+cannot be driven up by calling this route in a loop.
+
+| Outcome | Response |
+| ------- | -------- |
+| `confirm` missing, `false`, or not a boolean | `400` `bad_request`, nothing written |
+| `validity_days` or `common_name` out of range, or a name the certificate builder refuses | `422` `validation_failed` |
+| `/config/ca-archive/` already holds 8 retired pairs | `409` `conflict`, nothing written |
+| Writing `/config` failed | `500` `internal` — the message names no path; the container log has the file and the reason |
+| Success | `200` |
+
+### `GET /api/v1/certificates/ca/export?format=pem|der`
+
+The **public certificate only**. The export is re-encoded from the parsed
+certificate DER, so it cannot carry key material even if a combined
+`cert + key` blob was pasted in at import time (SECURITY.md, ADR-0006).
+
+| `format` | `Content-Type` | `Content-Disposition` filename |
+| -------- | -------------- | ------------------------------ |
+| `pem` (default) | `application/x-pem-file` | `fastadhunter-ca.pem` |
+| `der` | `application/pkix-cert` | `fastadhunter-ca.crt` |
+
+`application/pkix-cert` with a `.crt` name is what Android expects when
+installing a trusted root from a download.
+
+| Outcome | Response |
+| ------- | -------- |
+| No authority exists | `404` `not_found` |
+| `format` is neither `pem` nor `der` | `422` `validation_failed` |
+
+### `POST /api/v1/certificates/import`
+
+Replaces the **API-server** certificate. It does not touch the authority.
+
+```json
+{
+  "format": "pem",
+  "cert_pem": "-----BEGIN CERTIFICATE-----\n…",
+  "key_pem": "-----BEGIN PRIVATE KEY-----\n…"
+}
+```
+
+`format` defaults to `"pem"` and is the only accepted value. `cert_pem` may
+carry a chain; every certificate in it is kept, and any `PRIVATE KEY` block
+pasted into that field is dropped before anything is written. PKCS#8, SEC1 and
+PKCS#1 private keys are all accepted.
+
+```json
+{ "applied": false, "restart_required": true, "source": "imported" }
+```
+
+The pair being replaced is **copied** to `/config/api-archive/<unix-seconds>/`
+first, exactly as `ca/generate` archives the authority — an import that turns
+out to be wrong is recoverable by copying that pair back and restarting.
+`api_certificate.source` follows the certificate that is actually on disk, so a
+restored self-signed pair reads `"self_signed"` again. The same 8-pair cap
+applies: a ninth import is `409` `conflict` (`archive_full:`) until directories
+are moved out of `/config/api-archive/`.
+
+An import interrupted between its two commit steps (power loss after the
+certificate landed but before the key did) is completed at the next boot when
+the staged key matches the committed certificate; a staged key that matches
+nothing is left in place and the boot fails loudly, naming both files.
+
+**The running listener is not rebound.** The pair is on disk and
+`GET /api/v1/certificates` reports `"imported"` immediately, but the connection
+you are on keeps the old certificate until the container restarts — the same
+`restart_required` contract `POST /api/v1/config` uses for boot keys. Nothing
+retries on a timer; restart when it suits you. With `api.tls = false` the import
+is still accepted and stored, but no restart loads it: the pair waits in
+`/config` until TLS is enabled.
+
+Every rejection is `422` `validation_failed` with a stable prefix, so a client
+can tell the causes apart without new error codes:
+
+| Prefix | Cause |
+| ------ | ----- |
+| `parse:` | `cert_pem` or `key_pem` missing, blank, or not readable PEM |
+| `expired:` | The certificate's validity window has passed |
+| `not_yet_valid:` | The window has not opened yet |
+| `key_mismatch:` | The private key does not match the certificate |
+| `not_a_ca:` | Reserved — a certificate-authority import path would use it |
+| `unsupported_format:` | `format` is not `pem`; `pfx`/`pkcs12` names the `openssl` conversion |
+
+Two non-`422` rejections: a full archive is `409` `conflict` (above), and
+writing `/config` failing is `500` `internal` with a message that names no
+path — the container log carries the file and the reason. Both leave the live
+pair untouched: the import records itself before it commits, never after.
+
+A rejected import changes nothing and never echoes any part of the submitted
+certificate or key — not in the response, not in the log.
+
+### When the store is unavailable
+
+If `/config` holds a certificate authority that is corrupt, incomplete or whose
+key does not match its certificate, the store refuses to open. That is **not**
+fatal: DNS keeps resolving, the failure is logged once with the file and the
+reason, and all four routes above answer:
+
+```text
+503 unavailable   (no Retry-After)
+```
+
+`Retry-After` is absent for the same reason `api.tls = false` omits it — only
+an operator repairing `/config` and restarting clears the condition, so a
+client that sees this must not retry on a timer.
 
 ---
 

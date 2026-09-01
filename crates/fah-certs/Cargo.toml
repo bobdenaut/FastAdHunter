@@ -17,7 +17,10 @@ workspace = true
 # workspace already links; `x509-parser` lets a CA loaded from PEM become an
 # rcgen `Issuer` without keeping a parallel parameter copy on disk.
 rcgen = { version = "0.14", default-features = false, features = ["aws_lc_rs", "pem", "x509-parser"] }
-rustls = { workspace = true }
+# `aws_lc_rs` is declared rather than inherited: this crate names
+# `rustls::crypto::aws_lc_rs` directly, and relying on the workspace default
+# would turn a feature-resolution change elsewhere into a build break here.
+rustls = { workspace = true, features = ["aws_lc_rs"] }
 rustls-pemfile = "2"
 x509-parser = "0.18"
 # SHA-256 over the CA DER for the fingerprint. In-tree through rustls/rcgen, but

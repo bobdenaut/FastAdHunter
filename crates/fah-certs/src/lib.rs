@@ -10,7 +10,7 @@ pub use ca::{CaParams, CaSummary, DEFAULT_CA_COMMON_NAME, DEFAULT_CA_VALIDITY_DA
 pub use error::CertError;
 pub use import::{validate_ca_pair, validate_server_pair, ValidatedCaPair, ValidatedServerPair};
 pub use leaf::{LeafCacheStats, MintingResolver, LEAF_CACHE_CAPACITY, LEAF_VALIDITY_DAYS};
-pub use store::{ApiPairSource, CertStatus, CertStore};
+pub use store::{ApiPairSource, CaInstalled, CertStatus, CertStore, MAX_ARCHIVES};
 
 pub fn install_crypto_provider() {
     let _ = rustls::crypto::aws_lc_rs::default_provider().install_default();

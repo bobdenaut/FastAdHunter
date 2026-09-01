@@ -38,6 +38,11 @@ pub enum CertError {
     NoCa,
     #[error("the host is empty or longer than a DNS name may be")]
     InvalidHost,
+    #[error(
+        "{archive} already holds {limit} retired pairs; \
+         move some out of /config before replacing this pair"
+    )]
+    ArchiveFull { archive: &'static str, limit: usize },
 }
 
 impl CertError {

@@ -23,6 +23,7 @@ compile_error!(
 );
 
 mod auth;
+mod certs;
 mod config_store;
 mod error;
 mod events;
@@ -42,7 +43,9 @@ mod wire;
 pub use config_store::{ConfigStore, ConfigStoreError, UpdateOutcome};
 pub use error::ApiError;
 pub use events::{Event, EventHub};
-pub use fah_certs::{install_crypto_provider, load_or_generate as load_or_generate_tls, CertError};
+pub use fah_certs::{
+    install_crypto_provider, load_or_generate as load_or_generate_tls, CertError, CertStore,
+};
 pub use keys::ApiKeyStore;
 pub use password::AuthState;
 #[cfg(feature = "test-harness")]

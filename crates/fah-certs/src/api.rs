@@ -6,7 +6,9 @@ use rustls::sign::CertifiedKey;
 use rustls::ServerConfig;
 
 use crate::error::CertError;
-use crate::store::{discard_staged, load_pair, write_pair, PairPaths};
+use crate::store::{
+    clear_api_source, discard_staged, load_pair, read, rename, write_pair, PairPaths,
+};
 
 const VALIDITY_DAYS: i64 = 397;
 const CLOCK_SKEW_HOURS: i64 = 1;
@@ -36,13 +38,35 @@ pub fn load_or_generate(
         None => {
             let generated = generate(bind_address, detected)?;
             write_pair(&paths, &generated.cert_pem, &generated.key_pem)?;
+            clear_api_source(config_dir);
             (generated.cert_pem, generated.key_pem)
         }
     };
 
-    let config = server_config(&cert_pem, &key_pem, &paths)?;
+    let config = match server_config(&cert_pem, &key_pem, &paths) {
+        Ok(config) => config,
+        Err(error) => complete_interrupted_replacement(&paths, &cert_pem).ok_or(error)?,
+    };
     discard_staged(&paths);
     Ok(config)
+}
+
+fn complete_interrupted_replacement(
+    paths: &PairPaths,
+    cert_pem: &str,
+) -> Option<Arc<ServerConfig>> {
+    if !paths.key_tmp.exists() {
+        return None;
+    }
+    let staged_key = read(&paths.key_tmp).ok()?;
+    let config = server_config(cert_pem, &staged_key, paths).ok()?;
+    rename(&paths.key_tmp, &paths.key).ok()?;
+    tracing::warn!(
+        key = %paths.key.display(),
+        "completed an interrupted API certificate replacement: the staged key matches the \
+         committed certificate; the replaced key is under api-archive/"
+    );
+    Some(config)
 }
 
 fn san_entries(bind_address: &str, detected: Option<IpAddr>) -> (Vec<String>, Vec<IpAddr>) {
@@ -337,6 +361,67 @@ mod tests {
             key
         );
         assert!(!dir.path().join(API_KEY_TMP_FILE).exists());
+    }
+
+    #[test]
+    fn an_interrupted_replacement_is_completed_when_the_staged_key_matches() {
+        let dir = tempfile::tempdir().unwrap();
+        load_or_generate(dir.path(), BIND, None).unwrap();
+
+        let replacement = tempfile::tempdir().unwrap();
+        load_or_generate(replacement.path(), BIND, None).unwrap();
+        let new_cert = fs::read_to_string(replacement.path().join(API_CERT_FILE)).unwrap();
+        let new_key = fs::read_to_string(replacement.path().join(API_KEY_FILE)).unwrap();
+
+        fs::write(dir.path().join(API_CERT_FILE), &new_cert).unwrap();
+        fs::write(dir.path().join(API_KEY_TMP_FILE), &new_key).unwrap();
+
+        assert!(
+            load_or_generate(dir.path(), BIND, None).is_ok(),
+            "a crash between the two commit renames must not stop the next boot"
+        );
+        assert_eq!(
+            fs::read_to_string(dir.path().join(API_KEY_FILE)).unwrap(),
+            new_key,
+            "the staged key that matches the committed certificate becomes the live key"
+        );
+        assert!(!dir.path().join(API_KEY_TMP_FILE).exists());
+        assert!(load_or_generate(dir.path(), BIND, None).is_ok());
+    }
+
+    #[test]
+    fn a_mismatched_pair_with_an_unrelated_staged_key_is_still_refused() {
+        let dir = tempfile::tempdir().unwrap();
+        load_or_generate(dir.path(), BIND, None).unwrap();
+        let live_key = fs::read_to_string(dir.path().join(API_KEY_FILE)).unwrap();
+
+        let foreign = tempfile::tempdir().unwrap();
+        load_or_generate(foreign.path(), BIND, None).unwrap();
+        let unrelated = tempfile::tempdir().unwrap();
+        load_or_generate(unrelated.path(), BIND, None).unwrap();
+
+        fs::write(
+            dir.path().join(API_CERT_FILE),
+            fs::read_to_string(foreign.path().join(API_CERT_FILE)).unwrap(),
+        )
+        .unwrap();
+        let staged = fs::read_to_string(unrelated.path().join(API_KEY_FILE)).unwrap();
+        fs::write(dir.path().join(API_KEY_TMP_FILE), &staged).unwrap();
+
+        assert!(matches!(
+            load_or_generate(dir.path(), BIND, None),
+            Err(CertError::Config { .. })
+        ));
+        assert_eq!(
+            fs::read_to_string(dir.path().join(API_KEY_FILE)).unwrap(),
+            live_key,
+            "a staged key that matches nothing must not replace the live one"
+        );
+        assert_eq!(
+            fs::read_to_string(dir.path().join(API_KEY_TMP_FILE)).unwrap(),
+            staged,
+            "the staged key is kept for the operator, never deleted"
+        );
     }
 
     #[test]

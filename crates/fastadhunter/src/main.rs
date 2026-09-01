@@ -477,6 +477,22 @@ impl Engine {
             None
         };
 
+        let certs = {
+            let config_dir = config_dir.to_path_buf();
+            match tokio::task::spawn_blocking(move || fah_api::CertStore::open(&config_dir)).await?
+            {
+                Ok(store) => Some(Arc::new(store)),
+                Err(error) => {
+                    tracing::error!(
+                        %error,
+                        "the certificate store did not open; /api/v1/certificates is \
+                         unavailable until /config is repaired and the container restarted"
+                    );
+                    None
+                }
+            }
+        };
+
         let api_address = config.api.address.clone();
         let api_port = config.api.port;
         let stats_adapter = Arc::new(adapters::StatsAdapter::new(Arc::clone(&stats)));
@@ -499,6 +515,7 @@ impl Engine {
                 config: Arc::new(fah_api::ConfigStore::new(config, config_path.to_path_buf())),
                 keys: Arc::new(keys),
                 auth: Arc::new(auth),
+                certs,
             },
         )
         .await?;

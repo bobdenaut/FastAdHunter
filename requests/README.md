@@ -42,6 +42,7 @@ to a public root.
 | `policies.http` | Policy CRUD and client assignment |
 | `cache.http` | Cache usage and `POST /api/v1/cache/clean` |
 | `settings.http` | `GET`/`POST /api/v1/config` |
+| `certificates.http` | CA status, generate, export (PEM/DER), API-pair import |
 
 **One endpoint, one file.** No request appears in two files, so a response
 shape has exactly one place to be checked. `auth.http` is the sole exception,

@@ -2,6 +2,7 @@ use std::borrow::Cow;
 use std::fmt;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -18,6 +19,7 @@ pub(crate) const API_KEY_FILE: &str = "api-key.pem";
 pub(crate) const API_CERT_TMP_FILE: &str = "api-cert.pem.tmp";
 pub(crate) const API_KEY_TMP_FILE: &str = "api-key.pem.tmp";
 pub(crate) const API_SOURCE_FILE: &str = "api-cert.source";
+pub(crate) const API_ARCHIVE_DIR: &str = "api-archive";
 
 pub(crate) const CA_CERT_FILE: &str = "ca-cert.pem";
 pub(crate) const CA_KEY_FILE: &str = "ca-key.pem";
@@ -25,8 +27,8 @@ pub(crate) const CA_CERT_TMP_FILE: &str = "ca-cert.pem.tmp";
 pub(crate) const CA_KEY_TMP_FILE: &str = "ca-key.pem.tmp";
 pub(crate) const CA_ARCHIVE_DIR: &str = "ca-archive";
 
-const IMPORTED_MARKER: &str = "imported";
 const ARCHIVE_ATTEMPTS: u32 = 1024;
+pub const MAX_ARCHIVES: usize = 8;
 const MAX_HOST_LEN: usize = 253;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -40,6 +42,12 @@ pub struct CertStatus {
     pub ca: Option<CaSummary>,
     pub leaves: LeafCacheStats,
     pub api_pair: ApiPairSource,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CaInstalled {
+    pub summary: CaSummary,
+    pub archived_previous: bool,
 }
 
 pub(crate) struct PairPaths {
@@ -113,9 +121,9 @@ pub(crate) fn stage_pair(
     cert_pem: &str,
     key_pem: &str,
 ) -> Result<(), CertError> {
-    let staged = write(&paths.key_tmp, key_pem)
-        .and_then(|()| restrict_permissions(&paths.key_tmp))
-        .and_then(|()| write(&paths.cert_tmp, cert_pem));
+    discard(&paths.key_tmp);
+    let staged =
+        write_private(&paths.key_tmp, key_pem).and_then(|()| write(&paths.cert_tmp, cert_pem));
     if let Err(error) = staged {
         discard(&paths.cert_tmp);
         discard(&paths.key_tmp);
@@ -155,18 +163,48 @@ pub(crate) fn read(path: &Path) -> Result<String, CertError> {
 }
 
 pub(crate) fn write(path: &Path, text: &str) -> Result<(), CertError> {
-    if let Some(parent) = path.parent() {
-        if !parent.as_os_str().is_empty() {
-            fs::create_dir_all(parent).map_err(|source| CertError::Io {
-                path: parent.to_path_buf(),
-                source,
-            })?;
-        }
-    }
+    ensure_parent(path)?;
     fs::write(path, text).map_err(|source| CertError::Io {
         path: path.to_path_buf(),
         source,
     })
+}
+
+#[cfg(unix)]
+pub(crate) fn write_private(path: &Path, text: &str) -> Result<(), CertError> {
+    use std::io::Write as _;
+    use std::os::unix::fs::OpenOptionsExt;
+
+    ensure_parent(path)?;
+    let io = |source| CertError::Io {
+        path: path.to_path_buf(),
+        source,
+    };
+    let mut file = fs::OpenOptions::new()
+        .write(true)
+        .create(true)
+        .truncate(true)
+        .mode(0o600)
+        .open(path)
+        .map_err(io)?;
+    file.write_all(text.as_bytes()).map_err(io)
+}
+
+#[cfg(not(unix))]
+pub(crate) fn write_private(path: &Path, text: &str) -> Result<(), CertError> {
+    write(path, text)
+}
+
+fn ensure_parent(path: &Path) -> Result<(), CertError> {
+    match path.parent() {
+        Some(parent) if !parent.as_os_str().is_empty() => {
+            fs::create_dir_all(parent).map_err(|source| CertError::Io {
+                path: parent.to_path_buf(),
+                source,
+            })
+        }
+        _ => Ok(()),
+    }
 }
 
 pub(crate) fn rename(from: &Path, to: &Path) -> Result<(), CertError> {
@@ -236,6 +274,8 @@ pub struct CertStore {
     config_dir: PathBuf,
     ca: Mutex<Option<Arc<CaHandle>>>,
     leaves: LeafCache,
+    api: Mutex<()>,
+    api_imported: AtomicBool,
 }
 
 impl fmt::Debug for CertStore {
@@ -263,6 +303,8 @@ impl CertStore {
             config_dir: config_dir.to_path_buf(),
             ca: Mutex::new(handle),
             leaves: LeafCache::with_capacity(LEAF_CACHE_CAPACITY),
+            api: Mutex::new(()),
+            api_imported: AtomicBool::new(read_api_source(config_dir)),
         })
     }
 
@@ -274,16 +316,16 @@ impl CertStore {
         self.ca().map(|ca| ca.summary().clone())
     }
 
-    pub fn generate_ca(&self, params: &CaParams) -> Result<CaSummary, CertError> {
+    pub fn generate_ca(&self, params: &CaParams) -> Result<CaInstalled, CertError> {
         let generated = ca::generate(params)?;
         self.install_ca(&generated.cert_pem, &generated.key_pem)
     }
 
-    pub fn install_ca_pair(&self, pair: &ValidatedCaPair) -> Result<CaSummary, CertError> {
+    pub fn install_ca_pair(&self, pair: &ValidatedCaPair) -> Result<CaInstalled, CertError> {
         self.install_ca(pair.cert_pem(), pair.key_pem())
     }
 
-    fn install_ca(&self, cert_pem: &str, key_pem: &str) -> Result<CaSummary, CertError> {
+    fn install_ca(&self, cert_pem: &str, key_pem: &str) -> Result<CaInstalled, CertError> {
         let handle = Arc::new(CaHandle::load(cert_pem, key_pem)?);
 
         let mut slot = self.lock_ca();
@@ -321,30 +363,49 @@ impl CertStore {
         *slot = Some(handle);
         drop(slot);
         self.leaves.clear();
-        Ok(summary)
+        Ok(CaInstalled {
+            summary,
+            archived_previous: archive.is_some(),
+        })
     }
 
     fn archive_existing_ca(&self, paths: &PairPaths) -> Result<PathBuf, CertError> {
-        let dir = self.unused_archive_dir()?;
-        for (from, name) in [(&paths.cert, CA_CERT_FILE), (&paths.key, CA_KEY_FILE)] {
-            if from.exists() {
-                let to = dir.join(name);
-                copy(from, &to)?;
-            }
-        }
-        let key = dir.join(CA_KEY_FILE);
-        if key.exists() {
-            restrict_permissions(&key)?;
+        self.archive_pair(paths, CA_ARCHIVE_DIR, CA_CERT_FILE, CA_KEY_FILE)
+    }
+
+    fn archive_pair(
+        &self,
+        paths: &PairPaths,
+        archive_dir: &'static str,
+        cert_file: &str,
+        key_file: &str,
+    ) -> Result<PathBuf, CertError> {
+        let dir = self.unused_archive_dir(archive_dir)?;
+        if let Err(error) = fill_archive(&dir, paths, cert_file, key_file) {
+            let _ = fs::remove_dir_all(&dir);
+            return Err(error);
         }
         Ok(dir)
     }
 
-    fn unused_archive_dir(&self) -> Result<PathBuf, CertError> {
-        let base = self.config_dir.join(CA_ARCHIVE_DIR);
+    fn unused_archive_dir(&self, archive_dir: &'static str) -> Result<PathBuf, CertError> {
+        let base = self.config_dir.join(archive_dir);
         fs::create_dir_all(&base).map_err(|source| CertError::Io {
             path: base.clone(),
             source,
         })?;
+        let retired = fs::read_dir(&base)
+            .map_err(|source| CertError::Io {
+                path: base.clone(),
+                source,
+            })?
+            .count();
+        if retired >= MAX_ARCHIVES {
+            return Err(CertError::ArchiveFull {
+                archive: archive_dir,
+                limit: MAX_ARCHIVES,
+            });
+        }
 
         let stamp = unix_now();
         for attempt in 0..ARCHIVE_ATTEMPTS {
@@ -405,19 +466,63 @@ impl CertStore {
     }
 
     pub fn install_api_pair(&self, pair: &ValidatedServerPair) -> Result<(), CertError> {
+        let fingerprint = ca::fingerprint(&first_certificate(pair.cert_pem(), "the certificate")?);
+
+        let _serialized = self.lock_api();
         let paths = PairPaths::api(&self.config_dir);
-        write_pair(&paths, pair.cert_pem(), pair.key_pem())?;
-        write(&self.config_dir.join(API_SOURCE_FILE), IMPORTED_MARKER)
+        let marker = self.config_dir.join(API_SOURCE_FILE);
+        stage_pair(&paths, pair.cert_pem(), pair.key_pem())?;
+
+        let archive = match paths.cert.exists() || paths.key.exists() {
+            true => match self.archive_pair(&paths, API_ARCHIVE_DIR, API_CERT_FILE, API_KEY_FILE) {
+                Ok(archive) => Some(archive),
+                Err(error) => {
+                    discard_staged(&paths);
+                    return Err(error);
+                }
+            },
+            false => None,
+        };
+
+        let previous_marker = read(&marker).ok();
+        if let Err(error) = write(&marker, &fingerprint) {
+            discard_staged(&paths);
+            return Err(error);
+        }
+
+        if let Err(error) = commit_pair(&paths) {
+            if let Some(archive) = &archive {
+                restore_pair(archive, &paths, API_CERT_FILE, API_KEY_FILE);
+            }
+            match &previous_marker {
+                Some(previous) => {
+                    let _ = write(&marker, previous);
+                }
+                None => discard(&marker),
+            }
+            return Err(error);
+        }
+
+        self.api_imported.store(true, Ordering::Relaxed);
+        if let Some(archive) = &archive {
+            tracing::info!(
+                archive = %archive.display(),
+                "replaced the API server certificate; the previous pair is archived and \
+                 the new one applies at the next restart"
+            );
+        }
+        Ok(())
     }
 
     pub fn api_certified_key(&self) -> Result<Arc<CertifiedKey>, CertError> {
+        let _serialized = self.lock_api();
         crate::api::certified_key(&self.config_dir)
     }
 
     pub fn api_pair_source(&self) -> ApiPairSource {
-        match read(&self.config_dir.join(API_SOURCE_FILE)) {
-            Ok(marker) if marker.trim() == IMPORTED_MARKER => ApiPairSource::Imported,
-            _ => ApiPairSource::SelfSigned,
+        match self.api_imported.load(Ordering::Relaxed) {
+            true => ApiPairSource::Imported,
+            false => ApiPairSource::SelfSigned,
         }
     }
 
@@ -439,6 +544,13 @@ impl CertStore {
             poisoned.into_inner()
         })
     }
+
+    fn lock_api(&self) -> MutexGuard<'_, ()> {
+        self.api.lock().unwrap_or_else(|poisoned| {
+            self.api.clear_poison();
+            poisoned.into_inner()
+        })
+    }
 }
 
 fn normalize(host: &str) -> Option<Cow<'_, str>> {
@@ -451,29 +563,68 @@ fn normalize(host: &str) -> Option<Cow<'_, str>> {
     })
 }
 
+fn fill_archive(
+    dir: &Path,
+    paths: &PairPaths,
+    cert_file: &str,
+    key_file: &str,
+) -> Result<(), CertError> {
+    for (from, name) in [(&paths.cert, cert_file), (&paths.key, key_file)] {
+        if from.exists() {
+            copy(from, &dir.join(name))?;
+        }
+    }
+    let key = dir.join(key_file);
+    match key.exists() {
+        true => restrict_permissions(&key),
+        false => Ok(()),
+    }
+}
+
 fn restore_ca(archive: &Path, paths: &PairPaths) {
+    restore_pair(archive, paths, CA_CERT_FILE, CA_KEY_FILE);
+}
+
+fn restore_pair(archive: &Path, paths: &PairPaths, cert_file: &str, key_file: &str) {
     discard(&paths.cert_tmp);
     discard(&paths.key_tmp);
-    for (name, to) in [(CA_CERT_FILE, &paths.cert), (CA_KEY_FILE, &paths.key)] {
+    for (name, to) in [(cert_file, &paths.cert), (key_file, &paths.key)] {
         let from = archive.join(name);
         if from.exists() {
             if let Err(error) = copy(&from, to) {
                 tracing::error!(
                     %error,
                     path = %to.display(),
-                    "restoring the archived certificate authority failed; \
-                     the pair is preserved under the archive directory"
+                    "restoring the archived certificate pair failed; \
+                     it is preserved under the archive directory"
                 );
             }
         }
     }
 }
 
+pub(crate) fn read_api_source(config_dir: &Path) -> bool {
+    let Ok(marker) = read(&config_dir.join(API_SOURCE_FILE)) else {
+        return false;
+    };
+    let Ok(cert_pem) = read(&config_dir.join(API_CERT_FILE)) else {
+        return false;
+    };
+    let Ok(live) = first_certificate(&cert_pem, "the certificate") else {
+        return false;
+    };
+    marker.trim() == ca::fingerprint(&live)
+}
+
+pub(crate) fn clear_api_source(config_dir: &Path) {
+    discard(&config_dir.join(API_SOURCE_FILE));
+}
+
 fn unix_now() -> i64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|since| since.as_secs() as i64)
-        .unwrap_or_default()
+    match SystemTime::now().duration_since(UNIX_EPOCH) {
+        Ok(since) => since.as_secs() as i64,
+        Err(before) => -(before.duration().as_secs() as i64),
+    }
 }
 
 #[cfg(test)]
@@ -501,7 +652,12 @@ mod tests {
     #[test]
     fn a_generated_authority_survives_a_reopen_unchanged() {
         let (dir, store) = store();
-        let summary = store.generate_ca(&CaParams::default()).unwrap();
+        let installed = store.generate_ca(&CaParams::default()).unwrap();
+        assert!(
+            !installed.archived_previous,
+            "a first generation archives nothing"
+        );
+        let summary = installed.summary;
         assert!(dir.path().join(CA_CERT_FILE).exists());
         assert!(dir.path().join(CA_KEY_FILE).exists());
 
@@ -516,7 +672,14 @@ mod tests {
         let old_key = fs::read_to_string(dir.path().join(CA_KEY_FILE)).unwrap();
 
         let second = store.generate_ca(&CaParams::default()).unwrap();
-        assert_ne!(first.fingerprint_sha256, second.fingerprint_sha256);
+        assert!(
+            second.archived_previous,
+            "a replacement reports the archive it made"
+        );
+        assert_ne!(
+            first.summary.fingerprint_sha256,
+            second.summary.fingerprint_sha256
+        );
 
         let archive = dir.path().join(CA_ARCHIVE_DIR);
         let stamped = fs::read_dir(&archive).unwrap().next().unwrap().unwrap();
@@ -589,6 +752,379 @@ mod tests {
         );
         assert_eq!(store.api_pair_source(), ApiPairSource::Imported);
         assert_eq!(store.status().api_pair, ApiPairSource::Imported);
+    }
+
+    #[test]
+    fn replacing_the_api_pair_archives_the_one_it_replaces() {
+        let (dir, store) = store();
+        let first = ca::generate(&CaParams::default()).unwrap();
+        store
+            .install_api_pair(&validate_server_pair(&first.cert_pem, &first.key_pem).unwrap())
+            .unwrap();
+        assert!(
+            !dir.path().join(API_ARCHIVE_DIR).exists(),
+            "a first import has nothing to archive"
+        );
+
+        let second = ca::generate(&CaParams::default()).unwrap();
+        store
+            .install_api_pair(&validate_server_pair(&second.cert_pem, &second.key_pem).unwrap())
+            .unwrap();
+
+        let stamped = fs::read_dir(dir.path().join(API_ARCHIVE_DIR))
+            .unwrap()
+            .next()
+            .unwrap()
+            .unwrap()
+            .path();
+        assert_eq!(
+            fs::read_to_string(stamped.join(API_KEY_FILE)).unwrap(),
+            first.key_pem,
+            "the replaced private key is preserved, not deleted"
+        );
+        assert_eq!(
+            all_certificates(
+                &fs::read_to_string(stamped.join(API_CERT_FILE)).unwrap(),
+                "the certificate"
+            )
+            .unwrap(),
+            all_certificates(&first.cert_pem, "the certificate").unwrap()
+        );
+        assert_eq!(
+            fs::read_to_string(dir.path().join(API_KEY_FILE)).unwrap(),
+            second.key_pem,
+            "the live pair is the newly imported one"
+        );
+    }
+
+    #[test]
+    fn the_api_pair_source_is_answered_without_reading_the_disk() {
+        let (dir, store) = store();
+        let generated = ca::generate(&CaParams::default()).unwrap();
+        store
+            .install_api_pair(
+                &validate_server_pair(&generated.cert_pem, &generated.key_pem).unwrap(),
+            )
+            .unwrap();
+        assert_eq!(store.api_pair_source(), ApiPairSource::Imported);
+
+        fs::remove_file(dir.path().join(API_SOURCE_FILE)).unwrap();
+        assert_eq!(
+            store.api_pair_source(),
+            ApiPairSource::Imported,
+            "the marker is read once at open, not on every status call"
+        );
+        assert_eq!(
+            CertStore::open(dir.path()).unwrap().api_pair_source(),
+            ApiPairSource::SelfSigned,
+            "a reopen is what re-reads the marker"
+        );
+    }
+
+    #[test]
+    fn regenerating_a_self_signed_api_pair_clears_the_imported_marker() {
+        let (dir, store) = store();
+        let generated = ca::generate(&CaParams::default()).unwrap();
+        store
+            .install_api_pair(
+                &validate_server_pair(&generated.cert_pem, &generated.key_pem).unwrap(),
+            )
+            .unwrap();
+        assert!(dir.path().join(API_SOURCE_FILE).exists());
+
+        for file in [API_CERT_FILE, API_KEY_FILE] {
+            fs::remove_file(dir.path().join(file)).unwrap();
+        }
+        crate::api::load_or_generate(dir.path(), "127.0.0.1", None).unwrap();
+
+        assert!(
+            !dir.path().join(API_SOURCE_FILE).exists(),
+            "a regenerated self-signed pair must not keep claiming to be imported"
+        );
+        assert_eq!(
+            CertStore::open(dir.path()).unwrap().api_pair_source(),
+            ApiPairSource::SelfSigned
+        );
+    }
+
+    #[test]
+    fn a_full_authority_archive_refuses_regeneration_and_keeps_the_live_pair() {
+        let (dir, store) = store();
+        for _ in 0..=MAX_ARCHIVES {
+            store.generate_ca(&CaParams::default()).unwrap();
+        }
+        let summary = store.ca_summary().unwrap();
+        let cert = fs::read_to_string(dir.path().join(CA_CERT_FILE)).unwrap();
+        let key = fs::read_to_string(dir.path().join(CA_KEY_FILE)).unwrap();
+
+        assert!(matches!(
+            store.generate_ca(&CaParams::default()),
+            Err(CertError::ArchiveFull {
+                archive: CA_ARCHIVE_DIR,
+                limit: MAX_ARCHIVES
+            })
+        ));
+        assert_eq!(store.ca_summary(), Some(summary));
+        assert_eq!(
+            fs::read_to_string(dir.path().join(CA_CERT_FILE)).unwrap(),
+            cert
+        );
+        assert_eq!(
+            fs::read_to_string(dir.path().join(CA_KEY_FILE)).unwrap(),
+            key
+        );
+        assert_eq!(
+            fs::read_dir(dir.path().join(CA_ARCHIVE_DIR))
+                .unwrap()
+                .count(),
+            MAX_ARCHIVES,
+            "the cap is on retired pairs, and no archive is ever deleted"
+        );
+        assert!(!dir.path().join(CA_CERT_TMP_FILE).exists());
+        assert!(!dir.path().join(CA_KEY_TMP_FILE).exists());
+    }
+
+    #[test]
+    fn a_full_api_archive_refuses_import_and_keeps_the_live_pair() {
+        let (dir, store) = store();
+        crate::load_or_generate(dir.path(), "127.0.0.1", None).unwrap();
+        for _ in 0..MAX_ARCHIVES {
+            let generated = ca::generate(&CaParams::default()).unwrap();
+            store
+                .install_api_pair(
+                    &validate_server_pair(&generated.cert_pem, &generated.key_pem).unwrap(),
+                )
+                .unwrap();
+        }
+        let key = fs::read_to_string(dir.path().join(API_KEY_FILE)).unwrap();
+
+        let refused = ca::generate(&CaParams::default()).unwrap();
+        assert!(matches!(
+            store.install_api_pair(
+                &validate_server_pair(&refused.cert_pem, &refused.key_pem).unwrap()
+            ),
+            Err(CertError::ArchiveFull {
+                archive: API_ARCHIVE_DIR,
+                limit: MAX_ARCHIVES
+            })
+        ));
+        assert_eq!(
+            fs::read_to_string(dir.path().join(API_KEY_FILE)).unwrap(),
+            key
+        );
+        assert!(store.api_certified_key().is_ok());
+        assert_eq!(store.api_pair_source(), ApiPairSource::Imported);
+        assert!(!dir.path().join(API_KEY_TMP_FILE).exists());
+    }
+
+    #[test]
+    fn a_marker_that_cannot_be_written_fails_before_the_live_pair_changes() {
+        let (dir, store) = store();
+        crate::load_or_generate(dir.path(), "127.0.0.1", None).unwrap();
+        let cert = fs::read_to_string(dir.path().join(API_CERT_FILE)).unwrap();
+        let key = fs::read_to_string(dir.path().join(API_KEY_FILE)).unwrap();
+        fs::create_dir(dir.path().join(API_SOURCE_FILE)).unwrap();
+
+        let generated = ca::generate(&CaParams::default()).unwrap();
+        assert!(matches!(
+            store.install_api_pair(
+                &validate_server_pair(&generated.cert_pem, &generated.key_pem).unwrap()
+            ),
+            Err(CertError::Io { .. })
+        ));
+        assert_eq!(
+            fs::read_to_string(dir.path().join(API_CERT_FILE)).unwrap(),
+            cert,
+            "an import that cannot record itself must not replace the pair"
+        );
+        assert_eq!(
+            fs::read_to_string(dir.path().join(API_KEY_FILE)).unwrap(),
+            key
+        );
+        assert_eq!(store.api_pair_source(), ApiPairSource::SelfSigned);
+        assert!(!dir.path().join(API_CERT_TMP_FILE).exists());
+        assert!(!dir.path().join(API_KEY_TMP_FILE).exists());
+    }
+
+    #[test]
+    fn an_archive_that_cannot_be_completed_leaves_no_partial_directory() {
+        let (dir, store) = store();
+        let generated = ca::generate(&CaParams::default()).unwrap();
+        fs::write(dir.path().join(API_CERT_FILE), &generated.cert_pem).unwrap();
+        fs::create_dir(dir.path().join(API_KEY_FILE)).unwrap();
+
+        let replacement = ca::generate(&CaParams::default()).unwrap();
+        assert!(matches!(
+            store.install_api_pair(
+                &validate_server_pair(&replacement.cert_pem, &replacement.key_pem).unwrap()
+            ),
+            Err(CertError::Io { .. })
+        ));
+        assert_eq!(
+            fs::read_dir(dir.path().join(API_ARCHIVE_DIR))
+                .unwrap()
+                .count(),
+            0,
+            "a half-copied archive must not count toward the cap"
+        );
+        assert!(!dir.path().join(API_CERT_TMP_FILE).exists());
+        assert!(!dir.path().join(API_KEY_TMP_FILE).exists());
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn a_commit_that_fails_after_the_certificate_landed_restores_the_archived_pair() {
+        use std::os::windows::fs::OpenOptionsExt;
+        const FILE_SHARE_READ: u32 = 1;
+
+        let (dir, store) = store();
+        crate::load_or_generate(dir.path(), "127.0.0.1", None).unwrap();
+        let cert = fs::read_to_string(dir.path().join(API_CERT_FILE)).unwrap();
+        let key = fs::read_to_string(dir.path().join(API_KEY_FILE)).unwrap();
+
+        let pinned = fs::OpenOptions::new()
+            .read(true)
+            .share_mode(FILE_SHARE_READ)
+            .open(dir.path().join(API_KEY_FILE))
+            .unwrap();
+
+        let generated = ca::generate(&CaParams::default()).unwrap();
+        assert!(matches!(
+            store.install_api_pair(
+                &validate_server_pair(&generated.cert_pem, &generated.key_pem).unwrap()
+            ),
+            Err(CertError::Io { .. })
+        ));
+        drop(pinned);
+
+        assert_eq!(
+            fs::read_to_string(dir.path().join(API_CERT_FILE)).unwrap(),
+            cert,
+            "the certificate the failed commit had already renamed in must be put back"
+        );
+        assert_eq!(
+            fs::read_to_string(dir.path().join(API_KEY_FILE)).unwrap(),
+            key
+        );
+        assert!(!dir.path().join(API_SOURCE_FILE).exists());
+        assert_eq!(store.api_pair_source(), ApiPairSource::SelfSigned);
+        assert!(store.api_certified_key().is_ok());
+        assert!(!dir.path().join(API_CERT_TMP_FILE).exists());
+        assert!(!dir.path().join(API_KEY_TMP_FILE).exists());
+        assert_eq!(
+            fs::read_dir(dir.path().join(API_ARCHIVE_DIR))
+                .unwrap()
+                .count(),
+            1,
+            "the archive taken before the commit is kept"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_staged_key_is_never_readable_by_others_even_before_it_is_committed() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let dir = tempfile::tempdir().unwrap();
+        let paths = PairPaths::api(dir.path());
+        stage_pair(&paths, "cert", "key").unwrap();
+        let mode = fs::metadata(&paths.key_tmp).unwrap().permissions().mode();
+        assert_eq!(mode & 0o777, 0o600);
+
+        fs::write(&paths.key_tmp, "stale, world-readable").unwrap();
+        fs::set_permissions(&paths.key_tmp, fs::Permissions::from_mode(0o644)).unwrap();
+        stage_pair(&paths, "cert", "key").unwrap();
+        let mode = fs::metadata(&paths.key_tmp).unwrap().permissions().mode();
+        assert_eq!(
+            mode & 0o777,
+            0o600,
+            "a stale staged key is replaced, not reused"
+        );
+    }
+
+    #[test]
+    fn an_archived_pair_copied_back_is_not_reported_as_imported() {
+        let (dir, store) = store();
+        crate::load_or_generate(dir.path(), "127.0.0.1", None).unwrap();
+        let generated = ca::generate(&CaParams::default()).unwrap();
+        store
+            .install_api_pair(
+                &validate_server_pair(&generated.cert_pem, &generated.key_pem).unwrap(),
+            )
+            .unwrap();
+        assert_eq!(
+            CertStore::open(dir.path()).unwrap().api_pair_source(),
+            ApiPairSource::Imported
+        );
+
+        let archive = fs::read_dir(dir.path().join(API_ARCHIVE_DIR))
+            .unwrap()
+            .next()
+            .unwrap()
+            .unwrap()
+            .path();
+        for file in [API_CERT_FILE, API_KEY_FILE] {
+            fs::copy(archive.join(file), dir.path().join(file)).unwrap();
+        }
+
+        assert!(
+            dir.path().join(API_SOURCE_FILE).exists(),
+            "the marker survives a copy-back; the fingerprint inside it is what refutes it"
+        );
+        assert_eq!(
+            CertStore::open(dir.path()).unwrap().api_pair_source(),
+            ApiPairSource::SelfSigned,
+            "a self-signed pair restored from the archive must not claim to be imported"
+        );
+    }
+
+    #[test]
+    fn concurrent_api_imports_are_serialized_and_never_commit_a_mismatched_pair() {
+        const THREADS: usize = 8;
+        let (dir, store) = store();
+        crate::load_or_generate(dir.path(), "127.0.0.1", None).unwrap();
+        let pairs = (0..THREADS)
+            .map(|_| ca::generate(&CaParams::default()).unwrap())
+            .collect::<Vec<_>>();
+        let barrier = std::sync::Barrier::new(THREADS);
+
+        std::thread::scope(|scope| {
+            for generated in &pairs {
+                let (store, barrier) = (&store, &barrier);
+                scope.spawn(move || {
+                    let pair =
+                        validate_server_pair(&generated.cert_pem, &generated.key_pem).unwrap();
+                    barrier.wait();
+                    store.install_api_pair(&pair).unwrap();
+                });
+            }
+        });
+
+        assert!(
+            store.api_certified_key().is_ok(),
+            "the live pair must be key-matched after overlapping imports"
+        );
+        let live_key = fs::read_to_string(dir.path().join(API_KEY_FILE)).unwrap();
+        let live_cert = fs::read_to_string(dir.path().join(API_CERT_FILE)).unwrap();
+        let winner = pairs
+            .iter()
+            .find(|generated| generated.key_pem == live_key)
+            .expect("the live key is one of the imported keys");
+        assert_eq!(
+            all_certificates(&live_cert, "the certificate").unwrap(),
+            all_certificates(&winner.cert_pem, "the certificate").unwrap(),
+            "the live certificate belongs to the live key"
+        );
+        assert_eq!(
+            fs::read_dir(dir.path().join(API_ARCHIVE_DIR))
+                .unwrap()
+                .count(),
+            THREADS,
+            "every import archived exactly the pair it replaced"
+        );
+        assert!(!dir.path().join(API_CERT_TMP_FILE).exists());
+        assert!(!dir.path().join(API_KEY_TMP_FILE).exists());
+        assert_eq!(store.api_pair_source(), ApiPairSource::Imported);
     }
 
     #[test]
@@ -736,7 +1272,7 @@ mod tests {
         fs::create_dir(dir.path().join(CA_CERT_TMP_FILE)).unwrap();
         assert!(store.generate_ca(&CaParams::default()).is_err());
 
-        assert_eq!(store.ca_summary(), Some(first.clone()));
+        assert_eq!(store.ca_summary(), Some(first.summary.clone()));
         assert_eq!(
             fs::read_to_string(dir.path().join(CA_CERT_FILE)).unwrap(),
             cert
@@ -754,7 +1290,7 @@ mod tests {
         fs::remove_dir(dir.path().join(CA_CERT_TMP_FILE)).unwrap();
         assert_eq!(
             CertStore::open(dir.path()).unwrap().ca_summary(),
-            Some(first)
+            Some(first.summary)
         );
     }
 
@@ -913,7 +1449,8 @@ mod tests {
                 common_name: "Short Lived Authority".to_string(),
                 validity_days: 2,
             })
-            .unwrap();
+            .unwrap()
+            .summary;
         let leaf = store.prewarm("a.example").unwrap();
         let (_, parsed) = x509_parser::parse_x509_certificate(&leaf.cert[0]).unwrap();
         assert_eq!(

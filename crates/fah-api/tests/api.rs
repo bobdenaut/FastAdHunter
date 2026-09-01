@@ -455,6 +455,7 @@ struct Harness {
     stats: Arc<FakeStats>,
     history: Arc<FakeHistory>,
     auth: Arc<AuthState>,
+    certs: Option<Arc<fah_api::CertStore>>,
     _config_dir: tempfile::TempDir,
     data_dir: tempfile::TempDir,
 }
@@ -469,6 +470,7 @@ struct HarnessOptions {
     tls: bool,
     degraded: bool,
     limits: RateLimits,
+    certs: bool,
 }
 
 impl Default for HarnessOptions {
@@ -477,6 +479,7 @@ impl Default for HarnessOptions {
             tls: true,
             degraded: false,
             limits: AuthState::relaxed_limits(),
+            certs: true,
         }
     }
 }
@@ -517,6 +520,9 @@ async fn start_with(options: HarnessOptions) -> Harness {
         192, 168, 10, 15,
     ))));
     let history = Arc::new(FakeHistory::default());
+    let certs = options
+        .certs
+        .then(|| Arc::new(fah_api::CertStore::open(config_dir.path()).unwrap()));
     let state = AppStateBuilder {
         rules: Arc::clone(&rules),
         policies: Arc::new(fah_rules::PolicyState::default()),
@@ -529,6 +535,7 @@ async fn start_with(options: HarnessOptions) -> Harness {
         config: Arc::new(ConfigStore::new(config, config_path.clone())),
         keys: Arc::new(keys),
         auth: Arc::clone(&auth),
+        certs: certs.clone(),
     };
 
     let server = ApiServer::bind("127.0.0.1", 0, tls_config, state)
@@ -553,6 +560,7 @@ async fn start_with(options: HarnessOptions) -> Harness {
         stats,
         history,
         auth,
+        certs,
         _config_dir: config_dir,
         data_dir,
     }
@@ -3715,4 +3723,747 @@ async fn a_bearer_upgrade_with_no_origin_succeeds_in_both_forms() {
     assert!(query_form.is_ok(), "?token= form");
     drop(query_form);
     wait_for_query_subscribers(&harness, false).await;
+}
+
+const CERT_PATHS: [&str; 4] = [
+    "/api/v1/certificates",
+    "/api/v1/certificates/ca/generate",
+    "/api/v1/certificates/ca/export",
+    "/api/v1/certificates/import",
+];
+
+struct Pem {
+    cert: String,
+    key: String,
+}
+
+fn server_pem(offset_days: i64, validity_days: i64) -> Pem {
+    fah_api::install_crypto_provider();
+    let mut params = rcgen::CertificateParams::new(vec!["fah.example".to_string()]).unwrap();
+    params.not_before = time::OffsetDateTime::now_utc() + time::Duration::days(offset_days);
+    params.not_after = params.not_before + time::Duration::days(validity_days);
+    let key = rcgen::KeyPair::generate().unwrap();
+    let cert = params.self_signed(&key).unwrap();
+    Pem {
+        cert: cert.pem(),
+        key: key.serialize_pem(),
+    }
+}
+
+fn fingerprint(der: &[u8]) -> String {
+    let digest = aws_lc_rs::digest::digest(&aws_lc_rs::digest::SHA256, der);
+    digest
+        .as_ref()
+        .iter()
+        .map(|byte| format!("{byte:02X}"))
+        .collect::<Vec<_>>()
+        .join(":")
+}
+
+fn der_of(pem: &str) -> Vec<u8> {
+    let mut reader = pem.as_bytes();
+    let mut certs = rustls_pemfile::certs(&mut reader)
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap();
+    assert_eq!(certs.len(), 1, "an export carries exactly one certificate");
+    certs.swap_remove(0).to_vec()
+}
+
+impl Harness {
+    async fn post_json(&self, path: &str, body: Value) -> reqwest::Response {
+        self.client
+            .post(self.url(path))
+            .bearer_auth(&self.key)
+            .json(&body)
+            .send()
+            .await
+            .unwrap()
+    }
+
+    async fn post_ok(&self, path: &str, body: Value) -> Value {
+        let response = self.post_json(path, body).await;
+        assert!(response.status().is_success(), "POST {path}");
+        response.json().await.unwrap()
+    }
+}
+
+async fn generate_ca(harness: &Harness) -> Value {
+    harness
+        .post_ok(
+            "/api/v1/certificates/ca/generate",
+            json!({ "confirm": true }),
+        )
+        .await
+}
+
+#[tokio::test]
+async fn the_full_certificate_lifecycle_matches_the_documented_shapes() {
+    let harness = start().await;
+
+    let before = harness.get_json("/api/v1/certificates").await;
+    assert_eq!(before["ca"]["present"], false);
+    assert!(before["ca"]["fingerprint_sha256"].is_null());
+    assert_eq!(before["api_certificate"]["source"], "self_signed");
+    assert_eq!(before["leaf_cache"]["capacity"], 512);
+    assert_eq!(before["leaf_cache"]["size"], 0);
+
+    let generated = generate_ca(&harness).await;
+    assert_eq!(generated["archived_previous"], false);
+    assert_eq!(generated["ca"]["present"], true);
+    let first = generated["ca"]["fingerprint_sha256"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    assert!(first.contains(':'), "fingerprint is colon-separated hex");
+
+    let status = harness.get_json("/api/v1/certificates").await;
+    assert_eq!(status["ca"]["fingerprint_sha256"], first);
+    assert_eq!(status["ca"]["subject"], "CN=FastAdHunter CA");
+    assert!(status["ca"]["not_before"].as_str().unwrap().ends_with('Z'));
+    assert!(status["ca"]["not_after"].as_str().unwrap().ends_with('Z'));
+
+    let pem = harness.get("/api/v1/certificates/ca/export").await;
+    assert_eq!(pem.status(), 200);
+    assert_eq!(
+        pem.headers()["content-type"].to_str().unwrap(),
+        "application/x-pem-file"
+    );
+    assert_eq!(
+        pem.headers()["content-disposition"].to_str().unwrap(),
+        "attachment; filename=\"fastadhunter-ca.pem\""
+    );
+    let pem_body = pem.text().await.unwrap();
+    assert_eq!(fingerprint(&der_of(&pem_body)), first);
+
+    let der = harness
+        .get("/api/v1/certificates/ca/export?format=der")
+        .await;
+    assert_eq!(der.status(), 200);
+    assert_eq!(
+        der.headers()["content-type"].to_str().unwrap(),
+        "application/pkix-cert"
+    );
+    assert_eq!(
+        der.headers()["content-disposition"].to_str().unwrap(),
+        "attachment; filename=\"fastadhunter-ca.crt\""
+    );
+    let der_body = der.bytes().await.unwrap();
+    assert_eq!(fingerprint(&der_body), first);
+
+    let pair = server_pem(0, 30);
+    let imported = harness
+        .post_ok(
+            "/api/v1/certificates/import",
+            json!({ "format": "pem", "cert_pem": pair.cert, "key_pem": pair.key }),
+        )
+        .await;
+    assert_eq!(imported["applied"], false);
+    assert_eq!(imported["restart_required"], true);
+    assert_eq!(imported["source"], "imported");
+
+    let after_import = harness.get_json("/api/v1/certificates").await;
+    assert_eq!(after_import["api_certificate"]["source"], "imported");
+    assert_eq!(
+        after_import["ca"]["fingerprint_sha256"], first,
+        "importing the API pair must not touch the authority"
+    );
+
+    let again = generate_ca(&harness).await;
+    assert_eq!(again["archived_previous"], true);
+    let second = again["ca"]["fingerprint_sha256"].as_str().unwrap();
+    assert_ne!(second, first, "a regeneration mints a new authority");
+    assert_eq!(
+        harness.get_json("/api/v1/certificates").await["ca"]["fingerprint_sha256"],
+        second
+    );
+}
+
+#[tokio::test]
+async fn no_export_of_either_format_carries_private_material() {
+    let harness = start().await;
+    generate_ca(&harness).await;
+
+    let pem = harness
+        .get("/api/v1/certificates/ca/export?format=pem")
+        .await
+        .text()
+        .await
+        .unwrap();
+    assert!(pem.contains("BEGIN CERTIFICATE"));
+    assert!(
+        !pem.contains("PRIVATE"),
+        "the PEM export leaked key material"
+    );
+
+    let der = harness
+        .get("/api/v1/certificates/ca/export?format=der")
+        .await
+        .bytes()
+        .await
+        .unwrap();
+    assert!(!der.is_empty());
+    assert!(
+        !der.windows(7).any(|window| window == b"PRIVATE"),
+        "the DER export leaked key material"
+    );
+
+    let store = harness.certs.as_ref().unwrap();
+    assert!(!store.ca_public_pem().unwrap().contains("PRIVATE"));
+}
+
+#[tokio::test]
+async fn an_import_carrying_pasted_key_material_never_reaches_a_response_or_disk() {
+    let harness = start().await;
+    let pair = server_pem(0, 30);
+    let blob = format!("{}{}", pair.cert, pair.key);
+
+    let response = harness
+        .post_json(
+            "/api/v1/certificates/import",
+            json!({ "cert_pem": blob, "key_pem": pair.key }),
+        )
+        .await;
+    assert_eq!(response.status(), 200);
+    let body = response.text().await.unwrap();
+    assert!(
+        !body.contains("PRIVATE"),
+        "the response echoed key material"
+    );
+
+    let stored = std::fs::read_to_string(harness._config_dir.path().join("api-cert.pem")).unwrap();
+    assert!(
+        !stored.contains("PRIVATE"),
+        "the stored certificate kept the pasted key"
+    );
+}
+
+#[tokio::test]
+async fn each_invalid_import_class_is_a_422_naming_its_cause() {
+    let harness = start().await;
+    let valid = server_pem(0, 30);
+    let other = server_pem(0, 30);
+    let expired = server_pem(-40, 10);
+    let future = server_pem(5, 30);
+
+    let cases: Vec<(Value, &str)> = vec![
+        (
+            json!({ "cert_pem": expired.cert, "key_pem": expired.key }),
+            "expired:",
+        ),
+        (
+            json!({ "cert_pem": future.cert, "key_pem": future.key }),
+            "not_yet_valid:",
+        ),
+        (
+            json!({ "cert_pem": valid.cert, "key_pem": other.key }),
+            "key_mismatch:",
+        ),
+        (
+            json!({ "cert_pem": "not a certificate", "key_pem": valid.key }),
+            "parse:",
+        ),
+        (json!({ "key_pem": valid.key }), "parse:"),
+        (
+            json!({ "format": "pfx", "pfx_base64": "AAAA", "passphrase": "hunter2" }),
+            "unsupported_format:",
+        ),
+    ];
+
+    for (body, prefix) in cases {
+        let response = harness.post_json("/api/v1/certificates/import", body).await;
+        assert_eq!(response.status(), 422, "{prefix}");
+        let payload: Value = response.json().await.unwrap();
+        assert_eq!(payload["error"]["code"], "validation_failed");
+        let message = payload["error"]["message"].as_str().unwrap();
+        assert!(
+            message.starts_with(prefix),
+            "expected {prefix} got {message}"
+        );
+    }
+
+    let status = harness.get_json("/api/v1/certificates").await;
+    assert_eq!(
+        status["api_certificate"]["source"], "self_signed",
+        "a rejected import must not replace the API pair"
+    );
+}
+
+#[tokio::test]
+async fn a_rejected_import_never_echoes_the_submitted_material() {
+    let harness = start().await;
+    let valid = server_pem(0, 30);
+    let secret = server_pem(0, 30).key;
+
+    let response = harness
+        .post_json(
+            "/api/v1/certificates/import",
+            json!({ "cert_pem": valid.cert, "key_pem": secret.clone() }),
+        )
+        .await;
+    assert_eq!(response.status(), 422);
+
+    let body = response.text().await.unwrap();
+    for line in secret.lines().filter(|line| !line.starts_with('-')) {
+        assert!(!body.contains(line), "the error echoed a key line");
+    }
+    for line in valid.cert.lines().filter(|line| !line.starts_with('-')) {
+        assert!(!body.contains(line), "the error echoed a certificate line");
+    }
+}
+
+#[tokio::test]
+async fn generation_needs_an_explicit_confirmation() {
+    let harness = start().await;
+
+    for body in [json!({}), json!({ "confirm": false })] {
+        let response = harness
+            .post_json("/api/v1/certificates/ca/generate", body)
+            .await;
+        assert_eq!(response.status(), 400);
+        let payload: Value = response.json().await.unwrap();
+        assert_eq!(payload["error"]["code"], "bad_request");
+        assert!(payload["error"]["message"]
+            .as_str()
+            .unwrap()
+            .starts_with("confirm: true is required"));
+    }
+
+    let response = harness
+        .post_json(
+            "/api/v1/certificates/ca/generate",
+            json!({ "confirm": "yes" }),
+        )
+        .await;
+    assert_eq!(
+        response.status(),
+        400,
+        "a wrongly typed confirm is not a yes"
+    );
+
+    assert_eq!(
+        harness.get_json("/api/v1/certificates").await["ca"]["present"],
+        false,
+        "a refused generation must leave the store untouched"
+    );
+}
+
+#[tokio::test]
+async fn generation_parameters_are_range_checked() {
+    let harness = start().await;
+
+    for body in [
+        json!({ "confirm": true, "validity_days": 0 }),
+        json!({ "confirm": true, "validity_days": 7301 }),
+        json!({ "confirm": true, "common_name": "   " }),
+        json!({ "confirm": true, "common_name": "x".repeat(65) }),
+    ] {
+        let response = harness
+            .post_json("/api/v1/certificates/ca/generate", body)
+            .await;
+        assert_eq!(response.status(), 422);
+        assert_eq!(
+            response.json::<Value>().await.unwrap()["error"]["code"],
+            "validation_failed"
+        );
+    }
+
+    let named = harness
+        .post_ok(
+            "/api/v1/certificates/ca/generate",
+            json!({ "confirm": true, "common_name": "Household CA", "validity_days": 30 }),
+        )
+        .await;
+    assert_eq!(named["ca"]["subject"], "CN=Household CA");
+}
+
+#[tokio::test]
+async fn export_answers_404_without_an_authority_and_422_for_an_unknown_format() {
+    let harness = start().await;
+
+    let missing = harness.get("/api/v1/certificates/ca/export").await;
+    assert_eq!(missing.status(), 404);
+    assert_eq!(
+        missing.json::<Value>().await.unwrap()["error"]["code"],
+        "not_found"
+    );
+
+    let bad = harness
+        .get("/api/v1/certificates/ca/export?format=pfx")
+        .await;
+    assert_eq!(bad.status(), 422);
+    assert_eq!(
+        bad.json::<Value>().await.unwrap()["error"]["code"],
+        "validation_failed"
+    );
+}
+
+#[tokio::test]
+async fn an_oversized_certificate_body_is_refused_by_the_route_limit() {
+    let harness = start().await;
+
+    let response = harness
+        .post_json(
+            "/api/v1/certificates/import",
+            json!({ "cert_pem": "A".repeat(300 * 1024), "key_pem": "B" }),
+        )
+        .await;
+    assert_eq!(response.status(), 400);
+    let message = response.json::<Value>().await.unwrap()["error"]["message"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    assert!(message.contains("262144"), "{message}");
+}
+
+#[tokio::test]
+async fn every_certificate_route_takes_both_credentials_and_refuses_neither() {
+    let harness = start().await;
+    let cookie = login_cookie(&harness).await;
+
+    for path in CERT_PATHS {
+        let response = harness.client.get(harness.url(path)).send().await.unwrap();
+        assert_eq!(response.status(), 401, "{path} must require a credential");
+        assert_eq!(
+            response.headers()["cache-control"].to_str().unwrap(),
+            "no-store"
+        );
+    }
+
+    for path in [CERT_PATHS[0], CERT_PATHS[2]] {
+        for request in [
+            harness
+                .client
+                .get(harness.url(path))
+                .bearer_auth(&harness.key),
+            harness
+                .client
+                .get(harness.url(path))
+                .header("Cookie", &cookie),
+        ] {
+            let status = request.send().await.unwrap().status();
+            assert_ne!(status, 401, "{path} rejected a valid credential");
+        }
+    }
+}
+
+#[tokio::test]
+async fn both_certificate_posts_work_with_either_credential_and_fail_with_neither() {
+    let harness = start().await;
+    let cookie = login_cookie(&harness).await;
+    let pairs = [server_pem(0, 30), server_pem(0, 30)];
+
+    let bodies = [
+        (
+            "/api/v1/certificates/ca/generate",
+            json!({ "confirm": true }),
+        ),
+        (
+            "/api/v1/certificates/import",
+            json!({ "cert_pem": pairs[0].cert, "key_pem": pairs[0].key }),
+        ),
+    ];
+
+    for (path, body) in &bodies {
+        let response = harness
+            .client
+            .post(harness.url(path))
+            .json(body)
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), 401, "POST {path} without a credential");
+    }
+
+    for (index, (path, body)) in bodies.iter().enumerate() {
+        let bearer = harness
+            .client
+            .post(harness.url(path))
+            .bearer_auth(&harness.key)
+            .json(body)
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(bearer.status(), 200, "POST {path} with the bearer key");
+
+        let with_cookie = match index {
+            1 => json!({ "cert_pem": pairs[1].cert, "key_pem": pairs[1].key }),
+            _ => body.clone(),
+        };
+        let session = harness
+            .client
+            .post(harness.url(path))
+            .header("Cookie", &cookie)
+            .json(&with_cookie)
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(session.status(), 200, "POST {path} with a session cookie");
+    }
+
+    let status = harness.get_json("/api/v1/certificates").await;
+    assert_eq!(status["ca"]["present"], true);
+    assert_eq!(status["api_certificate"]["source"], "imported");
+}
+
+#[tokio::test]
+async fn the_error_paths_carry_no_store_too() {
+    let harness = start().await;
+
+    let responses = vec![
+        harness.get("/api/v1/certificates/ca/export").await,
+        harness
+            .get("/api/v1/certificates/ca/export?format=pfx")
+            .await,
+        harness
+            .post_json("/api/v1/certificates/ca/generate", json!({}))
+            .await,
+        harness
+            .post_json("/api/v1/certificates/import", json!({ "cert_pem": "x" }))
+            .await,
+        harness.get("/api/v1/certificates/import").await,
+    ];
+
+    for response in responses {
+        let url = response.url().clone();
+        let status = response.status();
+        assert!(status.is_client_error(), "{url} answered {status}");
+        assert_eq!(
+            response.headers()["cache-control"].to_str().unwrap(),
+            "no-store",
+            "{url} answered {status} without no-store"
+        );
+    }
+}
+
+#[tokio::test]
+async fn a_body_that_is_not_documented_json_is_a_400_on_both_posts() {
+    let harness = start().await;
+
+    for path in [
+        "/api/v1/certificates/ca/generate",
+        "/api/v1/certificates/import",
+    ] {
+        let untyped = harness
+            .client
+            .post(harness.url(path))
+            .bearer_auth(&harness.key)
+            .body("{}")
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(untyped.status(), 400, "{path} without a content type");
+
+        let malformed = harness
+            .client
+            .post(harness.url(path))
+            .bearer_auth(&harness.key)
+            .header("Content-Type", "application/json")
+            .body("{\"confirm\":")
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(malformed.status(), 400, "{path} with malformed JSON");
+        assert_eq!(
+            malformed.json::<Value>().await.unwrap()["error"]["code"],
+            "bad_request"
+        );
+    }
+}
+
+#[tokio::test]
+async fn the_body_limit_covers_generation_as_well_as_import() {
+    let harness = start().await;
+
+    let response = harness
+        .post_json(
+            "/api/v1/certificates/ca/generate",
+            json!({ "confirm": true, "common_name": "A".repeat(300 * 1024) }),
+        )
+        .await;
+    assert_eq!(response.status(), 400);
+    let message = response.json::<Value>().await.unwrap()["error"]["message"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    assert!(message.contains("262144"), "{message}");
+
+    assert_eq!(
+        harness.get_json("/api/v1/certificates").await["ca"]["present"],
+        false,
+        "a refused body must not reach the store"
+    );
+}
+
+#[tokio::test]
+async fn a_common_name_is_bounded_in_bytes_not_characters() {
+    let harness = start().await;
+
+    let response = harness
+        .post_json(
+            "/api/v1/certificates/ca/generate",
+            json!({ "confirm": true, "common_name": "é".repeat(33) }),
+        )
+        .await;
+    assert_eq!(
+        response.status(),
+        422,
+        "33 two-byte characters are 66 bytes, past RFC 5280's ub-common-name"
+    );
+    assert_eq!(
+        harness.get_json("/api/v1/certificates").await["ca"]["present"],
+        false
+    );
+}
+
+#[tokio::test]
+async fn replacing_the_api_pair_archives_the_pair_it_replaced() {
+    let harness = start().await;
+    let config = harness._config_dir.path().to_path_buf();
+    let original = std::fs::read_to_string(config.join("api-key.pem")).unwrap();
+
+    let first = server_pem(0, 30);
+    harness
+        .post_ok(
+            "/api/v1/certificates/import",
+            json!({ "cert_pem": first.cert, "key_pem": first.key }),
+        )
+        .await;
+
+    let archive = config.join("api-archive");
+    let stamped = std::fs::read_dir(&archive)
+        .expect("the replaced API pair is archived")
+        .next()
+        .unwrap()
+        .unwrap()
+        .path();
+    assert_eq!(
+        std::fs::read_to_string(stamped.join("api-key.pem")).unwrap(),
+        original,
+        "the private key the import replaced must be recoverable"
+    );
+    assert_eq!(
+        std::fs::read_to_string(config.join("api-key.pem")).unwrap(),
+        first.key
+    );
+}
+
+#[tokio::test]
+async fn archived_previous_reports_the_disk_not_the_slot() {
+    let harness = start().await;
+    let config = harness._config_dir.path();
+
+    let planted = server_pem(0, 30);
+    std::fs::write(config.join("ca-cert.pem"), &planted.cert).unwrap();
+    std::fs::write(config.join("ca-key.pem"), &planted.key).unwrap();
+
+    let generated = generate_ca(&harness).await;
+    assert_eq!(
+        generated["archived_previous"], true,
+        "a pair that was on disk was replaced, so it was archived"
+    );
+    assert!(config.join("ca-archive").exists());
+}
+
+#[tokio::test]
+async fn a_full_archive_answers_409_and_leaves_the_authority_in_place() {
+    let harness = start().await;
+    for _ in 0..=fah_certs::MAX_ARCHIVES {
+        generate_ca(&harness).await;
+    }
+    let before = harness.get_json("/api/v1/certificates").await;
+
+    let refused = harness
+        .post_json(
+            "/api/v1/certificates/ca/generate",
+            json!({ "confirm": true }),
+        )
+        .await;
+    assert_eq!(refused.status(), 409);
+    let payload: Value = refused.json().await.unwrap();
+    assert_eq!(payload["error"]["code"], "conflict");
+    let message = payload["error"]["message"].as_str().unwrap();
+    assert!(message.starts_with("archive_full:"), "{message}");
+    assert!(!message.contains("/config/"), "{message}");
+
+    let after = harness.get_json("/api/v1/certificates").await;
+    assert_eq!(
+        after["ca"]["fingerprint_sha256"],
+        before["ca"]["fingerprint_sha256"]
+    );
+    assert_eq!(
+        std::fs::read_dir(harness._config_dir.path().join("ca-archive"))
+            .unwrap()
+            .count(),
+        fah_certs::MAX_ARCHIVES
+    );
+}
+
+#[tokio::test]
+async fn every_certificate_response_carries_no_store() {
+    let harness = start().await;
+    generate_ca(&harness).await;
+    let pair = server_pem(0, 30);
+
+    let responses = vec![
+        harness.get("/api/v1/certificates").await,
+        harness.get("/api/v1/certificates/ca/export").await,
+        harness
+            .post_json(
+                "/api/v1/certificates/ca/generate",
+                json!({ "confirm": true }),
+            )
+            .await,
+        harness
+            .post_json(
+                "/api/v1/certificates/import",
+                json!({ "cert_pem": pair.cert, "key_pem": pair.key }),
+            )
+            .await,
+    ];
+
+    for response in responses {
+        let url = response.url().clone();
+        assert!(response.status().is_success(), "{url}");
+        assert_eq!(
+            response.headers()["cache-control"].to_str().unwrap(),
+            "no-store",
+            "{url}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn a_store_that_did_not_open_answers_503_without_a_retry_after() {
+    let harness = start_with(HarnessOptions {
+        certs: false,
+        ..Default::default()
+    })
+    .await;
+
+    let responses = vec![
+        harness.get("/api/v1/certificates").await,
+        harness.get("/api/v1/certificates/ca/export").await,
+        harness
+            .post_json(
+                "/api/v1/certificates/ca/generate",
+                json!({ "confirm": true }),
+            )
+            .await,
+        harness
+            .post_json("/api/v1/certificates/import", json!({ "cert_pem": "x" }))
+            .await,
+    ];
+
+    for response in responses {
+        let path = response.url().path().to_string();
+        assert_eq!(response.status(), 503, "{path}");
+        assert!(
+            response.headers().get("retry-after").is_none(),
+            "{path} must not invite a timed retry"
+        );
+        assert_eq!(
+            response.json::<Value>().await.unwrap()["error"]["code"],
+            "unavailable"
+        );
+    }
 }

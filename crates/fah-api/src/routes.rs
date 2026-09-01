@@ -8,7 +8,7 @@ use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 
 use axum::extract::rejection::JsonRejection;
-use axum::extract::{ConnectInfo, Path, Query, State, WebSocketUpgrade};
+use axum::extract::{ConnectInfo, DefaultBodyLimit, Path, Query, State, WebSocketUpgrade};
 use axum::http::header::{CACHE_CONTROL, HOST, ORIGIN, SET_COOKIE};
 use axum::http::{HeaderMap, HeaderValue, StatusCode, Uri};
 use axum::response::{IntoResponse, Response};
@@ -20,6 +20,7 @@ use fah_rules::{ListPatch, ListStatus, RefreshResult};
 use tower_http::set_header::SetResponseHeaderLayer;
 
 use crate::auth::AuthMethod;
+use crate::certs;
 use crate::error::{ApiError, ApiResult};
 use crate::events::{self, Event};
 use crate::password::{self, Argon2Permit, RateDecision};
@@ -86,6 +87,16 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/cache/clean", post(cache_clean))
         .route("/config", get(get_config).post(post_config))
         .route("/config/apikey/rotate", post(rotate_api_key))
+        .route("/certificates", no_store(get(certs::status)))
+        .route(
+            "/certificates/ca/generate",
+            no_store(bounded_body(post(certs::generate_ca))),
+        )
+        .route("/certificates/ca/export", no_store(get(certs::export_ca)))
+        .route(
+            "/certificates/import",
+            no_store(bounded_body(post(certs::import))),
+        )
         .route("/debug/memory", get(debug_memory))
         .route("/events", get(events_socket))
         .route("/auth/login", no_store(post(auth_login)))
@@ -117,6 +128,10 @@ fn no_store(method: MethodRouter<Arc<AppState>>) -> MethodRouter<Arc<AppState>> 
         CACHE_CONTROL,
         HeaderValue::from_static("no-store"),
     ))
+}
+
+fn bounded_body(method: MethodRouter<Arc<AppState>>) -> MethodRouter<Arc<AppState>> {
+    method.layer(DefaultBodyLimit::max(certs::MAX_BODY_BYTES))
 }
 
 // ─── Health & telemetry ────────────────────────────────────────────────

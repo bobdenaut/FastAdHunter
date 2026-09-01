@@ -65,6 +65,12 @@ tracing = { workspace = true }
 # own integration tests without it reaching a release build (D4-a).
 fah-api = { path = ".", features = ["test-harness"] }
 reqwest = { workspace = true, features = ["json", "blocking"] }
+# Test-only: /api/v1/certificates/import needs a real certificate + key pair to
+# import, and the export tests re-parse what came back over the wire. Both are
+# dev-only — p3-01 removed rcgen and rustls-pemfile from this crate's release
+# dependencies and they stay out (ADR-0006: minting lives in fah-certs).
+rcgen = { version = "0.14", default-features = false, features = ["aws_lc_rs", "pem"] }
+rustls-pemfile = "2"
 tempfile = "3"
 tokio-tungstenite = { version = "0.29", default-features = false, features = ["rustls-tls-webpki-roots"] }
 futures-channel = { version = "0.3", default-features = false, features = ["std", "sink"] }
