@@ -643,7 +643,7 @@ dependencies = [
 
 [[package]]
 name = "fah-api"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "arc-swap",
  "argon2",
@@ -679,7 +679,7 @@ dependencies = [
 
 [[package]]
 name = "fah-common"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "criterion",
  "socket2",
@@ -689,7 +689,7 @@ dependencies = [
 
 [[package]]
 name = "fah-config"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "serde",
  "tempfile",
@@ -699,7 +699,7 @@ dependencies = [
 
 [[package]]
 name = "fah-dns"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "criterion",
  "fah-common",
@@ -721,7 +721,7 @@ dependencies = [
 
 [[package]]
 name = "fah-http"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "bytes",
  "criterion",
@@ -740,7 +740,7 @@ dependencies = [
 
 [[package]]
 name = "fah-logging"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "tracing",
  "tracing-subscriber",
@@ -748,7 +748,7 @@ dependencies = [
 
 [[package]]
 name = "fah-metrics"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "arc-swap",
  "criterion",
@@ -758,7 +758,7 @@ dependencies = [
 
 [[package]]
 name = "fah-model"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "serde",
  "serde_json",
@@ -766,7 +766,7 @@ dependencies = [
 
 [[package]]
 name = "fah-rules"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "arc-swap",
  "criterion",
@@ -784,7 +784,7 @@ dependencies = [
 
 [[package]]
 name = "fah-stats"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "criterion",
  "fah-config",
@@ -798,7 +798,7 @@ dependencies = [
 
 [[package]]
 name = "fah-tui-monitor"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "chrono",
  "crossterm",
@@ -816,7 +816,7 @@ dependencies = [
 
 [[package]]
 name = "fastadhunter"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "criterion",
  "fah-api",

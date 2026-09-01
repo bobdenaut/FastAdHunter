@@ -584,3 +584,129 @@ F7 completely):
   invariant closes exactly (`hits+misses = pass+allow = 100 817`).
 - `fah-next` keeps serving unchanged until the single Stage-4
   intervention (deploy of the repaired build + p2.6 cleanup).
+
+## Re-soak termination — 0.3.0, owner decision 2026-09-01 (T0+~59 h of 7 d): no verdict
+
+The owner terminated the `0.3.0` re-soak early to change the measurement
+method. **This is not a gate outcome and is not a FAIL** — it is a
+methodology change taken before day 7, and the soak therefore produces **no
+declared-gate verdict at all**. Gates declared in
+[resoak-0.3.0-predeclaration.md](resoak-0.3.0-predeclaration.md) are left
+where they stood; that file is not edited, so its pre-declaration property
+is preserved.
+
+### Why terminated: the declared pull method drives the thing being measured
+
+| | |
+| --- | --- |
+| Declared method | §Method — "**`?fields=` is never passed**", to keep `list_fetch`, `memory` and `allocator_committed_bytes` in the sample |
+| Consequence | no `?fields=` ⇒ [`PerfFields::ALL`](../../../crates/fah-api/src/wire.rs) ⇒ `upstreams: true` ⇒ every gate pull parses the full `upstreams` array of every row in range |
+| Mechanism | that parse is what `d420f38` identifies as the RSS ratchet — `upstreams` is 77.5 % of a row's bytes and nearly all of its per-row heap; mimalloc sizes retained arenas to the churn and holds them |
+| Effect | every pull and every dashboard view injects an RSS excursion into the series being gated |
+
+Measured on device from the final pull's full series, RSS MiB:
+
+| Pull | −1 h | +0 h | +1 h | +2 h | +6 h |
+| --- | --- | --- | --- | --- | --- |
+| T0+45.4 h (dashboard open) | 65.3 | 83.7 | 80.6 | **64.8** | 64.6 |
+| T0+58.6 h (gate pull alone) | 67.6 | 74.5 | 72.6 | **66.3** (h59.9) | — |
+
+Series length compounds the excursion: 587 rows / 1.15 MB at T0+58.6 h,
+~1 680 rows / ~3.3 MB by day 7.
+
+**The excursions decay inside ~2 h.** They therefore distort G1 (which
+compares hour-16–20 against hour-20–24 means) and can push a `peak_rss` step
+under G3 — but they never set a 24 h minimum, so **G2's floor is not
+observer-contaminated**. What makes the remaining 4½ days uninformative is
+G1 and G3, not G2: with pulls unscheduled and dashboard sessions unlogged,
+neither gate's figures could be separated from the act of reading them.
+
+**The G2 floor ratchet is product-side and stands as a finding** — see
+§State at termination.
+
+### G5a — owner ruling: MOOT
+
+**`counters.lists.not_modified > 0` within the first 48 h did not occur
+(`not_modified` = 0 at every pull). The gate fails on the letter and the
+ruling is MOOT — it does not apply to any final verdict, because this soak
+was terminated for a methodology change and constitutes no acceptance
+evidence.** Recorded explicitly rather than left implicit, per F3: a
+criterion that stops applying must say so in writing.
+
+Why the letter-failure carries no signal about the fix:
+
+- `0.2.20` wrote no `.validators` files
+  ([cache.rs:15](../../../crates/fah-rules/src/lifecycle/cache.rs)), so at
+  `T0` every list's stored validator was absent and its first refresh was
+  unconditional **by construction** — the predeclaration itself declares
+  those 16 bodies unavoidable (§G5b).
+- The first validator-armed 48 h wave was due 2026-09-01T22:35Z, i.e.
+  **T0+75.3 h — outside the 48 h window G5a names, and never reached**.
+- The only lists refreshing inside the window were `tif-mini` (24 h) and
+  `phishdestroy` (12 h); the companion origin log shows both origins
+  rotating validators daily, so no 304 was available to them.
+
+**G5a was therefore untestable in the span observed.** It is re-declared
+for the `0.3.1` soak, where `/data` carries `.validators` from `0.3.0` and
+the first refresh of every list is conditional from `T0`.
+
+### State at termination
+
+All figures from the terminal pull
+[`resoak-0.3.0/pull-final-20260901T0713Z-*`](resoak-0.3.0/), taken
+immediately before the container stop: `uptime_seconds` 215 688, 600
+samples, `stride 1`, full series from `T0`.
+
+| Window | n | floor MiB | ceil MiB | half-to-half drift | G1 |
+| --- | --- | --- | --- | --- | --- |
+| W1 | 240 | 43.3 | 62.5 | −0.51 | pass |
+| W2 | 240 | 52.0 | 94.8 | +0.99 | pass |
+| W3 | 120 (partial) | 64.2 | 74.5 | — | no figure |
+
+- **G2 floor series 43.3 → 52.0 → 64.2 MiB, still rising at termination.**
+  W1's floor is the boot sample, so it measures cold start, not a plateau.
+- Six-hour minima separate warm-up from the ratchet:
+
+  | h | 0–6 | 6–12 | 12–18 | 18–24 | 24–30 | 30–36 | 36–42 | 42–48 | 48–54 | 54–60 |
+  | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+  | min MiB | 43.3 | 52.9 | 51.8 | 50.1 | 52.0 | 61.1 | 61.1 | 63.3 | 64.2 | 66.1 |
+
+  The +9.1 MiB step into h30–36 lands on the h27.3 batch compile (16
+  bodies). **After it, the minima still climb at +5.21 MiB/day** (least
+  squares, h ≥ 30, n = 5) — a rate that is neither warm-up nor observer
+  excursion, since those decay inside ~2 h.
+- Growth is anonymous and unaccounted: `residual_bytes` minima 24.6 → 40.0
+  MiB across h24–60, while `accounted_bytes` held ~29 MB, `rss_file_bytes`
+  pinned at 9.7 MiB from h6, and `cache.bytes` oscillated 0.3–4.4 MiB.
+- **`d420f38` has no evident mechanism against this.** It removes the
+  history-parse churn, which is the component that already decays. The
+  floor climb continues between pulls. Recorded here as a prediction against
+  the `0.3.1` soak, not as a claim about it.
+- **G3: 5 `peak_rss` steps, all attributed** to `list_fetch` activity at
+  h3.3, h3.4, h15.4, h27.3, h27.4. `peak_rss` flat at 148.0 MiB
+  (155 140 096 B) for the final 32.5 h, terminal pull included.
+- **G4 clean at every pull, terminal included**: `events_dropped` 0,
+  `swr.dropped` 0, `swr.failed` 0. Final `list_fetch`: `bodies` 22,
+  `not_modified` **0**, `bytes_fetched` 50 734 788 (30.0 % of `B`);
+  `ruleset.rules` 756 420.
+- `allocator_committed_bytes` 154.4 → 323.6 MiB, monotone, stepping at
+  compile waves — 4.4× RSS at termination.
+- G5b, G5c, G6: not evaluated; the soak did not reach day 7.
+
+### What carries forward
+
+- The `adaptive` acceptance and p5-10 Stage B move again — to the `0.3.1`
+  soak, as they moved off L.3. **Neither L.3 nor this soak carries them.**
+- `0.3.1` ships `d420f38` (slim history rows) plus the version bump.
+- **The `0.3.1` pre-declaration replaces the "never pass `?fields=`" rule
+  with an explicit 15-name set — every field except `upstreams`** —
+  verified on device to drop only `upstreams`, to preserve `memory` (all 6
+  subkeys), `list_fetch`, `allocator_committed_bytes`, `rss_anon_bytes`,
+  `rss_file_bytes`, and to return a byte-identical `rss_bytes`/`peak_rss`
+  series at `stride 1` (21-row window: 41 192 B full vs 18 869 B slim).
+- The `+16` unavoidable-bodies allowance (§G5b) **does not carry** —
+  `/data` retains `.validators`, so `0.3.1`'s first refresh per list is
+  conditional.
+- The companion `origin-log.tsv` runs on the dev box and is unaffected by
+  the swap; it already predates `0.3.1`'s `T0` by four days, satisfying
+  §Method's "starts before the container start" for the new soak.
