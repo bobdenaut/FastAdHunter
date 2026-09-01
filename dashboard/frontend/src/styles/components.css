@@ -232,10 +232,54 @@ table.t tbody tr:hover td {
   display: block;
 }
 
+/* Column, so the gloss sits under the ring and the legend rather than beside
+   them. The row the two used to form is `.donut-main`. */
 .bd.donut-body {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  flex: 1;
+}
+
+/* Query types and Upstream health share a row and each end in a note. A card is
+   a grid item stretched to the tallest in that row, but a body sized to its own
+   content leaves the slack underneath, so both notes floated at whatever height
+   their own content ran out — two footnotes side by side on different lines.
+   Filling the body and pushing the note to its foot puts them on one line.
+   Stated once for the pair: they are the same card shape, not two. */
+.card:has(> .bd.donut-body),
+.card:has(> .bd.upstreams) {
+  display: flex;
+  flex-direction: column;
+}
+
+.bd.upstreams {
+  flex: 1;
+}
+
+/* `auto 0 0`, never `margin-top` alone: `.note` is a `<p>`, so the user agent's
+   `margin: 1em 0` leaves 11.5px under it that the auto top margin cannot
+   absorb — the note lands one line-height above the card's foot. */
+.bd.upstreams > .note {
+  margin: auto 0 0;
+}
+
+.donut-main {
   display: flex;
   align-items: center;
   gap: 26px;
+}
+
+/* Names what the legend's own two non-type words hold — `rest` and the API's
+   `OTHER` — beside the figures they describe rather than in a tooltip nobody
+   opens. Each gloss is its own line: they define different words. */
+.donut-note {
+  margin: auto 0 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  color: var(--text-muted);
+  font-size: 11.5px;
 }
 
 /* Pointing at a slice marks its legend row, and pointing at a row lights its

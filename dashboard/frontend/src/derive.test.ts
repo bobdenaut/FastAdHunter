@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import {
-  OTHER_LABEL,
+  REST_LABEL,
   blockedPercent,
   extentOf,
+  foldedLabels,
   faultRate,
   listsNeedingAttention,
   stackedMemory,
@@ -109,19 +110,26 @@ describe('max-normalisation', () => {
 describe('the query-type fold', () => {
   const perType = { A: 100, AAAA: 50, HTTPS: 20, PTR: 10, NS: 4, SOA: 3, MX: 1 };
 
-  it('keeps the four largest and folds the rest into one `other`', () => {
+  it('keeps the four largest and folds the remainder into one `rest`', () => {
     const slices = queryTypeSlices(perType);
     expect(slices.map((s) => s.label)).toEqual([
       'A',
       'AAAA',
       'HTTPS',
       'PTR',
-      OTHER_LABEL,
+      REST_LABEL,
     ]);
     expect(slices[4]?.value).toBe(8);
   });
 
-  it('never renames a single leftover label to `other`', () => {
+  it('folds under a name the API never sends, so no legend row collides', () => {
+    const withOther = { A: 100, AAAA: 50, HTTPS: 20, OTHER: 10, NS: 4, SOA: 3 };
+    const labels = queryTypeSlices(withOther).map((s) => s.label);
+    expect(labels).toEqual(['A', 'AAAA', 'HTTPS', 'OTHER', REST_LABEL]);
+    expect(new Set(labels.map((l) => l.toLowerCase())).size).toBe(labels.length);
+  });
+
+  it('never renames a single leftover label to `rest`', () => {
     const slices = queryTypeSlices({ A: 5, AAAA: 4, HTTPS: 3, PTR: 2, NS: 1 });
     expect(slices.map((s) => s.label)).toEqual([
       'A',
@@ -130,6 +138,19 @@ describe('the query-type fold', () => {
       'PTR',
       'NS',
     ]);
+  });
+
+  it('names the folded labels, largest first, for the legend gloss', () => {
+    expect(foldedLabels(perType, queryTypeSlices(perType))).toEqual([
+      'NS',
+      'SOA',
+      'MX',
+    ]);
+  });
+
+  it('names nothing when nothing was folded', () => {
+    const totals = { A: 5, AAAA: 4 };
+    expect(foldedLabels(totals, queryTypeSlices(totals))).toEqual([]);
   });
 
   it('drops zero labels rather than drawing a zero-width slice', () => {

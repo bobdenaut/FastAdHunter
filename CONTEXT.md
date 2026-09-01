@@ -83,6 +83,27 @@ Both are just rule lists; the distinction lives in the rules, not the list.
 One DNS question received from a client (domain, record type, client source IP,
 timestamp).
 
+### Record Type
+
+The DNS question's type, counted per hour under a fixed set of eleven labels:
+`A`, `AAAA`, `HTTPS`, `MX`, `TXT`, `PTR`, `NS`, `SOA`, `SRV`, `CNAME` and
+`OTHER`. The set is fixed at compile time because a per-query counter cannot
+hold an unbounded set of type strings.
+
+**`OTHER` is a record type, not a leftovers bin** — it counts the types outside
+the named ten, and `/history/summary` reports it under that name.
+
+### rest
+
+The dashboard's fold: the query types outside the largest few, summed into one
+slice so a donut stays readable. A presentation concern, computed in the
+browser, and never a name the API sends.
+
+Deliberately not spelled `other`: the API already sends `OTHER`, and a fold
+spelled `other` put two different meanings one case-fold apart in a single
+legend. The card names what its `rest` slice holds rather than making the
+reader guess.
+
 ### Client
 
 A device on the network, identified by the source IP of its queries. May carry

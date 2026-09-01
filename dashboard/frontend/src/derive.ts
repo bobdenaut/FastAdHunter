@@ -52,15 +52,18 @@ export interface Slice {
   value: number;
 }
 
-export const OTHER_LABEL = 'other';
+/** Named `rest`, not `other`: the API's own type set carries a literal `OTHER`
+ *  label for record types outside the tracked ten, and a fold spelled `other`
+ *  put two different meanings a case-fold apart in one legend. */
+export const REST_LABEL = 'rest';
 
 /**
  * R13 / R14 — the donut's slices. `per_type` is summed over the active range's
  * items first (zero buckets are omitted from the response, so an absent label
  * is a zero rather than an unknown), then everything outside the `keep` largest
- * is folded into one `other` slice, as the artboards draw.
+ * is folded into one `rest` slice, as the artboards draw.
  *
- * `other` is appended only when something actually falls outside, and it is
+ * `rest` is appended only when something actually falls outside, and it is
  * never one label renamed — a single leftover label keeps its own name.
  */
 export function queryTypeSlices(
@@ -77,10 +80,29 @@ export function queryTypeSlices(
   const head = ranked.slice(0, keep);
   const tail = ranked.slice(keep);
   head.push({
-    label: OTHER_LABEL,
+    label: REST_LABEL,
     value: sumOver(tail, (slice) => slice.value),
   });
   return head;
+}
+
+/**
+ * The type labels [`queryTypeSlices`] folded away, so the card can name what is
+ * inside its `rest` slice rather than print a word the reader has to guess at.
+ *
+ * Derived from the two ends rather than returned by the fold: which labels fall
+ * outside depends on the range, and a legend that hardcodes today's seven is
+ * wrong the first time the mix changes. Empty when nothing was folded.
+ */
+export function foldedLabels(
+  totals: Record<string, number>,
+  slices: readonly Slice[],
+): string[] {
+  const shown = new Set(slices.map((slice) => slice.label));
+  return Object.entries(totals)
+    .filter(([label, value]) => value > 0 && !shown.has(label))
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+    .map(([label]) => label);
 }
 
 /** R13 — a slice as a percentage of the summed `per_type`. Here rather than in

@@ -4,7 +4,13 @@ import { percent1 } from '../../charts/format';
 import { Card } from '../../components/card';
 import { Donut } from '../../components/donut';
 import { EmptyState } from '../../components/empty-state';
-import { queryTypeSlices, sliceShare, sumPerType } from '../../derive';
+import {
+  REST_LABEL,
+  foldedLabels,
+  queryTypeSlices,
+  sliceShare,
+  sumPerType,
+} from '../../derive';
 import { RANGES, plottedRange, type RangeKey } from './ranges';
 
 /**
@@ -35,11 +41,16 @@ export function QueryTypes({
   loading: boolean;
   className?: string;
 }) {
-  const slices = useMemo(
-    () => queryTypeSlices(sumPerType(summary?.items ?? [])),
-    [summary],
-  );
+  const totals = useMemo(() => sumPerType(summary?.items ?? []), [summary]);
+  const slices = useMemo(() => queryTypeSlices(totals), [totals]);
   const total = slices.reduce((sum, slice) => sum + slice.value, 0);
+
+  /** Both words the legend can print that are not a record type the client
+   *  asked for. `OTHER` is the API's own catch-all and is glossed only when it
+   *  is drawn as its own row — folded into `rest`, it is one of the names the
+   *  line above already lists. */
+  const folded = useMemo(() => foldedLabels(totals, slices), [totals, slices]);
+  const showsOther = slices.some((slice) => slice.label === 'OTHER');
 
   // The range of what is **on screen**, not of what was last asked for. The
   // slices lag a range change by the round trip, so naming the chip's range
@@ -71,47 +82,61 @@ export function QueryTypes({
         />
       ) : (
         <>
-          <Donut
-            segments={slices.map((slice, index) => ({
-              label: slice.label,
-              value: slice.value,
-              colour: tone(index),
-            }))}
-            label={`Query types over the last ${rangeLabel}`}
-            size={150}
-            thickness={22}
-            hovered={hovered}
-            onHover={setHovered}
-          />
-          <table class="donut-legend">
-            <tbody>
-              {slices.map((slice, index) => (
-                <tr
-                  key={slice.label}
-                  class={hovered === index ? 'on' : undefined}
-                  // The row's accent bar is the slice's own colour, so the mark
-                  // says *which* arc it belongs to and not merely that
-                  // something is marked.
-                  style={{ '--slice': tone(index) }}
-                  // The legend answers the pointer as well as the ring, and
-                  // raises the same highlight: on a phone it is the larger
-                  // target by a wide margin, and it is the one a thumb can hit
-                  // without landing on a 22 px band.
-                  onPointerEnter={() => setHovered(index)}
-                  onPointerLeave={() => setHovered(null)}
-                >
-                  <td>
-                    <span class="sw" style={{ background: tone(index) }} />
-                    {slice.label}
-                  </td>
-                  <td class="num">{slice.value.toLocaleString()}</td>
-                  <td class="num share">
-                    {percent1(sliceShare(slice.value, total))}%
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <div class="donut-main">
+            <Donut
+              segments={slices.map((slice, index) => ({
+                label: slice.label,
+                value: slice.value,
+                colour: tone(index),
+              }))}
+              label={`Query types over the last ${rangeLabel}`}
+              size={150}
+              thickness={22}
+              hovered={hovered}
+              onHover={setHovered}
+            />
+            <table class="donut-legend">
+              <tbody>
+                {slices.map((slice, index) => (
+                  <tr
+                    key={slice.label}
+                    class={hovered === index ? 'on' : undefined}
+                    // The row's accent bar is the slice's own colour, so the
+                    // mark says *which* arc it belongs to and not merely that
+                    // something is marked.
+                    style={{ '--slice': tone(index) }}
+                    // The legend answers the pointer as well as the ring, and
+                    // raises the same highlight: on a phone it is the larger
+                    // target by a wide margin, and it is the one a thumb can
+                    // hit without landing on a 22 px band.
+                    onPointerEnter={() => setHovered(index)}
+                    onPointerLeave={() => setHovered(null)}
+                  >
+                    <td>
+                      <span class="sw" style={{ background: tone(index) }} />
+                      {slice.label}
+                    </td>
+                    <td class="num">{slice.value.toLocaleString()}</td>
+                    <td class="num share">
+                      {percent1(sliceShare(slice.value, total))}%
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          {(folded.length > 0 || showsOther) && (
+            <p class="donut-note">
+              {folded.length > 0 && (
+                <span>
+                  {REST_LABEL} — {folded.join(', ')}.
+                </span>
+              )}
+              {showsOther && (
+                <span>OTHER — record types outside the tracked ten.</span>
+              )}
+            </p>
+          )}
         </>
       )}
     </Card>
