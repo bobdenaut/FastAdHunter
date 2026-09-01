@@ -185,12 +185,36 @@ command, what it does, when it takes effect, and the rollback.
    Watch item from p3-05 decision 4: peak concurrent DoH sessions against the
    shared 64-permit API ceiling — the recorded number decides whether the
    named escape hatch (const bump / separate semaphore) is ever built.
+7. **Certificate-store checks that only the device can give** (deferred by
+   the p3-01 and p3-02 reviews to this task — **all mandatory**, on the probe
+   container, propose-only for anything on the production one):
+   - **Import-then-restart** over the API: `POST …/import` with a real pair,
+     restart, confirm the acceptor serves the imported certificate and status
+     reports `"imported"`. This is the acceptance path for p3-02 M1's
+     boot-abort half and for the MEDIUM-2 recovery API.md documents (copy
+     back from `api-archive/`, or the staged-key completion).
+   - **`0600` on every private key** after each write path: first-boot
+     `api-key.pem`, imported `api-key.pem`, `ca-key.pem` after generate and
+     after import, every archived key under `ca-archive/` and `api-archive/`,
+     and the staged `*.pem.tmp` while it exists. `write_private`'s
+     `OpenOptionsExt::mode(0o600)` compiles only on unix, so this is its first
+     execution anywhere — zero coverage on the Windows dev box.
+   - **Archive bound**: regenerate past `fah_certs::MAX_ARCHIVES` (8) and
+     confirm the ninth answers the documented `ArchiveFull` error with the
+     live pair intact; record the retention story the operator needs
+     (p3-02 LOW-2 — pruning is an owner decision, verification only records
+     what happens at the cap).
+   - **Generate / import wall time** on the device (p3-02 plan §Performance
+     contract left them `TBD`), for the PERFORMANCE.md rows below.
 
 ### Step 5 — documentation sweep (all proposed, landed on approval)
 
 - PERFORMANCE.md §Budgets: the new rows (SNI+splice, interception handshake,
-  leaf-cache hit rate, DoT/DoH added latency), each with its measured column
-  and a pointer to the review file.
+  leaf-cache hit rate, DoT/DoH added latency, **cold `prewarm` per first-sight
+  host** — p3-01's `certs_mint` bench measures the whole cold path including
+  the eviction scan, not raw keygen, so label the row that way — and
+  **CA generate / pair import wall time** from Step 4 item 7), each with its
+  measured column and a pointer to the review file.
 - SECURITY.md: no new promises — verify wording matches what shipped
   (present-tense sweep of §Later phases).
 - `docs/deploy-rb5009.md`: new §HTTPS (dst-nat 443, CA install, Private DNS,

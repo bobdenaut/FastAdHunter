@@ -206,6 +206,31 @@ reused for the client-side dimension — its doc comment says why).
   call it directly from an async task. A resolve that misses the warm cache
   increments `LeafCacheStats::unwarmed_misses`, so a forgotten pre-warm shows up
   in `GET /api/v1/certificates` rather than as a silent fallback.
+- **Re-warm the DoT hostname periodically — a startup-only pre-warm expires**
+  (p3-01 final review M3/F8, **must ship in this task**): leaves live
+  `fah_certs::LEAF_VALIDITY_DAYS` (7) and `cached_leaf` treats an expired entry
+  as a miss, so after a week of uptime a DoT listener silently degrades to the
+  API-pair fallback — exactly what Private DNS hostname mode rejects (decision
+  3). A repeat `prewarm` of a still-fresh host is a cache hit (~70 ns, no mint),
+  so the interval is free to be short: run
+  `spawn_blocking(move || store.prewarm(&dot_hostname))` from the DoT task on a
+  fixed interval well inside the leaf lifetime (**every 24 h**, i.e. a ≥ 6-day
+  margin), and also after any `superseded`/`unwarmed_misses` increase observed
+  in status. Test: mint, advance the entry past expiry (the `fah-certs` unit
+  tests show the pattern), assert the re-warm restores a `cached_leaf` hit
+  without the fallback ever being served.
+- **`api_certified_key()` has no interrupted-replacement recovery of its own**
+  (p3-02 final review, §Deferred items — LOW-B's root). `load_or_generate`
+  heals a crash between the API pair's two commit renames
+  (`complete_interrupted_replacement`), but with `api.tls = false` the boot
+  never calls it, so `api_certified_key` keeps returning `CertError::Config`
+  until the operator intervenes. **Resolve in this task**, one of: route the
+  fallback reader through the same completion step inside `fah-certs`
+  (preferred — one healer, both readers), or document in SECURITY.md §TLS for
+  the API that DoT with `api.tls = false` requires an intact pair and name the
+  recovery (copy back from `api-archive/`, or rename `api-key.pem.tmp`).
+  Either way, DoT startup must fail **explicitly** with the `Config` error in
+  the log, never fall through to a plaintext or CA-less listener.
 - When `api.tls = false` **and** DoT is
   enabled, the config is still built from the same cert pair (DoT without TLS
   does not exist); only if the cert pair itself cannot load does DoT fail

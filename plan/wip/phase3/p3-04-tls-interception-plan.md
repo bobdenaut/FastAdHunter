@@ -138,8 +138,9 @@ the exact thing forbidden.
    TLS handshake.** The client sees a TLS/connection failure (as if the site
    were unreachable), **never our cert.** Emit a `https`/`upstream-cert-failure`
    event.
-4. Upstream verified ⇒ mint the leaf (`get_or_mint(sni)`), accept the downstream
-   TLS, and bridge (step below).
+4. Upstream verified ⇒ pre-warm the leaf (`spawn_blocking(store.prewarm(sni))`;
+   the resolver then serves it from `cached_leaf`), accept the downstream TLS,
+   and bridge (step below).
 
 - **Reason:** this is the single most important security property of the task.
   Verifying first and closing on failure means "we never present a valid cert
@@ -353,6 +354,14 @@ or a scheme param — targeted change; URL patterns match `https://host/...`).
 - Build `Arc<CertStore>` at startup (p3-01 delivers this seam; `LeafCache` is
   private to `fah-certs` — the store *is* the handle. p3-04 is its first leaf
   consumer; the cache is empty until now, per p3-01's RSS note).
+  **The store already exists as `Option<Arc<CertStore>>`** — p3-02 wired it
+  and `main.rs` turns a failed `CertStore::open` (corrupt, non-CA or
+  key-mismatched `ca-cert.pem`) into a logged `None`, not a boot error
+  (p3-02 final review, §Deferred items). Interception **must** treat `None`
+  exactly like "no CA": listed clients are spliced, never MITM'd, one `warn!`
+  at startup naming the cause, and `GET /api/v1/certificates` remains the
+  operator's signal. Do not add a second `open`, and do not make a missing
+  store fatal — DNS must keep resolving.
 - Parse `[https.interception].clients` → `Vec<AllowedNet>` (fail startup on bad
   entry); build the `ExclusionSet` (baseline ∪ user).
 - Build the `ServerConfig`/`ClientConfig` once; hand them + the `Arc<CertStore>`
