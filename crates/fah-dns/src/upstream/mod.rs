@@ -348,7 +348,7 @@ impl UpstreamPool {
             let mut rollback = probe.then(|| ProbeGuard::new(health));
             let started = Instant::now();
             let result = server.query(query, self.timeout).await;
-            if result.is_ok() {
+            if recording && result.is_ok() {
                 server.rtt.observe(started.elapsed());
             }
             if let Some(rollback) = rollback.as_mut() {
@@ -1580,6 +1580,30 @@ mod tests {
                 before,
                 "resolve_host runs in Ignore and moves nothing, attempts included"
             );
+        }
+
+        #[tokio::test]
+        async fn resolve_host_records_no_rtt_under_adaptive() {
+            let addr = family_aware_udp_server(200, true).await;
+            let pool = adaptive_pool(vec![udp_server_config(addr)], 2000, policy_of(2, 60_000));
+
+            for _ in 0..10 {
+                pool.resolve_host("lists.example.com").await.unwrap();
+            }
+
+            let after_lookups = pool.status();
+            assert_eq!(after_lookups[0].attempts, 0);
+            assert_eq!(
+                after_lookups[0].rtt.count, 0,
+                "rtt follows attempts: a lookup Ignore does not count must not be timed either, \
+                 or answers timed outgrows attempts and the two stop describing one population"
+            );
+            assert_eq!(after_lookups[0].rtt.sum_seconds, 0.0);
+
+            assert!(pool.forward(&a_query()).await.is_ok());
+            let after_forward = pool.status();
+            assert_eq!(after_forward[0].attempts, 1);
+            assert_eq!(after_forward[0].rtt.count, 1);
         }
 
         #[tokio::test]

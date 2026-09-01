@@ -258,9 +258,80 @@ this device, these two trees; RB5009 figure is a factor conversion, not an
 on-device measurement — the phase's Stage B / soak remains the on-device
 verification.
 
+### Post-merge finding — 2026-09-01: RTT observed lookups `attempts` ignores
+
+Found on the running RB5009 (`0.3.1`, uptime 48 min) while verifying the
+Upstreams page against live telemetry, not by re-reading the diff.
+
+| Endpoint | attempts | rtt.count |
+| --- | --- | --- |
+| `1.1.1.1` | 492 | **570** |
+
+**`rtt.count` exceeded `attempts` by 78, with `failures` 0.** Two counters
+the page prints side by side, over two different populations, under a
+caption asserting they are one.
+
+Cause — `walk_adaptive`, `fah-dns/src/upstream/mod.rs`:
+
+```rust
+if recording {
+    health.attempts.fetch_add(1, Ordering::Relaxed);   // gated on HealthMode
+}
+...
+if result.is_ok() {
+    server.rtt.observe(started.elapsed());              // was NOT gated
+}
+```
+
+`resolve_host` forwards with `HealthMode::Ignore` so a list-URL hostname
+lookup moves no health counter — deliberately, and pinned by
+`resolve_host_with_one_family_black_holed_moves_no_health_state`. RTT was
+outside that gate, so those lookups were timed while never counted as
+attempts.
+
+**This contradicted the shipped contract, which was already correct.**
+[API.md §upstreams[].rtt](../../../API.md) reads "time-to-answer of that
+endpoint's **answered** attempts only" and [CONTEXT.md §Upstream RTT](../../../CONTEXT.md)
+reads "answered attempts, measured per Endpoint". The docs were right; the
+code did not match them. The review above therefore describes a population
+the implementation did not have.
+
+**FIXED — owner ruling, option A of two.** `rtt.observe` is now gated on
+`recording`. The rejected option B was to widen the documented population to
+match the code, which would have required editing API.md *and* CONTEXT.md —
+the binding vocabulary — to describe an accident. A restores conformance and
+needed no doc change at all; the dashboard caption
+(`upstreams/rtt-chart.tsx`, "measured over the attempts that were answered")
+became true rather than needing a rewrite.
+
+- Diff: one line in `walk_adaptive`, `if recording && result.is_ok()`.
+- New test `resolve_host_records_no_rtt_under_adaptive`: ten `resolve_host`
+  calls leave `attempts` **and** `rtt.count` at 0, then one `forward` moves
+  both to 1 — the invariant, not the symptom.
+- **Fallback deliberately unchanged.** It honours no `HealthMode` at all and
+  counts `resolve_host` legs as attempts, pinned by
+  `resolve_host_still_counts_attempts_under_fallback`. Attempts and RTT are
+  symmetric there, so the defect cannot arise; gating RTT alone would have
+  created it in the opposite direction.
+- Gates: `cargo fmt --check` clean, clippy `-D warnings` clean (exit 0),
+  `cargo test --all-features --workspace` green, `fah-dns --lib` 200 passed.
+- **Not deployed.** `f34af6c` is running unpatched on the RB5009 for the
+  `0.3.1` soak, so the live Upstreams page keeps showing the wider count
+  until the next deployment.
+
+Why the original review missed it: acceptance 4 tested that a *failed* or
+*timed-out* attempt is not observed. Nothing tested that a *non-attempt* is
+not observed, because `HealthMode::Ignore` was treated as a health-counter
+concern and RTT was not thought of as a health counter.
+
 ### Status
 
 **PASS** — all findings fixed or resolved; A/B shows no measurable
 regression and the direct instrumentation cost is quantified above. §6 doc
 edits approved and applied (API.md, CONTEXT.md, plus the owner-directed
 PERFORMANCE.md note).
+
+**Amended 2026-09-01:** PASS stands, with the post-merge finding above fixed
+in the working tree and awaiting deployment. The task's own acceptance was
+met; what the review did not cover was the interaction with
+`HealthMode::Ignore`.
