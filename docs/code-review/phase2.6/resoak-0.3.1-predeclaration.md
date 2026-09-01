@@ -195,14 +195,15 @@ under G3.
 | Field | Value |
 | --- | --- |
 | Version | `0.3.1` |
-| Image id | *filled at start from `/container/print detail`* |
-| Image tar | *filled at start: name, size, `sha256`* |
-| Container | comment exactly `fastadhunter`; `0.3.0` removed at deploy |
+| Image id | `b45b8a90b358f473bbadb7ea88c159f704b95c73d08b527e786ca6440eac8a3d` — confirmed in `/container/print detail` |
+| Image tar | `/kingston/fastadhunter-arm64-0.3.1.tar`, **14 959 104 B**; tag `docker.io/library/fastadhunter:0.3.1`, `os=linux arch=arm64`. `sha256` *pending, owner-supplied*. Note the name differs from `0.3.0`'s `fastadhunter-rosready-0.3.0.tar` (14.2 MB) |
+| Container | `fastadhunter-0.3.1`, comment exactly `fastadhunter`; `0.3.0` removed at deploy. `interface=veth1`, `root-dir=/kingston/fastadhunter/root`, `mountlists=fah-config,fah-data`, `shm-size=64.0MiB`, `cpu-list=cpu0..cpu3`, `memory-high=unlimited`, `start-on-boot=yes`, `stop-signal=15-SIGTERM`, `stop-time=10s` — all identical to `0.3.0` |
+| Container env | `envlists=fah-env`, observed at start: `MIMALLOC_PURGE_DELAY=0`, `MIMALLOC_PURGE_DECOMMITS=1`, `MIMALLOC_ARENA_EAGER_COMMIT=0`, `TZ=Europe/Bucharest`. Recorded because `PURGE_DELAY=0` bears directly on G2 — it is why the pull excursions decay rather than accumulate |
 | `root-dir` | `/kingston/fastadhunter/root` |
 | Mount lists | `fah-config`, `fah-data` → `/kingston/fastadhunter/{config,data}`, unchanged |
 | Interface | `veth1`, `172.17.0.2` |
 | Opt-in | **`strategy = "adaptive"` in `/config/fastadhunter.toml`**, on the `/config` mount and therefore carried across the swap untouched. Confirmed after start via `GET /api/v1/config`, never by editing the TOML |
-| `T0` | *filled at start* — `fastadhunter starting` in the container log. Day 7 closes `T0 + 168 h` |
+| `T0` | **2026-09-01T07:27:49Z** — `fastadhunter starting` in the container log (router-local 10:27:49 EEST). Day 7 closes **2026-09-08T07:27:49Z**. Corroborated two ways: `/health` `uptime_seconds` and the first `/history/perf` sample at 07:27:52Z, 3 s after |
 | RouterOS | 7.21.5 (long-term), RB5009UG+S+, 4× ARM64, 1024 MiB |
 | History sample interval | **360 s** (device `fastadhunter.toml`) |
 | List set | 16 lists, `refresh_hours_default = 48`; unchanged from the `0.3.0` probe |
@@ -216,9 +217,12 @@ retrospectively.
 
 | UTC | Event |
 | --- | --- |
-| *pending* | final `0.3.0` pull, immediately before the stop |
-| *pending* | `0.3.0` container stopped and removed |
-| *pending* | `0.3.1` container start — `T0` |
+| 2026-09-01T07:13Z | final `0.3.0` pull — [`resoak-0.3.0/pull-final-20260901T0713Z-*`](resoak-0.3.0/), uptime 215 688 s, 600 samples |
+| 2026-09-01T~07:20Z | `0.3.0` stopped and removed, `0.3.1` deployed (owner-run; exact stop time not captured) |
+| 2026-09-01T07:27:49Z | **`0.3.1` container start — `T0`.** Ruleset compiled from cache (756 420 rules), refresh schedule restored from 13 cached copies, 3 lists already due |
+| 2026-09-01T07:27:53Z | first scheduled refresh: `lists=3 unchanged=3 failed=0`, compile skipped. `dyndns` **304**; `filter_2` and `filter_63` 200 with byte-identical bodies caught by hash compare (256 780 B). **G5a satisfied at T0+4 s** |
+| 2026-09-01T07:29Z | pull 0 — [`resoak-0.3.1/pull0-t0-*`](resoak-0.3.1/), 15-field set verified on `0.3.1`: 16 keys returned, `upstreams` absent, `stride 1` |
+| 2026-09-01T07:33Z | origin probe, 16 conditional GETs from the dev box — 3× 304, 13× 200 (fifth consecutive registry etag rotation) |
 
 ## What a PASS does not claim
 
@@ -238,5 +242,129 @@ retrospectively.
 | Item | Owner |
 | --- | --- |
 | API key for the read-only pulls | owner-held, never committed |
-| The single router intervention (final `0.3.0` pull → stop → deploy → start) | proposed separately, owner-run |
+| Image tar `sha256` | owner-supplied; size and id already recorded |
 | p5-10 Stage B measurements at soak start | scoped in [p5-10-phase5-verification.md](../../../plan/wip/phase5/p5-10-phase5-verification.md) §Execution split |
+
+## Hand over
+
+Prompt for an agent taking over data collection. Self-contained apart from
+the repo docs it names. Copy from here down.
+
+````text
+You are taking over data collection for the FastAdHunter 0.3.1 soak. Repo:
+e:\FastAdHunter, branch main.
+
+READ FIRST, IN THIS ORDER
+1. e:\FastAdHunter\CLAUDE.md — §Working agreement is binding, no exceptions.
+2. docs/code-review/phase2.6/resoak-0.3.1-predeclaration.md — the gates and
+   the method. It is a pre-declaration: never edit a gate, a threshold or a
+   declared expectation. Only §Operational log is appended to.
+3. docs/code-review/phase2.6/phase2.6-audit.md §Re-soak termination — 0.3.0
+   — why the previous soak was killed and what it measured.
+4. git log --oneline --grep="resoak" -15 — the pull history.
+
+THREE HARD RULES
+- The RB5009 is off limits. No command that changes router state, ever, not
+  with permission, not "just once". Read-only queries (/container/print,
+  /log print, /system/resource/print, GETs against the FAH API) need no
+  asking. When a change is needed: propose the exact commands and stop.
+- ASK before every git commit and every push. There is no standing approval
+  and approval never carries to the next changeset. Approved pushes go to
+  BOTH remotes, origin and backup, and are not done until both succeed.
+- ASK before creating or editing any .md file. The exception is appending to
+  §Operational log in the pre-declaration, which the method requires.
+
+SOAK FACTS
+- T0 = 2026-09-01T07:27:49Z. Day 7 closes 2026-09-08T07:27:49Z.
+- Subject: 0.3.1 = 0.3.0 + d420f38 (slim history rows). Container
+  fastadhunter-0.3.1, image id:
+  b45b8a90b358f473bbadb7ea88c159f704b95c73d08b527e786ca6440eac8a3d
+- Gates G1..G6, all must pass. Full text in the pre-declaration.
+- G5a is ALREADY SATISFIED: not_modified went above 0 at T0+4 s (dyndns 304).
+  Do not re-litigate it.
+- G2 is the gate expected to decide this soak. The 0.3.0 predecessor's
+  six-hour RSS minima climbed +5.21 MiB/day post-warm-up; the
+  pre-declaration fixes in advance that reproducing that rate fails G2.
+
+API ACCESS — read-only, no asking needed
+- Base https://fastadhunter:8443. Bearer token is the "apiKey" value in
+  .vscode/settings.json. NEVER commit it, never echo it into a doc.
+- curl needs -k (self-signed cert, p5-02 SAN set).
+
+PER PULL — four saves, into docs/code-review/phase2.6/resoak-0.3.1/
+  GET /health                     -> pull<N>-health.json
+  GET /api/v1/telemetry           -> pull<N>-telemetry.json
+  GET /api/v1/debug/memory        -> pull<N>-memory.json
+  GET /api/v1/history/perf?from=2026-09-01T07:27:49Z&to=<nowZ>
+      &max_points=5000&fields=<THE 15-FIELD SET>
+                                  -> pull<N>-perf.json
+Scheduled pulls are pull<N>-*.json; any extra pull is
+pull-adhoc-<yyyymmddThhmmZ>-*.json AND must be appended to §Operational log
+at the time it is taken. An unlogged pull is a method violation.
+
+THE 15-FIELD SET — pass it exactly, never omit ?fields=, never narrow it:
+rss_bytes,peak_rss,qps,queries_delta,blocked_delta,allowed_delta,cache,
+latency,memory,minor_page_faults,rss_anon_bytes,rss_file_bytes,
+answers_delta,allocator_committed_bytes,list_fetch
+That is every name in PerfFields::NAMES except upstreams. Omitting ?fields=
+selects PerfFields::ALL, whose upstreams:true drives the full-row parse that
+injects an RSS excursion into the series being gated. Narrowing further
+drops a gate's input. Verify each response: 16 keys, no upstreams, stride 1.
+A response with stride > 1 is discarded and re-fetched paginated on from.
+
+CADENCE
+- One pull per 24 h at T0 + 24k h ± 1 h, plus a final pull at day 7.
+- The dashboard is an operational variable: a dashboard session retains
+  ~15 MiB transiently and must be logged in §Operational log if opened.
+
+PER-PULL GATE CHECK
+- G4, every pull: counters.events_dropped == 0 AND counters.swr.dropped == 0.
+  Any non-zero at any pull fails the whole soak. Read after a quiet interval
+  — swr.* and upstreams[].attempts lag up to 10 s.
+- G3: any peak_rss step >= 0.5 MiB between consecutive samples must line up
+  with list_fetch activity (bytes_fetched or bodies moving) or an event in
+  §Operational log. One unattributed step fails the soak.
+- G2 watch item: report six-hour RSS minima each pull and their slope. Pull
+  excursions decay inside ~2 h (MIMALLOC_PURGE_DELAY=0), so they never set a
+  24 h minimum — do not attribute a floor step to your own pull.
+
+ORIGIN PROBE — after each pull, dev box only, never touches the router
+One conditional GET per list URL. The 16 URLs are at .rules.lists[] in
+docs/code-review/phase2.6/resoak-0.3.0/pull0-t0-config.json. Carry each
+list's newest etag/last_modified from origin-log.tsv as If-None-Match /
+If-Modified-Since. Append rows
+  ts<TAB>id<TAB>status<TAB>size<TAB>etag<TAB>last_modified
+to docs/code-review/phase2.6/resoak-0.3.0/origin-log.tsv.
+304 = unchanged, 200 = validator rotated. This log is what makes G5b a gate
+rather than a guess, so it must not miss a day.
+
+Two traps that cost time, both hit on 2026-09-01:
+- SIZE MUST BE DECODED BYTES, taken from the written body file
+  (fs.statSync(out).size), NOT from curl's %{size_download}, which reports
+  wire bytes under --compressed and is ~3x smaller. G5b compares against
+  decoded sizes.
+- Windows curl.exe cannot write to /dev/null or reliably to /tmp paths; it
+  exits 23 (write error) and every row lands as ERR. Use a real Windows temp
+  path for -o and -D.
+If a probe run lands bad rows, `git checkout --` the log before retrying —
+do not hand-patch it.
+
+EXPECTED ORIGIN BEHAVIOUR, so it is not misread as a defect
+- The 12 registry-hosted lists (big.oisd.nl, filter_*) rotate weak etags
+  daily with byte-identical bodies. They answer 200, the container
+  downloads, the hash compare matches, the compile is skipped and the log
+  says "list unchanged at source". These increment counters.lists.bodies,
+  NOT not_modified. That is correct behaviour, not a G5 failure.
+- dyndns, doh-vpn-proxy-bypass and tif-mini serve strong etags and answer
+  304. not_modified rides on these.
+
+LOCAL TRAP
+rtk's grep hook corrupts arguments containing a double quote. Use the
+built-in Grep tool for JSON patterns; never shell grep for them.
+
+REPORTING
+Answer first, then detail. Lead with the gate status. Scope every claim to
+the corpus, workload and device it came from. Correct your own overstated
+claims unprompted — two were made and retracted on 2026-09-01 from
+single-sample reads; prefer a second sample over a fast conclusion.
+````
