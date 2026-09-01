@@ -254,6 +254,15 @@ exactly the failure worth finding.
   (measured on-device 2026-08-31, `docs/routeros-traps.md`). Such a connection
   is closed; `[https.sni] no_sni` only decides whether it is *reported* as pass
   or block. The DNS layer remains the backstop for domains hidden behind ECH.
+- **Domain fronting is an inherent SNI-filter bypass.** The SNI judge sees
+  only the name the client *claims*; a client may send an allowed SNI, be
+  spliced to that name's address, and then ask for a blocked host in the
+  encrypted `Host` header / `:authority` of a CDN that serves both. Nothing
+  on this path can see or refuse that. Two backstops: the DNS layer, which
+  still refuses the blocked name if the client resolves it honestly, and
+  p3-04 interception for managed clients, which judges the real request.
+  Major CDNs reject mismatched SNI/Host today, but that is their policy, not
+  ours.
 - **Phase 3 — HTTPS interception (MITM)** is opt-in, per-managed-environment,
   never default. The generated CA's private key never leaves `/config`; CA
   export endpoints export the **public** certificate only, re-encoded from the

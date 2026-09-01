@@ -1,8 +1,9 @@
 # p3-03 — SNI Filtering — Review
 
 **Status:** PASS WITH DEFERRED FINDINGS — review 2026-09-02, approved fixes
-applied same day (see §Review findings → §5 Fixes applied). `AWAITING SOAK`
-for the RB5009 throughput row (p3-06).
+applied same day (two passes; see §Review findings). Task `DONE` 2026-09-02
+by owner decision; the RB5009 splice-throughput row and the bench-fidelity
+fix are p3-06's (its plan §Step 1 "p3-03 carry-over").
 
 ## Implementation Summary
 
@@ -516,3 +517,167 @@ Gates after fixes: `cargo fmt --all -- --check` clean; `cargo clippy
 budget row) → p3-06; m4 (IP-literal SNI vs `allow_ip_literal_hosts`) →
 backlog, owner's call. n4 closed by the API.md §telemetry note. Docs applied.
 Task moves to `AWAITING SOAK` pending the RB5009 row.
+
+## Review findings — second pass, 2026-09-02 (commit `40ca0cc`, main agent, no subagents)
+
+Base: the committed tree at `40ca0cc` (working tree clean), i.e. the first
+pass plus its §5 fixes. Gates re-run: `cargo clippy --workspace --all-targets
+-- -D warnings` clean; `cargo test -p fah-http -p fah-config -p fah-rules
+-p fah-model` green, 0 failed (`fah-http/tests/sni.rs` 6 passed). Numbering
+continues from the first pass.
+
+### 1. Plan compliance (re-verified against the plan file)
+
+| Plan item | Status | Evidence |
+| --- | --- | --- |
+| Step 1 config: types, defaults 8444/1024/10 000/60 000, `deny_unknown_fields`, `#[serde(default)]` on `Config.https` | done | `schema/https.rs`, `schema/mod.rs:44-45`, `a_config_without_an_https_section_still_parses` |
+| Step 1 validations: `max_connections`, port vs api (plan) + http/dns (m2), timeouts (m1) | done | `lib.rs:127-167` + 3 tests |
+| Step 2 parser: `HelloScan` shape, record reassembly, every length bounded, normalise (lowercase, LDH+`_`, ≤253, label ≤63), 16 KiB cap → `NoSni` | done | `sni.rs`; 12 unit tests incl. mutation loop and real rustls hellos |
+| Step 3 handler, 1–4 | done | `https.rs:87-162`; block returns before `approved_address` |
+| Step 3 "EOF / deadline before a hello → close, `non_tls`, no event" | done as specified | `https.rs:100-109` — but see m8 |
+| Step 4 listener: shared bind, `serve`, `shutdown` aborting, `PORT_SETTING` | done in `fah-http`, **`shutdown` never wired in the binary** | `tls_server.rs:59-63`; see M5 |
+| Step 5 counters: separate instance, `non_tls`, `lib.rs` exports | done | `proxy.rs:83,101,115`; `lib.rs:33-38` |
+| Step 6 wiring: gate, bind before drop, build after, serve, telemetry, fan-out | done except lifecycle | `main.rs:393-400,419-428,548-550,573-577,737-748` |
+| Decision 2 shared `accept_loop` + mirrored `max_connections` test | done | `server.rs:100-124`; `tls_server.rs:143-180` |
+| Decision 3 `lookup_host_in`, 3 named assertions (block, `@@`, `$client`) | done, + `$dnstype` exclusion | `matcher.rs:879-885`, 4 tests |
+| Decision 6 field mapping, `bytes`, `duration` (amended by M2) | done | `https.rs:279-309`; API.md §events |
+| Decision 7 exhaustive `https_enabled` | done | `main.rs:634-639` + test |
+| Tests §Integration (6 named) | 5 of 6 fully; "event on refused destination" counter-only | see m9 |
+| Bench arm | done, diagnostic | see n5 |
+| Out of scope respected (no TLS termination, no QUIC, no fronting attempt) | yes | no rustls in release deps |
+
+### 2. Findings
+
+**M5 — Major (lifecycle) — `Engine` does not own the HTTPS listener, so
+`shutdown()` never reaches it.** `main.rs:393` binds `https` as a local of
+`Engine::start`; the struct (`main.rs:286-292`, built at `:600-605`) has
+`dns`, `http`, `api`, `tasks` and no `https`. `TlsServer` is therefore dropped
+at the end of `start`, its `JoinHandle` detaches, and the accept loop outlives
+`Engine::shutdown()` (`main.rs:609-617` aborts DNS, HTTP, API and the tasks —
+not HTTPS). Not observable today because the runtime is torn down right after
+`shutdown()` (`main.rs:254-260`), but plan Step 4 specifies the `Server`
+mirror ("`shutdown()` aborting"), `TlsServer::shutdown` is dead code from the
+binary's side, and the `dns.fatal()` exit path would keep accepting on :8444
+for as long as anything kept the runtime alive. Fix: `https:
+Option<fah_http::TlsServer>` on `Engine`, store it, abort it in `shutdown()`.
+**Fix before DONE** (three lines).
+
+**m7 — Minor (memory) — the ClientHello buffer lives for the whole splice.**
+`serve_connection` owns `hello` (capacity 2→16 KiB) and lends it to `splice`
+(`https.rs:160,175`); it is freed only when the session ends. Per spliced
+session that is +2 KiB typical, +16 KiB worst, on top of the 2 × 16 KiB copy
+buffers: +2 MiB typical / +16 MiB worst at `max_connections = 1024`, which the
+CONFIGURATION.md sizing ("2 x 16 KiB per session, ~32 MB") does not include.
+Fix: move `hello` into `splice`, `drop(hello)` after `write_all`. Owner's
+call; one signature change.
+
+**m8 — Minor (observability) — `non_tls` counts silence, not only garbage.**
+EOF before a hello and the `hello_timeout` deadline both increment `non_tls`
+(`https.rs:100-109`), alongside `NotTls`. Browsers open speculative
+connections and close them unused; each lands here (at once on close, or
+after 10 s if left open), so on a real LAN the counter will be dominated by
+benign preconnects and the "garbage on :443" reading API.md §telemetry gives
+it is diluted. The HTTP twin `non_http` counts parse errors only
+(`proxy.rs:304-305`), so two same-named fields carry different meanings.
+Options: a separate `hello_timeouts` counter, or count EOF/deadline nowhere
+and say so. Defer; not a correctness issue. Corollary worth one line in
+CONFIGURATION.md: a silent preconnect holds a permit for up to
+`hello_timeout_ms`.
+
+**m9 — Minor (tests) — first-pass M3 was closed with one of its four
+tests.** Still unasserted: (a) an `Allow` verdict splices and the event says
+`allow` (D5 — the success path of the deviation the first pass justified);
+(b) the connect deadline (D3): an approved but blackholed address returns
+within `hello_timeout` with `upstream_failures == 1` and an event of
+`bytes 0`; (c) the refused-destination *event* — `tests/sni.rs:343` asserts
+the counter only. All three fit the existing harness. Fix before DONE, or
+mark M3 "partially applied" in §5 rather than "fixed".
+
+**n5 — Nit (bench fidelity) — the splice bench bypasses `TlsServer`.**
+`benches/proxy.rs` `splice_in_front_of` runs its own accept loop: no permit,
+and no `set_nodelay` on the accepted client socket, which production's
+`accept_loop` sets. The measured relay differs from the shipped one in the
+TCP option most relevant to a byte relay. p3-06 should build the harness on
+`TlsServer::bind/serve` before the M4 A/B. Folds into M4.
+
+**n6 — Nit — `HelloScan::Incomplete` arm at `https.rs:119` is
+unreachable**: `read_client_hello` loops on `Incomplete` and returns `NoSni`
+at the cap. Harmless; leave or collapse.
+
+**n7 — Nit — `to_upstream` (`https.rs:186`) is written and never read.**
+`Activity` demands a `written` counter for both directions; the upstream one
+is dead. Leave.
+
+**n8 — Nit — the bound is 16 384 bytes *including* record headers**, so the
+largest legal single-record hello (16 384 body + 5) is classified `NoSni`. No
+client comes near it (PQ hybrids add ~1.2 KiB). Doc wording only, if at all.
+
+**n9 — Nit (doc) — domain fronting is an inherent SNI-filter bypass** and the
+new SECURITY.md bullet lists ECH/no-SNI but not it: SNI `allowed.cdn` plus an
+inner `Host: blocked.cdn` on one CDN address passes the SNI judge; DNS is the
+backstop, as for ECH. One sentence in the Phase 3 bullet — owner approval
+needed before the edit.
+
+### 3. Areas checked, no finding (second pass)
+
+- Parser re-walked: `advance_record` checks header and body bounds before any
+  index; `skip`/`copy_into` clamp to `record_end`; zero-length records loop at
+  most `len / 5` times; `Short && !truncated` → `NotTls` is right for a
+  non-handshake record interleaved mid-hello; bytes after the hello are never
+  read (`trailing_records_after_the_hello_do_not_disturb_the_scan`); the
+  rejected-name `debug!` is level-gated and `Debug`-escaped.
+- `read_client_hello`: `reserve` before `read_buf` keeps `Vec::chunk_mut`'s
+  hidden 64-byte grow off the path; growth is exactly 2→4→8→16 KiB;
+  `limit(want)` caps the length; rescans are ≤ 8 per connection.
+- Hello forward: `write_all(hello)` runs before the watchdog, but ≤16 KiB into
+  a fresh socket's empty send buffer cannot block; no deadline needed.
+- Address selection: first approved address, no fallback — identical to
+  `Proxy::approved_address`; `resolve_host` returns A before AAAA, so a v4
+  route is tried first. Parity, not a regression.
+- Idle: `Activity` stamps on every `Ready` poll including EOF; after a
+  half-close the surviving direction still refreshes; the `select!` drop closes
+  both sockets; the watchdog re-arms once per refresh, never per byte;
+  `last`/`to_client` on the task stack outlive the pinned `copy`; no `unsafe`.
+- Verdict order: `judge` precedes `approved_address`; `Block` returns with no
+  resolve (asserted by `resolve_failures == 0`).
+- Deps and layering: `Cargo.lock` +3 dev lines only; `rcgen 0.14` /
+  `tokio-rustls 0.26` match `fah-certs` / `fah-api`; `layering.rs` unchanged.
+- Fan-out: `Event::HttpsSni` reaches `metrics.record_http` and
+  `stats.record_http`; stats records policy and client only, so `host = ""`
+  never enters a domain table; no `_ =>` arm in fah-api / fah-stats /
+  fah-metrics / binary swallows the kind.
+- `Server` unchanged in behaviour: closure clone = one `Arc` bump per accept,
+  as before; HTTP and DNS suites green.
+- Applied docs match code: API.md `duration_ms` = hello→connected, `bytes`
+  reported on every exit; CONFIGURATION.md "BOTH directions", 0 rejected;
+  §telemetry `refused` note; SECURITY.md Phase 3 bullets.
+
+### 4. Fixes applied — second pass, 2026-09-02
+
+| Finding | Change | Verified by |
+| --- | --- | --- |
+| M5 | `Engine` gains `https: Option<fah_http::TlsServer>`; stored at construction; `shutdown()` aborts it between HTTP and API | `cargo test -p fastadhunter` green; `TlsServer::shutdown` now has a caller |
+| m9 (a) | `an_allowed_sni_is_spliced_and_reported_as_allow`: a block rule for `origin.test` plus its `@@` exception; handshake completes, echo round-trips, event verdict `Allow`, `blocked == 0` | `fah-http/tests/sni.rs` |
+| m9 (b) | `an_unreachable_upstream_is_reported_within_the_hello_deadline`: SNI resolves to `192.0.2.1` (TEST-NET-1, approved by the guard, never answers), `hello_timeout = 500 ms`; client closed within 5 s, `upstream_failures == 1`, `resolve_failures == refused_destination == 0`, event `pass` / `bytes 0` / `status 0`. Run alone it takes 0.53 s on the dev box — the deadline, not an OS unreachable error, ends it | same file |
+| m9 (c) | `an_sni_resolving_to_a_private_address_is_refused` now takes the event channel and asserts the event (`pass`, `bytes 0`, `status 0`) and `upstream_failures == 0` | same file |
+| — | `harness_with` takes a `Limits { hello, idle, max_connections }` (clippy `too_many_arguments`) | compiles |
+| m7 | `splice` takes `hello: Vec<u8>` by value and drops it right after `write_all`; per-session memory during the relay is now exactly the 2 × 16 KiB copy buffers the CONFIGURATION.md sizing states | existing splice tests |
+| m4 | `TlsProxy::with_ip_literal_hosts(bool)` (default `false`); an IP-literal SNI is refused before `judge`/`resolve` unless `[egress] allow_ip_literal_hosts`, counted as `refused_claim` like the HTTP claim path (no event, as there); the binary passes the config value; `/telemetry` `refused` now folds `refused_claim + refused_destination` for both listeners | `an_ip_literal_sni_is_refused_before_resolution_unless_allowed` (`tls_server.rs`): refused → `refused_claim 1`, `resolve_failures 0`; allowed → `refused_claim 0`, `resolve_failures 1` |
+| M4, n5 | not fixed here — carried into `plan/wip/phase3/p3-06-phase3-verification-plan.md` §Step 1 as "p3-03 carry-over" (owner-approved edit 2026-09-02) | — |
+
+Gates after fixes: `cargo fmt --all -- --check` clean; `cargo clippy
+--workspace --all-targets -- -D warnings` clean; `cargo test -p fah-http`
+green (`tests/sni.rs` 8 passed); `cargo test -p fastadhunter` green.
+
+### 5. Status (second pass)
+
+**PASS WITH DEFERRED FINDINGS** — M5, m9, n9, m7, m4 applied (n9:
+SECURITY.md §Later phases, domain-fronting bullet, owner-approved
+2026-09-02). Deferred, each with an owner in its plan file (edits
+owner-approved 2026-09-02): M4 + n5 → p3-06 §Step 1; m8 → p3-04 §Step 4
+(`non_tls` / `hello_timeouts` split) and p3-06 §Step 4.6 (soak reading);
+dashboard `https-sni` filter/detail → p3-06 §Step 5 (dashboard re-review);
+n6–n8 leave. CONFIGURATION.md `[egress] allow_ip_literal_hosts` comment now names
+the SNI path (owner-approved 2026-09-02).
+Task marked `DONE` 2026-09-02 (owner decision); the on-device throughput row
+is owed by p3-06, not by this task.

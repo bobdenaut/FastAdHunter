@@ -109,6 +109,49 @@ mod tests {
         ))
     }
 
+    async fn ip_literal_sni_outcome(allow: bool) -> crate::ProxyStats {
+        let mut server = TlsServer::bind(&config(0)).await.unwrap();
+        let addr = server.local_addr();
+        let proxy = Arc::new(
+            TlsProxy::new(
+                Arc::new(NoResolver),
+                DestinationPolicy::new(443, Vec::new()),
+                443,
+                Duration::from_secs(5),
+                Duration::from_secs(1),
+                NoSni::Pass,
+            )
+            .with_ip_literal_hosts(allow),
+        );
+        let counters = proxy.counters();
+        server.serve(proxy);
+
+        let mut stream = TcpStream::connect(addr).await.unwrap();
+        stream
+            .write_all(&crate::sni::tests::hello(Some("1.2.3.4")))
+            .await
+            .unwrap();
+        let mut response = Vec::new();
+        tokio::time::timeout(Duration::from_secs(5), stream.read_to_end(&mut response))
+            .await
+            .expect("an IP-literal SNI must be answered by a close, not held")
+            .unwrap();
+        assert!(response.is_empty());
+        server.shutdown();
+        counters.snapshot()
+    }
+
+    #[tokio::test]
+    async fn an_ip_literal_sni_is_refused_before_resolution_unless_allowed() {
+        let refused = ip_literal_sni_outcome(false).await;
+        assert_eq!(refused.refused_claim, 1);
+        assert_eq!(refused.resolve_failures, 0);
+
+        let allowed = ip_literal_sni_outcome(true).await;
+        assert_eq!(allowed.refused_claim, 0);
+        assert_eq!(allowed.resolve_failures, 1);
+    }
+
     #[tokio::test]
     async fn bind_reports_the_port_the_os_actually_gave() {
         let server = TlsServer::bind(&config(0)).await.unwrap();

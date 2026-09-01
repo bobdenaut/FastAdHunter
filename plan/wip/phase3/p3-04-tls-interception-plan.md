@@ -340,6 +340,15 @@ if self.intercepts(peer.ip()) && !self.exclusions.contains(sni) {
 `serve_intercepted` runs `hyper` auto server over `tls`, its service calling the
 shared verdict core and forwarding over `upstream`.
 
+**p3-03 carry-over (review finding m8):** while this step reworks
+`serve_connection`, split the `non_tls` counter. Today it counts three things
+— non-TLS bytes, client EOF before a hello, and the `hello_timeout` deadline —
+so browser preconnects that close unused dominate it, and the "garbage on
+:443" reading API.md §telemetry gives it is diluted; the HTTP twin `non_http`
+counts parse errors only. Keep `non_tls` for `NotTls`, add `hello_timeouts`
+(EOF or deadline before a complete hello), note both in API.md §telemetry.
+p3-06 reads the two during the soak.
+
 ### Step 5 — reuse the verdict core (`fah-http/src/proxy.rs`)
 
 Make `judge`/`emit`/the block short-circuit reachable by the intercepted handler
@@ -495,7 +504,8 @@ its steps precede these.)*
 5. `crates/fah-http/src/exclusions.rs` — `ExclusionSet` + `BASELINE_EXCLUSIONS`.
 6. `crates/fah-http/src/proxy.rs` — extract the reusable verdict core
    (`filter`/`emit` reachable); `absolute_url` scheme param.
-7. `crates/fah-http/src/https.rs` — the interception branch + `serve_intercepted`.
+7. `crates/fah-http/src/https.rs` — the interception branch + `serve_intercepted`;
+   the `non_tls` / `hello_timeouts` split (p3-03 m8).
 8. `crates/fah-http/src/lib.rs` — module decls + `pub use`.
 9. `crates/fastadhunter/src/main.rs` — build `CertStore`/configs/`ExclusionSet`,
    parse `clients`, wire into `TlsProxy`, fan-out `Event::Https` arm, startup log.

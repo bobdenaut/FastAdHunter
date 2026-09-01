@@ -253,7 +253,9 @@ allow_ip_literal_hosts = false # boot   — whether a client may name a bare IP 
                               #           name never produces one, so this is
                               #           the shape of a probe; prefer
                               #           allow_destinations, which is checked
-                              #           against the resolved address
+                              #           against the resolved address. Since
+                              #           p3-03 the same switch governs an
+                              #           IP-literal SNI on the HTTPS path
 
 # ─── Rule lists ────────────────────────────────────────────────────────
 [rules]

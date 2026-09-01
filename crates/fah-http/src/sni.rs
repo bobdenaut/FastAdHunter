@@ -299,10 +299,10 @@ fn normalize(raw: &[u8]) -> Option<Box<str>> {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
 
-    fn hello(server_name: Option<&str>) -> Vec<u8> {
+    pub(crate) fn hello(server_name: Option<&str>) -> Vec<u8> {
         let mut extensions = Vec::new();
         if let Some(name) = server_name {
             let mut entry = vec![NAME_TYPE_HOST];

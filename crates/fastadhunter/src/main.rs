@@ -288,6 +288,7 @@ struct Engine {
     /// `None` in `dns` mode — the HTTP port is then never bound, not bound and
     /// left idle (CONTEXT.md §Operating Mode).
     http: Option<fah_http::Server>,
+    https: Option<fah_http::TlsServer>,
     api: fah_api::ApiServer,
     tasks: Vec<tokio::task::JoinHandle<()>>,
 }
@@ -601,6 +602,7 @@ impl Engine {
         Ok(Self {
             dns,
             http,
+            https,
             api,
             tasks,
         })
@@ -610,6 +612,9 @@ impl Engine {
         self.dns.shutdown();
         if let Some(http) = &self.http {
             http.shutdown();
+        }
+        if let Some(https) = &self.https {
+            https.shutdown();
         }
         self.api.shutdown();
         for task in &self.tasks {
@@ -695,7 +700,8 @@ fn build_tls_proxy(
         Duration::from_millis(config.https.hello_timeout_ms),
         Duration::from_millis(config.https.idle_timeout_ms),
         config.https.sni.no_sni,
-    ))
+    )
+    .with_ip_literal_hosts(config.egress.allow_ip_literal_hosts))
 }
 
 fn build_http_proxy(
@@ -777,14 +783,13 @@ fn spawn_telemetry_poll(
             ticker.tick().await;
 
             metrics.set_dropped_events(pipeline.dropped_events());
-            let http_refused = proxy_counters.as_ref().map_or(0, |counters| {
-                let proxy = counters.snapshot();
-                proxy.refused_claim + proxy.refused_destination
-            });
-            let tls_refused = tls_proxy_counters
-                .as_ref()
-                .map_or(0, |counters| counters.snapshot().refused_destination);
-            metrics.set_requests_refused(http_refused + tls_refused);
+            let refused = |counters: &Option<Arc<fah_http::ProxyCounters>>| {
+                counters.as_ref().map_or(0, |counters| {
+                    let proxy = counters.snapshot();
+                    proxy.refused_claim + proxy.refused_destination
+                })
+            };
+            metrics.set_requests_refused(refused(&proxy_counters) + refused(&tls_proxy_counters));
             // Field-by-field rather than a shared type: `fah-dns` and
             // `fah-metrics` are L3 siblings and must not import each other
             // (ARCHITECTURE.md §Dependency Layering), so the binary is the one

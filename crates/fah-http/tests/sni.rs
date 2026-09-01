@@ -173,10 +173,25 @@ async fn harness(
         rules,
         events,
         no_sni,
-        Duration::from_secs(30),
-        1024,
+        Limits::default(),
     )
     .await
+}
+
+struct Limits {
+    hello: Duration,
+    idle: Duration,
+    max_connections: usize,
+}
+
+impl Default for Limits {
+    fn default() -> Self {
+        Self {
+            hello: Duration::from_secs(5),
+            idle: Duration::from_secs(30),
+            max_connections: 1024,
+        }
+    }
 }
 
 async fn harness_with(
@@ -185,8 +200,7 @@ async fn harness_with(
     rules: Option<Arc<dyn fah_http::Ruleset>>,
     events: Option<mpsc::Sender<Event>>,
     no_sni: NoSni,
-    idle: Duration,
-    max_connections: usize,
+    limits: Limits,
 ) -> Harness {
     let policy = DestinationPolicy::new(
         origin_port,
@@ -196,10 +210,11 @@ async fn harness_with(
         Arc::new(FixedResolver(vec![resolves_to])),
         policy,
         origin_port,
-        Duration::from_secs(5),
-        idle,
+        limits.hello,
+        limits.idle,
         no_sni,
     );
+    let max_connections = limits.max_connections;
     if let Some(rules) = rules {
         proxy = proxy.with_rules(rules);
     }
@@ -325,13 +340,55 @@ async fn a_blocked_sni_costs_the_origin_nothing() {
 }
 
 #[tokio::test]
+async fn an_allowed_sni_is_spliced_and_reported_as_allow() {
+    let (origin, accepts) = origin().await;
+    let (tx, mut rx) = mpsc::channel(16);
+    let harness = harness(
+        origin.port(),
+        origin.ip(),
+        Some(rules_with(&format!(
+            "||{ORIGIN_NAME}^\n@@||{ORIGIN_NAME}^\n"
+        ))),
+        Some(tx),
+        NoSni::Pass,
+    )
+    .await;
+
+    let stream = TcpStream::connect(harness.addr).await.unwrap();
+    let name = ServerName::try_from(ORIGIN_NAME).unwrap();
+    let mut tls = connector()
+        .connect(name, stream)
+        .await
+        .expect("an allow verdict must splice exactly like a pass");
+    tls.write_all(b"ping").await.unwrap();
+    let mut echoed = [0u8; 4];
+    tls.read_exact(&mut echoed).await.unwrap();
+    assert_eq!(&echoed, b"ping");
+    assert_eq!(accepts.load(Ordering::Relaxed), 1);
+    drop(tls);
+
+    let Event::HttpsSni(event) = next_event(&mut rx).await else {
+        panic!("expected an https-sni event");
+    };
+    assert_eq!(event.request.host, ORIGIN_NAME);
+    match &event.verdict {
+        Verdict::Allow(rule) => assert!(rule.rule.contains(ORIGIN_NAME), "{}", rule.rule),
+        other => panic!("expected an allow verdict, got {other:?}"),
+    }
+    assert!(event.bytes >= 4, "got {}", event.bytes);
+    assert_eq!(harness.counters.snapshot().blocked, 0);
+    harness.shutdown();
+}
+
+#[tokio::test]
 async fn an_sni_resolving_to_a_private_address_is_refused() {
     let (origin, accepts) = origin().await;
+    let (tx, mut rx) = mpsc::channel(16);
     let harness = harness(
         origin.port(),
         "192.168.77.1".parse().unwrap(),
         Some(rules_with("||ads.example.com^\n")),
-        None,
+        Some(tx),
         NoSni::Pass,
     )
     .await;
@@ -340,8 +397,60 @@ async fn an_sni_resolving_to_a_private_address_is_refused() {
     let name = ServerName::try_from(ORIGIN_NAME).unwrap();
     assert!(connector().connect(name, stream).await.is_err());
 
-    assert_eq!(harness.counters.snapshot().refused_destination, 1);
+    let Event::HttpsSni(event) = next_event(&mut rx).await else {
+        panic!("expected an https-sni event");
+    };
+    assert_eq!(event.request.host, ORIGIN_NAME);
+    assert_eq!(event.verdict, Verdict::Pass);
+    assert_eq!(event.status, 0);
+    assert_eq!(event.bytes, 0);
+
+    let counters = harness.counters.snapshot();
+    assert_eq!(counters.refused_destination, 1);
+    assert_eq!(counters.upstream_failures, 0);
     assert_eq!(accepts.load(Ordering::Relaxed), 0);
+    harness.shutdown();
+}
+
+#[tokio::test]
+async fn an_unreachable_upstream_is_reported_within_the_hello_deadline() {
+    const HELLO: Duration = Duration::from_millis(500);
+    let (tx, mut rx) = mpsc::channel(16);
+    let harness = harness_with(
+        443,
+        "192.0.2.1".parse().unwrap(),
+        None,
+        Some(tx),
+        NoSni::Pass,
+        Limits {
+            hello: HELLO,
+            ..Limits::default()
+        },
+    )
+    .await;
+
+    let stream = TcpStream::connect(harness.addr).await.unwrap();
+    let name = ServerName::try_from(ORIGIN_NAME).unwrap();
+    let outcome = tokio::time::timeout(HELLO * 10, connector().connect(name, stream))
+        .await
+        .expect("the connect deadline must close the client long before the OS SYN retry window");
+    assert!(
+        outcome.is_err(),
+        "nothing answers on TEST-NET-1; the handshake cannot complete"
+    );
+
+    let Event::HttpsSni(event) = next_event(&mut rx).await else {
+        panic!("expected an https-sni event");
+    };
+    assert_eq!(event.request.host, ORIGIN_NAME);
+    assert_eq!(event.verdict, Verdict::Pass);
+    assert_eq!(event.status, 0);
+    assert_eq!(event.bytes, 0);
+
+    let counters = harness.counters.snapshot();
+    assert_eq!(counters.upstream_failures, 1);
+    assert_eq!(counters.resolve_failures, 0);
+    assert_eq!(counters.refused_destination, 0);
     harness.shutdown();
 }
 
@@ -384,8 +493,11 @@ async fn an_idle_spliced_session_is_closed_and_its_permit_returned() {
         None,
         Some(tx),
         NoSni::Pass,
-        IDLE,
-        1,
+        Limits {
+            idle: IDLE,
+            max_connections: 1,
+            ..Limits::default()
+        },
     )
     .await;
 

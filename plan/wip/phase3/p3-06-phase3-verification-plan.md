@@ -60,12 +60,29 @@ criterion's stored baseline — measurement-traps rule):
 
 | Figure | Where measured | Feeds |
 | ------ | -------------- | ----- |
-| SNI verdict + splice added latency | `fah-http` bench (extend `benches/proxy.rs` or a new `sni.rs` per p3-03's actual module) | budget row |
+| SNI verdict + splice added latency **and splice throughput** | `fah-http` `benches/proxy.rs` `https_sni_splice` (p3-03) — see the p3-03 carry-over below | budget row |
 | Interception handshake overhead (terminate + re-originate vs splice) | new `fah-http` bench | budget row |
 | Minted-leaf cache hit rate under a browsing-like host distribution | `fah-certs` bench + a workload replay (host list from a real browsing session, corpus recorded) | budget row (hit-rate target) |
 | Leaf mint cost | p3-01's `certs_mint` bench, re-run | diagnostic beside the cache row |
 | DoT/DoH added latency vs UDP (in-engine) | p3-05's harness measurement, promoted to a repeatable bench | budget row |
 | RAM with all engines loaded (`dns+http+https`, rules compiled, caches warm) | dev-box RSS reading + on-device soak (step 3) | re-affirmed RAM row |
+
+**p3-03 carry-over (review findings M4 + n5, deferred to this task):**
+
+- **M4 — splice throughput.** On the dev box the splice arm ran ~6× under
+  direct-to-origin (148 vs 907 MiB/s, loopback, 1 MiB per connection, 16 KiB
+  buffers). If any of that survives on-device the RB5009 ceiling sits near
+  25 MiB/s, under gigabit LAN. Before writing the budget row: A/B
+  `SPLICE_BUF` 16 KiB vs 64 KiB **on the probe container** against a real
+  pre-change checkout, and add a steady-state arm (one connection, N MiB) beside
+  the per-connection one so connect + ClientHello + teardown are not in the
+  throughput figure. Memory cost of the larger buffer is
+  `2 × SPLICE_BUF × https.max_connections` — report both axes.
+- **n5 — bench fidelity.** `splice_in_front_of` in `benches/proxy.rs` runs
+  its own accept loop: no permit and no `set_nodelay` on the accepted client
+  socket, which production's `accept_loop` sets. Rebuild the harness on
+  `TlsServer::bind/serve` first, so the measured relay is the shipped one; a
+  figure taken on the old harness is diagnostic only.
 
 Every number recorded with corpus, workload and device
 (`docs/code-review/phase3/p3-06-phase3-verification-review.md` §Measurements;
@@ -185,6 +202,10 @@ command, what it does, when it takes effect, and the rollback.
    Watch item from p3-05 decision 4: peak concurrent DoH sessions against the
    shared 64-permit API ceiling — the recorded number decides whether the
    named escape hatch (const bump / separate semaphore) is ever built.
+   Second watch item (p3-03 m8, split in p3-04): `non_tls` vs
+   `hello_timeouts` over the window — the ratio says whether silent browser
+   preconnects dominate the port, which decides if the `hello_timeout_ms`
+   default (10 s of permit per silent socket) needs revisiting.
 7. **Certificate-store checks that only the device can give** (deferred by
    the p3-01 and p3-02 reviews to this task — **all mandatory**, on the probe
    container, propose-only for anything on the production one):
@@ -222,6 +243,13 @@ command, what it does, when it takes effect, and the rollback.
   warning that steering all :443 closes no-SNI/ECH connections (measured
   `ENOENT`, not forwardable; DNS-layer backstop), so the operator knows what
   full mode does to that slice of traffic before enabling it.
+- **Dashboard re-review (ROADMAP.md: Phase 3 triggers one).** p3-03 left
+  `https-sni` out of `dashboard/frontend/src/pages/live-feed/filters.ts`
+  (`KINDS = ['dns', 'http']`), and `detail.tsx` gates the HTTP detail block on
+  `kind === 'http'`, so an SNI row renders through the DNS-shaped branch with
+  empty method/path; p3-04 adds a third kind (`https`). Add both kinds to
+  `KINDS` and a detail branch for each, or record the owner's decision to
+  defer to a dashboard task — an unfiltered kind is a finding, not a note.
 - README operating-modes wording drift check (the task's doc sweep).
 - CONFIGURATION.md/API.md: only if p3-02…p3-05 left an approved edit pending.
 

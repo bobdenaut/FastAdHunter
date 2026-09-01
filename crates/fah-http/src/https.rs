@@ -1,5 +1,5 @@
 use std::io;
-use std::net::SocketAddr;
+use std::net::{IpAddr, SocketAddr};
 use std::pin::Pin;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
@@ -40,6 +40,7 @@ pub struct TlsProxy {
     hello_timeout: Duration,
     idle_timeout: Duration,
     no_sni: NoSni,
+    allow_ip_literal_hosts: bool,
 }
 
 impl TlsProxy {
@@ -62,7 +63,13 @@ impl TlsProxy {
             hello_timeout,
             idle_timeout,
             no_sni,
+            allow_ip_literal_hosts: false,
         }
+    }
+
+    pub fn with_ip_literal_hosts(mut self, allow: bool) -> Self {
+        self.allow_ip_literal_hosts = allow;
+        self
     }
 
     pub fn with_rules(mut self, rules: Arc<dyn Ruleset>) -> Self {
@@ -122,6 +129,12 @@ impl TlsProxy {
             }
         };
 
+        if !self.allow_ip_literal_hosts && host.parse::<IpAddr>().is_ok() {
+            self.counters.refused_claim.fetch_add(1, Ordering::Relaxed);
+            debug!(%peer, %host, "refused: IP-literal SNI");
+            return;
+        }
+
         let (verdict, policy) = self.judge(&host, peer);
         if matches!(verdict, Verdict::Block(_)) {
             self.counters.blocked.fetch_add(1, Ordering::Relaxed);
@@ -157,7 +170,7 @@ impl TlsProxy {
             };
 
         let duration = started.elapsed();
-        let bytes = self.splice(stream, upstream, &hello, peer, &host).await;
+        let bytes = self.splice(stream, upstream, hello, peer, &host).await;
         self.emit(&host, peer, verdict, policy, duration, bytes);
     }
 
@@ -165,20 +178,21 @@ impl TlsProxy {
         &self,
         client: TcpStream,
         mut upstream: TcpStream,
-        hello: &[u8],
+        hello: Vec<u8>,
         peer: SocketAddr,
         host: &str,
     ) -> u64 {
         if let Err(err) = upstream.set_nodelay(true) {
             debug!(%peer, error = %err, "could not set TCP_NODELAY upstream");
         }
-        if let Err(err) = upstream.write_all(hello).await {
+        if let Err(err) = upstream.write_all(&hello).await {
             self.counters
                 .upstream_failures
                 .fetch_add(1, Ordering::Relaxed);
             debug!(%peer, %host, error = %err, "could not forward the ClientHello");
             return 0;
         }
+        drop(hello);
 
         let clock = Instant::now();
         let last = AtomicU64::new(0);
