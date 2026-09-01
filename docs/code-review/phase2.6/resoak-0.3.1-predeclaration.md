@@ -15,7 +15,7 @@ methodology change and produces **no verdict** — see
 
 | | |
 | --- | --- |
-| Subject | `0.3.1` — `0.3.0` plus `d420f38` (slim history rows) — replacing `0.3.0` as the serving container |
+| Subject | `0.3.1` — `0.3.0` plus **two** code commits — replacing `0.3.0` as the serving container. `f34af6c` (p5-11, per-endpoint upstream round-trip time — 30 files, `crates/fah-dns` upstream path and `crates/fastadhunter/src/main.rs`) and `d420f38` (slim history rows). **Correction, 2026-09-01T08:2xZ:** this row and §What changed first read "plus `d420f38` … no other code change", asserted from the release notes without reading `git log 552b01a..HEAD -- crates/`. `f34af6c` was found while verifying the Upstreams page and is recorded here rather than quietly fixed |
 | Predecessors | L.3 on `0.2.20`, **terminated day ~5, FAIL**. Re-soak on `0.3.0`, **terminated T0+~59 h, no verdict** |
 | What this soak carries | the `adaptive` upstream-strategy acceptance, and p5-10 Stage B. **Neither predecessor carries them** |
 | Duration | 7 days from process start |
@@ -29,7 +29,8 @@ methodology change and produces **no verdict** — see
 | **§Method: the pull passes an explicit 15-field `?fields=` set** — everything except `upstreams`. The `0.3.0` rule was "`?fields=` is never passed" | That rule forced [`PerfFields::ALL`](../../../crates/fah-api/src/wire.rs), whose `upstreams: true` drives the full-row parse `d420f38` addresses. Each pull injects an RSS excursion — measured +6.9 MiB on a gate pull, +15.3 MiB on a dashboard session — that **decays inside ~2 h**, distorting G1's hour-16–20 vs 20–24 means and able to push a G3 `peak_rss` step. It never sets a 24 h minimum, so G2 was not observer-contaminated ([audit](phase2.6-audit.md) §Re-soak termination) |
 | **G5b's `+16` unavoidable-bodies allowance is removed** | `0.3.0` wrote `.validators` for all 16 lists by T0+27.4 h (`list_fetch.bodies` 3→17→19 across that batch). `/data` is the same mount, so every list starts `0.3.1` with a stored validator and a conditional first refresh |
 | **§Method declares the pull cadence and the dashboard as operational variables** | Pulls and dashboard views have measurable RSS cost. On `0.3.0` they were ad-hoc and unlogged; G2's floor could not be separated from them |
-| G1, G2, G3, G4, G5a, G5c, G6 | **unchanged, verbatim** from the `0.3.0` declaration |
+| **The subject carries `f34af6c` as well as `d420f38`** — see §Summary's correction | `f34af6c` adds a **per-endpoint RTT histogram** held for the process lifetime on the forwarding path, and puts `rtt` on every `upstreams` entry of every history row. It is bounded (fixed buckets, four endpoints), so it is not expected to move G2 — but it is new memory-touching state on the gate expected to decide this soak, and a `0.3.0` → `0.3.1` memory comparison therefore has **two** variables, not one. Declared here so no result is later attributed to `d420f38` alone |
+| G1, G2, G3, G4, G5a, G5c, G6 | **unchanged, verbatim** from the `0.3.0` declaration. The correction above changes what the subject *is*, never what a gate *requires* |
 
 ## Declared gates
 
@@ -223,6 +224,8 @@ retrospectively.
 | 2026-09-01T07:27:53Z | first scheduled refresh: `lists=3 unchanged=3 failed=0`, compile skipped. `dyndns` **304**; `filter_2` and `filter_63` 200 with byte-identical bodies caught by hash compare (256 780 B). **G5a satisfied at T0+4 s** |
 | 2026-09-01T07:29Z | pull 0 — [`resoak-0.3.1/pull0-t0-*`](resoak-0.3.1/), 15-field set verified on `0.3.1`: 16 keys returned, `upstreams` absent, `stride 1` |
 | 2026-09-01T07:33Z | origin probe, 16 conditional GETs from the dev box — 3× 304, 13× 200 (fifth consecutive registry etag rotation) |
+| 2026-09-01T~07:50Z | dashboard session, Diagnostics · Memory. Its history read asks for 4 fields only ([history.ts:75](../../../dashboard/frontend/src/api/history.ts)), so it took the slim path |
+| 2026-09-01T08:20Z | **deliberate fat-path read**, `?fields=upstreams`, 24 h range, 240 rows, 314 962 B — diagnosing why the Upstreams RTT chart was empty before `T0`. Not a gate pull. `rss` 60 211 200 → 61 149 184 and `residual_bytes` 32 866 423 → 33 804 343 at +2 s, i.e. **+938 KB retained**; whether it decays is read at pull 1. Answer found: `0.3.0` had no RTT feature at all, so its rows carry `rtt.count 0` and the chart is drawing all the data that exists |
 
 ## What a PASS does not claim
 
@@ -231,8 +234,10 @@ retrospectively.
   is outside what this soak measures.
 - `peak_rss` exceeding RSS is by design and is not itself a finding; G3 gates
   the *attribution* of its steps, not their size.
-- A PASS is evidence for `adaptive`, for the conditional-GET fix and for
-  `d420f38` on the RB5009. It is not a general statement about any of them.
+- A PASS is evidence for `adaptive`, for the conditional-GET fix, for
+  `d420f38` and for `f34af6c` on the RB5009. It is not a general statement
+  about any of them, and it cannot separate them: the soak runs one build,
+  so a PASS covers the pair jointly and attributes nothing to either alone.
 - A PASS says nothing about the full-row history path. This soak's pulls
   exclude `upstreams` by declaration; the dashboard does not, and its cost is
   measured only by the §Reported A/B.
@@ -276,8 +281,10 @@ THREE HARD RULES
 
 SOAK FACTS
 - T0 = 2026-09-01T07:27:49Z. Day 7 closes 2026-09-08T07:27:49Z.
-- Subject: 0.3.1 = 0.3.0 + d420f38 (slim history rows). Container
-  fastadhunter-0.3.1, image id:
+- Subject: 0.3.1 = 0.3.0 + TWO commits — f34af6c (p5-11, per-endpoint
+  upstream RTT) and d420f38 (slim history rows). Do not repeat the earlier
+  "d420f38 only" description; it was wrong and is corrected in Summary.
+  Container fastadhunter-0.3.1, image id:
   b45b8a90b358f473bbadb7ea88c159f704b95c73d08b527e786ca6440eac8a3d
 - Gates G1..G6, all must pass. Full text in the pre-declaration.
 - G5a is ALREADY SATISFIED: not_modified went above 0 at T0+4 s (dyndns 304).
