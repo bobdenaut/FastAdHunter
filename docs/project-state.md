@@ -11,16 +11,16 @@ what is true today.
 | | |
 | --- | --- |
 | Branch | `main`, in sync with **both** `origin` and `backup`. The `phase5-01`…`phase5-10` chain is merged; nothing is left unmerged |
-| Tree | **dirty** — uncommitted: `p5-10` review §13, the task-10 status flip in the phase table, the soak's §Operational log row, this file, and the untracked `docs/code-review/phase5/p5-10-stageb/` raw JSON |
+| Tree | clean, pushed to both remotes. Phase 5's Stage B evidence and the `wip` → `closed` move are committed |
 | Tests | green at `2b51bb0`; no code has changed since |
 | Version | 0.3.1 (workspace). **No phase-5 tag exists.** Newest tags are `soak-p2.6-11` (`1c430aa`, 0.2.20) and `v0.2.19-phase2.5` |
 | Deployed | container **`fastadhunter-0.3.1`** on `veth1` (`172.17.0.2`), image `b45b8a90…`, **`strategy = "adaptive"`**, soaking since **2026-09-01T07:27:49Z** (`T0`). First deployed build carrying the phase-5 dashboard |
 | Build ≠ tip | `0.3.1` is `db2f9b2`. **Four commits landed after it and are not deployed** — `36ed749` (cache hit-rate divisor, `fah-stats`), `003aedb` (query-types donut), `e6cbf08` (memory residual verdict), `7ea9175` (upstream RTT attribution) |
-| Phase | **two directories in `wip`.** `plan/wip/phase5` — 11/11 `DONE`, work finished, **not moved to `closed`** by owner decision. `plan/wip/phase2.6-adaptive-stage1` — 11 `DONE`, `p2.6-11` awaiting the 0.3.1 day-7 acceptance. The one-phase-in-`wip` rule in [plan/CLAUDE.md](../plan/CLAUDE.md) is knowingly suspended until phase 5 is moved |
+| Phase | **5 closed** (`plan/closed/phase5`, 11/11 `DONE`). **2.6 in `plan/wip/phase2.6-adaptive-stage1`** — 11 `DONE`, `p2.6-11` awaiting the 0.3.1 day-7 acceptance. `wip` is back to one phase |
 | Gate | [Global Architecture Review-Reconciled.md](code-review/Global%20Architecture%20Review-Reconciled.md): §5.1–6 **cleared** — §5.1 p2.5-01, §5.2 p2.5-02, §5.4 p2.5-03, §5.5 p2.5-04, §5.6 p2.5-05 + p2.5-10. §5.7–14 gate Phase 3. **S1-G2 tiers 1, 2 and 3 all met**; **S1-G4 and S1-G5 route 2 are not validated and will not be** |
 | **Next** | the 0.3.1 soak runs to **2026-09-08**; its day-7 acceptance closes `p2.6-11`. Then `p2.6-12` |
 
-## Phase 5 — Web Dashboard, 11/11 `DONE`, still in `wip`
+## Phase 5 — Web Dashboard, closed 2026-09-01
 
 Thirteen screens served from `/web` by `fah-api` on one origin, one binary, no
 second container and no new port. Bundle **128 730 B gzip** (83.8 % of the
