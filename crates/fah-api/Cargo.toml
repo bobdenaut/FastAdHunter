@@ -9,9 +9,10 @@ publish.workspace = true
 workspace = true
 
 # L3 sibling: serves the whole API.md surface over axum+rustls (SECURITY.md:
-# HTTPS by default, rcgen self-signed cert, bearer-key auth). Depends downward
-# only: fah-rules (L2) and fah-config/fah-model (L1) are held directly;
-# fah-stats/fah-metrics/fah-dns data arrives through this crate's own port
+# HTTPS by default, bearer-key auth). Certificate machinery lives in fah-certs
+# (L2, ADR-0006); this crate keeps only the local-address probe. Depends
+# downward only: fah-certs/fah-rules (L2) and fah-config/fah-model (L1) are
+# held directly; fah-stats/fah-metrics/fah-dns data arrives through this crate's own port
 # traits (`StatsSource`, `TelemetrySource`), implemented in `fastadhunter` —
 # ARCHITECTURE.md rule 2: siblings never import each other, the binary wires
 # them via channels and handles (same pattern as fah-metrics' snapshot DTOs).
@@ -23,6 +24,7 @@ workspace = true
 test-harness = []
 
 [dependencies]
+fah-certs = { path = "../fah-certs" }
 fah-common = { path = "../fah-common" }
 fah-config = { path = "../fah-config" }
 fah-model = { path = "../fah-model" }
@@ -33,7 +35,7 @@ arc-swap = { workspace = true }
 # runtime crate this task adds.
 argon2 = "0.5"
 # HMAC-SHA256 over the session token, plus its constant-time `verify`. Already
-# compiled into this crate through rcgen's `aws_lc_rs` feature and rustls, so
+# compiled into this crate through rustls and fah-certs, so
 # this is a manifest edge rather than a new crate — Rust has no transitive
 # visibility, and the name has to be declared here to be callable.
 aws-lc-rs = "1.17"
@@ -42,12 +44,7 @@ futures-util = { version = "0.3", default-features = false, features = ["sink"] 
 hyper = { version = "1", features = ["http1", "http2", "server"] }
 hyper-util = { version = "0.1", features = ["server", "server-auto", "service", "tokio"] }
 rand = { workspace = true }
-# rcgen for the self-signed API cert; matches SECURITY.md's fixed crypto set
-# (rustls/rcgen/x509-parser). aws_lc_rs backend to share one crypto provider
-# with the rustls already in-tree (reqwest/hickory-net).
-rcgen = { version = "0.14", default-features = false, features = ["aws_lc_rs", "pem"] }
 rustls = { workspace = true }
-rustls-pemfile = "2"
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
@@ -69,7 +66,6 @@ tracing = { workspace = true }
 fah-api = { path = ".", features = ["test-harness"] }
 reqwest = { workspace = true, features = ["json", "blocking"] }
 tempfile = "3"
-x509-parser = "0.18"
 tokio-tungstenite = { version = "0.29", default-features = false, features = ["rustls-tls-webpki-roots"] }
 futures-channel = { version = "0.3", default-features = false, features = ["std", "sink"] }
 futures-util = { version = "0.3", default-features = false, features = ["sink", "std"] }

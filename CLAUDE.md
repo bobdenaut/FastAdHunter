@@ -50,6 +50,7 @@ loaded — beyond it, read only what the task touches:
 | `fah-dns` (pipeline, cache, upstreams) | ARCHITECTURE.md (+ ADR-0001) |
 | `fah-http` (proxy, pass-through, interception) | ARCHITECTURE.md §HTTP Pipeline + CONTEXT.md |
 | `fah-api` (endpoints, auth) | API.md (+ SECURITY.md if auth/TLS) |
+| `fah-certs` (CA, leaf minting, import/export) | SECURITY.md + ADR-0006 |
 | `fah-config` / config options | CONFIGURATION.md |
 | `fah-stats` / `fah-metrics` | ARCHITECTURE.md (+ ADR-0002) |
 | Docker / deployment | SECURITY.md + CONFIGURATION.md |
@@ -255,7 +256,7 @@ branches. `unsafe` requires a `// SAFETY:` comment.
 ## Layout
 
 ```text
-crates/        # 11 crates (see ARCHITECTURE.md for responsibilities)
+crates/        # 12 crates (see ARCHITECTURE.md for responsibilities)
 tests/         # workspace integration tests
 benches/       # criterion benches vs PERFORMANCE.md budgets
 docs/          # images/, diagrams/, decisions/ (ADRs); solutions/ = documented

@@ -191,11 +191,22 @@ reused for the client-side dimension — its doc comment says why).
   socket exists it spawns `dot::run` with its own `fatal_tx` clone — DoT death
   reaches the same supervision path as UDP/TCP.
 - `main.rs`: build the **dedicated DoT `Arc<ServerConfig>`** per decision 3 —
-  `fah_certs::MintingResolver` over the `CertStore`'s leaf cache when a CA
-  exists, its `fallback` slot (p3-01's constructor parameter) holding the API
-  pair's `CertifiedKey` so a no-SNI hello still handshakes; plain API pair
-  otherwise —
-  and hand it to `Server::serve`. When `api.tls = false` **and** DoT is
+  `fah_certs::MintingResolver` over the `CertStore` when a CA exists, its
+  `fallback` slot (p3-01's constructor parameter) holding the API pair's
+  `CertifiedKey` from **`CertStore::api_certified_key()`** — p3-01 delivers it
+  so no key material is re-parsed outside `fah-certs` — so a no-SNI hello still
+  handshakes; plain API pair otherwise —
+  and hand it to `Server::serve`.
+- **Pre-warm the DoT hostname at startup** (p3-01 M5 resolution):
+  `MintingResolver::resolve` never mints — it is a synchronous cache read, so
+  minting there would block a tokio worker. Call
+  `spawn_blocking(move || store.prewarm(&dot_hostname))` once during startup for
+  the hostname clients will send as SNI; the `fallback` covers the no-SNI case.
+  `CertStore::prewarm` is blocking and single-flighted inside `fah-certs`; never
+  call it directly from an async task. A resolve that misses the warm cache
+  increments `LeafCacheStats::unwarmed_misses`, so a forgotten pre-warm shows up
+  in `GET /api/v1/certificates` rather than as a silent fallback.
+- When `api.tls = false` **and** DoT is
   enabled, the config is still built from the same cert pair (DoT without TLS
   does not exist); only if the cert pair itself cannot load does DoT fail
   startup, explicitly (rule 11: explicit failure over silent downgrade —

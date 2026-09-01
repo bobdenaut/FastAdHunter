@@ -14,8 +14,10 @@ Read, in this order, before writing any code:
    (webpki-roots because distroless has no system store). These are **hard law**,
    not guidance.
 3. `plan/wip/phase3/p3-01-cert-core-plan.md` — the **seams this task consumes**:
-   `LeafCache::get_or_mint(host) -> Arc<rustls::sign::CertifiedKey>`,
-   `CertStore`, and `fah_certs::MintingResolver` (the `ResolvesServerCert`
+   `Arc<CertStore>` with `prewarm(host)` (blocking, single-flighted, call from
+   `spawn_blocking`) and `cached_leaf(host) -> Option<Arc<CertifiedKey>>` (the
+   non-blocking read; `LeafCache` itself is private to `fah-certs`),
+   and `fah_certs::MintingResolver` (the `ResolvesServerCert`
    implementation ships in `fah-certs` because p3-05's DoT listener needs the
    identical resolver and siblings cannot share code — p3-04 only wires it
    into a `ServerConfig`). When p3-01 lands, read its Implementation Summary
@@ -202,11 +204,35 @@ transport is where they must diverge.
 ### 6. Certificate/TLS specifics (consuming p3-01)
 
 - **`fah_certs::MintingResolver`** (p3-01's `ResolvesServerCert` over the
-  `LeafCache` — shipped at L2 because p3-05's DoT listener needs the identical
+  `CertStore` — shipped at L2 because p3-05's DoT listener needs the identical
   resolver and siblings cannot import each other): p3-04 **consumes** it with
-  `fallback: None`, no local implementation — a mint failure aborts the
+  `fallback: None`, no local implementation — an unwarmed host aborts the
   handshake, fail-closed (the fallback slot exists for p3-05's DoT). rustls
-  sees the replayed ClientHello (see RewindStream below), so its SNI == ours. Minting is outside the LRU lock (p3-01 contract).
+  sees the replayed ClientHello (see RewindStream below), so its SNI == ours.
+- **`resolve()` never mints — pre-warm is mandatory** (p3-01 M5 resolution).
+  rustls' `ResolvesServerCert::resolve` is synchronous, so minting inside it
+  would block a tokio worker for ~0.5 ms per first-sight host on the RB5009.
+  `MintingResolver::resolve` is a pure cache read; the mint happens **before**
+  the stream reaches the acceptor:
+
+  ```text
+  accept → peek ClientHello (already done for the SNI verdict)
+         → spawn_blocking(move || store.prewarm(&host)).await
+         → TlsAcceptor::accept(rewound stream)   // guaranteed cache hit
+  ```
+
+  `CertStore::prewarm` is **blocking** (P-256 keygen + signature) and must be
+  called from `spawn_blocking`, never directly from an async task.
+  `CertStore::cached_leaf` is the non-blocking read the resolver uses. p3-01
+  owns the single-flight: concurrent `prewarm` calls for the same host collapse
+  to one mint (`std::sync::Condvar`, no tokio in `fah-certs`), so a burst of
+  connections to one new host costs one keygen, not N. p3-04 adds **no**
+  minting, caching or coalescing logic of its own.
+- **Skipping the pre-warm is observable, not silent:** a resolve that misses the
+  cache increments `LeafCacheStats::unwarmed_misses`, which p3-02 serializes and
+  p3-06 asserts is zero. `inflight` is exposed as a gauge — it is bounded by
+  this task's concurrent-connection cap, which is why `fah-certs` carries no
+  separate in-flight limit.
 - **Downstream `ServerConfig`** built **once** per `TlsProxy`
   (`Arc<ServerConfig>`): the `MintingResolver`, ALPN `[h2, http/1.1]`, no client
   auth, aws-lc-rs provider (the one workspace backend, SECURITY.md). Cheap to
@@ -287,12 +313,12 @@ legal). aws-lc-rs is the provider via rustls default features already in-tree.
   `Arc<ClientConfig>` builder (webpki-roots), `RewindStream<S>`, and
   `connect_verified_upstream(client_config, sni, approved_ip) -> Result<TlsStream>`.
 - All crypto via rustls/tokio-rustls/webpki-roots — no hand-rolled anything
-  (SECURITY.md). The leaf comes from `fah_certs::LeafCache` (p3-01).
+  (SECURITY.md). The leaf comes from `fah_certs::CertStore` (p3-01).
 
 ### Step 4 — the interception branch (`fah-http/src/https.rs`)
 
 Extend `TlsProxy` with `Arc<ServerConfig>`, `Arc<ClientConfig>`,
-`Vec<AllowedNet>` (clients), `ExclusionSet`, `Arc<LeafCache>`. In
+`Vec<AllowedNet>` (clients), `ExclusionSet`, `Arc<CertStore>`. In
 `serve_connection`, after the SNI verdict `Pass`/`Allow`:
 
 ```text
@@ -324,13 +350,13 @@ or a scheme param — targeted change; URL patterns match `https://host/...`).
 
 ### Step 6 — binary wiring (`fastadhunter/src/main.rs`)
 
-- Build `Arc<CertStore>`/`Arc<LeafCache>` at startup (p3-01 delivers this seam;
-  p3-04 is its first `LeafCache` consumer — the cache is empty until now, per
-  p3-01's RSS note).
+- Build `Arc<CertStore>` at startup (p3-01 delivers this seam; `LeafCache` is
+  private to `fah-certs` — the store *is* the handle. p3-04 is its first leaf
+  consumer; the cache is empty until now, per p3-01's RSS note).
 - Parse `[https.interception].clients` → `Vec<AllowedNet>` (fail startup on bad
   entry); build the `ExclusionSet` (baseline ∪ user).
-- Build the `ServerConfig`/`ClientConfig` once; hand them + the `LeafCache` to
-  `TlsProxy`.
+- Build the `ServerConfig`/`ClientConfig` once; hand them + the `Arc<CertStore>`
+  to `TlsProxy`.
 - Log at startup when the interception list is non-empty (a deliberate, auditable
   posture change — mirror the egress allow-list log at `main.rs:630-637`).
 
@@ -462,7 +488,7 @@ its steps precede these.)*
    (`filter`/`emit` reachable); `absolute_url` scheme param.
 7. `crates/fah-http/src/https.rs` — the interception branch + `serve_intercepted`.
 8. `crates/fah-http/src/lib.rs` — module decls + `pub use`.
-9. `crates/fastadhunter/src/main.rs` — build `LeafCache`/configs/`ExclusionSet`,
+9. `crates/fastadhunter/src/main.rs` — build `CertStore`/configs/`ExclusionSet`,
    parse `clients`, wire into `TlsProxy`, fan-out `Event::Https` arm, startup log.
 10. `crates/fah-http/tests/interception.rs` — the four security-property tests +
     h1/h2.

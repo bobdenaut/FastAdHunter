@@ -48,11 +48,12 @@ extension of `fah-common`. Decide explicitly and record it.
   hot path where possible (pre-warm on SNI first-sight). The rustls
   `ResolvesServerCert` type over the cache ships here (pure, shared by
   p3-04 and p3-05); its wiring does not.
-- Import: user PEM (cert+key) and — subject to the owner decision in the
-  plan (§Decisions 8: crypto-set amendment vs PEM-only descope) — PFX/PKCS#12
-  for the **API server cert** (replaces the self-signed from Phase 1);
-  validation via x509-parser with precise errors (expired, key mismatch, not
-  CA where CA expected).
+- Import: user PEM (cert+key) for the **API server cert** (replaces the
+  self-signed from Phase 1); validation via x509-parser with precise errors
+  (expired, key mismatch, not CA where CA expected). **PFX/PKCS#12 descoped**
+  (plan §Decisions 8, Option B — owner decision): it would need several new
+  crypto crates outside SECURITY.md's fixed set, and `openssl pkcs12` converts.
+  Recorded in ADR-0006 and API.md.
 - Export: CA public certificate as PEM and DER (Android wants DER).
 - Status introspection: CA fingerprint, validity window, leaf-cache stats.
 - Tests: mint → rustls client with CA trusted verifies successfully; import

@@ -1151,8 +1151,14 @@ this endpoint serves one instant.
 
 ## Certificates *(Phase 3 — reserved)*
 
-`/api/v1/certificates` — import PEM, import PFX, generate CA, export CA,
-status. Endpoints specified when Phase 3 begins; namespace reserved now.
+`/api/v1/certificates` — import PEM, generate CA, export CA, status. Endpoints
+specified in p3-02; namespace reserved now.
+
+**PFX/PKCS#12 import is not offered.** SECURITY.md's fixed crypto set contains
+no PKCS#12 parser and real `.pfx` files are encrypted, so import would need
+several new crypto crates. Import is PEM-only; convert with
+`openssl pkcs12 -in cert.pfx -out cert.pem -nodes`. See
+[ADR-0006](docs/decisions/0006-certificate-machinery-home.md).
 
 ---
 

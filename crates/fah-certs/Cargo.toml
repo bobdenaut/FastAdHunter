@@ -1,0 +1,43 @@
+[package]
+name = "fah-certs"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+# L2, beside fah-rules: certificate machinery shared by two L3 siblings that may
+# not import each other — fah-api (the API server pair, CA import/status) and
+# fah-http (leaf minting for interception). ADR-0006. Pure logic: no tokio, no
+# listeners, no async; the binary owns wiring.
+[dependencies]
+# SECURITY.md's fixed crypto set. aws_lc_rs backend shares the one provider the
+# workspace already links; `x509-parser` lets a CA loaded from PEM become an
+# rcgen `Issuer` without keeping a parallel parameter copy on disk.
+rcgen = { version = "0.14", default-features = false, features = ["aws_lc_rs", "pem", "x509-parser"] }
+rustls = { workspace = true }
+rustls-pemfile = "2"
+x509-parser = "0.18"
+# SHA-256 over the CA DER for the fingerprint. In-tree through rustls/rcgen, but
+# Rust has no transitive visibility, so the edge is declared here.
+aws-lc-rs = "1.17"
+# DER -> PEM for exports. Already compiled through rcgen's `pem` feature; the
+# edge is declared because every export is re-encoded from the parsed
+# certificate rather than echoing caller-supplied text (SECURITY.md: export is
+# public-certificate-only). Not a crypto crate: encoding only.
+pem = "3"
+thiserror = { workspace = true }
+time = { version = "0.3", default-features = false, features = ["std"] }
+tracing = { workspace = true }
+
+[dev-dependencies]
+criterion = { workspace = true }
+tempfile = "3"
+tokio = { workspace = true, features = ["io-util", "macros", "net", "rt-multi-thread"] }
+tokio-rustls = { version = "0.26", default-features = false, features = ["aws_lc_rs", "tls12"] }
+
+[[bench]]
+name = "certs"
+harness = false

@@ -5,7 +5,8 @@ hardening. Guiding rule: **do not reinvent cryptography** — rustls, rcgen,
 x509-parser, argon2 and aws-lc-rs only; no hand-rolled TLS or crypto anywhere.
 `argon2` hashes the dashboard password; `aws-lc-rs` supplies the constant-time
 HMAC-SHA256 the session token is signed and verified with (it is already in the
-tree through rustls and rcgen).
+tree through rustls and rcgen). The set is closed to *cryptography*; `pem`
+(base64 framing, no crypto) is used to re-encode certificates for export.
 
 ## Threat model (summary)
 
@@ -127,8 +128,15 @@ branch.
   certificate is generated with rcgen and stored in `/config`.
 - The browser shows a one-time warning for the self-signed certificate —
   expected for an appliance; the certificate is stable across restarts.
-- Users can replace it with their own certificate (PEM/PFX) in `/config`
-  (Phase 3 adds API-driven import).
+- Users can replace it with their own certificate (**PEM**) in `/config`
+  (Phase 3 adds API-driven import). PKCS#12/PFX is **not** accepted: the fixed
+  crypto set above has no PKCS#12 parser and real `.pfx` files are encrypted, so
+  supporting them would mean adding several crypto crates. Convert first with
+  `openssl pkcs12 -in cert.pfx -out cert.pem -nodes`
+  ([ADR-0006](docs/decisions/0006-certificate-machinery-home.md)).
+- An imported certificate is re-encoded from the parsed DER before it is stored,
+  so private key material pasted into the certificate field is discarded rather
+  than written to a world-readable file or handed back by an export endpoint.
 - Plain HTTP requires an explicit opt-out (`api.tls = false`) and is
   documented as **unsafe**: the API key is a bearer token — over HTTP a single
   sniffed request leaks full admin control and the DNS history.
@@ -224,8 +232,11 @@ exactly the failure worth finding.
 
 - **Phase 3 — HTTPS interception (MITM)** is opt-in, per-managed-environment,
   never default. The generated CA's private key never leaves `/config`; CA
-  export endpoints export the **public** certificate only. Interception uses
-  rustls; certificate minting uses rcgen; parsing uses x509-parser.
+  export endpoints export the **public** certificate only, re-encoded from the
+  parsed certificate DER so no export path can reach a key. Interception uses
+  rustls; certificate minting uses rcgen; parsing uses x509-parser. All of it
+  lives in `fah-certs`
+  ([ADR-0006](docs/decisions/0006-certificate-machinery-home.md)).
 - DoT/DoH **listeners** (client-facing) arrive with Phase 3 certificate
   machinery so clients can actually validate what they connect to.
 

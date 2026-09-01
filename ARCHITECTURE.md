@@ -188,6 +188,7 @@ FastAdHunter/
 │   ├── fah-config/       # TOML load/merge, precedence, hot-reload
 │   ├── fah-model/        # domain model + shared DTOs (Query, Verdict, Client…)
 │   ├── fah-rules/        # Rule Engine: parsers + compiled matchers
+│   ├── fah-certs/        # CA + leaf minting, PEM import, public-only export
 │   ├── fah-dns/          # listeners, pipeline, cache, upstreams
 │   ├── fah-http/         # HTTP engine: proxy, pass-through, URL filtering
 │   ├── fah-api/          # Axum REST + WebSocket
@@ -208,9 +209,18 @@ types only.
 ```text
 L4:  fastadhunter (binary — wires everything)
 L3:  fah-dns   fah-http   fah-api   fah-stats   fah-metrics
-L2:  fah-rules
+L2:  fah-rules   fah-certs
 L1:  fah-model   fah-config   fah-common   fah-logging
 ```
+
+`fah-certs` owns every certificate operation — CA generation and archival, leaf
+minting behind a bounded cache, the `ResolvesServerCert` implementation over it,
+PEM import validation, and public-certificate-only export. It sits at L2 because
+three L3 siblings need it (`fah-api` for the API server pair and the
+import/status endpoints, `fah-http` for interception leaves, `fah-dns` for the
+DoT listener) and siblings may not import each other. It is pure logic: no
+tokio, no listeners, no async — the binary owns the wiring. See
+[ADR-0006](docs/decisions/0006-certificate-machinery-home.md).
 
 `crates/fastadhunter/tests/layering.rs` enforces this by parsing every
 manifest: an internal dependency that does not point strictly downward fails

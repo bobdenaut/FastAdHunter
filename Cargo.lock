@@ -650,6 +650,7 @@ dependencies = [
  "aws-lc-rs",
  "axum",
  "fah-api",
+ "fah-certs",
  "fah-common",
  "fah-config",
  "fah-model",
@@ -659,10 +660,8 @@ dependencies = [
  "hyper",
  "hyper-util",
  "rand 0.9.5",
- "rcgen",
  "reqwest",
  "rustls",
- "rustls-pemfile",
  "serde",
  "serde_json",
  "tempfile",
@@ -673,6 +672,24 @@ dependencies = [
  "tokio-tungstenite",
  "tower",
  "tower-http",
+ "tracing",
+]
+
+[[package]]
+name = "fah-certs"
+version = "0.3.1"
+dependencies = [
+ "aws-lc-rs",
+ "criterion",
+ "pem",
+ "rcgen",
+ "rustls",
+ "rustls-pemfile",
+ "tempfile",
+ "thiserror",
+ "time",
+ "tokio",
+ "tokio-rustls",
  "tracing",
  "x509-parser",
 ]
