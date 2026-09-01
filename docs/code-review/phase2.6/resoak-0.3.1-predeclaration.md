@@ -226,6 +226,9 @@ retrospectively.
 | 2026-09-01T07:33Z | origin probe, 16 conditional GETs from the dev box — 3× 304, 13× 200 (fifth consecutive registry etag rotation) |
 | 2026-09-01T~07:50Z | dashboard session, Diagnostics · Memory. Its history read asks for 4 fields only ([history.ts:75](../../../dashboard/frontend/src/api/history.ts)), so it took the slim path |
 | 2026-09-01T08:20Z | **deliberate fat-path read**, `?fields=upstreams`, 24 h range, 240 rows, 314 962 B — diagnosing why the Upstreams RTT chart was empty before `T0`. Not a gate pull. `rss` 60 211 200 → 61 149 184 and `residual_bytes` 32 866 423 → 33 804 343 at +2 s, i.e. **+938 KB retained**; whether it decays is read at pull 1. Answer found: `0.3.0` had no RTT feature at all, so its rows carry `rtt.count 0` and the chart is drawing all the data that exists |
+| 2026-09-01T10:43:32Z | **first recompile under `0.3.1`** — `phishdestroy` (12 h list) refreshed, `lists=1 refreshed=1 unchanged=0 failed=0`. `bodies` 2 → 3, `bytes_fetched` 256 780 → 3 987 194, `rules` 756 420 → 756 794 |
+| 2026-09-01T11:15Z | ad-hoc pull — [`resoak-0.3.1/pull-adhoc-20260901T1115Z-*`](resoak-0.3.1/), 15-field set, 38 rows, `stride 1`. Taken to capture the recompile above while it was fresh |
+| 2026-09-01T11:15Z | origin probe — 1× 304 (`phishdestroy`, whose validator the container had just refreshed), 15× 200. **`dyndns` rotated for the first time in five days** (`382fff…` → `467f39…`), as did `doh-vpn-proxy-bypass` and `tif-mini`. The "`dyndns` is 304-stable" assumption behind G5a's pre-recorded expectation no longer holds; G5a was already satisfied at T0+4 s and is unaffected |
 
 ## What a PASS does not claim
 
