@@ -3,12 +3,13 @@
 ## Implementation Summary
 
 Nothing was built in this task. It measures the shipped phase-5 artefact and
-records the evidence. Per the task file's **§Execution split**, this file holds
-**Stage A only** — everything a dev box can answer while the p2.6-11 soak still
-owns the RB5009. Stage B rows stay open and are marked `AWAITING SOAK`.
+records the evidence. Per the task file's **§Execution split**, it has two
+dated stages: **Stage A**, everything a dev box can answer, in §1–§12; and
+**Stage B**, the on-device rows, in **§13**.
 
-**The RB5009 was not contacted in any form.** Every figure below comes from a
-local container on the dev box or from a local build.
+**Sections 1–12 did not contact the RB5009 in any form.** Every figure in them
+comes from a local container on the dev box or from a local build. Every figure
+in §13 comes from the router.
 
 | Stage A item | Result |
 | ------------ | ------ |
@@ -623,7 +624,7 @@ Note the certificate's SANs are `fastadhunter`, `localhost`, `127.0.0.1`, `::1`
 and the **container's** address `172.17.0.3` — not the dev box's LAN address —
 so a warning is expected here and says nothing about the shipped image.
 **The certificate re-confirmation is a Stage B item** on the deployed build,
-where the SAN set is the one `p5-02` fixed.
+where the SAN set is the one `p5-02` fixed — done in §13.6, SAN set intact.
 
 ---
 
@@ -865,7 +866,8 @@ fix applies to `.linky` as a class, so all four uses gain the target.
 
 Different architecture, different host kernel, a 59 k-rule corpus rather than a
 household one, and a synthetic 3 qps load. **The ≤ 128 MB budget row is an
-RB5009 steady-state row and its three readings are a Stage B item.** Recorded
+RB5009 steady-state row and its three readings are a Stage B item** — measured
+in §13.2 at 52.63–55.14 MiB, inside budget. Recorded
 only so the dev figure is not later mistaken for a breach —
 [measurement-traps.md](../../measurement-traps.md) §Memory applies in full,
 including that `allocator_committed_bytes` is a lifetime high-water mark that
@@ -956,15 +958,19 @@ Every Stage-A item in the task file's §Execution split is complete and measured
 | Socket-load run | **PASS** — ring bounded, 0 `query` frames to a non-subscriber, nothing shed (§9) |
 | Mobile pass over the LAN | **PARTIAL** — emulated pass complete and green (§10); the **real-phone leg needs the owner** (§10.1) |
 | Gates, cargo and frontend, `request_coverage.rs` included | **PASS** (§2) |
+| RSS on the RB5009, three readings | **PASS** — 52.63 / 53.55 / 55.14 MiB, peak flat at 141.34 MiB, inside the ≤ 128 MB row (§13.2). Deltas do not resolve against soak drift |
+| Argon2id cost on the device | **PARTIAL** — sequential p50 ~120 ms, peak unmoved (§13.3); the **concurrent** case is not measured |
+| Polled-endpoint cost | **PASS** — 0.89–1.05 ms warm; `/cache` at one occupancy only (§13.4) |
+| `constants.ts` refresh-default correction | **PASS** — no default moves; a 30 s option is cleared for `/telemetry` and `/cache` (§13.5). Not applied |
+| Certificate on the shipped image | **PASS** — p5-02 SAN set intact, `172.17.0.2` covered (§13.6) |
 
 Beyond the scope, at the owner's request: an exhaustive UI audit — every
 control, every dialog, every save, every link, render correctness and load speed
 on all thirteen screens (§8).
 
-**Stage B is untouched and stays open.** The three RSS readings, Argon2id cost
-on the device, polled-endpoint costs, the `constants.ts` refresh-default
-correction and the certificate re-confirmation all need the RB5009 and all wait
-for the p2.6-11 day-7 acceptance. The task sits **`AWAITING SOAK`**.
+**Stage B was collected on 2026-09-01 against the deployed `0.3.1` and is
+recorded in §13**, together with the three items it could not close and the
+limits on what its figures certify.
 
 ### Verdict
 
@@ -977,5 +983,141 @@ phase 5, lives in `fah-rules`, and is assigned to Stage 2 by the orchestration
 plan. The rest are deferred minors, two documentation edits awaiting the owner's
 yes, and two observations.
 
-One row is not green and cannot be made green here: the real-phone leg of the
-mobile pass (§10.1).
+Stage B (§13) added the on-device evidence and failed nothing. Four rows stay
+open and are carried, not closed: the **concurrent** Argon2id peak, `/cache` at
+a second occupancy, RSS deltas above the drift floor (§13.7), and the real-phone
+leg of the mobile pass (§10.1). The task is marked `DONE` on the owner's
+decision with those four recorded as deferred, and with §13.7's version-skew
+caveat standing — `0.3.1` predates `36ed749`, `003aedb` and `e6cbf08`, so
+figures observed on this device do not validate the fixed code.
+
+---
+
+## 13 · Stage B — on-device, RB5009
+
+**Collected 2026-09-01T11:35–11:46Z.** Read-only against the deployed container;
+no router configuration was touched and nothing was mutated. Logged in the soak's
+§Operational log as the method requires
+([resoak-0.3.1-predeclaration.md](../phase2.6/resoak-0.3.1-predeclaration.md)).
+Raw JSON: [p5-10-stageb/](p5-10-stageb/).
+
+### 13.1 · Corpus, workload, device
+
+| | |
+| --- | --- |
+| Device | RB5009, 4× ARMv8, 1 GB shared with RouterOS |
+| Build | `fastadhunter-0.3.1` at `db2f9b2`, container `fah-next`, `172.17.0.2` |
+| Uptime at collection | 14 882 s — soak T0+4.1 h |
+| Workload | live household DNS, 157 824 queries / 24 h, 66.4 % blocked, 486 client entries |
+| Ruleset | 756 794 rules, 16 lists, 452 683 duplicates removed |
+| Cache | 484 / 50 000 entries, 521 888 B |
+| Strategy | `adaptive`; only `1.1.1.1` had taken traffic |
+
+### 13.2 · RSS, three readings
+
+| Reading | State | `process_rss` | Delta |
+| --- | --- | --- | --- |
+| pre | immediately before the browser session | 53.40 MiB | — |
+| 1 | baseline, no dashboard | 52.63 MiB | — |
+| 2 | dashboard served, page holds no `query` subscription | 53.55 MiB | +0.16 MiB vs pre |
+| 3 | Live Feed, 11 samples at 30 s | 55.14 MiB mean (54.79–55.56) | +1.59 MiB vs reading 2 |
+| post | session closed | 54.40 MiB | — |
+
+`process_peak_rss` was **141.34 MiB at every reading, unchanged** — the known
+boot/compile transient (audit F9). Nothing in static serving, the socket or
+Argon2id moved it. Steady-state stayed inside the ≤ 128 MB budget throughout.
+
+**These two deltas do not resolve against the noise floor.** Quiet-state RSS
+moved 52.26 → 53.72 MiB during the same session with no dashboard attached — a
+1.46 MiB spread from soak drift. Reading 2's +0.16 MiB sits inside it and is
+**not a measurement**; reading 3's +1.59 MiB is only marginally outside it.
+The direction is right and the Live Feed series is flat over five minutes, but
+separating the event feed's cost from drift needs repeated attach/detach cycles,
+not three point readings. See §13.7.
+
+### 13.3 · Argon2id on the device
+
+| | |
+| --- | --- |
+| Samples | 5 sequential `POST /api/v1/auth/login`, all `204` |
+| Wall time | 0.123–0.157 s |
+| Less TLS handshake (7–22 ms) | **verification ≈ 116–136 ms, p50 ~120 ms** |
+| RSS across the five | +0.22 MiB |
+| `process_peak_rss` | unchanged |
+
+**The stated key risk is not covered by this.** Peak RSS is driven by
+*concurrent* verifications, which the `try_acquire` semaphore bounds; five
+sequential logins say nothing about it. Open — see §13.7.
+
+### 13.4 · Polled-endpoint cost
+
+20 samples each, connection reused, first request discarded.
+
+| Endpoint | p50 | p95 | max | Body |
+| --- | --- | --- | --- | --- |
+| `GET /health` | 0.93 ms | 1.07 ms | 1.39 ms | 56 B |
+| `GET /api/v1/telemetry` | 0.89 ms | 2.01 ms | 2.07 ms | 2 779 B |
+| `GET /api/v1/cache` | 1.05 ms | 1.43 ms | 1.53 ms | 187 B |
+
+TLS handshake is 6.6–7.3 ms, paid once per connection and amortized by
+keep-alive. **It dominates: a cold call costs 30–90 ms, a warm one ~1 ms.** The
+refresh interval is therefore an argument about connection reuse, not about
+server cost.
+
+~130 calls injected no measurable RSS excursion (52.63 → 52.26 MiB, `peak_rss`
+flat) — unlike the fat-path `/history/perf` read, which the soak measured at
++938 KB retained.
+
+`/cache` was measured at **one** occupancy (484 entries, 0.97 % load). The
+second point is deferred to a later soak pull as the cache fills; it costs
+nothing and needs no intervention.
+
+### 13.5 · `constants.ts` refresh defaults
+
+`p5-05` set the defaults and option sets from reasoning and marked them
+provisional pending this measurement.
+
+| | Current | Measured verdict |
+| --- | --- | --- |
+| `/health` default 60 s, options 30/60/300 | unchanged | 0.93 ms — nothing to correct |
+| `/telemetry` default 300 s, options 60/300 | default unchanged | **add 30 s to the option set** — 0.89 ms clears it |
+| `/cache` default 300 s, options 60/300 | default unchanged | **add 30 s to the option set** — 1.05 ms clears it |
+
+No default moves. The only correction the measurement supports is widening two
+option arrays. **Not applied in this task** — it is a code change to
+`dashboard/frontend/src/constants.ts` and needs its own approval.
+
+### 13.6 · Certificate on the shipped image
+
+| Field | Value |
+| --- | --- |
+| Subject / Issuer | `CN=FastAdHunter`, self-signed |
+| SAN | `DNS:fastadhunter`, `DNS:localhost`, `IP:127.0.0.1`, `IP:::1`, `IP:172.17.0.2` |
+| Validity | 2026-08-29 → 2027-09-30 |
+
+The p5-02 SAN set survived onto the shipped image; `172.17.0.2` name-matches, so
+a LAN browser reaches the origin without a name mismatch. A Chromium session
+loaded `https://172.17.0.2:8443/` and every page rendered live data. The session
+cookie from the owner's earlier session persisted across the `0.3.0` → `0.3.1`
+container replacement.
+
+### 13.7 · What Stage B did not close
+
+| Item | Why | Where it goes |
+| --- | --- | --- |
+| Concurrent Argon2id peak RSS | needs a parallel login burst at the live resolver — not read-only, owner's call | next deploy window |
+| `/cache` at a second occupancy | cache is at 0.97 % load; the point arrives on its own | a later soak pull |
+| Real-phone leg of the mobile pass (§10.1) | needs a phone reaching `172.17.0.2:8443`; [routeros-traps.md](../../routeros-traps.md) records no LAN→container dstnat, so it likely needs a firewall rule — owner-run | owner |
+| RSS deltas above the drift floor | three point readings cannot separate +0.16 MiB from 1.46 MiB of soak drift | repeated A/B, next deploy window |
+
+**Version skew limits what this device certifies.** `0.3.1` is `db2f9b2`. Three
+code fixes landed after it and are **not deployed**: `36ed749` (cache hit rate
+divisor, `fah-stats`), `003aedb` (query-types donut) and `e6cbf08` (memory
+residual verdict). The figure trace in §6 stands for main; the corresponding
+figures observed on this device — the Dashboard's 26.8 % cache hit rate in
+particular — are the superseded computation and must not be quoted as
+validating the fixed code.
+
+One further observation, outside this task: the Dashboard reported **486 active
+clients** for a household LAN, consistent with the IPv6 privacy-address rotation
+recorded in `652632b`. Not chased here.

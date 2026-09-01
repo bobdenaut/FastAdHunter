@@ -4,22 +4,65 @@ Where the work is right now. **Rewrite this file — never append.** History
 belongs in `git log`, `docs/code-review/` and the phase tables; this file is only
 what is true today.
 
-**Last updated:** 2026-08-25
+**Last updated:** 2026-09-01
 
 ## Now
 
 | | |
 | --- | --- |
-| Branch | `main`. Tags `v0.2.19-phase2.5` and `soak-p2.6-11` (`1c430aa`, 0.2.20) are on **both** origin and backup; 0.2.20 itself is **not** tagged. Local-only: the `phase5-NN` chain, until Phase 5 merges |
-| Tree | clean. No runtime code change since p2.5-11 (`6417842`) other than phase-2.6 Stage 1 work through p2.6-09; every commit since is documentation, measurement data or the version bump |
-| Tests | green — fmt/clippy/test at `1c430aa`: **1 056 passed, 0 failed, 8 ignored** |
-| Version | 0.2.20 (workspace). **The version string still does not identify a build** — 0.2.19 named both the phase-2.5 production image and the Stage 1 probe image. 0.2.20 is unambiguous today, but discriminate by container `tag` or by whether `/telemetry`'s upstream entries carry the p2.6-06 fields (`state`, `penalty_round`, `penalties`, `penalized_seconds_total`, `probes`, `probe_successes`, `family`) |
-| Deployed | **production**: container **`fah-next`** on `veth1` (`172.17.0.2`), 0.2.20, `root-dir /kingston/fastadhunter/root-0220`, **`strategy = "adaptive"`** via envlist `fah-optin`, `start-on-boot=yes`, soaking since 2026-08-25T07:57:02Z. **rollback**: the 0.2.19 container still exists as `comment="fastadhunter"`, stopped, `start-on-boot=no`. **probe**: `fah-probe` on `veth3` (`172.17.0.4`), `fastadhunter:stage1` at `f65386f`, stopped between arms |
-| Selector trap | `[find comment="fastadhunter"]` now resolves to the **stopped 0.2.19 rollback container**. Every live-path command targets `[find comment="fah-next"]` until the post-soak cleanup renames it back |
-| Phase | **2.5 closed**, tag `v0.2.19-phase2.5`. **2.6 in `plan/wip/phase2.6-adaptive-stage1`** — 13 tasks, **11 `DONE`**, p2.6-11 in progress |
-| Gate | [Global Architecture Review-Reconciled.md](code-review/Global%20Architecture%20Review-Reconciled.md): §5.1–6 **cleared** — §5.1 p2.5-01, §5.2 p2.5-02, §5.4 p2.5-03, §5.5 p2.5-04, §5.6 p2.5-05 + p2.5-10. §5.7–14 gate Phase 3. **S1-G2 tiers 1, 2 and 3 all met**; **S1-G4 and S1-G5 are not validated and will not be** |
-| **Next** | `p2.6-11` continues — L.4a/L.4b done, the soak closes 2026-09-01 |
-| Phase 5 track | **parallel, does not touch 2.6.** `plan/open/phase5` stays in `open`; 2.6 keeps `wip`. Work happens on the `phase5-NN` cumulative branch chain off `main` (`phase5-01` created 2026-08-26), nothing merges to `main` until the phase completes. The soak is a deployed artifact, unaffected by branch topology — `soak-p2.6-11` tags the exact commit (`1c430aa`, 0.2.20), pushed to origin and backup. Rules: [plan/open/phase5/CLAUDE.md](../plan/open/phase5/CLAUDE.md) §Parallel track |
+| Branch | `main`, in sync with **both** `origin` and `backup`. The `phase5-01`…`phase5-10` chain is merged; nothing is left unmerged |
+| Tree | **dirty** — uncommitted: `p5-10` review §13, the task-10 status flip in the phase table, the soak's §Operational log row, this file, and the untracked `docs/code-review/phase5/p5-10-stageb/` raw JSON |
+| Tests | green at `2b51bb0`; no code has changed since |
+| Version | 0.3.1 (workspace). **No phase-5 tag exists.** Newest tags are `soak-p2.6-11` (`1c430aa`, 0.2.20) and `v0.2.19-phase2.5` |
+| Deployed | container **`fastadhunter-0.3.1`** on `veth1` (`172.17.0.2`), image `b45b8a90…`, **`strategy = "adaptive"`**, soaking since **2026-09-01T07:27:49Z** (`T0`). First deployed build carrying the phase-5 dashboard |
+| Build ≠ tip | `0.3.1` is `db2f9b2`. **Four commits landed after it and are not deployed** — `36ed749` (cache hit-rate divisor, `fah-stats`), `003aedb` (query-types donut), `e6cbf08` (memory residual verdict), `7ea9175` (upstream RTT attribution) |
+| Phase | **two directories in `wip`.** `plan/wip/phase5` — 11/11 `DONE`, work finished, **not moved to `closed`** by owner decision. `plan/wip/phase2.6-adaptive-stage1` — 11 `DONE`, `p2.6-11` awaiting the 0.3.1 day-7 acceptance. The one-phase-in-`wip` rule in [plan/CLAUDE.md](../plan/CLAUDE.md) is knowingly suspended until phase 5 is moved |
+| Gate | [Global Architecture Review-Reconciled.md](code-review/Global%20Architecture%20Review-Reconciled.md): §5.1–6 **cleared** — §5.1 p2.5-01, §5.2 p2.5-02, §5.4 p2.5-03, §5.5 p2.5-04, §5.6 p2.5-05 + p2.5-10. §5.7–14 gate Phase 3. **S1-G2 tiers 1, 2 and 3 all met**; **S1-G4 and S1-G5 route 2 are not validated and will not be** |
+| **Next** | the 0.3.1 soak runs to **2026-09-08**; its day-7 acceptance closes `p2.6-11`. Then `p2.6-12` |
+
+## Phase 5 — Web Dashboard, 11/11 `DONE`, still in `wip`
+
+Thirteen screens served from `/web` by `fah-api` on one origin, one binary, no
+second container and no new port. Bundle **128 730 B gzip** (83.8 % of the
+150 KB budget), 114 097 B brotli; arm64 rootfs **14.07 MiB** against the 30 MB
+budget; no Node in the runtime image.
+
+Task 10 verified in two stages —
+[p5-10 review](code-review/phase5/p5-10-phase5-verification-review.md): Stage A
+on the dev box (§1–§12), Stage B read-only against the deployed `0.3.1` (§13).
+**Stage B needed no deploy** — `0.3.1` already is the phase-5 build, so the
+p2.6 dependency the plan assumed never applied.
+
+| Stage B figure | Value |
+| --- | --- |
+| RSS — baseline / dashboard / Live Feed | 52.63 / 53.55 / 55.14 MiB, inside the ≤ 128 MB row |
+| `process_peak_rss` | 141.34 MiB, unchanged at every reading |
+| Argon2id verification, sequential | p50 ~120 ms; peak unmoved |
+| `/health` · `/telemetry` · `/cache`, warm | 0.93 · 0.89 · 1.05 ms; TLS handshake 6.6–7.3 ms dominates a cold call |
+| Certificate on the shipped image | p5-02 SAN set intact, `172.17.0.2` covered, valid to 2027-09-30 |
+
+**Four rows are deferred, not passed** (review §13.7); the first three want the
+next deploy window:
+
+- **Concurrent Argon2id peak RSS** — the risk the `try_acquire` semaphore exists
+  for. Sequential logins say nothing about it.
+- **RSS deltas above the drift floor.** Quiet-state RSS moved 1.46 MiB during
+  the same session with no dashboard attached, so the +0.16 MiB static-serving
+  delta is **not a measurement**. Needs repeated attach/detach cycles.
+- **`/cache` at a second occupancy** — measured at 0.97 % load only; the second
+  point arrives free as the cache fills.
+- **Real-phone leg of the mobile pass** — owner-run; likely needs a
+  LAN→container dstnat that [routeros-traps.md](routeros-traps.md) records as
+  absent.
+
+**`constants.ts` verdict:** no refresh default moves. The measurement clears
+adding a **30 s option** to `/telemetry` and `/cache`, which `p5-05` left
+pending exactly this figure. Not applied — a code change needing its own
+approval.
+
+Surfaces to re-review later, decided when the phase opened: certificate UI and
+per-client interception controls after Phase 3; the **Lists** rule partition
+after Phase 4 (cosmetic rules split a fourth band out of `rules_inactive`).
 
 ## Phase 2.6 — Adaptive DNS Stage 1, in progress
 
@@ -29,9 +72,21 @@ docs. p2.6-08 met S1-G2 tier 1 on the microbench. p2.6-09 passed S1-G3 on the
 injected-failure bench. p2.6-13 built the on-device harness. p2.6-10 ran suite
 S1-N and froze the tier-3 threshold.
 
-**`p2.6-11` is in progress** — deploy done, pre-flip measurements done, soak
-running. Full evidence:
-[p2.6-11 review](code-review/phase2.6/p2.6-11-optin-deploy-soak-review.md).
+**`p2.6-11` is on its third soak.** Full evidence:
+[p2.6-11 review](code-review/phase2.6/p2.6-11-optin-deploy-soak-review.md); the
+repair plan is [plan/resoak-orchestration.md](../plan/resoak-orchestration.md).
+
+| Soak | Build | Outcome |
+| --- | --- | --- |
+| L.3 | 0.2.20 | superseded — the [audit](code-review/phase2.6/phase2.6-audit.md) found F1/F2/F3 and it carries no acceptance |
+| re-soak 1 | 0.3.0 | **terminated at T0+59 h to change the measurement method, not on a gate.** No verdict, no acceptance evidence |
+| re-soak 2 | **0.3.1** | **running**, T0 2026-09-01T07:27:49Z → 2026-09-08. Carries the `adaptive` acceptance, and carried p5-10 Stage B |
+
+Orchestration stages 1–3 are complete: `p5-10` Stage A merged; `c042840`
+shipped conditional list refresh with the 304 short-circuit, the perf-sample
+attribution fields and the gen.py fix; `803f56c` re-ran L.1s on the fixed
+generator, proving the declared workload exact and closing audit F1. **Stage 4
+is the running soak.**
 
 | Item | Result |
 | --- | --- |
@@ -39,9 +94,9 @@ running. Full evidence:
 | M.8 re-run — **closes p2.6-08 F1** | PASS. K = 8 pre-declared; 95 % t-CI of `mean(d_i)` `[−2.385 %, +1.893 %]`; worst pair +4.43 %; control −1.95 % |
 | S1-G2 tier 2 | PASS — `attempts/miss = 1.000000`, zero penalties, zero probes, 6 repetitions |
 | S1-G2 tier 3 | PASS — **+0.036 %** against the frozen 5.00 % |
-| L.1s, the SWR arm | PASS — 114 000 refreshes/repetition, zero dropped, zero failed |
-| S1-G4, S1-G5 | **NOT validated** — see below |
-| L.3 soak | running, 2026-08-25T07:57:02Z → 2026-09-01 |
+| L.1s, the SWR arm | PASS, re-run on the fixed generator — 114 000 refreshes/repetition, zero dropped, zero failed |
+| S1-G4, S1-G5 route 2 | **NOT validated** — see below |
+| G5a, 0.3.1 | **satisfied at T0+4 s** — `dyndns` 304. Do not re-litigate |
 | L.4a — WAN black hole, 1 h | PASS — 2 attempts arm the penalty, then **14 probe carriers, one per window**. Exactly **16 of 3 365 945** queries paid the dead endpoint (~804 ms each); p50 0.996 ms |
 | L.4b — LAN host-unreachable, 1 h | **SPLIT.** Window behaviour **PASS** (14 probes, 14 windows, at a second dead address). Path-failure classification **UNCONFIRMED on this platform** — the unused LAN address produced a **timeout, not `EHOSTUNREACH`** (2 attempts × 800 ms). The connected UDP socket rules out ICMP being swallowed; the router drops silently when its ARP fails |
 | `EHOSTUNREACH` → `PathFailure` | **unit-test coverage only** (p2.6-04, synthetic `io::Error`). No on-device coverage exists. **Deferred to topology-specific validation** — a coverage/topology gap, **not** a Stage 1 implementation failure, and it gates nothing else in p2.6-11 |
@@ -71,9 +126,8 @@ to rediscover:
   fah-env`, `logging=yes`, `start-on-boot=no`, no `memory-high`. Its config and
   API key live in `/kingston/probe/config` and **survive container removal**.
 - Image `kingston/fastadhunter-stage1-f65386f.tar` is already on the store, so
-  L.1/L.2 need no new build. L.3 is different — it is the **production**
-  container with `adaptive` enabled through `FAH__DNS__UPSTREAMS__STRATEGY`,
-  which needs a production deploy and separate approval.
+  L.1/L.2 need no new build. A soak is different — it runs the **production**
+  container, which needs a deploy and separate approval.
 - Mocks are native CoreDNS 1.14.7 on the dev box at `192.168.10.10:5301/5302`,
   `coredns.exe -conf Corefile.<port>`. **Docker port publishing must not be
   used** — its userland UDP relay wedges permanently under load and presents as
@@ -98,12 +152,35 @@ to rediscover:
   L.4a/L.4b are done and the probe is back on its pre-L.4 config, verified
   byte-identical against both the pre-run pull and the committed p2.6-10 copy.
 
+**A phase-5 build on the device does not need the probe.** Stage B was collected
+read-only against the running production container — no deploy, no probe
+container, no router change. Reserve the probe for arms that need their own
+traffic or their own config.
+
 **S1-G2 tier 3 is frozen at 5.00 %** on total upstream attempts, from
 N = 0.1094 % over a pre-declared K = 8 null A/B on the RB5009
 ([p2.6-10 review](code-review/phase2.6/p2.6-10-null-ab-review.md)). `forward`
 p99 measured N = 156.10 % and is **descriptive only** — it is quantized to
 histogram bucket bounds and cannot carry a gate. Do not substitute mean latency
 for it; that was considered and rejected. The metric order is unchanged.
+
+## Reading a soak pull
+
+The 0.3.1 method is frozen in
+[resoak-0.3.1-predeclaration.md](code-review/phase2.6/resoak-0.3.1-predeclaration.md).
+Two rules cost real time when broken:
+
+- **`?fields=` is passed explicitly, 15 fields, `upstreams` excluded.** Omitting
+  it selects `PerfFields::ALL`, whose full-row parse injects an RSS excursion
+  into the series being gated — +6.9 MiB on a gate pull, +938 KB retained on a
+  deliberate fat-path read.
+- **Every extra pull and every dashboard session is logged in §Operational log
+  when taken.** An unlogged pull is a method violation, not an attribution. Only
+  that section may be appended to; gates and thresholds are frozen.
+
+Measured 2026-09-01: the polled endpoints (`/health`, `/telemetry`, `/cache`)
+inject **no** measurable excursion — ~130 calls left RSS and `peak_rss` flat.
+The cost is the fat `/history/perf` path, not the dashboard's own reads.
 
 ## Phase 2.6 — background
 
@@ -147,10 +224,9 @@ for it; that was considered and rejected. The metric order is unchanged.
 
 ## Sequencing
 
-1. **Phase 2.6 — Adaptive Stage 1**: p2.6-01…09 on the dev box **done**;
-   p2.6-13 (harness) and p2.6-10 (null A/B) **done**; p2.6-11 **in progress** —
-   deployed and opted in, tiers 2–3, M.8, L.1s, L.4a and L.4b's window
-   behaviour all passed, soak closes 2026-09-01. Then p2.6-12.
+1. **Phase 2.6 — Adaptive Stage 1**: everything except `p2.6-11`'s acceptance
+   and `p2.6-12` is done. The 0.3.1 soak closes **2026-09-08**; its day-7
+   evaluation against the pre-declared gates closes `p2.6-11`. Then p2.6-12.
    **p2.6-12's precondition is now weaker than the plan assumed.** The default
    flip was gated on every deployment-tier gate passing; S1-G4 and S1-G5 route 2
    closed unvalidated instead. The spec's own narrow rejection route still
@@ -191,10 +267,10 @@ for it; that was considered and rejected. The metric order is unchanged.
   first-healthy-wins, not latency-aware. Making those endpoints observable
   needs deliberate probing of non-selected endpoints, which is Stage 2 work and
   is not designed.
-- **The deployed build is unsoaked.** V6 passed on 0.2.18 over 15.81 h;
-  0.2.19 shipped after it. The delta is a WS event key and a counter on a 10 s
-  poll, so no soak was run — but the soak evidence describes a build that is
-  no longer running.
+- **The deployed build's soak is in flight, and it is the only one that
+  counts.** 0.2.18's soak describes a build several versions old; L.3's and the
+  0.3.0 re-soak's carry no acceptance. Until 2026-09-08 there is **no soak
+  evidence for a build that is running**.
 - **Latency percentiles are unusable as gate metrics at the current histogram
   resolution.** `quantile()` returns a bucket *bound*, over eleven bounds
   spanning 0.1 ms to 100 ms, so in the region a real `forward` p99 occupies the
@@ -212,9 +288,10 @@ for it; that was considered and rejected. The metric order is unchanged.
   `probes == 0` is evidence about refresh traffic against **healthy**
   endpoints only — SWR against a failing endpoint is B.8's scenario, covered
   in-process at 100 stale keys and never on-device at load.
-- **The deployed build has no soak evidence of its own yet.** 0.2.20 is the
-  first build to run `adaptive` in production; its 7-day window closes
-  2026-09-01. Until then the only soak evidence on file describes 0.2.18.
+- **IPv6 client identity inflates the client count.** The dashboard reported
+  **486 active clients** for a household LAN on 2026-09-01, consistent with the
+  privacy-address rotation recorded in `652632b`. Unchased; it affects
+  `top_clients` and the Clients page on the live device.
 - IPv6 upstream forwarding: first on-device evidence 2026-08-22
   (`2606:4700:4700::1111` at index 0, 37 attempts / 0 failures, 0.2.17;
   [p2.5-08 review](code-review/phase2.5/p2.5-08-hygiene-review.md) §Side
@@ -235,7 +312,7 @@ for it; that was considered and rejected. The metric order is unchanged.
 ## Deferrable (reconciled §6)
 
 Type mirrors (`fah_config`/`fah_model`), `CacheStats` identity-DTO; compile
-transient (peak 181.4 MiB deployed, monitored via `peak_rss`); policy
+transient (peak 141.3 MiB on 0.3.1, monitored via `peak_rss`); policy
 fail-open window and name-assignments-on-LRU; SWR no-EDNS truncation tax;
 fah-common scope creep; `blocking_mode` inert; histogram 100 ms ceiling;
 p2.5-10 n1 (test-helper readability in `fah-api`, test-only).
