@@ -186,6 +186,10 @@ impl Window {
         percent(part, self.queries)
     }
 
+    pub fn cache_hit_percent(&self) -> f64 {
+        percent(self.cache_hits, self.queries.saturating_sub(self.blocked))
+    }
+
     /// Record types most-used first. The label set is whatever the window
     /// contains, so the panel hard-codes none of them.
     pub fn types_by_count(&self) -> Vec<(&str, u64)> {

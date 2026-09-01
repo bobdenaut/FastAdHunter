@@ -85,10 +85,8 @@ fn live_rates<'a>(state: &AppState, bar_width: usize) -> Vec<Line<'a>> {
             bar_width,
             theme::BLOCKED,
         ),
-        // "all q" distinguishes this from the header's Hit bar, which divides
-        // by cache lookups instead.
         rate_line(
-            "Hit (all q): ",
+            "Cache Hit:   ",
             live.cache_hit_percent,
             bar_width,
             theme::OK,
@@ -146,9 +144,9 @@ fn window_section<'a>(
         Some(window.percent_of_queries(window.blocked)),
     ));
     lines.push(counter_line(
-        "Cache Hits",
+        "Cache Hit Rate",
         window.cache_hits,
-        Some(window.percent_of_queries(window.cache_hits)),
+        Some(window.cache_hit_percent()),
     ));
     // Whatever record types the window holds, most-used first — the label set
     // is the API's, not a hard-coded A/AAAA/HTTPS.

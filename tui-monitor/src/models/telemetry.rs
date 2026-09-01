@@ -46,9 +46,6 @@ pub struct CacheStats {
 }
 
 impl CacheStats {
-    /// Hits over cache **lookups**. A different denominator from the live
-    /// push's `cache_hit_percent`, which divides by every query — and a
-    /// blocked query never reaches the cache.
     pub fn lookup_hit_percent(&self) -> f64 {
         crate::util::format::percent(self.hits, self.hits + self.misses)
     }

@@ -176,7 +176,10 @@ impl Aggregates {
 
     pub fn cache_hit_percent(&self, now: SystemTime) -> f64 {
         let totals = self.buckets.totals(now);
-        percent(totals.cache_hits, totals.queries)
+        percent(
+            totals.cache_hits,
+            totals.queries.saturating_sub(totals.blocked),
+        )
     }
 
     pub fn top_blocked(&self, n: usize, now: SystemTime) -> Vec<(Arc<str>, u64)> {
@@ -220,7 +223,31 @@ mod tests {
         assert_eq!(aggregates.queries_total(now), 2);
         assert_eq!(aggregates.blocked_total(now), 1);
         assert_eq!(aggregates.blocked_percent(now), 50.0);
+        assert_eq!(aggregates.cache_hit_percent(now), 100.0);
+    }
+
+    #[test]
+    fn cache_hit_percent_counts_only_the_queries_that_reach_the_cache() {
+        let mut aggregates = Aggregates::default();
+        let now = SystemTime::now();
+        for _ in 0..8 {
+            aggregates.record("ads.example.com", &QueryType::A, &block(), false, now);
+        }
+        aggregates.record("example.com", &QueryType::A, &Verdict::Pass, true, now);
+        aggregates.record("example.org", &QueryType::A, &Verdict::Pass, false, now);
+
+        assert_eq!(aggregates.queries_total(now), 10);
+        assert_eq!(aggregates.blocked_percent(now), 80.0);
         assert_eq!(aggregates.cache_hit_percent(now), 50.0);
+    }
+
+    #[test]
+    fn cache_hit_percent_is_zero_when_every_query_was_blocked() {
+        let mut aggregates = Aggregates::default();
+        let now = SystemTime::now();
+        aggregates.record("ads.example.com", &QueryType::A, &block(), false, now);
+
+        assert_eq!(aggregates.cache_hit_percent(now), 0.0);
     }
 
     #[test]

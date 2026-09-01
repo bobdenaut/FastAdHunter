@@ -274,6 +274,15 @@ Aggregated statistics (product data, for users/dashboard).
 }
 ```
 
+`blocked_percent` is of `queries_total`. `cache_hit_percent` is **not** — its
+denominator is `queries_total - blocked_total`, the queries that reached the
+cache at all. The Rule Engine runs before the cache (ADR-0001), so a blocked
+query is never a hit and never a miss; counting it would cap the figure at
+`100 - blocked_percent` and understate the rate by whatever share is blocked.
+Same denominator as `/api/v1/cache`'s `hits / (hits + misses)`, over a rolling
+24 h rather than the process lifetime — the two are the same measure over
+different spans and will not print the same number.
+
 `policies` counts both pipelines, unlike the domain tables which stay DNS-only.
 Clients under no assignment are counted under `default`. Rows with no traffic in
 the window are omitted.

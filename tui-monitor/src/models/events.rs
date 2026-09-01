@@ -174,8 +174,6 @@ pub struct StatsPush {
     pub queries_total: u64,
     pub blocked_total: u64,
     pub blocked_percent: f64,
-    /// Hits over **every** query, blocked ones included — not the cache's own
-    /// hit ratio ([`super::telemetry::CacheStats::lookup_hit_percent`]).
     pub cache_hit_percent: f64,
     pub top_blocked_domains: Vec<DomainCount>,
     pub top_queried_domains: Vec<DomainCount>,
