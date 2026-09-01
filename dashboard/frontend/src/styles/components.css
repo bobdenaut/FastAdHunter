@@ -4602,6 +4602,13 @@ table.t.counters td.bad {
 
 .feed-scroll {
   overflow-x: auto;
+  /* The query context for the Client column's ceiling below. It is this box and
+     not the viewport because the table is what the width has to be read
+     against — between them sit the sidebar, the page gutter and the card, and a
+     breakpoint in viewport pixels would have to carry the sum of the three and
+     be re-derived every time one of them moves. */
+  container-type: inline-size;
+  container-name: feed;
 }
 
 table.feed-table {
@@ -4620,6 +4627,15 @@ table.feed-table {
    the 12.5px the cells use, and every figure below is that times the characters
    it has to hold, plus the 20px of cell padding.
 
+   Only the columns holding a short fixed token stay in px. The four wide text
+   columns are percentages of the table, so narrowing the window shrinks them
+   together and each long value wraps downwards in its own cell. In px they
+   never moved and Domain absorbed the whole loss alone, down to a column
+   narrower than the word in the header above it.
+
+   Each percentage is its old px width at a 1600px table, so nothing moves at
+   the width the figures were measured on.
+
    Domain is deliberately left out. It is the one column with no width, so fixed
    layout hands it whatever the other nine do not claim — the table always ends
    flush with its card, and the slack lands where a long value is read. */
@@ -4634,9 +4650,29 @@ table.feed-table {
 
 /* Client: 39 characters, a full IPv6 address on one line. Sized for IPv4 it was
    half this and every v6 row wrapped to three — an address is one token and
-   reading it across a line break is worse than the width it costs. */
+   reading it across a line break is worse than the width it costs. A narrow
+   window spends that width rather than scrolling for it.
+
+   The cap is 45 characters, 329px. Past a full IPv6 address plus a few there is
+   no client value left to reveal, and on a wide screen the percentage kept
+   buying whitespace with room Domain has a use for.
+
+   It takes a container query because the two shorter spellings do not work
+   under a fixed layout. `max-width` is ignored outright — the column comes from
+   `width` alone. `width: min(18%, 329px)` is worse than ignored: Chrome drops
+   the whole declaration rather than the percentage, and the column falls back
+   to `auto` and shares the slack with Domain equally — the column ends up
+   *wider* than the 18% it was meant to cap. */
 .feed-table th:nth-child(3) {
-  width: 288px;
+  width: 18%;
+}
+
+/* 1830px is where 18% reaches 329px, so the column stops growing without a step
+   at the boundary. */
+@container feed (min-width: 1830px) {
+  .feed-table th:nth-child(3) {
+    width: 329px;
+  }
 }
 
 .feed-table th:nth-child(5) {
@@ -4651,15 +4687,15 @@ table.feed-table {
    `||pagead2.googlesyndication.com^` is exactly that. Trimmed from 40 to give
    the width back to Domain once Client stopped wrapping. */
 .feed-table th:nth-child(7) {
-  width: 240px;
+  width: 15%;
 }
 
 .feed-table th:nth-child(8) {
-  width: 140px;
+  width: 9%;
 }
 
 .feed-table th:nth-child(9) {
-  width: 180px;
+  width: 11%;
 }
 
 .feed-table th:nth-child(10) {
@@ -4667,10 +4703,15 @@ table.feed-table {
 }
 
 /* The row grows downwards instead: a value past its column wraps at any
-   character rather than widening the cell, which fixed layout would ignore. */
+   character rather than widening the cell, which fixed layout would ignore.
+   Every column that narrows with the window is here — a list name and a detail
+   string have no space to break at either, so without this they overflow the
+   cell and run under the column beside them. */
 .feed-domain,
 .feed-table td:nth-child(3),
-.feed-table td:nth-child(7) {
+.feed-table td:nth-child(7),
+.feed-table td:nth-child(8),
+.feed-table td:nth-child(9) {
   overflow-wrap: anywhere;
 }
 
@@ -4691,6 +4732,10 @@ table.feed-table th {
   /* The base rule pads the bottom only, which is what a caption wants. A band
      needs the same room on both sides of the text. */
   padding: 8px 10px;
+  /* The base rule is `nowrap`, written for columns wide enough for their own
+     label. These narrow with the window, so `Domain / path` kept its one line
+     and printed straight over `Cache` beside it. */
+  white-space: normal;
 }
 
 /* The rows carry the sunken ground instead — the block of data reads as one
