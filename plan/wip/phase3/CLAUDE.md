@@ -18,7 +18,7 @@ validate), verification last.
 | # | Task file | Outcome | MODEL | STATUS |
 |---|-----------|---------|-------|--------|
 | 1 | `p3-01-cert-core.md` | CA generation, leaf minting + cache, PEM import, storage (heavy) | Fable | DONE |
-| 2 | `p3-02-certificates-api.md` | `/api/v1/certificates` per reserved namespace; API.md updated | Fable | WAITING |
+| 2 | `p3-02-certificates-api.md` | `/api/v1/certificates` per reserved namespace; API.md updated | Fable | DONE |
 | 3 | `p3-03-sni-filtering.md` | Blocked domains die at SNI — no decryption, works for every client | Fable | WAITING |
 | 4 | `p3-04-tls-interception.md` | Opt-in per-client MITM feeding the Phase 2 HTTP pipeline (heavy) | Fable | WAITING |
 | 5 | `p3-05-dot-doh-listeners.md` | DoT :853 + DoH listeners; Android Private DNS works | Fable | WAITING |
