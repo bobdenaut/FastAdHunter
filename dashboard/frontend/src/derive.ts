@@ -503,3 +503,54 @@ export function windowTrend(
   if (last < first * (1 - tolerance)) return 'falling';
   return 'flat';
 }
+
+/**
+ * The rows a new process starts at, read off a `peak_rss` series.
+ *
+ * `peak_rss` is `getrusage`'s high-water mark and is monotone within one
+ * process lifetime, so a fall is a restart and never a reclaim. Each index
+ * returned is the **first row of the new process**, not the last of the old.
+ *
+ * Two kinds of row carry no peak and are skipped rather than read as a drop:
+ * a nullish one, and a `0`, which means the row predates the field or
+ * `getrusage` was unavailable. Reading either as a fall would invent a restart.
+ *
+ * **This is the single restart model.** The trend chart's marker and the
+ * residual verdict both resolve here, so the chart cannot draw a restart the
+ * verdict ignores.
+ */
+export function restartIndices(
+  peaks: ArrayLike<number | null | undefined>,
+): number[] {
+  const out: number[] = [];
+  let previous: number | null = null;
+  for (let index = 0; index < peaks.length; index += 1) {
+    const value = peaks[index];
+    if (value === null || value === undefined || value === 0) continue;
+    if (previous !== null && value < previous) out.push(index);
+    previous = value;
+  }
+  return out;
+}
+
+/**
+ * The tail of a series that belongs to the newest process.
+ *
+ * **A window spanning a restart describes no process.** `windowTrend` answers a
+ * question about one lifetime — residual that rises and never comes back — so
+ * rows from two binaries make the answer meaningless while leaving it exactly
+ * as confident. A 7 d window over a device redeployed twice that week read
+ * `rising` off three lifetimes stitched together.
+ *
+ * Rows before the last restart are dropped, never spliced. A series with no
+ * restart is returned whole, which is the ordinary case.
+ */
+export function sinceLastRestart<T>(
+  rows: readonly T[],
+  peakOf: (row: T) => number | null | undefined,
+): readonly T[] {
+  const restarts = restartIndices(rows.map(peakOf));
+  if (restarts.length === 0) return rows;
+  const start = restarts[restarts.length - 1];
+  return start === undefined ? rows : rows.slice(start);
+}

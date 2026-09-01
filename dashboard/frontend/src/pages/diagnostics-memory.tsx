@@ -7,7 +7,7 @@ import type { DebugMemory, HistoryPerf, Telemetry } from '../api/types';
 import { EmptyState } from '../components/empty-state';
 import { DataAge } from '../components/data-age';
 import { nowMs } from '../lifecycle/timers';
-import { windowTrend } from '../derive';
+import { sinceLastRestart, windowTrend } from '../derive';
 import { ErrorState } from '../components/error-state';
 import type { PageProps } from '../router/routes';
 import { ContentHeader } from '../shell/content-header';
@@ -231,9 +231,19 @@ export function DiagnosticsMemory(_props: PageProps) {
  * but "stable" on two samples would be a claim the data cannot support. So the
  * third state says exactly what is true — there is not enough history yet — in
  * the neutral tone, which is neither a pass nor a warning.
+ *
+ * **Only the newest process is read.** "Rises and never comes back" is a claim
+ * about one lifetime, so rows before the last restart are dropped rather than
+ * compared against. A 7 d window over a device redeployed twice that week
+ * otherwise reports `rising` off three binaries' data, at full confidence, on
+ * the visit right after a deploy — which is exactly when someone is looking. A
+ * fresh process then has too few rows to have a shape, and says so.
  */
 function ResidualVerdict({ history }: { history: HistoryPerf | null }) {
-  const values = (history?.items ?? [])
+  const values = sinceLastRestart(
+    history?.items ?? [],
+    (item) => item.peak_rss,
+  )
     .map((item) => item.memory?.residual_bytes)
     .filter((value): value is number => value !== undefined);
   // 10 % of the opening level, so a flat series with allocator jitter does not

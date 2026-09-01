@@ -760,6 +760,51 @@ describe('the page', () => {
     expect(pill?.textContent).toContain('residual stable');
   });
 
+  /** A row at minute `index` with its own peak and residual. */
+  function lifetimeRow(index: number, peak: number, residual: number) {
+    const base = perfRow();
+    return {
+      ...base,
+      ts: new Date(Date.UTC(2026, 7, 28, 0, index)).toISOString(),
+      peak_rss: peak,
+      memory: { ...base.memory, residual_bytes: residual },
+    };
+  }
+
+  it('does not read a climb across a restart as this process rising', async () => {
+    // Six rows of the old process climbing 40 -> 52 MiB, then two rows of a
+    // fresh one opening at 18. Judged as one window the thirds say `falling`
+    // and a differently-shaped window would say `rising` — either way it is a
+    // verdict about three binaries. The new process has too few rows to have a
+    // shape, and the badge says so.
+    const items = [
+      ...[40, 44, 48, 50, 51, 52].map((residual, index) =>
+        lifetimeRow(index, 148_000_000, residual * 1_048_576),
+      ),
+      lifetimeRow(6, 89_000_000, 18 * 1_048_576),
+      lifetimeRow(7, 90_000_000, 18 * 1_048_576),
+    ];
+    const dom = await mountPage(MEMORY, { ...HISTORY, items });
+    const pill = dom.querySelector('.memory-verdict');
+    expect(pill?.className).toContain('neutral');
+    expect(pill?.textContent).toContain('not enough history');
+  });
+
+  it('still reads a climb inside one lifetime as rising', async () => {
+    // The guard must not swallow the signal it sits beside: past the restart
+    // the new process has six rows of its own and a real climb in them shows.
+    const items = [
+      lifetimeRow(0, 148_000_000, 40 * 1_048_576),
+      ...[18, 18, 19, 26, 27, 28].map((residual, index) =>
+        lifetimeRow(index + 1, 89_000_000 + index, residual * 1_048_576),
+      ),
+    ];
+    const dom = await mountPage(MEMORY, { ...HISTORY, items });
+    const pill = dom.querySelector('.memory-verdict');
+    expect(pill?.className).toContain('warn');
+    expect(pill?.textContent).toContain('residual rising');
+  });
+
   it('states the unit trap the two budgets create', async () => {
     const dom = await mountPage();
     const text = (dom.textContent ?? '').replace(/\s+/g, ' ');

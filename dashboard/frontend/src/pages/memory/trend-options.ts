@@ -2,6 +2,7 @@ import type uPlot from 'uplot';
 import type { ChartTheme } from '../../charts/theme';
 import { loadedUPlot } from '../../charts/runtime';
 import { formatMiB } from '../../charts/format';
+import { restartIndices } from '../../derive';
 import {
   STEADY_STATE_BUDGET,
   WATCH_THRESHOLD,
@@ -261,10 +262,9 @@ function stateStroke(
 /**
  * The restart rows, read off the plotted peak series (KTD7).
  *
- * `peak_rss` is `getrusage`'s high-water mark and is monotone within one
- * process lifetime, so a fall is a restart and never a reclaim. `null` rows are
- * skipped rather than read as a drop: they mean the row predates the field or
- * `getrusage` was unavailable, not that the peak was lower.
+ * The rule itself lives in `restartIndices` — a fall in the high-water mark —
+ * and is shared with the residual verdict so the marker and the verdict cannot
+ * disagree about where a process ended.
  *
  * **It reads `u.data`, not the page's `items`, on purpose.** The annotation has
  * to mark the line that is actually drawn. Deriving it from `items` and passing
@@ -276,15 +276,7 @@ function stateStroke(
 function restartsOf(u: uPlot): number[] {
   const peaks = u.data[SERIES.peak];
   if (peaks === undefined) return [];
-  const out: number[] = [];
-  let previous: number | null = null;
-  for (let index = 0; index < peaks.length; index += 1) {
-    const value = peaks[index] as number | null | undefined;
-    if (value === null || value === undefined) continue;
-    if (previous !== null && value < previous) out.push(index);
-    previous = value;
-  }
-  return out;
+  return restartIndices(peaks as ArrayLike<number | null | undefined>);
 }
 
 /** Local midnight after `seconds`, in epoch seconds. */

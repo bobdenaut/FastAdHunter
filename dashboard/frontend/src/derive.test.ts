@@ -19,7 +19,9 @@ import {
   passDelta,
   qpsStats,
   queryTypeSlices,
+  restartIndices,
   shareOfMax,
+  sinceLastRestart,
   sliceShare,
   sumOver,
   sumPerType,
@@ -709,5 +711,117 @@ describe('windowTrend (D14)', () => {
 
   it('reads a fall past the tolerance as falling', () => {
     expect(windowTrend([130, 130, 130, 100, 100, 100], 0.1)).toBe('falling');
+  });
+});
+
+describe('restartIndices', () => {
+  it('finds nothing in a monotone peak series', () => {
+    expect(restartIndices([10, 10, 12, 12, 15])).toEqual([]);
+  });
+
+  it('marks the first row of the new process, not the last of the old', () => {
+    // 148 -> 89 is the deploy; index 3 is the new process's opening row.
+    expect(restartIndices([120, 140, 148, 89, 93])).toEqual([3]);
+  });
+
+  it('finds every restart in a window that spans several', () => {
+    expect(restartIndices([100, 120, 60, 80, 40, 50])).toEqual([2, 4]);
+  });
+
+  it('skips gap rows instead of reading them as a fall', () => {
+    // A `0` or a nullish peak means the row predates the field or `getrusage`
+    // was unavailable. Either read as a drop would invent a restart, and the
+    // row after it would invent a second one on the way back up.
+    expect(restartIndices([100, 0, 120])).toEqual([]);
+    expect(restartIndices([100, null, 120])).toEqual([]);
+    expect(restartIndices([100, undefined, 120])).toEqual([]);
+    // The real restart on the far side of a gap is still found.
+    expect(restartIndices([100, 0, 120, null, 60])).toEqual([4]);
+  });
+
+  it('reads a leading gap as no baseline rather than a restart', () => {
+    expect(restartIndices([0, null, 50, 60])).toEqual([]);
+  });
+
+  it('has nothing to say about an empty series', () => {
+    expect(restartIndices([])).toEqual([]);
+  });
+});
+
+describe('sinceLastRestart', () => {
+  type Row = { peak_rss?: number; memory: { residual_bytes: number } };
+  // `exactOptionalPropertyTypes` is on: a gap row omits the key rather than
+  // setting it to undefined, which is also how a real response carries it.
+  const row = (peak: number | null | undefined, residual: number): Row =>
+    peak === null || peak === undefined
+      ? { memory: { residual_bytes: residual } }
+      : { peak_rss: peak, memory: { residual_bytes: residual } };
+  const peakOf = (r: Row) => r.peak_rss;
+  const residual = (rows: readonly Row[]) =>
+    rows.map((r) => r.memory.residual_bytes);
+
+  it('returns the whole series when no restart is in it', () => {
+    const rows = [row(10, 1), row(12, 2), row(12, 3)];
+    expect(sinceLastRestart(rows, peakOf)).toEqual(rows);
+  });
+
+  it('drops everything before the restart, keeping the new process', () => {
+    const rows = [row(148, 40), row(148, 44), row(89, 18), row(90, 19)];
+    expect(sinceLastRestart(rows, peakOf)).toEqual([rows[2], rows[3]]);
+  });
+
+  it('keeps only the newest process when the window spans two restarts', () => {
+    const rows = [row(100, 9), row(60, 5), row(70, 6), row(30, 2), row(31, 3)];
+    expect(sinceLastRestart(rows, peakOf)).toEqual([rows[3], rows[4]]);
+  });
+
+  it('returns the restart row alone when it is the newest row', () => {
+    const rows = [row(148, 40), row(89, 18)];
+    expect(sinceLastRestart(rows, peakOf)).toEqual([rows[1]]);
+  });
+
+  it('leaves an empty series empty', () => {
+    expect(sinceLastRestart([] as readonly Row[], peakOf)).toEqual([]);
+  });
+
+  it('does not cut the window on a gap row', () => {
+    const rows = [row(10, 1), row(null, 2), row(12, 3)];
+    expect(sinceLastRestart(rows, peakOf)).toEqual(rows);
+  });
+
+  it('feeds windowTrend one lifetime, not the splice of two', () => {
+    // The defect this exists for: residual climbs 40 -> 52 across the old
+    // process, the new one opens at 18 and holds. Over the raw window the
+    // thirds compare 40-ish against 18-ish and the verdict is confident and
+    // wrong; over the segment there are too few rows to have a shape at all.
+    const rows = [
+      row(148, 40),
+      row(148, 44),
+      row(148, 48),
+      row(148, 50),
+      row(148, 51),
+      row(148, 52),
+      row(89, 18),
+      row(90, 18),
+    ];
+    expect(windowTrend(residual(rows), 0.1)).toBe('falling');
+    expect(windowTrend(residual(sinceLastRestart(rows, peakOf)), 0.1)).toBeNull();
+  });
+
+  it('lets a genuine climb inside one lifetime still read as rising', () => {
+    // The guard must not swallow the signal it was added beside: once the new
+    // process has rows of its own, a real climb in them still shows.
+    const rows = [
+      row(148, 40),
+      row(89, 18),
+      row(90, 18),
+      row(90, 19),
+      row(91, 26),
+      row(91, 27),
+      row(91, 28),
+    ];
+    const values = residual(sinceLastRestart(rows, peakOf));
+    expect(values).toHaveLength(6);
+    expect(windowTrend(values, 0.1)).toBe('rising');
   });
 });
