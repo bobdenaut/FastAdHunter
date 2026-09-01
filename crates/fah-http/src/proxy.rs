@@ -80,6 +80,7 @@ pub struct ProxyCounters {
     pub upstream_failures: AtomicU64,
     /// Connections that spoke something other than HTTP on the proxy port.
     pub non_http: AtomicU64,
+    pub non_tls: AtomicU64,
     /// Requests refused by a filtering rule (p2-04).
     pub blocked: AtomicU64,
     /// Events the bounded channel could not take. Mirrors the DNS pipeline's
@@ -97,6 +98,7 @@ pub struct ProxyStats {
     pub resolve_failures: u64,
     pub upstream_failures: u64,
     pub non_http: u64,
+    pub non_tls: u64,
     pub blocked: u64,
     pub dropped_events: u64,
 }
@@ -110,6 +112,7 @@ impl ProxyCounters {
             resolve_failures: self.resolve_failures.load(Ordering::Relaxed),
             upstream_failures: self.upstream_failures.load(Ordering::Relaxed),
             non_http: self.non_http.load(Ordering::Relaxed),
+            non_tls: self.non_tls.load(Ordering::Relaxed),
             blocked: self.blocked.load(Ordering::Relaxed),
             dropped_events: self.dropped_events.load(Ordering::Relaxed),
         }

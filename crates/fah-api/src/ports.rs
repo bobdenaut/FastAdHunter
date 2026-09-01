@@ -231,7 +231,7 @@ impl QueryRecord {
     pub fn duration(&self) -> Duration {
         match &self.event {
             fah_model::Event::Dns(event) => event.duration,
-            fah_model::Event::Http(event) => event.duration,
+            fah_model::Event::Http(event) | fah_model::Event::HttpsSni(event) => event.duration,
         }
     }
 
@@ -241,13 +241,13 @@ impl QueryRecord {
     pub fn as_dns(&self) -> Option<&QueryEvent> {
         match &self.event {
             fah_model::Event::Dns(event) => Some(event),
-            fah_model::Event::Http(_) => None,
+            fah_model::Event::Http(_) | fah_model::Event::HttpsSni(_) => None,
         }
     }
 
     pub fn as_http(&self) -> Option<&fah_model::RequestEvent> {
         match &self.event {
-            fah_model::Event::Http(event) => Some(event),
+            fah_model::Event::Http(event) | fah_model::Event::HttpsSni(event) => Some(event),
             fah_model::Event::Dns(_) => None,
         }
     }

@@ -4,6 +4,7 @@ mod egress;
 mod engine;
 mod history;
 mod http;
+mod https;
 mod log;
 mod policy;
 mod rules;
@@ -18,6 +19,7 @@ pub use egress::EgressConfig;
 pub use engine::{EngineConfig, EngineMode};
 pub use history::HistoryConfig;
 pub use http::{HttpConfig, HttpListenConfig};
+pub use https::{HttpsConfig, HttpsListenConfig, NoSni, SniConfig};
 pub use log::{LogConfig, LogFormat, LogLevel};
 pub use policy::{parse_days, parse_time_of_day, AssignmentConfig, PolicyConfig, ScheduleConfig};
 pub use rules::{RuleListConfig, RulesConfig};
@@ -39,6 +41,8 @@ pub struct Config {
     pub dns: DnsConfig,
     /// Inert unless `engine.mode` includes `http` (Phase 2).
     pub http: HttpConfig,
+    #[serde(default)]
+    pub https: HttpsConfig,
     /// Where the proxies may connect. Shared by HTTP and (Phase 3) HTTPS, so
     /// it is a section of its own rather than a key under `[http]`.
     pub egress: EgressConfig,

@@ -38,6 +38,11 @@ The whole `[http]` section is **boot** for the same reason, including
 sized once when the listener binds. Promoting a key means giving it a live
 consumer first — never relabelling it and hoping.
 
+The whole `[https]` section is **boot** on the same terms: the listener and its
+semaphore are built once at bind, and the two timeouts become per-connection
+deadlines held by the proxy handle. `[https.sni] no_sni` is read per connection
+but from the boot-time handle, so changing it needs a restart like the rest.
+
 `[schedule]` and `[[policies]]` became **runtime** in p2-06, through their own
 endpoints (API.md §Policies) rather than `POST /api/v1/config`, which rejects
 `policies` with 422 for the same one-owner reason `[[rules.lists]]` is rejected.
@@ -171,10 +176,62 @@ header_timeout_ms = 10000     # boot    — slowloris bound: deadline for a clie
                               #           Also caps how long a keep-alive
                               #           connection may sit between requests
 
+# ─── HTTPS SNI filtering (Phase 3) ─────────────────────────────────────
+# Inert unless [engine] mode is "dns+http+https". Nothing on this path
+# decrypts: the ClientHello is read, the SNI is judged, and the connection is
+# then closed or spliced byte-for-byte (SECURITY.md).
+[https.listen]
+address = "::"                # boot    — as [http.listen]: "::" is one
+                              #           dual-stack socket, IPV6_V6ONLY off
+port = 8444                   # boot    — NOT 443 (privileged, ADR-0004) and
+                              #           NOT 8443, which [api] port already
+                              #           uses — two listeners on one default
+                              #           port would make dns+http+https fail
+                              #           to boot on an untouched config. The
+                              #           router dst-nats 443 here. A value equal
+                              #           to [api], [http.listen] or [dns.listen]
+                              #           port is rejected at load, by name
+
+[https]
+max_connections = 1024        # boot    — ceiling on concurrent spliced
+                              #           sessions; the accept loop is the same
+                              #           one [http] uses, permit before accept.
+                              #           Splice memory is 2 x 16 KiB per
+                              #           session, so this key is the bound on
+                              #           it (~32 MB at the default)
+hello_timeout_ms = 10000      # boot    — deadline for a client to finish
+                              #           sending its ClientHello, and the
+                              #           deadline on the upstream connect. A
+                              #           blackholed destination must not hold
+                              #           a max_connections permit for the
+                              #           kernel's SYN-retry window. 0 is
+                              #           rejected at load
+idle_timeout_ms = 60000       # boot    — a spliced session with no activity in
+                              #           BOTH directions for this long is
+                              #           closed (one session-wide deadline, not
+                              #           one per direction). Long-lived idle
+                              #           connections (WebSocket over TLS) are
+                              #           cut and must reconnect; raise it if
+                              #           that matters. 0 is rejected at load
+
+[https.sni]
+no_sni = "pass"               # boot    — "pass" | "block". A ClientHello with
+                              #           no plaintext SNI (or an ECH-encrypted
+                              #           one) is CLOSED EITHER WAY: the
+                              #           container cannot recover the
+                              #           pre-dst-nat destination
+                              #           (docs/routeros-traps.md — measured
+                              #           SO_ORIGINAL_DST = ENOENT), so there is
+                              #           nothing to splice to. This key decides
+                              #           only how that closed connection is
+                              #           classified in events and metrics
+
 # ─── Egress (where the proxies may connect) ────────────────────────────
 # NOT under [http] on purpose: Phase 3's HTTPS path derives its destination
 # from SNI — an equally client-controlled claim — and judges it with these same
-# rules (CONTEXT.md §Egress Guard).
+# rules (CONTEXT.md §Egress Guard). Since p3-03 the SNI path uses them at port
+# 443 — the SNI hostname is the destination claim, judged after resolution
+# exactly as a Host header is.
 #
 # The router dst-nats port 80 into the container and RouterOS exposes no
 # SO_ORIGINAL_DST, so the only statement of where a client meant to go is a

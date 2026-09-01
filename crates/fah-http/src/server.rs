@@ -6,13 +6,14 @@
 //! `IPV6_V6ONLY` — an HTTP listener that quietly refused IPv6 while DNS served
 //! it would be invisible until a v6-only client failed.
 
+use std::future::Future;
 use std::io;
 use std::net::SocketAddr;
 use std::sync::Arc;
 
 use fah_common::listen::{bind_error, bind_tcp, listen_addr};
 use fah_config::HttpConfig;
-use tokio::net::TcpListener;
+use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::Semaphore;
 use tokio::task::JoinHandle;
 
@@ -65,7 +66,14 @@ impl Server {
             return;
         };
         let permits = Arc::clone(&self.permits);
-        self.handle = Some(tokio::spawn(accept_loop(listener, permits, proxy)));
+        self.handle = Some(tokio::spawn(accept_loop(
+            listener,
+            permits,
+            move |stream, peer| {
+                let proxy = Arc::clone(&proxy);
+                async move { proxy.serve_connection(stream, peer).await }
+            },
+        )));
     }
 
     pub fn local_addr(&self) -> SocketAddr {
@@ -89,30 +97,28 @@ impl Server {
 ///
 /// Since p2-02 the permit is held for the whole transfer rather than released
 /// immediately, so the ceiling now genuinely binds — the gap p2-01 documented.
-async fn accept_loop(listener: TcpListener, permits: Arc<Semaphore>, proxy: Arc<Proxy>) {
+pub(crate) async fn accept_loop<F, Fut>(listener: TcpListener, permits: Arc<Semaphore>, on_conn: F)
+where
+    F: Fn(TcpStream, SocketAddr) -> Fut + Clone + Send + 'static,
+    Fut: Future<Output = ()> + Send + 'static,
+{
     loop {
         let Ok(permit) = Arc::clone(&permits).acquire_owned().await else {
-            // Semaphore closed — only on shutdown.
             return;
         };
         match listener.accept().await {
             Ok((stream, peer)) => {
-                let proxy = Arc::clone(&proxy);
+                let on_conn = on_conn.clone();
                 tokio::spawn(async move {
                     let _permit = permit;
-                    // Proxied writes are small and latency-visible; Nagle would
-                    // hold a request head waiting for more to send.
                     if let Err(err) = stream.set_nodelay(true) {
                         tracing::debug!(%peer, error = %err, "could not set TCP_NODELAY");
                     }
-                    proxy.serve_connection(stream, peer).await;
+                    on_conn(stream, peer).await;
                 });
             }
             Err(err) => {
-                // Per-connection failures (a peer that vanished between the
-                // SYN and the accept, a momentary fd exhaustion) must not kill
-                // the listener — the DNS TCP loop takes the same line.
-                tracing::debug!(error = %err, "HTTP accept failed");
+                tracing::debug!(error = %err, "accept failed");
             }
         }
     }

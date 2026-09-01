@@ -390,6 +390,14 @@ impl Engine {
             None
         };
 
+        let mut https = if https_enabled(config.engine.mode) {
+            let server = fah_http::TlsServer::bind(&config.https).await?;
+            tracing::info!(addr = %server.local_addr(), "HTTPS SNI listener bound");
+            Some(server)
+        } else {
+            None
+        };
+
         // The proxy itself (p2-02). Built here, before `config` is moved into
         // the ConfigStore below, and only in a mode that serves HTTP — the
         // upstream connection pool should not exist in `dns` mode.
@@ -401,6 +409,17 @@ impl Engine {
                     .with_rules(Arc::clone(&rules) as Arc<dyn fah_http::Ruleset>)
                     // The same snapshot the DNS pipeline reads, so a client is
                     // judged under one policy by both.
+                    .with_policies(Arc::clone(&policy_state))
+                    .with_events(events_tx.clone()),
+            ))
+        } else {
+            None
+        };
+
+        let tls_proxy = if https.is_some() {
+            Some(Arc::new(
+                build_tls_proxy(&config, upstreams.clone())?
+                    .with_rules(Arc::clone(&rules) as Arc<dyn fah_http::Ruleset>)
                     .with_policies(Arc::clone(&policy_state))
                     .with_events(events_tx.clone()),
             ))
@@ -526,6 +545,9 @@ impl Engine {
         if let (Some(http), Some(proxy)) = (http.as_mut(), http_proxy.as_ref()) {
             http.serve(Arc::clone(proxy));
         }
+        if let (Some(https), Some(proxy)) = (https.as_mut(), tls_proxy.as_ref()) {
+            https.serve(Arc::clone(proxy));
+        }
 
         // ── The edges between the siblings ──
         let mut tasks = vec![
@@ -551,6 +573,7 @@ impl Engine {
                 Arc::clone(&pipeline),
                 upstreams,
                 http_proxy.as_ref().map(|proxy| proxy.counters()),
+                tls_proxy.as_ref().map(|proxy| proxy.counters()),
             ),
             spawn_policy_ticker(policy_state, rules, Arc::clone(&stats)),
         ];
@@ -608,6 +631,13 @@ fn http_enabled(mode: fah_config::EngineMode) -> bool {
     }
 }
 
+fn https_enabled(mode: fah_config::EngineMode) -> bool {
+    match mode {
+        fah_config::EngineMode::Dns | fah_config::EngineMode::DnsHttp => false,
+        fah_config::EngineMode::DnsHttpHttps => true,
+    }
+}
+
 /// The port a transparent HTTP proxy is the intercepting party for.
 ///
 /// Structural, not configurable: the router dst-nats the LAN's port 80 to the
@@ -616,6 +646,8 @@ fn http_enabled(mode: fah_config::EngineMode) -> bool {
 /// port — `[http.listen] port`, 8080 — is a different number and irrelevant
 /// here. Phase 3's HTTPS path uses 443 the same way.
 const HTTP_ORIGIN_PORT: u16 = 80;
+
+const HTTPS_ORIGIN_PORT: u16 = 443;
 
 /// Idle upstream connections kept per origin. Bounded so the pool is a function
 /// of configuration rather than of how many sites the LAN visits (hard rule 4);
@@ -630,10 +662,9 @@ const MAX_IDLE_UPSTREAMS_PER_HOST: usize = 8;
 /// that crate is L1 and cannot import `fah_common::egress`, so it can only
 /// check the shape. This is the authoritative parse, and it fails startup
 /// rather than degrading to a policy the operator did not write.
-fn build_http_proxy(
+fn egress_exceptions(
     config: &fah_config::Config,
-    upstreams: fah_dns::UpstreamPool,
-) -> Result<fah_http::Proxy, Box<dyn std::error::Error>> {
+) -> Result<Vec<fah_common::egress::AllowedNet>, Box<dyn std::error::Error>> {
     let exceptions = config
         .egress
         .allow_destinations
@@ -645,13 +676,33 @@ fn build_http_proxy(
         })
         .collect::<Result<Vec<_>, _>>()?;
     if !exceptions.is_empty() {
-        // Worth a line at startup: these are deliberate holes in the guard that
-        // stops the proxy being an open relay into the LAN.
         tracing::info!(
             count = exceptions.len(),
             "egress allow-list active — private destinations permitted"
         );
     }
+    Ok(exceptions)
+}
+
+fn build_tls_proxy(
+    config: &fah_config::Config,
+    upstreams: fah_dns::UpstreamPool,
+) -> Result<fah_http::TlsProxy, Box<dyn std::error::Error>> {
+    Ok(fah_http::TlsProxy::new(
+        Arc::new(adapters::UpstreamResolver::new(upstreams)),
+        fah_common::egress::DestinationPolicy::new(HTTPS_ORIGIN_PORT, egress_exceptions(config)?),
+        HTTPS_ORIGIN_PORT,
+        Duration::from_millis(config.https.hello_timeout_ms),
+        Duration::from_millis(config.https.idle_timeout_ms),
+        config.https.sni.no_sni,
+    ))
+}
+
+fn build_http_proxy(
+    config: &fah_config::Config,
+    upstreams: fah_dns::UpstreamPool,
+) -> Result<fah_http::Proxy, Box<dyn std::error::Error>> {
+    let exceptions = egress_exceptions(config)?;
 
     Ok(fah_http::Proxy::new(
         Arc::new(adapters::UpstreamResolver::new(upstreams)),
@@ -683,13 +734,17 @@ fn spawn_event_fanout(
             let client_ip = event.client_ip();
             match &event {
                 fah_model::Event::Dns(query) => metrics.record(query),
-                fah_model::Event::Http(request) => metrics.record_http(request),
+                fah_model::Event::Http(request) | fah_model::Event::HttpsSni(request) => {
+                    metrics.record_http(request)
+                }
             }
             let publish = hub.has_query_subscribers();
             let for_hub = publish.then(|| event.clone());
             match event {
                 fah_model::Event::Dns(query) => stats.record(*query),
-                fah_model::Event::Http(request) => stats.record_http(*request),
+                fah_model::Event::Http(request) | fah_model::Event::HttpsSni(request) => {
+                    stats.record_http(*request)
+                }
             }
             if let Some(event) = for_hub {
                 // Resolved after `record` so a first-ever client already
@@ -713,6 +768,7 @@ fn spawn_telemetry_poll(
     pipeline: Arc<fah_dns::Pipeline<fah_dns::UpstreamPool>>,
     upstreams: fah_dns::UpstreamPool,
     proxy_counters: Option<Arc<fah_http::ProxyCounters>>,
+    tls_proxy_counters: Option<Arc<fah_http::ProxyCounters>>,
 ) -> tokio::task::JoinHandle<()> {
     tokio::spawn(async move {
         let mut ticker = tokio::time::interval(TELEMETRY_POLL);
@@ -721,10 +777,14 @@ fn spawn_telemetry_poll(
             ticker.tick().await;
 
             metrics.set_dropped_events(pipeline.dropped_events());
-            if let Some(counters) = proxy_counters.as_ref() {
+            let http_refused = proxy_counters.as_ref().map_or(0, |counters| {
                 let proxy = counters.snapshot();
-                metrics.set_requests_refused(proxy.refused_claim + proxy.refused_destination);
-            }
+                proxy.refused_claim + proxy.refused_destination
+            });
+            let tls_refused = tls_proxy_counters
+                .as_ref()
+                .map_or(0, |counters| counters.snapshot().refused_destination);
+            metrics.set_requests_refused(http_refused + tls_refused);
             // Field-by-field rather than a shared type: `fah-dns` and
             // `fah-metrics` are L3 siblings and must not import each other
             // (ARCHITECTURE.md §Dependency Layering), so the binary is the one
@@ -1139,6 +1199,13 @@ mod tests {
         assert!(!http_enabled(fah_config::EngineMode::Dns));
         assert!(http_enabled(fah_config::EngineMode::DnsHttp));
         assert!(http_enabled(fah_config::EngineMode::DnsHttpHttps));
+    }
+
+    #[test]
+    fn https_starts_only_in_the_mode_that_names_it() {
+        assert!(!https_enabled(fah_config::EngineMode::Dns));
+        assert!(!https_enabled(fah_config::EngineMode::DnsHttp));
+        assert!(https_enabled(fah_config::EngineMode::DnsHttpHttps));
     }
 
     fn upstreams(servers: usize, timeout_ms: u32) -> fah_config::DnsUpstreamsConfig {

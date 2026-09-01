@@ -94,7 +94,10 @@ p1-08 and widening it would silently redefine every figure built on it.
 any upstream contact — an unusable `Host` (`[egress] allow_ip_literal_hosts`)
 or a resolved destination outside `[egress]`. It is counted on the proxy, not
 on the event stream, so it is not part of `pass + allow + block`; it is the
-only signal of a LAN client probing, now that refusals log at `debug`.
+only signal of a LAN client probing, now that refusals log at `debug`. Since
+p3-03 it also includes the HTTPS SNI listener's refused destinations. That
+listener keeps its own counter set, where `requests` means accepted
+*connections* (garbage included), not requests; it is not published separately.
 
 **Compatibility contract.** New fields may be added; existing fields must not
 change meaning or units. Figures that may change with the implementation live
@@ -976,7 +979,8 @@ Filtering is server-side and happens before the send. A subscription that omits
 WebSocket `Ping` on the same ~2 s cadence instead — the traffic that lets a peer
 which vanished without closing be detected.
 
-A `query` event carries both pipelines (p2-04), tagged by `kind`:
+A `query` event carries all three pipelines, tagged by `kind` — `dns`, `http`
+or `https-sni` (p3-03):
 
 ```json
 {
@@ -1004,6 +1008,17 @@ Every key is always **present**, so a client never has to tell "absent" from
 "not applicable": a DNS event leaves the HTTP-only fields `null` (`method`,
 `path`, `resource_type`, `status`, `bytes`), and an HTTP event leaves `qtype`
 `null` and `cached` `false`.
+
+An `https-sni` item is an HTTPS connection judged at the TLS ClientHello, with
+no decryption. It fills the HTTP-shaped fields it can and empties the rest:
+`domain` is the SNI hostname (empty when the hello carried none), `method` and
+`path` are `""`, `resource_type` is `"unknown"`, `status` is `0` — the outcome
+is connection-level, there is no HTTP status — `bytes` is the upstream→client
+total of the spliced session however it ended (clean close, error or idle
+deadline), `0` on a block, a refused destination or a failed connect, and
+`duration_ms` is ClientHello-to-upstream-connected (the request-latency
+analogue), not the session length. There is no per-kind filter on this
+socket; a client selects `https-sni` items by the `kind` field.
 
 One exception (p2.5-10): `endpoint` is **present only** on a DNS item that an
 upstream answered — the index of that server in `[dns.upstreams.servers]`

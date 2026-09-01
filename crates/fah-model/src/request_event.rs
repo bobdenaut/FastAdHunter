@@ -94,6 +94,8 @@ impl RequestEvent {
 pub enum Event {
     Dns(Box<QueryEvent>),
     Http(Box<RequestEvent>),
+    #[serde(rename = "https-sni")]
+    HttpsSni(Box<RequestEvent>),
 }
 
 impl Event {
@@ -105,6 +107,10 @@ impl Event {
         Self::Http(Box::new(event))
     }
 
+    pub fn https_sni(event: RequestEvent) -> Self {
+        Self::HttpsSni(Box::new(event))
+    }
+
     /// The stable `dns` / `http` discriminator the API publishes. A method
     /// rather than a derived string so the surfaces using it can never
     /// disagree about spelling.
@@ -112,27 +118,28 @@ impl Event {
         match self {
             Event::Dns(_) => EventKind::Dns,
             Event::Http(_) => EventKind::Http,
+            Event::HttpsSni(_) => EventKind::HttpsSni,
         }
     }
 
     pub fn client_ip(&self) -> IpAddr {
         match self {
             Event::Dns(event) => event.query.client_ip,
-            Event::Http(event) => event.request.client_ip,
+            Event::Http(event) | Event::HttpsSni(event) => event.request.client_ip,
         }
     }
 
     pub fn timestamp(&self) -> SystemTime {
         match self {
             Event::Dns(event) => event.query.timestamp,
-            Event::Http(event) => event.request.timestamp,
+            Event::Http(event) | Event::HttpsSni(event) => event.request.timestamp,
         }
     }
 
     pub fn verdict(&self) -> &Verdict {
         match self {
             Event::Dns(event) => &event.verdict,
-            Event::Http(event) => &event.verdict,
+            Event::Http(event) | Event::HttpsSni(event) => &event.verdict,
         }
     }
 
@@ -140,7 +147,7 @@ impl Event {
     pub fn policy(&self) -> Option<&str> {
         match self {
             Event::Dns(event) => event.policy.as_deref(),
-            Event::Http(event) => event.policy.as_deref(),
+            Event::Http(event) | Event::HttpsSni(event) => event.policy.as_deref(),
         }
     }
 }
@@ -152,6 +159,8 @@ impl Event {
 pub enum EventKind {
     Dns,
     Http,
+    #[serde(rename = "https-sni")]
+    HttpsSni,
 }
 
 impl EventKind {
@@ -161,6 +170,7 @@ impl EventKind {
         match self {
             EventKind::Dns => "dns",
             EventKind::Http => "http",
+            EventKind::HttpsSni => "https-sni",
         }
     }
 }
@@ -178,6 +188,7 @@ impl std::str::FromStr for EventKind {
         match text {
             "dns" => Ok(EventKind::Dns),
             "http" => Ok(EventKind::Http),
+            "https-sni" => Ok(EventKind::HttpsSni),
             _ => Err(()),
         }
     }
@@ -234,7 +245,22 @@ mod tests {
             200,
             0,
         ));
-        for event in [dns, http] {
+        let sni = Event::https_sni(RequestEvent::new(
+            Request {
+                path: String::new(),
+                method: String::new(),
+                resource_type: ResourceType::Unknown,
+                ..request()
+            },
+            Verdict::Pass,
+            Duration::from_millis(120),
+            0,
+            8192,
+        ));
+        assert!(serde_json::to_string(&sni)
+            .unwrap()
+            .contains("\"kind\":\"https-sni\""));
+        for event in [dns, http, sni] {
             let json = serde_json::to_string(&event).unwrap();
             assert_eq!(serde_json::from_str::<Event>(&json).unwrap(), event);
         }
@@ -244,7 +270,11 @@ mod tests {
     /// spelling, asserted, so the two cannot drift.
     #[test]
     fn event_kind_spelling_is_stable_and_round_trips() {
-        for (kind, text) in [(EventKind::Dns, "dns"), (EventKind::Http, "http")] {
+        for (kind, text) in [
+            (EventKind::Dns, "dns"),
+            (EventKind::Http, "http"),
+            (EventKind::HttpsSni, "https-sni"),
+        ] {
             assert_eq!(kind.as_str(), text);
             assert_eq!(kind.to_string(), text);
             assert_eq!(text.parse::<EventKind>(), Ok(kind));

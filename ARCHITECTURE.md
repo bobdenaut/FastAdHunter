@@ -93,6 +93,17 @@ must not have it (ADR-0004).
   anything else on the host and still complete a `connect()`, which a client
   cannot tell from a hung proxy.
 
+### HTTPS SNI (Phase 3)
+
+- TCP on `[https.listen]`, default **8444** — not 443 (privileged) and not 8443
+  (`[api] port`; a shared default would make `dns+http+https` fail to boot, so a
+  config setting them equal is rejected at load). The router dst-nats 443 here.
+- Bound **only** when `engine.mode` is `dns+http+https`, on the same reasoning
+  as HTTP above.
+- The accept loop is **the same code** as HTTP's: `server::accept_loop` is
+  generic over the per-connection handler, so the permit-before-accept ceiling
+  cannot drift between the two listeners.
+
 ## Upstreams
 
 - Protocols: plain UDP/53 with TCP fallback, DoT, DoH (Hickory + rustls).
@@ -174,6 +185,16 @@ Pipeline properties:
 Only unencrypted traffic is in scope for Phase 2. Most of the web is HTTPS, so
 the real coverage arrives with Phase 3's TLS termination — which reuses this
 same request model, and this same pipeline, rather than adding a third one.
+
+**HTTPS is close-or-splice, not a pipeline (p3-03).** `TlsProxy` reads the
+ClientHello under a deadline, extracts the SNI, and takes a verdict through
+`Matcher::lookup_host_in` — the domain tier only, since a nameless connection
+has no URL and no resource type. A block returns before any resolution or
+connect, so it costs zero bytes upstream. A pass resolves the SNI host, judges
+the resolved address with the shared egress guard, forwards the buffered
+ClientHello verbatim and then relays both directions with
+`copy_bidirectional`, uninspected, under one session-wide idle deadline. TLS is
+never terminated here; that is p3-04.
 
 ---
 

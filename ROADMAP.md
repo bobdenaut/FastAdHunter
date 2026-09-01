@@ -300,6 +300,9 @@ review (certificate machinery home, connector redesign, DoH/DoT listener
 placement, telemetry taxonomy, memory caps per new state owner, 443 steering
 v4+v6, on-device TLS measurements, opt-in bound to a stable identity).
 
+- SNI-level HTTPS filtering for every client, no setup and no decryption
+  (`p3-03`) — blocked domains die at the ClientHello; ECH/no-SNI is closed, not
+  forwarded (measured transport limit, SECURITY.md)
 - HTTPS interception for managed environments (opt-in, per-client)
 - Certificate management: generate CA, import PEM/PFX, export CA, status —
   `/api/v1/certificates` (rustls + rcgen + x509-parser; no hand-rolled crypto)

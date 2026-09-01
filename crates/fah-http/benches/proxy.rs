@@ -29,6 +29,7 @@ use hyper::header::HOST;
 use hyper::service::service_fn;
 use hyper::{Request, Response};
 use hyper_util::rt::{TokioIo, TokioTimer};
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::runtime::Runtime;
 
@@ -268,5 +269,124 @@ fn opaque_body(c: &mut Criterion) {
     group.finish();
 }
 
-criterion_group!(benches, pass_through, opaque_body);
+const SPLICE_SIZE: usize = 1024 * 1024;
+
+const SPLICE_HOST: &str = "origin.test";
+
+fn client_hello(host: &str) -> Vec<u8> {
+    let mut entry = vec![0u8];
+    entry.extend_from_slice(&(host.len() as u16).to_be_bytes());
+    entry.extend_from_slice(host.as_bytes());
+
+    let mut sni = Vec::new();
+    sni.extend_from_slice(&(entry.len() as u16).to_be_bytes());
+    sni.extend_from_slice(&entry);
+
+    let mut extensions = Vec::new();
+    extensions.extend_from_slice(&0u16.to_be_bytes());
+    extensions.extend_from_slice(&(sni.len() as u16).to_be_bytes());
+    extensions.extend_from_slice(&sni);
+
+    let mut body = Vec::new();
+    body.extend_from_slice(&[0x03, 0x03]);
+    body.extend_from_slice(&[0x42; 32]);
+    body.push(0);
+    body.extend_from_slice(&2u16.to_be_bytes());
+    body.extend_from_slice(&[0x13, 0x01]);
+    body.push(1);
+    body.push(0);
+    body.extend_from_slice(&(extensions.len() as u16).to_be_bytes());
+    body.extend_from_slice(&extensions);
+
+    let mut handshake = vec![0x01u8];
+    handshake.extend_from_slice(&(body.len() as u32).to_be_bytes()[1..]);
+    handshake.extend_from_slice(&body);
+
+    let mut record = vec![0x16u8, 0x03, 0x01];
+    record.extend_from_slice(&(handshake.len() as u16).to_be_bytes());
+    record.extend_from_slice(&handshake);
+    record
+}
+
+async fn raw_origin(size: usize) -> SocketAddr {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    tokio::spawn(async move {
+        loop {
+            let Ok((stream, _)) = listener.accept().await else {
+                return;
+            };
+            tokio::spawn(async move {
+                let (mut reader, mut writer) = stream.into_split();
+                tokio::spawn(async move {
+                    let mut sink = tokio::io::sink();
+                    let _ = tokio::io::copy(&mut reader, &mut sink).await;
+                });
+                let payload = vec![b'x'; size];
+                let _ = writer.write_all(&payload).await;
+                let _ = writer.shutdown().await;
+            });
+        }
+    });
+    addr
+}
+
+async fn splice_in_front_of(origin: SocketAddr) -> SocketAddr {
+    let proxy = Arc::new(fah_http::TlsProxy::new(
+        Arc::new(FixedResolver(vec![origin.ip()])),
+        DestinationPolicy::new(
+            origin.port(),
+            vec![AllowedNet::host("127.0.0.1".parse().unwrap())],
+        ),
+        origin.port(),
+        Duration::from_secs(120),
+        Duration::from_secs(120),
+        fah_config::NoSni::Pass,
+    ));
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    tokio::spawn(async move {
+        loop {
+            let Ok((stream, peer)) = listener.accept().await else {
+                return;
+            };
+            let proxy = Arc::clone(&proxy);
+            tokio::spawn(async move { proxy.serve_connection(stream, peer).await });
+        }
+    });
+    addr
+}
+
+async fn drain(addr: SocketAddr, hello: Option<&[u8]>, size: usize) {
+    let mut stream = TcpStream::connect(addr).await.unwrap();
+    stream.set_nodelay(true).unwrap();
+    if let Some(hello) = hello {
+        stream.write_all(hello).await.unwrap();
+    }
+    let mut buf = vec![0u8; size];
+    stream.read_exact(&mut buf).await.unwrap();
+}
+
+fn splice(c: &mut Criterion) {
+    let rt = Runtime::new().unwrap();
+    let origin = rt.block_on(raw_origin(SPLICE_SIZE));
+    let proxy = rt.block_on(splice_in_front_of(origin));
+    let hello = client_hello(SPLICE_HOST);
+
+    let mut group = c.benchmark_group("https_sni_splice");
+    group.sample_size(20);
+    group.throughput(Throughput::Bytes(SPLICE_SIZE as u64));
+
+    group.bench_function("direct_to_origin", |b| {
+        b.iter(|| rt.block_on(drain(origin, None, SPLICE_SIZE)));
+    });
+
+    group.bench_function("through_splice", |b| {
+        b.iter(|| rt.block_on(drain(proxy, Some(&hello), SPLICE_SIZE)));
+    });
+
+    group.finish();
+}
+
+criterion_group!(benches, pass_through, opaque_body, splice);
 criterion_main!(benches);

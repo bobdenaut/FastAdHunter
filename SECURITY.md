@@ -237,6 +237,23 @@ exactly the failure worth finding.
 
 ## Later phases (principles fixed now)
 
+- **Phase 3 — SNI filtering (p3-03)** decrypts nothing. The ClientHello is
+  parsed as bytes (strict bounds on every length; a malformed or non-TLS
+  connection is closed and counted, never forwarded), the SNI hostname is
+  judged by the same Rule Engine and per-client policy the DNS path uses, and
+  the connection is then either closed or relayed **uninspected** in both
+  directions. No key material, no CA and no `/config` access exist on this
+  path. The SNI hostname is attacker-controlled, so it is handed to the
+  resolver and then to the **egress guard** (`fah_common::egress`), which
+  judges the *resolved* address — the same open-relay defence the `Host` header
+  gets on :80.
+- **ECH / no-SNI is a hard transport limit, not a policy choice.** A TLS
+  connection reaching the dst-nat'd :443 with no plaintext SNI has **no
+  recoverable destination**: the container's netns holds no conntrack record of
+  the router-side NAT, so `getsockopt(SO_ORIGINAL_DST)` returns `ENOENT`
+  (measured on-device 2026-08-31, `docs/routeros-traps.md`). Such a connection
+  is closed; `[https.sni] no_sni` only decides whether it is *reported* as pass
+  or block. The DNS layer remains the backstop for domains hidden behind ECH.
 - **Phase 3 — HTTPS interception (MITM)** is opt-in, per-managed-environment,
   never default. The generated CA's private key never leaves `/config`; CA
   export endpoints export the **public** certificate only, re-encoded from the

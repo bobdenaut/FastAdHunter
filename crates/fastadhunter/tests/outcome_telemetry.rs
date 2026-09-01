@@ -82,7 +82,7 @@ async fn telemetry_after_one_query(answer: Answer, endpoint: u8) -> fah_model::E
     let metrics = Metrics::new();
     match rx.try_recv().expect("the pipeline must emit one event") {
         Event::Dns(event) => metrics.record(&event),
-        Event::Http(_) => panic!("the DNS pipeline emitted an HTTP event"),
+        Event::Http(_) | Event::HttpsSni(_) => panic!("the DNS pipeline emitted an HTTP event"),
     }
     metrics.engine_telemetry()
 }

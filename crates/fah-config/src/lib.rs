@@ -13,9 +13,10 @@ pub use error::ConfigError;
 pub use schema::{
     parse_days, parse_time_of_day, ApiConfig, AssignmentConfig, BlockingMode, Config,
     DnsBlockingConfig, DnsCacheConfig, DnsConfig, DnsListenConfig, DnsUpstreamsConfig,
-    EngineConfig, EngineMode, HistoryConfig, HttpConfig, HttpListenConfig, LogConfig, LogFormat,
-    LogLevel, PolicyConfig, RuleListConfig, RulesConfig, ScheduleConfig, StatsConfig,
-    UpstreamProtocol, UpstreamServerConfig, UpstreamStrategy,
+    EngineConfig, EngineMode, HistoryConfig, HttpConfig, HttpListenConfig, HttpsConfig,
+    HttpsListenConfig, LogConfig, LogFormat, LogLevel, NoSni, PolicyConfig, RuleListConfig,
+    RulesConfig, ScheduleConfig, SniConfig, StatsConfig, UpstreamProtocol, UpstreamServerConfig,
+    UpstreamStrategy,
 };
 pub use tz::{LocalTime, PosixTz, TzError};
 
@@ -123,10 +124,47 @@ fn validate(config: &Config) -> Result<(), ConfigError> {
     // rejected while the operator is editing it, not on the restart months
     // later that first turns the mode on.
     validate_ip("http.listen.address", &config.http.listen.address)?;
+    validate_ip("https.listen.address", &config.https.listen.address)?;
 
     validate_nonzero_port("dns.listen.port", config.dns.listen.port)?;
     validate_nonzero_port("api.port", config.api.port)?;
     validate_nonzero_port("http.listen.port", config.http.listen.port)?;
+    validate_nonzero_port("https.listen.port", config.https.listen.port)?;
+
+    for (section, port) in [
+        ("[api] port", config.api.port),
+        ("[http.listen] port", config.http.listen.port),
+        ("[dns.listen] port", config.dns.listen.port),
+    ] {
+        if config.https.listen.port == port {
+            return Err(ConfigError::Validation {
+                key: "https.listen.port",
+                message: format!(
+                    "must differ from {section} ({port}); two listeners cannot bind one port"
+                ),
+            });
+        }
+    }
+
+    if config.https.max_connections == 0 {
+        return Err(ConfigError::Validation {
+            key: "https.max_connections",
+            message: "must be at least 1".to_string(),
+        });
+    }
+    if config.https.hello_timeout_ms == 0 {
+        return Err(ConfigError::Validation {
+            key: "https.hello_timeout_ms",
+            message: "must be at least 1; 0 would close every connection before its ClientHello"
+                .to_string(),
+        });
+    }
+    if config.https.idle_timeout_ms == 0 {
+        return Err(ConfigError::Validation {
+            key: "https.idle_timeout_ms",
+            message: "must be at least 1; 0 would close every spliced session at once".to_string(),
+        });
+    }
 
     // A ceiling of zero would accept nothing while looking configured.
     if config.http.max_connections == 0 {
@@ -587,6 +625,41 @@ format = "text"
         assert_eq!(config.engine.mode, EngineMode::DnsHttp);
         assert_eq!(config.dns, DnsConfig::default());
         assert_eq!(config.api, ApiConfig::default());
+    }
+
+    #[test]
+    fn a_config_without_an_https_section_still_parses() {
+        let config = Config::from_toml_str("[dns.listen]\nport = 5353\n").unwrap();
+        assert_eq!(config.https, HttpsConfig::default());
+        assert_eq!(config.https.listen.port, 8444);
+    }
+
+    #[test]
+    fn a_zero_https_timeout_is_rejected_rather_than_read_literally() {
+        for (key, toml) in [
+            ("https.hello_timeout_ms", "[https]\nhello_timeout_ms = 0\n"),
+            ("https.idle_timeout_ms", "[https]\nidle_timeout_ms = 0\n"),
+        ] {
+            let err = Config::from_toml_str(toml).unwrap().validate().unwrap_err();
+            assert!(err.to_string().contains(key), "{key}: {err}");
+        }
+    }
+
+    #[test]
+    fn the_https_listener_may_not_share_another_listener_port() {
+        for (section, toml) in [
+            ("[api] port", "[https.listen]\nport = 8443\n"),
+            ("[http.listen] port", "[https.listen]\nport = 8080\n"),
+            (
+                "[dns.listen] port",
+                "[dns.listen]\nport = 5353\n[https.listen]\nport = 5353\n",
+            ),
+        ] {
+            let config = Config::from_toml_str(toml).unwrap();
+            let message = config.validate().unwrap_err().to_string();
+            assert!(message.contains("https.listen.port"), "{message}");
+            assert!(message.contains(section), "{message}");
+        }
     }
 
     #[test]

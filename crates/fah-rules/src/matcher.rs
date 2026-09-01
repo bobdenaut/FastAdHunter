@@ -876,6 +876,14 @@ impl Matcher {
         self.lookup_domain(domain, Some(qtype_bit(qtype)), ctx)
     }
 
+    pub fn lookup_host(&self, host: &str) -> MatchDecision {
+        self.lookup_host_in(host, &ClientContext::default())
+    }
+
+    pub fn lookup_host_in(&self, host: &str, ctx: &ClientContext<'_>) -> MatchDecision {
+        self.lookup_domain(host, None, ctx)
+    }
+
     /// Whether `idx` participates in a decision made for `ctx`.
     #[inline]
     fn visible(&self, idx: u32, ctx: &ClientContext<'_>) -> bool {
@@ -1239,6 +1247,64 @@ mod tests {
 
     fn decision(m: &Matcher, domain: &str) -> MatchDecision {
         m.lookup(domain, &QueryType::A)
+    }
+
+    #[test]
+    fn sni_host_lookup_blocks_the_name_and_its_subdomains() {
+        let m = matcher_with(&[("", block("ads.example.com"))]);
+        assert!(matches!(
+            m.lookup_host("ads.example.com"),
+            MatchDecision::Block(_)
+        ));
+        assert!(matches!(
+            m.lookup_host("x.ads.example.com"),
+            MatchDecision::Block(_)
+        ));
+        assert_eq!(m.lookup_host("example.com"), MatchDecision::Pass);
+    }
+
+    #[test]
+    fn sni_host_lookup_honours_an_exception() {
+        let m = matcher_with(&[
+            ("", block("ads.example.com")),
+            ("", allow("ads.example.com")),
+        ]);
+        assert!(matches!(
+            m.lookup_host("ads.example.com"),
+            MatchDecision::Allow(_)
+        ));
+    }
+
+    #[test]
+    fn sni_host_lookup_ignores_a_dnstype_restricted_rule() {
+        let m = matcher_with(&[("", block_with("ads.example.com", dnstype("A")))]);
+        assert!(matches!(
+            decision(&m, "ads.example.com"),
+            MatchDecision::Block(_)
+        ));
+        assert_eq!(m.lookup_host("ads.example.com"), MatchDecision::Pass);
+    }
+
+    #[test]
+    fn sni_host_lookup_applies_a_client_scoped_rule_to_that_client_only() {
+        let scoped = DomainOpts {
+            client: Some(Arc::from("192.168.1.10")),
+            ..DomainOpts::default()
+        };
+        let m = matcher_with(&[("", block_with("ads.example.com", scoped))]);
+        let active = ActivePolicies::default();
+
+        let scoped_client = m.context_for("192.168.1.10".parse().unwrap(), &active);
+        assert!(matches!(
+            m.lookup_host_in("ads.example.com", &scoped_client),
+            MatchDecision::Block(_)
+        ));
+
+        let other_client = m.context_for("192.168.1.11".parse().unwrap(), &active);
+        assert_eq!(
+            m.lookup_host_in("ads.example.com", &other_client),
+            MatchDecision::Pass
+        );
     }
 
     #[test]
