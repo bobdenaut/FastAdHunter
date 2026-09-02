@@ -1,0 +1,38 @@
+https_sni_splice/direct_to_origin
+                        time:   [721.97 µs 800.14 µs 876.99 µs]
+                        thrpt:  [1.1135 GiB/s 1.2205 GiB/s 1.3526 GiB/s]
+                 change:
+                        time:   [-46.048% -32.288% -13.222%] (p = 0.00 < 0.05)
+                        thrpt:  [+15.237% +47.684% +85.350%]
+                        Performance has improved.
+Found 1 outliers among 20 measurements (5.00%)
+  1 (5.00%) high severe
+https_sni_splice/through_splice
+                        time:   [5.1744 ms 8.5425 ms 10.914 ms]
+                        thrpt:  [91.629 MiB/s 117.06 MiB/s 193.26 MiB/s]
+                 change:
+                        time:   [-59.717% -39.562% -14.485%] (p = 0.01 < 0.05)
+                        thrpt:  [+16.939% +65.458% +148.24%]
+                        Performance has improved.
+Found 2 outliers among 20 measurements (10.00%)
+  2 (10.00%) high mild
+
+https_sni_splice verdict path: connections=2493 requests=2493 blocked=0 refused_destination=0 resolve_failures=0 dropped_events=0
+https_sni_splice_steady_state/direct_to_origin
+                        time:   [20.458 ms 21.026 ms 21.469 ms]
+                        thrpt:  [2.9111 GiB/s 2.9726 GiB/s 3.0550 GiB/s]
+                 change:
+                        time:   [-0.9985% +1.7330% +4.6489%] (p = 0.26 > 0.05)
+                        thrpt:  [-4.4424% -1.7035% +1.0086%]
+                        No change in performance detected.
+https_sni_splice_steady_state/through_splice
+                        time:   [59.563 ms 75.982 ms 96.502 ms]
+                        thrpt:  [663.20 MiB/s 842.31 MiB/s 1.0493 GiB/s]
+                 change:
+                        time:   [-16.829% -0.1461% +23.355%] (p = 0.99 > 0.05)
+                        thrpt:  [-18.933% +0.1464% +20.234%]
+                        No change in performance detected.
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high severe
+
+https_sni_splice_steady_state verdict path: connections=173 requests=173 blocked=0 refused_destination=0 resolve_failures=0 dropped_events=0

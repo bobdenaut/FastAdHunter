@@ -1,0 +1,8 @@
+Benchmarking full_pipeline/blocked_query
+Benchmarking full_pipeline/blocked_query: Warming up for 3.0000 s
+Benchmarking full_pipeline/blocked_query: Collecting 100 samples in estimated 5.0141 s (1.5M iterations)
+Benchmarking full_pipeline/blocked_query: Analyzing
+Benchmarking full_pipeline/forwarded_query_overhead
+Benchmarking full_pipeline/forwarded_query_overhead: Warming up for 3.0000 s
+Benchmarking full_pipeline/forwarded_query_overhead: Collecting 100 samples in estimated 5.0200 s (1.1M iterations)
+Benchmarking full_pipeline/forwarded_query_overhead: Analyzing

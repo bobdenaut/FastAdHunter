@@ -34,7 +34,9 @@ use tokio::net::{TcpListener, TcpStream};
 use tokio::runtime::Runtime;
 
 use fah_config::{HttpsConfig, HttpsListenConfig};
-use fah_http::{Proxy, TlsServer};
+use fah_http::{Proxy, ProxyCounters, TlsServer};
+use fah_model::Event;
+use fah_rules::{Matcher, MatcherBuilder};
 
 /// The bench never exercises real DNS; resolution is a fixed answer so the
 /// measurement is the proxy's own work, not a resolver's.
@@ -336,18 +338,51 @@ async fn raw_origin(payload: Arc<Vec<u8>>) -> SocketAddr {
     addr
 }
 
-async fn splice_in_front_of(origin: SocketAddr) -> SocketAddr {
-    let proxy = Arc::new(fah_http::TlsProxy::new(
-        Arc::new(FixedResolver(vec![origin.ip()])),
-        DestinationPolicy::new(
+const BENCH_RULES: &str = "||ads.example^\n\
+    ||tracker.example^\n\
+    ||metrics.example^$script\n\
+    /track.js\n\
+    /banner.\n\
+    ||cdn.example/analytics/\n";
+
+struct FixedRules(Arc<Matcher>);
+
+impl fah_http::Ruleset for FixedRules {
+    fn matcher(&self) -> Arc<Matcher> {
+        Arc::clone(&self.0)
+    }
+}
+
+fn rules_with(lines: &str) -> Arc<dyn fah_http::Ruleset> {
+    let parsed = fah_rules::parse_rule_list(lines);
+    let mut builder = MatcherBuilder::new();
+    builder.add_parsed_list("bench-list", &parsed);
+    Arc::new(FixedRules(Arc::new(builder.build())))
+}
+
+fn drained_events() -> tokio::sync::mpsc::Sender<Event> {
+    let (events, mut drain) = tokio::sync::mpsc::channel(1024);
+    tokio::spawn(async move { while drain.recv().await.is_some() {} });
+    events
+}
+
+async fn splice_in_front_of(origin: SocketAddr) -> (SocketAddr, Arc<ProxyCounters>) {
+    let proxy = Arc::new(
+        fah_http::TlsProxy::new(
+            Arc::new(FixedResolver(vec![origin.ip()])),
+            DestinationPolicy::new(
+                origin.port(),
+                vec![AllowedNet::host("127.0.0.1".parse().unwrap())],
+            ),
             origin.port(),
-            vec![AllowedNet::host("127.0.0.1".parse().unwrap())],
-        ),
-        origin.port(),
-        Duration::from_secs(120),
-        Duration::from_secs(120),
-        fah_config::NoSni::Pass,
-    ));
+            Duration::from_secs(120),
+            Duration::from_secs(120),
+            fah_config::NoSni::Pass,
+        )
+        .with_rules(rules_with(BENCH_RULES))
+        .with_events(drained_events()),
+    );
+    let counters = proxy.counters();
     let config = HttpsConfig {
         listen: HttpsListenConfig {
             address: "127.0.0.1".to_string(),
@@ -358,7 +393,7 @@ async fn splice_in_front_of(origin: SocketAddr) -> SocketAddr {
     let mut server = TlsServer::bind(&config).await.unwrap();
     let addr = server.local_addr();
     server.serve(proxy);
-    addr
+    (addr, counters)
 }
 
 async fn drain(addr: SocketAddr, hello: Option<&[u8]>, size: usize) {
@@ -385,7 +420,7 @@ fn splice_arms(
     hello: &[u8],
 ) {
     let origin = rt.block_on(raw_origin(Arc::new(vec![b'x'; size])));
-    let proxy = rt.block_on(splice_in_front_of(origin));
+    let (proxy, counters) = rt.block_on(splice_in_front_of(origin));
 
     let mut group = c.benchmark_group(name);
     group.sample_size(sample_size);
@@ -400,6 +435,18 @@ fn splice_arms(
     });
 
     group.finish();
+
+    let stats = counters.snapshot();
+    println!(
+        "{name} verdict path: connections={} requests={} blocked={} \
+         refused_destination={} resolve_failures={} dropped_events={}",
+        stats.connections,
+        stats.requests,
+        stats.blocked,
+        stats.refused_destination,
+        stats.resolve_failures,
+        stats.dropped_events
+    );
 }
 
 fn splice(c: &mut Criterion) {

@@ -10,7 +10,9 @@ use fah_certs::{CaParams, CertStore};
 use fah_common::egress::{AllowedNet, DestinationPolicy};
 use fah_common::resolve::{HostResolver, Resolving};
 use fah_config::{HttpsConfig, HttpsListenConfig, NoSni};
-use fah_http::{ExclusionSet, Interception, TlsProxy, TlsServer};
+use fah_http::{ExclusionSet, Interception, ProxyCounters, TlsProxy, TlsServer};
+use fah_model::Event;
+use fah_rules::{Matcher, MatcherBuilder};
 use http_body_util::{BodyExt, Full};
 use hyper::body::Incoming;
 use hyper::client::conn::{http1, http2};
@@ -144,7 +146,38 @@ fn interception(store: &Arc<CertStore>, upstream_root: &CertificateDer<'static>)
     )
 }
 
-async fn tls_server(origin: SocketAddr, interception: Option<Interception>) -> SocketAddr {
+const BENCH_RULES: &str = "||ads.example^\n\
+    ||tracker.example^\n\
+    ||metrics.example^$script\n\
+    /track.js\n\
+    /banner.\n\
+    ||cdn.example/analytics/\n";
+
+struct FixedRules(Arc<Matcher>);
+
+impl fah_http::Ruleset for FixedRules {
+    fn matcher(&self) -> Arc<Matcher> {
+        Arc::clone(&self.0)
+    }
+}
+
+fn rules_with(lines: &str) -> Arc<dyn fah_http::Ruleset> {
+    let parsed = fah_rules::parse_rule_list(lines);
+    let mut builder = MatcherBuilder::new();
+    builder.add_parsed_list("bench-list", &parsed);
+    Arc::new(FixedRules(Arc::new(builder.build())))
+}
+
+fn drained_events() -> tokio::sync::mpsc::Sender<Event> {
+    let (events, mut drain) = tokio::sync::mpsc::channel(1024);
+    tokio::spawn(async move { while drain.recv().await.is_some() {} });
+    events
+}
+
+async fn tls_server(
+    origin: SocketAddr,
+    interception: Option<Interception>,
+) -> (SocketAddr, Arc<ProxyCounters>) {
     let mut proxy = TlsProxy::new(
         Arc::new(FixedResolver(vec![origin.ip()])),
         DestinationPolicy::new(
@@ -155,10 +188,13 @@ async fn tls_server(origin: SocketAddr, interception: Option<Interception>) -> S
         Duration::from_secs(120),
         Duration::from_secs(120),
         NoSni::Pass,
-    );
+    )
+    .with_rules(rules_with(BENCH_RULES))
+    .with_events(drained_events());
     if let Some(interception) = interception {
         proxy = proxy.with_interception(interception);
     }
+    let counters = proxy.counters();
     let config = HttpsConfig {
         listen: HttpsListenConfig {
             address: "127.0.0.1".to_string(),
@@ -169,7 +205,21 @@ async fn tls_server(origin: SocketAddr, interception: Option<Interception>) -> S
     let mut server = TlsServer::bind(&config).await.unwrap();
     let addr = server.local_addr();
     server.serve(Arc::new(proxy));
-    addr
+    (addr, counters)
+}
+
+fn report_verdict_path(label: &str, counters: &ProxyCounters) {
+    let stats = counters.snapshot();
+    println!(
+        "{label} verdict path: connections={} requests={} blocked={} refused_claim={} \
+         upstream_cert_failures={} dropped_events={}",
+        stats.connections,
+        stats.requests,
+        stats.blocked,
+        stats.refused_claim,
+        stats.upstream_cert_failures,
+        stats.dropped_events
+    );
 }
 
 fn connector(root: &CertificateDer<'static>, alpn: Vec<Vec<u8>>) -> TlsConnector {
@@ -247,10 +297,19 @@ struct Rig {
     origin: SocketAddr,
     spliced: SocketAddr,
     intercepted: SocketAddr,
+    spliced_counters: Arc<ProxyCounters>,
+    intercepted_counters: Arc<ProxyCounters>,
     to_origin: TlsConnector,
     to_fah: TlsConnector,
     _dir: tempfile::TempDir,
     store: Arc<CertStore>,
+}
+
+impl Rig {
+    fn report_verdict_paths(&self, group: &str) {
+        report_verdict_path(&format!("{group}/spliced"), &self.spliced_counters);
+        report_verdict_path(&format!("{group}/intercepted"), &self.intercepted_counters);
+    }
 }
 
 fn rig(rt: &Runtime, alpn: fn() -> Vec<Vec<u8>>) -> Rig {
@@ -259,12 +318,15 @@ fn rig(rt: &Runtime, alpn: fn() -> Vec<Vec<u8>>) -> Rig {
     let origin = rt.block_on(tls_origin(cert, key, alpn()));
     let (dir, store) = store_with_ca();
     let fah_root = CertificateDer::from(store.ca_public_der().unwrap());
-    let spliced = rt.block_on(tls_server(origin, None));
-    let intercepted = rt.block_on(tls_server(origin, Some(interception(&store, &ca.root))));
+    let (spliced, spliced_counters) = rt.block_on(tls_server(origin, None));
+    let (intercepted, intercepted_counters) =
+        rt.block_on(tls_server(origin, Some(interception(&store, &ca.root))));
     Rig {
         origin,
         spliced,
         intercepted,
+        spliced_counters,
+        intercepted_counters,
         to_origin: connector(&ca.root, alpn()),
         to_fah: connector(&fah_root, alpn()),
         _dir: dir,
@@ -295,6 +357,7 @@ fn handshake(c: &mut Criterion) {
         "https_handshake leaf cache after the run: minted_total={} prewarm_hits={} unwarmed_misses={}",
         stats.minted_total, stats.prewarm_hits, stats.unwarmed_misses
     );
+    rig.report_verdict_paths("https_handshake");
 }
 
 fn h2_download(c: &mut Criterion) {
@@ -317,6 +380,7 @@ fn h2_download(c: &mut Criterion) {
         b.iter(|| assert_eq!(rt.block_on(h2_get(&mut intercepted, BIG_PATH)), BIG_BODY));
     });
     group.finish();
+    rig.report_verdict_paths("https_h2_download");
 }
 
 fn prewarm_hop(c: &mut Criterion) {

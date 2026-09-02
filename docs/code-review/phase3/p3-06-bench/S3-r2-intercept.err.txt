@@ -1,0 +1,36 @@
+Benchmarking https_handshake/direct_to_origin
+Benchmarking https_handshake/direct_to_origin: Warming up for 3.0000 s
+Benchmarking https_handshake/direct_to_origin: Collecting 50 samples in estimated 10.448 s (8925 iterations)
+Benchmarking https_handshake/direct_to_origin: Analyzing
+Benchmarking https_handshake/spliced
+Benchmarking https_handshake/spliced: Warming up for 3.0000 s
+Benchmarking https_handshake/spliced: Collecting 50 samples in estimated 12.694 s (5100 iterations)
+Benchmarking https_handshake/spliced: Analyzing
+Benchmarking https_handshake/intercepted
+Benchmarking https_handshake/intercepted: Warming up for 3.0000 s
+Benchmarking https_handshake/intercepted: Collecting 50 samples in estimated 10.400 s (600 iterations)
+Benchmarking https_handshake/intercepted: Analyzing
+Benchmarking https_h2_download/direct_to_origin
+Benchmarking https_h2_download/direct_to_origin: Warming up for 3.0000 s
+Benchmarking https_h2_download/direct_to_origin: Collecting 20 samples in estimated 6.0738 s (840 iterations)
+Benchmarking https_h2_download/direct_to_origin: Analyzing
+Benchmarking https_h2_download/spliced
+Benchmarking https_h2_download/spliced: Warming up for 3.0000 s
+Benchmarking https_h2_download/spliced: Collecting 20 samples in estimated 5.6223 s (630 iterations)
+Benchmarking https_h2_download/spliced: Analyzing
+Benchmarking https_h2_download/intercepted
+Benchmarking https_h2_download/intercepted: Warming up for 3.0000 s
+Benchmarking https_h2_download/intercepted: Collecting 20 samples in estimated 6.3660 s (420 iterations)
+Benchmarking https_h2_download/intercepted: Analyzing
+Benchmarking prewarm_hop/inline_cached_leaf
+Benchmarking prewarm_hop/inline_cached_leaf: Warming up for 3.0000 s
+Benchmarking prewarm_hop/inline_cached_leaf: Collecting 100 samples in estimated 5.0002 s (51M iterations)
+Benchmarking prewarm_hop/inline_cached_leaf: Analyzing
+Benchmarking prewarm_hop/inline_prewarm_warm
+Benchmarking prewarm_hop/inline_prewarm_warm: Warming up for 3.0000 s
+Benchmarking prewarm_hop/inline_prewarm_warm: Collecting 100 samples in estimated 5.0001 s (39M iterations)
+Benchmarking prewarm_hop/inline_prewarm_warm: Analyzing
+Benchmarking prewarm_hop/spawn_blocking_prewarm
+Benchmarking prewarm_hop/spawn_blocking_prewarm: Warming up for 3.0000 s
+Benchmarking prewarm_hop/spawn_blocking_prewarm: Collecting 100 samples in estimated 5.0083 s (1.2M iterations)
+Benchmarking prewarm_hop/spawn_blocking_prewarm: Analyzing

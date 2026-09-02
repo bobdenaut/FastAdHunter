@@ -233,6 +233,17 @@ hyper-threaded part is two physical cores, not four — together they turned
 Done right, the pinned means match the unpinned ones with ~5× tighter
 intervals ([docs/measurement-traps.md](docs/measurement-traps.md) §Calibration).
 
+**Building the `fastadhunter` bench target.** `cargo bench -p fastadhunter`
+does not compile as is: the crate's dev-dependency on `fah-api` carries
+`test-harness`, cargo unifies it into the bench profile, and `fah-api`'s
+`compile_error!` refuses that feature outside `debug_assertions` (p3-06 review
+X2, a p5-04 leftover). Until a follow-up moves the feature off the bench
+target, build it with
+`CARGO_PROFILE_BENCH_DEBUG_ASSERTIONS=true cargo bench --no-run -p fastadhunter --bench pipeline`.
+Every recorded `full_pipeline` A/B (p3-06, S3) used that override on **both**
+arms, so the comparison is fair, but its absolutes are not shipped codegen
+and must not become a budget row.
+
 Pinned, the same benches hold a confidence interval under 1 %. Trust a criterion
 delta only when its interval is narrow relative to the change it reports:
 `[366.0 ns 366.8 ns 367.5 ns]` is a measurement, `[737 ns 882 ns 1.04 µs]` is

@@ -66,6 +66,64 @@ runs (PERFORMANCE.md §Measuring reliably). **Control arm:**
 - D11/D12 ran after the main session (the script passed an empty filter
   argument; rerun with none), pinned as declared.
 - D14 read from the OS (`tasklist`), not `/debug/memory` (X4).
+- **P2 (2026-09-02, [phase3-audit](phase3-audit.md) §Fixes applied 3):** the
+  declared arm stands — a LAN client through the **probe FAH instance** (the
+  real binary), 200 fresh connections per arm, min / p50 / p99 — and Runbook
+  5's cross-compiled `intercept` criterion binary is **not** P2: it has no
+  verdict, no DNS resolution, no veth hop, and its loopback origin cannot be
+  verified by a release build. One change to the declaration: the origin is
+  **one fixed public HTTPS origin**, not "a LAN TLS origin" — the intercepted
+  arm verifies the origin against the compiled-in webpki roots and the probe
+  build has no `test-harness` root hook, so a LAN origin under a private CA
+  can never pass that arm (526). The three arms interleave per round so WAN
+  RTT drift lands on all of them. P1 and P3 carry the same declared-LAN vs
+  runbook-loopback split; **not resolved here — owner decision**.
+- **D6–D9 harness (2026-09-02, same audit, items 1–2):** both `fah-http`
+  benches gained a compiled ruleset (domain and URL rules, none matching the
+  bench origin), the default `PolicyState` and a drained event channel, so the
+  SNI verdict, the URL tier and `publish` run on every connection and request.
+  The figures in §Measurements and §Post-review work C were taken **without**
+  them; the missing term is the D5 / `url_matcher` cost (ns) against ms-scale
+  arms. Each bench prints its `ProxyCounters` after the group as the proof the
+  verdict path ran. The resolver stays fixed: the production resolver is
+  `fah-dns`, an L3 sibling no `fah-http` target may import (`layering.rs`
+  checks `dev-dependencies`); the resolve leg is measured only by P2 through
+  the real binary.
+- **P4 (2026-09-03, [p3-06-measurement-audit](p3-06-measurement-audit.md)
+  MA-8):** the acceptance measurement is the `encrypted_latency` harness
+  run **in-device** from the probe image (release binary, reused DoT
+  connection, DoH keep-alive, blocked domain ⇒ in-engine, 3 × 2 000) — the
+  declared "LAN client" run becomes **P4-LAN**, a diagnostic with `kdig
+  +keepopen`. Reason: the row is defined in-engine on a reused connection
+  (PERFORMANCE.md, D13); a per-invocation `kdig` pays a handshake per query
+  and reads at 0.1 ms resolution, neither of which the row can absorb.
+- **P6 (MA-9):** the row is `time_starttransfer − time_appconnect` (server
+  side, handshake excluded); `time_total` recorded beside it as the
+  handshake-inclusive diagnostic. The declared "wall time" did not say which.
+- **P3 / P7 (MA-10):** P7's RSS gate is household browsing; it cannot reach
+  the 64-stream stall. P3 is the sole authority for the intercepted-session
+  memory ceiling; a passing P7 makes no claim about it.
+- **P8 (MA-11):** "interception CPU under browsing" (plan §Step 4.5) is
+  **withdrawn as an acceptance claim** — per-leg CPU is not separable on the
+  RB5009 (`/tool/profile` keys on process name; the telemetry `process`
+  block carries version and uptime only). Replaced by P8, a full-mode CPU
+  diagnostic: `/tool/profile cpu=all` spot reads on the soak deploy against
+  the 0.3.1 `dns+http` container (Runbook 6). The terminate leg's CPU cost
+  stays bounded by P2's intercepted arm and the D8/D9 on-device diagnostics.
+- **P9 (MA-6):** the A/B filter left the `startup` group out; running it
+  now would show nothing by construction — `startup_from_cached_lists` is
+  `ListManager::new` + `boot()`, and Phase 3 touched neither (`matcher.rs`
+  gained two lookup wrappers, no representation change). The Phase 3 startup
+  delta lives in `Engine::start` (`CertStore::open`, DoT + HTTPS binds,
+  `dot_tls`) and is visible only in the binary: P9 reads it from the
+  container log on the device (Runbook 6), against the "< 3 s hard" row. The
+  `steady_state_memory` arm the bench header names **does not exist** in the
+  file; the "RAM steady-state, 1 M loaded" row has always been a soak
+  figure (PERFORMANCE.md: 46.6–53.6 MiB `dns+http`) and P7 re-affirms it for
+  full mode with the same deployed ruleset. Neither row is inside the
+  dev-box regression claim; both are covered on the device.
+- **D12 (MA-7):** the synthetic Zipf hit rate is struck from the proposed
+  hit-rate row; the soak's `leaf_cache` counters are the only evidence.
 
 ## Measurements
 
@@ -216,11 +274,11 @@ re-affirmed by P7.
 | **HTTPS** splice throughput, steady state | ≥ 100 MiB/s (gigabit LAN is 119 MiB/s) | 0.93–1.01 GiB/s at 16 KiB, 1.48–1.60 GiB/s at 64 KiB (D7, unpinned); 1.06–1.13 / 1.56–1.61 GiB/s pinned to four cores (§Post-review work C) | TBD — P1 |
 | **HTTPS** interception handshake overhead vs splice | intercepted p50 ≤ 2 × spliced p50 | within intervals of each other unpinned (D8); 1.5–2.2× pinned to four cores (§Post-review work C) | TBD — P2 |
 | **HTTPS** intercepted h2 relay | ≥ 50 MiB/s | 481–485 MiB/s (D9, unpinned); 571–620 MiB/s pinned to four cores | TBD — P3 |
-| Minted-leaf cache hit rate, browsing load | ≥ 90 % (real replay decides) | 67 % synthetic Zipf (D12) | TBD — soak feed |
+| Minted-leaf cache hit rate, browsing load | ≥ 90 % (real replay decides) | **none** — D12 is synthetic (a property of `ZIPF_HOSTS = 4096`, not of browsing) and is not evidence for this row (MA-7) | TBD — soak: `leaf_cache.prewarm_hits / (prewarm_hits + minted_total)` on the listed device over 24 h; the `https-sni` domain list is the corpus for a 7-day replay |
 | **DoT** / **DoH** added latency vs UDP, p50 | TBD — must be measured during verification (P4 sets it; TLS/HTTP legs do not convert) | +17 µs / +130 µs loopback (D13) | TBD — P4 |
 | Cold `prewarm` per first-sight host (whole path, not raw keygen) | < 1 ms | 53.5 µs (D11) ⇒ ≈ 0.48 ms by the ×9 factor (CPU-bound, converts) | TBD — P5 |
 | CA generate / API-pair import wall time | < 100 ms / < 50 ms | ≈ 2 ms / ≈ 1.4 ms (p3-02, debug) | TBD — P6 |
-| RAM steady-state, full mode | ≤ 128 MB (existing row, re-affirmed) | 46.1 MiB test build (D14) | TBD — P7 |
+| RAM steady-state, full mode | ≤ 128 MB (existing row, re-affirmed) | 46.1 MiB test build (D14) | TBD — P7 (household browsing; the 64-stream intercepted-session ceiling is P3's question, not this row's — MA-10) |
 
 ## Implementation Summary
 
@@ -398,6 +456,19 @@ or, for items 5 and 7, to the probe container.
    `[https.sni] no_sni` decides only how it is reported. Confirm the deployed
    lists cover the domains the household relies on before step 3, and keep
    step 3's rollback line at hand for the first hour.
+6. **Prove the steering on an unlisted device** (MA-5 — the "any client,
+   zero setup" half of the definition of done, production build). From a LAN
+   device that is **not** in `[https.interception] clients`, with nothing
+   installed: `curl -sv https://<a domain the deployed lists block>/` ⇒ the
+   TLS connection fails before any certificate (curl prints no `subject:` /
+   `issuer:` line; the error is a reset or unexpected EOF, not a certificate
+   error). Then read: `GET /api/v1/telemetry` `listeners.https.blocked` +1,
+   `connections` +1, and one WS `query` item `kind: "https-sni"`,
+   `verdict: "block"`, `domain: <that domain>`, `client: <that device>`.
+   Control: the same `curl` to an allowed domain ⇒ the origin's own
+   certificate (`issuer:` is public, never `FastAdHunter CA`) and a
+   `https-sni` `pass`/`allow` item. Record all four readings; the same two
+   commands are the soak's SNI gate (Runbook 6).
 
 ### 2. CA install walkthrough (Android OnePlus 15 `192.168.10.11`, Windows `192.168.10.10`)
 
@@ -428,11 +499,30 @@ or, for items 5 and 7, to the probe container.
    restart the container. Boot log must show
    `HTTPS interception active for the listed clients — each must hold a static lease`
    (`count=1`). Rollback: `clients: []` + restart.
-5. **Browse** from the device: the WS feed shows `kind: https` items with real
+5. **Assert interception on the production build** (MA-5,
+   [p3-06-measurement-audit](p3-06-measurement-audit.md) §Fixes applied) —
+   three objective checks, recorded verbatim, before any browsing:
+   - **Issuer.** From the listed device (Windows: `openssl s_client -connect
+     <allowed origin>:443 -servername <allowed origin> </dev/null | openssl
+     x509 -noout -issuer`; Android: the browser's certificate viewer) ⇒
+     `issuer=CN=FastAdHunter CA`. The same command from an **unlisted**
+     device ⇒ the origin's public issuer, never ours.
+   - **Relay header.** From the listed device
+     `curl -sSI --cacert fastadhunter-ca.pem https://<allowed origin>/ | findstr /i via`
+     ⇒ `Via: 1.1 fastadhunter`; absent from the unlisted device.
+   - **URL block inside TLS.** `PUT /api/v1/rules/user` adds
+     `||<allowed origin>/p3-06-probe.js`; from the listed device
+     `curl -sS -D - --cacert fastadhunter-ca.pem https://<allowed origin>/p3-06-probe.js`
+     ⇒ `200` with an empty body, and the WS feed carries one item
+     `kind: "https"`, `verdict: "block"`, `path: "/p3-06-probe.js"`,
+     `client: "192.168.10.11"` (or `.10`); from the unlisted device the same
+     URL ⇒ the origin's own `404` and no `https` item. Remove the rule after.
+   Then **browse**: the WS feed shows `kind: https` items with real
    `method`/`path`/`status` for that client and `https-sni` for everyone else;
    `GET /api/v1/certificates` `leaf_cache.minted_total` climbs with first-sight
    hosts, `unwarmed_misses` stays 0. Record what the device shows on an
-   HTTPS ad-heavy page (blocked images collapse, pages load).
+   HTTPS ad-heavy page (observation only — the three checks above are the
+   evidence).
 6. **ECH check (p3-04 L7):** from the listed device open
    `https://cloudflare-ech.com/cdn-cgi/trace` (or another ECH-enabled origin
    the owner prefers) — expect the browser to retry without ECH and the page to
@@ -492,18 +582,85 @@ Not built yet — the probe image for these arms does not exist. Proposed
 agent work (dev box only, no router write): cross-compile the criterion bench
 binaries `proxy`, `intercept`, `certs` for `aarch64-unknown-linux-musl` into a
 `Dockerfile.probe`-style single-layer image (they carry their own loopback
-origins, so they measure in-device CPU cost, which is the open question — the
-LAN hop is not), plus the `SPLICE_BUF` 64 KiB variant of `proxy`. Then the
+origins, so they measure in-device CPU cost — the "D8 / D9 on-device"
+diagnostics; the acceptance figures P2 and P4 are the LAN path and the
+in-device harness defined below, not these binaries), plus the `SPLICE_BUF`
+64 KiB variant of `proxy`, the `encrypted_latency` test binary and the
+release `fastadhunter` (P4). Then the
 owner: `scp` the tar (ask first), `/container/add … interface=veth3
 root-dir=/kingston/probe-bench/root comment="fah-bench"`, `/container/start`,
 `/log print where topics~"container"`, `/container/remove`
 (`docs/routeros-traps.md` §On-device measurement). Do **not** pin the probe
-(`cpu-list` empty). P4 (DoT/DoH/UDP per query) runs from a LAN host with
-`kdig` against the probe FAH instance (`kdig @172.17.0.4 +tls-host=dns.fastadhunter.lan …`,
-`+https`), 3 interleaved rounds × 2 000. P6 with
-`curl -w '%{time_total}'` against the probe's `/api/v1/certificates/ca/generate`
-and `/import`, 5 each. Also on the probe: re-run the security suite's
-traversal list with `curl -sk` against `https://172.17.0.4:8443` (X5).
+(`cpu-list` empty).
+
+**P2 — the declared arm, on the probe FAH instance (`172.17.0.4`, the real
+binary), never the criterion binary** (declaration change of 2026-09-02,
+§Pre-declaration). Preconditions, probe config (owner): `[engine] mode =
+"dns+http+https"`; `[https.interception] clients` lists the intercepted LAN
+client (boot key); a CA generated on the probe and its PEM on the client
+(`GET /api/v1/certificates/ca/export`). One fixed public origin `ORIGIN`
+(small page; record the name, its TLS version and ALPN) chosen before the
+run. The spliced and intercepted arms come from **two client addresses**
+(one listed, one not), or from one client in two passes with a restart
+between. From the client(s), 200 rounds, the three arms in order per round:
+
+```sh
+curl -sS -o /dev/null -w '%{time_connect} %{time_appconnect} %{time_starttransfer}\n' https://ORIGIN/
+curl -sS -o /dev/null -w '%{time_connect} %{time_appconnect} %{time_starttransfer}\n' --connect-to ORIGIN:443:172.17.0.4:8444 https://ORIGIN/
+curl -sS -o /dev/null -w '%{time_connect} %{time_appconnect} %{time_starttransfer}\n' --connect-to ORIGIN:443:172.17.0.4:8444 --cacert fastadhunter-ca.pem https://ORIGIN/
+```
+
+Line 1 direct, line 2 spliced (unlisted client), line 3 intercepted (listed
+client). `--connect-to` keeps SNI and `Host` at `ORIGIN` — the terminate leg
+answers `421` to a `Host` naming another port — and connects to the probe's
+8444. Per arm: handshake = `time_appconnect − time_connect`, first byte =
+`time_starttransfer − time_connect`; min / p50 / p99 over the 200. Windows
+curl (schannel) takes `--cacert` since 7.60; add `--ssl-no-revoke` if the
+probe CA carries no CRL. **Row evaluation:** "SNI verdict + splice, added
+latency per connection" = spliced p50 − direct p50 (handshake and first-byte
+columns both recorded); "intercepted p50 ≤ 2 × spliced p50" on the handshake
+column. Before/after each arm read the probe's `/api/v1/telemetry`
+`listeners.https` and `/api/v1/certificates` `leaf_cache`: `connections`,
+`requests` and `blocked = 0` prove the verdict ran; `minted_total = 1`,
+`unwarmed_misses = 0` and `requests > connections` prove the intercepted arm
+took the terminate leg. The cross-compiled `intercept` criterion binary stays
+useful as an in-device CPU diagnostic — label it "D8 on-device"; it is not P2.
+
+**P4 (DoT/DoH/UDP per query)** — two measurements, one row (MA-8,
+declaration change of 2026-09-03):
+
+- **P4, the acceptance measurement (in-engine, reused connection):** the
+  `encrypted_latency` harness cross-compiled into the probe image beside the
+  release binary (`FAH_E2E_BINARY=/fastadhunter`, `--ignored --nocapture`),
+  run **in-device** — the same quantity as D13 (µs resolution, one reused DoT
+  connection, DoH keep-alive, 3 interleaved rounds × 2 000, handshakes
+  excluded). Query: `ads.example.com` A, blocked by the harness's own user
+  rule ⇒ answered by the Rule Engine, no cache, no upstream. Feeds the
+  "DoT / DoH added latency vs UDP, p50" row directly; in-engine by
+  construction, as PERFORMANCE.md defines the row.
+- **P4-LAN, diagnostic (user-visible):** from a LAN host, `kdig +keepopen`
+  (one connection for the batch) against the probe: UDP `kdig @172.17.0.4
+  <blocked domain> A` ×2 000; DoT `kdig @172.17.0.4 +tls
+  +tls-ca=fastadhunter-ca.pem +tls-hostname=<dot hostname> +keepopen …`; DoH
+  `+https +keepopen …`; 3 interleaved rounds. Same blocked domain, so the
+  reply is in-engine and the UDP control isolates the listener cost from
+  upstream RTT. kdig's per-query time has 0.1 ms resolution — record p50/p99
+  from it **and** the wall-clock mean of each 2 000-batch; the LAN hop and
+  the one handshake per batch are in this figure, which is why it is not the
+  row.
+
+**P6 (CA generate / API-pair import wall time)** — `curl -sS -o /dev/null
+-H "Authorization: Bearer $FAH_KEY" -w '%{time_appconnect} %{time_starttransfer} %{time_total}\n'`
+against the probe's `/api/v1/certificates/ca/generate` and `/import`, 5 each
+(MA-9). **The row is `time_starttransfer − time_appconnect`**: server-side
+wall time from the TLS session being up to the first response byte — the
+archive copy, staging, two renames and the JSON are in it, the client's TCP
+and TLS handshake (≈ 7 ms on the device, p5-10) are not. Record
+`time_total` beside it as the handshake-inclusive diagnostic. Bearer auth,
+so no Argon2 in the reading.
+
+Also on the probe: re-run the security suite's traversal list with
+`curl -sk` against `https://172.17.0.4:8443` (X5).
 
 ### 6. 24 h soak (production container — a deploy with its own approval)
 
@@ -517,9 +674,16 @@ holds per listener (L5). Until it lands, watch item (b) has no read path.
 
 | Watch item | Class | Read | Decides |
 | --- | --- | --- | --- |
-| RSS ≤ 128 MB steady, flat (slope over the final third < 2 MB) | **gate** | `/api/v1/history/perf` `rss_bytes`, `/api/v1/debug/memory` `process_rss` (MiB vs MB) | acceptance |
+| RSS ≤ 128 MB steady, flat (slope over the final third < 2 MB) | **gate** | `/api/v1/history/perf` `rss_bytes`, `/api/v1/debug/memory` `process_rss` (MiB vs MB) | acceptance for **household browsing with the deployed 1 M-scale ruleset** — this reading also re-affirms the pre-existing "RAM steady-state, 1 M loaded" row for full mode (MA-6). It does **not** establish the 64-stream intercepted-session ceiling (`[https] max_connections` ≈ 5.5 MiB/session worst case): the soak's listed devices never stall 64 streams; **P3 is the only authority for that question** (MA-10) |
+| Boot-to-serving, full mode (MA-6, "P9"): container log timestamps from `/container/start` to `API listening` on the soak deploy, against the same interval on the 0.3.1 `dns+http` container (read-only `/log print where topics~"container"`, available now). Phase 3 adds `CertStore::open`, the DoT and HTTPS binds and `dot_tls` to `Engine::start`; the `startup` bench does not contain that code, so this is the only place the delta is visible | **gate** against the existing "< 3 s hard" row | container log | the pre-existing startup row for full mode |
+| Full-mode CPU under household browsing (MA-11, "P8"): `/tool/profile cpu=all` (read-only), 10 spot reads at matched hours on the soak deploy and, beforehand, on the 0.3.1 `dns+http` container; report the `fastadhunter` process share per read and the median delta. Interpret with `listeners.https.connections` and `requests − connections` from the same hour (splice vs terminate-leg mix). **Per-leg interception CPU is not separable on this platform** — `/tool/profile` keys on process name and the shipped telemetry carries no CPU seconds — so "interception CPU under browsing" is **withdrawn** as an acceptance claim; the terminate leg's CPU cost is bounded by P2's intercepted arm and the D8/D9 on-device diagnostics | diagnostic | `/tool/profile`, `/telemetry` | whether full mode changes the device's CPU envelope; descriptive |
 | No crash, no restart, `uptime_seconds` continuous | **gate** | `/health`, container log | acceptance |
 | Security suite green on the deployed build (traversal probes, X5) | **gate** | curl walk | acceptance |
+| **Traffic reached the container — HTTPS** ([phase3-audit](phase3-audit.md) §Fixes applied 4): `listeners.https.connections` strictly increasing between consecutive hourly pulls in ≥ 20 of the 24 windows, `listeners.https.requests ≥ 1` at the first pull | **gate** | `/api/v1/telemetry` | dst-nat 443 steers the LAN; without it the RSS and uptime gates pass on an idle listener |
+| **SNI filtering exercised**: at soak start, from an **unlisted** LAN device, `curl -sv https://<a domain the deployed lists block>/` ⇒ the connection closes before any certificate (curl reports a TLS connect failure, no `subject:` line); `listeners.https.blocked` +1 on the next pull; one `kind: "https-sni"`, `verdict: "block"` item from that device on a WS `query` tap. Then `blocked` keeps growing over the window | **gate** | curl, `/telemetry`, WS `query` | the everyone-path of the definition of done, on the production build |
+| **Interception exercised**: at soak start, from the **listed** device (CA installed), one URL a **user rule** blocks on an otherwise allowed host (`PUT /api/v1/rules/user`, the e2e's `\|\|host/track.js` shape; add it for the check, remove it after) ⇒ empty `200`; `leaf_cache.minted_total ≥ 1`; one `kind: "https"`, `verdict: "block"` item naming that URL and device on the WS tap; over the window `listeners.https.requests − connections` grows (requests judged inside TLS) | **gate** | `/certificates`, WS `query`, `/telemetry` | the managed-client path of the definition of done on the production build — the software leg 5 runs only on the `test-harness` build |
+| **DoT exercised**: `dot.state == "listening"` on every `/certificates` pull, and a 60 s WS `query` tap per hourly pull (`websocat`, `{"subscribe":["query"]}`, bearer header) counts ≥ 1 item with `transport: "dot"` from the phone's address in every window the phone is on Wi-Fi (Runbook 3 first). The tap is the only read path — no `/history/*` endpoint carries a per-item transport | **gate** | `/certificates`, WS `query` | Private DNS path of the definition of done |
+| **DoH**: `transport: "doh"` items on the same taps | diagnostic | WS `query` | DoH is not a definition-of-done item; record the count |
 | (a) peak concurrent DoH sessions vs the shared 64-permit API ceiling | diagnostic | **no direct read exists** — proxy: `transport: doh` items per minute on the WS feed and `/api/v1/stats` per-client counts; a session gauge would be a code change | whether the escape hatch (const bump / separate semaphore) is ever built |
 | (b) `non_tls` vs `hello_timeouts` over the window | diagnostic | `listeners.https` once published | whether `hello_timeout_ms` (10 s of permit per silent socket) is revisited |
 | (c) `leaf_cache.unwarmed_misses` with a CA installed | **attribute before filing** | `GET /api/v1/certificates` hourly | non-zero = p3-04 prewarm-then-evict window (> 512 first-sight hosts inside one handshake) or a DoT mint failure — attribute, then decide |
@@ -1114,6 +1278,51 @@ two-rule paragraph), `docs/measurement-traps.md` §Calibration (new row),
 `p4b-*` outputs, `session.log`, this file. `crates/fah-http/benches/intercept.rs`
 net unchanged (F6 reverted). `SPLICE_BUF` toggled to 64 KiB for one build and
 restored (diff verified: counters only).
+
+## Post-review work D — dev-box 01–06 re-run (session S3), 2026-09-03
+
+Owner instruction: run the six declared dev-box bench targets from the current
+checkout with the declared methodology, no arm changed. Script
+`p3-06-bench/run-s3.ps1`, raw `S3-*.out.txt` / `.err.txt`, `session.log`
+lines 64–88. Tip `f8ecad2` + working tree (proxy/intercept carry the
+2026-09-02 ruleset + event wiring); A = `64be513` exes of the declared session.
+Pinning per §Measuring reliably: 01–03, 06 one core (`ProcessorAffinity = 4`,
+High); 04–05 mask `0x55` + `TOKIO_WORKER_THREADS=4`. `pipeline` built with
+`CARGO_PROFILE_BENCH_DEBUG_ASSERTIONS=true` on both sides (X2). Not run: the
+64 KiB splice variant (needs a `src` edit), D13, D14. 22 arms, every exit
+clean, no stderr beyond criterion's own.
+
+**Session was not idle** (owner, after the fact): a browser and a fullscreen
+video on the second monitor ran through the window. Control arm
+`http_pass_through/direct_to_origin` moved **+0.4 %**, so the A/B verdict
+stands by the declared ±5 % rule; the **tip-only series is contaminated** and
+is not tabled — the identical A-side matcher exe read +5.9 % against
+2026-09-02, `certs_mint` +6–7 %, steady splice 10–25 % under p4b with the
+direct control unchanged. Re-run of splice16 / intercept / certs on an idle
+box pending.
+
+| A/B arm (means of two interleaved pairs) | A | B | Δ | Interval |
+| --- | --- | --- | --- | --- |
+| `dns_cache/cache_hit_in_engine_latency` µs | 2.964 | 2.730 | −7.9 % | ±9–10 %; round spread 40 % |
+| `matcher_lookup/hit_exact` ns | 67.31 | 67.01 | −0.4 % | < 1 % |
+| `matcher_lookup/hit_subdomain` ns | 208.3 | 206.4 | −0.9 % | < 1 % |
+| `matcher_lookup/miss` ns | 49.02 | 48.85 | −0.3 % | < 1 % |
+| `full_pipeline/blocked_query` µs | 3.344 | 3.162 | −5.4 % | ±6–12 % |
+| `full_pipeline/forwarded_query_overhead` µs | 5.147 | 5.169 | +0.4 % | pairs +5.4 / −5.5 |
+| `http_pass_through/direct_to_origin` µs (control) | 32.58 | 32.72 | +0.4 % | ±0.5 % |
+| `http_pass_through/through_proxy` µs | 65.83 | 66.00 | +0.3 % | ±0.5–1 % |
+| added (proxy − direct) µs | 33.25 | 33.28 | +0.1 % | — |
+| `http_opaque_body` 8 KiB direct / proxy µs | 35.26 / 69.29 | 35.02 / 70.76 | −0.7 % / +2.1 % | ±0.5–1 % |
+| 1 MiB direct / proxy ms | 0.973 / 1.663 | 0.897 / 1.271 | −7.8 % / −23.6 % | ±10–15 %, unresolved; B faster both pairs |
+| 8 MiB direct / proxy ms | 5.667 / 6.554 | 5.422 / 6.625 | −4.3 % / +1.1 % | ±3–5 %; pairs −9.5 / +12.2 |
+
+**Regression verdict (>10 % rule, two-pair means): none.** The 8 MiB proxy
+pair r2 (+12.2 %) reverses in r1 (−9.5 %) — scheduler-bound at four workers,
+as p4b recorded. Verdict-path proof lines held on every tip arm:
+splice `connections == requests`, intercepted `requests == 2 × connections`,
+h2 intercepted 1 connection / 676 requests, `blocked 0`, `dropped_events 0`,
+`minted_total 1`, `unwarmed_misses 0`. `certs_replay_zipf` hit rate 0.6732,
+deterministic (synthetic; not evidence, MA-7).
 
 ## Hand-off state, 2026-09-02 (end of session)
 

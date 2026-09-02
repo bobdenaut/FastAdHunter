@@ -1,0 +1,10 @@
+
+[p1-05] cache-hit bench: forwarder called 1 time(s) before the timed loop (PERFORMANCE.md budget: cache hit adds < 1ms in-engine)
+
+dns_cache/cache_hit_in_engine_latency
+                        time:   [2.2441 µs 2.4538 µs 2.7113 µs]
+                        change: [-13.005% +3.4229% +22.746%] (p = 0.70 > 0.05)
+                        No change in performance detected.
+Found 2 outliers among 100 measurements (2.00%)
+  2 (2.00%) high mild
+

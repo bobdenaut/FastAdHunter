@@ -1,0 +1,12 @@
+Benchmarking matcher_lookup/hit_exact
+Benchmarking matcher_lookup/hit_exact: Warming up for 3.0000 s
+Benchmarking matcher_lookup/hit_exact: Collecting 100 samples in estimated 5.0002 s (75M iterations)
+Benchmarking matcher_lookup/hit_exact: Analyzing
+Benchmarking matcher_lookup/hit_subdomain
+Benchmarking matcher_lookup/hit_subdomain: Warming up for 3.0000 s
+Benchmarking matcher_lookup/hit_subdomain: Collecting 100 samples in estimated 5.0001 s (24M iterations)
+Benchmarking matcher_lookup/hit_subdomain: Analyzing
+Benchmarking matcher_lookup/miss
+Benchmarking matcher_lookup/miss: Warming up for 3.0000 s
+Benchmarking matcher_lookup/miss: Collecting 100 samples in estimated 5.0001 s (100M iterations)
+Benchmarking matcher_lookup/miss: Analyzing

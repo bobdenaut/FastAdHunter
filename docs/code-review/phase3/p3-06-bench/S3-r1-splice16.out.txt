@@ -1,0 +1,39 @@
+https_sni_splice/direct_to_origin
+                        time:   [1.1265 ms 1.3171 ms 1.4940 ms]
+                        thrpt:  [669.34 MiB/s 759.22 MiB/s 887.67 MiB/s]
+                 change:
+                        time:   [-1.7651% +45.900% +128.55%] (p = 0.06 > 0.05)
+                        thrpt:  [-56.247% -31.460% +1.7968%]
+                        No change in performance detected.
+Found 1 outliers among 20 measurements (5.00%)
+  1 (5.00%) high mild
+https_sni_splice/through_splice
+                        time:   [8.0415 ms 10.016 ms 11.387 ms]
+                        thrpt:  [87.823 MiB/s 99.839 MiB/s 124.35 MiB/s]
+                 change:
+                        time:   [+83.834% +149.67% +244.43%] (p = 0.00 < 0.05)
+                        thrpt:  [-70.966% -59.947% -45.603%]
+                        Performance has regressed.
+
+https_sni_splice verdict path: connections=1653 requests=1653 blocked=0 refused_destination=0 resolve_failures=0 dropped_events=0
+https_sni_splice_steady_state/direct_to_origin
+                        time:   [20.140 ms 20.649 ms 21.070 ms]
+                        thrpt:  [2.9663 GiB/s 3.0267 GiB/s 3.1033 GiB/s]
+                 change:
+                        time:   [-11.304% -8.2244% -5.0403%] (p = 0.00 < 0.05)
+                        thrpt:  [+5.3079% +8.9614% +12.744%]
+                        Performance has improved.
+Found 2 outliers among 10 measurements (20.00%)
+  1 (10.00%) low mild
+  1 (10.00%) high mild
+https_sni_splice_steady_state/through_splice
+                        time:   [61.762 ms 66.428 ms 71.030 ms]
+                        thrpt:  [901.03 MiB/s 963.45 MiB/s 1.0119 GiB/s]
+                 change:
+                        time:   [-42.720% -25.253% -2.0737%] (p = 0.08 > 0.05)
+                        thrpt:  [+2.1177% +33.785% +74.582%]
+                        No change in performance detected.
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high severe
+
+https_sni_splice_steady_state verdict path: connections=173 requests=173 blocked=0 refused_destination=0 resolve_failures=0 dropped_events=0

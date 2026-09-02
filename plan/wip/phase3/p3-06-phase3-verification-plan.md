@@ -253,8 +253,11 @@ command, what it does, when it takes effect, and the rollback.
    (p3-04's GAR §5.14 owner decision): confirm on the router (read-only) that
    the listed IP is a static lease/address before calling §5.14 closed.
 5. **Measurements on-device (GAR §5.13):** TLS handshake cost, splice
-   throughput, interception CPU+RSS under browsing, DoT/DoH latency vs UDP —
-   via the probe-container procedure (`docs/routeros-traps.md`; the
+   throughput, intercepted-session RSS under a 64-stream stall (P3), DoT/DoH
+   latency vs UDP — via the probe-container procedure (`docs/routeros-traps.md`; the
+   *(2026-09-03: "interception CPU under browsing" withdrawn — per-leg CPU is
+   not separable on the RB5009; the review's P8 full-mode CPU diagnostic
+   replaces it, review §Pre-declaration declaration changes)*
    `fah-probe` harness facts in `docs/project-state.md`), not the production
    container. Pre-declare each measurement's workload and sample size before
    running it — the phase-2.6 lesson: a declaration that can be quietly

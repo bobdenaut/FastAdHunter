@@ -1,0 +1,26 @@
+certs_mint              time:   [57.121 µs 57.565 µs 57.997 µs]
+                        change: [+5.6088% +7.2323% +8.8923%] (p = 0.00 < 0.05)
+                        Performance has regressed.
+Found 3 outliers among 100 measurements (3.00%)
+  3 (3.00%) high severe
+
+certs_cache_hit         time:   [48.856 ns 49.058 ns 49.300 ns]
+                        change: [+2.4877% +3.1808% +4.1075%] (p = 0.00 < 0.05)
+                        Performance has regressed.
+Found 3 outliers among 100 measurements (3.00%)
+  2 (2.00%) high mild
+  1 (1.00%) high severe
+
+certs_prewarm_warm      time:   [76.295 ns 76.686 ns 77.055 ns]
+                        change: [+1.0049% +1.7360% +2.4375%] (p = 0.00 < 0.05)
+                        Performance has regressed.
+
+certs_replay_zipf: 100000 handshakes, Zipf(s=1) over 4096 hosts, LRU 512: prewarm_hits=67323 minted_total=32677 evictions=32165 hit_rate=0.6732
+certs_replay_zipf       time:   [18.293 µs 18.424 µs 18.564 µs]
+                        change: [+1.7295% +3.8154% +5.6778%] (p = 0.00 < 0.05)
+                        Performance has regressed.
+Found 6 outliers among 100 measurements (6.00%)
+  1 (1.00%) low mild
+  3 (3.00%) high mild
+  2 (2.00%) high severe
+

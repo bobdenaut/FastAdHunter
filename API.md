@@ -1304,9 +1304,14 @@ are **absent**, not `null`.
 import succeeds — before the restart that activates it).
 
 `leaf_cache` is the per-host minting cache. `unwarmed_misses` is the one to
-watch: a TLS handshake never mints, so a miss means the connection was served
-without a pre-warm and failed closed. `superseded` counts leaves dropped
-because a CA regeneration landed while they were being minted.
+watch: a TLS handshake never mints, so a miss is a handshake that arrived
+without a pre-warmed leaf. What follows depends on the listener: the HTTPS
+listener fails closed; the DoT listener serves the API pair instead, so with
+no CA installed **every** SNI-bearing DoT hello counts here and still
+succeeds. With a CA installed DoT contributes zero, and any increase is a leaf
+evicted between pre-warm and handshake or a mint failure — attribute it
+before filing. `superseded` counts leaves dropped because a CA regeneration
+landed while they were being minted.
 
 `dot` (p3-06) is the DoT listener's boot posture — the one listener that can
 disappear silently, since a certificate failure closes `[dns.listen] dot_port`

@@ -1,0 +1,72 @@
+https_handshake/direct_to_origin
+                        time:   [1.0681 ms 1.1128 ms 1.1574 ms]
+                        change: [-46.394% -40.167% -32.565%] (p = 0.00 < 0.05)
+                        Performance has improved.
+Found 2 outliers among 50 measurements (4.00%)
+  2 (4.00%) high mild
+https_handshake/spliced time:   [5.2559 ms 8.0154 ms 10.439 ms]
+                        change: [-57.184% -38.031% -16.428%] (p = 0.00 < 0.05)
+                        Performance has improved.
+Found 10 outliers among 50 measurements (20.00%)
+  1 (2.00%) high mild
+  9 (18.00%) high severe
+https_handshake/intercepted
+                        time:   [6.0139 ms 7.4975 ms 9.0794 ms]
+                        change: [+23.619% +69.065% +128.20%] (p = 0.00 < 0.05)
+                        Performance has regressed.
+Found 1 outliers among 50 measurements (2.00%)
+  1 (2.00%) high mild
+
+https_handshake leaf cache after the run: minted_total=1 prewarm_hits=854 unwarmed_misses=0
+https_handshake/spliced verdict path: connections=7147 requests=7147 blocked=0 refused_claim=0 upstream_cert_failures=0 dropped_events=0
+https_handshake/intercepted verdict path: connections=855 requests=1710 blocked=0 refused_claim=0 upstream_cert_failures=0 dropped_events=0
+https_h2_download/direct_to_origin
+                        time:   [6.3626 ms 6.6921 ms 7.0878 ms]
+                        thrpt:  [1.1023 GiB/s 1.1674 GiB/s 1.2279 GiB/s]
+                 change:
+                        time:   [+0.0537% +11.650% +25.374%] (p = 0.08 > 0.05)
+                        thrpt:  [-20.239% -10.434% -0.0537%]
+                        No change in performance detected.
+Found 1 outliers among 20 measurements (5.00%)
+  1 (5.00%) high severe
+https_h2_download/spliced
+                        time:   [8.6406 ms 9.3780 ms 10.346 ms]
+                        thrpt:  [773.24 MiB/s 853.06 MiB/s 925.86 MiB/s]
+                 change:
+                        time:   [+5.4742% +17.037% +27.599%] (p = 0.00 < 0.05)
+                        thrpt:  [-21.629% -14.557% -5.1901%]
+                        Performance has regressed.
+https_h2_download/intercepted
+                        time:   [13.516 ms 13.967 ms 14.453 ms]
+                        thrpt:  [553.54 MiB/s 572.78 MiB/s 591.91 MiB/s]
+                 change:
+                        time:   [-1.2784% +2.9342% +7.6213%] (p = 0.21 > 0.05)
+                        thrpt:  [-7.0816% -2.8505% +1.2950%]
+                        No change in performance detected.
+Found 3 outliers among 20 measurements (15.00%)
+  3 (15.00%) high mild
+
+https_h2_download/spliced verdict path: connections=1 requests=1 blocked=0 refused_claim=0 upstream_cert_failures=0 dropped_events=0
+https_h2_download/intercepted verdict path: connections=1 requests=676 blocked=0 refused_claim=0 upstream_cert_failures=0 dropped_events=0
+prewarm_hop/inline_cached_leaf
+                        time:   [98.266 ns 99.689 ns 101.27 ns]
+                        change: [+5.9416% +8.9085% +12.740%] (p = 0.00 < 0.05)
+                        Performance has regressed.
+Found 10 outliers among 100 measurements (10.00%)
+  6 (6.00%) high mild
+  4 (4.00%) high severe
+prewarm_hop/inline_prewarm_warm
+                        time:   [128.67 ns 132.29 ns 136.27 ns]
+                        change: [+8.6130% +12.745% +16.648%] (p = 0.00 < 0.05)
+                        Performance has regressed.
+Found 11 outliers among 100 measurements (11.00%)
+  7 (7.00%) high mild
+  4 (4.00%) high severe
+prewarm_hop/spawn_blocking_prewarm
+                        time:   [4.7705 µs 4.8589 µs 4.9446 µs]
+                        change: [+1.0928% +4.3222% +7.5043%] (p = 0.01 < 0.05)
+                        Performance has regressed.
+Found 5 outliers among 100 measurements (5.00%)
+  1 (1.00%) low severe
+  4 (4.00%) low mild
+

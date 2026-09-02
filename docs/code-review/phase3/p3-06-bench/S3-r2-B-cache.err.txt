@@ -1,0 +1,4 @@
+Benchmarking dns_cache/cache_hit_in_engine_latency
+Benchmarking dns_cache/cache_hit_in_engine_latency: Warming up for 3.0000 s
+Benchmarking dns_cache/cache_hit_in_engine_latency: Collecting 100 samples in estimated 5.0016 s (2.0M iterations)
+Benchmarking dns_cache/cache_hit_in_engine_latency: Analyzing
