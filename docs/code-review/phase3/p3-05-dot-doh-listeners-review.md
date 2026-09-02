@@ -95,9 +95,13 @@ Dev box, x86_64, **release binary** (`FAH_E2E_BINARY` override in
 `fah-api/test-harness` forbids it), loopback client, 2 000 sequential A
 queries for a blocked domain (in-engine, no upstream), single run. Diagnostic
 only — the RB5009 conversion is the documented ~9× factor, not a device
-reading. Reproduce: `cargo build --release -p fastadhunter` then
-`FAH_E2E_BINARY=target/release/fastadhunter.exe cargo test -p fastadhunter
---test encrypted_latency -- --ignored --nocapture`.
+reading. Reproduce: `cargo build --release -p fastadhunter` then, from the
+workspace root, `FAH_E2E_BINARY=../../target/release/fastadhunter.exe cargo
+test -p fastadhunter --test encrypted_latency -- --ignored --nocapture`. The
+override resolves against the test process's working directory, which cargo
+sets to `crates/fastadhunter/`, hence the two `..` (an absolute path also
+works); the harness refuses a value that is not a file and prints the path it
+uses.
 
 | Transport | min | p50 | p90 | p99 | max | Added vs UDP (p50) |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -355,3 +359,173 @@ on the Windows dev box.
 **PASS WITH DEFERRED FINDINGS** — S1, S2, N5, N6, N7, N10 fixed and
 verified; N2, N4, N9 closed won't-fix; N3 and N8 carried into the p3-06 plan;
 N1 deferred to p3-06 (profile before touching).
+
+## Second review — commits `6c6e66a` + `dc9bf3d` (2026-09-02)
+
+Both commits reviewed as one changeset against `p3-05-dot-doh-listeners.md`
+and `-plan.md`: `git diff --stat` first, diff file by file, callers of every
+changed symbol searched, ranges read. No sub-agents. Gates re-run on the
+Windows dev box: `cargo fmt --all -- --check`, `cargo clippy --workspace
+--all-targets -- -D warnings`, `cargo test -p fah-dns -p fah-api -p fah-config
+-p fah-model`, `cargo test -p fastadhunter --test e2e --test layering` — all
+green; the round-one fixes (S1, S2, N5, N6, N7, N10) are verified in the tree.
+Numbering continues from the first round. Evidence is from the tree unless
+marked *inference*.
+
+### Blockers
+
+None.
+
+### Should-fix
+
+**S3 — API.md §Certificates contradicts the shipped `api.tls = false` + DoT
+behaviour.** `API.md:1386-1388`: "With `api.tls = false` the import is still
+accepted and stored, but no restart loads it: the pair waits in `/config`
+until TLS is enabled." Since this change `main.rs:478` runs
+`load_or_generate_tls` whenever `config.api.tls || config.dns.listen.dot_enabled`,
+and `dot_tls` (`main.rs:729`) reads the pair through `api_certified_key()` as
+the DoT fallback — with the default `dot_enabled = true` a restart *does* load
+an imported pair, onto 853. CLAUDE.md: a change that contradicts a doc updates
+it in the same change; the six edits in `dc9bf3d` missed this sentence.
+Remediation: one clause — "…until TLS is enabled; with `dot_enabled = true`
+the next restart loads it as the DoT fallback certificate". Fix before DONE
+(doc edit, owner approval).
+
+**S4 — Two readers of the API pair, two failure postures; the summary states
+only one.** §Decisions: "Certificate failure degrades DoT, never the resolver
+… an unloadable API pair … logs `error!` and closes the 853 socket. :53 keeps
+serving." True of `api_certified_key()` (`main.rs:729-737`), not of the reader
+that runs first: `main.rs:478-484` `load_or_generate_tls(...)?` fails the whole
+boot on a corrupt or half-present pair (`CertError::Config` /
+`IncompletePair`, `fah-certs/src/api.rs:44-49`). Pre-existing for
+`api.tls = true`; **new** for `api.tls = false`, where nothing read the pair
+before and DoT is default-on — an operator who disabled API TLS around a
+broken pair now loses the resolver at boot, and the error names the pair
+files, not `[dns.listen] dot_enabled`. The plan permits explicit failure
+(rule 11) but says "only … DoT fail startup"; the summary and CONFIGURATION.md
+say DoT degrades. The corrupt-pair boot is *inference* from the `?`, not
+executed. Remediation, smallest: with `api.tls = false` run
+`load_or_generate_tls` inside `dot_tls`'s degrade path (it is already on the
+blocking pool) so an error closes 853 and :53 serves — both readers then share
+the posture the summary documents. Otherwise keep the boot failure and
+correct §Decisions + CONFIGURATION.md `dot_port` to say so. Fix before DONE.
+
+### Notes
+
+| # | Where | Evidence | Why it matters | Direction | Fix / defer |
+| --- | --- | --- | --- | --- | --- |
+| N11 | `dot.rs:127-129` | `prewarm(..).await` sits between the two `timeout_at(deadline, …)` windows, under neither | The handshake *completion* cannot outlive the deadline (the second `timeout_at` fires at once), but the permit and task are held for the blocking-pool wait + mint on top of it — §Correctness "cannot extend the total" is true of the handshake, not of the slot. Bounded: 64 permits, per-host single-flight in `fah-certs`, one P-256 mint (≈ 0.5 ms RB5009 by the documented factor — *inference*) | `timeout_at(deadline, prewarm(..))` frees the slot sooner; the blocking mint runs to completion either way. Or narrow the wording | defer to p3-06 with N1 |
+| N12 | `server_integration.rs:90-110` | probe bind → `drop(probe)` (`:95`) → `Server::bind` → re-bind the same port (`:106`) | TOCTOU: a parallel test process can take the freed ephemeral port between `:95` and `:106`; the assertion then fails for the wrong reason | Hold the probe listener and assert `Server::bind` with `dot_enabled = false` succeeds while the port is taken — race-free and strictly stronger | defer |
+| N13 | `routes.rs:119` | `/dns-query` registers on `state.doh.is_some()` only; `state.tls` is not consulted | With `api.tls = false` the route answers over plaintext HTTP. Exposure equals :53 (LAN, DNS only, no admin reach), but RFC 8484 is HTTPS-only, no real client uses it, and SECURITY.md §Later phases says "DoH rides the API listener's certificate" — there is none. Nothing logs it | Gate on `state.tls` (route absent, same invariant as `doh_enabled = false`) or one sentence under CONFIGURATION.md `doh_enabled` | owner call |
+| N14 | `server.rs:1-2` | module doc: "Binds `[dns.listen]`'s UDP and TCP sockets" | Stale after DoT; N6 deleted the two item-level blocks, the module-level one remains | Delete (rule 7: deletion is the compliant direction) | with S3/S4 |
+| N15 | `plan/wip/phase3/CLAUDE.md:24` | row 5 still `WAITING` | Every prior DONE commit in this phase flipped its row in the same commit (`8389503`, `49c6791`, `3a856ef`, `094f167`); neither p3-05 commit did | Owner flips to DONE when this review closes | owner gate |
+| N16 | `tests/common/mod.rs:110` | `FAH_E2E_BINARY` overrides the binary for every e2e, silently | A stale value left in the shell makes the whole suite test the wrong build with no trace in the output | `eprintln!` the chosen path when the override is active, or read it only in `encrypted_latency.rs` | defer |
+| N17 | `e2e.rs:193-215` | CA generated via the API, then a client trusting only that CA validates the DoT leaf — **no restart** | Live CA activation on DoT is a shipped property (`MintingResolver` reads the CA slot per handshake) that no doc states; CONFIGURATION.md `dot_port` says only "when a CA exists", API.md §Certificates documents restart semantics for the pair alone | One clause on the CA generate/import endpoints: "takes effect on the next DoT handshake" | with S3 |
+
+### Plan compliance — re-checked
+
+| Item | Status | Evidence |
+| --- | --- | --- |
+| Round-one fixes S1, S2(a), S2(b), N5, N6, N7, N10 | verified in tree | `dot.rs:141-142` `&mut stream` + bounded `shutdown()`; `a_finished_connection_is_closed_with_close_notify_not_a_bare_fin`; `server_integration.rs:90`; `e2e.rs` policy leg + `await_stats`; `client_transport.rs` has no `is_encrypted`; `server.rs` item docs gone; six doc edits in `dc9bf3d` |
+| Steps 1–7, decisions 1–8 | as in the first round | no new deviation in `dc9bf3d` |
+| Acceptance "CONFIGURATION.md + API.md updated in the same change" | met with one gap | S3 |
+| Acceptance "gates green" | re-run, green | header above |
+| Phase table row | not flipped | N15 |
+
+### Correctness — checked, acceptable (S4, N11)
+
+- `ConnectInfo` for DoH is real: `fah-api/src/server.rs` builds
+  `into_make_service_with_connect_info::<SocketAddr>()` per connection; the
+  peer is pinned by `dns_query_answers_post_and_get_without_credentials_and_names_the_peer`.
+- `has_ca()` (`store.rs:311` → `lock_ca().clone()`) is one uncontended mutex
+  read + `Arc` clone per SNI hello; `prewarm` re-locks — handshake path only.
+- Permit dropped on the accept-error `continue` (`dot.rs:71-88`); `RetryPolicy`
+  use identical to TCP/53.
+- Close path: `handle_connection` `Ok` and `Err` both reach `shutdown()`; a
+  dead peer bounds it at `TCP_IDLE_TIMEOUT`.
+- Live CA activation on DoT (N17) is correct by construction:
+  `MintingResolver::resolve` → `cached_leaf`, and `prewarm`, read the CA slot
+  per call.
+
+### Architecture — checked, acceptable
+
+Layering unchanged from round one; `layering.rs` green here
+(`fah-certs` at L2, `fah-dns → fah-certs` is the ARCHITECTURE.md-named edge).
+No new abstraction, dependency or public symbol in `dc9bf3d`.
+
+### Performance — checked, acceptable
+
+UDP/TCP query path unchanged since round one (`Copy` enum + `Into` at the
+event-build site). DoT: one `close_notify` write per connection end (S1), none
+per query. DoH unchanged.
+
+### Memory — checked, acceptable
+
+No new retained state in `dc9bf3d`. Per DoT connection: task + permit + TLS
+session, ≤ 64. rustls' session cache is its bounded default (256), the same
+posture as `fah-certs/src/api.rs`.
+
+### Rust quality — checked, acceptable
+
+`serve_connection` moves `tls.config` after borrowing `tls.store` — a valid
+partial move (`DotTls` has no `Drop`). No `unwrap`/`expect`/`panic` outside
+tests. Aborting the listener task drops the socket; connection tasks are
+detached exactly as TCP/53's are (pre-existing pattern, not widened).
+
+### Tests — checked; N12, N16
+
+Round-one suites plus the fix tests all green here: `fah-dns` 115 (7 in
+`dot::tests`), `fah-api` 208, `fah-config` 71, `fah-model` 57, e2e 3.1 s,
+`layering` 1. Timing assertions remain lower-bound only.
+`encrypted_latency.rs` stays `#[ignore]`d.
+
+### Regression — checked, acceptable (S4)
+
+The one behavioural change outside the task's stated scope is the
+`api.tls = false` boot now depending on the API pair (S4). `PUBLIC_PATHS`
+unchanged (`auth.rs:11`); WS key set pinned; UDP/TCP suites run with DoT off.
+
+### Status
+
+**PASS WITH DEFERRED FINDINGS** — S3 and S4 to fix before DONE (one doc
+clause; one posture choice with a small code option); N11–N17 recorded,
+N13 is an owner call, N15 is the owner's row flip.
+
+### Fixes applied — second review (owner-approved: S3, S4)
+
+| Finding | Change | Verification |
+| --- | --- | --- |
+| S3 | `API.md` §Certificates import paragraph: with `api.tls = false` the API listener never loads the pair, but `[dns.listen] dot_enabled = true` (default) loads it at the next restart as the DoT fallback; only with both off does the pair wait in `/config` | inspection against `main.rs` |
+| S4 | `main.rs` `Engine::start`: `load_or_generate_tls` still runs when either `api.tls` or `dot_enabled` is on, but its error is fatal only when `api.tls = true` (the API server needs the pair — pre-existing posture). With `api.tls = false` the error is logged once, naming `[dns.listen] dot_enabled` as the reason the pair was needed, `dot_pair_loaded` is `false`, `dot_tls` is skipped and `Server::serve` closes 853; :53 serves. Both readers of the pair now share the posture §Decisions documents. **Not test-pinned:** the branch lives in `main.rs`, and the e2e harness readies on `https://` so an `api.tls = false` boot cannot be driven through it — verified by inspection and the gates | `cargo fmt --check`, `cargo clippy --workspace --all-targets -- -D warnings` (binary crate re-checked after `touch`), `cargo test -p fastadhunter` (e2e, healthcheck, http_e2e, layering, mode_sync) — green |
+
+### Status after the fixes
+
+**PASS WITH DEFERRED FINDINGS** — S3, S4 fixed and verified; N11–N17
+recorded (N13 owner call, N15 row flip, the rest deferred).
+
+### Third round — second review (owner-approved: N13, N14, N15, N17)
+
+| Finding | Change | Verification |
+| --- | --- | --- |
+| N13 | Runtime gate, not validation (a validation error would fail every existing `api.tls = false` config on upgrade, `doh_enabled` being default-on). `routes.rs`: `/dns-query` registers only when `state.tls && state.doh.is_some()` — route absent, the same invariant `doh_enabled = false` gives. `main.rs`: one boot `warn!` when `doh_enabled = true` and `api.tls = false`, naming both keys. CONFIGURATION.md `doh_enabled` and API.md §DNS over HTTPS state it | new `dns_query_is_absent_without_tls_because_doh_is_https_only` (`fah-api/tests/api.rs`): plain-HTTP harness with the port wired — GET and POST never answer `application/dns-message`, the fake pipeline sees no query, `/health` and `/api/v1/stats` still serve |
+| N14 | `server.rs` module doc deleted | `cargo test -p fah-dns` green |
+| N15 | `plan/wip/phase3/CLAUDE.md` row 5 → `DONE` | after the gates below |
+| N17 | API.md `POST /api/v1/certificates/ca/generate`: DoT picks the new authority up on its next handshake, no restart (unlike an API-pair import). No CA *import* endpoint exists — `POST /api/v1/certificates/import` replaces the API pair only, whose restart semantics S3 covers | inspection; the e2e CA-generate → DoT leg already pins the behaviour |
+
+Gates after this round: `cargo fmt --all -- --check`, `cargo clippy
+--workspace --all-targets -- -D warnings`, `cargo test -p fah-api -p fah-dns
+-p fastadhunter` (incl. e2e, healthcheck, http_e2e, layering,
+request_coverage) — green on the Windows dev box.
+
+### Fourth round — second review (owner-approved: N12, N16)
+
+| Finding | Change | Verification |
+| --- | --- | --- |
+| N12 | Oracle checked first: `fah_common::listen::bind_tcp` sets no `SO_REUSEPORT`; `SO_REUSEADDR` only on Unix (tokio's own default), which still refuses a second *listening* socket on one addr:port — so "bind fails ⇔ port held" holds on Linux, macOS and Windows. Test rewritten: the probe socket is **held** through the assertions. (1) `dot_enabled = true` on the held port ⇒ `Server::bind` fails and the error names `DoT` — the oracle is proven on the platform running the test, not assumed; (2) `dot_enabled = false` on the same held port ⇒ `Server::bind` succeeds, `dot_addr()` is `None`; (3) `dot_enabled = true, dot_port = 0` ⇒ `dot_addr()` is `Some` and a second bind of it fails. No drop window, no sleeps, no retries | `cargo test -p fah-dns --test server_integration` 11/11 green |
+| N16 | `tests/common/mod.rs` `binary_under_test()`: unset ⇒ `CARGO_BIN_EXE_fastadhunter` as before. Set ⇒ `std::path::absolute`, `is_file()` required, otherwise a panic naming `FAH_E2E_BINARY`, the resolved path and the working directory it resolved against; the path is printed once per test process (`Once`). No fallback when the override is set. §Measurements reproduce line corrected: cargo runs the test process in `crates/fastadhunter/`, so the relative value is `../../target/release/fastadhunter.exe` | default: `healthcheck` 5/5 green, nothing printed. `FAH_E2E_BINARY=../../target/release/fastadhunter.exe` ⇒ "override active: E:\FastAdHunter\target\release\fastadhunter.exe", 5/5 green. `nope.exe` ⇒ panic "resolves to …\crates\fastadhunter\nope.exe, which is not a file; … working directory, E:\FastAdHunter\crates\fastadhunter". Empty ⇒ panic "cannot make an empty path absolute" |
+
+### Final status
+
+**PASS WITH DEFERRED FINDINGS** — S1–S4, N5, N6, N7, N10, N12, N13, N14, N15,
+N16, N17 fixed and verified; N2, N4, N9 won't-fix; N3, N8 in the p3-06 plan;
+N1, N11 deferred to p3-06 (profile before touching).

@@ -1,6 +1,3 @@
-//! Binds `[dns.listen]`'s UDP and TCP sockets and spawns their listener
-//! tasks (ARCHITECTURE.md §Listeners: UDP mandatory, TCP mandatory fallback).
-
 use std::io;
 use std::net::SocketAddr;
 use std::sync::Arc;

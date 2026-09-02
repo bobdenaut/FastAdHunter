@@ -11,10 +11,10 @@
 
 use std::cell::Cell;
 use std::net::{Ipv4Addr, SocketAddr};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::str::FromStr;
-use std::sync::Arc;
+use std::sync::{Arc, Once};
 use std::time::{Duration, Instant};
 
 use hickory_proto::op::{Message, Query as WireQuery, ResponseCode};
@@ -40,6 +40,27 @@ impl Drop for Guard {
         let _ = self.0.kill();
         let _ = self.0.wait();
     }
+}
+
+fn binary_under_test() -> PathBuf {
+    static ANNOUNCED: Once = Once::new();
+    let Some(raw) = std::env::var_os("FAH_E2E_BINARY") else {
+        return PathBuf::from(env!("CARGO_BIN_EXE_fastadhunter"));
+    };
+    let path = std::path::absolute(&raw).unwrap_or_else(|err| {
+        panic!("FAH_E2E_BINARY={raw:?} cannot be resolved to an absolute path: {err}")
+    });
+    assert!(
+        path.is_file(),
+        "FAH_E2E_BINARY={raw:?} resolves to {}, which is not a file; a relative value resolves \
+         against the test process's working directory, {}",
+        path.display(),
+        std::env::current_dir()
+            .map(|dir| dir.display().to_string())
+            .unwrap_or_default()
+    );
+    ANNOUNCED.call_once(|| eprintln!("FAH_E2E_BINARY override active: {}", path.display()));
+    path
 }
 
 /// The ports a booted instance was given.
@@ -106,18 +127,15 @@ pub async fn boot(
         let log_path = config_dir.join("engine.log");
         let log = std::fs::File::create(&log_path).expect("engine log");
         let child = Guard(
-            Command::new(
-                std::env::var_os("FAH_E2E_BINARY")
-                    .unwrap_or_else(|| env!("CARGO_BIN_EXE_fastadhunter").into()),
-            )
-            .arg("--config")
-            .arg(&config_path)
-            .arg("--data")
-            .arg(data_dir)
-            .stdout(Stdio::from(log.try_clone().expect("clone log handle")))
-            .stderr(Stdio::from(log))
-            .spawn()
-            .expect("spawn fastadhunter"),
+            Command::new(binary_under_test())
+                .arg("--config")
+                .arg(&config_path)
+                .arg("--data")
+                .arg(data_dir)
+                .stdout(Stdio::from(log.try_clone().expect("clone log handle")))
+                .stderr(Stdio::from(log))
+                .spawn()
+                .expect("spawn fastadhunter"),
         );
 
         let base = format!("https://127.0.0.1:{}", ports.api);

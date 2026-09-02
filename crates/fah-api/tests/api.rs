@@ -808,6 +808,46 @@ async fn dns_query_is_absent_when_doh_is_disabled_and_everything_else_serves() {
 }
 
 #[tokio::test]
+async fn dns_query_is_absent_without_tls_because_doh_is_https_only() {
+    let harness = start_with(HarnessOptions {
+        tls: false,
+        ..HarnessOptions::default()
+    })
+    .await;
+    assert!(harness.base.starts_with("http://"));
+    let dns = harness
+        .dns
+        .clone()
+        .expect("the DoH port is wired; only the route must be absent");
+
+    let response = harness
+        .client
+        .get(harness.url("/dns-query?dns=EjQBAA"))
+        .send()
+        .await
+        .unwrap();
+    assert_ne!(content_type(&response).as_deref(), Some(DNS_MESSAGE));
+
+    let response = harness
+        .client
+        .post(harness.url("/dns-query"))
+        .header("content-type", DNS_MESSAGE)
+        .body(vec![0x12, 0x34, 0x01, 0x00])
+        .send()
+        .await
+        .unwrap();
+    assert_ne!(response.status(), 200);
+    assert_ne!(content_type(&response).as_deref(), Some(DNS_MESSAGE));
+    assert!(
+        dns.seen.lock().unwrap().is_empty(),
+        "a plaintext listener must never hand a query to the pipeline"
+    );
+
+    assert_eq!(harness.get("/health").await.status(), 200);
+    assert_eq!(harness.get("/api/v1/stats").await.status(), 200);
+}
+
+#[tokio::test]
 async fn dns_query_is_the_only_route_outside_the_admin_exemptions() {
     let harness = start().await;
     for path in ["/api/v1/dns-query", "/api/dns-query", "/dns-query/"] {

@@ -84,7 +84,10 @@ dot_port = 853                # boot    — TCP; binds before the privilege drop
                               #           installed), else the API certificate
 doh_enabled = true            # boot    — DNS-over-HTTPS (RFC 8484) at
                               #           https://<api>/dns-query, unauthenticated;
-                              #           false removes the route entirely
+                              #           false removes the route entirely.
+                              #           Needs [api] tls = true: with TLS off the
+                              #           route is absent (DoH is HTTPS-only) and
+                              #           the boot log warns once
 
 # ─── Blocking behavior ─────────────────────────────────────────────────
 [dns.blocking]

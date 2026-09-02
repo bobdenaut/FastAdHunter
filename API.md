@@ -84,6 +84,9 @@ client; the query event carries `transport: "doh"` (§Events).
 - `doh_enabled = false`: the route does not exist — a `GET` falls through to
   the dashboard shell, a `POST` is refused, nothing on the listener answers
   `application/dns-message`.
+- `[api] tls = false`: the route is not registered either — DoH is HTTPS-only
+  (RFC 8484), so a plaintext listener never serves it; the boot log warns
+  once, naming both keys.
 - Served over HTTP/1.1 and h2 (the listener's ALPN); HTTP/3 is not offered.
 
 See `requests/dns-query.http`.
@@ -1310,7 +1313,9 @@ The previous pair is **copied** to `/config/ca-archive/<unix-seconds>/` before
 the new one is committed — nothing here ever deletes a private key. Colliding
 regenerations inside one second get their own directory.
 `archived_previous` says whether a predecessor existed. The leaf cache is
-purged, so every leaf minted afterwards chains to the new root only.
+purged, so every leaf minted afterwards chains to the new root only. The DoT
+listener picks the new authority up on its next handshake — it mints per SNI
+at handshake time — so no restart is needed, unlike an API-pair import.
 
 **The archive holds at most 8 retired pairs.** A ninth regeneration is refused
 with `409` `conflict` (`archive_full:`) and changes nothing; move directories
@@ -1384,8 +1389,10 @@ nothing is left in place and the boot fails loudly, naming both files.
 you are on keeps the old certificate until the container restarts — the same
 `restart_required` contract `POST /api/v1/config` uses for boot keys. Nothing
 retries on a timer; restart when it suits you. With `api.tls = false` the import
-is still accepted and stored, but no restart loads it: the pair waits in
-`/config` until TLS is enabled.
+is still accepted and stored; the API listener never loads it, but with
+`[dns.listen] dot_enabled = true` (the default) the next restart loads it as the
+DoT fallback certificate. With both off the pair waits in `/config` until one
+of them is enabled.
 
 Every rejection is `422` `validation_failed` with a stable prefix, so a client
 can tell the causes apart without new error codes:

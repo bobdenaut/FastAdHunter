@@ -88,27 +88,34 @@ async fn start_server_on(
 
 #[tokio::test]
 async fn a_disabled_dot_listener_binds_nothing_on_its_port() {
-    let probe = tokio::net::TcpListener::bind((Ipv4Addr::LOCALHOST, 0))
+    let held = tokio::net::TcpListener::bind((Ipv4Addr::LOCALHOST, 0))
         .await
         .unwrap();
-    let dot_port = probe.local_addr().unwrap().port();
-    drop(probe);
+    let dot_port = held.local_addr().unwrap().port();
 
     let listen = DnsListenConfig {
         address: "127.0.0.1".to_string(),
         port: 0,
-        dot_enabled: false,
+        dot_enabled: true,
         dot_port,
         ..Default::default()
     };
-    let server = Server::bind(&listen).await.unwrap();
+    let refused = Server::bind(&listen)
+        .await
+        .err()
+        .expect("dot_enabled = true must fail to bind a port another socket holds");
+    assert!(refused.to_string().contains("DoT"), "got: {refused}");
+
+    let listen = DnsListenConfig {
+        dot_enabled: false,
+        ..listen
+    };
+    let server = Server::bind(&listen)
+        .await
+        .expect("dot_enabled = false must not touch the DoT port, even while it is held");
     assert!(server.dot_addr().is_none());
-    let still_free = tokio::net::TcpListener::bind((Ipv4Addr::LOCALHOST, dot_port)).await;
-    assert!(
-        still_free.is_ok(),
-        "dot_enabled = false must leave the DoT port unbound, got {still_free:?}"
-    );
-    drop(still_free);
+    drop(server);
+    drop(held);
 
     let listen = DnsListenConfig {
         dot_enabled: true,

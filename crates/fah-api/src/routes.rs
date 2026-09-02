@@ -116,7 +116,7 @@ pub fn router(state: Arc<AppState>) -> Router {
             Arc::clone(&state),
             crate::auth::require_auth,
         ));
-    let router = match state.doh.is_some() {
+    let router = match state.tls && state.doh.is_some() {
         true => admin.route(
             "/dns-query",
             get(doh::get)

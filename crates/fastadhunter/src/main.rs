@@ -476,14 +476,27 @@ impl Engine {
             );
         }
         let api_pair = if config.api.tls || config.dns.listen.dot_enabled {
-            Some(fah_api::load_or_generate_tls(
+            match fah_api::load_or_generate_tls(
                 config_dir,
                 &config.api.address,
                 fah_api::probe_local_address(),
-            )?)
+            ) {
+                Ok(pair) => Some(pair),
+                Err(error) if config.api.tls => return Err(error.into()),
+                Err(error) => {
+                    tracing::error!(
+                        %error,
+                        "the API certificate pair did not load; [dns.listen] dot_enabled = true \
+                         needs it as the DoT fallback certificate — the DoT listener is closed \
+                         until /config is repaired and the container restarted"
+                    );
+                    None
+                }
+            }
         } else {
             None
         };
+        let dot_pair_loaded = api_pair.is_some();
         let tls = if config.api.tls {
             api_pair
         } else {
@@ -525,15 +538,23 @@ impl Engine {
             None
         };
 
-        let dot = {
+        let dot = if dot_pair_loaded {
             let listen = config.dns.listen.clone();
             let certs = certs.clone();
             tokio::task::spawn_blocking(move || dot_tls(&listen, certs.as_ref())).await?
+        } else {
+            None
         };
         let doh = config.dns.listen.doh_enabled.then(|| {
             Arc::new(adapters::DnsWireAdapter::new(Arc::clone(&pipeline)))
                 as Arc<dyn fah_api::DnsWireSource>
         });
+        if config.dns.listen.doh_enabled && !config.api.tls {
+            tracing::warn!(
+                "[dns.listen] doh_enabled = true, but [api] tls = false: /dns-query is not \
+                 served — DoH is HTTPS-only and needs the API listener's TLS"
+            );
+        }
 
         let api_address = config.api.address.clone();
         let api_port = config.api.port;
