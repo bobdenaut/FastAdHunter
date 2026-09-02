@@ -300,6 +300,7 @@ fn event(
         cache_hit,
         true,
         None,
+        fah_model::ClientTransport::Udp,
     )
 }
 
@@ -455,6 +456,7 @@ impl Harness {
             certs: Some(Arc::new(
                 fah_api::CertStore::open(config_dir.path()).unwrap(),
             )),
+            doh: None,
         };
         let server = ApiServer::bind("127.0.0.1", 0, tls, state).await.unwrap();
         let base = server.base_url();

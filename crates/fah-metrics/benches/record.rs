@@ -22,6 +22,7 @@ fn pass_event() -> QueryEvent {
         true,
         false,
         None,
+        fah_model::ClientTransport::Udp,
     )
 }
 
@@ -38,6 +39,7 @@ fn block_event() -> QueryEvent {
         false,
         false,
         None,
+        fah_model::ClientTransport::Udp,
     )
 }
 
@@ -54,6 +56,7 @@ fn forward_event() -> QueryEvent {
         false,
         true,
         None,
+        fah_model::ClientTransport::Udp,
     )
 }
 
@@ -72,6 +75,7 @@ fn stale_after_forward_failure_event() -> QueryEvent {
         true,
         true,
         Some(StaleServe::AfterForwardFailure),
+        fah_model::ClientTransport::Udp,
     )
 }
 
@@ -90,6 +94,7 @@ fn stale_from_swr_event() -> QueryEvent {
         true,
         false,
         Some(StaleServe::FromSwr),
+        fah_model::ClientTransport::Udp,
     )
 }
 

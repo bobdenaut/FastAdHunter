@@ -252,6 +252,7 @@ mod tests {
             false,
             true,
             None,
+            crate::ClientTransport::Udp,
         ));
         let http = Event::http(RequestEvent::new(
             request(),

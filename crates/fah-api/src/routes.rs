@@ -21,6 +21,7 @@ use tower_http::set_header::SetResponseHeaderLayer;
 
 use crate::auth::AuthMethod;
 use crate::certs;
+use crate::doh;
 use crate::error::{ApiError, ApiResult};
 use crate::events::{self, Event};
 use crate::password::{self, Argon2Permit, RateDecision};
@@ -107,16 +108,24 @@ pub fn router(state: Arc<AppState>) -> Router {
 
     let api = Router::new().nest("/v1", v1).fallback(not_found);
 
-    Router::new()
+    let admin = Router::new()
         .route("/health", get(health))
         .route("/api/", any(not_found))
         .nest("/api", api)
         .layer(axum::middleware::from_fn_with_state(
             Arc::clone(&state),
             crate::auth::require_auth,
-        ))
-        .with_state(state)
-        .merge(crate::web::mounted())
+        ));
+    let router = match state.doh.is_some() {
+        true => admin.route(
+            "/dns-query",
+            get(doh::get)
+                .post(doh::post)
+                .layer(DefaultBodyLimit::max(doh::MAX_MESSAGE_BYTES)),
+        ),
+        false => admin,
+    };
+    router.with_state(state).merge(crate::web::mounted())
 }
 
 async fn not_found() -> ApiError {

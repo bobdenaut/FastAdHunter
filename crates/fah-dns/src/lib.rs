@@ -5,6 +5,7 @@
 
 mod backoff;
 mod cache;
+mod dot;
 mod pipeline;
 mod qtype;
 mod response;
@@ -18,6 +19,7 @@ mod udp;
 mod upstream;
 
 pub use cache::{CacheClean, CacheCleanupStats, CacheStats, DEFAULT_REFRESH_CLAIM_LEASE};
+pub use dot::{DotTls, DOT_MAX_CONNECTIONS};
 pub use pipeline::{Pipeline, Transport};
 pub use server::{ListenerDied, Server};
 pub use swr::SwrStats;

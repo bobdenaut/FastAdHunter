@@ -23,6 +23,7 @@ fn timed_healthcheck(config_path: &Path) -> (Output, Duration) {
 
 fn config_toml(ports: &Ports) -> String {
     let dns_port = ports.dns;
+    let dot_port = ports.dot;
     let api_port = ports.api;
     format!(
         r#"
@@ -32,6 +33,7 @@ mode = "dns"
 [dns.listen]
 address = "127.0.0.1"
 port = {dns_port}
+dot_port = {dot_port}
 
 [dns.upstreams]
 strategy = "fallback"

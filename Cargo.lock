@@ -649,6 +649,7 @@ dependencies = [
  "argon2",
  "aws-lc-rs",
  "axum",
+ "base64",
  "fah-api",
  "fah-certs",
  "fah-common",
@@ -721,6 +722,7 @@ name = "fah-dns"
 version = "0.3.1"
 dependencies = [
  "criterion",
+ "fah-certs",
  "fah-common",
  "fah-config",
  "fah-model",
@@ -736,6 +738,7 @@ dependencies = [
  "tokio-rustls",
  "tracing",
  "url",
+ "x509-parser",
 ]
 
 [[package]]
@@ -864,6 +867,7 @@ dependencies = [
  "serde_json",
  "tempfile",
  "tokio",
+ "tokio-rustls",
  "tokio-tungstenite",
  "toml",
  "tracing",

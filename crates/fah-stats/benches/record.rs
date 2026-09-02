@@ -58,6 +58,7 @@ fn dns_event(index: usize, blocked: bool, cache_hit: bool) -> QueryEvent {
         cache_hit,
         false,
         None,
+        fah_model::ClientTransport::Udp,
     )
 }
 

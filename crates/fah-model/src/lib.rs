@@ -1,6 +1,7 @@
 //! Pure domain model and shared DTOs: Query, Verdict, Client, QueryEvent (ARCHITECTURE.md L1).
 
 mod client;
+mod client_transport;
 mod engine;
 mod history;
 mod http;
@@ -15,6 +16,7 @@ mod request_event;
 mod verdict;
 
 pub use client::Client;
+pub use client_transport::ClientTransport;
 pub use engine::{
     AnswerCounters, CacheCleanupCounters, DnsCounters, DnsLatency, EngineCounters, EngineTelemetry,
     HttpCounters, HttpLatency, LatencyTotals, ListFetchCounters, RulesetInfo, StageTotals,

@@ -130,6 +130,24 @@ fn validate(config: &Config) -> Result<(), ConfigError> {
     validate_nonzero_port("api.port", config.api.port)?;
     validate_nonzero_port("http.listen.port", config.http.listen.port)?;
     validate_nonzero_port("https.listen.port", config.https.listen.port)?;
+    if config.dns.listen.dot_enabled {
+        validate_nonzero_port("dns.listen.dot_port", config.dns.listen.dot_port)?;
+        for (section, port) in [
+            ("[dns.listen] port", config.dns.listen.port),
+            ("[api] port", config.api.port),
+            ("[http.listen] port", config.http.listen.port),
+            ("[https.listen] port", config.https.listen.port),
+        ] {
+            if config.dns.listen.dot_port == port {
+                return Err(ConfigError::Validation {
+                    key: "dns.listen.dot_port",
+                    message: format!(
+                        "must differ from {section} ({port}); two listeners cannot bind one port"
+                    ),
+                });
+            }
+        }
+    }
 
     for (section, port) in [
         ("[api] port", config.api.port),
@@ -525,6 +543,9 @@ mode = "dns"
 [dns.listen]
 address = "::"
 port = 53
+dot_enabled = true
+dot_port = 853
+doh_enabled = true
 
 [dns.blocking]
 mode = "null_ip"
@@ -625,6 +646,47 @@ format = "text"
         assert_eq!(config.engine.mode, EngineMode::DnsHttp);
         assert_eq!(config.dns, DnsConfig::default());
         assert_eq!(config.api, ApiConfig::default());
+    }
+
+    #[test]
+    fn encrypted_dns_listeners_default_on_with_dot_on_853() {
+        let config = Config::default();
+        assert!(config.dns.listen.dot_enabled);
+        assert_eq!(config.dns.listen.dot_port, 853);
+        assert!(config.dns.listen.doh_enabled);
+
+        let config =
+            Config::from_toml_str("[dns.listen]\ndot_enabled = false\ndoh_enabled = false\n")
+                .unwrap();
+        assert!(!config.dns.listen.dot_enabled);
+        assert!(!config.dns.listen.doh_enabled);
+        assert_eq!(config.dns.listen.dot_port, 853);
+    }
+
+    #[test]
+    fn dot_port_env_override_applies() {
+        let pairs = vec![("FAH__DNS__LISTEN__DOT_PORT".to_string(), "8853".to_string())];
+        let config = apply_env_overrides(Config::default(), &pairs).unwrap();
+        assert_eq!(config.dns.listen.dot_port, 8853);
+    }
+
+    #[test]
+    fn dot_port_must_not_collide_with_another_listener_unless_dot_is_off() {
+        let validated = |toml: &str| Config::from_toml_str(toml).unwrap().validate();
+
+        let text = validated("[dns.listen]\ndot_port = 8443\n")
+            .unwrap_err()
+            .to_string();
+        assert!(text.contains("dns.listen.dot_port"), "got: {text}");
+        assert!(text.contains("[api] port"), "got: {text}");
+
+        let text = validated("[dns.listen]\ndot_port = 0\n")
+            .unwrap_err()
+            .to_string();
+        assert!(text.contains("dns.listen.dot_port"), "got: {text}");
+
+        validated("[dns.listen]\ndot_enabled = false\ndot_port = 8443\n")
+            .expect("a disabled DoT listener binds nothing, so its port cannot collide");
     }
 
     #[test]

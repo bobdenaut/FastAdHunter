@@ -180,6 +180,27 @@ fn client(view: fah_stats::ClientView) -> ClientEntry {
     }
 }
 
+pub struct DnsWireAdapter {
+    pipeline: Arc<fah_dns::Pipeline<UpstreamPool>>,
+}
+
+impl DnsWireAdapter {
+    pub fn new(pipeline: Arc<fah_dns::Pipeline<UpstreamPool>>) -> Self {
+        Self { pipeline }
+    }
+}
+
+impl fah_api::DnsWireSource for DnsWireAdapter {
+    fn resolve(&self, message: Vec<u8>, client: IpAddr) -> fah_api::WireResolving {
+        let pipeline = Arc::clone(&self.pipeline);
+        Box::pin(async move {
+            pipeline
+                .handle(&message, client, fah_dns::Transport::Doh)
+                .await
+        })
+    }
+}
+
 pub struct CacheAdapter {
     pipeline: Arc<fah_dns::Pipeline<UpstreamPool>>,
 }

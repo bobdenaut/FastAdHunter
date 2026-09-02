@@ -384,6 +384,7 @@ mod tests {
             cache_hit,
             upstream_used,
             stale,
+            fah_model::ClientTransport::Udp,
         )
     }
 

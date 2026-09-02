@@ -46,6 +46,7 @@ impl Drop for Guard {
 pub struct Ports {
     pub dns: u16,
     pub api: u16,
+    pub dot: u16,
     http: Cell<Option<u16>>,
 }
 
@@ -91,6 +92,7 @@ pub async fn boot(
         let ports = Ports {
             dns: free_udp_port(),
             api: free_tcp_port(),
+            dot: free_tcp_port(),
             http: Cell::new(None),
         };
 
@@ -104,15 +106,18 @@ pub async fn boot(
         let log_path = config_dir.join("engine.log");
         let log = std::fs::File::create(&log_path).expect("engine log");
         let child = Guard(
-            Command::new(env!("CARGO_BIN_EXE_fastadhunter"))
-                .arg("--config")
-                .arg(&config_path)
-                .arg("--data")
-                .arg(data_dir)
-                .stdout(Stdio::from(log.try_clone().expect("clone log handle")))
-                .stderr(Stdio::from(log))
-                .spawn()
-                .expect("spawn fastadhunter"),
+            Command::new(
+                std::env::var_os("FAH_E2E_BINARY")
+                    .unwrap_or_else(|| env!("CARGO_BIN_EXE_fastadhunter").into()),
+            )
+            .arg("--config")
+            .arg(&config_path)
+            .arg("--data")
+            .arg(data_dir)
+            .stdout(Stdio::from(log.try_clone().expect("clone log handle")))
+            .stderr(Stdio::from(log))
+            .spawn()
+            .expect("spawn fastadhunter"),
         );
 
         let base = format!("https://127.0.0.1:{}", ports.api);
@@ -235,13 +240,7 @@ pub async fn resolve(port: u16, domain: &str) -> Answer {
         .await
         .expect("connect to the DNS listener");
 
-    let mut message = Message::query();
-    message.add_query(WireQuery::query(
-        Name::from_str(&format!("{domain}.")).expect("valid name"),
-        RecordType::A,
-    ));
-    let request = message.to_vec().expect("encodable query");
-
+    let request = a_query(domain);
     socket.send(&request).await.expect("send query");
 
     let mut buffer = vec![0u8; 4096];
@@ -250,7 +249,20 @@ pub async fn resolve(port: u16, domain: &str) -> Answer {
         .unwrap_or_else(|_| panic!("no DNS response for {domain} within 5s"))
         .expect("receive response");
 
-    let response = Message::from_vec(&buffer[..len]).expect("decodable response");
+    decode_answer(&buffer[..len])
+}
+
+pub fn a_query(domain: &str) -> Vec<u8> {
+    let mut message = Message::query();
+    message.add_query(WireQuery::query(
+        Name::from_str(&format!("{domain}.")).expect("valid name"),
+        RecordType::A,
+    ));
+    message.to_vec().expect("encodable query")
+}
+
+pub fn decode_answer(bytes: &[u8]) -> Answer {
+    let response = Message::from_vec(bytes).expect("decodable response");
     Answer {
         rcode: response.metadata.response_code,
         a_records: response
@@ -263,6 +275,108 @@ pub async fn resolve(port: u16, domain: &str) -> Answer {
             .collect(),
         ttl: response.answers.first().map(|record| record.ttl),
     }
+}
+
+pub async fn resolve_dot(
+    port: u16,
+    domain: &str,
+    tls: Arc<rustls::ClientConfig>,
+    sni: &str,
+) -> Answer {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    let tcp = tokio::net::TcpStream::connect((Ipv4Addr::LOCALHOST, port))
+        .await
+        .expect("connect to the DoT listener");
+    let name = rustls::pki_types::ServerName::try_from(sni.to_string()).expect("a valid SNI");
+    let mut stream = tokio::time::timeout(
+        Duration::from_secs(10),
+        tokio_rustls::TlsConnector::from(tls).connect(name, tcp),
+    )
+    .await
+    .expect("DoT handshake within 10s")
+    .expect("DoT handshake");
+
+    let request = a_query(domain);
+    let len = u16::try_from(request.len())
+        .expect("a short query")
+        .to_be_bytes();
+    stream.write_all(&len).await.expect("send length");
+    stream.write_all(&request).await.expect("send query");
+
+    let mut len_buf = [0u8; 2];
+    tokio::time::timeout(Duration::from_secs(5), stream.read_exact(&mut len_buf))
+        .await
+        .unwrap_or_else(|_| panic!("no DoT response for {domain} within 5s"))
+        .expect("response length");
+    let mut reply = vec![0u8; u16::from_be_bytes(len_buf) as usize];
+    stream.read_exact(&mut reply).await.expect("response body");
+    decode_answer(&reply)
+}
+
+pub async fn resolve_doh_post(client: &reqwest::Client, base: &str, domain: &str) -> Answer {
+    let response = client
+        .post(format!("{base}/dns-query"))
+        .header("content-type", "application/dns-message")
+        .body(a_query(domain))
+        .send()
+        .await
+        .expect("POST /dns-query");
+    doh_answer(response).await
+}
+
+pub async fn resolve_doh_get(client: &reqwest::Client, base: &str, domain: &str) -> Answer {
+    let response = client
+        .get(format!(
+            "{base}/dns-query?dns={}",
+            base64url(&a_query(domain))
+        ))
+        .send()
+        .await
+        .expect("GET /dns-query");
+    doh_answer(response).await
+}
+
+async fn doh_answer(response: reqwest::Response) -> Answer {
+    assert_eq!(response.status(), 200, "DoH must answer 200");
+    assert_eq!(
+        response
+            .headers()
+            .get("content-type")
+            .and_then(|value| value.to_str().ok()),
+        Some("application/dns-message")
+    );
+    let body = response.bytes().await.expect("DoH body");
+    decode_answer(&body)
+}
+
+fn base64url(bytes: &[u8]) -> String {
+    const ALPHABET: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+    let mut out = String::with_capacity(bytes.len().div_ceil(3) * 4);
+    for chunk in bytes.chunks(3) {
+        let mut word = 0u32;
+        for (index, byte) in chunk.iter().enumerate() {
+            word |= u32::from(*byte) << (16 - 8 * index);
+        }
+        for index in 0..=chunk.len() {
+            let sextet = (word >> (18 - 6 * index)) & 0x3F;
+            out.push(ALPHABET[sextet as usize] as char);
+        }
+    }
+    out
+}
+
+pub fn client_config_trusting(ca_der: Vec<u8>) -> Arc<rustls::ClientConfig> {
+    fah_api::install_crypto_provider();
+    let mut roots = rustls::RootCertStore::empty();
+    roots
+        .add(rustls::pki_types::CertificateDer::from(ca_der))
+        .expect("the exported CA parses as a root");
+    Arc::new(
+        rustls::ClientConfig::builder()
+            .with_root_certificates(roots)
+            .with_no_client_auth(),
+    )
 }
 
 // ─── API ────────────────────────────────────────────────────────────────

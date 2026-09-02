@@ -438,6 +438,7 @@ mod tests {
             false,
             true,
             None,
+            fah_model::ClientTransport::Udp,
         )
     }
 
@@ -456,6 +457,7 @@ mod tests {
             cache_hit,
             true,
             None,
+            fah_model::ClientTransport::Udp,
         )
     }
 

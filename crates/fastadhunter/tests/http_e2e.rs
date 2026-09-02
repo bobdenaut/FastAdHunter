@@ -202,6 +202,7 @@ async fn the_binary_proxies_filters_and_reports_http() {
 
 fn config_toml(ports: &Ports, upstream: SocketAddr) -> String {
     let dns_port = ports.dns;
+    let dot_port = ports.dot;
     let api_port = ports.api;
     let http_port = ports.http();
     // `allow_destinations` names loopback because the origin is in this
@@ -215,6 +216,7 @@ mode = "dns+http"
 [dns.listen]
 address = "127.0.0.1"
 port = {dns_port}
+dot_port = {dot_port}
 
 [dns.blocking]
 mode = "null_ip"

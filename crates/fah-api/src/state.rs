@@ -12,7 +12,7 @@ use crate::config_store::ConfigStore;
 use crate::events::EventHub;
 use crate::keys::ApiKeyStore;
 use crate::password::AuthState;
-use crate::ports::{CacheSource, HistorySource, StatsSource, TelemetrySource};
+use crate::ports::{CacheSource, DnsWireSource, HistorySource, StatsSource, TelemetrySource};
 
 pub struct AppState {
     pub rules: Arc<ListManager>,
@@ -27,6 +27,7 @@ pub struct AppState {
     pub keys: Arc<ApiKeyStore>,
     pub auth: Arc<AuthState>,
     pub certs: Option<Arc<CertStore>>,
+    pub doh: Option<Arc<dyn DnsWireSource>>,
     pub tls: bool,
     pub events: EventHub,
     pub started_at: Instant,
@@ -60,6 +61,7 @@ pub struct AppStateBuilder {
     pub keys: Arc<ApiKeyStore>,
     pub auth: Arc<AuthState>,
     pub certs: Option<Arc<CertStore>>,
+    pub doh: Option<Arc<dyn DnsWireSource>>,
 }
 
 impl AppStateBuilder {
@@ -75,6 +77,7 @@ impl AppStateBuilder {
             keys: self.keys,
             auth: self.auth,
             certs: self.certs,
+            doh: self.doh,
             tls,
             events,
             started_at: Instant::now(),

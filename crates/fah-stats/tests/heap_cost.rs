@@ -42,6 +42,7 @@ async fn measure_heap_walk_cost() {
             false,
             true,
             None,
+            fah_model::ClientTransport::Udp,
         ));
     }
 

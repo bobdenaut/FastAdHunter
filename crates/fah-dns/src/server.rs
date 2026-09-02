@@ -14,9 +14,18 @@ use tokio::task::JoinHandle;
 /// Named in bind failures so the operator is sent to the right setting.
 const PORT_SETTING: &str = "[dns.listen] port, or FAH__DNS__LISTEN__PORT";
 
+const DOT_PORT_SETTING: &str = "[dns.listen] dot_port, or FAH__DNS__LISTEN__DOT_PORT";
+
+use crate::dot::{self, DotTls};
 use crate::pipeline::Pipeline;
 use crate::upstream::Forwarder;
 use crate::{tcp, udp};
+
+struct Bound {
+    udp: UdpSocket,
+    tcp: TcpListener,
+    dot: Option<TcpListener>,
+}
 
 /// Owns the UDP + TCP listener tasks. Dropping this does not stop them (they
 /// hold their own `Arc` clones of the pipeline, matching
@@ -25,8 +34,9 @@ use crate::{tcp, udp};
 pub struct Server {
     udp_addr: SocketAddr,
     tcp_addr: SocketAddr,
+    dot_addr: Option<SocketAddr>,
     /// Bound, not yet accepting — taken by [`Server::serve`].
-    sockets: Option<(UdpSocket, TcpListener)>,
+    sockets: Option<Bound>,
     handles: Vec<JoinHandle<()>>,
     fatal_tx: mpsc::Sender<ListenerDied>,
     fatal_rx: mpsc::Receiver<ListenerDied>,
@@ -55,12 +65,33 @@ impl Server {
         let udp_addr = udp_socket.local_addr()?;
         let tcp_addr = tcp_listener.local_addr()?;
 
+        let dot_listener = match listen.dot_enabled {
+            true => {
+                let dot_addr = SocketAddr::new(addr.ip(), listen.dot_port);
+                Some(
+                    bind_tcp(dot_addr)
+                        .await
+                        .map_err(|err| bind_error("DoT", dot_addr, err, DOT_PORT_SETTING))?,
+                )
+            }
+            false => None,
+        };
+        let dot_addr = match &dot_listener {
+            Some(listener) => Some(listener.local_addr()?),
+            None => None,
+        };
+
         let (fatal_tx, fatal_rx) = mpsc::channel(1);
 
         Ok(Self {
             udp_addr,
             tcp_addr,
-            sockets: Some((udp_socket, tcp_listener)),
+            dot_addr,
+            sockets: Some(Bound {
+                udp: udp_socket,
+                tcp: tcp_listener,
+                dot: dot_listener,
+            }),
             handles: Vec::new(),
             fatal_tx,
             fatal_rx,
@@ -69,22 +100,41 @@ impl Server {
 
     /// Spawns the listener tasks. Call after any privilege drop; a second call
     /// does nothing, since the sockets have already been handed over.
-    pub fn serve<F: Forwarder>(&mut self, pipeline: Arc<Pipeline<F>>) {
-        let Some((udp_socket, tcp_listener)) = self.sockets.take() else {
+    pub fn serve<F: Forwarder>(&mut self, pipeline: Arc<Pipeline<F>>, dot: Option<DotTls>) {
+        let Some(bound) = self.sockets.take() else {
             return;
         };
         let udp_fatal = self.fatal_tx.clone();
         let udp_pipeline = Arc::clone(&pipeline);
         self.handles.push(tokio::spawn(async move {
-            let died = udp::run(udp_socket, udp_pipeline).await;
+            let died = udp::run(bound.udp, udp_pipeline).await;
             let _ = udp_fatal.try_send(died);
         }));
 
         let tcp_fatal = self.fatal_tx.clone();
+        let tcp_pipeline = Arc::clone(&pipeline);
         self.handles.push(tokio::spawn(async move {
-            let died = tcp::run(tcp_listener, pipeline).await;
+            let died = tcp::run(bound.tcp, tcp_pipeline).await;
             let _ = tcp_fatal.try_send(died);
         }));
+
+        match (bound.dot, dot) {
+            (Some(listener), Some(tls)) => {
+                let dot_fatal = self.fatal_tx.clone();
+                self.handles.push(tokio::spawn(async move {
+                    let died = dot::run(listener, tls, pipeline).await;
+                    let _ = dot_fatal.try_send(died);
+                }));
+            }
+            (Some(listener), None) => {
+                tracing::error!(
+                    addr = ?listener.local_addr().ok(),
+                    "DoT listener closed: no TLS configuration was supplied"
+                );
+                self.dot_addr = None;
+            }
+            (None, _) => {}
+        }
     }
 
     pub async fn fatal(&mut self) -> ListenerDied {
@@ -100,6 +150,10 @@ impl Server {
 
     pub fn tcp_addr(&self) -> SocketAddr {
         self.tcp_addr
+    }
+
+    pub fn dot_addr(&self) -> Option<SocketAddr> {
+        self.dot_addr
     }
 
     pub fn shutdown(&self) {
@@ -133,5 +187,19 @@ mod tests {
         .to_string();
         assert!(text.contains("FAH__DNS__LISTEN__PORT"), "got: {text}");
         assert!(text.contains("CAP_NET_BIND_SERVICE"), "got: {text}");
+    }
+
+    #[test]
+    fn a_dot_bind_failure_names_the_dot_port_setting() {
+        let addr: SocketAddr = "0.0.0.0:853".parse().unwrap();
+        let text = bind_error(
+            "DoT",
+            addr,
+            io::Error::from(io::ErrorKind::PermissionDenied),
+            DOT_PORT_SETTING,
+        )
+        .to_string();
+        assert!(text.contains("binding DoT 0.0.0.0:853"), "got: {text}");
+        assert!(text.contains("FAH__DNS__LISTEN__DOT_PORT"), "got: {text}");
     }
 }

@@ -21,6 +21,7 @@
 mod common;
 
 use std::net::{Ipv4Addr, SocketAddr};
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use futures_util::StreamExt;
@@ -29,9 +30,12 @@ use serde_json::Value;
 use tokio::net::UdpSocket;
 
 use common::{
-    await_stats, boot, connect_events, get_json, post_json, put_user_rules, resolve,
+    await_stats, boot, client_config_trusting, connect_events, get_json, insecure_client_config,
+    post_json, put_user_rules, resolve, resolve_doh_get, resolve_doh_post, resolve_dot,
     run_mock_upstream, Ports, UPSTREAM_IP,
 };
+
+const DOT_HOSTNAME: &str = "dns.fah.test";
 
 /// `[dns.blocking] ttl_seconds` in the generated config — asserted on the
 /// synthesized blocked answer.
@@ -116,6 +120,69 @@ async fn the_binary_blocks_resolves_reports_and_reconfigures_live() {
         "the decisive rule's list must be attributed"
     );
     assert_eq!(event["data"]["rule"], "||ads.example.com^");
+    assert_eq!(event["data"]["transport"], "udp");
+
+    let insecure = Arc::new(insecure_client_config());
+    let answer = resolve_dot(
+        ports.dot,
+        "ads.example.com",
+        Arc::clone(&insecure),
+        DOT_HOSTNAME,
+    )
+    .await;
+    assert_eq!(
+        answer.a_records,
+        vec![Ipv4Addr::UNSPECIFIED],
+        "the same domain must be blocked over DoT exactly as over UDP"
+    );
+    let event = await_query_event(&mut socket, "ads.example.com").await;
+    assert_eq!(event["data"]["transport"], "dot");
+    assert_eq!(event["data"]["verdict"], "block");
+    let answer = resolve_dot(ports.dot, "allowed.example.com", insecure, DOT_HOSTNAME).await;
+    assert_eq!(answer.a_records, vec![UPSTREAM_IP]);
+
+    let answer = resolve_doh_post(&http, &base, "ads.example.com").await;
+    assert_eq!(
+        answer.a_records,
+        vec![Ipv4Addr::UNSPECIFIED],
+        "the same domain must be blocked over DoH exactly as over UDP"
+    );
+    let event = await_query_event(&mut socket, "ads.example.com").await;
+    assert_eq!(event["data"]["transport"], "doh");
+    assert_eq!(event["data"]["verdict"], "block");
+    let answer = resolve_doh_get(&http, &base, "allowed.example.com").await;
+    assert_eq!(answer.a_records, vec![UPSTREAM_IP]);
+
+    let generated = http
+        .post(format!("{base}/api/v1/certificates/ca/generate"))
+        .bearer_auth(&key)
+        .json(&serde_json::json!({ "confirm": true }))
+        .send()
+        .await
+        .expect("generate a CA");
+    assert_eq!(generated.status(), 200);
+    let ca_der = http
+        .get(format!("{base}/api/v1/certificates/ca/export?format=der"))
+        .bearer_auth(&key)
+        .send()
+        .await
+        .expect("export the CA")
+        .bytes()
+        .await
+        .expect("CA DER")
+        .to_vec();
+    let answer = resolve_dot(
+        ports.dot,
+        "allowed.example.com",
+        client_config_trusting(ca_der),
+        DOT_HOSTNAME,
+    )
+    .await;
+    assert_eq!(
+        answer.a_records,
+        vec![UPSTREAM_IP],
+        "a client trusting only the exported CA must validate the DoT leaf minted for its SNI"
+    );
 
     // ── and counted in the statistics ──
     let stats = await_stats(&http, &base, &key, |stats| {
@@ -312,6 +379,7 @@ fn sorted_keys(value: &Value) -> Vec<String> {
 
 fn config_toml(ports: &Ports, upstream: SocketAddr) -> String {
     let dns_port = ports.dns;
+    let dot_port = ports.dot;
     let api_port = ports.api;
     // Loopback everywhere and zero rule lists: nothing in this test may reach
     // the network, and an empty `lists` keeps the refresh scheduler idle.
@@ -323,6 +391,7 @@ mode = "dns"
 [dns.listen]
 address = "127.0.0.1"
 port = {dns_port}
+dot_port = {dot_port}
 
 [dns.blocking]
 mode = "null_ip"

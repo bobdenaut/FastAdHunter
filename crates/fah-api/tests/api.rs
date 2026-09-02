@@ -66,6 +66,7 @@ fn blocked_event(client: IpAddr) -> QueryEvent {
         false,
         false,
         None,
+        fah_model::ClientTransport::Udp,
     )
 }
 
@@ -445,6 +446,22 @@ fn stage(count: u64, sum_seconds: f64) -> fah_model::StageTotals {
 
 // ─── Harness ───────────────────────────────────────────────────────────
 
+#[derive(Default)]
+struct FakeDns {
+    seen: Mutex<Vec<(IpAddr, Vec<u8>)>>,
+}
+
+impl fah_api::DnsWireSource for FakeDns {
+    fn resolve(&self, message: Vec<u8>, client: IpAddr) -> fah_api::WireResolving {
+        let reply = match message.first() {
+            Some(0xFF) => None,
+            _ => Some([message.as_slice(), b"reply"].concat()),
+        };
+        self.seen.lock().unwrap().push((client, message));
+        Box::pin(async move { reply })
+    }
+}
+
 struct Harness {
     server: ApiServer,
     client: reqwest::Client,
@@ -456,6 +473,7 @@ struct Harness {
     history: Arc<FakeHistory>,
     auth: Arc<AuthState>,
     certs: Option<Arc<fah_api::CertStore>>,
+    dns: Option<Arc<FakeDns>>,
     _config_dir: tempfile::TempDir,
     data_dir: tempfile::TempDir,
 }
@@ -471,6 +489,7 @@ struct HarnessOptions {
     degraded: bool,
     limits: RateLimits,
     certs: bool,
+    doh: bool,
 }
 
 impl Default for HarnessOptions {
@@ -480,6 +499,7 @@ impl Default for HarnessOptions {
             degraded: false,
             limits: AuthState::relaxed_limits(),
             certs: true,
+            doh: true,
         }
     }
 }
@@ -523,6 +543,7 @@ async fn start_with(options: HarnessOptions) -> Harness {
     let certs = options
         .certs
         .then(|| Arc::new(fah_api::CertStore::open(config_dir.path()).unwrap()));
+    let dns = options.doh.then(|| Arc::new(FakeDns::default()));
     let state = AppStateBuilder {
         rules: Arc::clone(&rules),
         policies: Arc::new(fah_rules::PolicyState::default()),
@@ -536,6 +557,9 @@ async fn start_with(options: HarnessOptions) -> Harness {
         keys: Arc::new(keys),
         auth: Arc::clone(&auth),
         certs: certs.clone(),
+        doh: dns
+            .clone()
+            .map(|dns| dns as Arc<dyn fah_api::DnsWireSource>),
     };
 
     let server = ApiServer::bind("127.0.0.1", 0, tls_config, state)
@@ -561,6 +585,7 @@ async fn start_with(options: HarnessOptions) -> Harness {
         history,
         auth,
         certs,
+        dns,
         _config_dir: config_dir,
         data_dir,
     }
@@ -633,6 +658,173 @@ async fn every_v1_route_requires_the_key() {
     ] {
         let response = harness.client.get(harness.url(path)).send().await.unwrap();
         assert_eq!(response.status(), 401, "{path} must require the key");
+    }
+}
+
+const DNS_MESSAGE: &str = "application/dns-message";
+
+fn content_type(response: &reqwest::Response) -> Option<String> {
+    response
+        .headers()
+        .get("content-type")
+        .and_then(|value| value.to_str().ok())
+        .map(str::to_string)
+}
+
+#[tokio::test]
+async fn dns_query_answers_post_and_get_without_credentials_and_names_the_peer() {
+    let harness = start().await;
+    let dns = harness.dns.clone().expect("DoH is on by default");
+    let message = vec![0x12, 0x34, 0x01, 0x00];
+
+    let response = harness
+        .client
+        .post(harness.url("/dns-query"))
+        .header("content-type", DNS_MESSAGE)
+        .body(message.clone())
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), 200);
+    assert_eq!(content_type(&response).as_deref(), Some(DNS_MESSAGE));
+    assert_eq!(
+        response
+            .headers()
+            .get("cache-control")
+            .and_then(|value| value.to_str().ok()),
+        Some("no-store")
+    );
+    assert_eq!(
+        response.bytes().await.unwrap().as_ref(),
+        [message.as_slice(), b"reply"].concat()
+    );
+
+    let response = harness
+        .client
+        .get(harness.url("/dns-query?dns=EjQBAA"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), 200);
+    assert_eq!(content_type(&response).as_deref(), Some(DNS_MESSAGE));
+    assert_eq!(
+        response.bytes().await.unwrap().as_ref(),
+        [message.as_slice(), b"reply"].concat()
+    );
+
+    let seen = dns.seen.lock().unwrap();
+    assert_eq!(seen.len(), 2);
+    for (client, seen_message) in seen.iter() {
+        assert_eq!(*client, IpAddr::V4(Ipv4Addr::LOCALHOST));
+        assert_eq!(*seen_message, message);
+    }
+}
+
+#[tokio::test]
+async fn dns_query_rejects_what_rfc_8484_does_not_allow() {
+    let harness = start().await;
+    let post = |body: Vec<u8>, media: Option<&'static str>| {
+        let mut request = harness.client.post(harness.url("/dns-query")).body(body);
+        if let Some(media) = media {
+            request = request.header("content-type", media);
+        }
+        request
+    };
+
+    for (request, status, why) in [
+        (post(vec![1, 2, 3], None), 415, "no media type"),
+        (
+            post(vec![1, 2, 3], Some("application/json")),
+            415,
+            "wrong media type",
+        ),
+        (post(Vec::new(), Some(DNS_MESSAGE)), 400, "empty body"),
+        (
+            post(vec![0; 65_536], Some(DNS_MESSAGE)),
+            413,
+            "over the 65535-byte protocol maximum",
+        ),
+        (
+            post(vec![0xFF], Some(DNS_MESSAGE)),
+            400,
+            "the pipeline had nothing to answer",
+        ),
+        (
+            harness.client.get(harness.url("/dns-query?dns=EjQBAA==")),
+            400,
+            "padded base64url",
+        ),
+        (
+            harness.client.get(harness.url("/dns-query?dns=%%%")),
+            400,
+            "not base64url",
+        ),
+        (
+            harness.client.get(harness.url("/dns-query")),
+            400,
+            "missing dns parameter",
+        ),
+    ] {
+        let response = request.send().await.unwrap();
+        assert_eq!(response.status(), status, "{why}");
+        assert_ne!(
+            content_type(&response).as_deref(),
+            Some(DNS_MESSAGE),
+            "{why}: a rejection must never look like a DNS answer"
+        );
+    }
+    assert!(harness.dns.as_ref().unwrap().seen.lock().unwrap().len() <= 1);
+}
+
+#[tokio::test]
+async fn dns_query_is_absent_when_doh_is_disabled_and_everything_else_serves() {
+    let harness = start_with(HarnessOptions {
+        doh: false,
+        ..HarnessOptions::default()
+    })
+    .await;
+
+    let response = harness
+        .client
+        .get(harness.url("/dns-query?dns=EjQBAA"))
+        .send()
+        .await
+        .unwrap();
+    assert_ne!(content_type(&response).as_deref(), Some(DNS_MESSAGE));
+
+    let response = harness
+        .client
+        .post(harness.url("/dns-query"))
+        .header("content-type", DNS_MESSAGE)
+        .body(vec![0x12, 0x34, 0x01, 0x00])
+        .send()
+        .await
+        .unwrap();
+    assert_ne!(response.status(), 200);
+    assert_ne!(content_type(&response).as_deref(), Some(DNS_MESSAGE));
+
+    assert_eq!(harness.get("/health").await.status(), 200);
+    assert_eq!(harness.get("/api/v1/stats").await.status(), 200);
+}
+
+#[tokio::test]
+async fn dns_query_is_the_only_route_outside_the_admin_exemptions() {
+    let harness = start().await;
+    for path in ["/api/v1/dns-query", "/api/dns-query", "/dns-query/"] {
+        let response = harness
+            .client
+            .get(harness.url(&format!("{path}?dns=EjQBAA")))
+            .send()
+            .await
+            .unwrap();
+        assert_ne!(
+            content_type(&response).as_deref(),
+            Some(DNS_MESSAGE),
+            "{path} must not answer DNS"
+        );
+        if path.starts_with("/api/") {
+            assert_eq!(response.status(), 401, "{path} stays behind auth");
+        }
     }
 }
 

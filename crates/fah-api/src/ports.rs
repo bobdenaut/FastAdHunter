@@ -11,8 +11,10 @@
 //! The DTOs here carry `SystemTime` and `fah_model` types — L1, legal for
 //! everyone. RFC 3339 formatting is the wire layer's job ([`crate::wire`]).
 
+use std::future::Future;
 use std::io;
 use std::net::IpAddr;
+use std::pin::Pin;
 use std::time::{Duration, SystemTime};
 
 use fah_model::{
@@ -110,6 +112,12 @@ pub trait CacheSource: Send + Sync + 'static {
     /// `POST /api/v1/cache/clean`: removes expired entries — and, when
     /// `purge_stale`, the RFC 8767 stale-window entries too.
     fn clean(&self, purge_stale: bool) -> CacheClean;
+}
+
+pub type WireResolving = Pin<Box<dyn Future<Output = Option<Vec<u8>>> + Send>>;
+
+pub trait DnsWireSource: Send + Sync + 'static {
+    fn resolve(&self, message: Vec<u8>, client: IpAddr) -> WireResolving;
 }
 
 /// Cache usage at one point in time. Counter fields (`hits`, `misses`,
@@ -281,6 +289,7 @@ mod tests {
                 false,
                 false,
                 None,
+                fah_model::ClientTransport::Udp,
             )),
             client_name: None,
         }

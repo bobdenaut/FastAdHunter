@@ -66,21 +66,20 @@ pub async fn run<L: Accept, F: Forwarder>(listener: L, pipeline: Arc<Pipeline<F>
         };
         let pipeline = Arc::clone(&pipeline);
         tokio::spawn(async move {
-            if let Err(err) = handle_connection(stream, &pipeline, client.ip()).await {
-                if is_client_disconnect(&err) {
-                    // A client that closes mid-query/response — broken pipe,
-                    // connection reset, an early EOF — is routine for
-                    // DNS-over-TCP (happy-eyeballs dropping the loser, a UDP
-                    // answer that arrived first, a client timeout). Not
-                    // operator-actionable, so it must not warn on the router log
-                    // like a real fault. (A clean close *between* messages is
-                    // already returned as `Ok` in `handle_connection`.)
-                    debug!(error = %err, client = %client, "TCP DNS client disconnected");
-                } else {
-                    warn!(error = %err, client = %client, "TCP DNS connection ended with an error");
-                }
-            }
+            let served = handle_connection(stream, &pipeline, client.ip(), Transport::Tcp).await;
+            report_connection_end(served, client, "TCP DNS");
         });
+    }
+}
+
+pub(crate) fn report_connection_end(result: io::Result<()>, client: SocketAddr, what: &str) {
+    let Err(err) = result else {
+        return;
+    };
+    if is_client_disconnect(&err) {
+        debug!(error = %err, client = %client, "{what} client disconnected");
+    } else {
+        warn!(error = %err, client = %client, "{what} connection ended with an error");
     }
 }
 
@@ -88,10 +87,11 @@ pub async fn run<L: Accept, F: Forwarder>(listener: L, pipeline: Arc<Pipeline<F>
 /// timeout fires, or it sends something malformed (RFC 7766 §6.2.4 permits
 /// closing on protocol errors; a client that framed garbage can't be trusted
 /// to frame the next message either).
-async fn handle_connection<S: AsyncRead + AsyncWrite + Unpin, F: Forwarder>(
+pub(crate) async fn handle_connection<S: AsyncRead + AsyncWrite + Unpin, F: Forwarder>(
     mut stream: S,
     pipeline: &Pipeline<F>,
     client_ip: std::net::IpAddr,
+    transport: Transport,
 ) -> std::io::Result<()> {
     loop {
         let mut len_buf = [0u8; 2];
@@ -111,10 +111,7 @@ async fn handle_connection<S: AsyncRead + AsyncWrite + Unpin, F: Forwarder>(
             Ok(result) => result?,
         };
 
-        let Some(reply) = pipeline
-            .handle(&message_buf, client_ip, Transport::Tcp)
-            .await
-        else {
+        let Some(reply) = pipeline.handle(&message_buf, client_ip, transport).await else {
             return Ok(());
         };
 

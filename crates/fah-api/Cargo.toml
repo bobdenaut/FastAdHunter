@@ -40,6 +40,10 @@ argon2 = "0.5"
 # visibility, and the name has to be declared here to be callable.
 aws-lc-rs = "1.17"
 axum = { version = "0.8", features = ["ws"] }
+# RFC 8484 §4.1 GET form: the `dns` parameter is unpadded base64url. Already
+# compiled into the binary through axum and hyper-util, so this is a manifest
+# edge, not a new crate.
+base64 = "0.22"
 futures-util = { version = "0.3", default-features = false, features = ["sink"] }
 hyper = { version = "1", features = ["http1", "http2", "server"] }
 hyper-util = { version = "0.1", features = ["server", "server-auto", "service", "tokio"] }

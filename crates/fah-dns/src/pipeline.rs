@@ -14,7 +14,9 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use fah_config::DnsCacheConfig;
-use fah_model::{AnswerOutcome, Event, Query as FahQuery, QueryEvent, StaleServe, Verdict};
+use fah_model::{
+    AnswerOutcome, ClientTransport, Event, Query as FahQuery, QueryEvent, StaleServe, Verdict,
+};
 use fah_rules::{ListManager, MatchDecision, PolicyState};
 use hickory_proto::op::{Message, MessageType, OpCode, Query as WireQuery, ResponseCode};
 use tokio::sync::mpsc;
@@ -33,6 +35,19 @@ use crate::upstream::Forwarder;
 pub enum Transport {
     Udp,
     Tcp,
+    Dot,
+    Doh,
+}
+
+impl From<Transport> for ClientTransport {
+    fn from(transport: Transport) -> Self {
+        match transport {
+            Transport::Udp => ClientTransport::Udp,
+            Transport::Tcp => ClientTransport::Tcp,
+            Transport::Dot => ClientTransport::Dot,
+            Transport::Doh => ClientTransport::Doh,
+        }
+    }
 }
 
 struct Resolved {
@@ -297,7 +312,7 @@ impl<F: Forwarder> Pipeline<F> {
         };
         let budget = match transport {
             Transport::Udp => response::max_udp_payload(&request),
-            Transport::Tcp => u16::MAX,
+            Transport::Tcp | Transport::Dot | Transport::Doh => u16::MAX,
         };
 
         if request.metadata.message_type != MessageType::Query {
@@ -376,6 +391,7 @@ impl<F: Forwarder> Pipeline<F> {
             started.elapsed(),
             &resolved,
             policy,
+            transport,
         );
 
         Some(response::encode_for_transport(&resolved.response, budget))
@@ -484,6 +500,7 @@ impl<F: Forwarder> Pipeline<F> {
         duration: std::time::Duration,
         resolved: &Resolved,
         policy: Option<Arc<str>>,
+        transport: Transport,
     ) {
         let event = QueryEvent::new(
             query,
@@ -492,6 +509,7 @@ impl<F: Forwarder> Pipeline<F> {
             resolved.cache_hit,
             resolved.upstream_used,
             resolved.stale,
+            transport.into(),
         )
         .under_policy(policy)
         .with_outcome(resolved.outcome, resolved.endpoint);

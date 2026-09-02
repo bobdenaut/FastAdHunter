@@ -1,0 +1,37 @@
+# DNS over HTTPS — RFC 8484, served by the API listener (p3-05)
+#
+# `/dns-query` is a DNS front door, not an admin endpoint: it is the one route
+# outside `/api/v1/` and it carries no authentication (a DNS client cannot
+# present a bearer key or a cookie — SECURITY.md §API access). It answers only
+# when `[dns.listen] doh_enabled = true` (the default); disabled, the path falls
+# through to the dashboard shell and never returns application/dns-message.
+#
+# Both forms return 200 with Content-Type: application/dns-message and
+# Cache-Control: no-store. The verdict is the same one UDP/53 would give the
+# same client (the peer address of the HTTPS connection).
+
+@base = {{host}}
+
+### GET form (RFC 8484 §4.1): `dns` is the wire-format query, base64url without
+### padding. This is the RFC's own example — an A query for www.example.com
+### with id 0.
+GET {{base}}/dns-query?dns=AAABAAABAAAAAAAAA3d3dwdleGFtcGxlA2NvbQAAAQAB
+Accept: application/dns-message
+
+### POST form (RFC 8484 §4.1): the wire-format query as the body. The body
+### file is the same 33-byte query the GET above carries.
+POST {{base}}/dns-query
+Content-Type: application/dns-message
+Accept: application/dns-message
+
+< ./dns-query.bin
+
+### A padded `dns` value is rejected (400) — the RFC forbids padding, and the
+### rejection is plain text, never application/dns-message.
+GET {{base}}/dns-query?dns=AAABAAABAAAAAAAAA3d3dwdleGFtcGxlA2NvbQAAAQAB==
+
+### The wrong media type is rejected (415).
+POST {{base}}/dns-query
+Content-Type: application/json
+
+{"not": "dns"}

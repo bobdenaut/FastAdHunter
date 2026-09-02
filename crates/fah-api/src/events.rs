@@ -326,6 +326,7 @@ mod tests {
             false,
             false,
             None,
+            fah_model::ClientTransport::Udp,
         )
     }
 
@@ -356,6 +357,7 @@ mod tests {
             endpoint.is_none(),
             endpoint.is_some(),
             None,
+            fah_model::ClientTransport::Udp,
         )
         .with_outcome(fah_model::AnswerOutcome::Answered, endpoint)
     }

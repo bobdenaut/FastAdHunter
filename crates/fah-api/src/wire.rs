@@ -149,6 +149,8 @@ pub struct QueryItemResponse {
     /// DNS only. An HTTP request has no cache to hit, so this is `false` for
     /// one rather than pretending it missed.
     pub cached: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub transport: Option<&'static str>,
     // ── HTTP only; `null` on a DNS item ──
     pub method: Option<String>,
     pub path: Option<String>,
@@ -171,14 +173,15 @@ impl From<QueryRecord> for QueryItemResponse {
         let ts = record.event.timestamp();
         let client = record.event.client_ip();
 
-        let (domain, qtype, cached, endpoint) = match record.as_dns() {
+        let (domain, qtype, cached, endpoint, transport) = match record.as_dns() {
             Some(event) => (
                 display_domain(&event.query.domain),
                 Some(qtype_name(&event.query.qtype)),
                 event.cache_hit,
                 event.endpoint,
+                Some(event.transport.as_str()),
             ),
-            None => (String::new(), None, false, None),
+            None => (String::new(), None, false, None, None),
         };
         let (domain, method, path, resource_type, status, bytes) = match record.as_http() {
             Some(event) => (
@@ -206,6 +209,7 @@ impl From<QueryRecord> for QueryItemResponse {
             upstream: None,
             endpoint,
             cached,
+            transport,
             method,
             path,
             resource_type,
@@ -1164,6 +1168,7 @@ mod tests {
                 false,
                 false,
                 None,
+                fah_model::ClientTransport::Udp,
             )),
             client_name: Some("liviu-phone".to_string()),
         };
@@ -1189,12 +1194,14 @@ mod tests {
                 "resource_type",
                 "rule",
                 "status",
+                "transport",
                 "ts",
                 "upstream",
                 "verdict",
             ]
         );
         assert_eq!(object["kind"], "dns");
+        assert_eq!(object["transport"], "udp");
         assert_eq!(
             object["method"],
             serde_json::Value::Null,

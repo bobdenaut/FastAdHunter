@@ -44,6 +44,13 @@ fn apply_one(
 
         ["dns", "listen", "address"] => config.dns.listen.address = value.to_string(),
         ["dns", "listen", "port"] => config.dns.listen.port = coerce_u16(var, path, value)?,
+        ["dns", "listen", "dot_enabled"] => {
+            config.dns.listen.dot_enabled = coerce_bool(var, path, value)?
+        }
+        ["dns", "listen", "dot_port"] => config.dns.listen.dot_port = coerce_u16(var, path, value)?,
+        ["dns", "listen", "doh_enabled"] => {
+            config.dns.listen.doh_enabled = coerce_bool(var, path, value)?
+        }
 
         ["dns", "blocking", "mode"] => config.dns.blocking.mode = coerce_enum(var, path, value)?,
         ["dns", "blocking", "ttl_seconds"] => {

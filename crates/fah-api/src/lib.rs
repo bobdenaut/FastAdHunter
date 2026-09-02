@@ -25,6 +25,7 @@ compile_error!(
 mod auth;
 mod certs;
 mod config_store;
+mod doh;
 mod error;
 mod events;
 mod keys;
@@ -51,8 +52,9 @@ pub use password::AuthState;
 #[cfg(feature = "test-harness")]
 pub use password::RateLimits;
 pub use ports::{
-    BucketCount, CacheClean, CacheSource, CacheStats, ClientCount, ClientEntry, DomainCount,
-    HistorySource, PolicyCount, QueryRecord, StatsOverview, StatsSource, TelemetrySource,
+    BucketCount, CacheClean, CacheSource, CacheStats, ClientCount, ClientEntry, DnsWireSource,
+    DomainCount, HistorySource, PolicyCount, QueryRecord, StatsOverview, StatsSource,
+    TelemetrySource, WireResolving,
 };
 pub use server::ApiServer;
 pub use state::AppStateBuilder;

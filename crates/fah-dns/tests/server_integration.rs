@@ -78,9 +78,11 @@ async fn start_server_on(
     let listen = DnsListenConfig {
         address: address.to_string(),
         port: 0,
+        dot_enabled: false,
+        ..Default::default()
     };
     let mut server = Server::bind(&listen).await.unwrap();
-    server.serve(pipeline);
+    server.serve(pipeline, None);
     (server, calls, data_dir)
 }
 
@@ -318,9 +320,11 @@ async fn full_pipeline_forwards_via_upstream_pool_and_caches_the_answer() {
     let listen = DnsListenConfig {
         address: "127.0.0.1".to_string(),
         port: 0,
+        dot_enabled: false,
+        ..Default::default()
     };
     let mut server = Server::bind(&listen).await.unwrap();
-    server.serve(pipeline);
+    server.serve(pipeline, None);
 
     for _ in 0..2 {
         let reply = udp_roundtrip(server.udp_addr(), &encode_a_query("example.com.")).await;

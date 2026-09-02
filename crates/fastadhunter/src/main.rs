@@ -371,7 +371,12 @@ impl Engine {
             .with_policies(Arc::clone(&policy_state)),
         );
         let mut dns = fah_dns::Server::bind(&config.dns.listen).await?;
-        tracing::info!(udp = %dns.udp_addr(), tcp = %dns.tcp_addr(), "DNS listeners bound");
+        tracing::info!(
+            udp = %dns.udp_addr(),
+            tcp = %dns.tcp_addr(),
+            dot = ?dns.dot_addr(),
+            "DNS listeners bound"
+        );
 
         // ── HTTP engine (L3, p2-01) ──
         // Bound here, with DNS, so both privileged binds happen before the
@@ -470,12 +475,17 @@ impl Engine {
                 "generated dashboard password — store it now; it is not shown again"
             );
         }
-        let tls = if config.api.tls {
+        let api_pair = if config.api.tls || config.dns.listen.dot_enabled {
             Some(fah_api::load_or_generate_tls(
                 config_dir,
                 &config.api.address,
                 fah_api::probe_local_address(),
             )?)
+        } else {
+            None
+        };
+        let tls = if config.api.tls {
+            api_pair
         } else {
             tracing::warn!(
                 "api.tls is disabled — the API key travels in plaintext, and dashboard \
@@ -515,6 +525,16 @@ impl Engine {
             None
         };
 
+        let dot = {
+            let listen = config.dns.listen.clone();
+            let certs = certs.clone();
+            tokio::task::spawn_blocking(move || dot_tls(&listen, certs.as_ref())).await?
+        };
+        let doh = config.dns.listen.doh_enabled.then(|| {
+            Arc::new(adapters::DnsWireAdapter::new(Arc::clone(&pipeline)))
+                as Arc<dyn fah_api::DnsWireSource>
+        });
+
         let api_address = config.api.address.clone();
         let api_port = config.api.port;
         let stats_adapter = Arc::new(adapters::StatsAdapter::new(Arc::clone(&stats)));
@@ -538,13 +558,14 @@ impl Engine {
                 keys: Arc::new(keys),
                 auth: Arc::new(auth),
                 certs,
+                doh,
             },
         )
         .await?;
         tracing::info!(url = %api.base_url(), "API listening");
 
         // Unprivileged from here — start answering (ADR-0004).
-        dns.serve(Arc::clone(&pipeline));
+        dns.serve(Arc::clone(&pipeline), dot);
         if let (Some(http), Some(proxy)) = (http.as_mut(), http_proxy.as_ref()) {
             http.serve(Arc::clone(proxy));
         }
@@ -689,6 +710,54 @@ fn egress_exceptions(
         );
     }
     Ok(exceptions)
+}
+
+fn dot_tls(
+    listen: &fah_config::DnsListenConfig,
+    certs: Option<&Arc<fah_api::CertStore>>,
+) -> Option<fah_dns::DotTls> {
+    if !listen.dot_enabled {
+        return None;
+    }
+    let Some(store) = certs else {
+        tracing::error!(
+            "[dns.listen] dot_enabled = true, but the certificate store did not open — the DoT \
+             listener is closed until /config is repaired and the container restarted"
+        );
+        return None;
+    };
+    let fallback = match store.api_certified_key() {
+        Ok(key) => key,
+        Err(error) => {
+            tracing::error!(
+                %error,
+                "the API certificate pair did not load — the DoT listener is closed until \
+                 /config is repaired and the container restarted"
+            );
+            return None;
+        }
+    };
+    match fah_dns::DotTls::new(Arc::clone(store), fallback) {
+        Ok(tls) => {
+            match store.has_ca() {
+                true => tracing::info!(
+                    port = listen.dot_port,
+                    "DoT serves a CA-minted certificate for the hostname each client sends, \
+                     the API certificate when a hello carries no SNI"
+                ),
+                false => tracing::info!(
+                    port = listen.dot_port,
+                    "DoT serves the API certificate; generate or import a CA via \
+                     /api/v1/certificates for Android Private DNS hostname mode"
+                ),
+            }
+            Some(tls)
+        }
+        Err(error) => {
+            tracing::error!(%error, "the DoT TLS configuration did not build; the listener is closed");
+            None
+        }
+    }
 }
 
 fn interception(

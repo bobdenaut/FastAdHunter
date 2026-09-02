@@ -3,6 +3,7 @@ use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 
+use crate::client_transport::ClientTransport;
 use crate::query::Query;
 use crate::verdict::Verdict;
 
@@ -63,6 +64,7 @@ pub struct QueryEvent {
     pub answer: AnswerOutcome,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub endpoint: Option<u8>,
+    pub transport: ClientTransport,
 }
 
 impl QueryEvent {
@@ -73,6 +75,7 @@ impl QueryEvent {
         cache_hit: bool,
         upstream_used: bool,
         stale: Option<StaleServe>,
+        transport: ClientTransport,
     ) -> Self {
         Self {
             query,
@@ -84,6 +87,7 @@ impl QueryEvent {
             policy: None,
             answer: AnswerOutcome::Answered,
             endpoint: None,
+            transport,
         }
     }
 
@@ -129,6 +133,7 @@ mod tests {
             false,
             true,
             None,
+            ClientTransport::Udp,
         );
         let json = serde_json::to_string(&event).unwrap();
         let back: QueryEvent = serde_json::from_str(&json).unwrap();
@@ -152,6 +157,7 @@ mod tests {
                 true,
                 false,
                 stale,
+                ClientTransport::Tcp,
             )
         };
         for stale in [
@@ -185,6 +191,7 @@ mod tests {
             false,
             true,
             None,
+            ClientTransport::Udp,
         );
         for (answer, endpoint, name) in [
             (AnswerOutcome::Answered, Some(0), "answered"),
@@ -219,11 +226,13 @@ mod tests {
             "verdict": "Pass",
             "duration": {"secs": 0, "nanos": 250000},
             "cache_hit": false,
-            "upstream_used": true
+            "upstream_used": true,
+            "transport": "udp"
         }"#;
         let event: QueryEvent = serde_json::from_str(json).expect("old events must still parse");
         assert_eq!(event.answer, AnswerOutcome::Answered);
         assert_eq!(event.endpoint, None);
+        assert_eq!(event.transport, ClientTransport::Udp);
         assert!(event.upstream_used);
     }
 }
