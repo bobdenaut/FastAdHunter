@@ -27,10 +27,6 @@ struct Bound {
     dot: Option<TcpListener>,
 }
 
-/// Owns the UDP + TCP listener tasks. Dropping this does not stop them (they
-/// hold their own `Arc` clones of the pipeline, matching
-/// `fah_rules::ListManager::spawn_scheduler`'s convention) — call
-/// [`Server::shutdown`] explicitly.
 pub struct Server {
     udp_addr: SocketAddr,
     tcp_addr: SocketAddr,
@@ -43,12 +39,6 @@ pub struct Server {
 }
 
 impl Server {
-    /// Binds both listeners **without** accepting anything yet.
-    ///
-    /// Binding and serving are deliberately separate: port 53 requires
-    /// privilege, answering queries must not have it (ADR-0004). The caller
-    /// binds, drops privileges, then calls [`Server::serve`] — so no query is
-    /// ever processed by a privileged process.
     pub async fn bind(listen: &DnsListenConfig) -> io::Result<Self> {
         let addr = listen_addr(&listen.address, listen.port, "dns.listen")?;
 

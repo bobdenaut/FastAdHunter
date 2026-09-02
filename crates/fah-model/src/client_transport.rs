@@ -18,10 +18,6 @@ impl ClientTransport {
             ClientTransport::Doh => "doh",
         }
     }
-
-    pub fn is_encrypted(self) -> bool {
-        matches!(self, ClientTransport::Dot | ClientTransport::Doh)
-    }
 }
 
 impl std::fmt::Display for ClientTransport {
@@ -54,13 +50,5 @@ mod tests {
     #[test]
     fn an_unknown_spelling_is_rejected() {
         assert!(serde_json::from_str::<ClientTransport>("\"doq\"").is_err());
-    }
-
-    #[test]
-    fn only_the_tls_transports_are_encrypted() {
-        assert!(!ClientTransport::Udp.is_encrypted());
-        assert!(!ClientTransport::Tcp.is_encrypted());
-        assert!(ClientTransport::Dot.is_encrypted());
-        assert!(ClientTransport::Doh.is_encrypted());
     }
 }

@@ -86,6 +86,46 @@ async fn start_server_on(
     (server, calls, data_dir)
 }
 
+#[tokio::test]
+async fn a_disabled_dot_listener_binds_nothing_on_its_port() {
+    let probe = tokio::net::TcpListener::bind((Ipv4Addr::LOCALHOST, 0))
+        .await
+        .unwrap();
+    let dot_port = probe.local_addr().unwrap().port();
+    drop(probe);
+
+    let listen = DnsListenConfig {
+        address: "127.0.0.1".to_string(),
+        port: 0,
+        dot_enabled: false,
+        dot_port,
+        ..Default::default()
+    };
+    let server = Server::bind(&listen).await.unwrap();
+    assert!(server.dot_addr().is_none());
+    let still_free = tokio::net::TcpListener::bind((Ipv4Addr::LOCALHOST, dot_port)).await;
+    assert!(
+        still_free.is_ok(),
+        "dot_enabled = false must leave the DoT port unbound, got {still_free:?}"
+    );
+    drop(still_free);
+
+    let listen = DnsListenConfig {
+        dot_enabled: true,
+        dot_port: 0,
+        ..listen
+    };
+    let server = Server::bind(&listen).await.unwrap();
+    let bound = server
+        .dot_addr()
+        .expect("dot_enabled = true binds the DoT port");
+    let taken = tokio::net::TcpListener::bind(bound).await;
+    assert!(
+        taken.is_err(),
+        "the bound DoT port must be held by the server, got {taken:?}"
+    );
+}
+
 fn encode_a_query(name: &str) -> Vec<u8> {
     let mut message = Message::query();
     message.add_query(WireQuery::query(

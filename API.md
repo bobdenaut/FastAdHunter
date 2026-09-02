@@ -16,7 +16,10 @@ Authorization: Bearer <api-key>
 ```
 
 Required for everything under `/api/v1/`. `GET /health` and
-`POST /api/v1/auth/login` are the two exemptions. Missing/invalid credential →
+`POST /api/v1/auth/login` are the two exemptions inside the admin surface;
+`/dns-query` (§DNS over HTTPS) sits outside `/api/v1/` and carries no
+authentication — a DNS client can present neither a key nor a cookie, and the
+route answers only DNS. Missing/invalid credential →
 `401`, and auth answers before routing does — an unknown path under `/api/v1/`
 is `401` without a credential, `404` with one.
 
@@ -58,6 +61,32 @@ with no `Retry-After` must not retry on a timer.
 `401`, `429` and `503` also carry `Cache-Control: no-store`.
 
 ---
+
+## DNS over HTTPS
+
+### `GET /dns-query?dns=<base64url>` / `POST /dns-query`
+
+RFC 8484 wire-format DoH on the API listener, present only when
+`[dns.listen] doh_enabled = true` (the default). Outside `/api/v1/` and
+**unauthenticated** — the one such route. The client for policy resolution is
+the HTTPS peer address, so the verdict is the one UDP/53 gives the same
+client; the query event carries `transport: "doh"` (§Events).
+
+- `GET`: `dns` is the wire-format query, base64url **without padding**
+  (RFC 8484 §4.1). Padded, undecodable or missing → `400`.
+- `POST`: `Content-Type: application/dns-message` (parameters ignored), the
+  body is the wire-format query. Another media type → `415`; empty → `400`;
+  over 65 535 bytes → `413`.
+- A body the pipeline cannot answer (not a DNS query) → `400`.
+- Success: `200`, `Content-Type: application/dns-message`,
+  `Cache-Control: no-store`. A rejection is plain text, never
+  `application/dns-message`, so it cannot be mistaken for an answer.
+- `doh_enabled = false`: the route does not exist — a `GET` falls through to
+  the dashboard shell, a `POST` is refused, nothing on the listener answers
+  `application/dns-message`.
+- Served over HTTP/1.1 and h2 (the listener's ALPN); HTTP/3 is not offered.
+
+See `requests/dns-query.http`.
 
 ## Health & telemetry
 
@@ -1014,7 +1043,10 @@ A `query` event carries every pipeline, tagged by `kind` — `dns`, `http`,
 Every key is always **present**, so a client never has to tell "absent" from
 "not applicable": a DNS event leaves the HTTP-only fields `null` (`method`,
 `path`, `resource_type`, `status`, `bytes`), and an HTTP event leaves `qtype`
-`null` and `cached` `false`.
+`null` and `cached` `false`. One key is conditional: `transport` — the
+listener a DNS query arrived on, `udp` | `tcp` | `dot` | `doh` — is present on
+every `kind: dns` item and absent (not `null`) on the HTTP kinds, which have
+no DNS transport.
 
 An `https-sni` item is an HTTPS connection judged at the TLS ClientHello, with
 no decryption. It fills the HTTP-shaped fields it can and empties the rest:

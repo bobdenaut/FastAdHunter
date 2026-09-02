@@ -138,7 +138,13 @@ async fn the_binary_blocks_resolves_reports_and_reconfigures_live() {
     let event = await_query_event(&mut socket, "ads.example.com").await;
     assert_eq!(event["data"]["transport"], "dot");
     assert_eq!(event["data"]["verdict"], "block");
-    let answer = resolve_dot(ports.dot, "allowed.example.com", insecure, DOT_HOSTNAME).await;
+    let answer = resolve_dot(
+        ports.dot,
+        "allowed.example.com",
+        Arc::clone(&insecure),
+        DOT_HOSTNAME,
+    )
+    .await;
     assert_eq!(answer.a_records, vec![UPSTREAM_IP]);
 
     let answer = resolve_doh_post(&http, &base, "ads.example.com").await;
@@ -152,6 +158,36 @@ async fn the_binary_blocks_resolves_reports_and_reconfigures_live() {
     assert_eq!(event["data"]["verdict"], "block");
     let answer = resolve_doh_get(&http, &base, "allowed.example.com").await;
     assert_eq!(answer.a_records, vec![UPSTREAM_IP]);
+
+    let created = http
+        .post(format!("{base}/api/v1/policies"))
+        .bearer_auth(&key)
+        .json(&serde_json::json!({
+            "id": "phone",
+            "assignments": [{ "client": "127.0.0.1" }]
+        }))
+        .send()
+        .await
+        .expect("create a policy assigned to the test client");
+    assert!(
+        created.status().is_success(),
+        "POST /api/v1/policies returned {}",
+        created.status()
+    );
+    let answer = resolve_dot(ports.dot, "ads.example.com", insecure, DOT_HOSTNAME).await;
+    assert_eq!(answer.a_records, vec![Ipv4Addr::UNSPECIFIED]);
+    let answer = resolve_doh_post(&http, &base, "ads.example.com").await;
+    assert_eq!(answer.a_records, vec![Ipv4Addr::UNSPECIFIED]);
+    await_stats(&http, &base, &key, |stats| {
+        stats["policies"].as_array().is_some_and(|policies| {
+            policies.iter().any(|entry| {
+                entry["policy"] == "phone"
+                    && entry["queries"].as_u64().unwrap_or(0) >= 2
+                    && entry["blocked"].as_u64().unwrap_or(0) >= 2
+            })
+        })
+    })
+    .await;
 
     let generated = http
         .post(format!("{base}/api/v1/certificates/ca/generate"))

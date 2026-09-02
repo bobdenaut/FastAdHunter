@@ -78,8 +78,14 @@ must not have it (ADR-0004).
 ### DNS (Phase 1)
 
 - UDP/53 with EDNS(0); TCP/53 for truncation fallback (mandatory).
-- DoT/DoH **listeners** arrive in a later phase (client cert distribution
-  depends on Phase 3 certificate machinery).
+- DoT on `[dns.listen] dot_port` (853, Phase 3): bound beside 53 before the
+  privilege drop; 64 connections, permit taken before accept; 10 s handshake
+  deadline; the TCP/53 framing loop over TLS. The leaf is minted per SNI at
+  the handshake through `fah-certs`' `MintingResolver`, the API pair is the
+  fallback.
+- DoH (Phase 3): `/dns-query` on the API listener, reaching the pipeline
+  through the `DnsWireSource` port (§Dependency Layering); the HTTPS peer
+  address is the client.
 - DNSSEC: pass-through (DO bit and RRSIGs forwarded untouched). Local
   validation is a roadmap item, off by default when it lands.
 
@@ -260,11 +266,12 @@ manifest: an internal dependency that does not point strictly downward fails
 
 **Ports.** When a lower layer needs something a higher one owns, it declares a
 trait describing what it needs and the binary supplies the implementation — the
-dependency arrow stays pointing down. Two of these exist:
+dependency arrow stays pointing down. Three of these exist:
 
 | Port                             | Declared by       | Implemented in `fastadhunter` over       |
 | -------------------------------- | ----------------- | ---------------------------------------- |
 | `StatsSource`, `TelemetrySource` | `fah-api` (L3)    | `fah-stats`, `fah-metrics` (L3 siblings) |
+| `DnsWireSource`                  | `fah-api` (L3)    | `fah-dns`'s `Pipeline` (L3 sibling)      |
 | `HostResolver`                   | `fah-common` (L1) | `fah-dns`'s `UpstreamPool` (L3)          |
 
 `HostResolver` is what lets anything inside FastAdHunter resolve a hostname

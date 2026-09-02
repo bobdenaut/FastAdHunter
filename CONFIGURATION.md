@@ -74,6 +74,17 @@ address = "::"                # boot    — bind address; "::" = one dual-stack
                               #           off explicitly; v4 clients are reported
                               #           canonically, never as ::ffff:… mapped)
 port = 53                     # boot    — UDP + TCP
+dot_enabled = true            # boot    — DNS-over-TLS listener (RFC 7858)
+dot_port = 853                # boot    — TCP; binds before the privilege drop
+                              #           like 53; must differ from every other
+                              #           listener port. Serves a CA-minted
+                              #           certificate for the hostname the client
+                              #           sends when a CA exists (Android Private
+                              #           DNS hostname mode needs the CA
+                              #           installed), else the API certificate
+doh_enabled = true            # boot    — DNS-over-HTTPS (RFC 8484) at
+                              #           https://<api>/dns-query, unauthenticated;
+                              #           false removes the route entirely
 
 # ─── Blocking behavior ─────────────────────────────────────────────────
 [dns.blocking]

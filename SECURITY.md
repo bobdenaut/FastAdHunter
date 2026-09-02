@@ -22,8 +22,11 @@ tree through rustls and rcgen). The set is closed to *cryptography*; `pem`
 - **Single API key** (bearer token), generated on first boot:
   printed once to the container log and stored in `/config`.
 - Required for everything under `/api/v1/`. `GET /health` and
-  `POST /api/v1/auth/login` are the two exemptions and are not configurable;
-  `/health` returns status, version and uptime only.
+  `POST /api/v1/auth/login` are the two exemptions inside the admin surface
+  and are not configurable; `/health` returns status, version and uptime
+  only. `/dns-query` (DoH, API.md §DNS over HTTPS) is outside `/api/v1/` and
+  unauthenticated because a DNS client can present neither a key nor a
+  cookie; it answers only DNS and reaches no admin handler.
 - Rotation: `POST /api/v1/config/apikey/rotate` — new key returned once, old
   key invalid immediately.
 - **No users and no roles: single-admin appliance.** One password, one API key.
@@ -304,8 +307,12 @@ exactly the failure worth finding.
   - **Bounded per session.** An intercepted session holds one client and one
     upstream TLS session plus fixed hyper buffers (CONFIGURATION.md
     `[https] max_connections`); it never buffers a body.
-- DoT/DoH **listeners** (client-facing) arrive with Phase 3 certificate
-  machinery so clients can actually validate what they connect to.
+- DoT (`[dns.listen] dot_port`, 853) and DoH (`/dns-query`) **listeners**
+  (client-facing) ship with the Phase 3 certificate machinery. DoT presents a
+  CA-minted leaf for the SNI the client sends when a CA exists, else the API
+  pair (the imported-real-certificate route); a hello without SNI gets the
+  API pair. Never plaintext on 853 — a non-TLS client gets a TLS alert or a
+  close. DoH rides the API listener's certificate.
 
 ## Reporting
 

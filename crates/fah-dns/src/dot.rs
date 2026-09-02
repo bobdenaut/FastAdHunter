@@ -7,9 +7,10 @@ use fah_certs::{CertStore, MintingResolver};
 use rustls::server::Acceptor;
 use rustls::sign::CertifiedKey;
 use rustls::ServerConfig;
+use tokio::io::AsyncWriteExt;
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::Semaphore;
-use tokio::time::{timeout_at, Instant};
+use tokio::time::{timeout, timeout_at, Instant};
 use tokio_rustls::LazyConfigAcceptor;
 use tracing::{debug, warn};
 
@@ -126,7 +127,7 @@ async fn serve_connection<F: Forwarder>(
     if let Some(host) = sni {
         prewarm(&tls.store, host).await;
     }
-    let stream = match timeout_at(deadline, start.into_stream(tls.config)).await {
+    let mut stream = match timeout_at(deadline, start.into_stream(tls.config)).await {
         Ok(Ok(stream)) => stream,
         Ok(Err(err)) => {
             debug!(client = %client, error = %err, "DoT handshake failed");
@@ -137,7 +138,9 @@ async fn serve_connection<F: Forwarder>(
             return Ok(());
         }
     };
-    tcp::handle_connection(stream, pipeline, client.ip(), Transport::Dot).await
+    let served = tcp::handle_connection(&mut stream, pipeline, client.ip(), Transport::Dot).await;
+    let _ = timeout(tcp::TCP_IDLE_TIMEOUT, stream.shutdown()).await;
+    served
 }
 
 async fn prewarm(store: &Arc<CertStore>, host: String) {
@@ -393,6 +396,26 @@ mod tests {
         assert_ne!(session.peer_certificates().unwrap()[0], fallback_der);
         assert!(peer_leaf_is_issued_by(&stream, &ca_der));
         assert!(store.cached_leaf(HOST).is_some());
+    }
+
+    #[tokio::test]
+    async fn a_finished_connection_is_closed_with_close_notify_not_a_bare_fin() {
+        let (_dir, store) = store_with_ca();
+        let (fallback, _) = self_signed_fallback();
+        let listener = listen(DotTls::new(store, fallback).unwrap(), HANDSHAKE_TIMEOUT).await;
+
+        let mut stream = connect(listener.addr, client_accepting_any(), HOST)
+            .await
+            .unwrap();
+        stream.write_all(&[0x00, 0x01, 0x00]).await.unwrap();
+        let mut buf = [0u8; 16];
+        let read = timeout(Duration::from_secs(5), stream.read(&mut buf))
+            .await
+            .expect("the server must close a connection it will not serve");
+        assert!(
+            matches!(read, Ok(0)),
+            "a TLS close must arrive as close_notify (clean EOF), got {read:?}"
+        );
     }
 
     #[tokio::test]

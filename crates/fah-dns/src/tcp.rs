@@ -27,7 +27,7 @@ use crate::upstream::Forwarder;
 /// before we close it. RFC 7766 §6.2.3 leaves the value to the server;
 /// long enough for a stub resolver's think time, short enough that idle
 /// connections can't accumulate on the RB5009.
-const TCP_IDLE_TIMEOUT: Duration = Duration::from_secs(10);
+pub(crate) const TCP_IDLE_TIMEOUT: Duration = Duration::from_secs(10);
 
 pub trait Accept: Send + Sync + 'static {
     type Stream: AsyncRead + AsyncWrite + Unpin + Send + 'static;

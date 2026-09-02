@@ -158,6 +158,18 @@ N10, deferred to this task by the accepted p3-04 review; integration tests in
 These are the p3-04 harness's own tests, not new unit coverage; the "Unit:
 none new" line below stands.
 
+**p3-05 carry-over (review N3, deferred to this task):** a certificate
+failure at boot (no store, an unloadable API pair, a `ServerConfig` build
+error) closes 853 with one `error!` line; `Server::dot_addr()` reads `None`
+after `serve`, but no API surface reports it — `/health` and
+`GET /api/v1/certificates` do not know DoT is closed, so a default-on
+listener can silently disappear. Propose (API.md edit, owner approval) a
+`dot` listener state — `listening` / `closed` plus the reason — on
+`GET /api/v1/certificates` or in `/health` `checks`, and extend suite item 6
+with the closed posture: an unloadable API pair ⇒ 853 refuses, :53 answers,
+never plaintext. Until it lands, the Step 4 Private DNS runbook starts by
+reading the container log for that line.
+
 ### Step 3 — offline full-mode E2E (one scripted scenario)
 
 Extend `crates/fastadhunter/tests/e2e.rs` (or a sibling `e2e_https.rs`
@@ -268,11 +280,25 @@ command, what it does, when it takes effect, and the rollback.
    connection while `blocked`/`refused_claim` are per request, so
    `blocked > requests` is possible on one listener.
    **Third watch item (p3-04 N4 detector, shared with p3-05):**
-   `GET /api/v1/certificates` `unwarmed_misses` reads 0 after the browsing
-   workload and at the end of the soak. A non-zero value is either p3-04's
-   prewarm-then-evict window (more than 512 first-sight hosts inside one
-   handshake) or p3-05's DoT leaf losing to LRU pressure between re-warms —
-   attribute it before filing.
+   `GET /api/v1/certificates` `leaf_cache.unwarmed_misses` reads 0 after the
+   browsing workload and at the end of the soak — **with a CA installed**.
+   p3-05 mints at the handshake (there is no re-warm ticker), so DoT moves the
+   counter only when the resolver misses without a preceding mint: no CA
+   (every SNI hello counts — expected, not a finding), an invalid SNI, or a
+   mint failure. A non-zero value with a CA is p3-04's prewarm-then-evict
+   window (more than 512 first-sight hosts inside one handshake) or a DoT
+   mint failure — attribute it before filing.
+   **Mint-rate watch (p3-05 review N8):** with a CA installed, **every** LAN
+   client can drive one mint per DoT handshake for any SNI it names — 853 is
+   default-on, whereas p3-04 confined SNI-driven minting to listed clients.
+   Record `leaf_cache.minted_total` growth per hour over the soak, the peak
+   `inflight`, and `superseded`/`evictions`; a hostile or misbehaving client
+   shows as a mint rate far above the number of DoT hostnames in use and as
+   p3-04's leaves churning (re-mints on the terminate leg). Today's bound is
+   64 connections × one P-256 mint; measure the on-device mint cost here
+   (the ≈ 0.5 ms figure is the dev-box number through the documented factor,
+   not a reading). A per-client mint rate limit is the named escape hatch,
+   built only if the soak shows the need.
    **Fourth watch item (p3-04 L4):** an intercepted h2 session cut by the
    idle watchdog leaves its in-flight stream tasks and the upstream
    connection task alive until the origin answers or `hello_timeout` fires,

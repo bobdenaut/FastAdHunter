@@ -111,6 +111,13 @@ an optional user-assigned name. In Phase 1 clients were observed and reported
 (per-client statistics) while filtering stayed global; since `p2-05` a client
 is also what a Policy is assigned to, and what a `$client` rule names.
 
+### Client Transport
+
+The listener a DNS query arrived on: `udp`, `tcp`, `dot` (TLS on
+`[dns.listen] dot_port`) or `doh` (`/dns-query` on the API listener). Carried
+on every DNS query event as `transport`. Distinct from an Endpoint's protocol,
+which is the transport FastAdHunter speaks **upstream**.
+
 ### Policy
 
 A named bundle of rule lists and settings assignable to clients or schedules
