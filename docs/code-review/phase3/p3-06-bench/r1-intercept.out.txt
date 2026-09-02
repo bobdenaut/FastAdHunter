@@ -1,0 +1,60 @@
+https_handshake/direct_to_origin
+                        time:   [1.0644 ms 1.1296 ms 1.2054 ms]
+                        change: [-22.986% -14.823% -5.8360%] (p = 0.00 < 0.05)
+                        Performance has improved.
+Found 2 outliers among 50 measurements (4.00%)
+  2 (4.00%) high mild
+https_handshake/spliced time:   [4.1025 ms 5.6661 ms 7.2844 ms]
+                        change: [+43.901% +105.44% +185.92%] (p = 0.00 < 0.05)
+                        Performance has regressed.
+https_handshake/intercepted
+                        time:   [2.3562 ms 2.7257 ms 3.1567 ms]
+Found 6 outliers among 50 measurements (12.00%)
+  2 (4.00%) high mild
+  4 (8.00%) high severe
+
+https_handshake leaf cache after the run: minted_total=1 prewarm_hits=4847 unwarmed_misses=0
+https_h2_download/direct_to_origin
+                        time:   [6.1350 ms 6.4975 ms 6.8771 ms]
+                        thrpt:  [1.1360 GiB/s 1.2024 GiB/s 1.2734 GiB/s]
+Found 1 outliers among 20 measurements (5.00%)
+  1 (5.00%) high mild
+https_h2_download/spliced
+                        time:   [8.2502 ms 8.8228 ms 9.4171 ms]
+                        thrpt:  [849.52 MiB/s 906.74 MiB/s 969.67 MiB/s]
+                 change:
+                        time:   [-13.340% +2.5851% +23.313%] (p = 0.81 > 0.05)
+                        thrpt:  [-18.905% -2.5200% +15.393%]
+                        No change in performance detected.
+Found 2 outliers among 20 measurements (10.00%)
+  1 (5.00%) high mild
+  1 (5.00%) high severe
+https_h2_download/intercepted
+                        time:   [15.549 ms 16.499 ms 17.471 ms]
+                        thrpt:  [457.91 MiB/s 484.89 MiB/s 514.49 MiB/s]
+Found 1 outliers among 20 measurements (5.00%)
+  1 (5.00%) high mild
+
+prewarm_hop/inline_cached_leaf
+                        time:   [91.373 ns 91.680 ns 92.023 ns]
+                        change: [-0.8286% +0.1502% +1.1901%] (p = 0.79 > 0.05)
+                        No change in performance detected.
+Found 4 outliers among 100 measurements (4.00%)
+  3 (3.00%) high mild
+  1 (1.00%) high severe
+prewarm_hop/inline_prewarm_warm
+                        time:   [117.96 ns 118.83 ns 120.10 ns]
+                        change: [-0.2325% +0.3989% +1.0975%] (p = 0.24 > 0.05)
+                        No change in performance detected.
+Found 6 outliers among 100 measurements (6.00%)
+  4 (4.00%) high mild
+  2 (2.00%) high severe
+prewarm_hop/spawn_blocking_prewarm
+                        time:   [4.0569 µs 4.1876 µs 4.3148 µs]
+                        change: [-3.2796% +0.4400% +3.9015%] (p = 0.82 > 0.05)
+                        No change in performance detected.
+Found 11 outliers among 100 measurements (11.00%)
+  3 (3.00%) low severe
+  6 (6.00%) low mild
+  2 (2.00%) high mild
+

@@ -71,6 +71,9 @@ serde_json = { workspace = true }
 tempfile = "3"
 # The end-to-end DoT client (p3-05): a TLS stream to the binary's 853 listener.
 tokio-rustls = { version = "0.26", default-features = false, features = ["aws_lc_rs", "tls12"] }
+# The phase-3 security suite and full-mode e2e (p3-06) run a TLS origin the
+# binary must NOT be able to verify — a self-signed leaf, minted here.
+rcgen = { version = "0.14", default-features = false, features = ["aws_lc_rs"] }
 tokio = { workspace = true, features = ["macros", "net", "rt-multi-thread", "sync", "time"] }
 tokio-tungstenite = { version = "0.29", default-features = false, features = ["rustls-tls-webpki-roots"] }
 futures-util = { version = "0.3", default-features = false, features = ["sink", "std"] }

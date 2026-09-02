@@ -1,0 +1,36 @@
+http_pass_through/direct_to_origin
+                        time:   [31.925 µs 32.152 µs 32.411 µs]
+Found 3 outliers among 100 measurements (3.00%)
+  2 (2.00%) high mild
+  1 (1.00%) high severe
+http_pass_through/through_proxy
+                        time:   [64.973 µs 65.523 µs 66.134 µs]
+Found 7 outliers among 100 measurements (7.00%)
+  4 (4.00%) high mild
+  3 (3.00%) high severe
+
+http_opaque_body/direct_to_origin/8192
+                        time:   [33.835 µs 34.206 µs 34.542 µs]
+                        thrpt:  [226.18 MiB/s 228.39 MiB/s 230.90 MiB/s]
+http_opaque_body/through_proxy/8192
+                        time:   [68.248 µs 69.322 µs 70.206 µs]
+                        thrpt:  [111.28 MiB/s 112.70 MiB/s 114.47 MiB/s]
+http_opaque_body/direct_to_origin/1048576
+                        time:   [876.20 µs 1.0221 ms 1.1545 ms]
+                        thrpt:  [866.16 MiB/s 978.38 MiB/s 1.1145 GiB/s]
+http_opaque_body/through_proxy/1048576
+                        time:   [816.13 µs 905.40 µs 1.0047 ms]
+                        thrpt:  [995.29 MiB/s 1.0786 GiB/s 1.1966 GiB/s]
+Found 2 outliers among 20 measurements (10.00%)
+  2 (10.00%) high mild
+http_opaque_body/direct_to_origin/8388608
+                        time:   [5.5032 ms 5.8479 ms 6.2162 ms]
+                        thrpt:  [1.2568 GiB/s 1.3360 GiB/s 1.4196 GiB/s]
+Found 1 outliers among 20 measurements (5.00%)
+  1 (5.00%) high mild
+http_opaque_body/through_proxy/8388608
+                        time:   [6.3926 ms 6.5916 ms 6.8448 ms]
+                        thrpt:  [1.1414 GiB/s 1.1852 GiB/s 1.2221 GiB/s]
+Found 1 outliers among 20 measurements (5.00%)
+  1 (5.00%) high severe
+

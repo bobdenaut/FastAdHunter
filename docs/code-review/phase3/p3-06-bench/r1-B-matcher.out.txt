@@ -1,0 +1,36 @@
+
+[p1-02] compiled matcher: 1000000 rules, 29703238 bytes (28.3 MiB) resident (PERFORMANCE.md budget: <= 40 MB for 1M domains)
+
+matcher_lookup/hit_exact
+                        time:   [63.358 ns 63.577 ns 63.840 ns]
+                        change: [+0.2312% +0.9002% +1.9213%] (p = 0.01 < 0.05)
+                        Change within noise threshold.
+Found 7 outliers among 100 measurements (7.00%)
+  2 (2.00%) high mild
+  5 (5.00%) high severe
+matcher_lookup/hit_subdomain
+                        time:   [190.10 ns 193.13 ns 196.21 ns]
+                        change: [-9.5046% -8.2012% -6.7212%] (p = 0.00 < 0.05)
+                        Performance has improved.
+Found 4 outliers among 100 measurements (4.00%)
+  3 (3.00%) high mild
+  1 (1.00%) high severe
+matcher_lookup/miss     time:   [47.504 ns 47.697 ns 47.933 ns]
+                        change: [+1.5914% +2.4295% +3.4102%] (p = 0.00 < 0.05)
+                        Performance has regressed.
+Found 5 outliers among 100 measurements (5.00%)
+  3 (3.00%) high mild
+  2 (2.00%) high severe
+
+
+[p1.5-05] deduplication: what it costs and what it saves
+  two 1000000-rule lists compiled together, by how much of the second repeats the first
+
+   overlap   duplicates        rules     compiled        saved      build
+        0%            0      2000000      57.7 MiB      0.0 MiB     403 ms
+       25%       250000      1750000      50.4 MiB      7.6 MiB     448 ms
+       50%       500000      1500000      43.0 MiB     15.2 MiB     380 ms
+       75%       750000      1250000      35.7 MiB     22.8 MiB     395 ms
+       90%       900000      1100000      31.3 MiB     27.3 MiB     355 ms
+      100%      1000000      1000000      28.3 MiB     30.3 MiB     399 ms
+

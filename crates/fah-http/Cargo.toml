@@ -72,6 +72,10 @@ tempfile = "3"
 # imposes nothing on dependents.
 mimalloc = { workspace = true }
 
+[[bench]]
+name = "intercept"
+harness = false
+
 # harness=false: the criterion runner replaces libtest so `cargo bench` drives it.
 [[bench]]
 name = "proxy"

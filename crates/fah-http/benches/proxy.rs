@@ -33,7 +33,8 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::runtime::Runtime;
 
-use fah_http::Proxy;
+use fah_config::{HttpsConfig, HttpsListenConfig};
+use fah_http::{Proxy, TlsServer};
 
 /// The bench never exercises real DNS; resolution is a fixed answer so the
 /// measurement is the proxy's own work, not a resolver's.
@@ -308,7 +309,11 @@ fn client_hello(host: &str) -> Vec<u8> {
     record
 }
 
-async fn raw_origin(size: usize) -> SocketAddr {
+const SPLICE_STEADY_SIZE: usize = 64 * 1024 * 1024;
+
+const DRAIN_CHUNK: usize = 64 * 1024;
+
+async fn raw_origin(payload: Arc<Vec<u8>>) -> SocketAddr {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
     tokio::spawn(async move {
@@ -316,13 +321,13 @@ async fn raw_origin(size: usize) -> SocketAddr {
             let Ok((stream, _)) = listener.accept().await else {
                 return;
             };
+            let payload = Arc::clone(&payload);
             tokio::spawn(async move {
                 let (mut reader, mut writer) = stream.into_split();
                 tokio::spawn(async move {
                     let mut sink = tokio::io::sink();
                     let _ = tokio::io::copy(&mut reader, &mut sink).await;
                 });
-                let payload = vec![b'x'; size];
                 let _ = writer.write_all(&payload).await;
                 let _ = writer.shutdown().await;
             });
@@ -343,17 +348,16 @@ async fn splice_in_front_of(origin: SocketAddr) -> SocketAddr {
         Duration::from_secs(120),
         fah_config::NoSni::Pass,
     ));
-    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let addr = listener.local_addr().unwrap();
-    tokio::spawn(async move {
-        loop {
-            let Ok((stream, peer)) = listener.accept().await else {
-                return;
-            };
-            let proxy = Arc::clone(&proxy);
-            tokio::spawn(async move { proxy.serve_connection(stream, peer).await });
-        }
-    });
+    let config = HttpsConfig {
+        listen: HttpsListenConfig {
+            address: "127.0.0.1".to_string(),
+            port: 0,
+        },
+        ..HttpsConfig::default()
+    };
+    let mut server = TlsServer::bind(&config).await.unwrap();
+    let addr = server.local_addr();
+    server.serve(proxy);
     addr
 }
 
@@ -363,29 +367,53 @@ async fn drain(addr: SocketAddr, hello: Option<&[u8]>, size: usize) {
     if let Some(hello) = hello {
         stream.write_all(hello).await.unwrap();
     }
-    let mut buf = vec![0u8; size];
-    stream.read_exact(&mut buf).await.unwrap();
+    let mut buf = vec![0u8; DRAIN_CHUNK];
+    let mut received = 0usize;
+    while received < size {
+        let read = stream.read(&mut buf).await.unwrap();
+        assert!(read > 0, "origin closed after {received} of {size} bytes");
+        received += read;
+    }
+}
+
+fn splice_arms(
+    c: &mut Criterion,
+    rt: &Runtime,
+    name: &str,
+    size: usize,
+    sample_size: usize,
+    hello: &[u8],
+) {
+    let origin = rt.block_on(raw_origin(Arc::new(vec![b'x'; size])));
+    let proxy = rt.block_on(splice_in_front_of(origin));
+
+    let mut group = c.benchmark_group(name);
+    group.sample_size(sample_size);
+    group.throughput(Throughput::Bytes(size as u64));
+
+    group.bench_function("direct_to_origin", |b| {
+        b.iter(|| rt.block_on(drain(origin, None, size)));
+    });
+
+    group.bench_function("through_splice", |b| {
+        b.iter(|| rt.block_on(drain(proxy, Some(hello), size)));
+    });
+
+    group.finish();
 }
 
 fn splice(c: &mut Criterion) {
     let rt = Runtime::new().unwrap();
-    let origin = rt.block_on(raw_origin(SPLICE_SIZE));
-    let proxy = rt.block_on(splice_in_front_of(origin));
     let hello = client_hello(SPLICE_HOST);
-
-    let mut group = c.benchmark_group("https_sni_splice");
-    group.sample_size(20);
-    group.throughput(Throughput::Bytes(SPLICE_SIZE as u64));
-
-    group.bench_function("direct_to_origin", |b| {
-        b.iter(|| rt.block_on(drain(origin, None, SPLICE_SIZE)));
-    });
-
-    group.bench_function("through_splice", |b| {
-        b.iter(|| rt.block_on(drain(proxy, Some(&hello), SPLICE_SIZE)));
-    });
-
-    group.finish();
+    splice_arms(c, &rt, "https_sni_splice", SPLICE_SIZE, 20, &hello);
+    splice_arms(
+        c,
+        &rt,
+        "https_sni_splice_steady_state",
+        SPLICE_STEADY_SIZE,
+        10,
+        &hello,
+    );
 }
 
 criterion_group!(benches, pass_through, opaque_body, splice);

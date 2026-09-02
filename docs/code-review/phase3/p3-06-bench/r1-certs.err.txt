@@ -1,0 +1,16 @@
+Benchmarking certs_mint
+Benchmarking certs_mint: Warming up for 3.0000 s
+Benchmarking certs_mint: Collecting 100 samples in estimated 5.1698 s (96k iterations)
+Benchmarking certs_mint: Analyzing
+Benchmarking certs_cache_hit
+Benchmarking certs_cache_hit: Warming up for 3.0000 s
+Benchmarking certs_cache_hit: Collecting 100 samples in estimated 5.0002 s (102M iterations)
+Benchmarking certs_cache_hit: Analyzing
+Benchmarking certs_prewarm_warm
+Benchmarking certs_prewarm_warm: Warming up for 3.0000 s
+Benchmarking certs_prewarm_warm: Collecting 100 samples in estimated 5.0000 s (66M iterations)
+Benchmarking certs_prewarm_warm: Analyzing
+Benchmarking certs_replay_zipf
+Benchmarking certs_replay_zipf: Warming up for 3.0000 s
+Benchmarking certs_replay_zipf: Collecting 100 samples in estimated 5.0231 s (288k iterations)
+Benchmarking certs_replay_zipf: Analyzing

@@ -1,0 +1,60 @@
+https_handshake/direct_to_origin
+                        time:   [954.94 µs 982.77 µs 1.0129 ms]
+                        change: [-16.354% -8.5255% +1.3354%] (p = 0.06 > 0.05)
+                        No change in performance detected.
+Found 4 outliers among 50 measurements (8.00%)
+  4 (8.00%) high severe
+https_handshake/spliced time:   [4.5832 ms 5.9858 ms 7.3286 ms]
+                        change: [-14.462% +21.440% +71.182%] (p = 0.28 > 0.05)
+                        No change in performance detected.
+https_handshake/intercepted
+                        time:   [3.7273 ms 4.8237 ms 6.0230 ms]
+                        change: [+1.4412% +45.693% +101.02%] (p = 0.03 < 0.05)
+                        Performance has regressed.
+Found 3 outliers among 50 measurements (6.00%)
+  3 (6.00%) high mild
+
+https_handshake leaf cache after the run: minted_total=1 prewarm_hits=3572 unwarmed_misses=0
+https_h2_download/direct_to_origin
+                        time:   [6.3924 ms 6.7318 ms 7.1101 ms]
+                        thrpt:  [1.0988 GiB/s 1.1605 GiB/s 1.2221 GiB/s]
+                 change:
+                        time:   [-6.2561% +1.7507% +11.186%] (p = 0.69 > 0.05)
+                        thrpt:  [-10.061% -1.7205% +6.6736%]
+                        No change in performance detected.
+https_h2_download/spliced
+                        time:   [8.2959 ms 8.8525 ms 9.4939 ms]
+                        thrpt:  [842.64 MiB/s 903.70 MiB/s 964.34 MiB/s]
+                 change:
+                        time:   [-20.138% -5.0488% +10.143%] (p = 0.61 > 0.05)
+                        thrpt:  [-9.2087% +5.3173% +25.217%]
+                        No change in performance detected.
+https_h2_download/intercepted
+                        time:   [15.766 ms 16.622 ms 17.433 ms]
+                        thrpt:  [458.89 MiB/s 481.29 MiB/s 507.42 MiB/s]
+                 change:
+                        time:   [-8.7912% +0.2980% +9.6085%] (p = 0.95 > 0.05)
+                        thrpt:  [-8.7662% -0.2971% +9.6385%]
+                        No change in performance detected.
+
+prewarm_hop/inline_cached_leaf
+                        time:   [91.418 ns 91.990 ns 92.743 ns]
+                        change: [-2.1695% -1.0354% +0.0451%] (p = 0.07 > 0.05)
+                        No change in performance detected.
+Found 4 outliers among 100 measurements (4.00%)
+  2 (2.00%) high mild
+  2 (2.00%) high severe
+prewarm_hop/inline_prewarm_warm
+                        time:   [117.06 ns 117.67 ns 118.35 ns]
+                        change: [-2.0369% -1.3310% -0.6585%] (p = 0.00 < 0.05)
+                        Change within noise threshold.
+Found 8 outliers among 100 measurements (8.00%)
+  4 (4.00%) high mild
+  4 (4.00%) high severe
+prewarm_hop/spawn_blocking_prewarm
+                        time:   [3.8920 µs 4.1708 µs 4.4200 µs]
+                        change: [-2.3333% +3.0144% +8.4391%] (p = 0.26 > 0.05)
+                        No change in performance detected.
+Found 2 outliers among 100 measurements (2.00%)
+  2 (2.00%) low mild
+

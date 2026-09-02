@@ -1,0 +1,28 @@
+session start 2026-09-02T18:13:30+03:00
+18:13:42  r1-A-cache                   exit= 12s
+18:13:53  r1-B-cache                   exit= 12s
+18:14:25  r1-A-matcher                 exit= 32s
+18:14:58  r1-B-matcher                 exit= 33s
+18:15:18  r1-A-pipeline                exit= 21s
+18:15:39  r1-B-pipeline                exit= 21s
+18:16:53  r1-A-proxy                   exit= 74s
+18:18:07  r1-B-proxy                   exit= 74s
+18:18:18  r2-A-cache                   exit= 10s
+18:18:29  r2-B-cache                   exit= 11s
+18:19:01  r2-A-matcher                 exit= 32s
+18:19:33  r2-B-matcher                 exit= 32s
+18:19:54  r2-A-pipeline                exit= 21s
+18:20:14  r2-B-pipeline                exit= 20s
+18:21:28  r2-A-proxy                   exit= 74s
+18:22:44  r2-B-proxy                   exit= 75s
+18:23:29  r1-splice16                  exit= 46s
+18:24:13  r1-splice64                  exit= 44s
+18:24:51  r2-splice16                  exit= 38s
+18:25:36  r2-splice64                  exit= 45s
+18:26:54  r1-intercept (rerun, no filter) exit=
+18:27:35  r1-certs (rerun, no filter, pinned) exit=
+18:27:51  r2-intercept (rerun, no filter) exit=
+18:28:31  r2-certs (rerun, no filter, pinned) exit=
+session end 2026-09-02T18:28:31+03:00
+18:35:57  r1-intercept (rerun 2, Connection: close, 10 s) exit=0
+18:37:49  r2-intercept (rerun 2, Connection: close, 10 s) exit=0

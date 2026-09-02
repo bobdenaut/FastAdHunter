@@ -1,0 +1,67 @@
+http_pass_through/direct_to_origin
+                        time:   [31.222 µs 31.518 µs 31.866 µs]
+                        change: [-2.8841% -1.6980% -0.4208%] (p = 0.01 < 0.05)
+                        Change within noise threshold.
+Found 9 outliers among 100 measurements (9.00%)
+  4 (4.00%) high mild
+  5 (5.00%) high severe
+http_pass_through/through_proxy
+                        time:   [64.407 µs 65.169 µs 66.068 µs]
+                        change: [-1.2175% +0.0097% +1.2935%] (p = 0.98 > 0.05)
+                        No change in performance detected.
+Found 7 outliers among 100 measurements (7.00%)
+  3 (3.00%) high mild
+  4 (4.00%) high severe
+
+http_opaque_body/direct_to_origin/8192
+                        time:   [33.754 µs 34.088 µs 34.447 µs]
+                        thrpt:  [226.80 MiB/s 229.18 MiB/s 231.46 MiB/s]
+                 change:
+                        time:   [-1.3184% -0.1751% +1.0520%] (p = 0.78 > 0.05)
+                        thrpt:  [-1.0410% +0.1754% +1.3360%]
+                        No change in performance detected.
+Found 3 outliers among 20 measurements (15.00%)
+  3 (15.00%) high mild
+http_opaque_body/through_proxy/8192
+                        time:   [67.723 µs 68.498 µs 69.342 µs]
+                        thrpt:  [112.67 MiB/s 114.06 MiB/s 115.36 MiB/s]
+                 change:
+                        time:   [-1.2459% +0.4134% +2.2244%] (p = 0.66 > 0.05)
+                        thrpt:  [-2.1760% -0.4117% +1.2616%]
+                        No change in performance detected.
+Found 1 outliers among 20 measurements (5.00%)
+  1 (5.00%) high severe
+http_opaque_body/direct_to_origin/1048576
+                        time:   [668.48 µs 718.34 µs 767.07 µs]
+                        thrpt:  [1.2731 GiB/s 1.3595 GiB/s 1.4609 GiB/s]
+                 change:
+                        time:   [-34.467% -24.011% -10.958%] (p = 0.00 < 0.05)
+                        thrpt:  [+12.306% +31.598% +52.595%]
+                        Performance has improved.
+http_opaque_body/through_proxy/1048576
+                        time:   [780.92 µs 811.12 µs 847.49 µs]
+                        thrpt:  [1.1523 GiB/s 1.2040 GiB/s 1.2505 GiB/s]
+                 change:
+                        time:   [-32.051% -20.776% -7.6163%] (p = 0.01 < 0.05)
+                        thrpt:  [+8.2442% +26.224% +47.170%]
+                        Performance has improved.
+http_opaque_body/direct_to_origin/8388608
+                        time:   [5.3419 ms 5.6668 ms 6.0077 ms]
+                        thrpt:  [1.3004 GiB/s 1.3787 GiB/s 1.4625 GiB/s]
+                 change:
+                        time:   [-4.6298% +3.0164% +12.483%] (p = 0.52 > 0.05)
+                        thrpt:  [-11.097% -2.9281% +4.8546%]
+                        No change in performance detected.
+Found 3 outliers among 20 measurements (15.00%)
+  2 (10.00%) high mild
+  1 (5.00%) high severe
+http_opaque_body/through_proxy/8388608
+                        time:   [6.0804 ms 6.2479 ms 6.4903 ms]
+                        thrpt:  [1.2037 GiB/s 1.2504 GiB/s 1.2849 GiB/s]
+                 change:
+                        time:   [-15.524% -9.0891% -2.9818%] (p = 0.01 < 0.05)
+                        thrpt:  [+3.0734% +9.9978% +18.376%]
+                        Performance has improved.
+Found 2 outliers among 20 measurements (10.00%)
+  2 (10.00%) high mild
+

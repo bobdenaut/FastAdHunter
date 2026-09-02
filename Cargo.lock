@@ -862,6 +862,7 @@ dependencies = [
  "libc",
  "libmimalloc-sys",
  "mimalloc",
+ "rcgen",
  "reqwest",
  "rustls",
  "serde_json",
