@@ -136,7 +136,7 @@ pub async fn boot(
     client: &reqwest::Client,
     config: impl Fn(&Ports) -> String,
 ) -> (Guard, Ports, String) {
-    boot_with(config_dir, data_dir, client, ApiScheme::Https, config).await
+    boot_with(config_dir, data_dir, client, ApiScheme::Https, &[], config).await
 }
 
 pub async fn boot_with(
@@ -144,6 +144,7 @@ pub async fn boot_with(
     data_dir: &Path,
     client: &reqwest::Client,
     scheme: ApiScheme,
+    envs: &[(&str, &std::ffi::OsStr)],
     config: impl Fn(&Ports) -> String,
 ) -> (Guard, Ports, String) {
     for attempt in 1..=BOOT_ATTEMPTS {
@@ -164,17 +165,16 @@ pub async fn boot_with(
         // can say why, so it has to be kept somewhere retrievable.
         let log_path = config_dir.join("engine.log");
         let log = std::fs::File::create(&log_path).expect("engine log");
-        let child = Guard(
-            Command::new(binary_under_test())
-                .arg("--config")
-                .arg(&config_path)
-                .arg("--data")
-                .arg(data_dir)
-                .stdout(Stdio::from(log.try_clone().expect("clone log handle")))
-                .stderr(Stdio::from(log))
-                .spawn()
-                .expect("spawn fastadhunter"),
-        );
+        let mut command = Command::new(binary_under_test());
+        command
+            .arg("--config")
+            .arg(&config_path)
+            .arg("--data")
+            .arg(data_dir)
+            .envs(envs.iter().copied())
+            .stdout(Stdio::from(log.try_clone().expect("clone log handle")))
+            .stderr(Stdio::from(log));
+        let child = Guard(command.spawn().expect("spawn fastadhunter"));
 
         let base = scheme.base(ports.api);
         match await_api_ready(client, &base, child, &log_path).await {
@@ -608,10 +608,13 @@ pub const PAGE_HOST: &str = "shop.example.com";
 pub const AD_HOST: &str = "ads.example.com";
 pub const DOT_HOSTNAME: &str = "dns.fah.test";
 
+pub const UPSTREAM_ROOT_ENV: &str = "FAH_TEST_UPSTREAM_ROOT";
+
 pub struct FullMode {
     pub origin_ip: Ipv4Addr,
     pub clients: Vec<String>,
     pub api_tls: bool,
+    pub upstream_root: Option<Vec<u8>>,
 }
 
 pub fn full_mode_config(ports: &Ports, upstream: SocketAddr, mode: &FullMode) -> String {
@@ -720,11 +723,24 @@ pub async fn boot_full_in(
     } else {
         ApiScheme::Http
     };
-    let (child, ports, base) =
-        boot_with(config_dir.path(), data_dir.path(), &http, scheme, |ports| {
-            full_mode_config(ports, upstream_addr, &mode)
-        })
-        .await;
+    let root_path = mode.upstream_root.as_ref().map(|der| {
+        let path = data_dir.path().join("test-upstream-root.der");
+        std::fs::write(&path, der).expect("write the test upstream root");
+        path
+    });
+    let envs: Vec<(&str, &std::ffi::OsStr)> = root_path
+        .iter()
+        .map(|path| (UPSTREAM_ROOT_ENV, path.as_os_str()))
+        .collect();
+    let (child, ports, base) = boot_with(
+        config_dir.path(),
+        data_dir.path(),
+        &http,
+        scheme,
+        &envs,
+        |ports| full_mode_config(ports, upstream_addr, &mode),
+    )
+    .await;
     let key = std::fs::read_to_string(config_dir.path().join("apikey"))
         .expect("first boot must persist an API key")
         .trim()
@@ -801,6 +817,12 @@ pub fn self_signed_origin(
     )
 }
 
+pub const ALLOW_SKIP_ENV: &str = "FAH_SECURITY_ALLOW_SKIP";
+
+pub fn skips_allowed() -> bool {
+    std::env::var_os(ALLOW_SKIP_ENV).is_some_and(|value| value.to_str() == Some("1"))
+}
+
 pub async fn bind_origin(ip: Ipv4Addr) -> Option<tokio::net::TcpListener> {
     match tokio::net::TcpListener::bind((ip, ORIGIN_PORT)).await {
         Ok(listener) => Some(listener),
@@ -810,6 +832,12 @@ pub async fn bind_origin(ip: Ipv4Addr) -> Option<tokio::net::TcpListener> {
                 std::io::ErrorKind::AddrInUse | std::io::ErrorKind::PermissionDenied
             ) =>
         {
+            assert!(
+                skips_allowed(),
+                "{} ({err}). A security check must not pass by skipping; set {ALLOW_SKIP_ENV}=1 \
+                 to accept the skip on this box",
+                skip_origin_message(ip)
+            );
             None
         }
         Err(err) => panic!("binding the origin on {ip}:{ORIGIN_PORT}: {err}"),
@@ -828,25 +856,36 @@ pub struct OriginCounters {
     pub handshakes: Arc<std::sync::atomic::AtomicU64>,
 }
 
+fn origin_acceptor(
+    cert: rustls::pki_types::CertificateDer<'static>,
+    key: rustls::pki_types::PrivateKeyDer<'static>,
+) -> tokio_rustls::TlsAcceptor {
+    fah_api::install_crypto_provider();
+    let config = rustls::ServerConfig::builder()
+        .with_no_client_auth()
+        .with_single_cert(vec![cert], key)
+        .expect("origin server config");
+    tokio_rustls::TlsAcceptor::from(Arc::new(config))
+}
+
+fn origin_counters() -> OriginCounters {
+    OriginCounters {
+        accepts: Arc::new(std::sync::atomic::AtomicU64::new(0)),
+        handshakes: Arc::new(std::sync::atomic::AtomicU64::new(0)),
+    }
+}
+
 pub fn run_tls_origin(
     listener: tokio::net::TcpListener,
     cert: rustls::pki_types::CertificateDer<'static>,
     key: rustls::pki_types::PrivateKeyDer<'static>,
     payload: Arc<Vec<u8>>,
 ) -> OriginCounters {
-    use std::sync::atomic::{AtomicU64, Ordering};
+    use std::sync::atomic::Ordering;
     use tokio::io::AsyncWriteExt;
 
-    fah_api::install_crypto_provider();
-    let config = rustls::ServerConfig::builder()
-        .with_no_client_auth()
-        .with_single_cert(vec![cert], key)
-        .expect("origin server config");
-    let acceptor = tokio_rustls::TlsAcceptor::from(Arc::new(config));
-    let counters = OriginCounters {
-        accepts: Arc::new(AtomicU64::new(0)),
-        handshakes: Arc::new(AtomicU64::new(0)),
-    };
+    let acceptor = origin_acceptor(cert, key);
+    let counters = origin_counters();
     let accepts = Arc::clone(&counters.accepts);
     let handshakes = Arc::clone(&counters.handshakes);
     tokio::spawn(async move {
@@ -864,6 +903,62 @@ pub fn run_tls_origin(
                 };
                 handshakes.fetch_add(1, Ordering::Relaxed);
                 let _ = tls.write_all(&payload).await;
+                let _ = tls.shutdown().await;
+            });
+        }
+    });
+    counters
+}
+
+pub fn run_tls_http_origin(
+    listener: tokio::net::TcpListener,
+    cert: rustls::pki_types::CertificateDer<'static>,
+    key: rustls::pki_types::PrivateKeyDer<'static>,
+    body: Arc<Vec<u8>>,
+) -> OriginCounters {
+    use std::sync::atomic::Ordering;
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    let acceptor = origin_acceptor(cert, key);
+    let counters = origin_counters();
+    let accepts = Arc::clone(&counters.accepts);
+    let handshakes = Arc::clone(&counters.handshakes);
+    tokio::spawn(async move {
+        loop {
+            let Ok((stream, _)) = listener.accept().await else {
+                return;
+            };
+            accepts.fetch_add(1, Ordering::Relaxed);
+            let acceptor = acceptor.clone();
+            let body = Arc::clone(&body);
+            let handshakes = Arc::clone(&handshakes);
+            tokio::spawn(async move {
+                let Ok(mut tls) = acceptor.accept(stream).await else {
+                    return;
+                };
+                handshakes.fetch_add(1, Ordering::Relaxed);
+                let mut head = Vec::new();
+                let mut chunk = [0u8; 1024];
+                loop {
+                    let read =
+                        match tokio::time::timeout(Duration::from_secs(10), tls.read(&mut chunk))
+                            .await
+                        {
+                            Ok(Ok(read)) if read > 0 => read,
+                            _ => return,
+                        };
+                    head.extend_from_slice(&chunk[..read]);
+                    if contains(&head, b"\r\n\r\n") {
+                        break;
+                    }
+                }
+                let response = format!(
+                    "HTTP/1.1 200 OK\r\nContent-Type: application/octet-stream\r\n\
+                     Content-Length: {}\r\nConnection: close\r\n\r\n",
+                    body.len()
+                );
+                let _ = tls.write_all(response.as_bytes()).await;
+                let _ = tls.write_all(&body).await;
                 let _ = tls.shutdown().await;
             });
         }

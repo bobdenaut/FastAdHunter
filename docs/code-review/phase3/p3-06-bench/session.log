@@ -26,3 +26,38 @@ session start 2026-09-02T18:13:30+03:00
 session end 2026-09-02T18:28:31+03:00
 18:35:57  r1-intercept (rerun 2, Connection: close, 10 s) exit=0
 18:37:49  r2-intercept (rerun 2, Connection: close, 10 s) exit=0
+2026-09-02 review fix F8: build provenance recovered from target/release/.fingerprint/*/test-bench-*.json (commands were not logged at the time). A = E:/FastAdHunter-pre3 (64be513), B = E:/FastAdHunter (tip). Both sides: rustc 1562763049001146449, config hash 8247474407144887393, features [] on every bench target, profile hash 10542696202433039341 for cache/matcher/proxy/proxy16/proxy64/intercept/certs and 17468198126472111474 for pipeline (the debug-assertions=true bench override, X2, applied to A and B alike). proxy (11b0f500..., workspace build 15:43) and proxy16 (5803552a..., single-package build 18:12) differ only in cargo's metadata hash. invoked.timestamp: A 15:36-15:37, B 15:43-15:45, proxy16/proxy64/intercept 18:08-18:12.
+pinned-4 session start 2026-09-02T20:42:49+03:00 (F8 re-run; intercept exe intercept-6ca2c9d04bfd81a9.exe)
+20:44:08  p4-r1-A-proxy                exit= 80s (pinned-4)
+20:45:34  p4-r1-B-proxy                exit= 86s (pinned-4)
+20:46:52  p4-r2-A-proxy                exit= 77s (pinned-4)
+20:48:13  p4-r2-B-proxy                exit= 81s (pinned-4)
+20:48:55  p4-r1-splice16               exit= 42s (pinned-4)
+20:49:34  p4-r1-splice64               exit= 40s (pinned-4)
+20:50:13  p4-r2-splice16               exit= 39s (pinned-4)
+20:50:54  p4-r2-splice64               exit= 41s (pinned-4)
+20:52:42  p4-r1-intercept              exit= 108s (pinned-4)
+20:54:28  p4-r2-intercept              exit= 106s (pinned-4)
+pinned-4 session end 2026-09-02T20:54:28+03:00
+21:03:59  p4w4-intercept-handshake exit= (pinned-4 + TOKIO_WORKER_THREADS=4)
+21:04:20  p4w4-B-passthrough exit= (pinned-4 + TOKIO_WORKER_THREADS=4)
+pin probe start 2026-09-02T21:04:49+03:00
+21:05:34  probe-mask15-w4-handshake        exit= 45s (mask=15 workers=4)
+21:05:58  probe-mask15-w4-passthrough      exit= 24s (mask=15 workers=4)
+21:06:47  probe-mask55-w4-handshake        exit= 49s (mask=85 workers=4)
+21:07:06  probe-mask55-w4-passthrough      exit= 19s (mask=85 workers=4)
+21:08:13  probe-mask55-w32-handshake       exit= 66s (mask=85 workers=)
+pin probe end 2026-09-02T21:08:13+03:00
+21:09:52  probe-unpinned-handshake         exit= (unpinned, default workers, F6 harness)
+pinned-4 session (p4b) start 2026-09-02T21:12:30+03:00 (F8 re-run; mask=85 workers=4; intercept exe intercept-6ca2c9d04bfd81a9.exe)
+21:13:46  p4b-r1-A-proxy               exit= 76s (mask=85 workers=4)
+21:15:03  p4b-r1-B-proxy               exit= 77s (mask=85 workers=4)
+21:16:18  p4b-r2-A-proxy               exit= 75s (mask=85 workers=4)
+21:17:33  p4b-r2-B-proxy               exit= 75s (mask=85 workers=4)
+21:18:16  p4b-r1-splice16              exit= 42s (mask=85 workers=4)
+21:18:55  p4b-r1-splice64              exit= 40s (mask=85 workers=4)
+21:19:35  p4b-r2-splice16              exit= 40s (mask=85 workers=4)
+21:20:16  p4b-r2-splice64              exit= 41s (mask=85 workers=4)
+21:22:14  p4b-r1-intercept             exit= 118s (mask=85 workers=4)
+21:24:25  p4b-r2-intercept             exit= 132s (mask=85 workers=4)
+pinned-4 session (p4b) end 2026-09-02T21:24:25+03:00

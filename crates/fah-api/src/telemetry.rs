@@ -104,6 +104,7 @@ impl MemorySnapshot {
 pub struct TelemetrySnapshot {
     memory: MemorySnapshot,
     engine: fah_model::EngineTelemetry,
+    listeners: fah_model::ListenerTelemetry,
     uptime_seconds: u64,
 }
 
@@ -112,6 +113,7 @@ impl TelemetrySnapshot {
         Self {
             memory: MemorySnapshot::collect(state),
             engine: state.telemetry.engine(),
+            listeners: state.telemetry.listeners(),
             uptime_seconds: state.uptime_seconds(),
         }
     }
@@ -125,6 +127,7 @@ pub struct TelemetryResponse {
     /// this crate adds.
     #[serde(flatten)]
     pub engine: fah_model::EngineTelemetry,
+    pub listeners: fah_model::ListenerTelemetry,
     pub cache: CacheStatsResponse,
     pub memory: MemoryResponse,
 }
@@ -148,6 +151,7 @@ impl From<TelemetrySnapshot> for TelemetryResponse {
                 uptime_seconds: snapshot.uptime_seconds,
             },
             engine: snapshot.engine,
+            listeners: snapshot.listeners,
             // Derived from the port snapshot exactly as `GET /api/v1/cache`
             // derives it — never from that endpoint's output, which would
             // couple the two.

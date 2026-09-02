@@ -1,0 +1,21 @@
+https_handshake/direct_to_origin
+                        time:   [9.4356 ms 10.231 ms 10.914 ms]
+                        change: [-53.289% -47.212% -41.103%] (p = 0.00 < 0.05)
+                        Performance has improved.
+Found 5 outliers among 50 measurements (10.00%)
+  5 (10.00%) low mild
+https_handshake/spliced time:   [16.445 ms 17.424 ms 18.419 ms]
+                        change: [-48.575% -45.344% -41.653%] (p = 0.00 < 0.05)
+                        Performance has improved.
+Found 2 outliers among 50 measurements (4.00%)
+  1 (2.00%) low mild
+  1 (2.00%) high mild
+https_handshake/intercepted
+                        time:   [16.016 ms 16.900 ms 17.781 ms]
+                        change: [-45.066% -40.404% -35.325%] (p = 0.00 < 0.05)
+                        Performance has improved.
+Found 3 outliers among 50 measurements (6.00%)
+  1 (2.00%) low mild
+  2 (4.00%) high mild
+
+https_handshake leaf cache after the run: minted_total=1 prewarm_hits=904 unwarmed_misses=0

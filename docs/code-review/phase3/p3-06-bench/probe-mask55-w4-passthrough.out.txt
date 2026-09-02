@@ -1,0 +1,15 @@
+http_pass_through/direct_to_origin
+                        time:   [31.521 µs 31.717 µs 31.906 µs]
+                        change: [-69.711% -61.283% -49.892%] (p = 0.00 < 0.05)
+                        Performance has improved.
+Found 4 outliers among 100 measurements (4.00%)
+  3 (3.00%) high mild
+  1 (1.00%) high severe
+http_pass_through/through_proxy
+                        time:   [64.346 µs 65.057 µs 65.825 µs]
+                        change: [-77.934% -67.535% -50.546%] (p = 0.00 < 0.05)
+                        Performance has improved.
+Found 4 outliers among 100 measurements (4.00%)
+  3 (3.00%) high mild
+  1 (1.00%) high severe
+

@@ -137,6 +137,28 @@ pub struct HttpCounters {
     pub refused: u64,
 }
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ListenerCounters {
+    pub connections: u64,
+    pub requests: u64,
+    pub blocked: u64,
+    pub refused_claim: u64,
+    pub refused_destination: u64,
+    pub resolve_failures: u64,
+    pub upstream_failures: u64,
+    pub upstream_cert_failures: u64,
+    pub non_http: u64,
+    pub non_tls: u64,
+    pub hello_timeouts: u64,
+    pub dropped_events: u64,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ListenerTelemetry {
+    pub http: Option<ListenerCounters>,
+    pub https: Option<ListenerCounters>,
+}
+
 /// Stale-while-refresh queue counters (ADR-0005).
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SwrCounters {

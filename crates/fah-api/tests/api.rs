@@ -358,6 +358,26 @@ impl TelemetrySource for FakeTelemetry {
         self.degraded
     }
 
+    fn listeners(&self) -> fah_model::ListenerTelemetry {
+        fah_model::ListenerTelemetry {
+            http: Some(fah_model::ListenerCounters {
+                connections: 5_120,
+                requests: 5_333,
+                blocked: 918,
+                refused_claim: 2,
+                refused_destination: 1,
+                resolve_failures: 4,
+                upstream_failures: 6,
+                upstream_cert_failures: 0,
+                non_http: 3,
+                non_tls: 0,
+                hello_timeouts: 0,
+                dropped_events: 0,
+            }),
+            https: None,
+        }
+    }
+
     /// Non-zero in every field the endpoint publishes, so a test asserting a
     /// field is present cannot pass on a default-constructed value.
     fn engine(&self) -> fah_model::EngineTelemetry {
@@ -560,6 +580,9 @@ async fn start_with(options: HarnessOptions) -> Harness {
         doh: dns
             .clone()
             .map(|dns| dns as Arc<dyn fah_api::DnsWireSource>),
+        dot: fah_api::DotListener::Listening {
+            address: "[::]:853".parse().unwrap(),
+        },
     };
 
     let server = ApiServer::bind("127.0.0.1", 0, tls_config, state)
@@ -4036,6 +4059,10 @@ async fn the_full_certificate_lifecycle_matches_the_documented_shapes() {
     assert_eq!(before["ca"]["present"], false);
     assert!(before["ca"]["fingerprint_sha256"].is_null());
     assert_eq!(before["api_certificate"]["source"], "self_signed");
+    assert_eq!(
+        before["dot"],
+        serde_json::json!({ "state": "listening", "address": "[::]:853" })
+    );
     assert_eq!(before["leaf_cache"]["capacity"], 512);
     assert_eq!(before["leaf_cache"]["size"], 0);
 

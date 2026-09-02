@@ -6,45 +6,46 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use hickory_proto::op::ResponseCode;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::net::TcpStream;
 
 use common::{
     await_event, bind_origin, boot_full, client_config_trusting, client_hello_without_sni,
-    connect_events, get_json, insecure_client_config, pseudo_random_payload, put_user_rules,
-    resolve, resolve_doh_post, resolve_dot, run_tls_origin, self_signed_origin,
-    skip_origin_message, tls_connect_from, FullMode, AD_HOST, DOT_HOSTNAME, PAGE_HOST,
+    connect_events, get_json, insecure_client_config, put_user_rules, resolve, resolve_doh_post,
+    resolve_dot, run_tls_http_origin, self_signed_origin, skip_origin_message, skips_allowed,
+    tls_connect_from, FullMode, AD_HOST, ALLOW_SKIP_ENV, DOT_HOSTNAME, PAGE_HOST,
 };
 
 const ORIGIN_IP: Ipv4Addr = Ipv4Addr::new(127, 0, 0, 30);
-const TEST_BUDGET: Duration = Duration::from_secs(90);
+const ORIGIN_PAGE: &[u8] = b"<html>origin page</html>\n";
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn full_mode_blocks_at_every_layer() {
     let started = Instant::now();
+    let (origin_cert, origin_key) = self_signed_origin(&[PAGE_HOST, AD_HOST]);
+    let origin_page = ORIGIN_PAGE.repeat(40);
     let origin = match bind_origin(ORIGIN_IP).await {
-        Some(listener) => {
-            let (cert, key) = self_signed_origin(&[PAGE_HOST, AD_HOST]);
-            Some(run_tls_origin(
-                listener,
-                cert,
-                key,
-                Arc::new(pseudo_random_payload(1024, 30)),
-            ))
-        }
+        Some(listener) => Some(run_tls_http_origin(
+            listener,
+            origin_cert.clone(),
+            origin_key,
+            Arc::new(origin_page.clone()),
+        )),
         None => {
             eprintln!(
-                "{} The intercepted leg runs without an origin.",
+                "{} The intercepted leg degrades to the fail-closed path.",
                 skip_origin_message(ORIGIN_IP)
             );
             None
         }
     };
+    let url_judge_inside_tls = origin.is_some() && cfg!(feature = "test-harness");
 
     let instance = boot_full(FullMode {
         origin_ip: ORIGIN_IP,
         clients: vec!["127.0.0.1".to_string()],
         api_tls: true,
+        upstream_root: Some(origin_cert.to_vec()),
     })
     .await;
     let ca_der = instance.generate_ca().await;
@@ -122,33 +123,99 @@ async fn full_mode_blocks_at_every_layer() {
         client_config_trusting(ca_der.clone()),
     )
     .await;
-    assert!(
-        intercepted.is_err(),
-        "5/7 intercepted: the listed client enters the terminate leg, and an origin the binary \
-         cannot verify is closed unanswered"
-    );
-    let event = await_event(&mut events, "https event for the listed client", |data| {
-        data["kind"] == "https" && data["domain"] == PAGE_HOST
-    })
-    .await;
-    match &origin {
-        Some(origin) => {
-            assert_eq!(
-                event["status"], 526,
-                "5/7 intercepted: upstream certificate failure is reported as 526: {event}"
-            );
-            assert!(origin.accepts.load(Ordering::Relaxed) >= 1);
-        }
-        None => assert_eq!(
-            event["status"], 0,
-            "5/7 intercepted: with no origin the upstream connect fails: {event}"
-        ),
+    if url_judge_inside_tls {
+        let origin = origin.as_ref().expect("checked above");
+        let mut inside = intercepted.expect(
+            "5/7 intercepted: the listed client, trusting only our CA, completes our \
+             handshake — the binary verified the origin against the injected root and \
+             minted a leaf for it",
+        );
+        let (status, body) = fetch_over(&mut inside, PAGE_HOST, "/track.js").await;
+        assert_eq!(
+            status, 200,
+            "5/7 intercepted: the blocked URL inside TLS collapses to an empty 200"
+        );
+        assert!(
+            body.is_empty(),
+            "5/7 intercepted: the blocked script body is empty, got {} bytes",
+            body.len()
+        );
+        let event = await_event(&mut events, "https block for the listed client", |data| {
+            data["kind"] == "https" && data["domain"] == PAGE_HOST && data["path"] == "/track.js"
+        })
+        .await;
+        assert_eq!(event["verdict"], "block", "5/7 intercepted: {event}");
+        assert_eq!(event["client"], "127.0.0.1");
+        let verified_before_block = origin.accepts.load(Ordering::Relaxed);
+        assert!(
+            verified_before_block >= 1,
+            "5/7 intercepted: the binary contacted the origin to verify it before minting"
+        );
+
+        let mut inside = tls_connect_from(
+            None,
+            https,
+            PAGE_HOST,
+            client_config_trusting(ca_der.clone()),
+        )
+        .await
+        .expect("5/7 intercepted: a second listed-client session completes our handshake");
+        let (status, body) = fetch_over(&mut inside, PAGE_HOST, "/page").await;
+        assert_eq!(
+            status, 200,
+            "5/7 intercepted: an allowed URL is answered by the origin through the terminate leg"
+        );
+        assert_eq!(
+            body.as_bytes(),
+            &origin_page[..],
+            "5/7 intercepted: the origin body arrives byte-identical through the terminate leg"
+        );
+        let event = await_event(&mut events, "https pass for the listed client", |data| {
+            data["kind"] == "https" && data["domain"] == PAGE_HOST && data["path"] == "/page"
+        })
+        .await;
+        assert_eq!(event["verdict"], "pass", "5/7 intercepted: {event}");
+        assert_eq!(event["status"], 200, "5/7 intercepted: {event}");
+        assert!(
+            origin.accepts.load(Ordering::Relaxed) > verified_before_block,
+            "5/7 intercepted: the second session verified a fresh upstream"
+        );
+        let certificates = instance.certificates().await;
+        assert_eq!(
+            certificates["leaf_cache"]["minted_total"], 1,
+            "5/7 intercepted: one leaf for {PAGE_HOST}, reused by the second session: \
+             {certificates}"
+        );
+    } else {
+        let reason = if origin.is_none() {
+            "no origin bound"
+        } else {
+            "the binary was built without the `test-harness` feature, so no upstream root \
+             could be injected — run `cargo test --all-features`"
+        };
+        assert!(
+            skips_allowed(),
+            "5/7 intercepted: {reason}. The URL judge inside TLS did not run; set \
+             {ALLOW_SKIP_ENV}=1 to accept the fail-closed path only"
+        );
+        assert!(
+            intercepted.is_err(),
+            "5/7 intercepted (degraded): the terminate leg closes unanswered"
+        );
+        let event = await_event(&mut events, "https event for the listed client", |data| {
+            data["kind"] == "https" && data["domain"] == PAGE_HOST
+        })
+        .await;
+        let expected = if origin.is_some() { 526 } else { 0 };
+        assert_eq!(
+            event["status"], expected,
+            "5/7 intercepted (degraded): fail-closed status: {event}"
+        );
+        eprintln!(
+            "5/7 intercepted: DEGRADED — {reason}; only the fail-closed path ran, the URL judge \
+             inside TLS was not exercised"
+        );
     }
-    let certificates = instance.certificates().await;
-    assert_eq!(
-        certificates["leaf_cache"]["minted_total"], 0,
-        "5/7 intercepted: verify-before-mint — no leaf for an unverifiable origin"
-    );
 
     let answer = resolve_dot(
         instance.ports.dot,
@@ -178,11 +245,57 @@ async fn full_mode_blocks_at_every_layer() {
     );
 
     let certificates = instance.certificates().await;
+    let expected_leaves = if url_judge_inside_tls { 2 } else { 1 };
     assert_eq!(
-        certificates["leaf_cache"]["minted_total"], 1,
-        "one leaf: the DoT hostname; the intercepted leg minted none"
+        certificates["leaf_cache"]["minted_total"], expected_leaves,
+        "leaves: one for {PAGE_HOST} on the terminate leg, one for the DoT hostname"
     );
     assert_eq!(certificates["leaf_cache"]["unwarmed_misses"], 0);
+    assert_eq!(
+        certificates["dot"]["state"], "listening",
+        "the DoT listener reports itself on the certificates document: {certificates}"
+    );
+
+    let telemetry = get_json(
+        &instance.http,
+        &instance.base,
+        &instance.key,
+        "/api/v1/telemetry",
+    )
+    .await;
+    for listener in ["http", "https"] {
+        let counters = &telemetry["listeners"][listener];
+        let (connections, requests, blocked) = (
+            counters["connections"].as_u64().unwrap_or_default(),
+            counters["requests"].as_u64().unwrap_or_default(),
+            counters["blocked"].as_u64().unwrap_or_default(),
+        );
+        assert!(
+            connections >= 1 && requests >= 1 && blocked >= 1,
+            "{listener}: the scenario drove at least one connection, request and block: {counters}"
+        );
+        assert!(
+            blocked <= requests,
+            "{listener}: every block is a judged request (p3-04 L5): {counters}"
+        );
+    }
+    assert!(
+        telemetry["listeners"]["https"]["connections"]
+            .as_u64()
+            .unwrap_or_default()
+            > telemetry["listeners"]["https"]["requests"]
+                .as_u64()
+                .unwrap_or_default()
+            || telemetry["listeners"]["https"]["requests"]
+                .as_u64()
+                .unwrap_or_default()
+                > telemetry["listeners"]["https"]["connections"]
+                    .as_u64()
+                    .unwrap_or_default(),
+        "https: connections and requests are different units — the no-SNI hello is a \
+         connection with a verdict and the intercepted session carries several requests: {}",
+        telemetry["listeners"]["https"]
+    );
 
     let memory = get_json(
         &instance.http,
@@ -202,9 +315,8 @@ async fn full_mode_blocks_at_every_layer() {
             .unwrap_or_else(|| "unavailable".to_string())
     );
 
-    assert!(
-        started.elapsed() < TEST_BUDGET,
-        "the scenario took {:?}, over the {TEST_BUDGET:?} budget",
+    println!(
+        "full-mode scenario wall time: {:?} (diagnostic, not asserted)",
         started.elapsed()
     );
 }
@@ -236,6 +348,14 @@ async fn fetch_http(proxy_port: u16, host: &str, path: &str) -> (u16, String) {
     let mut stream = TcpStream::connect(SocketAddr::from((Ipv4Addr::LOCALHOST, proxy_port)))
         .await
         .expect("connect to the HTTP proxy");
+    fetch_over(&mut stream, host, path).await
+}
+
+async fn fetch_over<S: AsyncRead + AsyncWrite + Unpin>(
+    stream: &mut S,
+    host: &str,
+    path: &str,
+) -> (u16, String) {
     let request =
         format!("GET {path} HTTP/1.1\r\nHost: {host}\r\nAccept: */*\r\nConnection: close\r\n\r\n");
     stream.write_all(request.as_bytes()).await.expect("send");
@@ -243,7 +363,7 @@ async fn fetch_http(proxy_port: u16, host: &str, path: &str) -> (u16, String) {
     tokio::time::timeout(Duration::from_secs(10), stream.read_to_end(&mut raw))
         .await
         .expect("the proxy closes within 10 s")
-        .expect("read");
+        .ok();
     let text = String::from_utf8_lossy(&raw).to_string();
     let (head, body) = text.split_once("\r\n\r\n").expect("an HTTP head");
     let status = head

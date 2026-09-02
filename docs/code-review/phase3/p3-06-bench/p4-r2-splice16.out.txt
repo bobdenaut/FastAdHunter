@@ -1,0 +1,35 @@
+https_sni_splice/direct_to_origin
+                        time:   [385.84 µs 411.84 µs 451.82 µs]
+                        thrpt:  [2.1614 GiB/s 2.3712 GiB/s 2.5310 GiB/s]
+                 change:
+                        time:   [-11.203% -0.8570% +10.139%] (p = 0.89 > 0.05)
+                        thrpt:  [-9.2059% +0.8644% +12.616%]
+                        No change in performance detected.
+Found 4 outliers among 20 measurements (20.00%)
+  1 (5.00%) high mild
+  3 (15.00%) high severe
+https_sni_splice/through_splice
+                        time:   [5.8716 ms 6.5620 ms 7.2691 ms]
+                        thrpt:  [137.57 MiB/s 152.39 MiB/s 170.31 MiB/s]
+                 change:
+                        time:   [-22.549% +1.5227% +33.924%] (p = 0.91 > 0.05)
+                        thrpt:  [-25.331% -1.4999% +29.113%]
+                        No change in performance detected.
+
+https_sni_splice_steady_state/direct_to_origin
+                        time:   [20.324 ms 20.801 ms 21.330 ms]
+                        thrpt:  [2.9302 GiB/s 3.0047 GiB/s 3.0752 GiB/s]
+                 change:
+                        time:   [-0.5853% +2.2779% +5.7782%] (p = 0.20 > 0.05)
+                        thrpt:  [-5.4625% -2.2272% +0.5888%]
+                        No change in performance detected.
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high severe
+https_sni_splice_steady_state/through_splice
+                        time:   [55.116 ms 57.295 ms 60.008 ms]
+                        thrpt:  [1.0415 GiB/s 1.0908 GiB/s 1.1340 GiB/s]
+                 change:
+                        time:   [+13.054% +20.957% +29.770%] (p = 0.00 < 0.05)
+                        thrpt:  [-22.941% -17.326% -11.547%]
+                        Performance has regressed.
+

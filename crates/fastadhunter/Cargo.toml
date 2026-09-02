@@ -20,7 +20,7 @@ path = "src/main.rs"
 # fastadhunter` (Dockerfile), which never enables it. Never pass
 # `--all-features` to a release build.
 [features]
-test-harness = ["fah-api/test-harness"]
+test-harness = ["fah-api/test-harness", "dep:rustls", "dep:webpki-roots"]
 
 # The binary is the only crate that may see every other one — it is what
 # wires the L3 siblings together (ARCHITECTURE.md §Dependency Layering:
@@ -50,6 +50,13 @@ tracing-subscriber.workspace = true
 # needs to know which one it is — they see `fah_model::AllocatorStats`.
 mimalloc.workspace = true
 libmimalloc-sys.workspace = true
+# `test-harness` only (p3-06 full-mode e2e): the terminate leg verifies
+# upstreams against the compiled-in webpki roots, so a loopback test origin
+# can never verify. Behind the feature the binary adds one extra trust anchor
+# read from `FAH_TEST_UPSTREAM_ROOT`; both crates are already in the graph via
+# fah-http, and the release build (no features) compiles none of this.
+rustls = { workspace = true, optional = true }
+webpki-roots = { version = "1", optional = true }
 
 # Credential syscalls for the post-bind privilege drop (ADR-0004). Unix only:
 # the shipped artefact is a Linux container, and the module compiles to no-ops

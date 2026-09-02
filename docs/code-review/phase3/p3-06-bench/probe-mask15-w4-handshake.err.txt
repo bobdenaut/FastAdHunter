@@ -1,0 +1,12 @@
+Benchmarking https_handshake/direct_to_origin
+Benchmarking https_handshake/direct_to_origin: Warming up for 3.0000 s
+Benchmarking https_handshake/direct_to_origin: Collecting 50 samples in estimated 10.572 s (600 iterations)
+Benchmarking https_handshake/direct_to_origin: Analyzing
+Benchmarking https_handshake/spliced
+Benchmarking https_handshake/spliced: Warming up for 3.0000 s
+Benchmarking https_handshake/spliced: Collecting 50 samples in estimated 10.389 s (350 iterations)
+Benchmarking https_handshake/spliced: Analyzing
+Benchmarking https_handshake/intercepted
+Benchmarking https_handshake/intercepted: Warming up for 3.0000 s
+Benchmarking https_handshake/intercepted: Collecting 50 samples in estimated 11.066 s (350 iterations)
+Benchmarking https_handshake/intercepted: Analyzing

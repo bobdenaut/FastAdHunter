@@ -14,6 +14,12 @@ use crate::keys::ApiKeyStore;
 use crate::password::AuthState;
 use crate::ports::{CacheSource, DnsWireSource, HistorySource, StatsSource, TelemetrySource};
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum DotListener {
+    Listening { address: std::net::SocketAddr },
+    Closed { reason: String },
+}
+
 pub struct AppState {
     pub rules: Arc<ListManager>,
     /// The client → policy map the pipelines read (p2-06). The API republishes
@@ -28,6 +34,7 @@ pub struct AppState {
     pub auth: Arc<AuthState>,
     pub certs: Option<Arc<CertStore>>,
     pub doh: Option<Arc<dyn DnsWireSource>>,
+    pub dot: DotListener,
     pub tls: bool,
     pub events: EventHub,
     pub started_at: Instant,
@@ -62,6 +69,7 @@ pub struct AppStateBuilder {
     pub auth: Arc<AuthState>,
     pub certs: Option<Arc<CertStore>>,
     pub doh: Option<Arc<dyn DnsWireSource>>,
+    pub dot: DotListener,
 }
 
 impl AppStateBuilder {
@@ -78,6 +86,7 @@ impl AppStateBuilder {
             auth: self.auth,
             certs: self.certs,
             doh: self.doh,
+            dot: self.dot,
             tls,
             events,
             started_at: Instant::now(),

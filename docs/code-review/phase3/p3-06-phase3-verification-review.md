@@ -146,7 +146,10 @@ on this box, but loopback figures do not convert (PERFORMANCE.md §Converting).
 Reading: on this box a proxied connection costs ~+3.5 ms per connection
 **whichever leg**; splice and terminate are within each other's (wide)
 intervals, so the TLS termination itself is not what the dev box resolves —
-the socket/task path is. Diagnostic only; P2 on-device decides.
+the socket/task path is. Diagnostic only; P2 on-device decides. Harness
+unchanged after review: the F6 `iter_custom` variant measured 3–6× slower
+under every pin, unpinned included, and was reverted (§Post-review work C,
+which also holds the pinned-four-core figures for these arms).
 
 | D9 `https_h2_download`, one h2 session, 8 MiB per GET, shipped `H2_*` limits | r1 | r2 |
 | --- | --- | --- |
@@ -169,6 +172,9 @@ The blocking-pool hop costs ≈ 4 µs per handshake against a ≥ 1 ms handshake
 (0.1–0.4 % here; by the factor ≈ 38 µs against a multi-millisecond on-device
 handshake — *inference*). Recommendation: **leave `dot.rs` / `intercept.rs`
 alone** unless P5 on the device contradicts this; N1/N11 stay deferred.
+The `spawn_blocking` arm measures a **warm** blocking pool (the pool thread
+exists after the first iteration); the cold-pool thread spawn N8 named is not
+in this figure and is paid once per idle pool, not per handshake (F7).
 
 | D11 `fah-certs` (pinned) | r1 | r2 | p3-01 |
 | --- | --- | --- | --- |
@@ -206,12 +212,12 @@ re-affirmed by P7.
 
 | Metric | Proposed budget | Dev-box figure (this file) | On-device |
 | --- | --- | --- | --- |
-| **HTTPS** SNI verdict + splice, added per connection | p50 < 5 ms on-device (proposal from P2, not from D8) | +3.5–4.9 ms loopback, harness-dominated (D8) | TBD — P2 |
-| **HTTPS** splice throughput, steady state | ≥ 100 MiB/s (gigabit LAN is 119 MiB/s) | 0.93–1.01 GiB/s at 16 KiB, 1.48–1.60 GiB/s at 64 KiB (D7) | TBD — P1 |
-| **HTTPS** interception handshake overhead vs splice | intercepted p50 ≤ 2 × spliced p50 | within intervals of each other (D8) | TBD — P2 |
-| **HTTPS** intercepted h2 relay | ≥ 50 MiB/s | 481–485 MiB/s (D9) | TBD — P3 |
+| **HTTPS** SNI verdict + splice, added per connection | TBD — must be measured during verification (P2 sets it; a loopback figure does not convert, PERFORMANCE.md §Converting) | +3.5–4.9 ms loopback, harness-dominated (D8, old harness — see F6) | TBD — P2 |
+| **HTTPS** splice throughput, steady state | ≥ 100 MiB/s (gigabit LAN is 119 MiB/s) | 0.93–1.01 GiB/s at 16 KiB, 1.48–1.60 GiB/s at 64 KiB (D7, unpinned); 1.06–1.13 / 1.56–1.61 GiB/s pinned to four cores (§Post-review work C) | TBD — P1 |
+| **HTTPS** interception handshake overhead vs splice | intercepted p50 ≤ 2 × spliced p50 | within intervals of each other unpinned (D8); 1.5–2.2× pinned to four cores (§Post-review work C) | TBD — P2 |
+| **HTTPS** intercepted h2 relay | ≥ 50 MiB/s | 481–485 MiB/s (D9, unpinned); 571–620 MiB/s pinned to four cores | TBD — P3 |
 | Minted-leaf cache hit rate, browsing load | ≥ 90 % (real replay decides) | 67 % synthetic Zipf (D12) | TBD — soak feed |
-| **DoT** / **DoH** added latency vs UDP, p50 | DoT < 0.5 ms, DoH < 2 ms on-device | +17 µs / +130 µs loopback (D13) | TBD — P4 |
+| **DoT** / **DoH** added latency vs UDP, p50 | TBD — must be measured during verification (P4 sets it; TLS/HTTP legs do not convert) | +17 µs / +130 µs loopback (D13) | TBD — P4 |
 | Cold `prewarm` per first-sight host (whole path, not raw keygen) | < 1 ms | 53.5 µs (D11) ⇒ ≈ 0.48 ms by the ×9 factor (CPU-bound, converts) | TBD — P5 |
 | CA generate / API-pair import wall time | < 100 ms / < 50 ms | ≈ 2 ms / ≈ 1.4 ms (p3-02, debug) | TBD — P6 |
 | RAM steady-state, full mode | ≤ 128 MB (existing row, re-affirmed) | 46.1 MiB test build (D14) | TBD — P7 |
@@ -229,7 +235,7 @@ proposed below and **stops there**; Step 5 is a list, nothing landed.
 | Security suite, six scenarios with the plan's exact names | `crates/fastadhunter/tests/security_phase3.rs` (new) |
 | Offline full-mode e2e `full_mode_blocks_at_every_layer` | `crates/fastadhunter/tests/e2e_https.rs` (new) |
 | Shared harness: `boot_with(scheme)`, `Ports::https()`, full-mode config, TLS/raw loopback origins on `127.0.0.x:443`, synthetic ClientHello (with/without SNI), key-material detector (`Needles`), WS event waiter, first-boot password + session cookie | `crates/fastadhunter/tests/common/mod.rs` |
-| p3-04 carry-over integration tests (M4 rows 5–9, N10, IPv6) | `crates/fah-http/tests/interception.rs`: `Setup.max_connections` / `Setup.listen`, `OriginSpec.count_body` / `cut_after_first`, `Trickle` streaming body, 6 new tests, N10 permit assertion added to the idle test |
+| p3-04 carry-over integration tests (M4 rows 5–9, N10, IPv6) | `crates/fah-http/tests/interception.rs`: `Setup.max_connections` / `Setup.listen`, `OriginSpec.count_body` / `hold_page` (+ `Origin.cut` / `Origin.release`, `Held` body), `Trickle` streaming body, 6 new tests, N10 permit assertion added to the idle test |
 | p3-03 n5 + M4: splice bench on `TlsServer::bind/serve`, shared payload origin, loop-read drain, steady-state arm (`https_sni_splice_steady_state`, 64 MiB) | `crates/fah-http/benches/proxy.rs` |
 | New bench: handshake overhead (direct / spliced / intercepted), h2 8 MiB download through terminate vs splice (p3-04 S1), `prewarm` hop (p3-04 N8) | `crates/fah-http/benches/intercept.rs` (new), `[[bench]]` in `crates/fah-http/Cargo.toml` |
 | Leaf-cache replay arm `certs_replay_zipf` (synthetic Zipf, hit rate printed) | `crates/fah-certs/benches/certs.rs` |
@@ -237,9 +243,11 @@ proposed below and **stops there**; Step 5 is a list, nothing landed.
 | A/B session script + raw criterion logs | `docs/code-review/phase3/p3-06-bench/` (`run-ab.ps1`, `session.log`, `r*-*.out.txt`) |
 | Dev-dependency | `crates/fastadhunter/Cargo.toml`: `rcgen` (dev-only; the origin the binary must *not* be able to verify) — `Cargo.lock` gains the edge |
 
-No release code changed. `crates/fah-http/src/https.rs` `SPLICE_BUF` was
-toggled to 64 KiB for one bench build and restored (`git diff` clean).
-`layering.rs` green. `http_e2e.rs` unchanged and green.
+Product code: one `test-harness`-gated hook in `main.rs` `interception()`
+(F1, owner decision (b), §Fixes applied) — nothing else under `crates/*/src`.
+`crates/fah-http/src/https.rs` `SPLICE_BUF` was toggled to 64 KiB for one
+bench build and restored (`git diff` clean). `layering.rs` green.
+`http_e2e.rs` unchanged and green.
 
 ## Decisions
 
@@ -272,7 +280,7 @@ toggled to 64 KiB for one bench build and restored (`git diff` clean).
 
 | # | Plan said | Found | Options |
 | --- | --- | --- | --- |
-| X1 | Step 3: "intercepted HTTPS URL block (client trusting the test CA, opted in)" through the full binary | **Not buildable offline.** The terminate leg verifies the upstream against **compiled-in webpki roots only** (`fah_http::client_config()`, `main.rs` `interception()`); no config key adds a root. A loopback origin can never verify, so the binary closes the connection (526) before minting. Leg 5/7 therefore asserts: listed client enters the terminate leg (event `kind: https`), unverifiable origin ⇒ `status 526`, no ServerHello, `minted_total == 0`. The URL-level judge inside TLS stays pinned at the `fah-http` harness (p3-04 `a_listed_client_gets_url_level_filtering_over_*`, which injects the origin root) | (a) accept as is — the wiring is proven end-to-end, the judge is proven one layer down; (b) a `test-harness`-gated extra-roots hook in `main.rs` (feature already exists for the login limiter; test-built binaries carry it, release cannot); (c) a real `[https.interception] upstream_roots` key (product feature, also serves private CAs — out of this task's scope) |
+| X1 | Step 3: "intercepted HTTPS URL block (client trusting the test CA, opted in)" through the full binary | **Resolved 2026-09-02 — owner chose (b), see §Fixes applied — F1.** Correction to the option text below: a plain `cargo test` build does **not** carry the binary's `test-harness` feature (the self dev-dep enables only `fah-api/test-harness`); the hook exists under `--all-features`, which is the documented gate. Original finding: **Not buildable offline.** The terminate leg verifies the upstream against **compiled-in webpki roots only** (`fah_http::client_config()`, `main.rs` `interception()`); no config key adds a root. A loopback origin can never verify, so the binary closes the connection (526) before minting. Leg 5/7 therefore asserts: listed client enters the terminate leg (event `kind: https`), unverifiable origin ⇒ `status 526`, no ServerHello, `minted_total == 0`. The URL-level judge inside TLS stays pinned at the `fah-http` harness (p3-04 `a_listed_client_gets_url_level_filtering_over_*`, which injects the origin root) | (a) accept as is — the wiring is proven end-to-end, the judge is proven one layer down; (b) a `test-harness`-gated extra-roots hook in `main.rs` (feature already exists for the login limiter; test-built binaries carry it, release cannot); (c) a real `[https.interception] upstream_roots` key (product feature, also serves private CAs — out of this task's scope) |
 | X2 | Step 1: A/B the `fastadhunter` pipeline bench | `cargo bench -p fastadhunter` **cannot build** at either checkout: the dev-dep `fah-api/test-harness` hits `compile_error!` under the release profile (since p5-04). D4 ran both arms with `--config profile.bench.debug-assertions=true` — equal treatment, but not the shipped codegen | record; or move the harness feature off the bench build (separate task) |
 | X3 | plan/CLAUDE.md: `wip` holds at most one phase | `plan/wip/` holds `phase2.6-adaptive-stage1` **and** `phase3`; `docs/project-state.md` (2026-09-01) still says Phase 3 opens after 2.6 closes | pre-existing; project-state rewrite at phase close |
 | X4 | Step 1 D14: dev-box RSS from `/api/v1/debug/memory` | `process_rss` / `process_peak_rss` are `null` on Windows (`getrusage` is unix-only); the reading was taken from the OS (`tasklist`) for the test-built binary | label as done in §Measurements |
@@ -283,8 +291,8 @@ toggled to 64 KiB for one bench build and restored (`git diff` clean).
 | Suite | New | Pins |
 | --- | --- | --- |
 | `fastadhunter` `security_phase3.rs` | 6 | `ca_key_unreachable_via_every_route` — 70 documented routes × 3 credentials (none / bearer / session cookie from the first-boot password) + `logout-all` + `apikey/rotate` = 212 requests, 0 leaks (CA key, API key); `non_listed_client_is_never_minted_a_leaf` — non-listed client sees the origin's own certificate through the splice, byte-identical payload, `https-sni pass` event; trusting only our CA fails; the listed client from another loopback IP gets `kind: https` and fails; `minted_total == 0`; `bad_upstream_cert_is_not_masked` — listed client + self-signed origin ⇒ handshake error, event `status 526`, `bytes 0`, no ServerHello even for an accept-anything client, `minted_total == 0`; `exports_contain_no_private_material` — PEM export is one CERTIFICATE block whose DER equals the DER export, no key material in either, in the status document, in the import response, in `api-cert.pem` after a real import, or in `GET /api/v1/config`; `splice_is_byte_identical_when_interception_is_off` — 3 samples × 256 KiB pseudo-random payload, direct vs spliced byte-equal, events `pass` with `bytes` = payload; `dns_query_is_the_only_new_unauthenticated_route` — every `/api/**` route answers 401 without credentials (login exists), `/health` + `/dns-query` are the only non-static public paths, `/api/v1/dns-query` and `/api/dns-query` are 401, plaintext DNS on the DoT port is never answered; **closed posture** (`api.tls = false` + unloadable API pair, booted over `http://`): :53 answers, the DoT port is bindable (nothing listens), plaintext gets nothing, the log names `dot_enabled = true`, `/dns-query` is absent (N13), `/health` carries no DoT field (N3, see §Proposed doc edits) |
-| `fastadhunter` `e2e_https.rs` | 1 | `full_mode_blocks_at_every_layer` — 1 DNS null-IP over UDP; 2 HTTP `/track.js` ⇒ empty 200; 3 SNI block closed before ServerHello, `https-sni block` event; 4 no-SNI hello closed, classified `pass`, listener still judging; 5 terminate leg entered, 526 (X1); 6 DoT answers the block for a client trusting only the exported CA; 7 DoH forwards and blocks. `minted_total == 1` (the DoT hostname), `unwarmed_misses == 0`. 0.9 s |
-| `fah-http` `interception.rs` | 6 (+1 extended) | `eight_parallel_h2_requests_share_one_verified_upstream_session` (8 × 200, `connections == 1`); `a_streamed_request_body_reaches_the_origin_before_the_client_finishes_sending` (4 MiB POST, 1 MiB window); `a_client_that_disconnects_mid_response_returns_its_permit` and `an_upstream_that_disconnects_mid_response_ends_the_session_and_returns_its_permit` (`max_connections = 1`, second session served); `shutdown_stops_accepting_while_a_live_intercepted_session_keeps_serving` (p3-04 L4 semantics pinned: accept loop aborted, live session answers, no new session); `an_ipv6_listed_client_is_intercepted_end_to_end` (`[::1]` listed and listening, block inside TLS, event client `::1`, one mint); `an_idle_intercepted_session_is_closed_and_its_permit_returned` now asserts the permit (N10) |
+| `fastadhunter` `e2e_https.rs` | 1 | `full_mode_blocks_at_every_layer` — 1 DNS null-IP over UDP; 2 HTTP `/track.js` ⇒ empty 200; 3 SNI block closed before ServerHello, `https-sni block` event; 4 no-SNI hello closed, classified `pass`, listener still judging; 5 (under `--all-features`, F1) listed client trusting only our CA completes our handshake, `GET /track.js` inside TLS ⇒ empty 200 + `https` event `verdict block`, `path /track.js`; second session `GET /page` ⇒ origin body byte-identical + `https` event `pass`, `status 200`; one leaf for `shop.example.com` reused by the second session; origin `accepts` grew per session (verify-before-mint) — without the feature the leg degrades to the fail-closed 526 and says so; 6 DoT answers the block for a client trusting only the exported CA; 7 DoH forwards and blocks. `minted_total == 2` (page host + DoT hostname), `unwarmed_misses == 0`. 0.9 s |
+| `fah-http` `interception.rs` | 6 (+1 extended) | `eight_parallel_h2_requests_share_one_verified_upstream_session` (8 × 200, `connections == 1`); `a_streamed_request_body_reaches_the_origin_before_the_client_finishes_sending` (4 MiB POST, 1 MiB window); `a_client_that_disconnects_mid_response_returns_its_permit` and `an_upstream_that_disconnects_mid_response_ends_the_session_and_returns_its_permit` (`max_connections = 1`; the origin holds `/page` open after a first 64 KiB frame, the client reads that frame, then one side cuts — deterministic mid-body, F2; second session served); `shutdown_stops_accepting_while_a_live_intercepted_session_keeps_serving` (p3-04 L4 semantics pinned: accept loop aborted, live session answers, no new session); `an_ipv6_listed_client_is_intercepted_end_to_end` (`[::1]` listed and listening, block inside TLS, event client `::1`, one mint); `an_idle_intercepted_session_is_closed_and_its_permit_returned` now asserts the permit (N10) |
 | `fah-certs` bench | 1 arm | `certs_replay_zipf` |
 | `fah-http` bench | 1 file, 3 groups | `https_handshake`, `https_h2_download`, `prewarm_hop` |
 
@@ -607,3 +615,536 @@ and the watch items above`.
 | N3 `dot` listener state, L5/TODO `listeners` block, dashboard kinds — proposed, not built | owner yes |
 | p3-05 N2/N4/N9 won't-fix, N12/N16 closed — untouched | — |
 | Real browsing-session host replay for the leaf-cache row (D12 is synthetic) | soak feed |
+
+## Findings (code review, 2026-09-02)
+
+**Scope.** Diff `877aad2..064397d` (63 files, +4 683 / −82), inspected
+diff-first. `crates/*/src` is untouched by the commit (`git diff --stat` on it
+is empty) — verified, not assumed. Severity mapping to the phase vocabulary:
+BLOCKER = Critical, HIGH = Major, MEDIUM/LOW = Minor, NIT = Nitpick.
+
+**Evidence runs.** Executed before the owner's mid-review instruction to stop
+running binaries; recorded as evidence only, nothing further was run:
+
+| Command | Result |
+| --- | --- |
+| `cargo fmt --all -- --check` | clean |
+| `cargo clippy --workspace --all-targets --message-format=short -- -D warnings` | clean |
+| `cargo test -p fastadhunter --test security_phase3 --test e2e_https --test http_e2e --test e2e --test layering` | 7/7, 2/2, 2/2, 2/2, 1/1 — 0 failed; **no origin skip fired** (every `127.0.0.x:443` bound); `ca_key_unreachable…` printed `212 requests over 70 routes x 3 credentials, 0 leaks`; full-mode RSS 48.5 MiB (OS reading, test build) |
+| `cargo test -p fah-http --test interception` | 27/27 |
+
+### Claims verified against the code
+
+| Claim | Verdict | Evidence |
+| --- | --- | --- |
+| `security_phase3` walks every live route | **holds** | `documented_routes` (50 API entries + 20 static/traversal) covers every `.route(...)` in `routes.rs:58-106` incl. `/health`, `/dns-query` GET+POST, `/api/` and the `/api/v1` fallback; `logout-all` and `apikey/rotate` run after the loop (correct — rotating inside it would kill the bearer arm). Detector built from the on-disk `ca-key.pem`/`api-key.pem`, self-checked. Status codes are not asserted in this test (leak-only, by design) — see F4 for the credential hole |
+| `full_mode_blocks_at_every_layer` proves each layer | **6 of 7 at review; 7 of 7 after F1 (b)** | Legs 1–4, 6, 7 assert real wire behaviour through the binary (UDP null-IP; empty 200; closed before ServerHello + `block` event; no-SNI closed + `pass` event; DoT leaf under the exported CA; DoH forward + block). Leg 5 at review proved terminate-leg entry + fail-closed 526 only — X1 / F1; after the fix it proves the in-TLS URL block and pass-through under `--all-features` (§Fixes applied — F1) |
+| byte-identical splice | **holds, one direction** | `raw_exchange` compares origin→client byte-for-byte against direct, 3 × 256 KiB; `bytes` event = payload (`https.rs:240-252` counts `to_client` only). Client→origin is sunk by `run_raw_origin` (`common/mod.rs:874`) — hello forwarding rests on p3-03 (F16) |
+| no private key exposure | **holds** | PEM/DER export, status, import echo, stored `api-cert.pem`, `GET /config` and the 212-request walk searched for the whole base64 payload, its first 48 chars, raw DER, four PEM headers. `Needles::found_in` (`mod.rs:1114`) skips hex/base64url re-encodings (F10) |
+| bad upstream cert never masked | **holds** | listed client trusting our CA fails; event `status 526`, `bytes 0`; an accept-anything client also fails; `minted_total == 0`; origin `accepts ≥ 2`. "no ServerHello" (`security_phase3.rs:618`) is inferred from the insecure client's error, not from a zero-byte read as leg 4 does — NIT |
+| no-SNI handling | **holds** | `hello_record(&[])` ⇒ `HelloScan::NoSni` ⇒ `no_sni_observed` (`https.rs:147-150, 271-282`); default `NoSni::Pass` (`schema/https.rs:107`); zero bytes back, event `domain ""`, listener still judging afterwards |
+| IPv6 listed client | **holds** | `an_ipv6_listed_client_is_intercepted_end_to_end`: listens on `[::1]`, lists `::1`, blocks inside TLS, event client `::1`, one mint |
+| h2 limits / memory | **throughput measured, stall not** | D9 uses the shipped `H2_*` constants; the S1 stall-RSS half is not measured on the dev box and is honestly deferred to P3; the 1.5 MiB alternative is arithmetic, labelled so |
+| `prewarm` hop | **measured, warm pool only** | D10: 4.2 µs `spawn_blocking` vs 92 ns inline; the cold-pool thread spawn N8 named is not in the figure (F7). "Leave alone" is sound at this ratio |
+| synthetic cert-cache replay | **labelled synthetic, internally consistent** | `certs_replay_zipf`: deterministic xorshift + Zipf CDF, 100 k prewarms outside the timed region, hit rate 0.673 printed; the timed 17.5 µs ≈ 0.327 × 53.5 µs |
+| DoT/DoH latency bench | **valid, dev-box only** | `encrypted_latency.rs`: 3 interleaved rounds × 2 000, per-round p50 printed, handshakes excluded, ×9 **not** applied — correct per PERFORMANCE.md §Converting. Still `#[ignore]`, release binary via `FAH_E2E_BINARY` |
+| production-path protection | **holds** | no `crates/*/src` change; `rcgen` dev-only in `fastadhunter`; `[[bench]] intercept` is a dev target; `test-harness` cannot reach a release build (`fah-api/src/lib.rs:17-22` `compile_error!`); `SPLICE_BUF` back at 16 KiB (`https.rs:29`), tree clean |
+| ×9 usage | **correct** | applied only to `certs_mint` (CPU-bound); TLS/HTTP/socket legs left unconverted; the D10 "≈ 38 µs" is flagged as inference |
+
+### X1–X5 — independent assessment
+
+| # | Reviewer verdict | Reasoning |
+| --- | --- | --- |
+| X1 | **plan discrepancy — owner decision; blocks DONE until decided** | Correctly characterised: `interception()` (`main.rs:784-830`) takes `fah_http::client_config()` = webpki roots only (`tls.rs:36-41`); no offline origin can verify. Leg 5 as shipped is a real security property (verify-before-mint, fail-closed) but not the plan's "intercepted HTTPS URL block". Option (b) is the minimal in-pattern fix: the feature already gates relaxed auth in `main.rs:455-467`, `compile_error!` keeps it out of release, and `client_config_with_roots` (`tls.rs:43`) already exists. Option (a) leaves the acceptance line "one scripted scenario … intercepted HTTPS URL block" formally unmet; if chosen, amend the task/plan text, not only this file |
+| X2 | **real pre-existing defect (p5-04), outside p3-06; the A/B is fair** | `crates/fastadhunter/Cargo.toml:65` dev-dep `fah-api` with `test-harness` unifies into every dev target, so `cargo bench -p fastadhunter` hits `lib.rs:17` under `profile.bench`. Both arms ran with `debug-assertions = true` — equal treatment, regression verdict valid; D4 absolutes are not shipped codegen and must not become a budget row. Follow-up task: keep the harness feature off the bench target |
+| X3 | **pre-existing, correctly characterised** | Not this task's; project-state rewrite at phase close |
+| X4 | **acceptable limitation, correctly labelled** | `process_rss` is `getrusage`-backed (`wire.rs:1015-1039`), unix-only; the reading is diagnostic, P7 is the row |
+| X5 | **acceptable limitation, correctly characterised — but the dev-box run is vacuous and the test is silent about it** | `ROOT = "/web"` is compiled in (`web.rs:10`); on this box every static probe is a 404, so both static-path assertions in `dns_query_is_the_only_new_unauthenticated_route` (`security_phase3.rs:857-872`) pass without exercising `ServeDir`. Refusal itself is pinned by the `web.rs` unit tests against a fixture root; the on-device curl walk (Runbook 5) closes it at the binary level. See F18 |
+
+### 1. Must be fixed or decided before p3-06 can be accepted
+
+**F1 — HIGH — leg 5 of the full-mode scenario does not prove the intercepted URL block (X1).**
+`crates/fastadhunter/tests/e2e_https.rs:118-153`. What: the plan's Step 3 and
+the acceptance text name "intercepted HTTPS URL block (client trusting the
+test CA, opted in)"; the test asserts terminate-leg entry + 526. Why: the one
+scripted scenario is the mode's definition of done; as written it is six
+layers plus a fail-closed path, while §Tests above counts seven. Fix: owner
+picks (a)/(b)/(c). Recommended (b): a `#[cfg(feature = "test-harness")]`
+extra-roots hook in `main.rs` `interception()`, fed by an env var the release
+build cannot compile, then leg 5 asserts `/track.js` ⇒ empty 200 inside TLS
+and `minted_total == 2`. If (a): amend the task/plan text so the criterion
+matches what is proven. **Blocks DONE** until decided.
+
+**F2 — MEDIUM — the two "mid-response" disconnect tests are racy about when
+they cut and usually cut after the response is complete.**
+`crates/fah-http/tests/interception.rs:1497-1533` and `:1536-1599`. What:
+`/page` is 200 KiB (`PAGE_BYTES`, `:37`); in the client test `send_request`
+returns at headers and the abort follows microseconds later — on loopback the
+body is normally already flushed. In the upstream test `signal.notify_one()`
+(`:264-266`) fires before hyper writes the body, but the `select!`
+(`:271-279`) sees it on the next poll, by which time the 200 KiB is usually
+written — the test prints "the origin's cut landed after the whole page was
+flushed" (`:1581`) for exactly this case. Why: p3-04 M4 row 7 is being closed
+on a name that overclaims (the N10 defect class); the permit-return property
+**is** proven, the mid-body path is not. Fix: stream the body through a
+channel-backed `Body` and cut after the peer has observed the first frame
+(deterministic), or rename both tests to `…after_a_response…` and leave row 7
+open. Blocks DONE only if the owner wants row 7 closed by this task.
+
+**F3 — MEDIUM — origin-bind skips are invisible to the gate.**
+`crates/fastadhunter/tests/common/mod.rs:804-825`, used at
+`security_phase3.rs:471-478, 569-576, 752-759` and `e2e_https.rs:24-41`.
+What: `AddrInUse`/`PermissionDenied` on `127.0.0.x:443` turns
+`non_listed_client…`, `bad_upstream_cert…`, `splice_is_byte_identical…` and
+leg 5 into `eprintln!` + `ok`. Why: on any Linux box without
+`CAP_NET_BIND_SERVICE` (a plain container, CI, WSL as non-root) the security
+suite reports green while three of six SECURITY.md checks did not run; the
+plan mandates skip-not-fail for the Windows WSAEACCES trap, not silence. This
+run had all four bound (verified above). Fix: honour an env such as
+`FAH_SECURITY_STRICT=1` that panics instead of skipping, and use it for gate
+runs; every gate record states "no skips". Deferrable with owner acceptance
+on that condition.
+
+### 2. Deferrable with explicit owner acceptance
+
+**F4 — LOW — cookie-credential coverage is cut short by the walk itself.**
+`security_phase3.rs:215`: `POST /api/v1/auth/logout` sits inside
+`documented_routes`; under `Auth::Cookie` it revokes the session, so every
+later entry in the cookie pass (`/api/v1/dns-query`, `/api/dns-query`,
+`/api/v1/nope`, `/api/`, the 20 static paths) runs anonymous. `:218-219`
+sends `current`/`new` where API.md §Session authentication names
+`current_password`/`new_password`, so the walk hits the 400 branch, not the
+handler. No leak can hide behind either today (those routes are 401 or
+static). Fix: move `logout` beside `logout-all` after the loop; use the
+documented field names.
+
+**F5 — LOW — three proposed budget rows have no measured basis and contradict
+the plan's own rule.** §Proposed PERFORMANCE.md rows: "SNI verdict + splice
+p50 < 5 ms on-device", "DoT < 0.5 ms / DoH < 2 ms on-device". The plan
+(§Step 1, §Performance contract) keeps TLS/HTTP-path rows `TBD` until
+measured on-device; PERFORMANCE.md §Converting records 4.55–10.09× for
+socket-bound work, and the dev box already shows +3.5–4.9 ms loopback (D8) —
+a 5 ms on-device row is likely to fail its first reading. Fix: keep the
+ratio-form row (intercepted ≤ 2× spliced), the CPU-bound `prewarm` row and
+the RAM row as proposals; leave the three absolute TLS-path values `TBD` until
+P2/P4. Doc proposal only; nothing landed.
+
+**F6 — LOW — the handshake bench cannot resolve intercept-vs-splice on this
+box, and the harness contributes to that.**
+`crates/fah-http/benches/intercept.rs:275-297`, `:200-215`. Every I/O
+completion inside `fetch_h1_once` wakes the criterion thread through
+`rt.block_on` (multi-thread runtime, caller off-runtime), and the proxied arms
+have roughly twice the I/O events of the direct arm; `intercepted` moved
+2.7 → 4.8 ms between rounds, `spliced` spans 4.1–7.3 ms. The report labels D8
+diagnostic — correct. Fix before P2 reuses this bench on the probe: drive N
+connections from one task inside the runtime per iteration (`iter_custom`),
+so the measured quantity is the proxy's added time, not the wake path.
+
+**F7 — NIT — `prewarm_hop/spawn_blocking_prewarm` measures a warm blocking
+pool.** `intercept.rs:334-345`. N8 named the cold-pool thread spawn; after
+the first iteration the pool thread exists. Label the 4 µs as the
+steady-state hop. Conclusion unaffected.
+
+**F8 — LOW — A/B provenance is incomplete.**
+`docs/code-review/phase3/p3-06-bench/run-ab.ps1:10-28`. The A-side
+executables' build command and feature set are not recorded; the B-side note
+says single-package `cargo bench --no-run -p fah-http` for `proxy16/64`, while
+the D1/D2 `proxy` exe is a different hash (a workspace build). `session.log`
+carries no build lines. `docs/measurement-traps.md` §Calibration says
+throughput benches pin to four cores; the declaration ran `fah-http` benches
+unpinned (PERFORMANCE.md §Measuring reliably) — the two docs disagree. The
+interleaving still makes the regression verdict sound. Fix: append both build
+commands to `session.log`; pick one pinning rule and cite it.
+
+**F9 — NIT — wall-clock assertion in an integration test.**
+`e2e_https.rs:20, :204-208` (`TEST_BUDGET` 90 s). Same class as p3-04 N5: a
+slow box turns a passing scenario into a failure. Print the figure instead.
+
+**F10 — NIT — key-material detector encodings.** `common/mod.rs:1114-1152`
+covers PEM base64 (whitespace/`\n`-stripped), its first 48 chars, raw DER and
+four PEM headers. Hex, base64url and JSON `\u` escapes are not searched. No
+route emits those today; note for the day one does.
+
+**F11 — LOW — plan §TASK START item 8 (GAR §5 items 7–14) is not closed as a
+map.** The report confirms §5.12/5.13/5.14 in the runbook; items 7–11 (cert
+home, connector redesign, DoH/DoT placement, event taxonomy, memory caps per
+state owner) are not confirmed against the review files in one place. Fix:
+one table, one row per item, pointing at the review file that discharges it.
+Doc-only.
+
+**F16 — NIT — splice identity is proven for one direction.**
+`security_phase3.rs:752-797` with `run_raw_origin` (`mod.rs:874-900`)
+sinking client bytes. Have the origin echo the first N bytes before the
+payload so both directions compare. p3-03 covers hello forwarding; low value,
+low cost.
+
+**F18 — LOW — static-path assertions pass vacuously on the dev box and the
+test is silent about it (X5).** `security_phase3.rs:857-872`. With
+`ROOT = "/web"` absent, every static probe is 404 and both loops assert
+nothing. Fix: print whether any static path answered 200 (a web root
+existed), so a gate log distinguishes "refused" from "not there"; the
+on-device curl walk stays the closing evidence.
+
+### 3. Informational
+
+- **I1 — dashboard kinds (`https-sni`, `https`) unfiltered** —
+  `dashboard/frontend/src/pages/live-feed/filters.ts` `KINDS`,
+  `detail.tsx:15/:53`. The plan calls an unfiltered kind a finding either way;
+  the report lists it as proposed edit 4 without an owner decision. Not p3-06
+  code; blocks phase close, not this task's dev-box work.
+- **I2 — soak prerequisites not built** — p3-04 L5/TODO `listeners` block and
+  p3-05 N3 `dot` state are proposed only; watch items (b)/(e) have no read
+  path until the owner says yes. Correctly declared.
+- **I3 — worktree** — `E:/FastAdHunter-pre3` (`64be513`, detached) is still
+  registered (`git worktree list`); drop at phase close as the report says.
+- **I4 — no production change, no regression** — `crates/*/src` untouched;
+  `http_e2e.rs` untouched and green; `layering.rs` green; D1–D5 inside the
+  round-to-round spread with the control arm at −0.3 %.
+- **I5 — harness lifecycle is sound** — `Instance` drops `child: Guard`
+  (kill + wait) before its `TempDir`s; origins ride the test runtime; every
+  network wait is bounded (10/15/20 s); `Ports::https()` follows the existing
+  lazy-draw + `BOOT_ATTEMPTS` retry, so the port-race class is unchanged.
+- **I6 — `Trickle` streaming proof** — `interception.rs:1430-1494` proves the
+  proxy never holds more than a 1 MiB window of a 4 MiB body (ordering, not
+  RSS, as stated). Adequate for an in-process harness.
+- **I7 — evidence integrity** — every D6–D13 figure in §Measurements was
+  spot-checked against the raw `p3-06-bench/*.out.txt`; all match.
+- **I8 — Rust quality, test code** — no `unsafe`, no comments (hard rule 7
+  holds in the new test/bench files), every `unwrap`/`expect` sits in test or
+  bench code with a message naming the invariant; allocations are per-test
+  (payloads, hello bytes) and never on a product path. Nothing to optimise
+  here that would change a conclusion.
+
+### Plan compliance
+
+| Plan item | Status |
+| --- | --- |
+| Step 1 D1–D14, pre-declared, A/B/A/B with a control arm | done as declared; deviations recorded under the declaration |
+| Step 1 p3-03 M4 / n5 | n5 closed (harness on `TlsServer`); M4 dev-box A/B done, decision → P1 |
+| Step 1 p3-04 S1 / N8 | dev-box halves done; stall RSS → P3, on-device hop → P5 |
+| Step 2 items 1–6 + p3-05 N3 closed posture | done (F3/F4/F18 qualify items 1 and 6) |
+| Step 2 p3-04 carry-over rows 5–9 + N10 | done; row 7 qualified by F2 |
+| Step 3 | 6/7 legs; leg 5 → F1 |
+| Step 4 | runbook only, nothing run — per working agreement |
+| Step 5 | listed, nothing landed — per working agreement |
+| Tests §Integration: six exact names | all six present, exact |
+| Tests §E2E: `full_mode_blocks_at_every_layer` | present; seventh assertion open (F1) |
+| Regression / gates | fmt, clippy, named suites green (evidence runs above); the full workspace suite was not re-run by the reviewer |
+
+### GAR §5 items 7–14 — the Phase 3 gate map (plan §TASK START 8, F11)
+
+| # | Item | Where it is discharged | Status |
+| --- | --- | --- | --- |
+| 7 | cert home / ADR-0006 | `docs/decisions/0006-certificate-machinery-home.md`; `fah-certs` (L2) consumed by `fah-http` and `fah-api` (L3); `layering.rs` green | closed (p3-01) |
+| 8 | connector redesign — hostname-verified upstream TLS | `crates/fah-http/src/tls.rs:65` `connect_verified_upstream`, roots from `client_config()` (`tls.rs:36`); suite `bad_upstream_cert_is_not_masked` proves fail-closed at the binary level | closed (p3-04 decision 4) |
+| 9 | DoH/DoT placement | DoT inside `fah-dns` (`main.rs:377` `dns.dot_addr()`); DoH on the API listener, route gated on `state.tls && state.doh` (`routes.rs:118-125`, `main.rs:548-582`); shared 64-permit consequence → soak watch item (a) | closed (p3-05 decision 4); watch item open |
+| 10 | event/telemetry taxonomy | `fah-model/src/request_event.rs:126-127` `EventKind::{HttpsSni, Https}`; `fah-model/src/client_transport.rs:5` `ClientTransport`; suite and e2e assert `kind: https-sni` / `https` on the WS feed | closed (p3-03/04/05) |
+| 11 | memory caps per new state owner | leaf LRU `fah-certs/src/leaf.rs:16` `LEAF_CACHE_CAPACITY = 512`; splice `https.rs:29` `SPLICE_BUF` × 2 × `max_connections` (D6/D7); terminate leg `intercept.rs:37-40` `H2_*` (D9); DoT 64 permits (p3-05) | closed on paper; stall RSS → P3 |
+| 12 | 443 steering v4 + v6 | Runbook item 1 (proposed, not run) | open — owner |
+| 13 | on-device TLS measurements | P1–P6 (declared, not run) | open — owner |
+| 14 | opt-in bound to stable identity | static leases for `192.168.10.11` / `.10` read-only verified 2026-09-02 (§Runbook read-only facts) | closed for the two test devices; re-verify per added client |
+
+### Verdict
+
+**PASS WITH DEFERRED FINDINGS** for the dev-box deliverables, conditional on
+the owner's X1/F1 decision: the task cannot go `DONE` while Step 3's seventh
+assertion is open, and it cannot pass `AWAITING SOAK` until Step 4 (dst-nat,
+CA install, Private DNS, P1–P7, cert-store checks) is owner-executed and
+recorded. F2 and F3 are the reviewer's must-decide items; F4–F18 defer with
+the owner's acceptance. (Superseded by §Fixes applied below: F2–F9, F11, F18
+fixed; F10, F16 deferred; F1 awaits the owner's (a)/(b)/(c) call.)
+
+## Fixes applied — review F2–F9, F11, F18, 2026-09-02
+
+Owner instruction: fix F2–F6, F7, F8, F9, F11, F18; defer F10, F16; F1 is a
+decision (option (b) touches `main.rs`, product code — not applied without an
+explicit yes). F2 is "before p3-06 `DONE`". Nothing under `crates/*/src`
+changed.
+
+| # | Status | What changed |
+| --- | --- | --- |
+| F1 | **fixed — option (b), owner decision 2026-09-02** | `main.rs`: `interception()` takes its upstream `ClientConfig` from `test_harness_upstream_client_config()` under `#[cfg(feature = "test-harness")]` (webpki roots + one DER anchor read from `FAH_TEST_UPSTREAM_ROOT`, `warn!` on load) and from `fah_http::client_config()` otherwise; `Cargo.toml`: `test-harness` also enables optional `rustls` / `webpki-roots` (both already in the graph via fah-http; `Cargo.lock` gains the two edges). Release path: `cfg(not(feature))` branch only — `cargo check --release -p fastadhunter` clean, and `fah-api`'s `compile_error!` still refuses the feature in a release profile. Harness: `FullMode.upstream_root`, `boot_with(.., envs, ..)`, `UPSTREAM_ROOT_ENV`, `run_tls_http_origin` (a TLS origin that answers HTTP/1.1, shared acceptor with `run_tls_origin`). Leg 5 rewritten — what it proves is listed below the verification table |
+| F2 | **fixed** | `tests/interception.rs`: `OriginSpec.hold_page` — `/page` answers one 64 KiB frame (`Held` body) and holds the stream until `Origin.release`; `Origin.cut` drops a live origin connection on demand (replaces `cut_after_first`). `held_page_in_flight` reads the first frame client-side before either side cuts, so both tests are mid-body by construction. Observed: the upstream cut surfaces as `error reading a body from connection`, never a clean end |
+| F3 | **fixed (strict by default, owner decision 2026-09-02)** | `tests/common/mod.rs` `bind_origin`: an unbindable `127.0.0.x:443` panics unless `FAH_SECURITY_ALLOW_SKIP=1`; the e2e's degraded leg 5 (no `test-harness` feature) fails under the same rule. The official gate `cargo test --all-features --workspace` therefore needs no environment variable and cannot pass on a skipped or degraded security check. (First iteration used an opt-in `FAH_SECURITY_STRICT=1`; replaced because an opt-in strictness is forgotten, an opt-out skip is not) |
+| F4 | **fixed** | `security_phase3.rs`: `POST /api/v1/auth/logout` is the last route (after the static paths), so the cookie pass stays authenticated for every other route; `/auth/password` sends `current_password` / `new_password`. Still 70 routes × 3 + 2 = 212 requests |
+| F5 | **fixed (this file)** | §Proposed rows: the two absolute TLS-path budgets (SNI+splice p50, DoT/DoH p50) are `TBD — must be measured during verification`; ratio, `prewarm` and RAM rows stand |
+| F6 | **attempted, measured, reverted — finding withdrawn** | The `iter_custom` batch-in-a-task variant ran the handshake arms at 6.6 / 13.9 / 10.3 ms unpinned against 1.1 / 5.7 / 2.7 ms on the original `rt.block_on` harness, and 10–18 ms under every pin. The per-event wake was not the dominant term; `benches/intercept.rs` is back to the reviewed form (`git diff` empty). Evidence in §Post-review work C |
+| F7 | **fixed (this file)** | D10 reading names the warm-pool caveat |
+| F8 | **fixed (partly)** | `session.log`: provenance recovered from `target/release/.fingerprint/*/test-bench-*.json` — same rustc, config hash, features `[]` and profile hash on A and B (pipeline's distinct profile hash on both sides = the X2 override). Build commands themselves were never logged. Pinning-rule conflict between `docs/measurement-traps.md` §Calibration and PERFORMANCE.md §Measuring reliably is an `.md` decision — **deferred to the owner** |
+| F9 | **fixed** | `e2e_https.rs`: wall time printed, not asserted |
+| F10 | deferred | — |
+| F11 | **fixed (this file)** | §GAR §5 items 7–14 table |
+| F16 | deferred | — |
+| F18 | **fixed** | `security_phase3.rs`: prints how many static probes answered 200 and whether the static-path assertions were vacuous |
+
+**Verification (Windows dev box, 2026-09-02, after the fixes):**
+
+| Command | Result |
+| --- | --- |
+| `cargo fmt --all -- --check` | clean |
+| `cargo clippy --workspace --all-targets --message-format=short -- -D warnings` | clean |
+| `FAH_SECURITY_STRICT=1 cargo test -p fastadhunter --test security_phase3 --test e2e_https --test http_e2e --test e2e` | 7/7, 2/2, 2/2, 2/2 — 0 failed, **no skip** (strict); `212 requests over 70 routes x 3 credentials, 0 leaks`; `static dashboard probes: 0 of 18 answered 200 — no web root on this box` (X5, as expected); scenario wall time 0.89 s |
+| `cargo test -p fah-http --test interception` | 27/27; `upstream cut surfaced to the client as error reading a body from connection` |
+
+**Verification of F1 (b) (Windows dev box, 2026-09-02):**
+
+| Command | Result |
+| --- | --- |
+| `cargo fmt --all -- --check` | clean |
+| `cargo clippy --workspace --all-targets -- -D warnings` and the same with `--all-features` | both clean |
+| `FAH_SECURITY_STRICT=1 cargo test -p fastadhunter --all-features --test security_phase3 --test e2e_https --test http_e2e --test e2e --test layering --test healthcheck` | 7/7, 2/2, 2/2, 2/2, 1/1, 5/5 — 0 failed, no skip, no degraded leg; `212 requests over 70 routes x 3 credentials, 0 leaks`; scenario 0.92 s |
+| `cargo test -p fastadhunter --test e2e_https` (no features, no strict) | 2/2; leg 5 prints `DEGRADED — the binary was built without the test-harness feature … run the gate as cargo test --all-features` and asserts the fail-closed 526 instead |
+| `cargo check --release -p fastadhunter` | clean — the hook is compiled out |
+
+**What leg 5 proves now (under `--all-features`, the documented gate):**
+
+1. The listed client (`127.0.0.1`), trusting **only** the CA exported from
+   `GET /api/v1/certificates/ca/export`, completes a TLS handshake with the
+   binary for SNI `shop.example.com` — so the binary minted a leaf for that
+   host under its CA, and did so only after `connect_verified_upstream`
+   accepted the origin against the injected anchor (origin `accepts ≥ 1`
+   before any client bytes).
+2. `GET /track.js` sent **inside** that TLS session answers an empty `200`,
+   and the WS feed carries `kind: https`, `client: 127.0.0.1`,
+   `domain: shop.example.com`, `path: /track.js`, `verdict: block` — the
+   Phase 2 URL judge ran on decrypted traffic through the shipped wiring
+   (`main.rs` → `TlsProxy` → `Interception` → pipeline → events → API).
+3. A second session's `GET /page` returns `200` with the origin's body
+   byte-identical, event `verdict: pass`, `status: 200`; origin `accepts`
+   grew by one (a fresh verified upstream per session); `minted_total`
+   stays 1 (the leaf was reused). So the block in step 2 was a verdict, not
+   a broken pipe.
+4. `minted_total == 2` at the end (page host + DoT hostname),
+   `unwarmed_misses == 0`.
+
+Not proven by leg 5: h2 on the terminate leg (the client offers no ALPN; h1
+is negotiated — h2 is covered by `fah-http/tests/interception.rs`), and the
+exclusion list (`BASELINE_EXCLUSIONS`, Runbook item 4).
+
+Without the feature the leg **fails** (message names the cause and the fix);
+only `FAH_SECURITY_ALLOW_SKIP=1` accepts the degraded run (fail-closed 526
+asserted, `DEGRADED` printed). A gate run never sets it, so it can never pass
+on the weaker path. Same rule for an unbindable origin port.
+
+Files changed by the fixes: `crates/fastadhunter/src/main.rs`,
+`crates/fastadhunter/Cargo.toml`, `Cargo.lock`,
+`crates/fah-http/tests/interception.rs`, `crates/fah-http/benches/intercept.rs`,
+`crates/fastadhunter/tests/common/mod.rs`, `crates/fastadhunter/tests/e2e_https.rs`,
+`crates/fastadhunter/tests/security_phase3.rs`,
+`docs/code-review/phase3/p3-06-bench/session.log`, this file.
+
+**Verdict after fixes: PASS WITH DEFERRED FINDINGS** — F10, F16 and the F8
+pinning-rule doc conflict deferred; F1 closed by (b); `AWAITING SOAK` remains
+the honest cell until Step 4 (dst-nat, CA install, Private DNS, P1–P7,
+cert-store checks, 24 h soak) is owner-executed and recorded.
+
+## Gate posture — strict by default, 2026-09-02 (owner decision)
+
+Owner instruction: the official gate must be exactly
+`cargo test --all-features --workspace`, with no environment variable to
+remember, and the docs must state the real behaviour — the full-mode e2e needs
+`test-harness`, and without it the test fails rather than passing on the
+fail-closed path.
+
+| Change | Where |
+| --- | --- |
+| Skips are opt-out, not opt-in: `bind_origin` panics on an unbindable `127.0.0.x:443` and leg 5 panics when built without `test-harness`, unless `FAH_SECURITY_ALLOW_SKIP=1` (`skips_allowed()`). `FAH_SECURITY_STRICT` removed | `crates/fastadhunter/tests/common/mod.rs`, `crates/fastadhunter/tests/e2e_https.rs` |
+| Why `--all-features` matters and what `FAH_SECURITY_ALLOW_SKIP` does, one paragraph each | root `CLAUDE.md` §Quality gates; `CONTRIBUTING.md` §`test-harness` (new bullet) |
+
+| Verification (Windows dev box, 2026-09-02) | Result |
+| --- | --- |
+| `cargo fmt --all -- --check` | clean |
+| `cargo clippy --workspace --all-targets -- -D warnings`, and with `--all-features` | both clean |
+| **`cargo test --all-features --workspace`** — no environment variable set (`FAH_SECURITY_ALLOW_SKIP`/`_STRICT` explicitly unset) | every suite green, 0 failed, no `DEGRADED`/`SKIPPED` line; `security_phase3` 7/7, `e2e_https` 2/2 with the full leg 5 |
+| `cargo test -p fastadhunter --test e2e_https` (no features, no env) | **fails as designed**: `5/7 intercepted: the binary was built without the test-harness feature … run cargo test --all-features. The URL judge inside TLS did not run; set FAH_SECURITY_ALLOW_SKIP=1 to accept the fail-closed path only` |
+| `FAH_SECURITY_ALLOW_SKIP=1 cargo test -p fastadhunter --test e2e_https` (no features) | 2/2, leg 5 prints `DEGRADED — …` and asserts the fail-closed 526 |
+
+Files changed by this step: `crates/fastadhunter/tests/common/mod.rs`,
+`crates/fastadhunter/tests/e2e_https.rs`, `CLAUDE.md`, `CONTRIBUTING.md`,
+this file. Verdict unchanged.
+
+## Post-review work A — DoT listener state (p3-05 N3) + listener telemetry (p3-04 L5 / TODO), 2026-09-02
+
+Owner decisions: `dot` state on `GET /api/v1/certificates` (not `/health`);
+`listeners` block on `GET /api/v1/telemetry`; `requests` = judged units,
+new `connections` = accepted connections, so `blocked ≤ requests` holds per
+listener. Both are soak prerequisites (watch items (b), (e)).
+
+| Change | Where |
+| --- | --- |
+| `ListenerCounters`, `ListenerTelemetry` (L1 data, no logic) | `fah-model/src/engine.rs`, exported |
+| `ProxyCounters.connections` / `ProxyStats.connections`; `From<ProxyStats> for ListenerCounters` (one conversion, L3→L1) | `fah-http/src/proxy.rs` |
+| `:80`: `connections` +1 per accepted connection (`requests` unchanged, per HTTP request) | `proxy.rs` `serve_connection` |
+| HTTPS listener: `connections` +1 per accept (was `requests`); `requests` +1 per SNI verdict (incl. no-SNI, which `[https.sni] no_sni` decides) and +1 per HTTP request judged inside TLS; `non_tls` / `hello_timeouts` never count as requests | `https.rs:117, :153, no_sni_observed`; `intercept.rs` `handle_intercepted` |
+| `TelemetrySource::listeners()` port; `TelemetrySnapshot`/`TelemetryResponse.listeners` | `fah-api/src/ports.rs`, `telemetry.rs` |
+| Binary adapter reads both `ProxyCounters` handles on demand (no poll lag; metrics registry untouched) | `fastadhunter/src/adapters.rs` `TelemetryAdapter::new(.., http, https)`, `main.rs` |
+| `DotListener { Listening { address } \| Closed { reason } }` on `AppStateBuilder`/`AppState`; `dot` block on the certificates document (`address` only when listening, `reason` only when closed) | `fah-api/src/state.rs`, `certs.rs`, `lib.rs` |
+| `dot_tls()` returns `Result<Option<DotTls>, String>` — `Ok(None)` disabled, `Err(reason)` closed (same sentences the boot log carries); the `dot_pair_loaded == false` path names the unloadable pair | `main.rs` |
+| API.md: `listeners` block (example + semantics paragraph replacing "not published yet"), certificates `dot` (example + paragraph, `/health` unchanged per SECURITY.md) | `API.md` |
+| Tests: `the_terminate_leg_counts_connections_and_judged_requests_separately` (1 connection, 3 requests, 1 block); `sni.rs` EOF-before-hello now `connections 1 / requests 0`; e2e asserts `dot.state == listening`, per-listener `blocked ≤ requests` and that `connections ≠ requests` on HTTPS; closed-posture test asserts `dot.state == closed` with a reason naming the pair, `address` absent, `/health` unchanged; fah-api unit + integration tests carry `dot` and the stub `listeners` | `fah-http/tests/{interception,sni}.rs`, `fastadhunter/tests/{e2e_https,security_phase3,history_e2e}.rs`, `fah-api/{src/certs.rs,tests/api.rs}` |
+
+Hot path: one relaxed `fetch_add` per accepted connection on both listeners
+and one per intercepted HTTP request; the DNS path is untouched. Memory: two
+`AtomicU64` per listener, one enum on `AppState`. Publish cost: `/telemetry`
+reads 24 more atomics per call.
+
+| Verification (Windows dev box, 2026-09-02) | Result |
+| --- | --- |
+| `cargo fmt --all -- --check`; clippy with and without `--all-features` | clean |
+| `cargo test -p fah-model -p fah-http -p fah-api --all-features` | fah-model 57, fah-http 81 + 12 + 28 + 12 + 9, fah-api 126 + 116 + 2 — 0 failed |
+| `cargo test -p fastadhunter --all-features` (security_phase3, e2e_https, http_e2e, e2e, history_e2e, outcome_telemetry, layering, healthcheck) | all green, 0 failed, no degraded leg |
+
+## Post-review work B — `BASELINE_EXCLUSIONS` before the pinned-app check, 2026-09-02
+
+- **p3-04 L6 is already closed** (p3-04 review §"Fixes applied — cleanup L1 ·
+  L6 · …"): `ExclusionSet::new` runs every `exclude_domains` entry through
+  `sni::normalize` and `main.rs` turns an invalid one into a startup error, the
+  same posture as `clients`. The rider in this review's analysis was stale; no
+  code change.
+- **Shipped list, unchanged, proposed as final** (`fah-http/src/exclusions.rs`
+  `BASELINE_EXCLUSIONS`, 34 entries; CONFIGURATION.md `exclude_domains` already
+  names every one): Apple `apple.com icloud.com mzstatic.com apple-cloudkit.com`;
+  Google/Android `android.com googleapis.com play.google.com
+  android.clients.google.com clients.google.com mtalk.google.com gvt1.com
+  gvt2.com gvt3.com`; Microsoft `windowsupdate.com update.microsoft.com
+  delivery.mp.microsoft.com login.microsoftonline.com notify.windows.com
+  wns.windows.com`; messaging `whatsapp.net whatsapp.com signal.org`; payments
+  `paypal.com revolut.com wise.com n26.com`; Romanian banks
+  `bancatransilvania.ro btrl.ro ing.ro bcr.ro george.ro brd.ro raiffeisen.ro
+  unicredit.ro`. A name covers itself and every subdomain.
+- **Owner input still needed:** the banking app used in Runbook item 4 and its
+  hosts. If they are outside this list, either extend the constant (one line +
+  `the_baseline_exclusions_ship_without_any_configuration` + the
+  CONFIGURATION.md sentence) or put them in `exclude_domains` on the device —
+  both are recorded here when done. Until then the pinned-app check proves
+  nothing about exclusions (plan §Step 4.4).
+
+## Post-review work C — F8: the pinning rule, settled by measurement, 2026-09-02
+
+Owner instruction: resolve the `docs/measurement-traps.md` ("four cores")
+vs PERFORMANCE.md §Measuring reliably ("one core", `fah-http` unpinned)
+conflict and re-run the `fah-http` arms pinned. Dev box: i9-13980HX, 8 P-cores
+with HT + 16 E-cores = 32 logical CPUs; logical 0–3 are two P-cores' sibling
+pairs. Raw output: `p3-06-bench/p4-*`, `probe-*`, `p4b-*`; scripts
+`run-pinned4.ps1`, `run-pin-probe.ps1`; every run in `session.log`.
+
+**Probe — what "pin to four cores" must mean** (handshake ms
+direct / spliced / intercepted; pass-through µs direct / proxy):
+
+| Variant | pass-through | handshake |
+| --- | --- | --- |
+| unpinned, 32 workers, original harness (18:35 session, reference) | 32.2 / 65.5 | 1.13 / 5.67 / 2.73 |
+| mask 15 (CPUs 0–3 = 2 P-cores' HT siblings), 32 workers, F6 harness (`p4-*`) | 70 ± 20 % / 160 | 13.8 / 30.3 / 28.7 |
+| mask 15, `TOKIO_WORKER_THREADS=4`, F6 harness | 70.7 / 195 | 17.9 / 31.9 / 28.4 |
+| mask 0x55 (CPUs 0,2,4,6 = 4 distinct P-cores), 4 workers, F6 harness | **31.7 ± 0.6 % / 65.1 ± 1 %** | 10.2 / 17.4 / 16.9 |
+| mask 0x55, 32 workers, F6 harness | — | 14.3 / 15.7 / 22.5 |
+| unpinned, 32 workers, F6 harness | — | 6.61 / 13.9 / 10.3 |
+| mask 0x55, 4 workers, **original harness** (`p4b-*`, r1 / r2) | 31.4 / 63.7 (B) | 2.35 / 11.6 / 16.9 · 2.51 / 8.85 / 19.7 |
+
+Three findings, each measured, not inferred:
+
+1. **A four-core mask alone measures oversubscription.** tokio sizes the
+   runtime by machine CPUs (32) regardless of the mask; with 32 spinning
+   workers on four logical CPUs the control arm doubled and its interval went
+   from ± 1 % to ± 20 %. `TOKIO_WORKER_THREADS=4` must accompany the mask.
+2. **`ProcessorAffinity = 15` is two physical cores on this box.** One logical
+   CPU per physical core (`0x55`) with four workers reproduces the unpinned
+   pass-through means with ~5× tighter intervals — the rule now written in
+   PERFORMANCE.md §Measuring reliably and the new traps.md row.
+3. **F6 was wrong and is withdrawn.** The reviewed `rt.block_on`-per-connection
+   harness is 3–6× faster than the `iter_custom` batch under every pin, so the
+   criterion-thread wake was not the cost the review assumed. Reverted;
+   `benches/intercept.rs` is byte-identical to the reviewed commit.
+
+The handshake arms are legitimately slower on four cores than on 24 (a
+three-party relay: client, proxy, origin, plus hyper connection tasks): direct
+2.4 ms vs 1.1 ms. That is the realistic four-core envelope, not a regression.
+
+**p4b A/B, `^http_`, mask 0x55 + 4 workers, A/B/A/B** (`64be513` vs tip with
+the post-review fixes; criterion means, intervals ± 0.5–1 % unless noted):
+
+| D1 `http_pass_through` (µs) | A r1 | B r1 | A r2 | B r2 | A mean | B mean | Δ |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| `direct_to_origin` (control) | 32.94 | 31.48 | 33.35 | 31.31 | 33.15 | 31.40 | −5.3 % |
+| `through_proxy` | 62.70 | 64.36 | 62.02 | 63.00 | 62.36 | 63.68 | +2.1 % |
+| added (proxy − direct) | 29.8 | 32.9 | 28.7 | 31.7 | 29.2 | 32.3 | +10.6 % — rides on the control moving −5 %; resolution bounded by that |
+
+| D2 `http_opaque_body` (8 KiB µs; 1 MiB / 8 MiB ms) | A r1 | B r1 | A r2 | B r2 |
+| --- | --- | --- | --- | --- |
+| 8 KiB direct / proxy | 35.81 / 66.45 | 33.61 / 68.27 | 33.69 / 66.85 | 34.29 / 66.06 |
+| 1 MiB direct / proxy | 0.762 / 0.804 | 0.755 / 0.909 | 0.748 / 0.890 | 0.698 / 1.165 (± 10 %) |
+| 8 MiB direct / proxy | 5.43 / 6.16 | 5.39 / 7.94 (± 23 %) | 5.19 / 6.00 | 5.16 / 6.00 |
+
+Reading: `through_proxy` +2.1 % and 8 KiB proxy +0.8 % — inside the 10 %
+rule with tight intervals. The 1 MiB / 8 MiB proxy arms alternate direction
+with ± 10–23 % intervals at four workers (the relay is scheduler-bound there)
+and the unpinned session had B ≥ A on them; not resolved, not claimed. The
+B-side code on this path differs from A by one relaxed `fetch_add` per
+*connection* (keep-alive: once per bench), nothing per byte.
+
+| D6 / D7 splice, mask 0x55 + 4 workers (`through_splice`, mean [range]) | 16 KiB r1 | 16 KiB r2 | 64 KiB r1 | 64 KiB r2 |
+| --- | --- | --- | --- | --- |
+| per connection, 1 MiB (MiB/s) | 71.5 [66.7 76.6] | 71.8 [60.6 93.0] | 87.6 [80.6 96.8] | 110.7 [100.8 124.6] |
+| steady state, 64 MiB (GiB/s) | 1.13 | 1.06 | 1.61 | 1.56 |
+| `direct_to_origin` steady (GiB/s) | 3.14 | 2.92 | 2.98 | 3.03 |
+
+On four cores the 64 KiB buffer wins on both arms (+22–54 % per connection,
++45 % steady) — the unpinned per-connection reversal (16 KiB faster) does not
+survive the pin. Memory axis unchanged: `2 × SPLICE_BUF × max_connections`,
+128 MiB at 64 KiB and the default 1024. Decision stays with P1 on the device.
+
+| D8–D10, mask 0x55 + 4 workers, original harness | r1 | r2 | unpinned (18:35) |
+| --- | --- | --- | --- |
+| `https_handshake/direct_to_origin` (ms) | 2.35 [2.02 2.69] | 2.51 [2.17 2.89] | 1.13 / 0.98 |
+| `https_handshake/spliced` (ms) | 11.6 [10.6 12.3] | 8.85 [7.79 9.96] | 5.67 / 5.99 |
+| `https_handshake/intercepted` (ms) | 16.9 [14.5 18.7] | 19.7 [17.6 21.5] | 2.73 / 4.82 |
+| intercepted ÷ spliced | 1.46 | 2.23 | within intervals |
+| `https_h2_download` 8 MiB direct / spliced / intercepted (MiB/s) | 1 205 / 989 / 571 | 1 304 / 984 / 620 | 1 231 / 907 / 485 |
+| `prewarm_hop/spawn_blocking_prewarm` (µs) | 6.47 | 3.29 | 4.19 / 4.17 |
+
+Reading: on four cores the terminate leg's second handshake is visible —
+intercepted is 1.5–2.2× the splice, straddling the proposed "≤ 2× spliced"
+row; P2 on the device decides it. h2 relay ratios hold (intercepted ≈ 0.6×
+spliced). The `spawn_blocking` hop is 3–6 µs against a ≥ 9 ms handshake here;
+N8 "leave alone" stands.
+
+Files changed by this step: `PERFORMANCE.md` §Measuring reliably (the
+two-rule paragraph), `docs/measurement-traps.md` §Calibration (new row),
+`p3-06-bench/run-pinned4.ps1`, `run-pin-probe.ps1`, raw `p4-*`, `probe-*`,
+`p4b-*` outputs, `session.log`, this file. `crates/fah-http/benches/intercept.rs`
+net unchanged (F6 reverted). `SPLICE_BUF` toggled to 64 KiB for one build and
+restored (diff verified: counters only).
+
+## Hand-off state, 2026-09-02 (end of session)
+
+**Final gate on the whole tree** (Windows dev box, no environment variable
+set): `cargo fmt --all -- --check` clean; `cargo clippy --workspace
+--all-targets -- -D warnings` clean with and without `--all-features`;
+`cargo test --all-features --workspace` — every suite green, 0 failed, no
+`DEGRADED`/`SKIPPED` line (`security_phase3` 7/7, `e2e_https` 2/2 with the
+full leg 5, `interception` 28/28, `api` 116/116); `cargo check --release -p
+fastadhunter` clean.
+
+**Uncommitted, per owner instruction ("do not commit"):** product code
+`fah-model/src/{engine,lib}.rs`, `fah-http/src/{proxy,https,intercept}.rs`,
+`fah-api/src/{certs,lib,ports,state,telemetry}.rs`,
+`fastadhunter/src/{main,adapters}.rs`, `fastadhunter/Cargo.toml`, `Cargo.lock`;
+tests `fah-http/tests/{interception,sni}.rs`, `fah-api/tests/api.rs`,
+`fastadhunter/tests/{common/mod,e2e_https,security_phase3,history_e2e}.rs`;
+docs `API.md`, `CLAUDE.md`, `CONTRIBUTING.md`, `PERFORMANCE.md`,
+`docs/measurement-traps.md`; evidence `p3-06-bench/` (`p4-*`, `probe-*`,
+`p4b-*`, two scripts, `session.log`); this file. **Phase row flipped to
+`AWAITING SOAK`** (owner instruction, 2026-09-02): dev-box work complete,
+Step 4 not executed. Flip condition: the 24 h full-mode soak on the RB5009
+records RSS ≤ 128 MB steady and the §Runbook 6 watch items, with Runbook 1–5
+and 7 done and recorded here. Committed on `phase3-06` in the same
+instruction; not pushed.
+
+**Open, owner side:** `BASELINE_EXCLUSIONS` final names (Post-review work B);
+dashboard kinds deferral needs a named task (I1); Step 5 doc sweep items not
+covered above (deploy-rb5009.md §5c after the walkthrough, README modes row,
+SECURITY.md row 3, ROADMAP, project-state); X2 follow-up task
+(`cargo bench -p fastadhunter`); `FastAdHunter-pre3` worktree removal at phase
+close; Runbook 1–7 on the device, P1–P7, the 24 h soak.
+
+**Deferred, accepted:** F10, F16. **Withdrawn:** F6.

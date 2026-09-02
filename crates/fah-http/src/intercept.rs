@@ -260,6 +260,7 @@ impl TlsProxy {
         peer: SocketAddr,
     ) -> Result<Response<ProxyBody>, hyper::Error> {
         let started = Instant::now();
+        self.counters.requests.fetch_add(1, Ordering::Relaxed);
 
         let claim = match destination_of(&request, self.origin_port, self.allow_ip_literal_hosts) {
             Ok(claim) => claim,

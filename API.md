@@ -127,16 +127,23 @@ any upstream contact — an unusable `Host` (`[egress] allow_ip_literal_hosts`)
 or a resolved destination outside `[egress]`. It is counted on the proxy, not
 on the event stream, so it is not part of `pass + allow + block`; it is the
 only signal of a LAN client probing, now that refusals log at `debug`. Since
-p3-03 it also includes the HTTPS SNI listener's refused destinations. That
-listener keeps its own counter set, where `requests` means accepted
-*connections* (garbage included), not requests; it is not published separately.
-Since p3-04 that set also splits `non_tls` (bytes that were never TLS) from
-`hello_timeouts` (silence: EOF, reset or the `hello_timeout_ms` deadline
-before a complete ClientHello — browser preconnects land here) and carries
-`upstream_cert_failures` (an intercepted client's origin failed certificate
-verification; the `status 526` events). None of the three is published yet;
-they exist so a later `/telemetry` block can expose them without changing
-their meaning.
+p3-03 it also includes the HTTPS SNI listener's refused destinations.
+
+`listeners` (p3-06) publishes each proxy listener's own counter set — `http`
+for `[http.listen]`, `https` for `[https.listen]`; a listener that is not part
+of the operating mode is `null`. Both blocks share one shape. `connections`
+is every accepted connection, garbage and silence included. `requests` is
+every unit that reached a verdict: on `:80` an HTTP request; on the HTTPS
+listener an SNI verdict per connection (a hello without SNI counts once, since
+`[https.sni] no_sni` decides it) plus, on an intercepted session, every HTTP
+request judged inside TLS. So `blocked ≤ requests` holds per listener, and
+`connections − requests` on the HTTPS listener is the silent-socket share.
+`non_tls` (bytes that were never TLS) and `hello_timeouts` (silence: EOF,
+reset or the `hello_timeout_ms` deadline before a complete ClientHello —
+browser preconnects land here) are HTTPS-only; `non_http` is `:80`-only;
+`upstream_cert_failures` is an intercepted client's origin failing certificate
+verification (the `status 526` events). `refused_claim + refused_destination`
+across both listeners is what `counters.http.refused` sums.
 
 **Compatibility contract.** New fields may be added; existing fields must not
 change meaning or units. Figures that may change with the implementation live
@@ -151,6 +158,7 @@ The boundary is **who produces a figure**, not how useful it looks:
 | The linked allocator (`allocator_committed_*`) | `/api/v1/debug/memory` |
 
 Top-level blocks: `process`, `ruleset`, `counters`, `latency`, `upstreams`,
+`listeners` (the HTTP and HTTPS proxy listeners' own counter sets, p3-06),
 `cache` (identical to `GET /api/v1/cache`), `memory` (identical to
 `GET /api/v1/debug/memory` minus the two `allocator_committed_*` fields).
 
@@ -172,6 +180,16 @@ Top-level blocks: `process`, `ruleset`, `counters`, `latency`, `upstreams`,
     "cache_cleanup": { "runs": 308, "entries_removed": 44120,
                        "bytes_freed": 9871232, "last_duration_micros": 1842 },
     "lists": { "bodies": 17, "not_modified": 3, "bytes_fetched": 27580000 }
+  },
+  "listeners": {
+    "http":  { "connections": 5120, "requests": 5333, "blocked": 918,
+               "refused_claim": 2, "refused_destination": 1, "resolve_failures": 4,
+               "upstream_failures": 6, "upstream_cert_failures": 0, "non_http": 3,
+               "non_tls": 0, "hello_timeouts": 0, "dropped_events": 0 },
+    "https": { "connections": 2210, "requests": 2402, "blocked": 131,
+               "refused_claim": 0, "refused_destination": 0, "resolve_failures": 2,
+               "upstream_failures": 1, "upstream_cert_failures": 1, "non_http": 0,
+               "non_tls": 4, "hello_timeouts": 87, "dropped_events": 0 }
   },
   "latency": {
     "dns":  { "block":     { "count": 96318,  "sum_seconds": 2.114 },
@@ -1273,7 +1291,8 @@ several new crypto crates. Import is PEM-only; convert with
     "size": 12, "capacity": 512, "inflight": 0,
     "hits": 4013, "unwarmed_misses": 2, "prewarm_hits": 118,
     "coalesced": 7, "minted_total": 19, "evictions": 0, "superseded": 0
-  }
+  },
+  "dot": { "state": "listening", "address": "[::]:853" }
 }
 ```
 
@@ -1288,6 +1307,15 @@ import succeeds — before the restart that activates it).
 watch: a TLS handshake never mints, so a miss means the connection was served
 without a pre-warm and failed closed. `superseded` counts leaves dropped
 because a CA regeneration landed while they were being minted.
+
+`dot` (p3-06) is the DoT listener's boot posture — the one listener that can
+disappear silently, since a certificate failure closes `[dns.listen] dot_port`
+while `:53` keeps answering. `{"state": "listening", "address": …}` or
+`{"state": "closed", "reason": …}`; the reason is the boot log's sentence
+(`dot_enabled = false`, the certificate store did not open, the API pair did
+not load, the TLS configuration did not build). Fixed at boot: it changes only
+with a restart. `/health` does not carry it — that endpoint stays status,
+version and uptime (SECURITY.md).
 
 ### `POST /api/v1/certificates/ca/generate`
 

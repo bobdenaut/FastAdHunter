@@ -457,6 +457,9 @@ impl Harness {
                 fah_api::CertStore::open(config_dir.path()).unwrap(),
             )),
             doh: None,
+            dot: fah_api::DotListener::Closed {
+                reason: "history e2e: no DNS listener".to_string(),
+            },
         };
         let server = ApiServer::bind("127.0.0.1", 0, tls, state).await.unwrap();
         let base = server.base_url();
@@ -607,6 +610,10 @@ impl TelemetrySource for NoTelemetry {
 
     fn engine(&self) -> fah_model::EngineTelemetry {
         fah_model::EngineTelemetry::default()
+    }
+
+    fn listeners(&self) -> fah_model::ListenerTelemetry {
+        fah_model::ListenerTelemetry::default()
     }
 }
 

@@ -48,6 +48,7 @@ fn full(origin_ip: Ipv4Addr, clients: &[&str]) -> FullMode {
         origin_ip,
         clients: clients.iter().map(|client| client.to_string()).collect(),
         api_tls: true,
+        upstream_root: None,
     }
 }
 
@@ -212,11 +213,13 @@ fn documented_routes(ca_pem: &str, ca_key_pem: &str) -> Vec<(Method, String, Bod
             "/api/v1/auth/login".to_string(),
             Body::Json(json!({ "password": "wrong" })),
         ),
-        (Method::POST, "/api/v1/auth/logout".to_string(), Body::Empty),
         (
             Method::POST,
             "/api/v1/auth/password".to_string(),
-            Body::Json(json!({ "current": "wrong", "new": "irrelevant-value-1234" })),
+            Body::Json(json!({
+                "current_password": "wrong",
+                "new_password": "irrelevant-value-1234"
+            })),
         ),
         (Method::GET, "/api/v1/dns-query".to_string(), Body::Dns),
         (Method::GET, "/api/dns-query".to_string(), Body::Dns),
@@ -226,6 +229,7 @@ fn documented_routes(ca_pem: &str, ca_key_pem: &str) -> Vec<(Method, String, Bod
     for path in static_and_traversal_paths() {
         routes.push((Method::GET, path.to_string(), Body::Empty));
     }
+    routes.push((Method::POST, "/api/v1/auth/logout".to_string(), Body::Empty));
     routes
 }
 
@@ -800,6 +804,13 @@ async fn dns_query_is_the_only_new_unauthenticated_route() {
     let instance = boot_full(full(Ipv4Addr::new(127, 0, 0, 26), &[])).await;
     instance.generate_ca().await;
     let ca_pem = read_config(&instance, "ca-cert.pem");
+    let certificates = instance.certificates().await;
+    assert_eq!(certificates["dot"]["state"], "listening", "{certificates}");
+    assert_eq!(
+        certificates["dot"]["address"],
+        format!("127.0.0.1:{}", instance.ports.dot),
+        "{certificates}"
+    );
 
     let mut answered_without_credentials = Vec::new();
     let mut wrong = Vec::new();
@@ -871,6 +882,20 @@ async fn dns_query_is_the_only_new_unauthenticated_route() {
             "{method} {path}: a /config-shaped path may only fall back to the dashboard shell"
         );
     }
+    let static_served = dashboard
+        .iter()
+        .filter(|(_, _, status, _)| *status == StatusCode::OK)
+        .count();
+    println!(
+        "static dashboard probes: {static_served} of {} answered 200 — {}",
+        dashboard.len(),
+        if static_served == 0 {
+            "no web root on this box, so the two static-path assertions above were vacuous \
+             (X5); the on-device curl walk is the closing evidence"
+        } else {
+            "a web root was present, so the static-path assertions above exercised the file server"
+        }
+    );
 
     let plaintext = plaintext_dns_on_the_dot_port(instance.ports.dot).await;
     assert!(
@@ -893,6 +918,7 @@ async fn dns_query_is_the_only_new_unauthenticated_route() {
             origin_ip: Ipv4Addr::new(127, 0, 0, 27),
             clients: Vec::new(),
             api_tls: false,
+            upstream_root: None,
         },
     )
     .await;
@@ -940,9 +966,23 @@ async fn dns_query_is_the_only_new_unauthenticated_route() {
         .await
         .expect("GET /health");
     let health: Value = health.json().await.expect("health json");
-    println!(
-        "closed DoT posture: /health reports {health} — no field names the DoT listener state (p3-05 N3)"
+    assert!(
+        health.get("dot").is_none() && health.get("checks").is_none(),
+        "/health stays status, version and uptime only (SECURITY.md): {health}"
     );
+    let certificates = closed.certificates().await;
+    assert_eq!(
+        certificates["dot"]["state"], "closed",
+        "the closed DoT listener is reported on the certificates document (p3-05 N3): \
+         {certificates}"
+    );
+    assert!(
+        certificates["dot"]["reason"]
+            .as_str()
+            .is_some_and(|reason| reason.contains("certificate pair")),
+        "the reason names the unloadable API pair: {certificates}"
+    );
+    assert!(certificates["dot"].get("address").is_none());
 }
 
 async fn plaintext_dns_on_the_dot_port(port: u16) -> Option<Vec<u8>> {

@@ -1,0 +1,18 @@
+Benchmarking https_sni_splice/direct_to_origin
+Benchmarking https_sni_splice/direct_to_origin: Warming up for 3.0000 s
+Benchmarking https_sni_splice/direct_to_origin: Collecting 20 samples in estimated 5.0810 s (12k iterations)
+Benchmarking https_sni_splice/direct_to_origin: Analyzing
+Benchmarking https_sni_splice/through_splice
+Benchmarking https_sni_splice/through_splice: Warming up for 3.0000 s
+
+Warning: Unable to complete 20 samples in 5.0s. You may wish to increase target time to 5.2s, enable flat sampling, or reduce sample count to 10.
+Benchmarking https_sni_splice/through_splice: Collecting 20 samples in estimated 5.2112 s (210 iterations)
+Benchmarking https_sni_splice/through_splice: Analyzing
+Benchmarking https_sni_splice_steady_state/direct_to_origin
+Benchmarking https_sni_splice_steady_state/direct_to_origin: Warming up for 3.0000 s
+Benchmarking https_sni_splice_steady_state/direct_to_origin: Collecting 10 samples in estimated 5.0816 s (220 iterations)
+Benchmarking https_sni_splice_steady_state/direct_to_origin: Analyzing
+Benchmarking https_sni_splice_steady_state/through_splice
+Benchmarking https_sni_splice_steady_state/through_splice: Warming up for 3.0000 s
+Benchmarking https_sni_splice_steady_state/through_splice: Collecting 10 samples in estimated 6.4452 s (110 iterations)
+Benchmarking https_sni_splice_steady_state/through_splice: Analyzing

@@ -1,0 +1,8 @@
+Benchmarking http_pass_through/direct_to_origin
+Benchmarking http_pass_through/direct_to_origin: Warming up for 3.0000 s
+Benchmarking http_pass_through/direct_to_origin: Collecting 100 samples in estimated 5.1785 s (76k iterations)
+Benchmarking http_pass_through/direct_to_origin: Analyzing
+Benchmarking http_pass_through/through_proxy
+Benchmarking http_pass_through/through_proxy: Warming up for 3.0000 s
+Benchmarking http_pass_through/through_proxy: Collecting 100 samples in estimated 5.7972 s (35k iterations)
+Benchmarking http_pass_through/through_proxy: Analyzing

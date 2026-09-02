@@ -1,0 +1,32 @@
+Benchmarking http_pass_through/direct_to_origin
+Benchmarking http_pass_through/direct_to_origin: Warming up for 3.0000 s
+Benchmarking http_pass_through/direct_to_origin: Collecting 100 samples in estimated 5.3061 s (81k iterations)
+Benchmarking http_pass_through/direct_to_origin: Analyzing
+Benchmarking http_pass_through/through_proxy
+Benchmarking http_pass_through/through_proxy: Warming up for 3.0000 s
+Benchmarking http_pass_through/through_proxy: Collecting 100 samples in estimated 5.3468 s (45k iterations)
+Benchmarking http_pass_through/through_proxy: Analyzing
+Benchmarking http_opaque_body/direct_to_origin/8192
+Benchmarking http_opaque_body/direct_to_origin/8192: Warming up for 3.0000 s
+Benchmarking http_opaque_body/direct_to_origin/8192: Collecting 20 samples in estimated 5.0139 s (74k iterations)
+Benchmarking http_opaque_body/direct_to_origin/8192: Analyzing
+Benchmarking http_opaque_body/through_proxy/8192
+Benchmarking http_opaque_body/through_proxy/8192: Warming up for 3.0000 s
+Benchmarking http_opaque_body/through_proxy/8192: Collecting 20 samples in estimated 5.0206 s (50k iterations)
+Benchmarking http_opaque_body/through_proxy/8192: Analyzing
+Benchmarking http_opaque_body/direct_to_origin/1048576
+Benchmarking http_opaque_body/direct_to_origin/1048576: Warming up for 3.0000 s
+Benchmarking http_opaque_body/direct_to_origin/1048576: Collecting 20 samples in estimated 5.2425 s (3150 iterations)
+Benchmarking http_opaque_body/direct_to_origin/1048576: Analyzing
+Benchmarking http_opaque_body/through_proxy/1048576
+Benchmarking http_opaque_body/through_proxy/1048576: Warming up for 3.0000 s
+Benchmarking http_opaque_body/through_proxy/1048576: Collecting 20 samples in estimated 5.0551 s (2730 iterations)
+Benchmarking http_opaque_body/through_proxy/1048576: Analyzing
+Benchmarking http_opaque_body/direct_to_origin/8388608
+Benchmarking http_opaque_body/direct_to_origin/8388608: Warming up for 3.0000 s
+Benchmarking http_opaque_body/direct_to_origin/8388608: Collecting 20 samples in estimated 5.4171 s (630 iterations)
+Benchmarking http_opaque_body/direct_to_origin/8388608: Analyzing
+Benchmarking http_opaque_body/through_proxy/8388608
+Benchmarking http_opaque_body/through_proxy/8388608: Warming up for 3.0000 s
+Benchmarking http_opaque_body/through_proxy/8388608: Collecting 20 samples in estimated 5.2338 s (420 iterations)
+Benchmarking http_opaque_body/through_proxy/8388608: Analyzing

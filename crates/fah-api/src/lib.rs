@@ -57,5 +57,5 @@ pub use ports::{
     TelemetrySource, WireResolving,
 };
 pub use server::ApiServer;
-pub use state::AppStateBuilder;
+pub use state::{AppStateBuilder, DotListener};
 pub use tls::probe_local_address;

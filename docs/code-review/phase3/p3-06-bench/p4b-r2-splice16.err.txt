@@ -1,0 +1,16 @@
+Benchmarking https_sni_splice/direct_to_origin
+Benchmarking https_sni_splice/direct_to_origin: Warming up for 3.0000 s
+Benchmarking https_sni_splice/direct_to_origin: Collecting 20 samples in estimated 5.0992 s (10k iterations)
+Benchmarking https_sni_splice/direct_to_origin: Analyzing
+Benchmarking https_sni_splice/through_splice
+Benchmarking https_sni_splice/through_splice: Warming up for 3.0000 s
+Benchmarking https_sni_splice/through_splice: Collecting 20 samples in estimated 6.3267 s (420 iterations)
+Benchmarking https_sni_splice/through_splice: Analyzing
+Benchmarking https_sni_splice_steady_state/direct_to_origin
+Benchmarking https_sni_splice_steady_state/direct_to_origin: Warming up for 3.0000 s
+Benchmarking https_sni_splice_steady_state/direct_to_origin: Collecting 10 samples in estimated 5.5900 s (275 iterations)
+Benchmarking https_sni_splice_steady_state/direct_to_origin: Analyzing
+Benchmarking https_sni_splice_steady_state/through_splice
+Benchmarking https_sni_splice_steady_state/through_splice: Warming up for 3.0000 s
+Benchmarking https_sni_splice_steady_state/through_splice: Collecting 10 samples in estimated 6.4183 s (110 iterations)
+Benchmarking https_sni_splice_steady_state/through_splice: Analyzing

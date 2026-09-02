@@ -245,11 +245,23 @@ impl fah_api::CacheSource for CacheAdapter {
 pub struct TelemetryAdapter {
     metrics: Arc<Metrics>,
     upstreams: UpstreamPool,
+    http: Option<Arc<fah_http::ProxyCounters>>,
+    https: Option<Arc<fah_http::ProxyCounters>>,
 }
 
 impl TelemetryAdapter {
-    pub fn new(metrics: Arc<Metrics>, upstreams: UpstreamPool) -> Self {
-        Self { metrics, upstreams }
+    pub fn new(
+        metrics: Arc<Metrics>,
+        upstreams: UpstreamPool,
+        http: Option<Arc<fah_http::ProxyCounters>>,
+        https: Option<Arc<fah_http::ProxyCounters>>,
+    ) -> Self {
+        Self {
+            metrics,
+            upstreams,
+            http,
+            https,
+        }
     }
 }
 
@@ -279,6 +291,16 @@ impl TelemetrySource for TelemetryAdapter {
     /// the only place that can read its own atomics.
     fn engine(&self) -> fah_model::EngineTelemetry {
         self.metrics.engine_telemetry()
+    }
+
+    fn listeners(&self) -> fah_model::ListenerTelemetry {
+        let read = |counters: &Option<Arc<fah_http::ProxyCounters>>| {
+            counters.as_ref().map(|counters| counters.snapshot().into())
+        };
+        fah_model::ListenerTelemetry {
+            http: read(&self.http),
+            https: read(&self.https),
+        }
     }
 }
 

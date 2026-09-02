@@ -1,0 +1,14 @@
+Benchmarking https_handshake/direct_to_origin
+Benchmarking https_handshake/direct_to_origin: Warming up for 3.0000 s
+
+Warning: Unable to complete 50 samples in 10.0s. You may wish to increase target time to 12.2s, enable flat sampling, or reduce sample count to 30.
+Benchmarking https_handshake/direct_to_origin: Collecting 50 samples in estimated 12.237 s (1275 iterations)
+Benchmarking https_handshake/direct_to_origin: Analyzing
+Benchmarking https_handshake/spliced
+Benchmarking https_handshake/spliced: Warming up for 3.0000 s
+Benchmarking https_handshake/spliced: Collecting 50 samples in estimated 10.779 s (650 iterations)
+Benchmarking https_handshake/spliced: Analyzing
+Benchmarking https_handshake/intercepted
+Benchmarking https_handshake/intercepted: Warming up for 3.0000 s
+Benchmarking https_handshake/intercepted: Collecting 50 samples in estimated 10.757 s (650 iterations)
+Benchmarking https_handshake/intercepted: Analyzing

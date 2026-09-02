@@ -505,7 +505,11 @@ async fn a_preconnect_closed_unused_is_a_hello_timeout_not_garbage() {
         tokio::time::sleep(Duration::from_millis(20)).await;
     };
     assert_eq!(counters.non_tls, 0, "silence is not garbage");
-    assert_eq!(counters.requests, 1);
+    assert_eq!(counters.connections, 1);
+    assert_eq!(
+        counters.requests, 0,
+        "a connection that never reached a verdict is not a request"
+    );
     harness.shutdown();
 }
 

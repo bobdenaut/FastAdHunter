@@ -71,6 +71,7 @@ const HOP_BY_HOP: [HeaderName; 8] = [
 /// total — the operator's signal that a LAN device is probing.
 #[derive(Debug, Default)]
 pub struct ProxyCounters {
+    pub connections: AtomicU64,
     pub requests: AtomicU64,
     /// `Host` rejected before any resolution.
     pub refused_claim: AtomicU64,
@@ -94,6 +95,7 @@ pub struct ProxyCounters {
 /// (siblings never import each other, so metrics arrive through a port).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ProxyStats {
+    pub connections: u64,
     pub requests: u64,
     pub refused_claim: u64,
     pub refused_destination: u64,
@@ -110,6 +112,7 @@ pub struct ProxyStats {
 impl ProxyCounters {
     pub fn snapshot(&self) -> ProxyStats {
         ProxyStats {
+            connections: self.connections.load(Ordering::Relaxed),
             requests: self.requests.load(Ordering::Relaxed),
             refused_claim: self.refused_claim.load(Ordering::Relaxed),
             refused_destination: self.refused_destination.load(Ordering::Relaxed),
@@ -121,6 +124,25 @@ impl ProxyCounters {
             upstream_cert_failures: self.upstream_cert_failures.load(Ordering::Relaxed),
             blocked: self.blocked.load(Ordering::Relaxed),
             dropped_events: self.dropped_events.load(Ordering::Relaxed),
+        }
+    }
+}
+
+impl From<ProxyStats> for fah_model::ListenerCounters {
+    fn from(stats: ProxyStats) -> Self {
+        Self {
+            connections: stats.connections,
+            requests: stats.requests,
+            blocked: stats.blocked,
+            refused_claim: stats.refused_claim,
+            refused_destination: stats.refused_destination,
+            resolve_failures: stats.resolve_failures,
+            upstream_failures: stats.upstream_failures,
+            upstream_cert_failures: stats.upstream_cert_failures,
+            non_http: stats.non_http,
+            non_tls: stats.non_tls,
+            hello_timeouts: stats.hello_timeouts,
+            dropped_events: stats.dropped_events,
         }
     }
 }
@@ -284,6 +306,7 @@ impl Proxy {
         // does, and for the same reason: a policy assigned to `192.168.1.50`
         // must match, and the client must not appear twice in the log.
         let peer = SocketAddr::new(peer.ip().to_canonical(), peer.port());
+        self.counters.connections.fetch_add(1, Ordering::Relaxed);
         let proxy = Arc::clone(&self);
         let service = service_fn(move |request| {
             let proxy = Arc::clone(&proxy);

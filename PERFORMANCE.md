@@ -205,6 +205,21 @@ $p.ProcessorAffinity = 4; $p.PriorityClass = 'High'; $p.WaitForExit()
 taskset -c 2 nice -n -5 cargo bench -p <crate> --bench <bench>
 ```
 
+Two pinning rules, by what the bench measures. **CPU-bound microbenches**
+(matcher, cache, pipeline, certs) run on **one core** (`ProcessorAffinity = 4`,
+`taskset -c 2`) — that is where the sub-1 % intervals come from.
+**Throughput and socket-bound benches** (`fah-http/benches/*`: pass-through,
+opaque body, splice, handshake, h2) run on **four distinct physical cores with
+the runtime sized to them**: `TOKIO_WORKER_THREADS=4` plus an affinity mask
+that names one logical CPU per physical core — on the dev box's i9-13980HX
+that is `ProcessorAffinity = 0x55` (CPUs 0, 2, 4, 6; `taskset -c 0,2,4,6`).
+Two measured traps (p3-06 F8, 2026-09-02): a mask alone leaves tokio spawning
+one worker per *machine* CPU inside the mask, and `ProcessorAffinity = 15` on a
+hyper-threaded part is two physical cores, not four — together they turned
+`http_pass_through/direct_to_origin` from 31.7 µs ± 0.6 % into 70 µs ± 20 %.
+Done right, the pinned means match the unpinned ones with ~5× tighter
+intervals ([docs/measurement-traps.md](docs/measurement-traps.md) §Calibration).
+
 Pinned, the same benches hold a confidence interval under 1 %. Trust a criterion
 delta only when its interval is narrow relative to the change it reports:
 `[366.0 ns 366.8 ns 367.5 ns]` is a measurement, `[737 ns 882 ns 1.04 µs]` is

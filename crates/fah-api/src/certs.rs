@@ -13,7 +13,7 @@ use fah_certs::{
 use serde::{Deserialize, Serialize};
 
 use crate::error::{ApiError, ApiResult};
-use crate::state::AppState;
+use crate::state::{AppState, DotListener};
 use crate::timestamp;
 
 pub(crate) const MAX_BODY_BYTES: usize = 256 * 1024;
@@ -32,6 +32,33 @@ pub(crate) struct CertificatesResponse {
     pub(crate) ca: CaResponse,
     pub(crate) api_certificate: ApiCertificateResponse,
     pub(crate) leaf_cache: LeafCacheResponse,
+    pub(crate) dot: DotResponse,
+}
+
+#[derive(Debug, Serialize)]
+pub(crate) struct DotResponse {
+    pub(crate) state: &'static str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) address: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) reason: Option<String>,
+}
+
+impl DotResponse {
+    fn of(dot: &DotListener) -> Self {
+        match dot {
+            DotListener::Listening { address } => Self {
+                state: "listening",
+                address: Some(address.to_string()),
+                reason: None,
+            },
+            DotListener::Closed { reason } => Self {
+                state: "closed",
+                address: None,
+                reason: Some(reason.clone()),
+            },
+        }
+    }
 }
 
 #[derive(Debug, Serialize)]
@@ -143,8 +170,8 @@ impl From<LeafCacheStats> for LeafCacheResponse {
     }
 }
 
-impl From<CertStatus> for CertificatesResponse {
-    fn from(status: CertStatus) -> Self {
+impl CertificatesResponse {
+    fn of(status: CertStatus, dot: &DotListener) -> Self {
         Self {
             ca: status
                 .ca
@@ -154,6 +181,7 @@ impl From<CertStatus> for CertificatesResponse {
                 source: source_name(status.api_pair),
             },
             leaf_cache: status.leaves.into(),
+            dot: DotResponse::of(dot),
         }
     }
 }
@@ -264,7 +292,7 @@ pub(crate) async fn status(
 ) -> ApiResult<Json<CertificatesResponse>> {
     let store = store(&state)?;
     let status = on_blocking(store, CertStore::status).await?;
-    Ok(Json(status.into()))
+    Ok(Json(CertificatesResponse::of(status, &state.dot)))
 }
 
 pub(crate) async fn generate_ca(
@@ -452,14 +480,23 @@ mod tests {
 
     #[test]
     fn a_status_without_an_authority_reports_present_false_and_nothing_else() {
-        let body = json_of(&CertificatesResponse::from(CertStatus {
-            ca: None,
-            leaves: stats(),
-            api_pair: ApiPairSource::SelfSigned,
-        }));
+        let body = json_of(&CertificatesResponse::of(
+            CertStatus {
+                ca: None,
+                leaves: stats(),
+                api_pair: ApiPairSource::SelfSigned,
+            },
+            &DotListener::Closed {
+                reason: "[dns.listen] dot_enabled = false".to_string(),
+            },
+        ));
 
         assert_eq!(body["ca"], serde_json::json!({ "present": false }));
         assert_eq!(body["api_certificate"]["source"], "self_signed");
+        assert_eq!(
+            body["dot"],
+            serde_json::json!({ "state": "closed", "reason": "[dns.listen] dot_enabled = false" })
+        );
         assert_eq!(
             body["leaf_cache"],
             serde_json::json!({
@@ -479,11 +516,16 @@ mod tests {
 
     #[test]
     fn a_status_with_an_authority_renders_rfc3339_and_the_imported_marker() {
-        let body = json_of(&CertificatesResponse::from(CertStatus {
-            ca: Some(summary()),
-            leaves: stats(),
-            api_pair: ApiPairSource::Imported,
-        }));
+        let body = json_of(&CertificatesResponse::of(
+            CertStatus {
+                ca: Some(summary()),
+                leaves: stats(),
+                api_pair: ApiPairSource::Imported,
+            },
+            &DotListener::Listening {
+                address: "[::]:853".parse().unwrap(),
+            },
+        ));
 
         assert_eq!(
             body["ca"],
@@ -496,6 +538,10 @@ mod tests {
             })
         );
         assert_eq!(body["api_certificate"]["source"], "imported");
+        assert_eq!(
+            body["dot"],
+            serde_json::json!({ "state": "listening", "address": "[::]:853" })
+        );
     }
 
     #[test]

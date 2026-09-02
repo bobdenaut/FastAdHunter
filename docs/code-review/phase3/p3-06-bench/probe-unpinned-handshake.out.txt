@@ -1,0 +1,15 @@
+https_handshake/direct_to_origin
+                        time:   [5.3288 ms 6.6096 ms 7.9247 ms]
+                        change: [-52.012% -41.106% -28.822%] (p = 0.00 < 0.05)
+                        Performance has improved.
+Found 1 outliers among 50 measurements (2.00%)
+  1 (2.00%) high mild
+https_handshake/spliced time:   [12.208 ms 13.889 ms 15.411 ms]
+                        change: [-27.709% -17.129% -3.8287%] (p = 0.01 < 0.05)
+                        Performance has improved.
+https_handshake/intercepted
+                        time:   [8.7460 ms 10.304 ms 11.881 ms]
+                        change: [-52.768% -40.483% -25.004%] (p = 0.00 < 0.05)
+                        Performance has improved.
+
+https_handshake leaf cache after the run: minted_total=1 prewarm_hits=1785 unwarmed_misses=0

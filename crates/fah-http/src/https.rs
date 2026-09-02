@@ -114,7 +114,7 @@ impl TlsProxy {
 
     pub async fn serve_connection(self: Arc<Self>, mut stream: TcpStream, peer: SocketAddr) {
         let peer = SocketAddr::new(peer.ip().to_canonical(), peer.port());
-        self.counters.requests.fetch_add(1, Ordering::Relaxed);
+        self.counters.connections.fetch_add(1, Ordering::Relaxed);
         let started = Instant::now();
 
         let mut hello = Vec::with_capacity(HELLO_CHUNK);
@@ -150,6 +150,7 @@ impl TlsProxy {
             }
         };
 
+        self.counters.requests.fetch_add(1, Ordering::Relaxed);
         if !self.allow_ip_literal_hosts && host.parse::<IpAddr>().is_ok() {
             self.counters.refused_claim.fetch_add(1, Ordering::Relaxed);
             debug!(%peer, %host, "refused: IP-literal SNI");
@@ -269,6 +270,7 @@ impl TlsProxy {
     }
 
     fn no_sni_observed(&self, peer: SocketAddr, started: Instant) {
+        self.counters.requests.fetch_add(1, Ordering::Relaxed);
         let verdict = match self.no_sni {
             NoSni::Pass => Verdict::Pass,
             NoSni::Block => {

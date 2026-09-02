@@ -30,6 +30,13 @@ Consequences to know before you hit them:
 
 - `cargo test --all-features` (dev profile) is the intended context and is the
   gate above.
+- The p3-06 full-mode e2e (`crates/fastadhunter/tests/e2e_https.rs`) needs the
+  binary's `test-harness` feature: only then does `main.rs` add the upstream
+  trust anchor from `FAH_TEST_UPSTREAM_ROOT`, which its loopback origin needs
+  to be verified on the terminate leg. Without the feature the test fails (it
+  does not pass on the fail-closed path); `FAH_SECURITY_ALLOW_SKIP=1` is the
+  only way to accept that degraded run or a `127.0.0.x:443` origin that cannot
+  bind, and a gate run never sets it.
 - **`cargo test --release --all-features` does not compile.** That is the guard
   working, not a break.
 - Building the measurement harness needs the flag back on:

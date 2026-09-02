@@ -102,6 +102,7 @@ pub trait TelemetrySource: Send + Sync + 'static {
     /// lives beside [`fah_model::MemoryBreakdown`] for the same reason — three
     /// crates need it and none of them may import another.
     fn engine(&self) -> fah_model::EngineTelemetry;
+    fn listeners(&self) -> fah_model::ListenerTelemetry;
 }
 
 /// The DNS cache's admin plane (API.md §Cache) — implemented by the binary

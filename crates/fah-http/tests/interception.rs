@@ -15,6 +15,7 @@ use fah_common::resolve::{HostResolver, Resolving};
 use fah_config::{HttpsConfig, HttpsListenConfig, NoSni};
 use fah_model::{Event, EventKind, ResourceType, Verdict};
 use fah_rules::{Matcher, MatcherBuilder};
+use http_body_util::combinators::UnsyncBoxBody;
 use http_body_util::{BodyExt, Full};
 use hyper::body::{Body, Frame, Incoming};
 use hyper::client::conn::{http1, http2};
@@ -27,7 +28,7 @@ use rustls::pki_types::{CertificateDer, PrivateKeyDer, ServerName};
 use rustls::sign::CertifiedKey;
 use rustls::RootCertStore;
 use tokio::net::{TcpListener, TcpStream};
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, Notify};
 use tokio_rustls::client::TlsStream;
 use tokio_rustls::{TlsAcceptor, TlsConnector};
 
@@ -38,6 +39,7 @@ const PAGE_BYTES: usize = 200 * 1024;
 const SEEN_HOST: &str = "x-seen-host";
 const HOST_HEADER: &str = "x-host-header";
 const BODY_BYTES: &str = "x-body-bytes";
+const HELD_FRAME_BYTES: usize = 64 * 1024;
 
 struct FixedResolver(Vec<IpAddr>);
 
@@ -131,6 +133,8 @@ struct Origin {
     connections: Arc<AtomicU64>,
     requests: Arc<AtomicU64>,
     body_seen: tokio::sync::watch::Receiver<u64>,
+    cut: Arc<Notify>,
+    release: Arc<Notify>,
 }
 
 struct OriginSpec {
@@ -139,7 +143,7 @@ struct OriginSpec {
     alpn: Option<Vec<Vec<u8>>>,
     close_each_response: bool,
     goaway_after_first: bool,
-    cut_after_first: bool,
+    hold_page: bool,
     count_body: bool,
 }
 
@@ -151,8 +155,36 @@ impl OriginSpec {
             alpn: None,
             close_each_response: false,
             goaway_after_first: false,
-            cut_after_first: false,
+            hold_page: false,
             count_body: false,
+        }
+    }
+}
+
+struct Held {
+    first: Option<Bytes>,
+    release: Arc<Notify>,
+    waiting: Option<Pin<Box<dyn Future<Output = ()> + Send>>>,
+}
+
+impl Body for Held {
+    type Data = Bytes;
+    type Error = Infallible;
+
+    fn poll_frame(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+    ) -> Poll<Option<Result<Frame<Bytes>, Infallible>>> {
+        if let Some(first) = self.first.take() {
+            return Poll::Ready(Some(Ok(Frame::data(first))));
+        }
+        if self.waiting.is_none() {
+            let release = Arc::clone(&self.release);
+            self.waiting = Some(Box::pin(async move { release.notified().await }));
+        }
+        match self.waiting.as_mut().unwrap().as_mut().poll(cx) {
+            Poll::Ready(()) => Poll::Ready(None),
+            Poll::Pending => Poll::Pending,
         }
     }
 }
@@ -199,10 +231,14 @@ async fn origin_with(spec: OriginSpec) -> Origin {
     let acceptor = TlsAcceptor::from(Arc::new(config));
     let close_each_response = spec.close_each_response;
     let goaway_after_first = spec.goaway_after_first;
-    let cut_after_first = spec.cut_after_first;
+    let hold_page = spec.hold_page;
     let count_body = spec.count_body;
     let (body_seen_tx, body_seen) = tokio::sync::watch::channel(0u64);
     let body_seen_tx = Arc::new(body_seen_tx);
+    let cut = Arc::new(Notify::new());
+    let release = Arc::new(Notify::new());
+    let cut_in_loop = Arc::clone(&cut);
+    let release_in_loop = Arc::clone(&release);
 
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
@@ -219,6 +255,8 @@ async fn origin_with(spec: OriginSpec) -> Origin {
             let acceptor = acceptor.clone();
             let requests = Arc::clone(&seen_requests);
             let body_seen_tx = Arc::clone(&body_seen_tx);
+            let cut = Arc::clone(&cut_in_loop);
+            let release = Arc::clone(&release_in_loop);
             tokio::spawn(async move {
                 let Ok(tls) = acceptor.accept(stream).await else {
                     return;
@@ -238,6 +276,7 @@ async fn origin_with(spec: OriginSpec) -> Origin {
                     let path = request.uri().path().to_string();
                     let signal = Arc::clone(&signal);
                     let body_seen_tx = Arc::clone(&body_seen_tx);
+                    let release = Arc::clone(&release);
                     async move {
                         let mut received = 0u64;
                         if count_body {
@@ -249,9 +288,15 @@ async fn origin_with(spec: OriginSpec) -> Origin {
                                 }
                             }
                         }
-                        let body = match path.as_str() {
-                            "/page" => page(),
-                            path => Bytes::from(format!("origin:{path}")),
+                        let body: UnsyncBoxBody<Bytes, Infallible> = match path.as_str() {
+                            "/page" if hold_page => Held {
+                                first: Some(Bytes::from(vec![b'h'; HELD_FRAME_BYTES])),
+                                release,
+                                waiting: None,
+                            }
+                            .boxed_unsync(),
+                            "/page" => Full::new(page()).boxed_unsync(),
+                            path => Full::new(Bytes::from(format!("origin:{path}"))).boxed_unsync(),
                         };
                         let mut response = Response::builder()
                             .header(CONTENT_TYPE, "application/octet-stream")
@@ -262,23 +307,23 @@ async fn origin_with(spec: OriginSpec) -> Origin {
                             response = response.header(CONNECTION, "close");
                         }
                         signal.notify_one();
-                        Ok::<_, Infallible>(response.body(Full::new(body)).unwrap())
+                        Ok::<_, Infallible>(response.body(body).unwrap())
                     }
                 });
                 let builder = auto::Builder::new(TokioExecutor::new());
                 let connection = builder.serve_connection(TokioIo::new(tls), service);
                 tokio::pin!(connection);
-                if goaway_after_first || cut_after_first {
+                if goaway_after_first {
                     tokio::select! {
                         _ = &mut connection => return,
                         () = answered.notified() => {}
                     }
-                    if cut_after_first {
-                        return;
-                    }
                     connection.as_mut().graceful_shutdown();
                 }
-                let _ = connection.await;
+                tokio::select! {
+                    _ = &mut connection => {}
+                    () = cut.notified() => {}
+                }
             });
         }
     });
@@ -287,6 +332,8 @@ async fn origin_with(spec: OriginSpec) -> Origin {
         connections,
         requests,
         body_seen,
+        cut,
+        release,
     }
 }
 
@@ -1493,20 +1540,13 @@ async fn second_session_gets_the_only_permit(harness: &Harness) {
     assert_eq!(body_of(response).await, Bytes::from("origin:/after"));
 }
 
-#[tokio::test]
-async fn a_client_that_disconnects_mid_response_returns_its_permit() {
-    let ca = origin_ca();
-    let (cert, key) = leaf_signed_by(&ca);
-    let origin = origin(Proto::H1, cert, key).await;
-    let harness = harness(
-        origin.addr,
-        Setup {
-            max_connections: 1,
-            ..Setup::intercepting(ca.root.clone())
-        },
-    )
-    .await;
-
+async fn held_page_in_flight(
+    harness: &Harness,
+) -> (
+    http1::SendRequest<Full<Bytes>>,
+    tokio::task::JoinHandle<()>,
+    Incoming,
+) {
     let tls = tls_to(harness.addr, &harness.ours(Proto::H1))
         .await
         .unwrap();
@@ -1523,21 +1563,26 @@ async fn a_client_that_disconnects_mid_response_returns_its_permit() {
         .unwrap();
     let response = sender.send_request(request).await.unwrap();
     assert_eq!(response.status(), StatusCode::OK);
-    drop(response);
-    drop(sender);
-    connection.abort();
-
-    second_session_gets_the_only_permit(&harness).await;
-    assert_eq!(origin.requests.load(Ordering::Relaxed), 2);
-    harness.shutdown();
+    let mut body = response.into_body();
+    let first = tokio::time::timeout(Duration::from_secs(10), body.frame())
+        .await
+        .expect("the first frame arrives while the origin holds the rest of the body")
+        .expect("a frame, not end of stream")
+        .unwrap();
+    let data = first.into_data().expect("a data frame");
+    assert!(
+        !data.is_empty(),
+        "response bytes are in flight before either side cuts"
+    );
+    (sender, connection, body)
 }
 
 #[tokio::test]
-async fn an_upstream_that_disconnects_mid_response_ends_the_session_and_returns_its_permit() {
+async fn a_client_that_disconnects_mid_response_returns_its_permit() {
     let ca = origin_ca();
     let (cert, key) = leaf_signed_by(&ca);
     let origin = origin_with(OriginSpec {
-        cut_after_first: true,
+        hold_page: true,
         ..OriginSpec::new(Proto::H1, cert, key)
     })
     .await;
@@ -1550,39 +1595,51 @@ async fn an_upstream_that_disconnects_mid_response_ends_the_session_and_returns_
     )
     .await;
 
-    let tls = tls_to(harness.addr, &harness.ours(Proto::H1))
-        .await
-        .unwrap();
-    let (mut sender, connection) = http1::handshake::<_, Full<Bytes>>(TokioIo::new(tls))
-        .await
-        .unwrap();
-    let connection = tokio::spawn(async move {
-        let _ = connection.await;
-    });
-    let request = Request::builder()
-        .uri("/page")
-        .header(HOST, ORIGIN_NAME)
-        .body(Full::new(Bytes::new()))
-        .unwrap();
-    let outcome = tokio::time::timeout(Duration::from_secs(10), async {
-        let response = sender.send_request(request).await?;
-        let status = response.status();
-        let body = response
-            .into_body()
-            .collect()
-            .await
-            .map(|body| body.to_bytes());
-        Ok::<_, hyper::Error>((status, body))
+    let (sender, connection, body) = held_page_in_flight(&harness).await;
+    drop(body);
+    drop(sender);
+    connection.abort();
+
+    second_session_gets_the_only_permit(&harness).await;
+    assert_eq!(origin.requests.load(Ordering::Relaxed), 2);
+    origin.release.notify_waiters();
+    harness.shutdown();
+}
+
+#[tokio::test]
+async fn an_upstream_that_disconnects_mid_response_ends_the_session_and_returns_its_permit() {
+    let ca = origin_ca();
+    let (cert, key) = leaf_signed_by(&ca);
+    let origin = origin_with(OriginSpec {
+        hold_page: true,
+        ..OriginSpec::new(Proto::H1, cert, key)
+    })
+    .await;
+    let harness = harness(
+        origin.addr,
+        Setup {
+            max_connections: 1,
+            ..Setup::intercepting(ca.root.clone())
+        },
+    )
+    .await;
+
+    let (sender, connection, mut body) = held_page_in_flight(&harness).await;
+    origin.cut.notify_waiters();
+    let rest = tokio::time::timeout(Duration::from_secs(10), async move {
+        let mut more = 0usize;
+        while let Some(frame) = body.frame().await {
+            if let Ok(data) = frame?.into_data() {
+                more += data.len();
+            }
+        }
+        Ok::<_, hyper::Error>(more)
     })
     .await
-    .expect("the cut origin must surface within 10 s");
-    match &outcome {
-        Ok((status, Ok(body))) if *status == StatusCode::OK && body.len() == PAGE_BYTES => {
-            eprintln!("note: the origin's cut landed after the whole page was flushed")
-        }
-        Ok((status, body)) => eprintln!(
-            "upstream cut surfaced to the client as status {status}, body {:?}",
-            body.as_ref().map(|body| body.len())
+    .expect("the cut origin must surface to the client within 10 s");
+    match &rest {
+        Ok(more) => eprintln!(
+            "upstream cut surfaced to the client as end of stream after {more} more bytes"
         ),
         Err(err) => eprintln!("upstream cut surfaced to the client as {err}"),
     }
@@ -1671,6 +1728,42 @@ async fn an_ipv6_listed_client_is_intercepted_end_to_end() {
     assert_eq!(allowed.status(), StatusCode::OK);
     assert_eq!(body_of(allowed).await, page());
     assert_eq!(harness.store.leaf_cache_stats().minted_total, 1);
+    harness.shutdown();
+}
+
+#[tokio::test]
+async fn the_terminate_leg_counts_connections_and_judged_requests_separately() {
+    let ca = origin_ca();
+    let (cert, key) = leaf_signed_by(&ca);
+    let origin = origin(Proto::H1, cert, key).await;
+    let harness = harness(
+        origin.addr,
+        Setup {
+            rules: Some(rules_with(&format!("||{ORIGIN_NAME}/ads/\n"))),
+            ..Setup::intercepting(ca.root.clone())
+        },
+    )
+    .await;
+
+    let tls = tls_to(harness.addr, &harness.ours(Proto::H1))
+        .await
+        .unwrap();
+    let mut client = Client::over(tls, Proto::H1).await;
+    let allowed = client.get("/page", "text/html").await;
+    assert_eq!(allowed.status(), StatusCode::OK);
+    body_of(allowed).await;
+    let blocked = client.get("/ads/pixel.gif", "image/*").await;
+    assert_eq!(blocked.status(), StatusCode::OK);
+    body_of(blocked).await;
+
+    let counters = harness.counters.snapshot();
+    assert_eq!(counters.connections, 1, "one accepted connection");
+    assert_eq!(
+        counters.requests, 3,
+        "the SNI verdict plus two HTTP requests judged inside TLS"
+    );
+    assert_eq!(counters.blocked, 1);
+    assert!(counters.blocked <= counters.requests);
     harness.shutdown();
 }
 

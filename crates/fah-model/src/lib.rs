@@ -19,8 +19,8 @@ pub use client::Client;
 pub use client_transport::ClientTransport;
 pub use engine::{
     AnswerCounters, CacheCleanupCounters, DnsCounters, DnsLatency, EngineCounters, EngineTelemetry,
-    HttpCounters, HttpLatency, LatencyTotals, ListFetchCounters, RulesetInfo, StageTotals,
-    SwrCounters,
+    HttpCounters, HttpLatency, LatencyTotals, ListFetchCounters, ListenerCounters,
+    ListenerTelemetry, RulesetInfo, StageTotals, SwrCounters,
 };
 pub use history::{
     ClientHits, DailyTopN, DomainHits, HistoryPoint, HistoryRange, HistoryResolution,

@@ -250,6 +250,13 @@ cargo test --all-features --workspace
 cargo bench           # when a hot path is touched; >10% regression needs justification
 ```
 
+`--all-features` enables the binary's `test-harness` feature, which the p3-06
+full-mode e2e (`e2e_https.rs`) needs to inject an upstream trust anchor for its
+loopback origin. Without it that test fails rather than passing on the
+fail-closed path; `FAH_SECURITY_ALLOW_SKIP=1` is the only way to accept the
+degraded run (or a `127.0.0.x:443` origin that cannot bind), and a gate run
+never sets it.
+
 Conventional Commits (`feat:`, `fix:`, `perf:`, …), trunk-based, short-lived
 branches. `unsafe` requires a `// SAFETY:` comment.
 

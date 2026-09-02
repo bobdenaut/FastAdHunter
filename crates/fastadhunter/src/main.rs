@@ -542,9 +542,28 @@ impl Engine {
             let listen = config.dns.listen.clone();
             let certs = certs.clone();
             tokio::task::spawn_blocking(move || dot_tls(&listen, certs.as_ref())).await?
+        } else if config.dns.listen.dot_enabled {
+            Err(
+                "the API certificate pair did not load — the DoT listener is closed until \
+                 /config is repaired and the container restarted"
+                    .to_string(),
+            )
         } else {
-            None
+            Ok(None)
         };
+        let dot_listener = match (&dot, dns.dot_addr()) {
+            (Ok(Some(_)), Some(address)) => fah_api::DotListener::Listening { address },
+            (Ok(Some(_)), None) => fah_api::DotListener::Closed {
+                reason: "the DoT socket was never bound".to_string(),
+            },
+            (Ok(None), _) => fah_api::DotListener::Closed {
+                reason: "[dns.listen] dot_enabled = false".to_string(),
+            },
+            (Err(reason), _) => fah_api::DotListener::Closed {
+                reason: reason.clone(),
+            },
+        };
+        let dot = dot.unwrap_or(None);
         let doh = config.dns.listen.doh_enabled.then(|| {
             Arc::new(adapters::DnsWireAdapter::new(Arc::clone(&pipeline)))
                 as Arc<dyn fah_api::DnsWireSource>
@@ -573,6 +592,8 @@ impl Engine {
                 telemetry: Arc::new(adapters::TelemetryAdapter::new(
                     Arc::clone(&metrics),
                     upstreams.clone(),
+                    http_proxy.as_ref().map(|proxy| proxy.counters()),
+                    tls_proxy.as_ref().map(|proxy| proxy.counters()),
                 )),
                 cache: Arc::new(adapters::CacheAdapter::new(Arc::clone(&pipeline))),
                 config: Arc::new(fah_api::ConfigStore::new(config, config_path.to_path_buf())),
@@ -580,6 +601,7 @@ impl Engine {
                 auth: Arc::new(auth),
                 certs,
                 doh,
+                dot: dot_listener,
             },
         )
         .await?;
@@ -736,26 +758,27 @@ fn egress_exceptions(
 fn dot_tls(
     listen: &fah_config::DnsListenConfig,
     certs: Option<&Arc<fah_api::CertStore>>,
-) -> Option<fah_dns::DotTls> {
+) -> Result<Option<fah_dns::DotTls>, String> {
     if !listen.dot_enabled {
-        return None;
+        return Ok(None);
     }
     let Some(store) = certs else {
-        tracing::error!(
-            "[dns.listen] dot_enabled = true, but the certificate store did not open — the DoT \
-             listener is closed until /config is repaired and the container restarted"
-        );
-        return None;
+        let reason = "[dns.listen] dot_enabled = true, but the certificate store did not open — \
+                      the DoT listener is closed until /config is repaired and the container \
+                      restarted"
+            .to_string();
+        tracing::error!("{reason}");
+        return Err(reason);
     };
     let fallback = match store.api_certified_key() {
         Ok(key) => key,
         Err(error) => {
-            tracing::error!(
-                %error,
-                "the API certificate pair did not load — the DoT listener is closed until \
-                 /config is repaired and the container restarted"
+            let reason = format!(
+                "the API certificate pair did not load ({error}) — the DoT listener is closed \
+                 until /config is repaired and the container restarted"
             );
-            return None;
+            tracing::error!("{reason}");
+            return Err(reason);
         }
     };
     match fah_dns::DotTls::new(Arc::clone(store), fallback) {
@@ -772,11 +795,14 @@ fn dot_tls(
                      /api/v1/certificates for Android Private DNS hostname mode"
                 ),
             }
-            Some(tls)
+            Ok(Some(tls))
         }
         Err(error) => {
-            tracing::error!(%error, "the DoT TLS configuration did not build; the listener is closed");
-            None
+            let reason = format!(
+                "the DoT TLS configuration did not build ({error}); the listener is closed"
+            );
+            tracing::error!("{reason}");
+            Err(reason)
         }
     }
 }
@@ -818,7 +844,10 @@ fn interception(
         );
     }
     let server = fah_http::server_config(Arc::clone(store))?;
+    #[cfg(not(feature = "test-harness"))]
     let client = fah_http::client_config()?;
+    #[cfg(feature = "test-harness")]
+    let client = test_harness_upstream_client_config()?;
     tracing::info!(
         count = clients.len(),
         exclusions = exclusions.len(),
@@ -831,6 +860,26 @@ fn interception(
         clients,
         exclusions,
     )))
+}
+
+#[cfg(feature = "test-harness")]
+fn test_harness_upstream_client_config(
+) -> Result<Arc<rustls::ClientConfig>, Box<dyn std::error::Error>> {
+    const ROOT_ENV: &str = "FAH_TEST_UPSTREAM_ROOT";
+    let mut roots = rustls::RootCertStore {
+        roots: webpki_roots::TLS_SERVER_ROOTS.to_vec(),
+    };
+    if let Some(path) = std::env::var_os(ROOT_ENV) {
+        let der = std::fs::read(&path)
+            .map_err(|err| format!("{ROOT_ENV}: reading {}: {err}", path.to_string_lossy()))?;
+        roots.add(rustls::pki_types::CertificateDer::from(der))?;
+        tracing::warn!(
+            path = %path.to_string_lossy(),
+            "built with the test-harness feature: an extra upstream trust anchor was loaded \
+             from {ROOT_ENV}. This build must never be shipped"
+        );
+    }
+    Ok(fah_http::client_config_with_roots(roots)?)
 }
 
 fn build_tls_proxy(
