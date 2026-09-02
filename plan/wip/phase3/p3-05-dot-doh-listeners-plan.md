@@ -10,8 +10,10 @@
    Summary** (declared dependency): the actual TLS `ServerConfig` construction
    path for the API pair.
 4. Implementation Summaries of p3-02/p3-03/p3-04 reviews **only where this
-   task touches them**: p3-02 for the API-cert source, p3-04 only if it
-   changed `fah-api` server wiring. Do not read their full findings.
+   task touches them**: p3-02 for the API-cert source, p3-04 for the shared
+   leaf LRU (its review's N4 — the p3-05 half is a required check in Step 5
+   below; p3-04 did not change `fah-api` server wiring). Do not read their
+   full findings beyond that.
 5. ARCHITECTURE.md §Listeners, §Dependency Layering (Ports table), §Runtime
    Model — the wiring rules this task must not bend.
 6. CONFIGURATION.md `[dns.listen]` and `[api]` sections only.
@@ -219,6 +221,20 @@ reused for the client-side dimension — its doc comment says why).
   in status. Test: mint, advance the entry past expiry (the `fah-certs` unit
   tests show the pattern), assert the re-warm restores a `cached_leaf` hit
   without the fallback ever being served.
+  **p3-04 shares this cache — required check before DONE (p3-04 review N4,
+  its p3-05 half).** The interception leg (p3-04) mints one leaf per browsed
+  host of a listed client into the same 512-entry LRU
+  (`fah_certs::LEAF_CACHE_CAPACITY`), evicted by recency — so more than 512
+  first-sight hosts between two DoT handshakes evict the DoT leaf,
+  `cached_leaf` misses, and the fallback (API pair) is served: exactly what
+  Private DNS hostname mode rejects (decision 3). Choose the re-warm interval
+  against LRU pressure, not against the 7-day validity — a still-fresh
+  `prewarm` is a cache hit, so minutes are free — and state the chosen value
+  and why in the review file. Add the test: pre-warm the DoT hostname, mint
+  512 other hosts through the same store, assert the DoT entry is gone, run
+  one re-warm tick, assert `cached_leaf(dot_hostname)` is a hit again. Also
+  `unwarmed_misses` is now shared with p3-04's terminate leg; p3-06 reads it
+  as a detector for both and must be able to attribute a non-zero value.
 - **`api_certified_key()` has no interrupted-replacement recovery of its own**
   (p3-02 final review, §Deferred items — LOW-B's root). `load_or_generate`
   heals a crash between the API pair's two commit renames

@@ -42,6 +42,9 @@ The whole `[https]` section is **boot** on the same terms: the listener and its
 semaphore are built once at bind, and the two timeouts become per-connection
 deadlines held by the proxy handle. `[https.sni] no_sni` is read per connection
 but from the boot-time handle, so changing it needs a restart like the rest.
+`[https.interception]` is parsed into the proxy handle at the same moment; the
+CA it mints from is the one live thing on that path (`/api/v1/certificates`
+can generate or replace it without a restart).
 
 `[schedule]` and `[[policies]]` became **runtime** in p2-06, through their own
 endpoints (API.md §Policies) rather than `POST /api/v1/config`, which rejects
@@ -193,26 +196,53 @@ port = 8444                   # boot    — NOT 443 (privileged, ADR-0004) and
                               #           port is rejected at load, by name
 
 [https]
-max_connections = 1024        # boot    — ceiling on concurrent spliced
-                              #           sessions; the accept loop is the same
-                              #           one [http] uses, permit before accept.
-                              #           Splice memory is 2 x 16 KiB per
-                              #           session, so this key is the bound on
-                              #           it (~32 MB at the default)
+max_connections = 1024        # boot    — ceiling on concurrent HTTPS sessions,
+                              #           spliced and intercepted alike; the
+                              #           accept loop is the same one [http]
+                              #           uses, permit before accept. Splice
+                              #           memory is 2 x 16 KiB per session
+                              #           (~32 MB at the default). An
+                              #           INTERCEPTED session (listed client,
+                              #           [https.interception]) is bounded by
+                              #           fixed hyper limits set in code, not
+                              #           by hyper's defaults: h2 receive
+                              #           windows 256 KiB per connection and
+                              #           64 KiB per stream, 64 KiB send buffer
+                              #           PER STREAM, 64 concurrent streams, h1
+                              #           buffers 128 KiB — on BOTH the client
+                              #           and the origin side. Worst case per
+                              #           session, every stream stalled against
+                              #           a slow client: 64 x (64 + 16) KiB of
+                              #           response send buffers, ~5 MiB, plus
+                              #           the two 256 KiB receive windows —
+                              #           ~5.5 MiB; the same again only if 64
+                              #           uploads stall too. Typical is far
+                              #           below that: a send buffer fills only
+                              #           when the client stops reading. Plus
+                              #           two TLS sessions; bodies stream and
+                              #           are never held. A silent preconnect
+                              #           holds a permit for up to
+                              #           hello_timeout_ms
 hello_timeout_ms = 10000      # boot    — deadline for a client to finish
                               #           sending its ClientHello, and the
                               #           deadline on the upstream connect. A
                               #           blackholed destination must not hold
                               #           a max_connections permit for the
-                              #           kernel's SYN-retry window. 0 is
-                              #           rejected at load
-idle_timeout_ms = 60000       # boot    — a spliced session with no activity in
-                              #           BOTH directions for this long is
-                              #           closed (one session-wide deadline, not
-                              #           one per direction). Long-lived idle
-                              #           connections (WebSocket over TLS) are
-                              #           cut and must reconnect; raise it if
-                              #           that matters. 0 is rejected at load
+                              #           kernel's SYN-retry window. On an
+                              #           intercepted session it also bounds
+                              #           the upstream TLS verification (each
+                              #           reconnect too) and our own handshake;
+                              #           the wait between requests is
+                              #           idle_timeout_ms, h1 and h2 alike. 0
+                              #           is rejected at load
+idle_timeout_ms = 60000       # boot    — a spliced or intercepted session with
+                              #           no activity in BOTH directions for
+                              #           this long is closed (one session-wide
+                              #           deadline, not one per direction).
+                              #           Long-lived idle connections
+                              #           (WebSocket over TLS) are cut and must
+                              #           reconnect; raise it if that matters.
+                              #           0 is rejected at load
 
 [https.sni]
 no_sni = "pass"               # boot    — "pass" | "block". A ClientHello with
@@ -225,6 +255,65 @@ no_sni = "pass"               # boot    — "pass" | "block". A ClientHello with
                               #           nothing to splice to. This key decides
                               #           only how that closed connection is
                               #           classified in events and metrics
+
+[https.interception]
+clients = []                  # boot    — IP addresses or CIDR blocks whose
+                              #           HTTPS is TERMINATED with a leaf minted
+                              #           by the installed CA and filtered at
+                              #           URL level (SECURITY.md §Later phases,
+                              #           CONTEXT.md §Terminate Leg). DEFAULT
+                              #           EMPTY = nobody is intercepted; every
+                              #           other client splices. PRECONDITION:
+                              #           every listed client holds a static
+                              #           DHCP lease or a static address on the
+                              #           router — the source IP is the only
+                              #           identity the container sees, and a
+                              #           reassigned lease silently moves
+                              #           interception to whichever device
+                              #           inherits the address. The client must
+                              #           also trust the CA (/api/v1/certificates
+                              #           export); one that does not is closed
+                              #           after a wasted upstream handshake.
+                              #           A bad entry is rejected at load, by
+                              #           name. Listed clients with no CA
+                              #           installed, or with a certificate store
+                              #           that did not open, are spliced
+                              #           (store) or closed (no CA) — never
+                              #           fatal, DNS keeps resolving; one warn!
+                              #           at boot names which
+exclude_domains = []          # boot    — SNI hostnames that always splice,
+                              #           even for a listed client; a name
+                              #           excludes itself and every subdomain
+                              #           ("bank.example" covers
+                              #           "api.bank.example", not
+                              #           "notbank.example"). MERGED with the
+                              #           compiled-in baseline of
+                              #           certificate-pinned families, which
+                              #           applies with this key empty: Apple
+                              #           (apple.com, icloud.com, mzstatic.com,
+                              #           apple-cloudkit.com), Google/Android
+                              #           (android.com, googleapis.com,
+                              #           play.google.com,
+                              #           android.clients.google.com,
+                              #           clients.google.com, mtalk.google.com,
+                              #           gvt1/gvt2/gvt3.com), Microsoft
+                              #           (windowsupdate.com,
+                              #           update.microsoft.com,
+                              #           delivery.mp.microsoft.com,
+                              #           login.microsoftonline.com,
+                              #           notify.windows.com, wns.windows.com),
+                              #           WhatsApp (whatsapp.net/.com),
+                              #           signal.org, PayPal, Revolut, Wise,
+                              #           N26 and eight Romanian bank domains
+                              #           (bancatransilvania.ro, btrl.ro,
+                              #           ing.ro, bcr.ro, george.ro, brd.ro,
+                              #           raiffeisen.ro, unicredit.ro). The
+                              #           baseline cannot be removed from
+                              #           config; it is the shipped default
+                              #           (fah_http::BASELINE_EXCLUSIONS). An
+                              #           entry that is not a hostname (a
+                              #           wildcard, a scheme, a path, a port)
+                              #           is rejected at load, by name
 
 # ─── Egress (where the proxies may connect) ────────────────────────────
 # NOT under [http] on purpose: Phase 3's HTTPS path derives its destination

@@ -51,7 +51,7 @@ const VIA_VALUE: HeaderValue = HeaderValue::from_static("1.1 fastadhunter");
 /// Response body: either the upstream's stream, relayed untouched, or a short
 /// synthesized message. [`Either`] rather than a boxed body — no virtual call
 /// per body chunk.
-type ProxyBody = Either<Incoming, Full<Bytes>>;
+pub(crate) type ProxyBody = Either<Incoming, Full<Bytes>>;
 
 /// Hop-by-hop headers, which a proxy must not forward (RFC 9110 §7.6.1).
 /// `Connection` itself may also name further ones; those are stripped
@@ -81,6 +81,8 @@ pub struct ProxyCounters {
     /// Connections that spoke something other than HTTP on the proxy port.
     pub non_http: AtomicU64,
     pub non_tls: AtomicU64,
+    pub hello_timeouts: AtomicU64,
+    pub upstream_cert_failures: AtomicU64,
     /// Requests refused by a filtering rule (p2-04).
     pub blocked: AtomicU64,
     /// Events the bounded channel could not take. Mirrors the DNS pipeline's
@@ -99,6 +101,8 @@ pub struct ProxyStats {
     pub upstream_failures: u64,
     pub non_http: u64,
     pub non_tls: u64,
+    pub hello_timeouts: u64,
+    pub upstream_cert_failures: u64,
     pub blocked: u64,
     pub dropped_events: u64,
 }
@@ -113,6 +117,8 @@ impl ProxyCounters {
             upstream_failures: self.upstream_failures.load(Ordering::Relaxed),
             non_http: self.non_http.load(Ordering::Relaxed),
             non_tls: self.non_tls.load(Ordering::Relaxed),
+            hello_timeouts: self.hello_timeouts.load(Ordering::Relaxed),
+            upstream_cert_failures: self.upstream_cert_failures.load(Ordering::Relaxed),
             blocked: self.blocked.load(Ordering::Relaxed),
             dropped_events: self.dropped_events.load(Ordering::Relaxed),
         }
@@ -391,77 +397,30 @@ impl Proxy {
     /// host, path, method and resource type all have to be taken off the head
     /// before it is handed upstream.
     fn judge(&self, request: &Request<Incoming>, claim: &Destination, peer: SocketAddr) -> Judged {
-        let resource_type = crate::request::resource_type(request.headers(), request.uri());
-        let authority = match claim.port {
-            port if port == self.origin_port => claim.host.clone(),
-            port => format!("{}:{port}", claim.host),
-        };
-        let url = crate::request::absolute_url(request, &authority);
-        let host = crate::request::request_host(&claim.host).to_string();
-        let path = request
-            .uri()
-            .path_and_query()
-            .map_or("/", |pq| pq.as_str())
-            .to_string();
-
-        let (verdict, policy) = match &self.rules {
-            None => (Verdict::Pass, None),
-            Some(rules) => {
-                let matcher = rules.matcher();
-                let active = self.policies.current();
-                // Same helper the DNS pipeline calls, so a client cannot land
-                // in one policy for a name and another for a fetch.
-                let ctx = matcher.context_for(peer.ip(), &active);
-                let document_host = crate::request::document_host(request.headers());
-                let model = HttpRequest {
-                    url: &url,
-                    host: &host,
-                    method: request.method().as_str(),
-                    resource_type,
-                    document_host,
-                };
-                let verdict = match matcher.lookup_http_in(&model, &ctx) {
-                    MatchDecision::Block(rule) => Verdict::Block(matcher.decisive_rule(rule)),
-                    MatchDecision::Allow(rule) => Verdict::Allow(matcher.decisive_rule(rule)),
-                    MatchDecision::Pass => Verdict::Pass,
-                };
-                (verdict, active.id_of(ctx.policy))
-            }
-        };
-
-        Judged {
-            request: ModelRequest {
-                host,
-                path,
-                method: request.method().as_str().to_string(),
-                resource_type,
-                client_ip: peer.ip(),
-                timestamp: SystemTime::now(),
-            },
-            resource_type,
-            verdict,
-            policy,
-        }
+        judge(
+            self.rules.as_deref(),
+            &self.policies,
+            "http",
+            self.origin_port,
+            request,
+            claim,
+            peer,
+        )
     }
 
     /// Publishes the completed request. Never blocks the response: a full
     /// channel sheds and counts, exactly as the DNS pipeline does — an
     /// observability queue must not become a backpressure path onto traffic.
     fn emit(&self, judged: &Judged, started: Instant, status: u16, bytes: u64) {
-        let Some(events) = &self.events else {
-            return;
-        };
-        let event = RequestEvent::new(
-            judged.request.clone(),
-            judged.verdict.clone(),
-            started.elapsed(),
+        emit(
+            self.events.as_ref(),
+            &self.counters,
+            Event::http,
+            judged,
+            started,
             status,
             bytes,
-        )
-        .under_policy(judged.policy.clone());
-        if events.try_send(Event::http(event)).is_err() {
-            self.counters.dropped_events.fetch_add(1, Ordering::Relaxed);
-        }
+        );
     }
 
     /// Resolves the claim and returns the first address the policy allows.
@@ -549,17 +508,106 @@ impl Proxy {
 
 /// One request's verdict plus everything the event will need, captured before
 /// the head is handed upstream.
-struct Judged {
-    request: ModelRequest,
-    resource_type: ResourceType,
-    verdict: Verdict,
-    policy: Option<Arc<str>>,
+pub(crate) struct Judged {
+    pub(crate) request: ModelRequest,
+    pub(crate) resource_type: ResourceType,
+    pub(crate) verdict: Verdict,
+    pub(crate) policy: Option<Arc<str>>,
+}
+
+pub(crate) fn judge(
+    rules: Option<&dyn Ruleset>,
+    policies: &PolicyState,
+    scheme: &str,
+    origin_port: u16,
+    request: &Request<Incoming>,
+    claim: &Destination,
+    peer: SocketAddr,
+) -> Judged {
+    let resource_type = crate::request::resource_type(request.headers(), request.uri());
+    let authority = match claim.port {
+        port if port == origin_port => claim.host.clone(),
+        port => format!("{}:{port}", claim.host),
+    };
+    let url = crate::request::absolute_url(scheme, request, &authority);
+    let host = crate::request::request_host(&claim.host).to_string();
+    let path = request
+        .uri()
+        .path_and_query()
+        .map_or("/", |pq| pq.as_str())
+        .to_string();
+
+    let (verdict, policy) = match rules {
+        None => (Verdict::Pass, None),
+        Some(rules) => {
+            let matcher = rules.matcher();
+            let active = policies.current();
+            let ctx = matcher.context_for(peer.ip(), &active);
+            let document_host = crate::request::document_host(request.headers());
+            let model = HttpRequest {
+                url: &url,
+                host: &host,
+                method: request.method().as_str(),
+                resource_type,
+                document_host,
+            };
+            let verdict = match matcher.lookup_http_in(&model, &ctx) {
+                MatchDecision::Block(rule) => Verdict::Block(matcher.decisive_rule(rule)),
+                MatchDecision::Allow(rule) => Verdict::Allow(matcher.decisive_rule(rule)),
+                MatchDecision::Pass => Verdict::Pass,
+            };
+            (verdict, active.id_of(ctx.policy))
+        }
+    };
+
+    Judged {
+        request: ModelRequest {
+            host,
+            path,
+            method: request.method().as_str().to_string(),
+            resource_type,
+            client_ip: peer.ip(),
+            timestamp: SystemTime::now(),
+        },
+        resource_type,
+        verdict,
+        policy,
+    }
+}
+
+pub(crate) fn emit(
+    events: Option<&mpsc::Sender<Event>>,
+    counters: &ProxyCounters,
+    wrap: fn(RequestEvent) -> Event,
+    judged: &Judged,
+    started: Instant,
+    status: u16,
+    bytes: u64,
+) {
+    let Some(events) = events else {
+        return;
+    };
+    let event = RequestEvent::new(
+        judged.request.clone(),
+        judged.verdict.clone(),
+        started.elapsed(),
+        status,
+        bytes,
+    )
+    .under_policy(judged.policy.clone());
+    publish(events, counters, wrap(event));
+}
+
+pub(crate) fn publish(events: &mpsc::Sender<Event>, counters: &ProxyCounters, event: Event) {
+    if events.try_send(event).is_err() {
+        counters.dropped_events.fetch_add(1, Ordering::Relaxed);
+    }
 }
 
 impl Judged {
     /// `Some(rule)` when this request must be refused. `Verdict::Allow` is an
     /// exception *matching*, which means forward — not a second kind of block.
-    fn blocked(&self) -> Option<Option<&DecisiveRule>> {
+    pub(crate) fn blocked(&self) -> Option<Option<&DecisiveRule>> {
         match &self.verdict {
             Verdict::Block(rule) => Some(Some(rule)),
             Verdict::Allow(_) | Verdict::Pass => None,
@@ -567,7 +615,7 @@ impl Judged {
     }
 }
 
-fn to_client_response(response: Response<Incoming>) -> Response<ProxyBody> {
+pub(crate) fn to_client_response(response: Response<Incoming>) -> Response<ProxyBody> {
     let (mut parts, body) = response.into_parts();
     strip_hop_by_hop(&mut parts.headers);
     append_via(&mut parts.headers);
@@ -576,7 +624,7 @@ fn to_client_response(response: Response<Incoming>) -> Response<ProxyBody> {
 }
 
 /// A short synthesized response. The only body this proxy ever creates.
-fn refuse(status: StatusCode) -> Response<ProxyBody> {
+pub(crate) fn refuse(status: StatusCode) -> Response<ProxyBody> {
     let mut response = Response::new(Either::Right(Full::new(Bytes::from_static(
         b"FastAdHunter: request refused\n",
     ))));
@@ -587,7 +635,7 @@ fn refuse(status: StatusCode) -> Response<ProxyBody> {
 /// Removes hop-by-hop headers, including the ones `Connection` names
 /// (RFC 9110 §7.6.1). Forwarding these is how a proxy leaks framing decisions
 /// between two connections that made them independently.
-fn strip_hop_by_hop(headers: &mut hyper::HeaderMap) {
+pub(crate) fn strip_hop_by_hop(headers: &mut hyper::HeaderMap) {
     // Collect first: the names come out of the very header being removed.
     let named: Vec<HeaderName> = headers
         .get_all(CONNECTION)
@@ -604,7 +652,7 @@ fn strip_hop_by_hop(headers: &mut hyper::HeaderMap) {
     }
 }
 
-fn append_via(headers: &mut hyper::HeaderMap) {
+pub(crate) fn append_via(headers: &mut hyper::HeaderMap) {
     headers.append(VIA, VIA_VALUE);
 }
 

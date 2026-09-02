@@ -175,7 +175,9 @@ mod tests {
     async fn a_client_that_never_sends_a_hello_is_cut_off() {
         let mut server = TlsServer::bind(&config(0)).await.unwrap();
         let addr = server.local_addr();
-        server.serve(proxy_with(Duration::from_millis(150)));
+        let proxy = proxy_with(Duration::from_millis(150));
+        let counters = proxy.counters();
+        server.serve(proxy);
 
         let mut stream = TcpStream::connect(addr).await.unwrap();
         stream.write_all(&[0x16, 0x03, 0x01]).await.unwrap();
@@ -186,6 +188,9 @@ mod tests {
             .expect("the hello deadline must close a stalled handshake")
             .unwrap();
         assert!(response.is_empty());
+        let counters = counters.snapshot();
+        assert_eq!(counters.hello_timeouts, 1);
+        assert_eq!(counters.non_tls, 0);
         server.shutdown();
     }
 

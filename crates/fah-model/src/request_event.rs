@@ -96,6 +96,7 @@ pub enum Event {
     Http(Box<RequestEvent>),
     #[serde(rename = "https-sni")]
     HttpsSni(Box<RequestEvent>),
+    Https(Box<RequestEvent>),
 }
 
 impl Event {
@@ -111,6 +112,10 @@ impl Event {
         Self::HttpsSni(Box::new(event))
     }
 
+    pub fn https(event: RequestEvent) -> Self {
+        Self::Https(Box::new(event))
+    }
+
     /// The stable `dns` / `http` discriminator the API publishes. A method
     /// rather than a derived string so the surfaces using it can never
     /// disagree about spelling.
@@ -119,27 +124,32 @@ impl Event {
             Event::Dns(_) => EventKind::Dns,
             Event::Http(_) => EventKind::Http,
             Event::HttpsSni(_) => EventKind::HttpsSni,
+            Event::Https(_) => EventKind::Https,
         }
     }
 
     pub fn client_ip(&self) -> IpAddr {
         match self {
             Event::Dns(event) => event.query.client_ip,
-            Event::Http(event) | Event::HttpsSni(event) => event.request.client_ip,
+            Event::Http(event) | Event::HttpsSni(event) | Event::Https(event) => {
+                event.request.client_ip
+            }
         }
     }
 
     pub fn timestamp(&self) -> SystemTime {
         match self {
             Event::Dns(event) => event.query.timestamp,
-            Event::Http(event) | Event::HttpsSni(event) => event.request.timestamp,
+            Event::Http(event) | Event::HttpsSni(event) | Event::Https(event) => {
+                event.request.timestamp
+            }
         }
     }
 
     pub fn verdict(&self) -> &Verdict {
         match self {
             Event::Dns(event) => &event.verdict,
-            Event::Http(event) | Event::HttpsSni(event) => &event.verdict,
+            Event::Http(event) | Event::HttpsSni(event) | Event::Https(event) => &event.verdict,
         }
     }
 
@@ -147,7 +157,9 @@ impl Event {
     pub fn policy(&self) -> Option<&str> {
         match self {
             Event::Dns(event) => event.policy.as_deref(),
-            Event::Http(event) | Event::HttpsSni(event) => event.policy.as_deref(),
+            Event::Http(event) | Event::HttpsSni(event) | Event::Https(event) => {
+                event.policy.as_deref()
+            }
         }
     }
 }
@@ -161,6 +173,7 @@ pub enum EventKind {
     Http,
     #[serde(rename = "https-sni")]
     HttpsSni,
+    Https,
 }
 
 impl EventKind {
@@ -171,6 +184,7 @@ impl EventKind {
             EventKind::Dns => "dns",
             EventKind::Http => "http",
             EventKind::HttpsSni => "https-sni",
+            EventKind::Https => "https",
         }
     }
 }
@@ -189,6 +203,7 @@ impl std::str::FromStr for EventKind {
             "dns" => Ok(EventKind::Dns),
             "http" => Ok(EventKind::Http),
             "https-sni" => Ok(EventKind::HttpsSni),
+            "https" => Ok(EventKind::Https),
             _ => Err(()),
         }
     }
@@ -260,7 +275,17 @@ mod tests {
         assert!(serde_json::to_string(&sni)
             .unwrap()
             .contains("\"kind\":\"https-sni\""));
-        for event in [dns, http, sni] {
+        let https = Event::https(RequestEvent::new(
+            request(),
+            Verdict::Pass,
+            Duration::from_millis(30),
+            526,
+            0,
+        ));
+        assert!(serde_json::to_string(&https)
+            .unwrap()
+            .contains("\"kind\":\"https\""));
+        for event in [dns, http, sni, https] {
             let json = serde_json::to_string(&event).unwrap();
             assert_eq!(serde_json::from_str::<Event>(&json).unwrap(), event);
         }
@@ -274,6 +299,7 @@ mod tests {
             (EventKind::Dns, "dns"),
             (EventKind::Http, "http"),
             (EventKind::HttpsSni, "https-sni"),
+            (EventKind::Https, "https"),
         ] {
             assert_eq!(kind.as_str(), text);
             assert_eq!(kind.to_string(), text);

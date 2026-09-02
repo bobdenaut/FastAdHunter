@@ -263,7 +263,7 @@ fn server_name(reader: &mut Records<'_>, ext_len: usize, name: &mut [u8; MAX_NAM
     }
 }
 
-fn normalize(raw: &[u8]) -> Option<Box<str>> {
+pub(crate) fn normalize(raw: &[u8]) -> Option<Box<str>> {
     if raw.is_empty() || raw.len() > MAX_NAME_LEN {
         return None;
     }

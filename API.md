@@ -98,6 +98,13 @@ only signal of a LAN client probing, now that refusals log at `debug`. Since
 p3-03 it also includes the HTTPS SNI listener's refused destinations. That
 listener keeps its own counter set, where `requests` means accepted
 *connections* (garbage included), not requests; it is not published separately.
+Since p3-04 that set also splits `non_tls` (bytes that were never TLS) from
+`hello_timeouts` (silence: EOF, reset or the `hello_timeout_ms` deadline
+before a complete ClientHello — browser preconnects land here) and carries
+`upstream_cert_failures` (an intercepted client's origin failed certificate
+verification; the `status 526` events). None of the three is published yet;
+they exist so a later `/telemetry` block can expose them without changing
+their meaning.
 
 **Compatibility contract.** New fields may be added; existing fields must not
 change meaning or units. Figures that may change with the implementation live
@@ -979,8 +986,8 @@ Filtering is server-side and happens before the send. A subscription that omits
 WebSocket `Ping` on the same ~2 s cadence instead — the traffic that lets a peer
 which vanished without closing be detected.
 
-A `query` event carries all three pipelines, tagged by `kind` — `dns`, `http`
-or `https-sni` (p3-03):
+A `query` event carries every pipeline, tagged by `kind` — `dns`, `http`,
+`https-sni` (p3-03) or `https` (p3-04):
 
 ```json
 {
@@ -1019,6 +1026,24 @@ deadline), `0` on a block, a refused destination or a failed connect, and
 `duration_ms` is ClientHello-to-upstream-connected (the request-latency
 analogue), not the session length. There is no per-kind filter on this
 socket; a client selects `https-sni` items by the `kind` field.
+
+An `https` item (p3-04) is one HTTP request judged **inside** an intercepted
+TLS session of a client listed in `[https.interception]`. It is shaped exactly
+like an `http` item — `domain`, `method`, `path`, `resource_type`, `status`
+and `bytes` all filled, the URL judged as `https://…` — and `bytes` means the
+same thing as for `http`: the upstream's declared `Content-Length`, `0` when
+the body length is unknown (chunked) or the request was blocked. Two statuses
+are synthesized by FastAdHunter rather than relayed: **`526`** — the origin's
+certificate failed verification, so nothing was fetched and the client was
+closed (or, on a reconnect inside a session, answered 526); **`421`** — the
+request's `Host`/`:authority` is not the SNI the session was verified for, or
+names a port other than the origin port; `domain` is the name the client
+claimed. An intercepted session that ends
+before any request (upstream unreachable, no CA to mint from, the client
+rejected our certificate) emits one `https` item with empty `method`/`path`,
+`status 0` and `bytes 0` — the connection-level shape `https-sni` uses —
+so a listed device whose failures never reach HTTP still shows up. An
+intercepted session emits no `https-sni` item.
 
 One exception (p2.5-10): `endpoint` is **present only** on a DNS item that an
 upstream answered — the index of that server in `[dns.upstreams.servers]`

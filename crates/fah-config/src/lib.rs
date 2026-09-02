@@ -14,9 +14,9 @@ pub use schema::{
     parse_days, parse_time_of_day, ApiConfig, AssignmentConfig, BlockingMode, Config,
     DnsBlockingConfig, DnsCacheConfig, DnsConfig, DnsListenConfig, DnsUpstreamsConfig,
     EngineConfig, EngineMode, HistoryConfig, HttpConfig, HttpListenConfig, HttpsConfig,
-    HttpsListenConfig, LogConfig, LogFormat, LogLevel, NoSni, PolicyConfig, RuleListConfig,
-    RulesConfig, ScheduleConfig, SniConfig, StatsConfig, UpstreamProtocol, UpstreamServerConfig,
-    UpstreamStrategy,
+    HttpsListenConfig, InterceptionConfig, LogConfig, LogFormat, LogLevel, NoSni, PolicyConfig,
+    RuleListConfig, RulesConfig, ScheduleConfig, SniConfig, StatsConfig, UpstreamProtocol,
+    UpstreamServerConfig, UpstreamStrategy,
 };
 pub use tz::{LocalTime, PosixTz, TzError};
 

@@ -417,17 +417,6 @@ impl Engine {
             None
         };
 
-        let tls_proxy = if https.is_some() {
-            Some(Arc::new(
-                build_tls_proxy(&config, upstreams.clone())?
-                    .with_rules(Arc::clone(&rules) as Arc<dyn fah_http::Ruleset>)
-                    .with_policies(Arc::clone(&policy_state))
-                    .with_events(events_tx.clone()),
-            ))
-        } else {
-            None
-        };
-
         // ── Privilege drop (ADR-0004) ──
         // Port 53 is the only thing here that needs root, and it is now bound.
         // Everything below runs unprivileged: the API listens on 8443, and the
@@ -511,6 +500,19 @@ impl Engine {
                     None
                 }
             }
+        };
+
+        let tls_proxy = if https.is_some() {
+            let mut proxy = build_tls_proxy(&config, upstreams.clone())?
+                .with_rules(Arc::clone(&rules) as Arc<dyn fah_http::Ruleset>)
+                .with_policies(Arc::clone(&policy_state))
+                .with_events(events_tx.clone());
+            if let Some(interception) = interception(&config, certs.as_ref())? {
+                proxy = proxy.with_interception(interception);
+            }
+            Some(Arc::new(proxy))
+        } else {
+            None
         };
 
         let api_address = config.api.address.clone();
@@ -689,6 +691,58 @@ fn egress_exceptions(
     Ok(exceptions)
 }
 
+fn interception(
+    config: &fah_config::Config,
+    certs: Option<&Arc<fah_api::CertStore>>,
+) -> Result<Option<fah_http::Interception>, Box<dyn std::error::Error>> {
+    let clients = config
+        .https
+        .interception
+        .clients
+        .iter()
+        .map(|entry| {
+            entry
+                .parse::<fah_common::egress::AllowedNet>()
+                .map_err(|err| format!("[https.interception] clients: {err}"))
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    let exclusions = fah_http::ExclusionSet::new(&config.https.interception.exclude_domains)
+        .map_err(|err| format!("[https.interception] exclude_domains: {err}"))?;
+    if clients.is_empty() {
+        return Ok(None);
+    }
+    let Some(store) = certs else {
+        tracing::warn!(
+            count = clients.len(),
+            "[https.interception] clients listed, but the certificate store did not open — \
+             they are spliced, not intercepted, until /config is repaired and the container \
+             restarted"
+        );
+        return Ok(None);
+    };
+    if !store.has_ca() {
+        tracing::warn!(
+            count = clients.len(),
+            "[https.interception] clients listed, but no CA is installed — their connections \
+             close until one is generated or imported via /api/v1/certificates"
+        );
+    }
+    let server = fah_http::server_config(Arc::clone(store))?;
+    let client = fah_http::client_config()?;
+    tracing::info!(
+        count = clients.len(),
+        exclusions = exclusions.len(),
+        "HTTPS interception active for the listed clients — each must hold a static lease"
+    );
+    Ok(Some(fah_http::Interception::new(
+        server,
+        client,
+        Arc::clone(store),
+        clients,
+        exclusions,
+    )))
+}
+
 fn build_tls_proxy(
     config: &fah_config::Config,
     upstreams: fah_dns::UpstreamPool,
@@ -740,17 +794,17 @@ fn spawn_event_fanout(
             let client_ip = event.client_ip();
             match &event {
                 fah_model::Event::Dns(query) => metrics.record(query),
-                fah_model::Event::Http(request) | fah_model::Event::HttpsSni(request) => {
-                    metrics.record_http(request)
-                }
+                fah_model::Event::Http(request)
+                | fah_model::Event::HttpsSni(request)
+                | fah_model::Event::Https(request) => metrics.record_http(request),
             }
             let publish = hub.has_query_subscribers();
             let for_hub = publish.then(|| event.clone());
             match event {
                 fah_model::Event::Dns(query) => stats.record(*query),
-                fah_model::Event::Http(request) | fah_model::Event::HttpsSni(request) => {
-                    stats.record_http(*request)
-                }
+                fah_model::Event::Http(request)
+                | fah_model::Event::HttpsSni(request)
+                | fah_model::Event::Https(request) => stats.record_http(*request),
             }
             if let Some(event) = for_hub {
                 // Resolved after `record` so a first-ever client already

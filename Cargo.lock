@@ -744,6 +744,7 @@ version = "0.3.1"
 dependencies = [
  "bytes",
  "criterion",
+ "fah-certs",
  "fah-common",
  "fah-config",
  "fah-model",
@@ -754,10 +755,12 @@ dependencies = [
  "mimalloc",
  "rcgen",
  "rustls",
+ "tempfile",
  "tokio",
  "tokio-rustls",
  "tower-service",
  "tracing",
+ "webpki-roots 1.0.8",
 ]
 
 [[package]]

@@ -263,13 +263,47 @@ exactly the failure worth finding.
   p3-04 interception for managed clients, which judges the real request.
   Major CDNs reject mismatched SNI/Host today, but that is their policy, not
   ours.
-- **Phase 3 — HTTPS interception (MITM)** is opt-in, per-managed-environment,
-  never default. The generated CA's private key never leaves `/config`; CA
-  export endpoints export the **public** certificate only, re-encoded from the
-  parsed certificate DER so no export path can reach a key. Interception uses
-  rustls; certificate minting uses rcgen; parsing uses x509-parser. All of it
-  lives in `fah-certs`
-  ([ADR-0006](docs/decisions/0006-certificate-machinery-home.md)).
+- **Phase 3 — HTTPS interception (MITM, p3-04)** is opt-in, per-client,
+  never default: only a client whose address is listed in
+  `[https.interception] clients` (IP/CIDR — the only identity the container
+  sees, so every listed client must hold a static lease, CONFIGURATION.md)
+  takes the terminate leg; everyone else, and every excluded SNI, splices as
+  in p3-03. The generated CA's private key never leaves `/config`; the
+  interception path only reads minted leaves from the p3-01 cache. CA export
+  endpoints export the **public** certificate only, re-encoded from the parsed
+  certificate DER so no export path can reach a key. Interception uses rustls;
+  certificate minting uses rcgen; parsing uses x509-parser. All of it lives in
+  `fah-certs` ([ADR-0006](docs/decisions/0006-certificate-machinery-home.md)).
+  - **Verify before present.** The upstream is connected to the
+    egress-approved address and its certificate verified against the SNI
+    hostname (compiled-in webpki roots — distroless has no system store)
+    **before** our ServerHello is sent. A verification failure closes the
+    client's TCP connection unanswered: the client never sees a locally-signed
+    certificate for an origin we could not verify. Only
+    `rustls::Error::InvalidCertificate` is a verification failure (event
+    `status 526`); every other upstream failure — refused, timed out, ALPN or
+    protocol mismatch — is an ordinary upstream failure (`status 0`). A
+    reconnect inside a session repeats the same verification, or resumes the
+    TLS session the origin issued a ticket for, which is bound to that
+    verification.
+  - **One name per session.** A request whose `Host`/`:authority` is not the
+    verified SNI is refused with `421`; nothing rides a session verified for
+    another name.
+  - **HSTS is transparent.** The minted leaf chains to the CA the client
+    installed, so HSTS pins hold and no browser warning is bypassed —
+    interception works only where the CA was deliberately trusted.
+  - **Exclusions always splice.** A compiled-in baseline of certificate-pinned
+    families (OS update and push hosts, app stores, messengers, payment and
+    banking apps — `fah_http::BASELINE_EXCLUSIONS`) plus
+    `[https.interception] exclude_domains` is matched on the SNI, before any
+    decryption; a hit takes the p3-03 splice leg.
+  - **Listed clients lose ECH.** An Encrypted ClientHello enters the terminate
+    leg under its outer (public) SNI, is verified and served under that name,
+    and the browser retries without ECH; the retry is filtered under the real
+    name. Inherent to MITM; unlisted clients are unaffected.
+  - **Bounded per session.** An intercepted session holds one client and one
+    upstream TLS session plus fixed hyper buffers (CONFIGURATION.md
+    `[https] max_connections`); it never buffers a body.
 - DoT/DoH **listeners** (client-facing) arrive with Phase 3 certificate
   machinery so clients can actually validate what they connect to.
 

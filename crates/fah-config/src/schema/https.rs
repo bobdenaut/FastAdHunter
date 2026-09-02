@@ -11,6 +11,7 @@ pub struct HttpsConfig {
     #[serde(default = "default_idle_timeout_ms")]
     pub idle_timeout_ms: u64,
     pub sni: SniConfig,
+    pub interception: InterceptionConfig,
 }
 
 impl Default for HttpsConfig {
@@ -21,8 +22,16 @@ impl Default for HttpsConfig {
             hello_timeout_ms: default_hello_timeout_ms(),
             idle_timeout_ms: default_idle_timeout_ms(),
             sni: SniConfig::default(),
+            interception: InterceptionConfig::default(),
         }
     }
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields, default)]
+pub struct InterceptionConfig {
+    pub clients: Vec<String>,
+    pub exclude_domains: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -96,6 +105,33 @@ mod tests {
         assert_eq!(config.hello_timeout_ms, 10_000);
         assert_eq!(config.idle_timeout_ms, 60_000);
         assert_eq!(config.sni.no_sni, NoSni::Pass);
+    }
+
+    #[test]
+    fn the_interception_client_list_is_empty() {
+        let config = HttpsConfig::default();
+        assert!(config.interception.clients.is_empty());
+        assert!(config.interception.exclude_domains.is_empty());
+        let parsed: HttpsConfig = toml::from_str("[listen]\nport = 8444\n").unwrap();
+        assert!(parsed.interception.clients.is_empty());
+    }
+
+    #[test]
+    fn the_interception_section_parses_clients_and_exclusions() {
+        let config: HttpsConfig = toml::from_str(
+            "[interception]\nclients = [\"192.168.88.10\", \"192.168.88.0/24\"]\n\
+             exclude_domains = [\"bank.example\"]\n",
+        )
+        .unwrap();
+        assert_eq!(
+            config.interception.clients,
+            vec!["192.168.88.10".to_string(), "192.168.88.0/24".to_string()]
+        );
+        assert_eq!(
+            config.interception.exclude_domains,
+            vec!["bank.example".to_string()]
+        );
+        assert!(toml::from_str::<HttpsConfig>("[interception]\nenabled = true\n").is_err());
     }
 
     #[test]

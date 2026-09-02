@@ -19,7 +19,7 @@ pub use egress::EgressConfig;
 pub use engine::{EngineConfig, EngineMode};
 pub use history::HistoryConfig;
 pub use http::{HttpConfig, HttpListenConfig};
-pub use https::{HttpsConfig, HttpsListenConfig, NoSni, SniConfig};
+pub use https::{HttpsConfig, HttpsListenConfig, InterceptionConfig, NoSni, SniConfig};
 pub use log::{LogConfig, LogFormat, LogLevel};
 pub use policy::{parse_days, parse_time_of_day, AssignmentConfig, PolicyConfig, ScheduleConfig};
 pub use rules::{RuleListConfig, RulesConfig};

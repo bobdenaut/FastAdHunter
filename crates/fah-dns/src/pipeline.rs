@@ -511,7 +511,9 @@ mod tests {
     fn dns_event(event: fah_model::Event) -> QueryEvent {
         match event {
             fah_model::Event::Dns(event) => *event,
-            fah_model::Event::Http(_) | fah_model::Event::HttpsSni(_) => {
+            fah_model::Event::Http(_)
+            | fah_model::Event::HttpsSni(_)
+            | fah_model::Event::Https(_) => {
                 panic!("the DNS pipeline emitted an HTTP event")
             }
         }

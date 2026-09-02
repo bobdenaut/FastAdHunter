@@ -179,10 +179,11 @@ fn from_extension(path: &str) -> ResourceType {
 /// against the whole address. The port is **kept** here — `||example.com^`
 /// depends on `:` being a separator — which is why [`without_port`] is applied
 /// to the host fields only.
-pub fn absolute_url<B>(request: &Request<B>, authority: &str) -> String {
+pub fn absolute_url<B>(scheme: &str, request: &Request<B>, authority: &str) -> String {
     let path_and_query = request.uri().path_and_query().map_or("/", |pq| pq.as_str());
-    let mut url = String::with_capacity(7 + authority.len() + path_and_query.len());
-    url.push_str("http://");
+    let mut url = String::with_capacity(scheme.len() + 3 + authority.len() + path_and_query.len());
+    url.push_str(scheme);
+    url.push_str("://");
     url.push_str(authority);
     url.push_str(path_and_query);
     url
@@ -342,7 +343,7 @@ mod tests {
     fn the_absolute_url_keeps_the_port_the_host_field_drops() {
         let request = Request::builder().uri("/a/b?c=d").body(()).unwrap();
         assert_eq!(
-            absolute_url(&request, "example.com:8080"),
+            absolute_url("http", &request, "example.com:8080"),
             "http://example.com:8080/a/b?c=d"
         );
     }
@@ -350,6 +351,18 @@ mod tests {
     #[test]
     fn an_empty_target_becomes_a_root_path() {
         let request = Request::builder().uri("/").body(()).unwrap();
-        assert_eq!(absolute_url(&request, "example.com"), "http://example.com/");
+        assert_eq!(
+            absolute_url("http", &request, "example.com"),
+            "http://example.com/"
+        );
+    }
+
+    #[test]
+    fn the_scheme_is_whatever_the_transport_says_it_was() {
+        let request = Request::builder().uri("/ad.js").body(()).unwrap();
+        assert_eq!(
+            absolute_url("https", &request, "example.com"),
+            "https://example.com/ad.js"
+        );
     }
 }

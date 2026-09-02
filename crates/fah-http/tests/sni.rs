@@ -467,7 +467,9 @@ async fn garbage_on_the_https_port_is_closed_and_counted() {
         .expect("non-TLS bytes must be closed, not held")
         .unwrap();
     assert!(response.is_empty());
-    assert_eq!(harness.counters.snapshot().non_tls, 1);
+    let counters = harness.counters.snapshot();
+    assert_eq!(counters.non_tls, 1);
+    assert_eq!(counters.hello_timeouts, 0, "garbage is not silence");
 
     let stream = TcpStream::connect(harness.addr).await.unwrap();
     let name = ServerName::try_from(ORIGIN_NAME).unwrap();
@@ -479,6 +481,31 @@ async fn garbage_on_the_https_port_is_closed_and_counted() {
     let mut echoed = [0u8; 4];
     tls.read_exact(&mut echoed).await.unwrap();
     assert_eq!(&echoed, b"ping");
+    harness.shutdown();
+}
+
+#[tokio::test]
+async fn a_preconnect_closed_unused_is_a_hello_timeout_not_garbage() {
+    let (origin, _) = origin().await;
+    let harness = harness(origin.port(), origin.ip(), None, None, NoSni::Pass).await;
+
+    let stream = TcpStream::connect(harness.addr).await.unwrap();
+    drop(stream);
+
+    let deadline = std::time::Instant::now() + Duration::from_secs(5);
+    let counters = loop {
+        let counters = harness.counters.snapshot();
+        if counters.hello_timeouts == 1 {
+            break counters;
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "an EOF before any hello must be counted as a hello timeout"
+        );
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    };
+    assert_eq!(counters.non_tls, 0, "silence is not garbage");
+    assert_eq!(counters.requests, 1);
     harness.shutdown();
 }
 

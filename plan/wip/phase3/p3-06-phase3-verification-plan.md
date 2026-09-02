@@ -84,6 +84,24 @@ criterion's stored baseline — measurement-traps rule):
   `TlsServer::bind/serve` first, so the measured relay is the shipped one; a
   figure taken on the old harness is diagnostic only.
 
+**p3-04 carry-over (review S1 decision + N8, deferred to this task):**
+
+- **S1 — h2 limits on the terminate leg were set, not measured.** Shipped:
+  64 concurrent streams × 64 KiB send buffer **per stream**, 256 KiB
+  connection window, 64 KiB stream window, on both the client and the origin
+  side (`intercept.rs` `H2_*` consts); CONFIGURATION.md `[https]
+  max_connections` states the ≈ 5.5 MiB per-session worst case. Measure on the
+  probe container: intercepted h2 throughput with these limits, and per-session
+  RSS under a 64-stream stall (slow client, fast origin). The named alternative
+  is 32 streams × 32 KiB (≈ 1.5 MiB). Report both axes; lowering the constants
+  is an owner decision on the measured trade, never a pre-emptive edit.
+- **N8 — `spawn_blocking(prewarm)` runs on every intercepted connection, cache
+  hit or not.** One cross-thread hop (and a thread spawn on a cold blocking
+  pool) per connection. Profile the terminate-leg handshake on-device; if the
+  hop is material against the two TLS handshakes it sits between, the named
+  fix is a non-counting cache peek in `fah-certs` (`cached_leaf` cannot serve
+  as the peek — it counts `unwarmed_misses`). Measure before touching.
+
 Every number recorded with corpus, workload and device
 (`docs/code-review/phase3/p3-06-phase3-verification-review.md` §Measurements;
 root docs get a pointer, never the narrative — root CLAUDE.md rule 19).
@@ -124,6 +142,21 @@ property of the full binary or full API surface:
 
 Any failure here is a finding for the review file and blocks `DONE` — these
 are SECURITY.md promises, not targets.
+
+**p3-04 carry-over — terminate-leg unhappy paths (review M4 rows 5–9 and
+N10, deferred to this task by the accepted p3-04 review; integration tests in
+`crates/fah-http/tests/interception.rs`, in that harness):**
+
+| Path | Proof |
+| --- | --- |
+| concurrent h2 requests from one listed client | 8 parallel `/page` on one h2 session ⇒ all 200, `origin.connections == 1` |
+| streaming request body | POST 4 MiB ⇒ origin sees 4 MiB; proxy RSS delta bounded by the S1 limits — a body is never held |
+| client disconnect mid-response, upstream disconnect mid-response | session ends and the permit is released: `max_connections = 1`, a second connect succeeds. Rename or extend `an_idle_intercepted_session_is_closed_and_its_permit_returned`, which today asserts nothing about the permit (N10) |
+| shutdown with live intercepted sessions | record the semantics: `Engine::shutdown` aborts the accept loop only; live sessions end with the runtime — pre-existing, shared with :80 and the splice leg (p3-04 L4) |
+| IPv6 listed client end-to-end | `[::1]` listed, connect over v6 ⇒ intercepted (today only `intercepts()` is unit-tested for v6) |
+
+These are the p3-04 harness's own tests, not new unit coverage; the "Unit:
+none new" line below stands.
 
 ### Step 3 — offline full-mode E2E (one scripted scenario)
 
@@ -175,6 +208,16 @@ command, what it does, when it takes effect, and the rollback.
    browser drops cookies on download, fall back to `curl -H "Authorization:
    Bearer …" -o fastadhunter-ca.crt` from another machine and transfer the
    file; record which path the walkthrough used.
+   **Sequencing (p3-04 L2, owner decision: a listed client with no CA is
+   closed, not spliced):** list the test device in `[https.interception]
+   clients` only **after** the CA is installed on it, then restart
+   (boot-class). Listing it earlier turns every HTTPS connection from that
+   device into a closed socket and a `status 0` `https` event until the
+   install lands. **ECH (p3-04 L7):** from the listed device, browse one
+   ECH-enabled origin; expect the browser to retry without ECH and the retry
+   to be filtered under the real name; record the extra upstream handshake and
+   `status 0` event per ECH origin, and whether the retry was visible to the
+   user. Unlisted devices are unaffected.
 3. **Private DNS**: p3-05 decision 3 walked end-to-end — pick the hostname,
    propose the local answer for it (a `$dnsrewrite` rule mapping it to the
    container address — the bootstrap: the phone resolves the Private DNS
@@ -186,6 +229,14 @@ command, what it does, when it takes effect, and the rollback.
    and the walkthrough documents that outcome).
 4. **Pinned-app spot check**: one banking app on the test device with
    interception active for it excluded/not opted in — must work unchanged.
+   **Before this check** the owner trims or extends
+   `fah_http::BASELINE_EXCLUSIONS` (p3-04 TODO — the shipped list is a first
+   cut: Apple/Google/Microsoft update, push and store hosts, WhatsApp, Signal,
+   PayPal, Revolut, Wise, N26, eight Romanian banks); it is a code change
+   with its own gates, and the final list is recorded in this task's review
+   file together with the CONFIGURATION.md `exclude_domains` text that names
+   it. The banking app used must be covered by the baseline or by
+   `exclude_domains`, else the check proves nothing about exclusions.
    For every intercepted client, **verify the static-lease precondition**
    (p3-04's GAR §5.14 owner decision): confirm on the router (read-only) that
    the listed IP is a static lease/address before calling §5.14 closed.
@@ -206,6 +257,28 @@ command, what it does, when it takes effect, and the rollback.
    `hello_timeouts` over the window — the ratio says whether silent browser
    preconnects dominate the port, which decides if the `hello_timeout_ms`
    default (10 s of permit per silent socket) needs revisiting.
+   **Prerequisite for that watch item (p3-04 L5 + TODO, required before the
+   soak starts):** `non_tls`, `hello_timeouts` and `upstream_cert_failures`
+   are counted in `fah_http::ProxyCounters` but published nowhere —
+   `/telemetry` carries only the refused sum (`main.rs` telemetry poll). Settle
+   the p3-04 decision first: a per-listener block on `GET /api/v1/telemetry`
+   (API.md edit, owner approval — API.md §telemetry already names the three
+   as unpublished) or another agreed read path. The same decision must fix
+   L5 before any consumer exists: on the terminate leg `requests` is per
+   connection while `blocked`/`refused_claim` are per request, so
+   `blocked > requests` is possible on one listener.
+   **Third watch item (p3-04 N4 detector, shared with p3-05):**
+   `GET /api/v1/certificates` `unwarmed_misses` reads 0 after the browsing
+   workload and at the end of the soak. A non-zero value is either p3-04's
+   prewarm-then-evict window (more than 512 first-sight hosts inside one
+   handshake) or p3-05's DoT leaf losing to LRU pressure between re-warms —
+   attribute it before filing.
+   **Fourth watch item (p3-04 L4):** an intercepted h2 session cut by the
+   idle watchdog leaves its in-flight stream tasks and the upstream
+   connection task alive until the origin answers or `hello_timeout` fires,
+   outside `max_connections`. Over the soak, RSS must not trend with the
+   number of idle-cut sessions; record the reading as the L4 evidence. The
+   shutdown half of L4 is in Step 2's carry-over table.
 7. **Certificate-store checks that only the device can give** (deferred by
    the p3-01 and p3-02 reviews to this task — **all mandatory**, on the probe
    container, propose-only for anything on the production one):
@@ -252,6 +325,10 @@ command, what it does, when it takes effect, and the rollback.
   defer to a dashboard task — an unfiltered kind is a finding, not a note.
 - README operating-modes wording drift check (the task's doc sweep).
 - CONFIGURATION.md/API.md: only if p3-02…p3-05 left an approved edit pending.
+- ROADMAP.md: Phase 3 deliverables (SNI filtering, per-client interception,
+  DoT/DoH listeners) to delivered wording at phase close — the p3-04 plan's
+  §Doc changes carried this line and the p3-04 approved doc list did not
+  include it, so it lands here.
 
 ## Performance contract
 

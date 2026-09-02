@@ -13,6 +13,9 @@ workspace = true
 # wires the siblings together. `fah-rules` and `fah-model` arrive with p2-04,
 # which is when verdicts are actually consulted and events actually emitted.
 [dependencies]
+# `fah-certs` (L2) supplies the minted leaf and the `MintingResolver` the
+# interception leg (p3-04) hands to rustls; the crate never mints or caches.
+fah-certs = { path = "../fah-certs" }
 fah-common = { path = "../fah-common" }
 fah-config = { path = "../fah-config" }
 fah-model = { path = "../fah-model" }
@@ -20,15 +23,34 @@ fah-rules = { path = "../fah-rules" }
 
 bytes = "1"
 http-body-util = "0.1"
-hyper = { version = "1", features = ["http1", "server", "client"] }
+# `http2` because an intercepted client may negotiate h2 on either side; the
+# plaintext proxy stays h1-only.
+hyper = { version = "1", features = ["http1", "http2", "server", "client"] }
 # `client-legacy` is hyper-util's pooling client — the connection reuse the
 # proxy needs upstream. Already in-tree via fah-api, so this adds no new crate.
-hyper-util = { version = "0.1", features = ["client", "client-legacy", "http1", "tokio"] }
-tokio = { workspace = true, features = ["io-util", "net", "sync", "time"] }
+# `server-auto` is the h1/h2 sniffing server the interception leg serves the
+# decrypted stream with — the same feature set fah-api already builds.
+hyper-util = { version = "0.1", features = [
+    "client",
+    "client-legacy",
+    "http1",
+    "http2",
+    "server",
+    "server-auto",
+    "tokio",
+] }
+# Pinned exactly as fah-api and fah-certs pin it: one TLS backend
+# (SECURITY.md), aws-lc-rs, no ring.
+rustls = { workspace = true }
+tokio = { workspace = true, features = ["io-util", "net", "rt", "sync", "time"] }
+tokio-rustls = { version = "0.26", default-features = false, features = ["aws_lc_rs", "tls12"] }
 # The connector is a `tower_service::Service<Uri>`; the one trait, not the
 # whole tower stack.
 tower-service = "0.3"
 tracing = { workspace = true }
+# Upstream verification roots. The distroless image has no system store, so
+# the bundle ships compiled in — the same reason hickory-net carries it.
+webpki-roots = "1"
 
 [dev-dependencies]
 tokio = { workspace = true, features = [
@@ -41,9 +63,8 @@ tokio = { workspace = true, features = [
 ] }
 criterion = { workspace = true }
 http-body-util = "0.1"
-tokio-rustls = { version = "0.26", default-features = false, features = ["aws_lc_rs", "tls12"] }
-rustls = { workspace = true }
 rcgen = { version = "0.14", default-features = false, features = ["aws_lc_rs", "pem"] }
+tempfile = "3"
 # Example-only (`examples/httpbench.rs`, the on-device probe): the probe has to
 # run the allocator the router runs, or its figures describe a build production
 # never ships. A library must not participate in allocator selection — that is

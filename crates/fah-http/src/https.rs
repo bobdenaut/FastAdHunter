@@ -1,5 +1,6 @@
 use std::io;
 use std::net::{IpAddr, SocketAddr};
+use std::ops::Deref;
 use std::pin::Pin;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
@@ -21,7 +22,8 @@ use tokio::net::TcpStream;
 use tokio::sync::mpsc;
 use tracing::debug;
 
-use crate::proxy::{ProxyCounters, Ruleset};
+use crate::intercept::Interception;
+use crate::proxy::{publish, ProxyCounters, Ruleset};
 use crate::sni::{scan_client_hello, HelloScan, MAX_HELLO_BYTES};
 
 const SPLICE_BUF: usize = 16 * 1024;
@@ -32,15 +34,16 @@ const NO_SNI_RULE: &str = "no_sni = \"block\"";
 pub struct TlsProxy {
     resolver: Arc<dyn HostResolver>,
     policy: DestinationPolicy,
-    counters: Arc<ProxyCounters>,
-    rules: Option<Arc<dyn Ruleset>>,
-    policies: Arc<PolicyState>,
-    events: Option<mpsc::Sender<Event>>,
-    origin_port: u16,
-    hello_timeout: Duration,
-    idle_timeout: Duration,
+    pub(crate) counters: Arc<ProxyCounters>,
+    pub(crate) rules: Option<Arc<dyn Ruleset>>,
+    pub(crate) policies: Arc<PolicyState>,
+    pub(crate) events: Option<mpsc::Sender<Event>>,
+    pub(crate) origin_port: u16,
+    pub(crate) hello_timeout: Duration,
+    pub(crate) idle_timeout: Duration,
     no_sni: NoSni,
-    allow_ip_literal_hosts: bool,
+    pub(crate) allow_ip_literal_hosts: bool,
+    interception: Option<Interception>,
 }
 
 impl TlsProxy {
@@ -64,12 +67,30 @@ impl TlsProxy {
             idle_timeout,
             no_sni,
             allow_ip_literal_hosts: false,
+            interception: None,
         }
     }
 
     pub fn with_ip_literal_hosts(mut self, allow: bool) -> Self {
         self.allow_ip_literal_hosts = allow;
         self
+    }
+
+    pub fn with_interception(mut self, interception: Interception) -> Self {
+        self.interception = (!interception.is_empty()).then_some(interception);
+        self
+    }
+
+    pub fn intercepts(&self, ip: IpAddr) -> bool {
+        self.interception
+            .as_ref()
+            .is_some_and(|interception| interception.intercepts(ip))
+    }
+
+    fn interception_for(&self, ip: IpAddr, host: &str) -> Option<&Interception> {
+        self.interception
+            .as_ref()
+            .filter(|interception| interception.intercepts(ip) && !interception.excludes(host))
     }
 
     pub fn with_rules(mut self, rules: Arc<dyn Ruleset>) -> Self {
@@ -105,12 +126,12 @@ impl TlsProxy {
         {
             Ok(Ok(scan)) => scan,
             Ok(Err(err)) => {
-                self.counters.non_tls.fetch_add(1, Ordering::Relaxed);
+                self.counters.hello_timeouts.fetch_add(1, Ordering::Relaxed);
                 debug!(%peer, error = %err, "no ClientHello arrived; closing");
                 return;
             }
             Err(_) => {
-                self.counters.non_tls.fetch_add(1, Ordering::Relaxed);
+                self.counters.hello_timeouts.fetch_add(1, Ordering::Relaxed);
                 debug!(%peer, "ClientHello deadline expired; closing");
                 return;
             }
@@ -147,6 +168,19 @@ impl TlsProxy {
             self.emit(&host, peer, verdict, policy, started.elapsed(), 0);
             return;
         };
+
+        if let Some(interception) = self.interception_for(peer.ip(), &host) {
+            let session = Session {
+                peer,
+                address,
+                verdict,
+                policy,
+                started,
+            };
+            self.intercept(interception, stream, hello, host, session)
+                .await;
+            return;
+        }
 
         let upstream =
             match tokio::time::timeout(self.hello_timeout, TcpStream::connect(address)).await {
@@ -198,8 +232,8 @@ impl TlsProxy {
         let last = AtomicU64::new(0);
         let to_client = AtomicU64::new(0);
         let to_upstream = AtomicU64::new(0);
-        let mut client = Activity::new(client, &last, &to_client, clock);
-        let mut upstream = Activity::new(upstream, &last, &to_upstream, clock);
+        let mut client = Activity::new(client, &last, Some(&to_client), clock);
+        let mut upstream = Activity::new(upstream, &last, Some(&to_upstream), clock);
 
         let idle_ms = as_millis(self.idle_timeout);
         let copy =
@@ -302,25 +336,43 @@ impl TlsProxy {
         let Some(events) = &self.events else {
             return;
         };
-        let event = RequestEvent::new(
-            ModelRequest {
-                host: host.to_string(),
-                path: String::new(),
-                method: String::new(),
-                resource_type: ResourceType::Unknown,
-                client_ip: peer.ip(),
-                timestamp: SystemTime::now(),
-            },
-            verdict,
-            duration,
-            0,
-            bytes,
-        )
-        .under_policy(policy);
-        if events.try_send(Event::https_sni(event)).is_err() {
-            self.counters.dropped_events.fetch_add(1, Ordering::Relaxed);
-        }
+        let event = session_event(host, peer, verdict, policy, duration, 0, bytes);
+        publish(events, &self.counters, Event::https_sni(event));
     }
+}
+
+pub(crate) struct Session {
+    pub(crate) peer: SocketAddr,
+    pub(crate) address: SocketAddr,
+    pub(crate) verdict: Verdict,
+    pub(crate) policy: Option<Arc<str>>,
+    pub(crate) started: Instant,
+}
+
+pub(crate) fn session_event(
+    host: &str,
+    peer: SocketAddr,
+    verdict: Verdict,
+    policy: Option<Arc<str>>,
+    duration: Duration,
+    status: u16,
+    bytes: u64,
+) -> RequestEvent {
+    RequestEvent::new(
+        ModelRequest {
+            host: host.to_string(),
+            path: String::new(),
+            method: String::new(),
+            resource_type: ResourceType::Unknown,
+            client_ip: peer.ip(),
+            timestamp: SystemTime::now(),
+        },
+        verdict,
+        duration,
+        status,
+        bytes,
+    )
+    .under_policy(policy)
 }
 
 async fn read_client_hello(stream: &mut TcpStream, hello: &mut Vec<u8>) -> io::Result<HelloScan> {
@@ -343,7 +395,7 @@ async fn read_client_hello(stream: &mut TcpStream, hello: &mut Vec<u8>) -> io::R
     }
 }
 
-async fn idle_watchdog(last: &AtomicU64, clock: Instant, idle_ms: u64) {
+pub(crate) async fn idle_watchdog(last: &AtomicU64, clock: Instant, idle_ms: u64) {
     loop {
         let now = elapsed_ms(clock);
         let deadline = last.load(Ordering::Relaxed).saturating_add(idle_ms);
@@ -354,7 +406,7 @@ async fn idle_watchdog(last: &AtomicU64, clock: Instant, idle_ms: u64) {
     }
 }
 
-fn as_millis(duration: Duration) -> u64 {
+pub(crate) fn as_millis(duration: Duration) -> u64 {
     duration.as_millis().min(u128::from(u64::MAX)) as u64
 }
 
@@ -362,15 +414,15 @@ fn elapsed_ms(clock: Instant) -> u64 {
     as_millis(clock.elapsed())
 }
 
-struct Activity<'a, S> {
+pub(crate) struct Activity<S, L> {
     inner: S,
-    last: &'a AtomicU64,
-    written: &'a AtomicU64,
+    last: L,
+    written: Option<L>,
     clock: Instant,
 }
 
-impl<'a, S> Activity<'a, S> {
-    fn new(inner: S, last: &'a AtomicU64, written: &'a AtomicU64, clock: Instant) -> Self {
+impl<S, L: Deref<Target = AtomicU64>> Activity<S, L> {
+    pub(crate) fn new(inner: S, last: L, written: Option<L>, clock: Instant) -> Self {
         Self {
             inner,
             last,
@@ -384,7 +436,7 @@ impl<'a, S> Activity<'a, S> {
     }
 }
 
-impl<S: AsyncRead + Unpin> AsyncRead for Activity<'_, S> {
+impl<S: AsyncRead + Unpin, L: Deref<Target = AtomicU64> + Unpin> AsyncRead for Activity<S, L> {
     fn poll_read(
         mut self: Pin<&mut Self>,
         cx: &mut Context<'_>,
@@ -398,15 +450,15 @@ impl<S: AsyncRead + Unpin> AsyncRead for Activity<'_, S> {
     }
 }
 
-impl<S: AsyncWrite + Unpin> AsyncWrite for Activity<'_, S> {
+impl<S: AsyncWrite + Unpin, L: Deref<Target = AtomicU64> + Unpin> AsyncWrite for Activity<S, L> {
     fn poll_write(
         mut self: Pin<&mut Self>,
         cx: &mut Context<'_>,
         buf: &[u8],
     ) -> Poll<io::Result<usize>> {
         let polled = Pin::new(&mut self.inner).poll_write(cx, buf);
-        if let Poll::Ready(Ok(written)) = polled {
-            self.written.fetch_add(written as u64, Ordering::Relaxed);
+        if let (Poll::Ready(Ok(written)), Some(counter)) = (&polled, &self.written) {
+            counter.fetch_add(*written as u64, Ordering::Relaxed);
         }
         if polled.is_ready() {
             self.touch();

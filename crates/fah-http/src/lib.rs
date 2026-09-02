@@ -22,17 +22,23 @@
 
 mod block;
 mod claim;
+mod exclusions;
 mod https;
+mod intercept;
 mod proxy;
 mod request;
 mod server;
 mod sni;
+mod tls;
 mod tls_server;
 
 pub use block::BlockStyle;
 pub use claim::{ClaimError, Destination};
+pub use exclusions::{ExclusionSet, InvalidExclusion, BASELINE_EXCLUSIONS};
 pub use https::TlsProxy;
+pub use intercept::Interception;
 pub use proxy::{Proxy, ProxyCounters, ProxyStats, Ruleset};
 pub use server::Server;
 pub use sni::{scan_client_hello, HelloScan, MAX_HELLO_BYTES};
+pub use tls::{client_config, client_config_with_roots, server_config};
 pub use tls_server::TlsServer;

@@ -324,6 +324,32 @@ browsers hold no proxy setting and nothing on the client changes. The same
 mechanism already carries DNS; extending it to HTTP is one more rule, and
 rollback is removing it.
 
+Since p3-04 the word also names the per-client **TLS termination** on the
+HTTPS port (SECURITY.md §Later phases): a client listed in
+`[https.interception] clients` has its TLS terminated with a minted leaf and
+its requests judged by the URL Tier. Which meaning is intended is clear from
+the section: dst-nat is how traffic *arrives*, termination is what happens to
+a listed client's traffic once it has.
+
+### Splice Leg / Terminate Leg
+
+The two outcomes of an HTTPS connection after the SNI verdict is not a Block.
+The **splice leg** (p3-03) relays the bytes untouched in both directions — no
+key, no decryption, the client validates the origin's own certificate. The
+**terminate leg** (p3-04) verifies the origin first, then terminates TLS with
+a minted leaf, runs the HTTP pipeline over the decrypted requests and
+re-encrypts to the verified origin. Every connection takes the splice leg
+unless the client is listed **and** the SNI is not an Exclusion.
+
+### Exclusion
+
+An SNI hostname that always takes the splice leg, even for a listed client:
+the compiled-in baseline of certificate-pinned families plus
+`[https.interception] exclude_domains`. Matched by exact host or parent suffix
+(`api.bank.example` is excluded by `bank.example`) on the ClientHello, before
+any decryption. An Exclusion is not a verdict: the connection is still judged
+at the SNI and still egress-guarded; it only decides which leg carries it.
+
 ### Destination Claim
 
 Where a client *says* it was going. After Interception there is no
