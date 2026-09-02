@@ -42,7 +42,7 @@ breach.
 
 | Metric | Budget | Measured on the RB5009 |
 |--------|--------|------------------------|
-| RAM steady-state | ≤ 128 MB | 46.6–53.6 MiB |
+| RAM steady-state | ≤ 128 MB | 46.6–53.6 MiB (`dns+http`); `dns+http+https` TBD — must be measured during verification |
 | RAM hard ceiling (container limit) | 256 MB | — |
 | Compiled ruleset, 1M domains | ≤ 40 MB | 25.8 MiB at 799 k rules |
 | Startup to serving, cached lists | < 3 s hard, ~1 s goal | 2.85 s at 1.15 M parsed |
@@ -55,6 +55,14 @@ breach.
 | **HTTP** throughput, opaque body | ≥ 100 MiB/s | 271 MiB/s min · 208 MiB/s p50 at 1 MiB |
 | **HTTP** request verdict (URL tier), p99 | < 1 ms | 569.5 µs at 8 KiB, EasyList + EasyPrivacy |
 | **HTTP** concurrent connections | bounded by `[http] max_connections` (1024) | unmeasured |
+| **HTTPS** SNI verdict + splice, added latency per connection | TBD — set from the RB5009 (loopback figures do not convert) | TBD — must be measured during verification |
+| **HTTPS** splice throughput, steady state | ≥ 100 MiB/s (gigabit LAN is 119 MiB/s) | TBD — must be measured during verification |
+| **HTTPS** interception handshake overhead vs splice | intercepted p50 ≤ 2 × spliced p50 | TBD — must be measured during verification |
+| **HTTPS** intercepted h2 relay | ≥ 50 MiB/s | TBD — must be measured during verification |
+| **HTTPS** minted-leaf cache hit rate, browsing load | ≥ 90 % (a real-session replay decides) | TBD — soak `https-sni` feed |
+| **DoT** / **DoH** added latency vs UDP, p50 | TBD — set from the RB5009 (TLS/HTTP legs do not convert) | TBD — must be measured during verification |
+| Cold `prewarm` per first-sight host (whole path incl. eviction scan, not raw keygen) | < 1 ms | TBD — must be measured during verification |
+| CA generate / API-pair import wall time | < 100 ms / < 50 ms | TBD — must be measured during verification |
 
 In-engine latency excludes upstream RTT — we measure what we add. The served
 `forward` histogram (`duration_forward`; `forward_p50/p99` on `/history/perf`)
@@ -129,7 +137,12 @@ probe container.
 **It converts CPU-bound work only.** p2-08's HTTP arms — syscall- and copy-bound,
 across two OS network stacks — came out **4.55–10.09×**. Anything dominated by
 socket I/O needs a probe container, not a conversion
-([p2-08](docs/code-review/phase2/p2-08-review.md) §Findings).
+([p2-08](docs/code-review/phase2/p2-08-review.md) §Findings). TLS handshake,
+splice and interception figures do not convert either (p3-06): the dev box
+resolves them only as diagnostics, and the Phase 3 budget rows fill from the
+RB5009 runbook — dev-box figures, corpus and pinning per row in
+[docs/code-review/phase3/p3-06-phase3-verification-review.md](docs/code-review/phase3/p3-06-phase3-verification-review.md)
+§Measurements and §Post-review work C.
 
 Whether all-cores load behaves differently is **untested**.
 

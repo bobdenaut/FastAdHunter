@@ -33,7 +33,7 @@ numbers below are measured on the target hardware, not estimated.
 | 2.5 | Pre-Adaptive hardening | ✅ done | `v0.2.19-phase2.5` |
 | 2.6 | Adaptive DNS Stage 1 | 🚧 built and deployed opt-in; default flip pending | — |
 | 5 | Web dashboard | 🚧 all ten tasks built and merged; on-device verification in the re-soak | `0.3.0` |
-| 3 | HTTPS interception | ⬜ not started | — |
+| 3 | HTTPS interception | 🚧 built and verified on the dev box (p3-01…p3-05 done, p3-06 awaiting the on-device soak) | `phase3-06` |
 | 4 | HTML filtering | ⬜ not started | — |
 
 Rows are in **execution** order, which is not numeric order: the dashboard is
@@ -41,7 +41,7 @@ numbered 5 by capability and scheduled ahead of HTTPS and HTML filtering because
 that is what the household needs next.
 
 Running in production on a MikroTik RB5009 as the household's only resolver, in
-`dns+http` mode, on **0.3.0** since 2026-08-29. Phase 2's engine work is deployed
+`dns+http` mode, on **0.3.1** since 2026-09-01. Phase 2's engine work is deployed
 — the transparent HTTP proxy, URL-path rules, per-client Policies and the single
 JSON telemetry surface — and so is the Phase 5 dashboard.
 
@@ -424,7 +424,7 @@ Fixed at container start via `engine.mode`:
 | ---- | ------- |
 | `dns` | Network-wide DNS filtering |
 | `dns+http` | …plus URL-level filtering of unencrypted HTTP — **deployed today** |
-| `dns+http+https` | …plus HTTPS interception, for managed environments |
+| `dns+http+https` | …plus SNI-level HTTPS filtering for every client, opt-in per-client HTTPS interception (own CA, installed on the device), and DoT/DoH listeners for Private DNS |
 
 A mode that does not name an engine means that engine's listener is **never
 bound** — not bound and idle.

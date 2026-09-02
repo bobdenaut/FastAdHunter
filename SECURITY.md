@@ -173,7 +173,7 @@ measured.
 | ------ | ---- | ------------ |
 | Accept the warning once, per device and per browser | 2 actions per device; repeated after any certificate regeneration | A working dashboard. The address bar keeps saying "Not secure" |
 | Install the box certificate as a trusted root on each device | One install per device, plus a repeat after each regeneration | A clean connection with no warning — verified: `openssl` returns `0 (ok)` once the certificate is trusted **and** the address is in its SAN set. Trusting a certificate whose SAN set misses the address still fails with `64 (IP address mismatch)`, which is why the SAN set matters more than the warning does |
-| A real name with a publicly trusted certificate | A domain, DNS, and a renewal mechanism this project does not ship | No warning anywhere, no per-device work. Out of scope until Phase 3 |
+| A real name with a publicly trusted certificate | A domain, DNS, and a renewal mechanism this project does not ship | No warning anywhere, no per-device work. Import the pair with `POST /api/v1/certificates/import` (Phase 3, API.md §Certificates); the DoT listener serves it too. Renewal stays an operator action |
 
 `fastadhunter` is in the certificate but resolves nowhere: reaching the
 dashboard by name needs a DNS entry or a hosts file; without one the browser
