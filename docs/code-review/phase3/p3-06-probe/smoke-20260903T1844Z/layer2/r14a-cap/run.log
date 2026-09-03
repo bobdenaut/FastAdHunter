@@ -1,0 +1,10 @@
+2026-09-03T18:58:26.255Z [p6] == p6 start 2026-09-03T18:58:26.218Z tip=92e3f4a9b930-dirty out=docs/code-review/phase3/p3-06-probe/smoke-20260903T1844Z/layer2/r14a-cap
+2026-09-03T18:58:26.256Z [p6] args {"probe":"127.0.0.1","api-port":8446,"key":"<set>","out":"docs/code-review/phase3/p3-06-probe/smoke-20260903T1844Z/layer2/r14a-cap","tip":null,"allow-busy":false,"skip-host-checks":false,"generate":10,"import":0,"cert":"p1.crt","key-file":"p1.key","ca-archive-count":0,"api-archive-count":0,"ca-out":null}
+2026-09-03T18:58:26.548Z [p6] Get-NetConnectionProfile: Ethernet                Public
+2026-09-03T18:58:26.950Z [p6] idle check: PASS (recorded; each stage decides)
+2026-09-03T18:58:26.958Z [p6] GET /health -> 200 {"status":"ok","version":"0.3.1","uptime_seconds":15}
+2026-09-03T18:58:26.964Z [p6] config snapshot -> docs\code-review\phase3\p3-06-probe\smoke-20260903T1844Z\layer2\r14a-cap\config.json
+2026-09-03T18:58:26.964Z [p6] engine.mode = dns+http+https
+2026-09-03T18:58:26.966Z [p6] before: ca={"present":false} api_certificate={"source":"self_signed"}
+2026-09-03T18:58:26.966Z [p6] INVALID: ca-archive holds 0; 10 generates would add 9 (the first on an empty store archives nothing) and pass the cap of 8
+2026-09-03T18:58:26.967Z [p6] wrote docs\code-review\phase3\p3-06-probe\smoke-20260903T1844Z\layer2\r14a-cap\p6.json

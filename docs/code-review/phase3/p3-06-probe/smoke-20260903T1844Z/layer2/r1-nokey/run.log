@@ -1,0 +1,4 @@
+2026-09-03T18:53:52.600Z [sni] == sni start 2026-09-03T18:53:52.561Z tip=92e3f4a9b930-dirty out=docs/code-review/phase3/p3-06-probe/smoke-20260903T1844Z/layer2/r1-nokey
+2026-09-03T18:53:52.601Z [sni] args {"probe":"127.0.0.1","api-port":8443,"key":null,"out":"docs/code-review/phase3/p3-06-probe/smoke-20260903T1844Z/layer2/r1-nokey","tip":null,"allow-busy":false,"skip-host-checks":false,"blocked":"ads.smoke.test","allowed":"example.com","port":8444,"attempts":5,"timeout":5000}
+2026-09-03T18:53:52.601Z [sni] INVALID: no API key: --key <key|file> or FAH_PROBE_KEY
+2026-09-03T18:53:52.601Z [sni] wrote docs\code-review\phase3\p3-06-probe\smoke-20260903T1844Z\layer2\r1-nokey\sni.json

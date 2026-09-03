@@ -1,0 +1,26 @@
+2026-09-03T18:54:01.657Z [sni] == sni start 2026-09-03T18:54:01.620Z tip=92e3f4a9b930-dirty out=docs/code-review/phase3/p3-06-probe/smoke-20260903T1844Z/layer2/r5-allowedblocked
+2026-09-03T18:54:01.658Z [sni] args {"probe":"127.0.0.1","api-port":8443,"key":"<set>","out":"docs/code-review/phase3/p3-06-probe/smoke-20260903T1844Z/layer2/r5-allowedblocked","tip":null,"allow-busy":false,"skip-host-checks":false,"blocked":"ads.smoke.test","allowed":"ads.smoke.test","port":8444,"attempts":5,"timeout":5000}
+2026-09-03T18:54:01.964Z [sni] Get-NetConnectionProfile: Ethernet                Public
+2026-09-03T18:54:02.392Z [sni] idle check: PASS (recorded; each stage decides)
+2026-09-03T18:54:02.400Z [sni] GET /health -> 200 {"status":"ok","version":"0.3.1","uptime_seconds":97}
+2026-09-03T18:54:02.408Z [sni] config snapshot -> docs\code-review\phase3\p3-06-probe\smoke-20260903T1844Z\layer2\r5-allowedblocked\config.json
+2026-09-03T18:54:02.408Z [sni] engine.mode = dns+http+https
+2026-09-03T18:54:02.408Z [sni] https.sni.no_sni = pass
+2026-09-03T18:54:02.413Z [sni] blocked  #1 closed_silent bytes=0 close=0.806ms
+2026-09-03T18:54:02.414Z [sni] allowed  #1 closed_silent bytes=0 close=0.49ms
+2026-09-03T18:54:02.415Z [sni] no_sni   #1 closed_silent bytes=0 close=0.394ms
+2026-09-03T18:54:02.416Z [sni] blocked  #2 closed_silent bytes=0 close=0.397ms
+2026-09-03T18:54:02.416Z [sni] allowed  #2 closed_silent bytes=0 close=0.345ms
+2026-09-03T18:54:02.417Z [sni] no_sni   #2 closed_silent bytes=0 close=0.373ms
+2026-09-03T18:54:02.418Z [sni] blocked  #3 closed_silent bytes=0 close=0.308ms
+2026-09-03T18:54:02.418Z [sni] allowed  #3 closed_silent bytes=0 close=0.288ms
+2026-09-03T18:54:02.419Z [sni] no_sni   #3 closed_silent bytes=0 close=0.301ms
+2026-09-03T18:54:02.420Z [sni] blocked  #4 closed_silent bytes=0 close=0.323ms
+2026-09-03T18:54:02.420Z [sni] allowed  #4 closed_silent bytes=0 close=0.333ms
+2026-09-03T18:54:02.421Z [sni] no_sni   #4 closed_silent bytes=0 close=0.274ms
+2026-09-03T18:54:02.421Z [sni] blocked  #5 closed_silent bytes=0 close=0.27ms
+2026-09-03T18:54:02.422Z [sni] allowed  #5 closed_silent bytes=0 close=0.289ms
+2026-09-03T18:54:02.422Z [sni] no_sni   #5 closed_silent bytes=0 close=0.268ms
+2026-09-03T18:54:02.426Z [sni] listeners.https delta {"connections":15,"requests":15,"blocked":10,"refused_claim":0,"refused_destination":0,"resolve_failures":0,"upstream_failures":0,"upstream_cert_failures":0,"non_http":0,"non_tls":0,"hello_timeouts":0,"dropped_events":0}
+2026-09-03T18:54:02.426Z [sni] INVALID: allowed name did not reach ServerHello through the probe; the listener closing everything proves nothing about blocked rows
+2026-09-03T18:54:02.426Z [sni] wrote docs\code-review\phase3\p3-06-probe\smoke-20260903T1844Z\layer2\r5-allowedblocked\sni.json

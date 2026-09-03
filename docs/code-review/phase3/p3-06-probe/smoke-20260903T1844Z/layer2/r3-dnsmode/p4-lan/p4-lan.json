@@ -1,0 +1,35 @@
+{
+  "script": "p4-lan",
+  "started_at": "2026-09-03T18:56:05.191Z",
+  "finished_at": "2026-09-03T18:56:05.883Z",
+  "tip": "92e3f4a9b930-dirty",
+  "probe": "127.0.0.1",
+  "probe_version": "0.3.1",
+  "host": {
+    "platform": "win32",
+    "idle": true,
+    "network": [
+      "Ethernet                Public"
+    ],
+    "busy": []
+  },
+  "args": {
+    "probe": "127.0.0.1",
+    "api-port": 8443,
+    "key": "<set>",
+    "out": "docs/code-review/phase3/p3-06-probe/smoke-20260903T1844Z/layer2/r3-dnsmode/p4-lan",
+    "tip": null,
+    "allow-busy": false,
+    "skip-host-checks": false,
+    "domain": "ads.smoke.test",
+    "dot-host": "dns.smoke.test",
+    "dns-port": 5300,
+    "dot-port": 8853,
+    "queries": 200,
+    "rounds": 1,
+    "timeout": 2000
+  },
+  "valid": false,
+  "status": "INVALID",
+  "reason": "engine.mode dns carries no https listener"
+}

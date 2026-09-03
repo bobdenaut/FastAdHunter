@@ -1,0 +1,92 @@
+{
+  "script": "p5",
+  "started_at": "2026-09-03T18:51:55.143Z",
+  "finished_at": "2026-09-03T18:51:55.922Z",
+  "tip": "92e3f4a9b930-dirty",
+  "probe": "127.0.0.1",
+  "probe_version": "0.3.1",
+  "host": {
+    "platform": "win32",
+    "idle": true,
+    "network": [
+      "Ethernet                Public"
+    ],
+    "busy": []
+  },
+  "args": {
+    "probe": "127.0.0.1",
+    "api-port": 8443,
+    "key": "<set>",
+    "out": "docs/code-review/phase3/p3-06-probe/smoke-20260903T1844Z/layer1-b",
+    "tip": null,
+    "allow-busy": false,
+    "skip-host-checks": false,
+    "hosts": 16,
+    "seed": "20260903T185155Z",
+    "dot-port": 8853,
+    "timeout": 10000
+  },
+  "valid": true,
+  "status": "valid",
+  "degraded_reasons": [],
+  "measurement": "P5",
+  "hosts": 16,
+  "seed": "20260903t185155z",
+  "figures": {
+    "first-sight": {
+      "n": 16,
+      "min": 0.612,
+      "p50": 0.663,
+      "p99": 0.825,
+      "max": 0.825,
+      "mean": 0.679,
+      "served_issuer": "FastAdHunter CA"
+    },
+    "repeat": {
+      "n": 16,
+      "min": 0.51,
+      "p50": 0.551,
+      "p99": 0.583,
+      "max": 0.583,
+      "mean": 0.546,
+      "served_issuer": "FastAdHunter CA"
+    },
+    "counters_delta": {
+      "minted_total": 16,
+      "unwarmed_misses": 0,
+      "evictions": 0,
+      "superseded": 0,
+      "prewarm_hits": 16,
+      "size": 16
+    }
+  },
+  "leaf_cache_before": {
+    "size": 0,
+    "capacity": 512,
+    "inflight": 0,
+    "hits": 0,
+    "unwarmed_misses": 0,
+    "prewarm_hits": 0,
+    "coalesced": 0,
+    "minted_total": 0,
+    "evictions": 0,
+    "superseded": 0
+  },
+  "leaf_cache_after": {
+    "size": 16,
+    "capacity": 512,
+    "inflight": 0,
+    "hits": 32,
+    "unwarmed_misses": 0,
+    "prewarm_hits": 16,
+    "coalesced": 0,
+    "minted_total": 16,
+    "evictions": 0,
+    "superseded": 0
+  },
+  "gate": {
+    "statistic": "p50(first-sight) - p50(repeat) < 1 ms (incremental p50 estimate of mint + insert)",
+    "value_ms": 0.112,
+    "pass": true
+  }
+}

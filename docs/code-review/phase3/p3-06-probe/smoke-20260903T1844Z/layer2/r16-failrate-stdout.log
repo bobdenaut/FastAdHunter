@@ -1,0 +1,19 @@
+2026-09-03T18:57:42.400Z [p1] == p1 start 2026-09-03T18:57:42.364Z tip=92e3f4a9b930-dirty out=docs/code-review/phase3/p3-06-probe/smoke-20260903T1844Z/layer2/r16-failrate
+2026-09-03T18:57:42.401Z [p1] args {"probe":"127.0.0.1","api-port":8443,"key":"<set>","out":"docs/code-review/phase3/p3-06-probe/smoke-20260903T1844Z/layer2/r16-failrate","tip":null,"allow-busy":false,"skip-host-checks":false,"origin":"127-0-0-1.nip.io","origin-ip":null,"origin-port":443,"origin-cert":"p1.crt","port":8444,"bytes":512,"runs":5,"connections":1,"direct":false,"control":null,"profile-share":null,"timeout":120000,"max-fail-pct":2}
+2026-09-03T18:57:42.691Z [p1] Get-NetConnectionProfile: Ethernet                Public
+2026-09-03T18:57:43.107Z [p1] idle check: PASS (recorded; each stage decides)
+2026-09-03T18:57:43.115Z [p1] GET /health -> 200 {"status":"ok","version":"0.3.1","uptime_seconds":59}
+2026-09-03T18:57:43.118Z [p1] engine.mode = dns+http+https
+2026-09-03T18:57:43.123Z [p1] origin 127-0-0-1.nip.io resolves locally to 127.0.0.1
+2026-09-03T18:57:43.123Z [p1] egress.allow_destinations = ["127.0.0.0/8"]
+2026-09-03T18:57:43.124Z [p1] arm=spliced target=127.0.0.1:8444 sni=127-0-0-1.nip.io expected=512 MiB x 1 conn x 5 runs
+2026-09-03T18:57:43.936Z [p1] run 1: ok=1/1 steady=928.3 MiB/s total=633.868 aggregate=928.3 hs=3.801ms
+2026-09-03T18:57:44.769Z [p1] run 2: ok=1/1 steady=914.25 MiB/s total=615.852 aggregate=914.25 hs=26.095ms
+2026-09-03T18:57:45.529Z [p1] run 3: ok=1/1 steady=1037.078 MiB/s total=675.359 aggregate=1037.077 hs=13.153ms
+2026-09-03T18:57:45.676Z [p1] run 4: ok=0/1 steady=- MiB/s total=- aggregate=- hs=17.534ms errors=[{"index":0,"error":"closed_zero_bytes","bytes":0}]
+2026-09-03T18:57:47.689Z [p1] run 5: ok=0/1 steady=- MiB/s total=- aggregate=- hs=nullms errors=[{"index":0,"error":"closed_before_handshake","bytes":0}]
+2026-09-03T18:57:47.695Z [p1] listeners.https delta {"connections":5,"requests":5,"blocked":0,"refused_claim":0,"refused_destination":0,"resolve_failures":0,"upstream_failures":1,"upstream_cert_failures":0,"non_http":0,"non_tls":0,"hello_timeouts":0,"dropped_events":0}
+2026-09-03T18:57:47.696Z [p1] degraded: 2 of 5 runs incomplete (40% over 2%); figures from the 3 completed runs
+2026-09-03T18:57:47.696Z [p1] wrote docs\code-review\phase3\p3-06-probe\smoke-20260903T1844Z\layer2\r16-failrate\p1.json
+2026-09-03T18:57:47.697Z [p1] GATE (degraded, not a gate) {"statistic":"median of runs steady MiB/s >= 100 and inside P1-control min-max","median_steady_mib_s":928.3,"at_least_100":true,"band":null,"inside_band":"not evaluated (--control absent)","pass":null}
+2026-09-03T18:57:47.697Z [p1] == p1 done (degraded)

@@ -1,0 +1,12 @@
+2026-09-03T19:12:17.169749Z  INFO fastadhunter: DNS listeners bound udp=[::]:53 tcp=[::]:53 dot=Some([::]:853)
+2026-09-03T19:12:17.169794Z  INFO fastadhunter::privilege::imp: adopting state directory for the service user path=/data/history
+2026-09-03T19:12:17.178180Z  INFO fastadhunter::privilege::imp: dropped privileges after binding uid=65532 gid=65532
+2026-09-03T19:12:17.178241Z  INFO fastadhunter: generated API key — store it now; it is not shown again api_key=adc15e84e802b518454ef9c773721cefcbf4b138718b494b66fd80eef356f9f9
+2026-09-03T19:12:17.193530Z  INFO fastadhunter: generated dashboard password — store it now; it is not shown again dashboard_password=3trnplpjewaga4lk5qwfdpf7du
+2026-09-03T19:12:17.212379Z  INFO fah_certs::api: generated self-signed API certificate dns=["fastadhunter", "localhost"] ip=[127.0.0.1, ::1, 172.28.0.2] not_after=2027-10-05 18:12:17.193612876 +00:00:00
+2026-09-03T19:12:17.212672Z  INFO fastadhunter: DoT serves the API certificate; generate or import a CA via /api/v1/certificates for Android Private DNS hostname mode port=853
+2026-09-03T19:12:17.213025Z  INFO fastadhunter: API listening url=https://0.0.0.0:8443
+2026-09-03T19:12:17.213047Z  INFO fastadhunter: stale-while-refresh pool started workers=3
+2026-09-03T19:12:17.213050Z  INFO fastadhunter: cache cleanup scheduler started
+2026-09-03T19:12:18.817759Z  WARN fah_dns::upstream: all upstreams failed — answers now depend on cached entries upstreams=2 suppressed=0 error=upstream timed out
+2026-09-03T19:12:18.817932Z  WARN fah_rules::lifecycle: scheduled list refresh failed list=oisd-basic error=fetch https://small.oisd.nl failed: error sending request for url (https://small.oisd.nl/): client error (Connect): dns error: upstream timed out

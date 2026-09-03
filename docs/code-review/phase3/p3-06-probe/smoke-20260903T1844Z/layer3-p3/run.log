@@ -1,0 +1,18 @@
+2026-09-03T19:16:38.905Z [p3] == p3 start 2026-09-03T19:16:38.864Z tip=92e3f4a9b930-dirty out=docs/code-review/phase3/p3-06-probe/smoke-20260903T1844Z/layer3-p3
+2026-09-03T19:16:38.905Z [p3] args {"probe":"127.0.0.1","api-port":8443,"key":"<set>","out":"docs/code-review/phase3/p3-06-probe/smoke-20260903T1844Z/layer3-p3","tip":null,"allow-busy":false,"skip-host-checks":false,"origin":"sabnzbd.org","path":"/tests/internetspeed/5MB.bin","warmup-path":"/","ca":"smoke3-ca.pem","port":8444,"bytes":5,"streams":64,"runs":1,"settle":5,"barrier-timeout":60,"throughput-runs":1,"arm":"both","max-fail-pct":2}
+2026-09-03T19:16:39.230Z [p3] Get-NetConnectionProfile: Ethernet                Public
+2026-09-03T19:16:39.680Z [p3] idle check: PASS (recorded; each stage decides)
+2026-09-03T19:16:39.693Z [p3] GET /health -> 200 {"status":"ok","version":"0.3.1","uptime_seconds":24}
+2026-09-03T19:16:39.696Z [p3] config snapshot -> docs\code-review\phase3\p3-06-probe\smoke-20260903T1844Z\layer3-p3\config.json
+2026-09-03T19:16:39.696Z [p3] engine.mode = dns+http+https
+2026-09-03T19:16:39.697Z [p3] local address toward the probe: 127.0.0.1; https.interception.clients = ["127.0.0.1","172.28.0.1"]
+2026-09-03T19:16:40.199Z [p3] throughput run 1: 11.348 MiB/s bytes=5242880
+2026-09-03T19:16:42.277Z [p3] stall run 1: warm-up 200 23854B issuer=FastAdHunter CA
+2026-09-03T19:16:42.637Z [p3] stall run 1: barrier MET (64/64 streams with :status 200 + first DATA, met)
+2026-09-03T19:16:49.705Z [p3] stall run 1: before=50.04 max=70.28 after=68.09 MiB delta=20.246 MiB drained=0/64 exclusive=true
+2026-09-03T19:16:50.769Z [p3] control run 1: warm-up 200 23846B issuer=FastAdHunter CA
+2026-09-03T19:16:51.196Z [p3] control run 1: barrier MET (64/64 streams with :status 200 + first DATA, met)
+2026-09-03T19:17:18.291Z [p3] control run 1: before=68.11 max=73.3 after=65.71 MiB delta=5.195 MiB drained=64/64 exclusive=true
+2026-09-03T19:17:18.295Z [p3] wrote docs\code-review\phase3\p3-06-probe\smoke-20260903T1844Z\layer3-p3\p3.json
+2026-09-03T19:17:18.295Z [p3] GATE {"throughput":{"statistic":"median of runs >= 50 MiB/s","median_mib_s":11.348,"pass":false},"rss":{"statistic":"max stall delta over runs vs ~5.5 MiB, read only when RESOLVED","attribution":"RESOLVED","max_stall_delta_mib":20.246,"reading_against_5_5_mib":"above — a finding, not a fail"}}
+2026-09-03T19:17:18.295Z [p3] == p3 done (valid)

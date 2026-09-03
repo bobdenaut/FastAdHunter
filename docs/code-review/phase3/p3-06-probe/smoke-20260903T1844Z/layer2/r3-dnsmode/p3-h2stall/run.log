@@ -1,0 +1,9 @@
+2026-09-03T18:56:04.455Z [p3] == p3 start 2026-09-03T18:56:04.418Z tip=92e3f4a9b930-dirty out=docs/code-review/phase3/p3-06-probe/smoke-20260903T1844Z/layer2/r3-dnsmode/p3-h2stall
+2026-09-03T18:56:04.456Z [p3] args {"probe":"127.0.0.1","api-port":8443,"key":"<set>","out":"docs/code-review/phase3/p3-06-probe/smoke-20260903T1844Z/layer2/r3-dnsmode/p3-h2stall","tip":null,"allow-busy":false,"skip-host-checks":false,"origin":"127-0-0-1.nip.io","path":"/8mib","warmup-path":"/","ca":"smoke-ca.pem","port":8444,"bytes":8,"streams":64,"runs":1,"settle":5,"barrier-timeout":60,"throughput-runs":1,"arm":"both","max-fail-pct":2}
+2026-09-03T18:56:04.738Z [p3] Get-NetConnectionProfile: Ethernet                Public
+2026-09-03T18:56:05.105Z [p3] idle check: PASS (recorded; each stage decides)
+2026-09-03T18:56:05.113Z [p3] GET /health -> 200 {"status":"ok","version":"0.3.1","uptime_seconds":14}
+2026-09-03T18:56:05.116Z [p3] config snapshot -> docs\code-review\phase3\p3-06-probe\smoke-20260903T1844Z\layer2\r3-dnsmode\p3-h2stall\config.json
+2026-09-03T18:56:05.116Z [p3] engine.mode = dns
+2026-09-03T18:56:05.116Z [p3] INVALID: engine.mode dns carries no https listener
+2026-09-03T18:56:05.116Z [p3] wrote docs\code-review\phase3\p3-06-probe\smoke-20260903T1844Z\layer2\r3-dnsmode\p3-h2stall\p3.json

@@ -1,0 +1,33 @@
+{
+  "script": "sni",
+  "started_at": "2026-09-03T18:56:01.902Z",
+  "finished_at": "2026-09-03T18:56:02.684Z",
+  "tip": "92e3f4a9b930-dirty",
+  "probe": "127.0.0.1",
+  "probe_version": "0.3.1",
+  "host": {
+    "platform": "win32",
+    "idle": true,
+    "network": [
+      "Ethernet                Public"
+    ],
+    "busy": []
+  },
+  "args": {
+    "probe": "127.0.0.1",
+    "api-port": 8443,
+    "key": "<set>",
+    "out": "docs/code-review/phase3/p3-06-probe/smoke-20260903T1844Z/layer2/r3-dnsmode/p0-sni",
+    "tip": null,
+    "allow-busy": false,
+    "skip-host-checks": false,
+    "blocked": "ads.smoke.test",
+    "allowed": "example.com",
+    "port": 8444,
+    "attempts": 5,
+    "timeout": 5000
+  },
+  "valid": false,
+  "status": "INVALID",
+  "reason": "engine.mode dns carries no https listener"
+}

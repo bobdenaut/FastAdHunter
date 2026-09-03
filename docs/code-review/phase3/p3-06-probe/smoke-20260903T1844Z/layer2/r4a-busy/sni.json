@@ -1,0 +1,35 @@
+{
+  "script": "sni",
+  "started_at": "2026-09-03T18:59:31.903Z",
+  "finished_at": "2026-09-03T18:59:32.735Z",
+  "tip": "92e3f4a9b930-dirty",
+  "probe": "127.0.0.1",
+  "probe_version": "0.3.1",
+  "host": {
+    "platform": "win32",
+    "idle": false,
+    "network": [
+      "Ethernet                Public"
+    ],
+    "busy": [
+      "chrome"
+    ]
+  },
+  "args": {
+    "probe": "127.0.0.1",
+    "api-port": 8446,
+    "key": "<set>",
+    "out": "docs/code-review/phase3/p3-06-probe/smoke-20260903T1844Z/layer2/r4a-busy",
+    "tip": null,
+    "allow-busy": false,
+    "skip-host-checks": false,
+    "blocked": "ads.smoke.test",
+    "allowed": "example.com",
+    "port": 8445,
+    "attempts": 5,
+    "timeout": 5000
+  },
+  "valid": false,
+  "status": "INVALID",
+  "reason": "host not idle: chrome running (plan §Running item 3); --allow-busy to proceed degraded"
+}

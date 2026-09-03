@@ -1,0 +1,21 @@
+2026-09-03T18:58:32.996Z [p6] == p6 start 2026-09-03T18:58:32.960Z tip=92e3f4a9b930-dirty out=docs/code-review/phase3/p3-06-probe/smoke-20260903T1844Z/layer2/r14b-409
+2026-09-03T18:58:32.997Z [p6] args {"probe":"127.0.0.1","api-port":8446,"key":"<set>","out":"docs/code-review/phase3/p3-06-probe/smoke-20260903T1844Z/layer2/r14b-409","tip":null,"allow-busy":false,"skip-host-checks":false,"generate":10,"import":0,"cert":"p1.crt","key-file":"p1.key","ca-archive-count":null,"api-archive-count":null,"ca-out":null}
+2026-09-03T18:58:33.283Z [p6] Get-NetConnectionProfile: Ethernet                Public
+2026-09-03T18:58:33.683Z [p6] idle check: PASS (recorded; each stage decides)
+2026-09-03T18:58:33.691Z [p6] GET /health -> 200 {"status":"ok","version":"0.3.1","uptime_seconds":22}
+2026-09-03T18:58:33.697Z [p6] config snapshot -> docs\code-review\phase3\p3-06-probe\smoke-20260903T1844Z\layer2\r14b-409\config.json
+2026-09-03T18:58:33.697Z [p6] engine.mode = dns+http+https
+2026-09-03T18:58:33.699Z [p6] before: ca={"present":false} api_certificate={"source":"self_signed"}
+2026-09-03T18:58:33.699Z [p6] degraded: ca-archive count before the run unknown (--ca-archive-count)
+2026-09-03T18:58:33.703Z [p6] ca/generate #1: 200 starttransfer-appconnect=1.778 ms total=3.357 ms
+2026-09-03T18:58:33.708Z [p6] ca/generate #2: 200 starttransfer-appconnect=2.999 ms total=4.563 ms
+2026-09-03T18:58:33.712Z [p6] ca/generate #3: 200 starttransfer-appconnect=1.975 ms total=3.669 ms
+2026-09-03T18:58:33.716Z [p6] ca/generate #4: 200 starttransfer-appconnect=2.899 ms total=4.563 ms
+2026-09-03T18:58:33.721Z [p6] ca/generate #5: 200 starttransfer-appconnect=2.046 ms total=3.987 ms
+2026-09-03T18:58:33.724Z [p6] ca/generate #6: 200 starttransfer-appconnect=1.803 ms total=3.496 ms
+2026-09-03T18:58:33.728Z [p6] ca/generate #7: 200 starttransfer-appconnect=1.589 ms total=3.18 ms
+2026-09-03T18:58:33.731Z [p6] ca/generate #8: 200 starttransfer-appconnect=1.859 ms total=3.356 ms
+2026-09-03T18:58:33.735Z [p6] ca/generate #9: 200 starttransfer-appconnect=2.092 ms total=3.624 ms
+2026-09-03T18:58:33.738Z [p6] ca/generate #10: 409 starttransfer-appconnect=0.95 ms total=2.515 ms
+2026-09-03T18:58:33.738Z [p6] INVALID: ca/generate #10 answered 409: {"error":{"code":"conflict","message":"archive_full: ca-archive already holds 8 retired pairs; move some out of /config before replacing this pair"}}
+2026-09-03T18:58:33.739Z [p6] wrote docs\code-review\phase3\p3-06-probe\smoke-20260903T1844Z\layer2\r14b-409\p6.json

@@ -1,0 +1,35 @@
+{
+  "script": "p6",
+  "started_at": "2026-09-03T18:58:26.218Z",
+  "finished_at": "2026-09-03T18:58:26.966Z",
+  "tip": "92e3f4a9b930-dirty",
+  "probe": "127.0.0.1",
+  "probe_version": "0.3.1",
+  "host": {
+    "platform": "win32",
+    "idle": true,
+    "network": [
+      "Ethernet                Public"
+    ],
+    "busy": []
+  },
+  "args": {
+    "probe": "127.0.0.1",
+    "api-port": 8446,
+    "key": "<set>",
+    "out": "docs/code-review/phase3/p3-06-probe/smoke-20260903T1844Z/layer2/r14a-cap",
+    "tip": null,
+    "allow-busy": false,
+    "skip-host-checks": false,
+    "generate": 10,
+    "import": 0,
+    "cert": "p1.crt",
+    "key-file": "p1.key",
+    "ca-archive-count": 0,
+    "api-archive-count": 0,
+    "ca-out": null
+  },
+  "valid": false,
+  "status": "INVALID",
+  "reason": "ca-archive holds 0; 10 generates would add 9 (the first on an empty store archives nothing) and pass the cap of 8"
+}

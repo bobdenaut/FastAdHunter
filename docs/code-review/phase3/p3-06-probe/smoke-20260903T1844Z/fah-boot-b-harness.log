@@ -1,0 +1,16 @@
+2026-09-03T18:52:24.693176Z  INFO fastadhunter: fastadhunter starting config_path=smoke-config/fastadhunter.toml data_dir=smoke-data mode=DnsHttpHttps
+2026-09-03T18:52:24.842017Z  INFO fah_rules::lifecycle: refresh schedule restored from cached copies lists=1
+2026-09-03T18:52:24.842550Z  INFO fastadhunter: ruleset compiled from cache rules=62949 policies=1
+2026-09-03T18:52:24.844932Z  INFO fastadhunter: DNS listeners bound udp=127.0.0.1:5300 tcp=127.0.0.1:5300 dot=Some(127.0.0.1:8853)
+2026-09-03T18:52:24.845003Z  INFO fastadhunter: HTTP listener bound addr=127.0.0.1:8080
+2026-09-03T18:52:24.845048Z  INFO fastadhunter: HTTPS SNI listener bound addr=127.0.0.1:8444
+2026-09-03T18:52:24.845077Z  INFO fastadhunter: egress allow-list active — private destinations permitted count=1
+2026-09-03T18:52:24.848876Z  WARN fastadhunter: built with the p5-04 measurement feature: login rate limiting is relaxed. This build must never be shipped
+2026-09-03T18:52:24.850999Z  INFO fastadhunter: egress allow-list active — private destinations permitted count=1
+2026-09-03T18:52:24.851218Z  WARN fastadhunter: built with the test-harness feature: an extra upstream trust anchor was loaded from FAH_TEST_UPSTREAM_ROOT. This build must never be shipped path=E:/FastAdHunter/p3.der
+2026-09-03T18:52:24.851252Z  INFO fastadhunter: HTTPS interception active for the listed clients — each must hold a static lease count=1 exclusions=34
+2026-09-03T18:52:24.851592Z  INFO fastadhunter: DoT serves a CA-minted certificate for the hostname each client sends, the API certificate when a hello carries no SNI port=8853
+2026-09-03T18:52:24.851745Z ERROR fah_api::web: web UI missing: the dashboard will not load. /web is image content, not a volume — a volume mounted over it hides the bundle the image ships path=/web\index.html
+2026-09-03T18:52:24.853053Z  INFO fastadhunter: API listening url=https://127.0.0.1:8443
+2026-09-03T18:52:24.853198Z  INFO fastadhunter: stale-while-refresh pool started workers=3
+2026-09-03T18:52:24.853212Z  INFO fastadhunter: cache cleanup scheduler started

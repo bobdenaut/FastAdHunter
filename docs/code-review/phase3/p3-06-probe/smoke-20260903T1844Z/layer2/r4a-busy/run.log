@@ -1,0 +1,9 @@
+2026-09-03T18:59:31.942Z [sni] == sni start 2026-09-03T18:59:31.903Z tip=92e3f4a9b930-dirty out=docs/code-review/phase3/p3-06-probe/smoke-20260903T1844Z/layer2/r4a-busy
+2026-09-03T18:59:31.943Z [sni] args {"probe":"127.0.0.1","api-port":8446,"key":"<set>","out":"docs/code-review/phase3/p3-06-probe/smoke-20260903T1844Z/layer2/r4a-busy","tip":null,"allow-busy":false,"skip-host-checks":false,"blocked":"ads.smoke.test","allowed":"example.com","port":8445,"attempts":5,"timeout":5000}
+2026-09-03T18:59:32.231Z [sni] Get-NetConnectionProfile: Ethernet                Public
+2026-09-03T18:59:32.719Z [sni] idle check: FAIL chrome (recorded; each stage decides)
+2026-09-03T18:59:32.727Z [sni] GET /health -> 200 {"status":"ok","version":"0.3.1","uptime_seconds":81}
+2026-09-03T18:59:32.735Z [sni] config snapshot -> docs\code-review\phase3\p3-06-probe\smoke-20260903T1844Z\layer2\r4a-busy\config.json
+2026-09-03T18:59:32.735Z [sni] engine.mode = dns+http+https
+2026-09-03T18:59:32.735Z [sni] INVALID: host not idle: chrome running (plan §Running item 3); --allow-busy to proceed degraded
+2026-09-03T18:59:32.735Z [sni] wrote docs\code-review\phase3\p3-06-probe\smoke-20260903T1844Z\layer2\r4a-busy\sni.json

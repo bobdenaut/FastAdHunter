@@ -1,0 +1,9 @@
+2026-09-03T18:56:05.988Z [p5] == p5 start 2026-09-03T18:56:05.952Z tip=92e3f4a9b930-dirty out=docs/code-review/phase3/p3-06-probe/smoke-20260903T1844Z/layer2/r3-dnsmode/p5-mint
+2026-09-03T18:56:05.989Z [p5] args {"probe":"127.0.0.1","api-port":8443,"key":"<set>","out":"docs/code-review/phase3/p3-06-probe/smoke-20260903T1844Z/layer2/r3-dnsmode/p5-mint","tip":null,"allow-busy":false,"skip-host-checks":false,"hosts":16,"seed":"20260903T185605Z","dot-port":8853,"timeout":10000}
+2026-09-03T18:56:06.272Z [p5] Get-NetConnectionProfile: Ethernet                Public
+2026-09-03T18:56:06.642Z [p5] idle check: PASS (recorded; each stage decides)
+2026-09-03T18:56:06.650Z [p5] GET /health -> 200 {"status":"ok","version":"0.3.1","uptime_seconds":16}
+2026-09-03T18:56:06.656Z [p5] config snapshot -> docs\code-review\phase3\p3-06-probe\smoke-20260903T1844Z\layer2\r3-dnsmode\p5-mint\config.json
+2026-09-03T18:56:06.656Z [p5] engine.mode = dns
+2026-09-03T18:56:06.656Z [p5] INVALID: engine.mode dns carries no https listener
+2026-09-03T18:56:06.656Z [p5] wrote docs\code-review\phase3\p3-06-probe\smoke-20260903T1844Z\layer2\r3-dnsmode\p5-mint\p5.json

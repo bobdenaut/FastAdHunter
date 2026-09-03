@@ -1,0 +1,148 @@
+{
+  "script": "p3",
+  "started_at": "2026-09-03T19:16:38.864Z",
+  "finished_at": "2026-09-03T19:17:18.292Z",
+  "tip": "92e3f4a9b930-dirty",
+  "probe": "127.0.0.1",
+  "probe_version": "0.3.1",
+  "host": {
+    "platform": "win32",
+    "idle": true,
+    "network": [
+      "Ethernet                Public"
+    ],
+    "busy": []
+  },
+  "args": {
+    "probe": "127.0.0.1",
+    "api-port": 8443,
+    "key": "<set>",
+    "out": "docs/code-review/phase3/p3-06-probe/smoke-20260903T1844Z/layer3-p3",
+    "tip": null,
+    "allow-busy": false,
+    "skip-host-checks": false,
+    "origin": "sabnzbd.org",
+    "path": "/tests/internetspeed/5MB.bin",
+    "warmup-path": "/",
+    "ca": "smoke3-ca.pem",
+    "port": 8444,
+    "bytes": 5,
+    "streams": 64,
+    "runs": 1,
+    "settle": 5,
+    "barrier-timeout": 60,
+    "throughput-runs": 1,
+    "arm": "both",
+    "max-fail-pct": 2
+  },
+  "valid": true,
+  "status": "valid",
+  "degraded_reasons": [],
+  "measurement": "P3",
+  "origin": "sabnzbd.org",
+  "path": "/tests/internetspeed/5MB.bin",
+  "streams": 64,
+  "local_address": "127.0.0.1",
+  "throughput": {
+    "runs": [
+      {
+        "index": 1,
+        "status": 200,
+        "bytes": 5242880,
+        "content_length": null,
+        "ok": true,
+        "issuer": "FastAdHunter CA",
+        "mib_s": 11.348,
+        "first_byte_ms": 33.659
+      }
+    ],
+    "median_mib_s": 11.348,
+    "gate": {
+      "statistic": "median of runs >= 50 MiB/s",
+      "median_mib_s": 11.348,
+      "pass": false
+    }
+  },
+  "rss": {
+    "runs": [
+      {
+        "kind": "stall",
+        "index": 1,
+        "valid": true,
+        "reason": null,
+        "barrier": "met",
+        "tls": {
+          "issuerCN": "FastAdHunter CA",
+          "subjectCN": "sabnzbd.org",
+          "fingerprint256": "03:74:3F:6A:1F:A4:2B:16:82:BE:AE:AD:78:A0:10:2B:F8:A0:EC:0A:11:87:9D:79:C7:32:78:48:5F:12:C1:7D",
+          "tls": "TLSv1.3",
+          "alpn": "h2",
+          "authorized": true
+        },
+        "before_rss": 52465664,
+        "max_during_rss": 73695232,
+        "after_rss": 71401472,
+        "delta_mib": 20.246,
+        "after_minus_before_mib": 18.059,
+        "window_s": 7.1,
+        "streams_drained": 0,
+        "bytes_total": 524286,
+        "connections_delta": 2,
+        "dns_flat": true
+      },
+      {
+        "kind": "control",
+        "index": 1,
+        "valid": true,
+        "reason": null,
+        "barrier": "met",
+        "tls": {
+          "issuerCN": "FastAdHunter CA",
+          "subjectCN": "sabnzbd.org",
+          "fingerprint256": "03:74:3F:6A:1F:A4:2B:16:82:BE:AE:AD:78:A0:10:2B:F8:A0:EC:0A:11:87:9D:79:C7:32:78:48:5F:12:C1:7D",
+          "tls": "TLSv1.3",
+          "alpn": "h2",
+          "authorized": true
+        },
+        "before_rss": 71417856,
+        "max_during_rss": 76865536,
+        "after_rss": 68907008,
+        "delta_mib": 5.195,
+        "after_minus_before_mib": -2.395,
+        "window_s": 27.1,
+        "streams_drained": 64,
+        "bytes_total": 335544320,
+        "connections_delta": 2,
+        "dns_flat": true
+      }
+    ],
+    "stall_delta_mib": [
+      20.246
+    ],
+    "control_delta_mib": [
+      5.195
+    ],
+    "max_stall_delta_mib": 20.246,
+    "max_control_delta_mib": 5.195,
+    "attribution": "RESOLVED",
+    "gate": {
+      "statistic": "max stall delta over runs vs ~5.5 MiB, read only when RESOLVED",
+      "attribution": "RESOLVED",
+      "max_stall_delta_mib": 20.246,
+      "reading_against_5_5_mib": "above — a finding, not a fail"
+    }
+  },
+  "gate": {
+    "throughput": {
+      "statistic": "median of runs >= 50 MiB/s",
+      "median_mib_s": 11.348,
+      "pass": false
+    },
+    "rss": {
+      "statistic": "max stall delta over runs vs ~5.5 MiB, read only when RESOLVED",
+      "attribution": "RESOLVED",
+      "max_stall_delta_mib": 20.246,
+      "reading_against_5_5_mib": "above — a finding, not a fail"
+    }
+  }
+}

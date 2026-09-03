@@ -1,0 +1,2 @@
+sabnzbd.org /tests/internetspeed/5MB.bin alpn h2 status 200 content-length undefined bytes 5242880
+sabnzbd.org / alpn h2 status 200 content-length undefined bytes 23846

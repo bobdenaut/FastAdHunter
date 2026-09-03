@@ -1,0 +1,14 @@
+2026-09-03T19:15:51.470Z [p5] == p5 start 2026-09-03T19:15:51.435Z tip=92e3f4a9b930-dirty out=docs/code-review/phase3/p3-06-probe/smoke-20260903T1844Z/layer3-l1b
+2026-09-03T19:15:51.471Z [p5] args {"probe":"127.0.0.1","api-port":8443,"key":"<set>","out":"docs/code-review/phase3/p3-06-probe/smoke-20260903T1844Z/layer3-l1b","tip":null,"allow-busy":false,"skip-host-checks":false,"hosts":16,"seed":"20260903T191551Z","dot-port":8853,"timeout":10000}
+2026-09-03T19:15:51.752Z [p5] Get-NetConnectionProfile: Ethernet                Public
+2026-09-03T19:15:52.195Z [p5] idle check: PASS (recorded; each stage decides)
+2026-09-03T19:15:52.203Z [p5] GET /health -> 200 {"status":"ok","version":"0.3.1","uptime_seconds":119}
+2026-09-03T19:15:52.206Z [p5] config snapshot -> docs\code-review\phase3\p3-06-probe\smoke-20260903T1844Z\layer3-l1b\config.json
+2026-09-03T19:15:52.210Z [p5] engine.mode = dns+http+https
+2026-09-03T19:15:52.213Z [p5] certificates before: ca.present=true dot={"state":"listening","address":"0.0.0.0:853"} leaf_cache={"size":1,"capacity":512,"inflight":0,"hits":1,"unwarmed_misses":0,"prewarm_hits":0,"coalesced":0,"minted_total":1,"evictions":0,"superseded":0}
+2026-09-03T19:15:52.248Z [p5] first-sight: 16/16 handshakes, p50=1.013 ms, issuers=FastAdHunter CA, errors=0
+2026-09-03T19:15:52.280Z [p5] repeat: 16/16 handshakes, p50=0.958 ms, issuers=FastAdHunter CA, errors=0
+2026-09-03T19:15:52.282Z [p5] leaf_cache delta whole run {"size":16,"capacity":0,"inflight":0,"hits":32,"unwarmed_misses":0,"prewarm_hits":16,"coalesced":0,"minted_total":16,"evictions":0,"superseded":0}; repeat pass {"size":0,"capacity":0,"inflight":0,"hits":16,"unwarmed_misses":0,"prewarm_hits":16,"coalesced":0,"minted_total":0,"evictions":0,"superseded":0}
+2026-09-03T19:15:52.283Z [p5] wrote docs\code-review\phase3\p3-06-probe\smoke-20260903T1844Z\layer3-l1b\p5.json
+2026-09-03T19:15:52.283Z [p5] GATE {"statistic":"p50(first-sight) - p50(repeat) < 1 ms (incremental p50 estimate of mint + insert)","value_ms":0.055,"pass":true}
+2026-09-03T19:15:52.283Z [p5] == p5 done (valid)

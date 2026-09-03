@@ -1,0 +1,32 @@
+{
+  "script": "p5",
+  "started_at": "2026-09-03T18:54:37.381Z",
+  "finished_at": "2026-09-03T18:54:38.134Z",
+  "tip": "92e3f4a9b930-dirty",
+  "probe": "127.0.0.1",
+  "probe_version": "0.3.1",
+  "host": {
+    "platform": "win32",
+    "idle": true,
+    "network": [
+      "Ethernet                Public"
+    ],
+    "busy": []
+  },
+  "args": {
+    "probe": "127.0.0.1",
+    "api-port": 8443,
+    "key": "<set>",
+    "out": "docs/code-review/phase3/p3-06-probe/smoke-20260903T1844Z/layer2/r13-headroom",
+    "tip": null,
+    "allow-busy": false,
+    "skip-host-checks": false,
+    "hosts": 600,
+    "seed": "20260903T185437Z",
+    "dot-port": 8853,
+    "timeout": 10000
+  },
+  "valid": false,
+  "status": "INVALID",
+  "reason": "leaf_cache.size 0 + 600 hosts exceeds capacity 512: the repeat pass would evict"
+}

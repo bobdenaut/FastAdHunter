@@ -1,0 +1,7 @@
+2026-09-03T18:53:52.710Z [sni] == sni start 2026-09-03T18:53:52.676Z tip=92e3f4a9b930-dirty out=docs/code-review/phase3/p3-06-probe/smoke-20260903T1844Z/layer2/r2-nohealth
+2026-09-03T18:53:52.711Z [sni] args {"probe":"127.0.0.9","api-port":8443,"key":"<set>","out":"docs/code-review/phase3/p3-06-probe/smoke-20260903T1844Z/layer2/r2-nohealth","tip":null,"allow-busy":false,"skip-host-checks":false,"blocked":"ads.smoke.test","allowed":"example.com","port":8444,"attempts":5,"timeout":5000}
+2026-09-03T18:53:53.053Z [sni] Get-NetConnectionProfile: Ethernet                Public
+2026-09-03T18:53:53.431Z [sni] idle check: PASS (recorded; each stage decides)
+2026-09-03T18:53:53.436Z [sni] GET /health -> 0 Error: connect ECONNREFUSED 127.0.0.9:8443
+2026-09-03T18:53:53.440Z [sni] INVALID: probe /health answered 0
+2026-09-03T18:53:53.440Z [sni] wrote docs\code-review\phase3\p3-06-probe\smoke-20260903T1844Z\layer2\r2-nohealth\sni.json

@@ -1,0 +1,259 @@
+{
+  "script": "p1",
+  "started_at": "2026-09-03T18:49:34.084Z",
+  "finished_at": "2026-09-03T18:49:34.956Z",
+  "tip": "92e3f4a9b930-dirty",
+  "probe": "127.0.0.1",
+  "probe_version": "0.3.1",
+  "host": {
+    "platform": "win32",
+    "idle": true,
+    "network": [
+      "Ethernet                Public"
+    ],
+    "busy": []
+  },
+  "args": {
+    "probe": "127.0.0.1",
+    "api-port": 8443,
+    "key": "<set>",
+    "out": "docs/code-review/phase3/p3-06-probe/smoke-20260903T1844Z/layer1-a",
+    "tip": null,
+    "allow-busy": false,
+    "skip-host-checks": false,
+    "origin": "127-0-0-1.nip.io",
+    "origin-ip": null,
+    "origin-port": 4443,
+    "origin-cert": "p1.crt",
+    "port": 8444,
+    "bytes": 8,
+    "runs": 5,
+    "connections": 1,
+    "direct": true,
+    "control": null,
+    "profile-share": null,
+    "timeout": 120000,
+    "max-fail-pct": 2
+  },
+  "valid": true,
+  "status": "valid",
+  "degraded_reasons": [],
+  "measurement": "P1-control",
+  "arm": "p1_control",
+  "origin": "127-0-0-1.nip.io",
+  "target": {
+    "host": "127.0.0.1",
+    "port": 4443
+  },
+  "bytes_mib": 8,
+  "connections": 1,
+  "served_issuer": "127-0-0-1.nip.io",
+  "figures": {
+    "steady_mib_s": {
+      "n": 5,
+      "min": 208.937,
+      "p50": 1151.576,
+      "p99": 1331.78,
+      "max": 1331.78,
+      "mean": 829.093
+    },
+    "total_mib_s": {
+      "n": 5,
+      "min": 186.986,
+      "p50": 686.695,
+      "p99": 763.65,
+      "max": 763.65,
+      "mean": 511.726
+    },
+    "aggregate_mib_s": {
+      "n": 5,
+      "min": 208.935,
+      "p50": 1151.51,
+      "p99": 1331.846,
+      "max": 1331.846,
+      "mean": 829.096
+    },
+    "median_steady_mib_s": 1151.576
+  },
+  "telemetry_delta": null,
+  "runs": [
+    {
+      "run": 1,
+      "connections": 1,
+      "ok": 1,
+      "bytes_total": 8388608,
+      "steady_mib_s": 294.258,
+      "total_mib_s": 232.592,
+      "aggregate_mib_s": 294.256,
+      "handshake_ms": {
+        "n": 1,
+        "min": 3.087,
+        "p50": 3.087,
+        "p99": 3.087,
+        "max": 3.087,
+        "mean": 3.087
+      },
+      "first_byte_ms": {
+        "n": 1,
+        "min": 4.121,
+        "p50": 4.121,
+        "p99": 4.121,
+        "max": 4.121,
+        "mean": 4.121
+      },
+      "errors": [],
+      "tls": {
+        "issuerCN": "127-0-0-1.nip.io",
+        "subjectCN": "127-0-0-1.nip.io",
+        "fingerprint256": "EB:DE:8B:BB:E3:DA:AC:77:1B:5A:C1:37:82:AD:47:DF:A6:BF:E4:9B:0E:93:C1:E2:78:3C:2D:CF:74:13:4F:B7",
+        "tls": "TLSv1.3",
+        "alpn": null,
+        "authorized": true
+      }
+    },
+    {
+      "run": 2,
+      "connections": 1,
+      "ok": 1,
+      "bytes_total": 8388608,
+      "steady_mib_s": 1331.78,
+      "total_mib_s": 763.65,
+      "aggregate_mib_s": 1331.846,
+      "handshake_ms": {
+        "n": 1,
+        "min": 0.771,
+        "p50": 0.771,
+        "p99": 0.771,
+        "max": 0.771,
+        "mean": 0.771
+      },
+      "first_byte_ms": {
+        "n": 1,
+        "min": 3.698,
+        "p50": 3.698,
+        "p99": 3.698,
+        "max": 3.698,
+        "mean": 3.698
+      },
+      "errors": [],
+      "tls": {
+        "issuerCN": "127-0-0-1.nip.io",
+        "subjectCN": "127-0-0-1.nip.io",
+        "fingerprint256": "EB:DE:8B:BB:E3:DA:AC:77:1B:5A:C1:37:82:AD:47:DF:A6:BF:E4:9B:0E:93:C1:E2:78:3C:2D:CF:74:13:4F:B7",
+        "tls": "TLSv1.3",
+        "alpn": null,
+        "authorized": true
+      }
+    },
+    {
+      "run": 3,
+      "connections": 1,
+      "ok": 1,
+      "bytes_total": 8388608,
+      "steady_mib_s": 208.937,
+      "total_mib_s": 186.986,
+      "aggregate_mib_s": 208.935,
+      "handshake_ms": {
+        "n": 1,
+        "min": 0.77,
+        "p50": 0.77,
+        "p99": 0.77,
+        "max": 0.77,
+        "mean": 0.77
+      },
+      "first_byte_ms": {
+        "n": 1,
+        "min": 3.725,
+        "p50": 3.725,
+        "p99": 3.725,
+        "max": 3.725,
+        "mean": 3.725
+      },
+      "errors": [],
+      "tls": {
+        "issuerCN": "127-0-0-1.nip.io",
+        "subjectCN": "127-0-0-1.nip.io",
+        "fingerprint256": "EB:DE:8B:BB:E3:DA:AC:77:1B:5A:C1:37:82:AD:47:DF:A6:BF:E4:9B:0E:93:C1:E2:78:3C:2D:CF:74:13:4F:B7",
+        "tls": "TLSv1.3",
+        "alpn": null,
+        "authorized": true
+      }
+    },
+    {
+      "run": 4,
+      "connections": 1,
+      "ok": 1,
+      "bytes_total": 8388608,
+      "steady_mib_s": 1158.916,
+      "total_mib_s": 688.705,
+      "aggregate_mib_s": 1158.933,
+      "handshake_ms": {
+        "n": 1,
+        "min": 0.939,
+        "p50": 0.939,
+        "p99": 0.939,
+        "max": 0.939,
+        "mean": 0.939
+      },
+      "first_byte_ms": {
+        "n": 1,
+        "min": 3.775,
+        "p50": 3.775,
+        "p99": 3.775,
+        "max": 3.775,
+        "mean": 3.775
+      },
+      "errors": [],
+      "tls": {
+        "issuerCN": "127-0-0-1.nip.io",
+        "subjectCN": "127-0-0-1.nip.io",
+        "fingerprint256": "EB:DE:8B:BB:E3:DA:AC:77:1B:5A:C1:37:82:AD:47:DF:A6:BF:E4:9B:0E:93:C1:E2:78:3C:2D:CF:74:13:4F:B7",
+        "tls": "TLSv1.3",
+        "alpn": null,
+        "authorized": true
+      }
+    },
+    {
+      "run": 5,
+      "connections": 1,
+      "ok": 1,
+      "bytes_total": 8388608,
+      "steady_mib_s": 1151.576,
+      "total_mib_s": 686.695,
+      "aggregate_mib_s": 1151.51,
+      "handshake_ms": {
+        "n": 1,
+        "min": 0.874,
+        "p50": 0.874,
+        "p99": 0.874,
+        "max": 0.874,
+        "mean": 0.874
+      },
+      "first_byte_ms": {
+        "n": 1,
+        "min": 3.828,
+        "p50": 3.828,
+        "p99": 3.828,
+        "max": 3.828,
+        "mean": 3.828
+      },
+      "errors": [],
+      "tls": {
+        "issuerCN": "127-0-0-1.nip.io",
+        "subjectCN": "127-0-0-1.nip.io",
+        "fingerprint256": "EB:DE:8B:BB:E3:DA:AC:77:1B:5A:C1:37:82:AD:47:DF:A6:BF:E4:9B:0E:93:C1:E2:78:3C:2D:CF:74:13:4F:B7",
+        "tls": "TLSv1.3",
+        "alpn": null,
+        "authorized": true
+      }
+    }
+  ],
+  "gate": {
+    "statistic": "none — this arm is the band",
+    "band": {
+      "min": 208.937,
+      "p50": 1151.576,
+      "max": 1331.78
+    }
+  }
+}

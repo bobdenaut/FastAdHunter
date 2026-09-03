@@ -1,0 +1,34 @@
+2026-09-03T18:58:11.134081Z  INFO fastadhunter: fastadhunter starting config_path=smoke2-config/fastadhunter.toml data_dir=smoke2-data mode=DnsHttpHttps
+2026-09-03T18:58:11.138803Z  INFO fastadhunter: ruleset compiled from cache rules=0 policies=1
+2026-09-03T18:58:11.140392Z  INFO fastadhunter: DNS listeners bound udp=127.0.0.1:5301 tcp=127.0.0.1:5301 dot=Some(127.0.0.1:8854)
+2026-09-03T18:58:11.140442Z  INFO fastadhunter: HTTP listener bound addr=127.0.0.1:8081
+2026-09-03T18:58:11.140479Z  INFO fastadhunter: HTTPS SNI listener bound addr=127.0.0.1:8445
+2026-09-03T18:58:11.140487Z  INFO fastadhunter: egress allow-list active — private destinations permitted count=1
+2026-09-03T18:58:11.140679Z  INFO fastadhunter: generated API key — store it now; it is not shown again api_key=c6ff158189e27390160182ca53381f5182d828ed271437e059f1ca835b68c4eb
+2026-09-03T18:58:11.155417Z  INFO fastadhunter: generated dashboard password — store it now; it is not shown again dashboard_password=xjfdk2yna6oq362iucu62ytcrq
+2026-09-03T18:58:11.175960Z  INFO fah_certs::api: generated self-signed API certificate dns=["fastadhunter", "localhost"] ip=[127.0.0.1, ::1, 192.168.10.10] not_after=2027-10-05 17:58:11.1556254 +00:00:00
+2026-09-03T18:58:11.177175Z  INFO fastadhunter: egress allow-list active — private destinations permitted count=1
+2026-09-03T18:58:11.179968Z  INFO fastadhunter: DoT serves the API certificate; generate or import a CA via /api/v1/certificates for Android Private DNS hostname mode port=8854
+2026-09-03T18:58:11.180108Z ERROR fah_api::web: web UI missing: the dashboard will not load. /web is image content, not a volume — a volume mounted over it hides the bundle the image ships path=/web\index.html
+2026-09-03T18:58:11.180403Z  INFO fastadhunter: API listening url=https://127.0.0.1:8446
+2026-09-03T18:58:11.180441Z  INFO fastadhunter: stale-while-refresh pool started workers=3
+2026-09-03T18:58:11.180445Z  INFO fastadhunter: cache cleanup scheduler started
+2026-09-03T18:58:11.705979Z  INFO fah_rules::lifecycle: list refreshed list=oisd-basic active=62948 inactive=0 parse_errors=0
+2026-09-03T18:58:11.706006Z  INFO fah_rules::lifecycle: scheduled refresh complete lists=1 refreshed=1 unchanged=0 failed=0 rules=62948
+2026-09-03T18:58:33.703566Z  INFO fah_api::certs: generated a certificate authority fingerprint=01:8A:A5:CB:8C:8F:61:BB:95:3A:D9:34:D1:69:14:79:4E:72:01:92:F0:0B:EF:CB:49:7C:50:AE:68:D5:38:7E archived_previous=false
+2026-09-03T18:58:33.708374Z  WARN fah_certs::store: replacing the certificate authority; every client trusting the old root must install the new one archive=smoke2-config\ca-archive\1788461913
+2026-09-03T18:58:33.708426Z  INFO fah_api::certs: generated a certificate authority fingerprint=D9:7D:70:7D:EE:F3:92:85:33:6A:6E:42:DC:89:4F:AD:C9:6E:47:93:87:35:7B:72:16:BE:EF:DE:7A:DB:5D:31 archived_previous=true
+2026-09-03T18:58:33.712513Z  WARN fah_certs::store: replacing the certificate authority; every client trusting the old root must install the new one archive=smoke2-config\ca-archive\1788461913-1
+2026-09-03T18:58:33.712544Z  INFO fah_api::certs: generated a certificate authority fingerprint=EC:B0:9E:C3:8B:6F:B3:3E:B7:DB:28:F6:7B:78:56:09:90:5F:D9:77:6A:BD:77:AD:C4:92:9B:73:D8:96:77:09 archived_previous=true
+2026-09-03T18:58:33.717340Z  WARN fah_certs::store: replacing the certificate authority; every client trusting the old root must install the new one archive=smoke2-config\ca-archive\1788461913-2
+2026-09-03T18:58:33.717370Z  INFO fah_api::certs: generated a certificate authority fingerprint=38:36:86:23:AC:99:B8:04:84:3C:90:F3:B5:D5:3A:5E:B2:49:CE:72:7F:68:15:6C:41:DC:AB:9D:E0:B6:27:6B archived_previous=true
+2026-09-03T18:58:33.721645Z  WARN fah_certs::store: replacing the certificate authority; every client trusting the old root must install the new one archive=smoke2-config\ca-archive\1788461913-3
+2026-09-03T18:58:33.721681Z  INFO fah_api::certs: generated a certificate authority fingerprint=58:26:A8:1A:88:7A:B6:56:04:FA:AC:4E:82:AF:A1:17:CE:07:10:44:CD:D1:E7:28:48:B6:DE:24:E9:FB:3B:A7 archived_previous=true
+2026-09-03T18:58:33.725422Z  WARN fah_certs::store: replacing the certificate authority; every client trusting the old root must install the new one archive=smoke2-config\ca-archive\1788461913-4
+2026-09-03T18:58:33.725445Z  INFO fah_api::certs: generated a certificate authority fingerprint=65:22:93:60:D9:F4:AB:1A:ED:BF:73:D8:FA:63:30:9F:EE:CA:13:53:07:F6:B2:15:94:69:12:51:ED:02:DA:65 archived_previous=true
+2026-09-03T18:58:33.728845Z  WARN fah_certs::store: replacing the certificate authority; every client trusting the old root must install the new one archive=smoke2-config\ca-archive\1788461913-5
+2026-09-03T18:58:33.728868Z  INFO fah_api::certs: generated a certificate authority fingerprint=DE:2B:B2:15:26:DD:E9:7E:68:D1:3D:72:6D:A9:43:0D:5E:93:65:4F:0D:10:79:E7:3C:F6:7C:02:9A:AE:C4:AE archived_previous=true
+2026-09-03T18:58:33.732452Z  WARN fah_certs::store: replacing the certificate authority; every client trusting the old root must install the new one archive=smoke2-config\ca-archive\1788461913-6
+2026-09-03T18:58:33.732479Z  INFO fah_api::certs: generated a certificate authority fingerprint=83:88:47:2A:C8:CB:ED:96:F8:A4:24:01:72:52:80:43:C9:8B:80:F0:0B:05:D6:56:53:D2:1D:F2:BD:B6:FA:9A archived_previous=true
+2026-09-03T18:58:33.736328Z  WARN fah_certs::store: replacing the certificate authority; every client trusting the old root must install the new one archive=smoke2-config\ca-archive\1788461913-7
+2026-09-03T18:58:33.736356Z  INFO fah_api::certs: generated a certificate authority fingerprint=65:94:82:BC:39:46:98:3A:47:9C:16:9F:E2:50:ED:D2:BF:EF:41:96:32:B5:D5:D1:8F:76:52:F1:CA:FC:FF:08 archived_previous=true

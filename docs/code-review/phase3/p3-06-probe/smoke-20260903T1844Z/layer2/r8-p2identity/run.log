@@ -1,0 +1,10 @@
+2026-09-03T18:54:53.745Z [p2] == p2 start 2026-09-03T18:54:53.705Z tip=92e3f4a9b930-dirty out=docs/code-review/phase3/p3-06-probe/smoke-20260903T1844Z/layer2/r8-p2identity
+2026-09-03T18:54:53.746Z [p2] args {"probe":"127.0.0.1","api-port":8443,"key":"<set>","out":"docs/code-review/phase3/p3-06-probe/smoke-20260903T1844Z/layer2/r8-p2identity","tip":null,"allow-busy":false,"skip-host-checks":false,"origin":"example.com","origin-port":443,"path":"/","ca":"smoke-ca.pem","listed":"192.168.10.10","unlisted":"192.168.10.11","port":8444,"dns-port":5300,"rounds":10,"timeout":10000,"max-fail-pct":2}
+2026-09-03T18:54:54.031Z [p2] Get-NetConnectionProfile: Ethernet                Public
+2026-09-03T18:54:54.451Z [p2] idle check: PASS (recorded; each stage decides)
+2026-09-03T18:54:54.462Z [p2] GET /health -> 200 {"status":"ok","version":"0.3.1","uptime_seconds":25}
+2026-09-03T18:54:54.465Z [p2] config snapshot -> docs\code-review\phase3\p3-06-probe\smoke-20260903T1844Z\layer2\r8-p2identity\config.json
+2026-09-03T18:54:54.465Z [p2] engine.mode = dns+http+https
+2026-09-03T18:54:54.467Z [p2] ip -4 -o addr: {"error":"spawnSync ip ENOENT"}
+2026-09-03T18:54:54.467Z [p2] INVALID: identity precondition: both --listed and --unlisted must be on this host's interfaces (found none)
+2026-09-03T18:54:54.467Z [p2] wrote docs\code-review\phase3\p3-06-probe\smoke-20260903T1844Z\layer2\r8-p2identity\p2.json

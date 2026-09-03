@@ -1,0 +1,319 @@
+{
+  "script": "sni",
+  "started_at": "2026-09-03T18:48:35.300Z",
+  "finished_at": "2026-09-03T18:48:36.456Z",
+  "tip": "92e3f4a9b930-dirty",
+  "probe": "127.0.0.1",
+  "probe_version": "0.3.1",
+  "host": {
+    "platform": "win32",
+    "idle": true,
+    "network": [
+      "Ethernet                Public"
+    ],
+    "busy": []
+  },
+  "args": {
+    "probe": "127.0.0.1",
+    "api-port": 8443,
+    "key": "<set>",
+    "out": "docs/code-review/phase3/p3-06-probe/smoke-20260903T1844Z/layer1-a",
+    "tip": null,
+    "allow-busy": false,
+    "skip-host-checks": false,
+    "blocked": "ads.smoke.test",
+    "allowed": "example.com",
+    "port": 8444,
+    "attempts": 5,
+    "timeout": 5000
+  },
+  "valid": true,
+  "status": "valid",
+  "degraded_reasons": [],
+  "measurement": "SNI",
+  "no_sni_setting": "pass",
+  "figures": {
+    "blocked": {
+      "n": 5,
+      "outcomes": {
+        "closed_silent": 5
+      },
+      "closed_before_certificate": true,
+      "close_ms": {
+        "n": 5,
+        "min": 0.319,
+        "p50": 0.42,
+        "p99": 0.718,
+        "max": 0.718,
+        "mean": 0.469
+      }
+    },
+    "allowed": {
+      "n": 5,
+      "outcomes": {
+        "server_hello": 5
+      },
+      "closed_before_certificate": false,
+      "close_ms": {
+        "n": 5,
+        "min": 7.583,
+        "p50": 19.849,
+        "p99": 23.949,
+        "max": 23.949,
+        "mean": 16.309
+      }
+    },
+    "no_sni": {
+      "n": 5,
+      "outcomes": {
+        "closed_silent": 5
+      },
+      "closed_before_certificate": true,
+      "close_ms": {
+        "n": 5,
+        "min": 0.368,
+        "p50": 0.4,
+        "p99": 0.618,
+        "max": 0.618,
+        "mean": 0.456
+      }
+    }
+  },
+  "telemetry_delta": {
+    "connections": 15,
+    "requests": 15,
+    "blocked": 5,
+    "refused_claim": 0,
+    "refused_destination": 0,
+    "resolve_failures": 0,
+    "upstream_failures": 0,
+    "upstream_cert_failures": 0,
+    "non_http": 0,
+    "non_tls": 0,
+    "hello_timeouts": 0,
+    "dropped_events": 0
+  },
+  "supporting": {
+    "blocked_delta_expected_at_least": 5,
+    "blocked_delta_observed": 5
+  },
+  "rows": [
+    {
+      "kind": "blocked",
+      "sni": "ads.smoke.test",
+      "outcome": "closed_silent",
+      "how": "fin",
+      "error": null,
+      "bytes_received": 0,
+      "first_bytes_hex": "",
+      "alert": null,
+      "connect_ms": 0.42,
+      "close_ms": 0.718,
+      "closed_before_certificate": true,
+      "attempt": 1
+    },
+    {
+      "kind": "allowed",
+      "sni": "example.com",
+      "outcome": "server_hello",
+      "how": "server_hello_seen",
+      "error": null,
+      "bytes_received": 3934,
+      "first_bytes_hex": "160303005a020000",
+      "alert": null,
+      "connect_ms": 0.308,
+      "close_ms": 9.987,
+      "closed_before_certificate": false,
+      "attempt": 1
+    },
+    {
+      "kind": "no_sni",
+      "sni": null,
+      "outcome": "closed_silent",
+      "how": "fin",
+      "error": null,
+      "bytes_received": 0,
+      "first_bytes_hex": "",
+      "alert": null,
+      "connect_ms": 0.281,
+      "close_ms": 0.368,
+      "closed_before_certificate": true,
+      "attempt": 1
+    },
+    {
+      "kind": "blocked",
+      "sni": "ads.smoke.test",
+      "outcome": "closed_silent",
+      "how": "fin",
+      "error": null,
+      "bytes_received": 0,
+      "first_bytes_hex": "",
+      "alert": null,
+      "connect_ms": 0.24,
+      "close_ms": 0.319,
+      "closed_before_certificate": true,
+      "attempt": 2
+    },
+    {
+      "kind": "allowed",
+      "sni": "example.com",
+      "outcome": "server_hello",
+      "how": "server_hello_seen",
+      "error": null,
+      "bytes_received": 3933,
+      "first_bytes_hex": "160303005a020000",
+      "alert": null,
+      "connect_ms": 0.248,
+      "close_ms": 23.949,
+      "closed_before_certificate": false,
+      "attempt": 2
+    },
+    {
+      "kind": "no_sni",
+      "sni": null,
+      "outcome": "closed_silent",
+      "how": "fin",
+      "error": null,
+      "bytes_received": 0,
+      "first_bytes_hex": "",
+      "alert": null,
+      "connect_ms": 0.284,
+      "close_ms": 0.391,
+      "closed_before_certificate": true,
+      "attempt": 2
+    },
+    {
+      "kind": "blocked",
+      "sni": "ads.smoke.test",
+      "outcome": "closed_silent",
+      "how": "fin",
+      "error": null,
+      "bytes_received": 0,
+      "first_bytes_hex": "",
+      "alert": null,
+      "connect_ms": 0.224,
+      "close_ms": 0.38,
+      "closed_before_certificate": true,
+      "attempt": 3
+    },
+    {
+      "kind": "allowed",
+      "sni": "example.com",
+      "outcome": "server_hello",
+      "how": "server_hello_seen",
+      "error": null,
+      "bytes_received": 3934,
+      "first_bytes_hex": "160303005a020000",
+      "alert": null,
+      "connect_ms": 0.249,
+      "close_ms": 19.849,
+      "closed_before_certificate": false,
+      "attempt": 3
+    },
+    {
+      "kind": "no_sni",
+      "sni": null,
+      "outcome": "closed_silent",
+      "how": "fin",
+      "error": null,
+      "bytes_received": 0,
+      "first_bytes_hex": "",
+      "alert": null,
+      "connect_ms": 0.347,
+      "close_ms": 0.502,
+      "closed_before_certificate": true,
+      "attempt": 3
+    },
+    {
+      "kind": "blocked",
+      "sni": "ads.smoke.test",
+      "outcome": "closed_silent",
+      "how": "fin",
+      "error": null,
+      "bytes_received": 0,
+      "first_bytes_hex": "",
+      "alert": null,
+      "connect_ms": 0.259,
+      "close_ms": 0.42,
+      "closed_before_certificate": true,
+      "attempt": 4
+    },
+    {
+      "kind": "allowed",
+      "sni": "example.com",
+      "outcome": "server_hello",
+      "how": "server_hello_seen",
+      "error": null,
+      "bytes_received": 3935,
+      "first_bytes_hex": "160303005a020000",
+      "alert": null,
+      "connect_ms": 0.303,
+      "close_ms": 7.583,
+      "closed_before_certificate": false,
+      "attempt": 4
+    },
+    {
+      "kind": "no_sni",
+      "sni": null,
+      "outcome": "closed_silent",
+      "how": "fin",
+      "error": null,
+      "bytes_received": 0,
+      "first_bytes_hex": "",
+      "alert": null,
+      "connect_ms": 0.305,
+      "close_ms": 0.618,
+      "closed_before_certificate": true,
+      "attempt": 4
+    },
+    {
+      "kind": "blocked",
+      "sni": "ads.smoke.test",
+      "outcome": "closed_silent",
+      "how": "fin",
+      "error": null,
+      "bytes_received": 0,
+      "first_bytes_hex": "",
+      "alert": null,
+      "connect_ms": 0.334,
+      "close_ms": 0.507,
+      "closed_before_certificate": true,
+      "attempt": 5
+    },
+    {
+      "kind": "allowed",
+      "sni": "example.com",
+      "outcome": "server_hello",
+      "how": "server_hello_seen",
+      "error": null,
+      "bytes_received": 1452,
+      "first_bytes_hex": "160303005a020000",
+      "alert": null,
+      "connect_ms": 0.277,
+      "close_ms": 20.178,
+      "closed_before_certificate": false,
+      "attempt": 5
+    },
+    {
+      "kind": "no_sni",
+      "sni": null,
+      "outcome": "closed_silent",
+      "how": "fin",
+      "error": null,
+      "bytes_received": 0,
+      "first_bytes_hex": "",
+      "alert": null,
+      "connect_ms": 0.29,
+      "close_ms": 0.4,
+      "closed_before_certificate": true,
+      "attempt": 5
+    }
+  ],
+  "gate": {
+    "statistic": "every blocked and no-SNI attempt closed before a certificate (boolean)",
+    "blocked_closed": true,
+    "no_sni_closed": true,
+    "allowed_opened": true,
+    "pass": true
+  }
+}

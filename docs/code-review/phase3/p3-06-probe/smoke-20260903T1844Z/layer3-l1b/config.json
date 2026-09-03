@@ -1,0 +1,103 @@
+{
+  "engine": {
+    "mode": "dns+http+https"
+  },
+  "dns": {
+    "listen": {
+      "address": "0.0.0.0",
+      "port": 53,
+      "dot_enabled": true,
+      "dot_port": 853,
+      "doh_enabled": true
+    },
+    "blocking": {
+      "mode": "null_ip",
+      "ttl_seconds": 10
+    },
+    "cache": {
+      "max_entries": 10000,
+      "max_bytes": 67108864,
+      "min_ttl_seconds": 0,
+      "max_ttl_seconds": 86400,
+      "negative_ttl_max_seconds": 60,
+      "serve_stale": true,
+      "swr_workers": 3,
+      "cleanup_interval_seconds": 360
+    },
+    "upstreams": {
+      "strategy": "fallback",
+      "timeout_ms": 800,
+      "penalty_failures": 2,
+      "servers": [
+        {
+          "address": "127.0.0.11:53",
+          "protocol": "udp",
+          "hostname": null
+        }
+      ]
+    }
+  },
+  "http": {
+    "listen": {
+      "address": "0.0.0.0",
+      "port": 8080
+    },
+    "max_connections": 1024,
+    "idle_timeout_ms": 60000,
+    "header_timeout_ms": 10000
+  },
+  "https": {
+    "listen": {
+      "address": "0.0.0.0",
+      "port": 8444
+    },
+    "max_connections": 1024,
+    "hello_timeout_ms": 10000,
+    "idle_timeout_ms": 60000,
+    "sni": {
+      "no_sni": "pass"
+    },
+    "interception": {
+      "clients": [],
+      "exclude_domains": []
+    }
+  },
+  "egress": {
+    "allow_destinations": [
+      "127.0.0.0/8",
+      "172.16.0.0/12"
+    ],
+    "allow_ip_literal_hosts": false
+  },
+  "rules": {
+    "refresh_hours_default": 24,
+    "lists": [
+      {
+        "id": "oisd-basic",
+        "url": "https://small.oisd.nl",
+        "enabled": true,
+        "refresh_hours": null
+      }
+    ]
+  },
+  "schedule": {
+    "timezone": "UTC"
+  },
+  "stats": {
+    "snapshot_interval_seconds": 300
+  },
+  "history": {
+    "enabled": true,
+    "sample_interval_seconds": 60,
+    "retention_days": 30
+  },
+  "api": {
+    "address": "0.0.0.0",
+    "port": 8443,
+    "tls": true
+  },
+  "log": {
+    "level": "info",
+    "format": "text"
+  }
+}

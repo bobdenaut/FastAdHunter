@@ -1,0 +1,9 @@
+2026-09-03T18:56:05.231Z [p4-lan] == p4-lan start 2026-09-03T18:56:05.191Z tip=92e3f4a9b930-dirty out=docs/code-review/phase3/p3-06-probe/smoke-20260903T1844Z/layer2/r3-dnsmode/p4-lan
+2026-09-03T18:56:05.231Z [p4-lan] args {"probe":"127.0.0.1","api-port":8443,"key":"<set>","out":"docs/code-review/phase3/p3-06-probe/smoke-20260903T1844Z/layer2/r3-dnsmode/p4-lan","tip":null,"allow-busy":false,"skip-host-checks":false,"domain":"ads.smoke.test","dot-host":"dns.smoke.test","dns-port":5300,"dot-port":8853,"queries":200,"rounds":1,"timeout":2000}
+2026-09-03T18:56:05.492Z [p4-lan] Get-NetConnectionProfile: Ethernet                Public
+2026-09-03T18:56:05.868Z [p4-lan] idle check: PASS (recorded; each stage decides)
+2026-09-03T18:56:05.876Z [p4-lan] GET /health -> 200 {"status":"ok","version":"0.3.1","uptime_seconds":15}
+2026-09-03T18:56:05.882Z [p4-lan] config snapshot -> docs\code-review\phase3\p3-06-probe\smoke-20260903T1844Z\layer2\r3-dnsmode\p4-lan\config.json
+2026-09-03T18:56:05.883Z [p4-lan] engine.mode = dns
+2026-09-03T18:56:05.883Z [p4-lan] INVALID: engine.mode dns carries no https listener
+2026-09-03T18:56:05.883Z [p4-lan] wrote docs\code-review\phase3\p3-06-probe\smoke-20260903T1844Z\layer2\r3-dnsmode\p4-lan\p4-lan.json

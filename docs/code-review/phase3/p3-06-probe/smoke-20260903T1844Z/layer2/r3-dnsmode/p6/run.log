@@ -1,0 +1,17 @@
+2026-09-03T18:56:14.534Z [p6] == p6 start 2026-09-03T18:56:14.492Z tip=92e3f4a9b930-dirty out=docs/code-review/phase3/p3-06-probe/smoke-20260903T1844Z/layer2/r3-dnsmode/p6
+2026-09-03T18:56:14.535Z [p6] args {"probe":"127.0.0.1","api-port":8443,"key":"<set>","out":"docs/code-review/phase3/p3-06-probe/smoke-20260903T1844Z/layer2/r3-dnsmode/p6","tip":null,"allow-busy":false,"skip-host-checks":false,"generate":2,"import":2,"cert":"p1.crt","key-file":"p1.key","ca-archive-count":0,"api-archive-count":0,"ca-out":null}
+2026-09-03T18:56:14.821Z [p6] Get-NetConnectionProfile: Ethernet                Public
+2026-09-03T18:56:15.233Z [p6] idle check: PASS (recorded; each stage decides)
+2026-09-03T18:56:15.242Z [p6] GET /health -> 200 {"status":"ok","version":"0.3.1","uptime_seconds":24}
+2026-09-03T18:56:15.248Z [p6] config snapshot -> docs\code-review\phase3\p3-06-probe\smoke-20260903T1844Z\layer2\r3-dnsmode\p6\config.json
+2026-09-03T18:56:15.248Z [p6] engine.mode = dns
+2026-09-03T18:56:15.250Z [p6] before: ca={"present":true,"fingerprint_sha256":"00:DC:DD:65:61:9E:27:EA:69:37:15:FC:0E:B3:64:CD:49:13:17:24:6D:CB:FA:D0:75:63:6F:C8:8C:94:DB:5F","not_before":"2026-09-02T18:50:41Z","not_after":"2036-08-30T18:50:41Z","subject":"CN=FastAdHunter CA"} api_certificate={"source":"imported"}
+2026-09-03T18:56:15.255Z [p6] ca/generate #1: 200 starttransfer-appconnect=2.567 ms total=4.372 ms
+2026-09-03T18:56:15.258Z [p6] ca/generate #2: 200 starttransfer-appconnect=1.665 ms total=3.371 ms
+2026-09-03T18:56:15.263Z [p6] import #1: 200 starttransfer-appconnect=2.34 ms total=3.823 ms
+2026-09-03T18:56:15.267Z [p6] import #2: 200 starttransfer-appconnect=2.06 ms total=3.718 ms
+2026-09-03T18:56:15.269Z [p6] after: ca={"present":true,"fingerprint_sha256":"EE:1B:51:CB:FF:44:EA:AB:EB:15:26:A9:A3:D1:CB:CD:F7:0F:80:8D:CE:C7:3C:E3:6B:55:69:E3:73:EB:D1:E7","not_before":"2026-09-02T18:56:15Z","not_after":"2036-08-30T18:56:15Z","subject":"CN=FastAdHunter CA"} api_certificate={"source":"imported"}
+2026-09-03T18:56:15.271Z [p6] re-exported CA -> docs\code-review\phase3\p3-06-probe\smoke-20260903T1844Z\layer2\r3-dnsmode\p6\ca-after-p6.pem (fingerprint EE:1B:51:CB:FF:44:EA:AB:EB:15:26:A9:A3:D1:CB:CD:F7:0F:80:8D:CE:C7:3C:E3:6B:55:69:E3:73:EB:D1:E7); every earlier export is invalid
+2026-09-03T18:56:15.271Z [p6] wrote docs\code-review\phase3\p3-06-probe\smoke-20260903T1844Z\layer2\r3-dnsmode\p6\p6.json
+2026-09-03T18:56:15.271Z [p6] GATE {"statistic":"median of starttransfer - appconnect: generate < 100 ms, import < 50 ms","generate_median_ms":2.567,"import_median_ms":2.34,"generate_pass":true,"import_pass":true,"pass":true}
+2026-09-03T18:56:15.271Z [p6] == p6 done (valid)

@@ -1,0 +1,15 @@
+
+running 1 test
+test per_query_latency_udp_vs_dot_vs_doh ... FAH_E2E_BINARY override active: /fah-probe
+blocked-domain round trips from a loopback client, 3 rounds x 2000 sequential queries per transport, transports interleaved within each round
+round 1: p50 udp=53us dot=44024us doh=80us; DoT handshake 547.961µs
+round 2: p50 udp=47us dot=44003us doh=99us; DoT handshake 612.705µs
+round 3: p50 udp=54us dot=44004us doh=78us; DoT handshake 599.71µs
+pooled over 3 rounds; DoT handshakes (excluded from per-query figures) [547.961µs, 612.705µs, 599.71µs]; DoH over Some(HTTP/1.1)
+udp        n=6000 min=25us p50=53us p90=62us p99=115us max=306us
+dot        n=6000 min=67us p50=44011us p90=44330us p99=48101us max=61796us
+doh-post   n=6000 min=70us p50=87us p90=130us p99=360us max=1230us
+ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 266.38s
+

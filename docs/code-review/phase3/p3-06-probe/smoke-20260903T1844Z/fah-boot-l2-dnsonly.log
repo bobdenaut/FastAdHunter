@@ -1,0 +1,17 @@
+2026-09-03T18:55:50.527135Z  INFO fastadhunter: fastadhunter starting config_path=smoke-config/fastadhunter.toml data_dir=smoke-data mode=Dns
+2026-09-03T18:55:50.549530Z  INFO fah_rules::lifecycle: refresh schedule restored from cached copies lists=1
+2026-09-03T18:55:50.549756Z  INFO fastadhunter: ruleset compiled from cache rules=62949 policies=1
+2026-09-03T18:55:50.551672Z  INFO fastadhunter: DNS listeners bound udp=127.0.0.1:5300 tcp=127.0.0.1:5300 dot=Some(127.0.0.1:8853)
+2026-09-03T18:55:50.552833Z  INFO fastadhunter: DoT serves a CA-minted certificate for the hostname each client sends, the API certificate when a hello carries no SNI port=8853
+2026-09-03T18:55:50.552973Z ERROR fah_api::web: web UI missing: the dashboard will not load. /web is image content, not a volume — a volume mounted over it hides the bundle the image ships path=/web\index.html
+2026-09-03T18:55:50.556643Z  INFO fastadhunter: API listening url=https://127.0.0.1:8443
+2026-09-03T18:55:50.556666Z  INFO fastadhunter: stale-while-refresh pool started workers=3
+2026-09-03T18:55:50.556673Z  INFO fastadhunter: cache cleanup scheduler started
+2026-09-03T18:56:15.256009Z  WARN fah_certs::store: replacing the certificate authority; every client trusting the old root must install the new one archive=smoke-config\ca-archive\1788461775
+2026-09-03T18:56:15.256047Z  INFO fah_api::certs: generated a certificate authority fingerprint=C9:BF:57:F7:88:DE:89:88:FC:66:B4:1F:B4:CF:E3:39:57:29:C2:08:3F:94:8C:3B:9A:3F:2B:2A:D1:C6:EB:E9 archived_previous=true
+2026-09-03T18:56:15.259918Z  WARN fah_certs::store: replacing the certificate authority; every client trusting the old root must install the new one archive=smoke-config\ca-archive\1788461775-1
+2026-09-03T18:56:15.259940Z  INFO fah_api::certs: generated a certificate authority fingerprint=EE:1B:51:CB:FF:44:EA:AB:EB:15:26:A9:A3:D1:CB:CD:F7:0F:80:8D:CE:C7:3C:E3:6B:55:69:E3:73:EB:D1:E7 archived_previous=true
+2026-09-03T18:56:15.264123Z  INFO fah_certs::store: replaced the API server certificate; the previous pair is archived and the new one applies at the next restart archive=smoke-config\api-archive\1788461775
+2026-09-03T18:56:15.264185Z  INFO fah_api::certs: imported an API server certificate pair; it applies on the next restart
+2026-09-03T18:56:15.268080Z  INFO fah_certs::store: replaced the API server certificate; the previous pair is archived and the new one applies at the next restart archive=smoke-config\api-archive\1788461775-1
+2026-09-03T18:56:15.268117Z  INFO fah_api::certs: imported an API server certificate pair; it applies on the next restart

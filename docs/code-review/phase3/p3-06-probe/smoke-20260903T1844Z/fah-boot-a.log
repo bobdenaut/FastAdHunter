@@ -1,0 +1,26 @@
+2026-09-03T18:47:06.632625Z  INFO fastadhunter: fastadhunter starting config_path=smoke-config/fastadhunter.toml data_dir=smoke-data mode=DnsHttpHttps
+2026-09-03T18:47:06.637457Z  INFO fastadhunter: ruleset compiled from cache rules=0 policies=1
+2026-09-03T18:47:06.638998Z  INFO fastadhunter: DNS listeners bound udp=127.0.0.1:5300 tcp=127.0.0.1:5300 dot=Some(127.0.0.1:8853)
+2026-09-03T18:47:06.639056Z  INFO fastadhunter: HTTP listener bound addr=127.0.0.1:8080
+2026-09-03T18:47:06.639105Z  INFO fastadhunter: HTTPS SNI listener bound addr=127.0.0.1:8444
+2026-09-03T18:47:06.639117Z  INFO fastadhunter: egress allow-list active — private destinations permitted count=1
+2026-09-03T18:47:06.639298Z  INFO fastadhunter: generated API key — store it now; it is not shown again api_key=a252f273a01c0023645922e29edb4bb028753bec0c2d2207e06a9731c7e40de9
+2026-09-03T18:47:06.656611Z  INFO fastadhunter: generated dashboard password — store it now; it is not shown again dashboard_password=sej7lfk3a6do4i6inhellwt3vy
+2026-09-03T18:47:06.677318Z  INFO fah_certs::api: generated self-signed API certificate dns=["fastadhunter", "localhost"] ip=[127.0.0.1, ::1, 192.168.10.10] not_after=2027-10-05 17:47:06.6568489 +00:00:00
+2026-09-03T18:47:06.678240Z  INFO fastadhunter: egress allow-list active — private destinations permitted count=1
+2026-09-03T18:47:06.692422Z  INFO fastadhunter: DoT serves the API certificate; generate or import a CA via /api/v1/certificates for Android Private DNS hostname mode port=8853
+2026-09-03T18:47:06.692614Z ERROR fah_api::web: web UI missing: the dashboard will not load. /web is image content, not a volume — a volume mounted over it hides the bundle the image ships path=/web\index.html
+2026-09-03T18:47:06.693100Z  INFO fastadhunter: API listening url=https://127.0.0.1:8443
+2026-09-03T18:47:06.693144Z  INFO fastadhunter: stale-while-refresh pool started workers=3
+2026-09-03T18:47:06.693150Z  INFO fastadhunter: cache cleanup scheduler started
+2026-09-03T18:47:07.279929Z  INFO fah_rules::lifecycle: list refreshed list=oisd-basic active=62948 inactive=0 parse_errors=0
+2026-09-03T18:47:07.279953Z  INFO fah_rules::lifecycle: scheduled refresh complete lists=1 refreshed=1 unchanged=0 failed=0 rules=62948
+2026-09-03T18:47:19.116107Z  INFO fah_api::certs: generated a certificate authority fingerprint=FD:25:14:69:9B:7C:6D:FB:9E:76:B1:BF:E9:88:E7:D6:0F:FA:92:8D:38:39:15:65:7E:A8:EF:61:02:0B:B2:7F archived_previous=false
+2026-09-03T18:50:41.593414Z  WARN fah_certs::store: replacing the certificate authority; every client trusting the old root must install the new one archive=smoke-config\ca-archive\1788461441
+2026-09-03T18:50:41.593485Z  INFO fah_api::certs: generated a certificate authority fingerprint=1A:C3:D8:DC:A1:8C:37:CC:08:63:ED:AF:F3:6A:46:10:1F:29:DF:B1:50:78:25:95:54:CE:51:B7:96:7A:DA:E3 archived_previous=true
+2026-09-03T18:50:41.599608Z  WARN fah_certs::store: replacing the certificate authority; every client trusting the old root must install the new one archive=smoke-config\ca-archive\1788461441-1
+2026-09-03T18:50:41.599661Z  INFO fah_api::certs: generated a certificate authority fingerprint=00:DC:DD:65:61:9E:27:EA:69:37:15:FC:0E:B3:64:CD:49:13:17:24:6D:CB:FA:D0:75:63:6F:C8:8C:94:DB:5F archived_previous=true
+2026-09-03T18:50:41.604435Z  INFO fah_certs::store: replaced the API server certificate; the previous pair is archived and the new one applies at the next restart archive=smoke-config\api-archive\1788461441
+2026-09-03T18:50:41.604507Z  INFO fah_api::certs: imported an API server certificate pair; it applies on the next restart
+2026-09-03T18:50:41.608971Z  INFO fah_certs::store: replaced the API server certificate; the previous pair is archived and the new one applies at the next restart archive=smoke-config\api-archive\1788461441-1
+2026-09-03T18:50:41.609030Z  INFO fah_api::certs: imported an API server certificate pair; it applies on the next restart

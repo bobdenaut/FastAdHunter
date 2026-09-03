@@ -1,0 +1,272 @@
+{
+  "script": "p1",
+  "started_at": "2026-09-03T19:15:36.957Z",
+  "finished_at": "2026-09-03T19:15:38.016Z",
+  "tip": "92e3f4a9b930-dirty",
+  "probe": "127.0.0.1",
+  "probe_version": "0.3.1",
+  "host": {
+    "platform": "win32",
+    "idle": true,
+    "network": [
+      "Ethernet                Public"
+    ],
+    "busy": []
+  },
+  "args": {
+    "probe": "127.0.0.1",
+    "api-port": 8443,
+    "key": "<set>",
+    "out": "docs/code-review/phase3/p3-06-probe/smoke-20260903T1844Z/layer3-l1a",
+    "tip": null,
+    "allow-busy": false,
+    "skip-host-checks": false,
+    "origin": "172-28-0-3.nip.io",
+    "origin-ip": null,
+    "origin-port": 443,
+    "origin-cert": "p3c.crt",
+    "port": 8444,
+    "bytes": 8,
+    "runs": 5,
+    "connections": 1,
+    "direct": false,
+    "control": null,
+    "profile-share": null,
+    "timeout": 120000,
+    "max-fail-pct": 2
+  },
+  "valid": true,
+  "status": "valid",
+  "degraded_reasons": [],
+  "measurement": "P1-LAN",
+  "arm": "spliced",
+  "origin": "172-28-0-3.nip.io",
+  "target": {
+    "host": "127.0.0.1",
+    "port": 8444
+  },
+  "bytes_mib": 8,
+  "connections": 1,
+  "served_issuer": "172-28-0-3.nip.io",
+  "figures": {
+    "steady_mib_s": {
+      "n": 5,
+      "min": 159.077,
+      "p50": 270.362,
+      "p99": 311.709,
+      "max": 311.709,
+      "mean": 260.621
+    },
+    "total_mib_s": {
+      "n": 5,
+      "min": 137.266,
+      "p50": 211.713,
+      "p99": 234.453,
+      "max": 234.453,
+      "mean": 198.688
+    },
+    "aggregate_mib_s": {
+      "n": 5,
+      "min": 159.078,
+      "p50": 270.36,
+      "p99": 311.705,
+      "max": 311.705,
+      "mean": 260.62
+    },
+    "median_steady_mib_s": 270.362
+  },
+  "telemetry_delta": {
+    "connections": 5,
+    "requests": 5,
+    "blocked": 0,
+    "refused_claim": 0,
+    "refused_destination": 0,
+    "resolve_failures": 0,
+    "upstream_failures": 0,
+    "upstream_cert_failures": 0,
+    "non_http": 0,
+    "non_tls": 0,
+    "hello_timeouts": 0,
+    "dropped_events": 0
+  },
+  "runs": [
+    {
+      "run": 1,
+      "connections": 1,
+      "ok": 1,
+      "bytes_total": 8388608,
+      "steady_mib_s": 259.673,
+      "total_mib_s": 178.775,
+      "aggregate_mib_s": 259.674,
+      "handshake_ms": {
+        "n": 1,
+        "min": 7.748,
+        "p50": 7.748,
+        "p99": 7.748,
+        "max": 7.748,
+        "mean": 7.748
+      },
+      "first_byte_ms": {
+        "n": 1,
+        "min": 6.193,
+        "p50": 6.193,
+        "p99": 6.193,
+        "max": 6.193,
+        "mean": 6.193
+      },
+      "errors": [],
+      "tls": {
+        "issuerCN": "172-28-0-3.nip.io",
+        "subjectCN": "172-28-0-3.nip.io",
+        "fingerprint256": "26:52:F5:B7:A6:EE:C7:6A:89:19:6E:B6:D4:07:91:8F:17:BB:EE:2C:7B:0C:1A:8F:D7:6D:48:A9:E4:F5:E8:E0",
+        "tls": "TLSv1.3",
+        "alpn": null,
+        "authorized": true
+      }
+    },
+    {
+      "run": 2,
+      "connections": 1,
+      "ok": 1,
+      "bytes_total": 8388608,
+      "steady_mib_s": 270.362,
+      "total_mib_s": 211.713,
+      "aggregate_mib_s": 270.36,
+      "handshake_ms": {
+        "n": 1,
+        "min": 3.138,
+        "p50": 3.138,
+        "p99": 3.138,
+        "max": 3.138,
+        "mean": 3.138
+      },
+      "first_byte_ms": {
+        "n": 1,
+        "min": 5.059,
+        "p50": 5.059,
+        "p99": 5.059,
+        "max": 5.059,
+        "mean": 5.059
+      },
+      "errors": [],
+      "tls": {
+        "issuerCN": "172-28-0-3.nip.io",
+        "subjectCN": "172-28-0-3.nip.io",
+        "fingerprint256": "26:52:F5:B7:A6:EE:C7:6A:89:19:6E:B6:D4:07:91:8F:17:BB:EE:2C:7B:0C:1A:8F:D7:6D:48:A9:E4:F5:E8:E0",
+        "tls": "TLSv1.3",
+        "alpn": null,
+        "authorized": true
+      }
+    },
+    {
+      "run": 3,
+      "connections": 1,
+      "ok": 1,
+      "bytes_total": 8388608,
+      "steady_mib_s": 311.709,
+      "total_mib_s": 234.453,
+      "aggregate_mib_s": 311.705,
+      "handshake_ms": {
+        "n": 1,
+        "min": 3.082,
+        "p50": 3.082,
+        "p99": 3.082,
+        "max": 3.082,
+        "mean": 3.082
+      },
+      "first_byte_ms": {
+        "n": 1,
+        "min": 5.375,
+        "p50": 5.375,
+        "p99": 5.375,
+        "max": 5.375,
+        "mean": 5.375
+      },
+      "errors": [],
+      "tls": {
+        "issuerCN": "172-28-0-3.nip.io",
+        "subjectCN": "172-28-0-3.nip.io",
+        "fingerprint256": "26:52:F5:B7:A6:EE:C7:6A:89:19:6E:B6:D4:07:91:8F:17:BB:EE:2C:7B:0C:1A:8F:D7:6D:48:A9:E4:F5:E8:E0",
+        "tls": "TLSv1.3",
+        "alpn": null,
+        "authorized": true
+      }
+    },
+    {
+      "run": 4,
+      "connections": 1,
+      "ok": 1,
+      "bytes_total": 8388608,
+      "steady_mib_s": 302.286,
+      "total_mib_s": 231.234,
+      "aggregate_mib_s": 302.285,
+      "handshake_ms": {
+        "n": 1,
+        "min": 3.406,
+        "p50": 3.406,
+        "p99": 3.406,
+        "max": 3.406,
+        "mean": 3.406
+      },
+      "first_byte_ms": {
+        "n": 1,
+        "min": 4.726,
+        "p50": 4.726,
+        "p99": 4.726,
+        "max": 4.726,
+        "mean": 4.726
+      },
+      "errors": [],
+      "tls": {
+        "issuerCN": "172-28-0-3.nip.io",
+        "subjectCN": "172-28-0-3.nip.io",
+        "fingerprint256": "26:52:F5:B7:A6:EE:C7:6A:89:19:6E:B6:D4:07:91:8F:17:BB:EE:2C:7B:0C:1A:8F:D7:6D:48:A9:E4:F5:E8:E0",
+        "tls": "TLSv1.3",
+        "alpn": null,
+        "authorized": true
+      }
+    },
+    {
+      "run": 5,
+      "connections": 1,
+      "ok": 1,
+      "bytes_total": 8388608,
+      "steady_mib_s": 159.077,
+      "total_mib_s": 137.266,
+      "aggregate_mib_s": 159.078,
+      "handshake_ms": {
+        "n": 1,
+        "min": 3.099,
+        "p50": 3.099,
+        "p99": 3.099,
+        "max": 3.099,
+        "mean": 3.099
+      },
+      "first_byte_ms": {
+        "n": 1,
+        "min": 4.892,
+        "p50": 4.892,
+        "p99": 4.892,
+        "max": 4.892,
+        "mean": 4.892
+      },
+      "errors": [],
+      "tls": {
+        "issuerCN": "172-28-0-3.nip.io",
+        "subjectCN": "172-28-0-3.nip.io",
+        "fingerprint256": "26:52:F5:B7:A6:EE:C7:6A:89:19:6E:B6:D4:07:91:8F:17:BB:EE:2C:7B:0C:1A:8F:D7:6D:48:A9:E4:F5:E8:E0",
+        "tls": "TLSv1.3",
+        "alpn": null,
+        "authorized": true
+      }
+    }
+  ],
+  "gate": {
+    "statistic": "median of runs steady MiB/s >= 100 and inside P1-control min-max",
+    "median_steady_mib_s": 270.362,
+    "at_least_100": true,
+    "band": null,
+    "inside_band": "not evaluated (--control absent)",
+    "pass": null
+  }
+}

@@ -1,0 +1,271 @@
+{
+  "script": "p1",
+  "started_at": "2026-09-03T18:49:56.351Z",
+  "finished_at": "2026-09-03T18:49:57.535Z",
+  "tip": "92e3f4a9b930-dirty",
+  "probe": "127.0.0.1",
+  "probe_version": "0.3.1",
+  "host": {
+    "platform": "win32",
+    "idle": true,
+    "network": [
+      "Ethernet                Public"
+    ],
+    "busy": []
+  },
+  "args": {
+    "probe": "127.0.0.1",
+    "api-port": 8443,
+    "key": "<set>",
+    "out": "docs/code-review/phase3/p3-06-probe/smoke-20260903T1844Z/layer1-a",
+    "tip": null,
+    "allow-busy": false,
+    "skip-host-checks": false,
+    "origin": "127-0-0-1.nip.io",
+    "origin-ip": null,
+    "origin-port": 443,
+    "origin-cert": "p1.crt",
+    "port": 8444,
+    "bytes": 8,
+    "runs": 5,
+    "connections": 8,
+    "direct": false,
+    "control": null,
+    "profile-share": null,
+    "timeout": 120000,
+    "max-fail-pct": 2
+  },
+  "valid": true,
+  "status": "degraded",
+  "degraded_reasons": [
+    "aggregate arm without a /tool/profile share (--profile-share): throughput of the loop only"
+  ],
+  "measurement": "P1-LAN",
+  "arm": "aggregate",
+  "origin": "127-0-0-1.nip.io",
+  "target": {
+    "host": "127.0.0.1",
+    "port": 8444
+  },
+  "bytes_mib": 8,
+  "connections": 8,
+  "served_issuer": "127-0-0-1.nip.io",
+  "figures": {
+    "steady_mib_s": {
+      "n": 0,
+      "min": null,
+      "p50": null,
+      "p99": null,
+      "max": null,
+      "mean": null
+    },
+    "total_mib_s": {
+      "n": 0,
+      "min": null,
+      "p50": null,
+      "p99": null,
+      "max": null,
+      "mean": null
+    },
+    "aggregate_mib_s": {
+      "n": 5,
+      "min": 713.274,
+      "p50": 996.154,
+      "p99": 1114.09,
+      "max": 1114.09,
+      "mean": 977.6
+    },
+    "median_steady_mib_s": null
+  },
+  "telemetry_delta": {
+    "connections": 40,
+    "requests": 40,
+    "blocked": 0,
+    "refused_claim": 0,
+    "refused_destination": 0,
+    "resolve_failures": 0,
+    "upstream_failures": 0,
+    "upstream_cert_failures": 0,
+    "non_http": 0,
+    "non_tls": 0,
+    "hello_timeouts": 0,
+    "dropped_events": 0
+  },
+  "runs": [
+    {
+      "run": 1,
+      "connections": 8,
+      "ok": 8,
+      "bytes_total": 67108864,
+      "steady_mib_s": null,
+      "total_mib_s": null,
+      "aggregate_mib_s": 996.154,
+      "handshake_ms": {
+        "n": 8,
+        "min": 4.45,
+        "p50": 10.496,
+        "p99": 44.98,
+        "max": 44.98,
+        "mean": 16.328
+      },
+      "first_byte_ms": {
+        "n": 8,
+        "min": 4.53,
+        "p50": 15.88,
+        "p99": 31.911,
+        "max": 31.911,
+        "mean": 16.465
+      },
+      "errors": [],
+      "tls": {
+        "issuerCN": "127-0-0-1.nip.io",
+        "subjectCN": "127-0-0-1.nip.io",
+        "fingerprint256": "EB:DE:8B:BB:E3:DA:AC:77:1B:5A:C1:37:82:AD:47:DF:A6:BF:E4:9B:0E:93:C1:E2:78:3C:2D:CF:74:13:4F:B7",
+        "tls": "TLSv1.3",
+        "alpn": null,
+        "authorized": true
+      }
+    },
+    {
+      "run": 2,
+      "connections": 8,
+      "ok": 8,
+      "bytes_total": 67108864,
+      "steady_mib_s": null,
+      "total_mib_s": null,
+      "aggregate_mib_s": 713.274,
+      "handshake_ms": {
+        "n": 8,
+        "min": 3.959,
+        "p50": 4.977,
+        "p99": 34.611,
+        "max": 34.611,
+        "mean": 11.583
+      },
+      "first_byte_ms": {
+        "n": 8,
+        "min": 4.55,
+        "p50": 18.942,
+        "p99": 38.318,
+        "max": 38.318,
+        "mean": 19.056
+      },
+      "errors": [],
+      "tls": {
+        "issuerCN": "127-0-0-1.nip.io",
+        "subjectCN": "127-0-0-1.nip.io",
+        "fingerprint256": "EB:DE:8B:BB:E3:DA:AC:77:1B:5A:C1:37:82:AD:47:DF:A6:BF:E4:9B:0E:93:C1:E2:78:3C:2D:CF:74:13:4F:B7",
+        "tls": "TLSv1.3",
+        "alpn": null,
+        "authorized": true
+      }
+    },
+    {
+      "run": 3,
+      "connections": 8,
+      "ok": 8,
+      "bytes_total": 67108864,
+      "steady_mib_s": null,
+      "total_mib_s": null,
+      "aggregate_mib_s": 1069.955,
+      "handshake_ms": {
+        "n": 8,
+        "min": 3.346,
+        "p50": 4.624,
+        "p99": 47.128,
+        "max": 47.128,
+        "mean": 12.989
+      },
+      "first_byte_ms": {
+        "n": 8,
+        "min": 4.549,
+        "p50": 15.771,
+        "p99": 29.063,
+        "max": 29.063,
+        "mean": 16.984
+      },
+      "errors": [],
+      "tls": {
+        "issuerCN": "127-0-0-1.nip.io",
+        "subjectCN": "127-0-0-1.nip.io",
+        "fingerprint256": "EB:DE:8B:BB:E3:DA:AC:77:1B:5A:C1:37:82:AD:47:DF:A6:BF:E4:9B:0E:93:C1:E2:78:3C:2D:CF:74:13:4F:B7",
+        "tls": "TLSv1.3",
+        "alpn": null,
+        "authorized": true
+      }
+    },
+    {
+      "run": 4,
+      "connections": 8,
+      "ok": 8,
+      "bytes_total": 67108864,
+      "steady_mib_s": null,
+      "total_mib_s": null,
+      "aggregate_mib_s": 994.527,
+      "handshake_ms": {
+        "n": 8,
+        "min": 29.121,
+        "p50": 30.367,
+        "p99": 70.851,
+        "max": 70.851,
+        "mean": 38.192
+      },
+      "first_byte_ms": {
+        "n": 8,
+        "min": 4.859,
+        "p50": 19.611,
+        "p99": 26.126,
+        "max": 26.126,
+        "mean": 16.258
+      },
+      "errors": [],
+      "tls": {
+        "issuerCN": "127-0-0-1.nip.io",
+        "subjectCN": "127-0-0-1.nip.io",
+        "fingerprint256": "EB:DE:8B:BB:E3:DA:AC:77:1B:5A:C1:37:82:AD:47:DF:A6:BF:E4:9B:0E:93:C1:E2:78:3C:2D:CF:74:13:4F:B7",
+        "tls": "TLSv1.3",
+        "alpn": null,
+        "authorized": true
+      }
+    },
+    {
+      "run": 5,
+      "connections": 8,
+      "ok": 8,
+      "bytes_total": 67108864,
+      "steady_mib_s": null,
+      "total_mib_s": null,
+      "aggregate_mib_s": 1114.09,
+      "handshake_ms": {
+        "n": 8,
+        "min": 17.664,
+        "p50": 18.885,
+        "p99": 60.567,
+        "max": 60.567,
+        "mean": 25.035
+      },
+      "first_byte_ms": {
+        "n": 8,
+        "min": 4.63,
+        "p50": 24.013,
+        "p99": 30.62,
+        "max": 30.62,
+        "mean": 16.956
+      },
+      "errors": [],
+      "tls": {
+        "issuerCN": "127-0-0-1.nip.io",
+        "subjectCN": "127-0-0-1.nip.io",
+        "fingerprint256": "EB:DE:8B:BB:E3:DA:AC:77:1B:5A:C1:37:82:AD:47:DF:A6:BF:E4:9B:0E:93:C1:E2:78:3C:2D:CF:74:13:4F:B7",
+        "tls": "TLSv1.3",
+        "alpn": null,
+        "authorized": true
+      }
+    }
+  ],
+  "gate": {
+    "statistic": "none — aggregate arm is diagnostic; CPU axis from /tool/profile",
+    "aggregate_median_mib_s": 996.154,
+    "profile_share": null
+  }
+}

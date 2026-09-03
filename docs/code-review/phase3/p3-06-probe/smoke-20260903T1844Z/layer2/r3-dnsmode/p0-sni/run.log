@@ -1,0 +1,9 @@
+2026-09-03T18:56:01.942Z [sni] == sni start 2026-09-03T18:56:01.902Z tip=92e3f4a9b930-dirty out=docs/code-review/phase3/p3-06-probe/smoke-20260903T1844Z/layer2/r3-dnsmode/p0-sni
+2026-09-03T18:56:01.943Z [sni] args {"probe":"127.0.0.1","api-port":8443,"key":"<set>","out":"docs/code-review/phase3/p3-06-probe/smoke-20260903T1844Z/layer2/r3-dnsmode/p0-sni","tip":null,"allow-busy":false,"skip-host-checks":false,"blocked":"ads.smoke.test","allowed":"example.com","port":8444,"attempts":5,"timeout":5000}
+2026-09-03T18:56:02.274Z [sni] Get-NetConnectionProfile: Ethernet                Public
+2026-09-03T18:56:02.670Z [sni] idle check: PASS (recorded; each stage decides)
+2026-09-03T18:56:02.677Z [sni] GET /health -> 200 {"status":"ok","version":"0.3.1","uptime_seconds":12}
+2026-09-03T18:56:02.684Z [sni] config snapshot -> docs\code-review\phase3\p3-06-probe\smoke-20260903T1844Z\layer2\r3-dnsmode\p0-sni\config.json
+2026-09-03T18:56:02.684Z [sni] engine.mode = dns
+2026-09-03T18:56:02.684Z [sni] INVALID: engine.mode dns carries no https listener
+2026-09-03T18:56:02.685Z [sni] wrote docs\code-review\phase3\p3-06-probe\smoke-20260903T1844Z\layer2\r3-dnsmode\p0-sni\sni.json

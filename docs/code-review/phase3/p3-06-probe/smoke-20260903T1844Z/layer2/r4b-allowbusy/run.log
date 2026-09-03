@@ -1,0 +1,27 @@
+2026-09-03T18:59:32.859Z [sni] == sni start 2026-09-03T18:59:32.819Z tip=92e3f4a9b930-dirty out=docs/code-review/phase3/p3-06-probe/smoke-20260903T1844Z/layer2/r4b-allowbusy
+2026-09-03T18:59:32.860Z [sni] args {"probe":"127.0.0.1","api-port":8446,"key":"<set>","out":"docs/code-review/phase3/p3-06-probe/smoke-20260903T1844Z/layer2/r4b-allowbusy","tip":null,"allow-busy":true,"skip-host-checks":false,"blocked":"ads.smoke.test","allowed":"example.com","port":8445,"attempts":5,"timeout":5000}
+2026-09-03T18:59:33.146Z [sni] Get-NetConnectionProfile: Ethernet                Public
+2026-09-03T18:59:33.611Z [sni] idle check: FAIL chrome (recorded; each stage decides)
+2026-09-03T18:59:33.619Z [sni] GET /health -> 200 {"status":"ok","version":"0.3.1","uptime_seconds":82}
+2026-09-03T18:59:33.623Z [sni] config snapshot -> docs\code-review\phase3\p3-06-probe\smoke-20260903T1844Z\layer2\r4b-allowbusy\config.json
+2026-09-03T18:59:33.623Z [sni] engine.mode = dns+http+https
+2026-09-03T18:59:33.623Z [sni] degraded: host not idle: chrome
+2026-09-03T18:59:33.623Z [sni] https.sni.no_sni = pass
+2026-09-03T18:59:33.629Z [sni] blocked  #1 closed_silent bytes=0 close=2.067ms
+2026-09-03T18:59:33.639Z [sni] allowed  #1 server_hello  bytes=3934 close=8.83ms
+2026-09-03T18:59:33.640Z [sni] no_sni   #1 closed_silent bytes=0 close=0.762ms
+2026-09-03T18:59:33.642Z [sni] blocked  #2 closed_silent bytes=0 close=1.634ms
+2026-09-03T18:59:33.656Z [sni] allowed  #2 server_hello  bytes=3934 close=12.699ms
+2026-09-03T18:59:33.657Z [sni] no_sni   #2 closed_silent bytes=0 close=0.585ms
+2026-09-03T18:59:33.659Z [sni] blocked  #3 closed_silent bytes=0 close=1.451ms
+2026-09-03T18:59:33.684Z [sni] allowed  #3 server_hello  bytes=3934 close=25.034ms
+2026-09-03T18:59:33.685Z [sni] no_sni   #3 closed_silent bytes=0 close=0.49ms
+2026-09-03T18:59:33.688Z [sni] blocked  #4 closed_silent bytes=0 close=2.114ms
+2026-09-03T18:59:33.714Z [sni] allowed  #4 server_hello  bytes=3933 close=26.214ms
+2026-09-03T18:59:33.715Z [sni] no_sni   #4 closed_silent bytes=0 close=0.637ms
+2026-09-03T18:59:33.717Z [sni] blocked  #5 closed_silent bytes=0 close=1.433ms
+2026-09-03T18:59:33.743Z [sni] allowed  #5 server_hello  bytes=3933 close=25.147ms
+2026-09-03T18:59:33.744Z [sni] no_sni   #5 closed_silent bytes=0 close=0.402ms
+2026-09-03T18:59:33.747Z [sni] listeners.https delta {"connections":15,"requests":15,"blocked":0,"refused_claim":0,"refused_destination":0,"resolve_failures":5,"upstream_failures":0,"upstream_cert_failures":0,"non_http":0,"non_tls":0,"hello_timeouts":0,"dropped_events":0}
+2026-09-03T18:59:33.747Z [sni] INVALID: blocked rows closed without a rule verdict: listeners.https.blocked moved by 0, expected at least 5 (resolve_failures 5, refused_destination 0); --blocked is not blocked by the probe's ruleset
+2026-09-03T18:59:33.747Z [sni] wrote docs\code-review\phase3\p3-06-probe\smoke-20260903T1844Z\layer2\r4b-allowbusy\sni.json

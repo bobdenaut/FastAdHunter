@@ -1,0 +1,143 @@
+{
+  "script": "p6",
+  "started_at": "2026-09-03T19:15:59.516Z",
+  "finished_at": "2026-09-03T19:16:00.344Z",
+  "tip": "92e3f4a9b930-dirty",
+  "probe": "127.0.0.1",
+  "probe_version": "0.3.1",
+  "host": {
+    "platform": "win32",
+    "idle": true,
+    "network": [
+      "Ethernet                Public"
+    ],
+    "busy": []
+  },
+  "args": {
+    "probe": "127.0.0.1",
+    "api-port": 8443,
+    "key": "<set>",
+    "out": "docs/code-review/phase3/p3-06-probe/smoke-20260903T1844Z/layer3-l1a",
+    "tip": null,
+    "allow-busy": false,
+    "skip-host-checks": false,
+    "generate": 2,
+    "import": 2,
+    "cert": "p1.crt",
+    "key-file": "p1.key",
+    "ca-archive-count": 0,
+    "api-archive-count": 0,
+    "ca-out": null
+  },
+  "valid": true,
+  "status": "valid",
+  "degraded_reasons": [],
+  "measurement": "P6",
+  "archive_count_before": {
+    "ca": 0,
+    "api": 0
+  },
+  "figures": {
+    "ca/generate": {
+      "n": 2,
+      "min": 16.732,
+      "p50": 18.62,
+      "p99": 18.62,
+      "max": 18.62,
+      "mean": 17.676,
+      "median_time_total_ms": 20.636
+    },
+    "import": {
+      "n": 2,
+      "min": 14.628,
+      "p50": 19.759,
+      "p99": 19.759,
+      "max": 19.759,
+      "mean": 17.194,
+      "median_time_total_ms": 21.87
+    }
+  },
+  "ca_after": {
+    "present": true,
+    "fingerprint_sha256": "BC:F8:B9:0A:D0:F5:90:5B:7D:A4:98:85:07:C1:D9:40:50:6C:22:A9:72:92:CE:C8:12:36:A5:84:26:33:FA:A1",
+    "not_before": "2026-09-02T19:16:00Z",
+    "not_after": "2036-08-30T19:16:00Z",
+    "subject": "CN=FastAdHunter CA"
+  },
+  "api_certificate_after": {
+    "source": "imported"
+  },
+  "ca_exported_to": "docs\\code-review\\phase3\\p3-06-probe\\smoke-20260903T1844Z\\layer3-l1a\\ca-after-p6.pem",
+  "rows": [
+    {
+      "op": "ca/generate",
+      "index": 1,
+      "status": 200,
+      "starttransfer_minus_appconnect_ms": 16.732,
+      "time_total_ms": 18.562,
+      "appconnect_ms": 1.746,
+      "response": {
+        "ca": {
+          "present": true,
+          "fingerprint_sha256": "F1:ED:7A:6D:C5:66:57:8F:0D:44:BC:25:62:35:20:C8:3D:97:24:BC:77:C2:2E:BC:10:4D:DC:21:58:14:1E:73",
+          "not_before": "2026-09-02T19:16:00Z",
+          "not_after": "2036-08-30T19:16:00Z",
+          "subject": "CN=FastAdHunter CA"
+        },
+        "archived_previous": true
+      }
+    },
+    {
+      "op": "ca/generate",
+      "index": 2,
+      "status": 200,
+      "starttransfer_minus_appconnect_ms": 18.62,
+      "time_total_ms": 20.636,
+      "appconnect_ms": 1.911,
+      "response": {
+        "ca": {
+          "present": true,
+          "fingerprint_sha256": "BC:F8:B9:0A:D0:F5:90:5B:7D:A4:98:85:07:C1:D9:40:50:6C:22:A9:72:92:CE:C8:12:36:A5:84:26:33:FA:A1",
+          "not_before": "2026-09-02T19:16:00Z",
+          "not_after": "2036-08-30T19:16:00Z",
+          "subject": "CN=FastAdHunter CA"
+        },
+        "archived_previous": true
+      }
+    },
+    {
+      "op": "import",
+      "index": 1,
+      "status": 200,
+      "starttransfer_minus_appconnect_ms": 14.628,
+      "time_total_ms": 16.717,
+      "appconnect_ms": 2.012,
+      "response": {
+        "applied": false,
+        "restart_required": true,
+        "source": "imported"
+      }
+    },
+    {
+      "op": "import",
+      "index": 2,
+      "status": 200,
+      "starttransfer_minus_appconnect_ms": 19.759,
+      "time_total_ms": 21.87,
+      "appconnect_ms": 2.022,
+      "response": {
+        "applied": false,
+        "restart_required": true,
+        "source": "imported"
+      }
+    }
+  ],
+  "gate": {
+    "statistic": "median of starttransfer - appconnect: generate < 100 ms, import < 50 ms",
+    "generate_median_ms": 18.62,
+    "import_median_ms": 19.759,
+    "generate_pass": true,
+    "import_pass": true,
+    "pass": true
+  }
+}

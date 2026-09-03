@@ -1,0 +1,15 @@
+2026-09-03T18:56:15.380Z [p7-store] == p7-store start 2026-09-03T18:56:15.343Z tip=92e3f4a9b930-dirty out=docs/code-review/phase3/p3-06-probe/smoke-20260903T1844Z/layer2/r3-dnsmode/p7
+2026-09-03T18:56:15.381Z [p7-store] args {"probe":"127.0.0.1","api-port":8443,"key":"<set>","out":"docs/code-review/phase3/p3-06-probe/smoke-20260903T1844Z/layer2/r3-dnsmode/p7","tip":null,"allow-busy":false,"skip-host-checks":false,"ca-key":"smoke-config/ca-key.pem"}
+2026-09-03T18:56:15.642Z [p7-store] Get-NetConnectionProfile: Ethernet                Public
+2026-09-03T18:56:16.054Z [p7-store] idle check: PASS (recorded; each stage decides)
+2026-09-03T18:56:16.063Z [p7-store] GET /health -> 200 {"status":"ok","version":"0.3.1","uptime_seconds":25}
+2026-09-03T18:56:16.069Z [p7-store] config snapshot -> docs\code-review\phase3\p3-06-probe\smoke-20260903T1844Z\layer2\r3-dnsmode\p7\config.json
+2026-09-03T18:56:16.069Z [p7-store] engine.mode = dns
+2026-09-03T18:56:16.070Z [p7-store] ca key: ec prime256v1, payload 184 base64 chars / 138 DER bytes
+2026-09-03T18:56:16.073Z [p7-store] PASS ca/export?format=pem {"status":200,"content_type":"application/x-pem-file","blocks":["CERTIFICATE"],"leaks":[]}
+2026-09-03T18:56:16.075Z [p7-store] PASS ca/export?format=der {"status":200,"content_type":"application/pkix-cert","bytes":384,"first_byte":48,"leaks":[]}
+2026-09-03T18:56:16.077Z [p7-store] PASS /api/v1/config {"status":200,"leaks":[]}
+2026-09-03T18:56:16.148Z [p7-store] PASS traversal list against the API listener {"paths":20,"requests":40,"served":{"spa_shell":0,"other_200":0,"rejected":40},"failing":[]}
+2026-09-03T18:56:16.148Z [p7-store] wrote docs\code-review\phase3\p3-06-probe\smoke-20260903T1844Z\layer2\r3-dnsmode\p7\certs.json
+2026-09-03T18:56:16.148Z [p7-store] GATE {"statistic":"every check pass","pass":true,"failing":[]}
+2026-09-03T18:56:16.148Z [p7-store] == p7-store done (valid)

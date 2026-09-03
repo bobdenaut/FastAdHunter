@@ -1,0 +1,16 @@
+2026-09-03T18:56:50.964Z [p1] == p1 start 2026-09-03T18:56:50.928Z tip=92e3f4a9b930-dirty out=docs/code-review/phase3/p3-06-probe/smoke-20260903T1844Z/layer2/r7-bytes
+2026-09-03T18:56:50.965Z [p1] args {"probe":"127.0.0.1","api-port":8443,"key":"<set>","out":"docs/code-review/phase3/p3-06-probe/smoke-20260903T1844Z/layer2/r7-bytes","tip":null,"allow-busy":false,"skip-host-checks":false,"origin":"127-0-0-1.nip.io","origin-ip":null,"origin-port":4443,"origin-cert":"p1.crt","port":8444,"bytes":16,"runs":5,"connections":1,"direct":true,"control":null,"profile-share":null,"timeout":120000,"max-fail-pct":2}
+2026-09-03T18:56:51.273Z [p1] Get-NetConnectionProfile: Ethernet                Public
+2026-09-03T18:56:51.666Z [p1] idle check: PASS (recorded; each stage decides)
+2026-09-03T18:56:51.677Z [p1] GET /health -> 200 {"status":"ok","version":"0.3.1","uptime_seconds":8}
+2026-09-03T18:56:51.680Z [p1] config snapshot -> docs\code-review\phase3\p3-06-probe\smoke-20260903T1844Z\layer2\r7-bytes\config.json
+2026-09-03T18:56:51.680Z [p1] engine.mode = dns+http+https
+2026-09-03T18:56:51.685Z [p1] origin 127-0-0-1.nip.io resolves locally to 127.0.0.1
+2026-09-03T18:56:51.685Z [p1] arm=p1_control target=127.0.0.1:4443 sni=127-0-0-1.nip.io expected=16 MiB x 1 conn x 5 runs
+2026-09-03T18:56:51.703Z [p1] run 1: ok=0/1 steady=- MiB/s total=- aggregate=- hs=2.254ms errors=[{"index":0,"error":"closed_early","bytes":8388608}]
+2026-09-03T18:56:51.716Z [p1] run 2: ok=0/1 steady=- MiB/s total=- aggregate=- hs=0.784ms errors=[{"index":0,"error":"closed_early","bytes":8388608}]
+2026-09-03T18:56:51.729Z [p1] run 3: ok=0/1 steady=- MiB/s total=- aggregate=- hs=0.733ms errors=[{"index":0,"error":"closed_early","bytes":8388608}]
+2026-09-03T18:56:51.741Z [p1] run 4: ok=0/1 steady=- MiB/s total=- aggregate=- hs=0.793ms errors=[{"index":0,"error":"closed_early","bytes":8388608}]
+2026-09-03T18:56:51.765Z [p1] run 5: ok=0/1 steady=- MiB/s total=- aggregate=- hs=0.797ms errors=[{"index":0,"error":"closed_early","bytes":8388608}]
+2026-09-03T18:56:51.765Z [p1] INVALID: no p1_control sample completed 16 MiB on every connection
+2026-09-03T18:56:51.765Z [p1] wrote docs\code-review\phase3\p3-06-probe\smoke-20260903T1844Z\layer2\r7-bytes\p1-control.json

@@ -1,0 +1,9 @@
+2026-09-03T18:54:38.272Z [p7-store] == p7-store start 2026-09-03T18:54:38.235Z tip=92e3f4a9b930-dirty out=docs/code-review/phase3/p3-06-probe/smoke-20260903T1844Z/layer2/r15a-nokeyfile
+2026-09-03T18:54:38.273Z [p7-store] args {"probe":"127.0.0.1","api-port":8443,"key":"<set>","out":"docs/code-review/phase3/p3-06-probe/smoke-20260903T1844Z/layer2/r15a-nokeyfile","tip":null,"allow-busy":false,"skip-host-checks":false,"ca-key":"nope.pem"}
+2026-09-03T18:54:38.557Z [p7-store] Get-NetConnectionProfile: Ethernet                Public
+2026-09-03T18:54:38.915Z [p7-store] idle check: PASS (recorded; each stage decides)
+2026-09-03T18:54:38.923Z [p7-store] GET /health -> 200 {"status":"ok","version":"0.3.1","uptime_seconds":9}
+2026-09-03T18:54:38.925Z [p7-store] config snapshot -> docs\code-review\phase3\p3-06-probe\smoke-20260903T1844Z\layer2\r15a-nokeyfile\config.json
+2026-09-03T18:54:38.929Z [p7-store] engine.mode = dns+http+https
+2026-09-03T18:54:38.929Z [p7-store] INVALID: --ca-key unreadable: ENOENT: no such file or directory, open 'E:\FastAdHunter\nope.pem'
+2026-09-03T18:54:38.929Z [p7-store] wrote docs\code-review\phase3\p3-06-probe\smoke-20260903T1844Z\layer2\r15a-nokeyfile\certs.json

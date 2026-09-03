@@ -1,0 +1,29 @@
+{
+  "script": "p7-store",
+  "started_at": "2026-09-03T18:54:38.235Z",
+  "finished_at": "2026-09-03T18:54:38.929Z",
+  "tip": "92e3f4a9b930-dirty",
+  "probe": "127.0.0.1",
+  "probe_version": "0.3.1",
+  "host": {
+    "platform": "win32",
+    "idle": true,
+    "network": [
+      "Ethernet                Public"
+    ],
+    "busy": []
+  },
+  "args": {
+    "probe": "127.0.0.1",
+    "api-port": 8443,
+    "key": "<set>",
+    "out": "docs/code-review/phase3/p3-06-probe/smoke-20260903T1844Z/layer2/r15a-nokeyfile",
+    "tip": null,
+    "allow-busy": false,
+    "skip-host-checks": false,
+    "ca-key": "nope.pem"
+  },
+  "valid": false,
+  "status": "INVALID",
+  "reason": "--ca-key unreadable: ENOENT: no such file or directory, open 'E:\\FastAdHunter\\nope.pem'"
+}

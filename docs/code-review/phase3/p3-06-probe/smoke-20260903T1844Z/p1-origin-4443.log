@@ -1,0 +1,6 @@
+p1-origin listening on 0.0.0.0:4443, 8 MiB per connection, cert p1.crt
+#1 127.0.0.1:60182 closed after 32.1 ms, 8388608 bytes written, ? sni=127-0-0-1.nip.io
+#2 127.0.0.1:60183 closed after 10.1 ms, 8388608 bytes written, ? sni=127-0-0-1.nip.io
+#3 127.0.0.1:60184 closed after 42.4 ms, 8388608 bytes written, ? sni=127-0-0-1.nip.io
+#4 127.0.0.1:60185 closed after 11 ms, 8388608 bytes written, ? sni=127-0-0-1.nip.io
+#5 127.0.0.1:60186 closed after 11 ms, 8388608 bytes written, ? sni=127-0-0-1.nip.io

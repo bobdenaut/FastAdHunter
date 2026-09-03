@@ -1,0 +1,245 @@
+{
+  "script": "p1",
+  "started_at": "2026-09-03T18:56:50.928Z",
+  "finished_at": "2026-09-03T18:56:51.765Z",
+  "tip": "92e3f4a9b930-dirty",
+  "probe": "127.0.0.1",
+  "probe_version": "0.3.1",
+  "host": {
+    "platform": "win32",
+    "idle": true,
+    "network": [
+      "Ethernet                Public"
+    ],
+    "busy": []
+  },
+  "args": {
+    "probe": "127.0.0.1",
+    "api-port": 8443,
+    "key": "<set>",
+    "out": "docs/code-review/phase3/p3-06-probe/smoke-20260903T1844Z/layer2/r7-bytes",
+    "tip": null,
+    "allow-busy": false,
+    "skip-host-checks": false,
+    "origin": "127-0-0-1.nip.io",
+    "origin-ip": null,
+    "origin-port": 4443,
+    "origin-cert": "p1.crt",
+    "port": 8444,
+    "bytes": 16,
+    "runs": 5,
+    "connections": 1,
+    "direct": true,
+    "control": null,
+    "profile-share": null,
+    "timeout": 120000,
+    "max-fail-pct": 2
+  },
+  "valid": false,
+  "status": "INVALID",
+  "reason": "no p1_control sample completed 16 MiB on every connection",
+  "arm": "p1_control",
+  "runs": [
+    {
+      "run": 1,
+      "connections": 1,
+      "ok": 0,
+      "bytes_total": 8388608,
+      "steady_mib_s": null,
+      "total_mib_s": null,
+      "aggregate_mib_s": null,
+      "handshake_ms": {
+        "n": 1,
+        "min": 2.254,
+        "p50": 2.254,
+        "p99": 2.254,
+        "max": 2.254,
+        "mean": 2.254
+      },
+      "first_byte_ms": {
+        "n": 1,
+        "min": 4.183,
+        "p50": 4.183,
+        "p99": 4.183,
+        "max": 4.183,
+        "mean": 4.183
+      },
+      "errors": [
+        {
+          "index": 0,
+          "error": "closed_early",
+          "bytes": 8388608
+        }
+      ],
+      "tls": {
+        "issuerCN": "127-0-0-1.nip.io",
+        "subjectCN": "127-0-0-1.nip.io",
+        "fingerprint256": "EB:DE:8B:BB:E3:DA:AC:77:1B:5A:C1:37:82:AD:47:DF:A6:BF:E4:9B:0E:93:C1:E2:78:3C:2D:CF:74:13:4F:B7",
+        "tls": "TLSv1.3",
+        "alpn": null,
+        "authorized": true
+      }
+    },
+    {
+      "run": 2,
+      "connections": 1,
+      "ok": 0,
+      "bytes_total": 8388608,
+      "steady_mib_s": null,
+      "total_mib_s": null,
+      "aggregate_mib_s": null,
+      "handshake_ms": {
+        "n": 1,
+        "min": 0.784,
+        "p50": 0.784,
+        "p99": 0.784,
+        "max": 0.784,
+        "mean": 0.784
+      },
+      "first_byte_ms": {
+        "n": 1,
+        "min": 4.119,
+        "p50": 4.119,
+        "p99": 4.119,
+        "max": 4.119,
+        "mean": 4.119
+      },
+      "errors": [
+        {
+          "index": 0,
+          "error": "closed_early",
+          "bytes": 8388608
+        }
+      ],
+      "tls": {
+        "issuerCN": "127-0-0-1.nip.io",
+        "subjectCN": "127-0-0-1.nip.io",
+        "fingerprint256": "EB:DE:8B:BB:E3:DA:AC:77:1B:5A:C1:37:82:AD:47:DF:A6:BF:E4:9B:0E:93:C1:E2:78:3C:2D:CF:74:13:4F:B7",
+        "tls": "TLSv1.3",
+        "alpn": null,
+        "authorized": true
+      }
+    },
+    {
+      "run": 3,
+      "connections": 1,
+      "ok": 0,
+      "bytes_total": 8388608,
+      "steady_mib_s": null,
+      "total_mib_s": null,
+      "aggregate_mib_s": null,
+      "handshake_ms": {
+        "n": 1,
+        "min": 0.733,
+        "p50": 0.733,
+        "p99": 0.733,
+        "max": 0.733,
+        "mean": 0.733
+      },
+      "first_byte_ms": {
+        "n": 1,
+        "min": 3.667,
+        "p50": 3.667,
+        "p99": 3.667,
+        "max": 3.667,
+        "mean": 3.667
+      },
+      "errors": [
+        {
+          "index": 0,
+          "error": "closed_early",
+          "bytes": 8388608
+        }
+      ],
+      "tls": {
+        "issuerCN": "127-0-0-1.nip.io",
+        "subjectCN": "127-0-0-1.nip.io",
+        "fingerprint256": "EB:DE:8B:BB:E3:DA:AC:77:1B:5A:C1:37:82:AD:47:DF:A6:BF:E4:9B:0E:93:C1:E2:78:3C:2D:CF:74:13:4F:B7",
+        "tls": "TLSv1.3",
+        "alpn": null,
+        "authorized": true
+      }
+    },
+    {
+      "run": 4,
+      "connections": 1,
+      "ok": 0,
+      "bytes_total": 8388608,
+      "steady_mib_s": null,
+      "total_mib_s": null,
+      "aggregate_mib_s": null,
+      "handshake_ms": {
+        "n": 1,
+        "min": 0.793,
+        "p50": 0.793,
+        "p99": 0.793,
+        "max": 0.793,
+        "mean": 0.793
+      },
+      "first_byte_ms": {
+        "n": 1,
+        "min": 3.672,
+        "p50": 3.672,
+        "p99": 3.672,
+        "max": 3.672,
+        "mean": 3.672
+      },
+      "errors": [
+        {
+          "index": 0,
+          "error": "closed_early",
+          "bytes": 8388608
+        }
+      ],
+      "tls": {
+        "issuerCN": "127-0-0-1.nip.io",
+        "subjectCN": "127-0-0-1.nip.io",
+        "fingerprint256": "EB:DE:8B:BB:E3:DA:AC:77:1B:5A:C1:37:82:AD:47:DF:A6:BF:E4:9B:0E:93:C1:E2:78:3C:2D:CF:74:13:4F:B7",
+        "tls": "TLSv1.3",
+        "alpn": null,
+        "authorized": true
+      }
+    },
+    {
+      "run": 5,
+      "connections": 1,
+      "ok": 0,
+      "bytes_total": 8388608,
+      "steady_mib_s": null,
+      "total_mib_s": null,
+      "aggregate_mib_s": null,
+      "handshake_ms": {
+        "n": 1,
+        "min": 0.797,
+        "p50": 0.797,
+        "p99": 0.797,
+        "max": 0.797,
+        "mean": 0.797
+      },
+      "first_byte_ms": {
+        "n": 1,
+        "min": 3.812,
+        "p50": 3.812,
+        "p99": 3.812,
+        "max": 3.812,
+        "mean": 3.812
+      },
+      "errors": [
+        {
+          "index": 0,
+          "error": "closed_early",
+          "bytes": 8388608
+        }
+      ],
+      "tls": {
+        "issuerCN": "127-0-0-1.nip.io",
+        "subjectCN": "127-0-0-1.nip.io",
+        "fingerprint256": "EB:DE:8B:BB:E3:DA:AC:77:1B:5A:C1:37:82:AD:47:DF:A6:BF:E4:9B:0E:93:C1:E2:78:3C:2D:CF:74:13:4F:B7",
+        "tls": "TLSv1.3",
+        "alpn": null,
+        "authorized": true
+      }
+    }
+  ],
+  "telemetry_delta": null
+}

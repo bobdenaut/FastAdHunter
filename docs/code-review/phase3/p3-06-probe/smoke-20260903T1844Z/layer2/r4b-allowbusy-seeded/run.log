@@ -1,0 +1,28 @@
+2026-09-03T18:59:54.544Z [sni] == sni start 2026-09-03T18:59:54.506Z tip=92e3f4a9b930-dirty out=docs/code-review/phase3/p3-06-probe/smoke-20260903T1844Z/layer2/r4b-allowbusy-seeded
+2026-09-03T18:59:54.545Z [sni] args {"probe":"127.0.0.1","api-port":8443,"key":"<set>","out":"docs/code-review/phase3/p3-06-probe/smoke-20260903T1844Z/layer2/r4b-allowbusy-seeded","tip":null,"allow-busy":true,"skip-host-checks":false,"blocked":"ads.smoke.test","allowed":"example.com","port":8444,"attempts":5,"timeout":5000}
+2026-09-03T18:59:54.846Z [sni] Get-NetConnectionProfile: Ethernet                Public
+2026-09-03T18:59:55.259Z [sni] idle check: FAIL chrome (recorded; each stage decides)
+2026-09-03T18:59:55.266Z [sni] GET /health -> 200 {"status":"ok","version":"0.3.1","uptime_seconds":7}
+2026-09-03T18:59:55.272Z [sni] config snapshot -> docs\code-review\phase3\p3-06-probe\smoke-20260903T1844Z\layer2\r4b-allowbusy-seeded\config.json
+2026-09-03T18:59:55.272Z [sni] engine.mode = dns+http+https
+2026-09-03T18:59:55.272Z [sni] degraded: host not idle: chrome
+2026-09-03T18:59:55.273Z [sni] https.sni.no_sni = pass
+2026-09-03T18:59:55.276Z [sni] blocked  #1 closed_silent bytes=0 close=0.635ms
+2026-09-03T18:59:55.287Z [sni] allowed  #1 server_hello  bytes=3934 close=9.913ms
+2026-09-03T18:59:55.288Z [sni] no_sni   #1 closed_silent bytes=0 close=0.569ms
+2026-09-03T18:59:55.289Z [sni] blocked  #2 closed_silent bytes=0 close=0.54ms
+2026-09-03T18:59:55.309Z [sni] allowed  #2 server_hello  bytes=3933 close=19.651ms
+2026-09-03T18:59:55.310Z [sni] no_sni   #2 closed_silent bytes=0 close=0.397ms
+2026-09-03T18:59:55.311Z [sni] blocked  #3 closed_silent bytes=0 close=0.329ms
+2026-09-03T18:59:55.319Z [sni] allowed  #3 server_hello  bytes=3935 close=8.235ms
+2026-09-03T18:59:55.320Z [sni] no_sni   #3 closed_silent bytes=0 close=0.375ms
+2026-09-03T18:59:55.321Z [sni] blocked  #4 closed_silent bytes=0 close=0.461ms
+2026-09-03T18:59:55.329Z [sni] allowed  #4 server_hello  bytes=3934 close=7.817ms
+2026-09-03T18:59:55.330Z [sni] no_sni   #4 closed_silent bytes=0 close=0.346ms
+2026-09-03T18:59:55.330Z [sni] blocked  #5 closed_silent bytes=0 close=0.287ms
+2026-09-03T18:59:55.354Z [sni] allowed  #5 server_hello  bytes=3934 close=23.494ms
+2026-09-03T18:59:55.355Z [sni] no_sni   #5 closed_silent bytes=0 close=0.369ms
+2026-09-03T18:59:55.357Z [sni] listeners.https delta {"connections":15,"requests":15,"blocked":5,"refused_claim":0,"refused_destination":0,"resolve_failures":0,"upstream_failures":0,"upstream_cert_failures":0,"non_http":0,"non_tls":0,"hello_timeouts":0,"dropped_events":0}
+2026-09-03T18:59:55.359Z [sni] wrote docs\code-review\phase3\p3-06-probe\smoke-20260903T1844Z\layer2\r4b-allowbusy-seeded\sni.json
+2026-09-03T18:59:55.359Z [sni] GATE (degraded, not a gate) {"statistic":"every blocked and no-SNI attempt closed before a certificate (boolean)","blocked_closed":true,"no_sni_closed":true,"allowed_opened":true,"pass":true}
+2026-09-03T18:59:55.359Z [sni] == sni done (degraded)

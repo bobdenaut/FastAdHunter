@@ -1,0 +1,14 @@
+2026-09-03T18:54:29.095891Z  INFO fastadhunter: fastadhunter starting config_path=smoke-config/fastadhunter.toml data_dir=smoke-data mode=DnsHttpHttps
+2026-09-03T18:54:29.117105Z  INFO fah_rules::lifecycle: refresh schedule restored from cached copies lists=1
+2026-09-03T18:54:29.117227Z  INFO fastadhunter: ruleset compiled from cache rules=62949 policies=1
+2026-09-03T18:54:29.118749Z  INFO fastadhunter: DNS listeners bound udp=127.0.0.1:5300 tcp=127.0.0.1:5300 dot=Some(127.0.0.1:8853)
+2026-09-03T18:54:29.118802Z  INFO fastadhunter: HTTP listener bound addr=127.0.0.1:8080
+2026-09-03T18:54:29.118832Z  INFO fastadhunter: HTTPS SNI listener bound addr=127.0.0.1:8444
+2026-09-03T18:54:29.118844Z  INFO fastadhunter: egress allow-list active — private destinations permitted count=1
+2026-09-03T18:54:29.123154Z  INFO fastadhunter: egress allow-list active — private destinations permitted count=1
+2026-09-03T18:54:29.123180Z  INFO fastadhunter: HTTPS interception active for the listed clients — each must hold a static lease count=1 exclusions=34
+2026-09-03T18:54:29.123345Z  INFO fastadhunter: DoT serves a CA-minted certificate for the hostname each client sends, the API certificate when a hello carries no SNI port=8853
+2026-09-03T18:54:29.123472Z ERROR fah_api::web: web UI missing: the dashboard will not load. /web is image content, not a volume — a volume mounted over it hides the bundle the image ships path=/web\index.html
+2026-09-03T18:54:29.123750Z  INFO fastadhunter: API listening url=https://127.0.0.1:8443
+2026-09-03T18:54:29.123772Z  INFO fastadhunter: stale-while-refresh pool started workers=3
+2026-09-03T18:54:29.123776Z  INFO fastadhunter: cache cleanup scheduler started

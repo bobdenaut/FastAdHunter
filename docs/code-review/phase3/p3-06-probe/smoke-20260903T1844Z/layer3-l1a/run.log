@@ -1,0 +1,88 @@
+2026-09-03T19:14:35.724Z [sni] == sni start 2026-09-03T19:14:35.686Z tip=92e3f4a9b930-dirty out=docs/code-review/phase3/p3-06-probe/smoke-20260903T1844Z/layer3-l1a
+2026-09-03T19:14:35.725Z [sni] args {"probe":"127.0.0.1","api-port":8443,"key":"<set>","out":"docs/code-review/phase3/p3-06-probe/smoke-20260903T1844Z/layer3-l1a","tip":null,"allow-busy":false,"skip-host-checks":false,"blocked":"ads.smoke.test","allowed":"example.com","port":8444,"attempts":5,"timeout":5000}
+2026-09-03T19:14:36.059Z [sni] Get-NetConnectionProfile: Ethernet                Public
+2026-09-03T19:14:36.485Z [sni] idle check: PASS (recorded; each stage decides)
+2026-09-03T19:14:36.493Z [sni] GET /health -> 200 {"status":"ok","version":"0.3.1","uptime_seconds":43}
+2026-09-03T19:14:36.500Z [sni] config snapshot -> docs\code-review\phase3\p3-06-probe\smoke-20260903T1844Z\layer3-l1a\config.json
+2026-09-03T19:14:36.500Z [sni] engine.mode = dns+http+https
+2026-09-03T19:14:36.500Z [sni] https.sni.no_sni = pass
+2026-09-03T19:14:36.505Z [sni] blocked  #1 closed_silent bytes=0 close=1.148ms
+2026-09-03T19:14:36.519Z [sni] allowed  #1 server_hello  bytes=3935 close=12.679ms
+2026-09-03T19:14:36.520Z [sni] no_sni   #1 closed_silent bytes=0 close=0.975ms
+2026-09-03T19:14:36.522Z [sni] blocked  #2 closed_silent bytes=0 close=1.134ms
+2026-09-03T19:14:36.533Z [sni] allowed  #2 server_hello  bytes=1420 close=10.915ms
+2026-09-03T19:14:36.535Z [sni] no_sni   #2 closed_silent bytes=0 close=1.362ms
+2026-09-03T19:14:36.536Z [sni] blocked  #3 closed_silent bytes=0 close=1.084ms
+2026-09-03T19:14:36.548Z [sni] allowed  #3 server_hello  bytes=1420 close=11.196ms
+2026-09-03T19:14:36.550Z [sni] no_sni   #3 closed_silent bytes=0 close=1.196ms
+2026-09-03T19:14:36.551Z [sni] blocked  #4 closed_silent bytes=0 close=1.089ms
+2026-09-03T19:14:36.561Z [sni] allowed  #4 server_hello  bytes=3934 close=9.613ms
+2026-09-03T19:14:36.563Z [sni] no_sni   #4 closed_silent bytes=0 close=1.491ms
+2026-09-03T19:14:36.564Z [sni] blocked  #5 closed_silent bytes=0 close=1.031ms
+2026-09-03T19:14:36.576Z [sni] allowed  #5 server_hello  bytes=3934 close=11.033ms
+2026-09-03T19:14:36.577Z [sni] no_sni   #5 closed_silent bytes=0 close=0.831ms
+2026-09-03T19:14:36.580Z [sni] listeners.https delta {"connections":15,"requests":15,"blocked":5,"refused_claim":0,"refused_destination":0,"resolve_failures":0,"upstream_failures":0,"upstream_cert_failures":0,"non_http":0,"non_tls":0,"hello_timeouts":0,"dropped_events":0}
+2026-09-03T19:14:36.581Z [sni] wrote docs\code-review\phase3\p3-06-probe\smoke-20260903T1844Z\layer3-l1a\sni.json
+2026-09-03T19:14:36.581Z [sni] GATE {"statistic":"every blocked and no-SNI attempt closed before a certificate (boolean)","blocked_closed":true,"no_sni_closed":true,"allowed_opened":true,"pass":true}
+2026-09-03T19:14:36.581Z [sni] == sni done (valid)
+2026-09-03T19:14:36.707Z [p4-lan] == p4-lan start 2026-09-03T19:14:36.671Z tip=92e3f4a9b930-dirty out=docs/code-review/phase3/p3-06-probe/smoke-20260903T1844Z/layer3-l1a
+2026-09-03T19:14:36.708Z [p4-lan] args {"probe":"127.0.0.1","api-port":8443,"key":"<set>","out":"docs/code-review/phase3/p3-06-probe/smoke-20260903T1844Z/layer3-l1a","tip":null,"allow-busy":false,"skip-host-checks":false,"domain":"ads.smoke.test","dot-host":"dns.smoke.test","dns-port":5300,"dot-port":8853,"queries":200,"rounds":1,"timeout":2000}
+2026-09-03T19:14:36.973Z [p4-lan] Get-NetConnectionProfile: Ethernet                Public
+2026-09-03T19:14:37.385Z [p4-lan] idle check: PASS (recorded; each stage decides)
+2026-09-03T19:14:37.393Z [p4-lan] GET /health -> 200 {"status":"ok","version":"0.3.1","uptime_seconds":44}
+2026-09-03T19:14:37.398Z [p4-lan] engine.mode = dns+http+https
+2026-09-03T19:14:37.398Z [p4-lan] dns.listen.dot_enabled=true doh_enabled=true
+2026-09-03T19:14:37.474Z [p4-lan] round 1 udp p50=0.347 p99=0.543 ms n=200 unanswered=0 unmatched=0 wall=74.963ms hs=-
+2026-09-03T19:14:38.074Z [p4-lan] round 1 dot p50=0.33 p99=0.626 ms n=200 unanswered=0 unmatched=0 wall=76.451ms hs=13.832
+2026-09-03T19:14:38.733Z [p4-lan] round 1 doh p50=0.483 p99=1.083 ms n=200 unanswered=0 unmatched=0 wall=148.485ms hs=5.139
+2026-09-03T19:14:39.238Z [p4-lan] wrote docs\code-review\phase3\p3-06-probe\smoke-20260903T1844Z\layer3-l1a\p4-lan.json
+2026-09-03T19:14:39.238Z [p4-lan] GATE {"statistic":"none — diagnostic","dot_p50_minus_udp_p50_ms":-0.017,"doh_p50_minus_udp_p50_ms":0.136}
+2026-09-03T19:14:39.239Z [p4-lan] == p4-lan done (valid)
+2026-09-03T19:14:58.952Z [p7-store] == p7-store start 2026-09-03T19:14:58.918Z tip=92e3f4a9b930-dirty out=docs/code-review/phase3/p3-06-probe/smoke-20260903T1844Z/layer3-l1a
+2026-09-03T19:14:58.953Z [p7-store] args {"probe":"127.0.0.1","api-port":8443,"key":"<set>","out":"docs/code-review/phase3/p3-06-probe/smoke-20260903T1844Z/layer3-l1a","tip":null,"allow-busy":false,"skip-host-checks":false,"ca-key":"smoke3-config/ca-key.pem"}
+2026-09-03T19:14:59.242Z [p7-store] Get-NetConnectionProfile: Ethernet                Public
+2026-09-03T19:14:59.685Z [p7-store] idle check: PASS (recorded; each stage decides)
+2026-09-03T19:14:59.693Z [p7-store] GET /health -> 200 {"status":"ok","version":"0.3.1","uptime_seconds":66}
+2026-09-03T19:14:59.697Z [p7-store] engine.mode = dns+http+https
+2026-09-03T19:14:59.698Z [p7-store] ca key: ec prime256v1, payload 184 base64 chars / 138 DER bytes
+2026-09-03T19:14:59.701Z [p7-store] PASS ca/export?format=pem {"status":200,"content_type":"application/x-pem-file","blocks":["CERTIFICATE"],"leaks":[]}
+2026-09-03T19:14:59.703Z [p7-store] PASS ca/export?format=der {"status":200,"content_type":"application/pkix-cert","bytes":383,"first_byte":48,"leaks":[]}
+2026-09-03T19:14:59.706Z [p7-store] PASS /api/v1/config {"status":200,"leaks":[]}
+2026-09-03T19:14:59.817Z [p7-store] PASS traversal list against the API listener {"paths":20,"requests":40,"served":{"spa_shell":24,"other_200":0,"rejected":16},"failing":[]}
+2026-09-03T19:14:59.817Z [p7-store] wrote docs\code-review\phase3\p3-06-probe\smoke-20260903T1844Z\layer3-l1a\certs.json
+2026-09-03T19:14:59.817Z [p7-store] GATE {"statistic":"every check pass","pass":true,"failing":[]}
+2026-09-03T19:14:59.817Z [p7-store] == p7-store done (valid)
+2026-09-03T19:15:36.995Z [p1] == p1 start 2026-09-03T19:15:36.957Z tip=92e3f4a9b930-dirty out=docs/code-review/phase3/p3-06-probe/smoke-20260903T1844Z/layer3-l1a
+2026-09-03T19:15:36.996Z [p1] args {"probe":"127.0.0.1","api-port":8443,"key":"<set>","out":"docs/code-review/phase3/p3-06-probe/smoke-20260903T1844Z/layer3-l1a","tip":null,"allow-busy":false,"skip-host-checks":false,"origin":"172-28-0-3.nip.io","origin-ip":null,"origin-port":443,"origin-cert":"p3c.crt","port":8444,"bytes":8,"runs":5,"connections":1,"direct":false,"control":null,"profile-share":null,"timeout":120000,"max-fail-pct":2}
+2026-09-03T19:15:37.306Z [p1] Get-NetConnectionProfile: Ethernet                Public
+2026-09-03T19:15:37.774Z [p1] idle check: PASS (recorded; each stage decides)
+2026-09-03T19:15:37.783Z [p1] GET /health -> 200 {"status":"ok","version":"0.3.1","uptime_seconds":105}
+2026-09-03T19:15:37.787Z [p1] engine.mode = dns+http+https
+2026-09-03T19:15:37.792Z [p1] origin 172-28-0-3.nip.io resolves locally to 172.28.0.3
+2026-09-03T19:15:37.792Z [p1] egress.allow_destinations = ["127.0.0.0/8","172.16.0.0/12"]
+2026-09-03T19:15:37.792Z [p1] arm=spliced target=127.0.0.1:8444 sni=172-28-0-3.nip.io expected=8 MiB x 1 conn x 5 runs
+2026-09-03T19:15:37.842Z [p1] run 1: ok=1/1 steady=259.673 MiB/s total=178.775 aggregate=259.674 hs=7.748ms
+2026-09-03T19:15:37.882Z [p1] run 2: ok=1/1 steady=270.362 MiB/s total=211.713 aggregate=270.36 hs=3.138ms
+2026-09-03T19:15:37.917Z [p1] run 3: ok=1/1 steady=311.709 MiB/s total=234.453 aggregate=311.705 hs=3.082ms
+2026-09-03T19:15:37.953Z [p1] run 4: ok=1/1 steady=302.286 MiB/s total=231.234 aggregate=302.285 hs=3.406ms
+2026-09-03T19:15:38.013Z [p1] run 5: ok=1/1 steady=159.077 MiB/s total=137.266 aggregate=159.078 hs=3.099ms
+2026-09-03T19:15:38.016Z [p1] listeners.https delta {"connections":5,"requests":5,"blocked":0,"refused_claim":0,"refused_destination":0,"resolve_failures":0,"upstream_failures":0,"upstream_cert_failures":0,"non_http":0,"non_tls":0,"hello_timeouts":0,"dropped_events":0}
+2026-09-03T19:15:38.020Z [p1] wrote docs\code-review\phase3\p3-06-probe\smoke-20260903T1844Z\layer3-l1a\p1.json
+2026-09-03T19:15:38.020Z [p1] GATE {"statistic":"median of runs steady MiB/s >= 100 and inside P1-control min-max","median_steady_mib_s":270.362,"at_least_100":true,"band":null,"inside_band":"not evaluated (--control absent)","pass":null}
+2026-09-03T19:15:38.020Z [p1] == p1 done (valid)
+2026-09-03T19:15:59.550Z [p6] == p6 start 2026-09-03T19:15:59.516Z tip=92e3f4a9b930-dirty out=docs/code-review/phase3/p3-06-probe/smoke-20260903T1844Z/layer3-l1a
+2026-09-03T19:15:59.551Z [p6] args {"probe":"127.0.0.1","api-port":8443,"key":"<set>","out":"docs/code-review/phase3/p3-06-probe/smoke-20260903T1844Z/layer3-l1a","tip":null,"allow-busy":false,"skip-host-checks":false,"generate":2,"import":2,"cert":"p1.crt","key-file":"p1.key","ca-archive-count":0,"api-archive-count":0,"ca-out":null}
+2026-09-03T19:15:59.831Z [p6] Get-NetConnectionProfile: Ethernet                Public
+2026-09-03T19:16:00.244Z [p6] idle check: PASS (recorded; each stage decides)
+2026-09-03T19:16:00.252Z [p6] GET /health -> 200 {"status":"ok","version":"0.3.1","uptime_seconds":127}
+2026-09-03T19:16:00.256Z [p6] engine.mode = dns+http+https
+2026-09-03T19:16:00.259Z [p6] before: ca={"present":true,"fingerprint_sha256":"B0:DF:FF:E1:3E:34:B2:33:F2:BC:6A:C2:CA:35:BA:19:B4:7B:C4:A6:E3:82:11:F9:7D:6E:C5:1E:9B:E0:DE:3E","not_before":"2026-09-02T19:14:26Z","not_after":"2036-08-30T19:14:26Z","subject":"CN=FastAdHunter CA"} api_certificate={"source":"self_signed"}
+2026-09-03T19:16:00.278Z [p6] ca/generate #1: 200 starttransfer-appconnect=16.732 ms total=18.562 ms
+2026-09-03T19:16:00.298Z [p6] ca/generate #2: 200 starttransfer-appconnect=18.62 ms total=20.636 ms
+2026-09-03T19:16:00.316Z [p6] import #1: 200 starttransfer-appconnect=14.628 ms total=16.717 ms
+2026-09-03T19:16:00.338Z [p6] import #2: 200 starttransfer-appconnect=19.759 ms total=21.87 ms
+2026-09-03T19:16:00.341Z [p6] after: ca={"present":true,"fingerprint_sha256":"BC:F8:B9:0A:D0:F5:90:5B:7D:A4:98:85:07:C1:D9:40:50:6C:22:A9:72:92:CE:C8:12:36:A5:84:26:33:FA:A1","not_before":"2026-09-02T19:16:00Z","not_after":"2036-08-30T19:16:00Z","subject":"CN=FastAdHunter CA"} api_certificate={"source":"imported"}
+2026-09-03T19:16:00.343Z [p6] re-exported CA -> docs\code-review\phase3\p3-06-probe\smoke-20260903T1844Z\layer3-l1a\ca-after-p6.pem (fingerprint BC:F8:B9:0A:D0:F5:90:5B:7D:A4:98:85:07:C1:D9:40:50:6C:22:A9:72:92:CE:C8:12:36:A5:84:26:33:FA:A1); every earlier export is invalid
+2026-09-03T19:16:00.344Z [p6] wrote docs\code-review\phase3\p3-06-probe\smoke-20260903T1844Z\layer3-l1a\p6.json
+2026-09-03T19:16:00.344Z [p6] GATE {"statistic":"median of starttransfer - appconnect: generate < 100 ms, import < 50 ms","generate_median_ms":18.62,"import_median_ms":19.759,"generate_pass":true,"import_pass":true,"pass":true}
+2026-09-03T19:16:00.344Z [p6] == p6 done (valid)
