@@ -112,11 +112,11 @@ probe.
 | `p0-sni.mjs` | `--port 8444 --blocked ads.smoke.test --allowed example.com` | `sni.json` `valid: true`; blocked and no-SNI rows `closed_silent` or `alert`, allowed rows `server_hello`; `telemetry_delta.blocked ≥ 5` |
 | `p1-origin.mjs` + `p1-lan.mjs` | posture A. Origin: `openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:prime256v1 -nodes -keyout p1.key -out p1.crt -days 3 -subj "/CN=127-0-0-1.nip.io" -addext "subjectAltName=DNS:127-0-0-1.nip.io" -addext "basicConstraints=critical,CA:FALSE" -addext "extendedKeyUsage=serverAuth"` (the last two are what the interception leg needs — without them rustls rejects the certificate as `CaUsedAsEndEntity`, F6), then `node p1-origin.mjs --cert p1.crt --key-file p1.key --port 4443 --bytes 8`; client: `--origin 127-0-0-1.nip.io --origin-port 4443 --origin-cert p1.crt --bytes 8 --port 8444` — the probe splices to `:443` by construction, so on the dev box the spliced arm reaches the origin only if the origin listens on 443 (elevated shell) — else expect `INVALID` with `refused_destination` / `upstream_failures` in the telemetry delta and count that as the negative path; `--direct` with `--origin-port 4443` must pass | `p1-control.json` `valid: true`, 5 runs, `steady_mib_s` present; spliced arm on `:443`: `p1.json` `valid: true`, `served_issuer` = the origin's CN; `--connections 8` writes `p1-aggregate.json` |
 | `p2-handshake.mjs` | Linux only (`ip addr`), and WSL2 cannot reach a loopback-bound probe (F4). Run it from the **wired bridged VM the campaign will use** — its dress rehearsal: a third posture with every listener on `0.0.0.0` and one VM address in `clients`; on the dev box, inbound firewall rules scoped to the VM's two addresses for TCP 8443, 8444, 8853 and UDP 5300 (owner adds, removes afterwards); on the VM `--probe <dev-box LAN IP> --listed <A> --unlisted <B> --origin example.com --ca smoke-ca.pem --rounds 10 --dns-port 5300 --port 8444`. No VM available ⇒ record the row as not run | `p2.json` `valid: true`; intercepted `served_issuer` = `FastAdHunter CA`, spliced and direct ≠; `gate.ratio` present. On the Windows dev box directly the identity precondition must print `INVALID` (no `ip`) — record that as the negative path |
-| `p3-h2stall.mjs` | posture B. Needs an h2 origin the binary trusts: build the dev-profile harness binary `cargo build -p fastadhunter --features test-harness`, run it instead of the release one with `FAH_TEST_UPSTREAM_ROOT=<origin-cert.der>`; origin: `node docs/code-review/phase3/p3-06-probe/smoke/h2-origin.mjs --cert p3.crt --key-file p3.key --port 443 --bytes 8` (elevated; certificate with the CA:FALSE + EKU lines above, DER via `openssl x509 -in p3.crt -outform der -out p3.der`); client: `--origin 127-0-0-1.nip.io --path /8mib --warmup-path / --ca smoke-ca.pem --port 8444 --streams 64 --runs 1 --settle 5 --throughput-runs 1` | `p3.json`: throughput arm `ok: true`, 8 MiB received. RSS arm **on Windows**: `INVALID: process_rss is null on this probe` is the correct outcome (F8 — the kernel reading exists in-container only; Layer 3's `fah-probe` image is where the arm can reach `barrier: met`, samples and `attribution`). **The barrier itself is the dev-box reproduction the P3 BLOCKED state owes** (plan §State; F7 reproduced it: control 64/64, stall 5/64, the other 59 streams answered `:status 200` then ended with zero DATA) — a p3-04 finding to be filed before any device run |
+| `p3-h2stall.mjs` | posture B. Needs an h2 origin the binary trusts: build the dev-profile harness binary `cargo build -p fastadhunter --features test-harness`, run it instead of the release one with `FAH_TEST_UPSTREAM_ROOT=<origin-cert.der>`; origin: `node docs/code-review/phase3/p3-06-probe/smoke/h2-origin.mjs --cert p3.crt --key-file p3.key --port 443 --bytes 8` (elevated; certificate with the CA:FALSE + EKU lines above, DER via `openssl x509 -in p3.crt -outform der -out p3.der`); client: `--origin 127-0-0-1.nip.io --path /8mib --warmup-path / --ca smoke-ca.pem --port 8444 --streams 64 --runs 1 --settle 5 --throughput-runs 1` | `p3.json`: throughput arm `ok: true`, 8 MiB received. RSS arm **on Windows**: `INVALID: process_rss is null on this probe` is the correct outcome (F8 — the kernel reading exists in-container only). The RSS arm becomes measurable in Layer 3's `fah-probe` image **only against a publicly trusted h2 origin** (the campaign's own P3 setup): that image is a plain release build, so `FAH_TEST_UPSTREAM_ROOT` is inert there and a local origin fails `UnknownIssuer` (F22). **The stall barrier is the dev-box reproduction the P3 BLOCKED state owes** (plan §State; F7 reproduced it with the harness binary: control 64/64, stall 5/64, the other 59 streams answered `:status 200` then ended with zero DATA) — a p3-04 finding to be filed before any device run |
 | `p4-lan.mjs` | `--domain ads.smoke.test --dot-host dns.smoke.test --dns-port 5300 --dot-port 8853 --queries 200 --rounds 1` | `p4-lan.json` `valid: true`; all three transports `n = 200`, `unanswered = 0`, `unmatched = 0`, `first_answer.answers` = `["0.0.0.0"]`, dot `served_issuer` = `FastAdHunter CA` |
 | `p5-mint.mjs` | `--dot-port 8853 --hosts 16` | `p5.json` `valid: true`; `counters_delta.minted_total = 16`, `evictions = 0`, both arms' `served_issuer` = `FastAdHunter CA` |
 | `p6-certs-time.mjs` | `--generate 2 --import 2 --cert p1.crt --key-file p1.key --ca-archive-count 0 --api-archive-count 0` (fresh `smoke-config`, so both archives are empty) | `p6.json` `valid: true`; four rows `status: 200`; `api_certificate_after.source = "imported"`; `ca-after-p6.pem` written and differs from `smoke-ca.pem` |
-| `p7-store.mjs` | `--ca-key smoke-config/ca-key.pem` | `certs.json` `valid: true`, `gate.pass: true`, every traversal row `pass: true`, `/config/*` and `/data/*` never `200` |
+| `p7-store.mjs` | `--ca-key smoke-config/ca-key.pem` | `certs.json` `valid: true`, `gate.pass: true`, every traversal row `pass: true` = `leaks: []`. Status is diagnostic only: a build that ships `/web` answers `200 text/html` (the SPA shell, `served: spa_shell`) for every unmatched route including `/config/ca-key.pem` — the security suite asserts needles, never status (F20). An `other_200` on a sensitive path is logged for a human look |
 
 After `p6`, re-export the CA (`smoke-ca.pem` is stale — each generate
 replaces it) before re-running `p2`, `p3` or `p5`.
@@ -138,7 +138,7 @@ or the `degraded` label, never a number. Restore the state afterwards.
 | identity precondition (`p2`) | run on the Windows dev box | `INVALID: identity precondition: both --listed and --unlisted must be on this host's interfaces` |
 | both addresses unlisted (`p2`, Linux) | `clients = []` | `INVALID: … exactly one of the two addresses must be in https.interception.clients` |
 | this host not listed (`p3`) | `clients = []`, restart | `INVALID: this host (127.0.0.1) is not in https.interception.clients` |
-| barrier not met (`p3`) | `--arm rss --path /stall` against `smoke/h2-origin.mjs` (`/stall` answers `:status 200` and never sends DATA, so no stream reaches its first chunk; a tiny body would *meet* the barrier, F11) | RSS arm `INVALID: … barrier not met: 0/64 streams answered` after `--barrier-timeout`; on Windows the `process_rss is null` rule fires first, so run this row in Layer 3's `fah-probe` image |
+| barrier not met (`p3`) | `--arm rss --path /stall` against `smoke/h2-origin.mjs` (`/stall` answers `:status 200` and never sends DATA, so no stream reaches its first chunk; a tiny body would *meet* the barrier, F11) | RSS arm `INVALID: … barrier not met: 0/64 streams answered` after `--barrier-timeout`. **Not runnable on this dev box** (F8 + F22): on Windows `process_rss is null` fires first, and the release `fah-probe` image cannot trust a local origin. Record as not run; the rule is exercised on the device the first time a public origin stalls |
 | no CA in the store (`p5`) | fresh `smoke-config` without `ca/generate` | `INVALID: no CA in the probe store` |
 | cache headroom (`p5`) | `--hosts 600` | `INVALID: leaf_cache.size … exceeds capacity 512` |
 | archive cap (`p6`) | fresh store, `--generate 10 --ca-archive-count 0` | `INVALID: ca-archive holds 0; 10 generates would add 9 (the first on an empty store archives nothing) and pass the cap of 8` before any call; with the counts omitted, the **tenth** call itself `INVALID: ca/generate #10 answered 409` (F10: from an empty store N generates make N − 1 archives; nine fill the cap and all answer 200) |
@@ -185,7 +185,30 @@ Then Layer 1 again against it (`--probe 127.0.0.1`, same ports). Passes when
 every Layer 1 row passes unchanged and `docker top` shows `/fah-probe`.
 Docker Desktop's UDP port relay is known to wedge under load
 (`docs/project-state.md`): keep `p4-lan` at `--queries 200`, and read no
-timing from this layer.
+timing from this layer. Two rows differ here:
+
+- **`p1-lan.mjs --direct` (P1-control): not run.** Docker Desktop on Windows
+  does not route the bridge subnet to the host, so the host reaches a
+  bridge-side origin only through the probe's published port (F21). Record
+  as not run; the arm has real LAN addresses on the RB5009.
+- **`p3-h2stall.mjs` RSS rows: public h2 origin only** (F22). This is the
+  campaign's own P3 shape. Pick any publicly trusted origin that serves a
+  resource of exactly `--bytes` MiB with `content-length` over h2; prove it
+  first from the dev box with
+
+  ```sh
+  node -e 'const h=require("node:http2");const s=h.connect("https://ORIGIN");s.on("connect",()=>{console.log("alpn",s.socket.alpnProtocol);const r=s.request({":path":"PATH"});let n=0,cl;r.on("response",x=>cl=x["content-length"]);r.on("data",c=>n+=c.length);r.on("end",()=>{console.log("content-length",cl,"bytes",n);s.close();});});s.on("error",e=>console.log("error",e.code||e.message));'
+  ```
+
+  `alpn h2` and `bytes` = 8 388 608 are required; record origin, path and
+  that line in SMOKE-REPORT.md. Then, with `127.0.0.1` listed in the
+  container's config: `--origin ORIGIN --path PATH --warmup-path <small path>
+  --ca <exported CA> --port 8444 --streams 64 --runs 1 --settle 5
+  --throughput-runs 1`. Pass: throughput arm `ok: true`; RSS arm `barrier:
+  met` on the control run, samples present, `attribution` printed. A stall
+  run that misses the barrier the way F7 did is the p3-04 finding
+  reproduced in-container: capture the per-stream dump, do not work around
+  it. No public origin reachable ⇒ record both rows as not run.
 
 ## Report
 

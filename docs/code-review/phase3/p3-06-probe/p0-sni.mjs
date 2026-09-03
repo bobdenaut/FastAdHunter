@@ -169,6 +169,14 @@ if (!allowedOpened) {
     hint: 'check resolve_failures / refused_destination / upstream_failures in telemetry_delta and that --allowed is public and resolvable from the container',
   });
 }
+const expectedBlocked = args.attempts * (noSni === 'pass' ? 1 : 2);
+if ((delta.blocked ?? 0) < expectedBlocked) {
+  run.invalid(`blocked rows closed without a rule verdict: listeners.https.blocked moved by ${delta.blocked}, expected at least ${expectedBlocked} (resolve_failures ${delta.resolve_failures}, refused_destination ${delta.refused_destination}); --blocked is not blocked by the probe's ruleset`, {
+    rows,
+    telemetry_delta: delta,
+    hint: 'check GET /api/v1/rules/user and the list set; a close caused by a resolve failure proves nothing about the SNI verdict',
+  });
+}
 const blockedClosed = byKind('blocked').every((r) => r.closed_before_certificate);
 const noSniClosed = byKind('no_sni').every((r) => r.closed_before_certificate);
 const figures = {};
@@ -188,7 +196,7 @@ run.finish({
   figures,
   telemetry_delta: delta,
   supporting: {
-    blocked_delta_expected_at_least: args.attempts * (noSni === 'pass' ? 1 : 2),
+    blocked_delta_expected_at_least: expectedBlocked,
     blocked_delta_observed: delta.blocked,
   },
   rows,

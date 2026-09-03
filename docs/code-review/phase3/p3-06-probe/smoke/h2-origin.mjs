@@ -24,6 +24,17 @@ const args = Object.fromEntries(
     return acc;
   }, []),
 );
+const USAGE = 'usage: node smoke/h2-origin.mjs --cert <pem> --key-file <pem> [--port 443] [--address 127.0.0.1] [--bytes 8] [--max-streams 256] [--session-memory 4096]';
+if ('help' in args) {
+  console.log(USAGE);
+  process.exit(0);
+}
+for (const flag of ['cert', 'key-file']) {
+  if (!args[flag] || !fs.existsSync(args[flag])) {
+    console.error(`--${flag} missing or not a file\n${USAGE}`);
+    process.exit(64);
+  }
+}
 const port = Number(args.port ?? 443);
 const address = args.address ?? '127.0.0.1';
 const bytes = Number(args.bytes ?? 8) * 1024 * 1024;

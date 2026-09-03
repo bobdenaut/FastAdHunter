@@ -15,8 +15,10 @@
 //   3. GET /api/v1/config                              200, no key payload
 //   4. the security suite's 20 static / traversal paths against the API
 //      listener, each with and without the bearer: no response carries the
-//      PRIVATE KEY marker or the key payload; /config/*, /data/* and every
-//      traversal never answer 200
+//      PRIVATE KEY marker or the key payload. Status is recorded, never
+//      asserted — the dashboard is a single-page app whose catch-all answers
+//      200 text/html (index.html) for any unmatched route, /config/ca-key.pem
+//      included; the security suite asserts needles, not status (F20)
 // "Key payload" = the key's base64 body (searched in the response text with
 // and without whitespace) and its DER bytes (searched in the raw body).
 //
@@ -76,7 +78,8 @@ const PATHS = [
   '/config/apikey',
   '/data/session-secret',
 ];
-const NEVER_200 = (p) => p.includes('..') || p.startsWith('/config') || p.startsWith('/data') || p === '/ca-key.pem';
+const SENSITIVE = (p) => p.includes('..') || p.startsWith('/config') || p.startsWith('/data') || p === '/ca-key.pem';
+const spaShell = (r) => r.status === 200 && (r.headers['content-type'] ?? '').startsWith('text/html');
 
 function leaks(body) {
   const text = body.toString('latin1');
@@ -124,14 +127,20 @@ for (const p of PATHS) {
   for (const auth of [true, false]) {
     const r = await run.api(p, { auth }).catch((e) => ({ status: 0, body: Buffer.alloc(0), headers: {}, text: e.message }));
     const l = leaks(r.body);
-    const row = { path: p, auth, status: r.status, content_type: r.headers['content-type'] ?? null, bytes: r.body.length, leaks: l };
-    const ok = l.length === 0 && !(NEVER_200(p) && r.status === 200);
+    const row = { path: p, auth, status: r.status, content_type: r.headers['content-type'] ?? null, bytes: r.body.length, leaks: l, served: spaShell(r) ? 'spa_shell' : r.status === 200 ? 'other_200' : 'rejected' };
+    if (SENSITIVE(p) && row.served === 'other_200') run.log(`note: ${p} answered 200 with ${row.content_type} (${row.bytes} bytes) — not the SPA shell; leaks=${JSON.stringify(l)}`);
+    const ok = l.length === 0;
     if (!ok) traversalPass = false;
     traversal.push({ ...row, pass: ok });
     run.raw({ measurement: 'P7-store', check: 'traversal', ...row, pass: ok });
   }
 }
-record('traversal list against the API listener', traversalPass, { paths: PATHS.length, requests: traversal.length, failing: traversal.filter((t) => !t.pass) });
+record('traversal list against the API listener', traversalPass, {
+  paths: PATHS.length,
+  requests: traversal.length,
+  served: Object.fromEntries(['spa_shell', 'other_200', 'rejected'].map((k) => [k, traversal.filter((t) => t.served === k).length])),
+  failing: traversal.filter((t) => !t.pass),
+});
 
 run.finish({
   measurement: 'P7-store',

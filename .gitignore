@@ -25,3 +25,12 @@ dashboard/frontend/dist/
 # Browser-verification scratch (Playwright MCP screenshots/traces). p5-05 ships
 # no Playwright; this only keeps a verification run out of the tree.
 .playwright-mcp/
+
+# p3-06 smoke runs (plan/wip/phase3/p3-06-smoke-plan.md): local FastAdHunter
+# stores — hold ca-key.pem, api-key.pem, apikey, auth-hash — plus the origin
+# certificates and exported CAs. Recreated from scratch by every session.
+/smoke*/
+/smoke*-ca*.pem
+/p[13]*.crt
+/p[13]*.key
+/p[13]*.der

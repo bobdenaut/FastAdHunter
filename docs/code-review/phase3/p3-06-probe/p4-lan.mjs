@@ -214,6 +214,7 @@ for (const t of ['udp', 'dot', 'doh']) {
     unmatched: bs.reduce((a, b) => a + b.unmatched, 0),
     batch_wall_ms_mean: round(bs.reduce((a, b) => a + (b.wall_ms ?? 0), 0) / bs.length),
     handshake_ms: bs.map((b) => b.handshake_ms),
+    protocol: t === 'udp' ? 'udp' : t === 'dot' ? `tls ${[...new Set(bs.map((b) => b.tls?.tls ?? null))].join('|')}` : `doh over ${[...new Set(bs.map((b) => b.tls?.alpn ?? 'h1'))].join('|')}`,
     served_issuer: [...new Set(bs.map((b) => b.tls?.issuerCN ?? null))],
     first_answer: bs[0]?.first_answer ?? null,
   };
