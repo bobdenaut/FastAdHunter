@@ -1052,6 +1052,47 @@ h2 intercepted 1 connection / 676 requests, `blocked 0`, `dropped_events 0`,
 `minted_total 1`, `unwarmed_misses 0`. `certs_replay_zipf` hit rate 0.6732,
 deterministic (synthetic; not evidence, MA-7).
 
+## Post-review work E — review of the smoke fixes F7 (p3-04 S2) and F19 (p3-05 N12), 2026-09-03
+
+Scope: the uncommitted working-tree diff of `fah-dns/src/{tcp,dot}.rs`,
+`fah-http/src/intercept.rs`, `fah-http/tests/interception.rs`,
+`CONFIGURATION.md` §`[https] max_connections`, p3-04 review rows S1/S2, p3-05
+review row N12. Gate on the touched crates: `cargo fmt --check` clean,
+`cargo clippy -p fah-dns -p fah-http --all-targets -- -D warnings` clean,
+`fah-dns tcp::` 2/2, `interception` stall/watchdog tests 3/3 (3.3 s).
+
+### Verified
+
+- `Upstream` (the h2 sender to the origin) is created per intercepted session
+  (`intercept.rs:174`), so an upstream h2 connection carries at most the 64
+  streams of its one client session; `H2_CONNECTION_WINDOW = 64 × 64 KiB`
+  covers the full stall set. Any smaller multiple reintroduces starvation at
+  that many stalled streams — 64× is the only value that removes the
+  head-of-line block.
+- `sixty_four_stalled_h2_streams_…` fails on the old constant by
+  construction: `drain_in_order` collects stream 0 while 63 siblings hold up
+  to 64 KiB each (> 256 KiB). Not re-run against the old constant (no code
+  edits in this review).
+- `Accept for TcpListener` refined to `async fn` compiles `Send`; DoT calls
+  the inherent `TcpListener::accept`, so `TCP_NODELAY` is set exactly once per
+  socket on both listeners.
+- Encrypted upstreams (hickory `tls_exchange`) already frame length + message
+  in one buffer and set `TCP_NODELAY`; not affected by F19.
+- p3-04 S1/S2, p3-05 N12 and the `CONFIGURATION.md` wording match the code.
+
+### Findings
+
+| # | Severity | Finding | Disposition |
+| --- | --- | --- | --- |
+| E1 | medium | F7 doubles the per-session stalled ceiling: old ≈ 4.25 MiB (64 × 64 KiB send + 256 KiB receive), new ≈ 8 MiB with downloads stalled, ≈ 12 MiB with uploads stalled too (client-leg receive window is 4 MiB as well), × `max_connections` 1024. Reached only by a listed client that stops reading. The alternative (32 KiB stream window → 2 MiB) halves single-stream throughput at RTT and was not weighed | **owner decision 2026-09-03: keep 64 × 64 KiB; documented here as the decision, no further code change. P3 on the RB5009 (§Runbook 5, 64 stalled streams) is the only authority for the real footprint** |
+| E2 | low | same defect class as F19 unfixed on the upstream TCP fallback: `upstream/plain.rs:105-106` writes length and message separately, no `TCP_NODELAY`; the truncation fallback pays the same ≈ 40 ms on Linux. Rare path (TC=1 replies only) | deferred; file as p3-05 follow-up row or Phase 1 fix — not part of F19 |
+| E3 | low | `TCP_NODELAY` lives in two places (`tcp::Accept for TcpListener` and inline in `dot::run_with:89`); principle 4 | deferred; `tcp::Accept::accept(&listener)` in `dot::run_with` removes the inline block |
+| E4 | low | `tcp::frame_reply` splice may realloc + memmove per reply when the pipeline `Vec` has no spare capacity; sub-µs against the syscall and TLS record it saves. Pre-existing `unwrap_or(u16::MAX)` clamp would desync the stream on a > 65 535-byte reply; unreachable, the pipeline bounds replies | accepted |
+| E5 | low | `poll_once` classifies a frame later than 250 ms as `Pending`; the first-poll assert `with_data == 64` fails if any first DATA lands after 250 ms on a loaded box. Second-poll asserts tolerate it | accepted; no CI, dev-box only |
+| E6 | info | the Node-default-window test proves h2-crate round-robin scheduling under a 65 535 client window, not relay code; still guards "the relay never ends a starved stream" | keep |
+
+**Verdict: PASS WITH DEFERRED FINDINGS** (E1 decided, E2/E3 deferred, E4–E6 accepted).
+
 ## Hand-off state, 2026-09-02 (end of session)
 
 **Final gate on the whole tree** (Windows dev box, no environment variable
