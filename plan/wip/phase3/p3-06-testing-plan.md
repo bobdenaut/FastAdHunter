@@ -431,6 +431,23 @@ arm runs; the original block stays unedited.
     because a certificate served on a hello without SNI is a finding under
     either setting. Close latency stays diagnostic. Recorded before the
     first SNI run.
+14. **P3 origin (2026-09-03)** — declared: "public h2 origin". Now: an h2
+    origin on the second LAN endpoint under a **public name with a publicly
+    trusted certificate** (Let's Encrypt DNS-01 — the release probe verifies
+    upstreams against `webpki-roots` only, so a local CA is refused with
+    `UnknownIssuer`), served by `smoke/h2-origin.mjs --address 0.0.0.0
+    --bytes 8` (`/8mib` = 8 388 608 bytes with `content-length`, `/` for the
+    warm-up, HEAD answered headers-only), the endpoint's address in
+    `egress.allow_destinations`. Reasons: no third-party 64 × 8 MiB burst,
+    and LAN bandwidth — against a WAN origin the ≥ 50 MiB/s throughput gate
+    reads the internet link, not the relay. Preflight from bobdenaut before
+    the arm: `smoke/h2-preflight.mjs --host <name> --path /8mib --bytes 8`
+    — one HEAD and one GET over h2, `PASS` only when ALPN is h2, both answer
+    200 with `content-length: 8388608` and the GET body is 8 388 608 bytes
+    (no curl on bobdenaut speaks h2, so `curl -I --http2` is not the tool) —
+    output saved to `results-<ts>/p3-origin-preflight.log`. Barrier,
+    exclusive-window proof, gate statistics and counts unchanged.
+    Recorded before the first P3 run.
 
 **Frozen at approval (2026-09-03).** The scripts implement this plan as
 written. A methodology change discovered while writing them is a new numbered

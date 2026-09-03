@@ -1,6 +1,9 @@
-// smoke/h2-origin.mjs — smoke-only h2 origin for the p3-h2stall.mjs rows of
-// plan/wip/phase3/p3-06-smoke-plan.md. Not a measurement tool, never used on
-// the device: the campaign's P3 origin is a public h2 origin.
+// smoke/h2-origin.mjs — the h2 origin p3-h2stall.mjs talks to. Two uses:
+// the smoke rows of plan/wip/phase3/p3-06-smoke-plan.md (dev box, self-signed
+// certificate) and, per testing-plan declaration delta 14, the campaign's P3
+// origin on the second LAN endpoint under a public name with a publicly
+// trusted certificate (the release probe verifies upstreams against
+// webpki-roots only). Never runs on the device itself. Not a measurement tool.
 //
 // Paths:
 //   /            3-byte body (warm-up)
@@ -8,12 +11,18 @@
 //   /stall       200 with headers only, DATA never sent, stream held open —
 //                the "barrier not met" negative row: every stream gets
 //                :status 200, none gets a first DATA chunk
+// HEAD answers headers only (content-length included), so `curl -I --http2`
+// is a clean preflight.
 // Certificate: SAN = the origin name, CA:FALSE + EKU serverAuth (the
-// interception leg verifies it; see p1-origin.mjs for the openssl line).
+// interception leg verifies it; see p1-origin.mjs for the openssl line), or
+// a Let's Encrypt fullchain.pem + privkey.pem for the campaign.
 // Limits are set high so the origin itself is never the bottleneck under
 // 64 concurrent 8 MiB streams (--max-streams, --session-memory).
+// Binds 127.0.0.1 unless --address is given; the LAN endpoint needs
+// --address 0.0.0.0 (or its LAN address).
 //
 //   node smoke/h2-origin.mjs --cert p3.crt --key-file p3.key --port 443 --bytes 8
+//   node smoke/h2-origin.mjs --cert fullchain.pem --key-file privkey.pem --address 0.0.0.0 --port 443 --bytes 8
 
 import fs from 'node:fs';
 import http2 from 'node:http2';
@@ -52,16 +61,18 @@ const server = http2.createSecureServer({
 
 server.on('stream', (stream, headers) => {
   const path = headers[':path'] ?? '/';
+  const head = headers[':method'] === 'HEAD';
   stream.on('error', (e) => console.error(`stream ${path} error ${e.code || e.message}`));
   if (path === '/stall') {
-    stream.respond({ ':status': 200, 'content-type': 'application/octet-stream' });
+    stream.respond({ ':status': 200, 'content-type': 'application/octet-stream' }, { endStream: head });
+    if (head) return;
     held.add(stream);
     stream.on('close', () => held.delete(stream));
     return;
   }
   const body = path === '/8mib' ? payload : small;
-  stream.respond({ ':status': 200, 'content-length': body.length, 'content-type': 'application/octet-stream' });
-  stream.end(body);
+  stream.respond({ ':status': 200, 'content-length': body.length, 'content-type': 'application/octet-stream' }, { endStream: head });
+  if (!head) stream.end(body);
 });
 server.on('sessionError', (e) => console.error(`sessionError ${e.code || e.message}`));
 server.on('error', (e) => {

@@ -152,6 +152,15 @@ runs (PERFORMANCE.md §Measuring reliably). **Control arm:**
   gate boolean covers blocked and no-SNI attempts, both closed before any
   certificate. Close latency stays diagnostic; the gate statistic is
   unchanged in kind.
+- **P3 origin (2026-09-03, testing-plan delta 14):** the "public h2 origin"
+  becomes an h2 origin on the second LAN endpoint under a public name with a
+  publicly trusted certificate (Let's Encrypt DNS-01; the release probe
+  trusts `webpki-roots` only), served by `smoke/h2-origin.mjs --bytes 8`.
+  Reasons: no third-party 64 × 8 MiB burst; LAN bandwidth, without which the
+  ≥ 50 MiB/s throughput gate reads the WAN link. Preflight
+  (`smoke/h2-preflight.mjs`: HEAD + GET over h2, `PASS` on ALPN h2, 200,
+  `content-length` and body of exactly 8 MiB) saved beside the results.
+  Barrier, exclusive-window proof, gate statistics and counts unchanged.
 
 ## Measurements
 
