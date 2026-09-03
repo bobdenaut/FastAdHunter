@@ -215,3 +215,9 @@ repeated here. Still open:
 | N9 | `Vec::from(body)` copies each DoH POST once | won't-fix | one ≤ 64 KiB memcpy beats a `bytes` type in the public port |
 
 **PASS WITH DEFERRED FINDINGS** — 6 open rows (3 deferred, 3 won't-fix). Task marked DONE 2026-09-02.
+
+### Fixed after consolidation — 2026-09-03, p3-06 smoke run F16/F19
+
+| id | Issue | Root cause | Fix | Evidence |
+| --- | --- | --- | --- | --- |
+| N12 | every DNS-over-TCP and DoT reply left the listener ~40 ms late on Linux (in-device harness and LAN client alike; invisible on the Windows dev box) | `tcp::handle_connection` wrote the 2-byte length and the payload as two `write_all` calls — over TLS two records, two segments — and no socket in `fah-dns` set `TCP_NODELAY`: Nagle held the payload segment until the client's delayed ACK (Linux ≈ 40 ms). TCP/53 shares the path | `tcp::frame_reply` splices the length in front of the reply and one `write_all` sends it; `TCP_NODELAY` on every accepted socket in `tcp::run` (the `Accept for TcpListener` impl) and `dot::run_with`. Framing and the `u16::MAX` clamp unchanged | unit test `a_reply_is_framed_as_one_buffer_with_its_big_endian_length_in_front`; **diagnostic only, not a campaign figure**: x86 Linux containers, same store, `p4-lan.mjs` 200 queries — DoT p50 43.9 ms on the pre-fix image, 0.30 ms on the fixed image, UDP/DoH unchanged (`p3-06-probe/smoke-20260903T1557Z/f19-check/`, untracked). The P4 row is still measured only on the device |

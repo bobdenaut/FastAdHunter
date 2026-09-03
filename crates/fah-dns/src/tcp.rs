@@ -38,8 +38,12 @@ pub trait Accept: Send + Sync + 'static {
 impl Accept for TcpListener {
     type Stream = TcpStream;
 
-    fn accept(&self) -> impl Future<Output = io::Result<(TcpStream, SocketAddr)>> + Send {
-        TcpListener::accept(self)
+    async fn accept(&self) -> io::Result<(TcpStream, SocketAddr)> {
+        let (stream, client) = TcpListener::accept(self).await?;
+        if let Err(err) = stream.set_nodelay(true) {
+            debug!(error = %err, client = %client, "TCP_NODELAY not set on a TCP DNS connection");
+        }
+        Ok((stream, client))
     }
 }
 
@@ -111,14 +115,18 @@ pub(crate) async fn handle_connection<S: AsyncRead + AsyncWrite + Unpin, F: Forw
             Ok(result) => result?,
         };
 
-        let Some(reply) = pipeline.handle(&message_buf, client_ip, transport).await else {
+        let Some(mut reply) = pipeline.handle(&message_buf, client_ip, transport).await else {
             return Ok(());
         };
 
-        let reply_len = u16::try_from(reply.len()).unwrap_or(u16::MAX).to_be_bytes();
-        stream.write_all(&reply_len).await?;
+        frame_reply(&mut reply);
         stream.write_all(&reply).await?;
     }
+}
+
+pub(crate) fn frame_reply(reply: &mut Vec<u8>) {
+    let len = u16::try_from(reply.len()).unwrap_or(u16::MAX).to_be_bytes();
+    reply.splice(0..0, len);
 }
 
 /// Whether an I/O error is just the client hanging up — the connection kinds a
@@ -143,6 +151,24 @@ mod tests {
     use super::*;
     use crate::backoff::FATAL_CONSECUTIVE_ERRORS;
     use crate::testkit;
+
+    #[test]
+    fn a_reply_is_framed_as_one_buffer_with_its_big_endian_length_in_front() {
+        let mut reply = vec![0xAB; 300];
+        frame_reply(&mut reply);
+        assert_eq!(reply.len(), 302);
+        assert_eq!(&reply[..2], &300u16.to_be_bytes());
+        assert!(reply[2..].iter().all(|byte| *byte == 0xAB));
+
+        let mut empty = Vec::new();
+        frame_reply(&mut empty);
+        assert_eq!(empty, vec![0, 0]);
+
+        let mut oversized = vec![0u8; usize::from(u16::MAX) + 1];
+        frame_reply(&mut oversized);
+        assert_eq!(&oversized[..2], &u16::MAX.to_be_bytes());
+        assert_eq!(oversized.len(), usize::from(u16::MAX) + 3);
+    }
 
     struct FlakyListener {
         errors_before_first_success: u32,

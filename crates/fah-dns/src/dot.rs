@@ -86,6 +86,9 @@ pub(crate) async fn run_with<F: Forwarder>(
                 RetryDecision::Fatal => return ListenerDied { last_error: err },
             },
         };
+        if let Err(err) = stream.set_nodelay(true) {
+            debug!(error = %err, client = %client, "TCP_NODELAY not set on a DoT connection");
+        }
         let pipeline = Arc::clone(&pipeline);
         let tls = tls.clone();
         tokio::spawn(async move {
