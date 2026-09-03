@@ -70,7 +70,10 @@ criterion = { workspace = true }
 # non-default and rides a dev-dependency edge only, so `cargo build --release`
 # (Dockerfile:86) never sees it — `resolver = "2"` is what guarantees that.
 fah-api = { path = "../fah-api", features = ["test-harness"] }
-reqwest = { workspace = true, features = ["json"] }
+# http2: the encrypted_latency harness's DoH arm negotiates h2, the protocol the
+# LAN client (p4-lan.mjs) speaks; without it P4 and P4-LAN compare HTTP/1.1
+# against h2 on that transport.
+reqwest = { workspace = true, features = ["json", "http2"] }
 # The end-to-end test speaks to the appliance's self-signed certificate;
 # tungstenite needs an explicit rustls config to accept it.
 rustls = { workspace = true }

@@ -317,6 +317,16 @@ pub fn a_query(domain: &str) -> Vec<u8> {
     message.to_vec().expect("encodable query")
 }
 
+pub fn framed_query(request: &[u8]) -> Vec<u8> {
+    let len = u16::try_from(request.len())
+        .expect("a short query")
+        .to_be_bytes();
+    let mut framed = Vec::with_capacity(2 + request.len());
+    framed.extend_from_slice(&len);
+    framed.extend_from_slice(request);
+    framed
+}
+
 pub fn decode_answer(bytes: &[u8]) -> Answer {
     let response = Message::from_vec(bytes).expect("decodable response");
     Answer {
@@ -344,6 +354,7 @@ pub async fn resolve_dot(
     let tcp = tokio::net::TcpStream::connect((Ipv4Addr::LOCALHOST, port))
         .await
         .expect("connect to the DoT listener");
+    tcp.set_nodelay(true).expect("nodelay");
     let name = rustls::pki_types::ServerName::try_from(sni.to_string()).expect("a valid SNI");
     let mut stream = tokio::time::timeout(
         Duration::from_secs(10),
@@ -353,12 +364,10 @@ pub async fn resolve_dot(
     .expect("DoT handshake within 10s")
     .expect("DoT handshake");
 
-    let request = a_query(domain);
-    let len = u16::try_from(request.len())
-        .expect("a short query")
-        .to_be_bytes();
-    stream.write_all(&len).await.expect("send length");
-    stream.write_all(&request).await.expect("send query");
+    stream
+        .write_all(&framed_query(&a_query(domain)))
+        .await
+        .expect("send framed query");
 
     let mut len_buf = [0u8; 2];
     tokio::time::timeout(Duration::from_secs(5), stream.read_exact(&mut len_buf))

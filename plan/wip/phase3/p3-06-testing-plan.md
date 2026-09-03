@@ -406,6 +406,16 @@ arm runs; the original block stays unedited.
     budget; P2's 200 rows per arm tolerate 4. P2's issuer rules stay
     `INVALID` conditions, outside this budget. Gate statistics, quantities
     and counts unchanged. Recorded before the first P1-LAN, P2 or P3 run.
+12. **P4 DoH protocol (2026-09-03)** — declared: the `encrypted_latency`
+    harness "DoH keep-alive", the same quantity as D13, whose client
+    negotiated HTTP/1.1 because the workspace `reqwest` carried no `http2`
+    feature (p3-05 review). Now: the DoH arm runs over **h2** — `reqwest`
+    dev-dependency feature `http2`, every response asserted `HTTP/2.0` —
+    the protocol P4-LAN (`kdig +https`, `p4-lan.mjs` over `node:http2`) and
+    real DoH clients speak, so the two DoH columns describe one protocol
+    (smoke findings F17 / F26). D13's h1 seed is not the comparator for the
+    DoH column; UDP and DoT columns, gate statistic and counts unchanged.
+    Recorded before the first P4 run.
 
 **Frozen at approval (2026-09-03).** The scripts implement this plan as
 written. A methodology change discovered while writing them is a new numbered

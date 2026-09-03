@@ -7,7 +7,9 @@ use std::time::{Duration, Instant};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::UdpSocket;
 
-use common::{a_query, boot, insecure_client_config, put_user_rules, run_mock_upstream, Ports};
+use common::{
+    a_query, boot, framed_query, insecure_client_config, put_user_rules, run_mock_upstream, Ports,
+};
 
 const QUERIES: usize = 2_000;
 const ROUNDS: usize = 3;
@@ -111,6 +113,7 @@ async fn time_dot(
     let tcp = tokio::net::TcpStream::connect((Ipv4Addr::LOCALHOST, port))
         .await
         .expect("connect DoT");
+    tcp.set_nodelay(true).expect("nodelay");
     let name = rustls::pki_types::ServerName::try_from(DOT_HOSTNAME).expect("sni");
     let handshake_started = Instant::now();
     let mut stream = tokio_rustls::TlsConnector::from(tls)
@@ -118,12 +121,11 @@ async fn time_dot(
         .await
         .expect("DoT handshake");
     let handshake = handshake_started.elapsed();
-    let len = u16::try_from(request.len()).expect("short").to_be_bytes();
+    let framed = framed_query(request);
     let mut micros = Vec::with_capacity(QUERIES);
     for _ in 0..QUERIES {
         let started = Instant::now();
-        stream.write_all(&len).await.expect("len");
-        stream.write_all(request).await.expect("query");
+        stream.write_all(&framed).await.expect("query");
         let mut len_buf = [0u8; 2];
         stream.read_exact(&mut len_buf).await.expect("reply len");
         let mut reply = vec![0u8; u16::from_be_bytes(len_buf) as usize];
@@ -149,9 +151,15 @@ async fn time_doh(
             .send()
             .await
             .expect("POST /dns-query");
-        version.get_or_insert(response.version());
+        let negotiated = response.version();
+        version.get_or_insert(negotiated);
         let _ = response.bytes().await.expect("body");
         micros.push(started.elapsed().as_micros());
+        assert_eq!(
+            negotiated,
+            reqwest::Version::HTTP_2,
+            "DoH arm negotiated {negotiated:?}; P4 declares h2 (testing-plan delta 12)"
+        );
     }
     (version, micros)
 }

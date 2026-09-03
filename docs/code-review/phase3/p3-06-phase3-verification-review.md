@@ -139,6 +139,12 @@ runs (PERFORMANCE.md §Measuring reliably). **Control arm:**
   ⇒ `INVALID`, at or under 2 % ⇒ `valid` from the completed samples, above
   ⇒ `degraded`. P2's issuer rules stay `INVALID` conditions outside this
   budget. Gate statistics, quantities and counts unchanged.
+- **P4 DoH protocol (2026-09-03, testing-plan delta 12):** the harness's DoH
+  arm runs over h2 (`reqwest` dev-dependency feature `http2`, every response
+  asserted `HTTP/2.0`), the protocol P4-LAN and real DoH clients speak, so
+  P4 and P4-LAN describe one protocol on that transport (smoke findings
+  F17 / F26). D13's HTTP/1.1 seed is not the comparator for the DoH column;
+  UDP and DoT columns, gate statistic and counts unchanged.
 
 ## Measurements
 
