@@ -4,21 +4,33 @@ Where the work is right now. **Rewrite this file — never append.** History
 belongs in `git log`, `docs/code-review/` and the phase tables; this file is only
 what is true today.
 
-**Last updated:** 2026-09-01
+**Last updated:** 2026-09-03
 
 ## Now
 
 | | |
 | --- | --- |
-| Branch | `main`, in sync with **both** `origin` and `backup`. The `phase5-01`…`phase5-10` chain is merged; nothing is left unmerged |
-| Tree | clean, pushed to both remotes. Phase 5's Stage B evidence and the `wip` → `closed` move are committed |
-| Tests | green at `2b51bb0`; no code has changed since |
+| Branch | `phase3-06` at `d99cd90`. `origin` and `backup` are at `2df5f5e`; `d99cd90` (probe scripts + delta 14, no Rust) is **not pushed** |
+| Tree | clean apart from the owner's two uncommitted 0.3.1 soak-log files under `docs/code-review/phase2.6/` |
+| Tests | green at `145bc17` — fmt, clippy `-D warnings`, `cargo test --all-features --workspace`. No Rust changed since |
 | Version | 0.3.1 (workspace). **No phase-5 tag exists.** Newest tags are `soak-p2.6-11` (`1c430aa`, 0.2.20) and `v0.2.19-phase2.5` |
 | Deployed | container **`fastadhunter-0.3.1`** on `veth1` (`172.17.0.2`), image `b45b8a90…`, **`strategy = "adaptive"`**, soaking since **2026-09-01T07:27:49Z** (`T0`). First deployed build carrying the phase-5 dashboard |
 | Build ≠ tip | `0.3.1` is `db2f9b2`. **Four commits landed after it and are not deployed** — `36ed749` (cache hit-rate divisor, `fah-stats`), `003aedb` (query-types donut), `e6cbf08` (memory residual verdict), `7ea9175` (upstream RTT attribution) |
-| Phase | **5 closed** (`plan/closed/phase5`, 11/11 `DONE`). **2.6 in `plan/wip/phase2.6-adaptive-stage1`** — 11 `DONE`, `p2.6-11` awaiting the 0.3.1 day-7 acceptance. `wip` is back to one phase |
+| Phase | **5 closed**. **Two phases in `wip`:** `phase2.6-adaptive-stage1` — 11 `DONE`, `p2.6-11` awaiting the 0.3.1 day-7 acceptance; `phase3` — p3-06 `AWAITING SOAK`, probe campaign not started (§Phase 3 below) |
+| 0.3.1 soak at T0+48 h | on the predeclaration's own gates: **G1 drift fails W1 (3.49 MiB) and W2 (2.82 MiB)** against < 2; floor W1 → W2 43.4 → 58.2 MiB, six-hour minima after h24 climb **+5.7 MiB/day**, the rate the predeclaration said fails G2. Growth is anonymous heap in `residual_bytes` (+19 MiB / 48 h; `rss_file` flat at 8.8 MiB; ruleset, cache, stats flat). Floor steps at h18, h24, h36, h44, not aligned with the two list recompiles. Third soak with this shape; no fix in between targeted it |
 | Gate | [Global Architecture Review-Reconciled.md](code-review/Global%20Architecture%20Review-Reconciled.md): §5.1–6 **cleared** — §5.1 p2.5-01, §5.2 p2.5-02, §5.4 p2.5-03, §5.5 p2.5-04, §5.6 p2.5-05 + p2.5-10. §5.7–14 gate Phase 3. **S1-G2 tiers 1, 2 and 3 all met**; **S1-G4 and S1-G5 route 2 are not validated and will not be** |
-| **Next** | the 0.3.1 soak runs to **2026-09-08**; its day-7 acceptance closes `p2.6-11`. Then `p2.6-12` |
+| **Next** | (1) arm64 probe images finish building (detached, see §Phase 3); (2) **heap diagnosis of the 0.3.1 floor climb** on the dev box — owner go pending — 0.3.1 build, replayed traffic for hours, `debug/memory` pulls, then allocator-level attribution of what accrues in steps; (3) the p3-06 campaign on the router, owner-run router steps proposed first. The soak itself runs to **2026-09-08**; its day-7 verdict closes `p2.6-11` |
+
+## Phase 3 — p3-06 verification, campaign pending (2026-09-03)
+
+| | |
+| --- | --- |
+| Commits today | `145bc17` harness DoT client framed in one write + `TCP_NODELAY`, DoH arm over h2 with an `HTTP/2.0` assertion (smoke F25 / F26, delta 12); `4dbbfb2` delta 13 (SNI invalidity rules) + fixed lines; `2df5f5e` smoke-1844Z raw output and its verification tracked; `d99cd90` delta 14, `h2-origin.mjs` HEAD, `smoke/h2-preflight.mjs` |
+| Smoke status | scripts match the frozen testing plan (`p3-06-smoke-20260903T1844Z-verification.md`, PASS WITH DEFERRED FINDINGS). F25 / F26 proven fixed in-container (`smoke-20260903T1949Z/layer3-p4-run.log`). Older smoke sessions removed in `761cc1c`; F1–F13 exist in history only, F14–F22 nowhere |
+| Images | building detached on bobdenaut, `docs/code-review/phase3/p3-06-probe/results-20260903T2114Z/build-arm64.sh`, log `build-arm64.log` beside it; started 20:39Z at tip `d99cd90`. Order: `fah-probe`, `fah-p4`, `fah-splicebench`, each then converted with skopeo to `<name>-d99cd90-rosready.tar` in the repo root (gitignored). Not uploaded |
+| Parked | **P3**: needs an origin under a public name with a publicly trusted certificate (delta 14); every path found touches production (dyndns zones blocked by the live resolver, soak forbids changes) or the router. **P2**: no wired bridged VM. Both stages skip; the rest of the campaign does not depend on them |
+| Campaign order | SNI, P1 (control + spliced + aggregate, then the `splicebench` sweep container), P4 in-device (`fah-p4` add / remove), P4-LAN, P5, P6, P7. Router steps first, owner-run, proposed only: read-only `/container/print` and firewall prints, tar upload to `kingston`, `/container/add` for `fah-probe` on `veth3`, three boot keys via `POST /api/v1/config`, restart |
+| Dashboard | I1 (p3-06 review): Live Feed lacks the `https-sni` / `https` kinds — frontend-only, no task file yet |
 
 ## Phase 5 — Web Dashboard, closed 2026-09-01
 
