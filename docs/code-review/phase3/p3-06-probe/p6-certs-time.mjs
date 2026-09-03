@@ -47,14 +47,15 @@ if (run.host.idle === false) {
 }
 if (args.import > 0 && !(args.cert && args['key-file'])) run.invalid('import arm needs --cert and --key-file (a real pair on disk)');
 const MAX_ARCHIVES = 8;
+const before = await run.certificates();
+run.log(`before: ca=${JSON.stringify(before.ca)} api_certificate=${JSON.stringify(before.api_certificate)}`);
+const archivesFromGenerates = before.ca?.present ? args.generate : Math.max(0, args.generate - 1);
 if (args['ca-archive-count'] === null) run.degraded('ca-archive count before the run unknown (--ca-archive-count)');
-else if (args['ca-archive-count'] + args.generate > MAX_ARCHIVES) run.invalid(`ca-archive holds ${args['ca-archive-count']}; ${args.generate} generates would pass the cap of ${MAX_ARCHIVES}`);
+else if (args['ca-archive-count'] + archivesFromGenerates > MAX_ARCHIVES) run.invalid(`ca-archive holds ${args['ca-archive-count']}; ${args.generate} generates would add ${archivesFromGenerates} (the first on an empty store archives nothing) and pass the cap of ${MAX_ARCHIVES}`);
 if (args.import > 0) {
   if (args['api-archive-count'] === null) run.degraded('api-archive count before the run unknown (--api-archive-count)');
   else if (args['api-archive-count'] + args.import > MAX_ARCHIVES) run.invalid(`api-archive holds ${args['api-archive-count']}; ${args.import} imports would pass the cap of ${MAX_ARCHIVES}`);
 }
-const before = await run.certificates();
-run.log(`before: ca=${JSON.stringify(before.ca)} api_certificate=${JSON.stringify(before.api_certificate)}`);
 
 function columns(r) {
   const t = r.timings;

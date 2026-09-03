@@ -300,6 +300,8 @@ export class Run {
     this.logPath = path.join(this.out, 'run.log');
     this.rawPath = path.join(this.out, 'raw.jsonl');
     this.tip = this.args.tip || gitTip();
+    process.on('unhandledRejection', (e) => this.invalid(`unhandled rejection: ${e?.code ?? ''} ${e?.message ?? e}`.trim()));
+    process.on('uncaughtException', (e) => this.invalid(`uncaught exception: ${e?.code ?? ''} ${e?.message ?? e}`.trim()));
     this.log(`== ${this.script} start ${this.startedAt} tip=${this.tip ?? 'unknown'} out=${this.out}`);
     this.log(`args ${JSON.stringify({ ...this.args, key: this.args.key ? '<set>' : null })}`);
     if (this.tip === null) this.degraded('tip hash unknown (no git; pass --tip)');
@@ -338,12 +340,19 @@ export class Run {
   }
 
   async snapshotConfig() {
-    const p = path.join(this.out, 'config.json');
-    if (fs.existsSync(p)) return JSON.parse(fs.readFileSync(p, 'utf8'));
     const r = await this.api('/api/v1/config');
     if (r.status !== 200) this.invalid(`GET /api/v1/config answered ${r.status}: ${r.text.slice(0, 200)}`);
-    fs.writeFileSync(p, JSON.stringify(r.json, null, 2));
-    this.log(`config snapshot -> ${p}`);
+    const live = JSON.stringify(r.json, null, 2);
+    const p = path.join(this.out, 'config.json');
+    if (!fs.existsSync(p)) {
+      fs.writeFileSync(p, live);
+      this.log(`config snapshot -> ${p}`);
+    } else if (fs.readFileSync(p, 'utf8') !== live) {
+      const alt = path.join(this.out, `config.${this.script}.${stamp()}.json`);
+      fs.writeFileSync(alt, live);
+      this.log(`probe config differs from ${p}; live copy -> ${alt}`);
+      this.degraded('probe config changed since this results directory was opened');
+    }
     return r.json;
   }
 

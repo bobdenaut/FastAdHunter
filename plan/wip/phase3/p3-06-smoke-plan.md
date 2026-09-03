@@ -42,7 +42,7 @@ port = 5300
 dot_port = 8853
 
 [[dns.upstreams.servers]]
-address = "1.1.1.1:53"
+address = "192.168.10.1:53"   # the LAN resolver; this LAN blocks DNS straight out (F1)
 protocol = "udp"
 
 [http.listen]
@@ -54,7 +54,7 @@ address = "127.0.0.1"
 port = 8444
 
 [https.interception]
-clients = ["127.0.0.1"]
+clients = []                  # posture A; posture B = ["127.0.0.1"], see below
 
 [egress]
 allow_destinations = ["127.0.0.0/8"]
@@ -94,14 +94,25 @@ smoke-config/apikey --out <root>/layer1`. A browser open on the dev box makes
 every script `INVALID` by design (plan §Running item 3); close it or pass
 `--allow-busy` and accept `degraded`.
 
+**Two client postures (F2).** Loopback has one client address, `127.0.0.1`.
+The spliced arms need it *unlisted*, the terminate-leg arms need it *listed*,
+so the box boots twice: **posture A** (`clients = []`) for `p0`, `p1`,
+`p4-lan`, `p6`, `p7`; **posture B** (`clients = ["127.0.0.1"]`) for `p3` and
+`p5`. Every restart is a probe config change: give each posture its own
+`--out` directory (`<root>/layer1-a`, `<root>/layer1-b`). `lib.mjs` reads the
+live config on every run and, when it differs from the directory's
+`config.json`, writes a dated copy and labels the run `degraded` (F9) — a
+row that shows that label ran in the wrong directory, not against the wrong
+probe.
+
 ### 1.2 Per script — command and what "works" means
 
 | Script | Command (beyond the common flags) | Passes when |
 | --- | --- | --- |
 | `p0-sni.mjs` | `--port 8444 --blocked ads.smoke.test --allowed example.com` | `sni.json` `valid: true`; blocked and no-SNI rows `closed_silent` or `alert`, allowed rows `server_hello`; `telemetry_delta.blocked ≥ 5` |
-| `p1-origin.mjs` + `p1-lan.mjs` | origin: `openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:prime256v1 -nodes -keyout p1.key -out p1.crt -days 3 -subj "/CN=127-0-0-1.nip.io" -addext "subjectAltName=DNS:127-0-0-1.nip.io"`, then `node p1-origin.mjs --cert p1.crt --key-file p1.key --port 4443 --bytes 8`; client: `--origin 127-0-0-1.nip.io --origin-port 4443 --origin-cert p1.crt --bytes 8 --port 8444` — the probe splices to `:443` by construction, so on the dev box the spliced arm reaches the origin only if the origin listens on 443 (elevated shell) — else expect `INVALID` with `refused_destination` / `upstream_failures` in the telemetry delta and count that as the negative path; `--direct` with `--origin-port 4443` must pass | `p1-control.json` `valid: true`, 5 runs, `steady_mib_s` present; spliced arm on `:443`: `p1.json` `valid: true`, `served_issuer` = the origin's CN; `--connections 8` writes `p1-aggregate.json` |
-| `p2-handshake.mjs` | Linux only (`ip addr`): WSL or the VM against the dev box binary, `--probe <dev-box LAN IP>`, `--listed 127.0.0.2`-style is not routable — use two addresses on the WSL/VM interface, one of them added to `https.interception.clients` in the smoke TOML (restart), `--origin example.com --ca smoke-ca.pem --rounds 10 --dns-port 5300 --port 8444` | `p2.json` `valid: true`; intercepted `served_issuer` = `FastAdHunter CA`, spliced and direct ≠; `gate.ratio` present. On the Windows dev box directly the identity precondition must print `INVALID` (no `ip`) — record that as the negative path |
-| `p3-h2stall.mjs` | needs an h2 origin the binary trusts: build the dev-profile harness binary `cargo build -p fastadhunter --features test-harness`, run it instead of the release one with `FAH_TEST_UPSTREAM_ROOT=<origin-cert.der>`; origin: a Node `http2.createSecureServer` on `:443` (elevated) serving `/8mib` (8 MiB) and `/` (small), cert SAN `127-0-0-1.nip.io`, written under `<root>/layer1/h2-origin.mjs`; client: `--origin 127-0-0-1.nip.io --path /8mib --warmup-path / --ca smoke-ca.pem --port 8444 --streams 64 --runs 1 --settle 5 --throughput-runs 1` | `p3.json`: throughput arm `ok: true`, 8 MiB received; RSS arm reaches `barrier: met` on both a stall and a control run, samples present, `attribution` printed. **This is also the dev-box reproduction the P3 BLOCKED state owes** (plan §State): a barrier that never fills with 64 × 8 MiB on one session is the p3-04 finding, to be filed before any device run |
+| `p1-origin.mjs` + `p1-lan.mjs` | posture A. Origin: `openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:prime256v1 -nodes -keyout p1.key -out p1.crt -days 3 -subj "/CN=127-0-0-1.nip.io" -addext "subjectAltName=DNS:127-0-0-1.nip.io" -addext "basicConstraints=critical,CA:FALSE" -addext "extendedKeyUsage=serverAuth"` (the last two are what the interception leg needs — without them rustls rejects the certificate as `CaUsedAsEndEntity`, F6), then `node p1-origin.mjs --cert p1.crt --key-file p1.key --port 4443 --bytes 8`; client: `--origin 127-0-0-1.nip.io --origin-port 4443 --origin-cert p1.crt --bytes 8 --port 8444` — the probe splices to `:443` by construction, so on the dev box the spliced arm reaches the origin only if the origin listens on 443 (elevated shell) — else expect `INVALID` with `refused_destination` / `upstream_failures` in the telemetry delta and count that as the negative path; `--direct` with `--origin-port 4443` must pass | `p1-control.json` `valid: true`, 5 runs, `steady_mib_s` present; spliced arm on `:443`: `p1.json` `valid: true`, `served_issuer` = the origin's CN; `--connections 8` writes `p1-aggregate.json` |
+| `p2-handshake.mjs` | Linux only (`ip addr`), and WSL2 cannot reach a loopback-bound probe (F4). Run it from the **wired bridged VM the campaign will use** — its dress rehearsal: a third posture with every listener on `0.0.0.0` and one VM address in `clients`; on the dev box, inbound firewall rules scoped to the VM's two addresses for TCP 8443, 8444, 8853 and UDP 5300 (owner adds, removes afterwards); on the VM `--probe <dev-box LAN IP> --listed <A> --unlisted <B> --origin example.com --ca smoke-ca.pem --rounds 10 --dns-port 5300 --port 8444`. No VM available ⇒ record the row as not run | `p2.json` `valid: true`; intercepted `served_issuer` = `FastAdHunter CA`, spliced and direct ≠; `gate.ratio` present. On the Windows dev box directly the identity precondition must print `INVALID` (no `ip`) — record that as the negative path |
+| `p3-h2stall.mjs` | posture B. Needs an h2 origin the binary trusts: build the dev-profile harness binary `cargo build -p fastadhunter --features test-harness`, run it instead of the release one with `FAH_TEST_UPSTREAM_ROOT=<origin-cert.der>`; origin: `node docs/code-review/phase3/p3-06-probe/smoke/h2-origin.mjs --cert p3.crt --key-file p3.key --port 443 --bytes 8` (elevated; certificate with the CA:FALSE + EKU lines above, DER via `openssl x509 -in p3.crt -outform der -out p3.der`); client: `--origin 127-0-0-1.nip.io --path /8mib --warmup-path / --ca smoke-ca.pem --port 8444 --streams 64 --runs 1 --settle 5 --throughput-runs 1` | `p3.json`: throughput arm `ok: true`, 8 MiB received. RSS arm **on Windows**: `INVALID: process_rss is null on this probe` is the correct outcome (F8 — the kernel reading exists in-container only; Layer 3's `fah-probe` image is where the arm can reach `barrier: met`, samples and `attribution`). **The barrier itself is the dev-box reproduction the P3 BLOCKED state owes** (plan §State; F7 reproduced it: control 64/64, stall 5/64, the other 59 streams answered `:status 200` then ended with zero DATA) — a p3-04 finding to be filed before any device run |
 | `p4-lan.mjs` | `--domain ads.smoke.test --dot-host dns.smoke.test --dns-port 5300 --dot-port 8853 --queries 200 --rounds 1` | `p4-lan.json` `valid: true`; all three transports `n = 200`, `unanswered = 0`, `unmatched = 0`, `first_answer.answers` = `["0.0.0.0"]`, dot `served_issuer` = `FastAdHunter CA` |
 | `p5-mint.mjs` | `--dot-port 8853 --hosts 16` | `p5.json` `valid: true`; `counters_delta.minted_total = 16`, `evictions = 0`, both arms' `served_issuer` = `FastAdHunter CA` |
 | `p6-certs-time.mjs` | `--generate 2 --import 2 --cert p1.crt --key-file p1.key --ca-archive-count 0 --api-archive-count 0` (fresh `smoke-config`, so both archives are empty) | `p6.json` `valid: true`; four rows `status: 200`; `api_certificate_after.source = "imported"`; `ca-after-p6.pem` written and differs from `smoke-ca.pem` |
@@ -127,10 +138,10 @@ or the `degraded` label, never a number. Restore the state afterwards.
 | identity precondition (`p2`) | run on the Windows dev box | `INVALID: identity precondition: both --listed and --unlisted must be on this host's interfaces` |
 | both addresses unlisted (`p2`, Linux) | `clients = []` | `INVALID: … exactly one of the two addresses must be in https.interception.clients` |
 | this host not listed (`p3`) | `clients = []`, restart | `INVALID: this host (127.0.0.1) is not in https.interception.clients` |
-| barrier not met (`p3`) | `--streams 64 --path /` (a tiny resource: streams end before the window) | RSS arm `INVALID: … barrier not met` or `streams answered` count in the reason; throughput arm unaffected |
+| barrier not met (`p3`) | `--arm rss --path /stall` against `smoke/h2-origin.mjs` (`/stall` answers `:status 200` and never sends DATA, so no stream reaches its first chunk; a tiny body would *meet* the barrier, F11) | RSS arm `INVALID: … barrier not met: 0/64 streams answered` after `--barrier-timeout`; on Windows the `process_rss is null` rule fires first, so run this row in Layer 3's `fah-probe` image |
 | no CA in the store (`p5`) | fresh `smoke-config` without `ca/generate` | `INVALID: no CA in the probe store` |
 | cache headroom (`p5`) | `--hosts 600` | `INVALID: leaf_cache.size … exceeds capacity 512` |
-| archive cap (`p6`) | `--generate 9 --ca-archive-count 0` | `INVALID: ca-archive holds 0; 9 generates would pass the cap of 8` before any call; with the counts omitted, the ninth call itself `INVALID: ca/generate #9 answered 409` |
+| archive cap (`p6`) | fresh store, `--generate 10 --ca-archive-count 0` | `INVALID: ca-archive holds 0; 10 generates would add 9 (the first on an empty store archives nothing) and pass the cap of 8` before any call; with the counts omitted, the **tenth** call itself `INVALID: ca/generate #10 answered 409` (F10: from an empty store N generates make N − 1 archives; nine fill the cap and all answer 200) |
 | `--ca-key` unreadable / not a key (`p7`) | `--ca-key nope.pem`, then `--ca-key p1.crt` | `INVALID: --ca-key unreadable`, then `INVALID: --ca-key is not a private key` |
 | failure-rate budget (`p1`, `p2`, `p3`, delta 11) | kill `p1-origin.mjs` after run 3 of 5 | `p1.json` `status: "degraded"`, `degraded_reasons` names `2 of 5 runs incomplete`, figures from 3 runs |
 | dirty checkout (all) | run with an uncommitted tracked change | `run.log` line `tip=<hash>-dirty`; the campaign must not start in this state |

@@ -133,12 +133,23 @@ function openStream(session, path, { stallAfterFirstData }) {
 }
 
 async function warmup() {
-  const { session, tls: info } = await connectSession();
+  let connected;
+  try {
+    connected = await connectSession();
+  } catch (e) {
+    return { status: null, bytes: 0, error: `connect: ${e.code || e.message}`, tls: null };
+  }
+  const { session, tls: info } = connected;
   const s = openStream(session, args['warmup-path'], { stallAfterFirstData: false });
   await Promise.race([s.finished, sleep(args['barrier-timeout'] * 1000)]);
   session.close();
   await sleep(1000);
   return { status: s.status, bytes: s.bytes, error: s.error, tls: info };
+}
+
+async function rssOrNull() {
+  const m = await run.apiJson('/api/v1/debug/memory');
+  return typeof m.process_rss === 'number' ? m.process_rss : null;
 }
 
 function dnsTotal(t) {
@@ -150,9 +161,16 @@ async function rssRun(kind, index) {
   const t0 = await run.telemetry();
   const w = await warmup();
   run.log(`${kind} run ${index}: warm-up ${w.status} ${w.bytes}B issuer=${w.tls?.issuerCN}${w.error ? ' error=' + w.error : ''}`);
-  if (w.status !== 200 || w.tls?.issuerCN !== CA_ISSUER_CN) return { kind, index, valid: false, reason: `warm-up ${w.status} issuer=${w.tls?.issuerCN}`, warmup: w };
-  const before = await run.processRss();
-  const { session, tls: info } = await connectSession();
+  if (w.status !== 200 || w.tls?.issuerCN !== CA_ISSUER_CN) return { kind, index, valid: false, reason: `warm-up ${w.status} issuer=${w.tls?.issuerCN}${w.error ? ' ' + w.error : ''}`, warmup: w };
+  const before = await rssOrNull();
+  if (before === null) return { kind, index, valid: false, reason: 'process_rss is null on this probe (kernel reading unavailable, e.g. Windows): the RSS arm is measurable in-container / on-device only', warmup: w };
+  let connected;
+  try {
+    connected = await connectSession();
+  } catch (e) {
+    return { kind, index, valid: false, reason: `session connect failed: ${e.code || e.message}`, warmup: w, before_rss: before };
+  }
+  const { session, tls: info } = connected;
   const streams = Array.from({ length: args.streams }, () => openStream(session, args.path, { stallAfterFirstData: kind === 'stall' }));
   const barrier = await Promise.race([Promise.all(streams.map((s) => s.ready)).then(() => 'met'), sleep(args['barrier-timeout'] * 1000).then(() => 'timeout')]);
   const snapshot = () => streams.map((s) => ({ status: s.status, first_data: s.firstData, bytes: s.bytes, ended: s.ended, error: s.error }));
@@ -172,8 +190,14 @@ async function rssRun(kind, index) {
     return elapsed < args.settle || !streams.every((s) => s.ended || s.error !== null);
   };
   while (windowOpen()) {
-    samples.push(await run.processRss());
+    const sample = await rssOrNull();
+    if (sample !== null) samples.push(sample);
     await sleep(1000);
+  }
+  if (!samples.length) {
+    for (const s of streams) s.req.close();
+    session.destroy();
+    return { kind, index, valid: false, reason: 'no process_rss samples inside the window', before_rss: before, streams: snapshot() };
   }
   const drained = streams.filter((s) => s.ended).length;
   const bytesTotal = streams.reduce((a, s) => a + s.bytes, 0);
@@ -181,7 +205,7 @@ async function rssRun(kind, index) {
   session.close();
   await sleep(2000);
   session.destroy();
-  const after = await run.processRss();
+  const after = await rssOrNull();
   const t1 = await run.telemetry();
   const connDelta = t1.listeners.https.connections - t0.listeners.https.connections;
   const dnsFlat = dnsTotal(t1) === dnsTotal(t0);
@@ -198,7 +222,7 @@ async function rssRun(kind, index) {
     max_during_rss: maxDuring,
     after_rss: after,
     delta_mib: round((maxDuring - before) / MiB),
-    after_minus_before_mib: round((after - before) / MiB),
+    after_minus_before_mib: after === null ? null : round((after - before) / MiB),
     samples_mib: samples.map((s) => round(s / MiB, 2)),
     window_s: round((performance.now() - tWindow) / 1000, 1),
     streams_drained: drained,
@@ -207,12 +231,22 @@ async function rssRun(kind, index) {
     dns_flat: dnsFlat,
   };
   run.raw({ measurement: 'P3-rss', ...row, streams: snapshot() });
-  run.log(`${kind} run ${index}: before=${round(before / MiB, 2)} max=${round(maxDuring / MiB, 2)} after=${round(after / MiB, 2)} MiB delta=${row.delta_mib} MiB drained=${drained}/${args.streams} exclusive=${exclusive}`);
+  run.log(`${kind} run ${index}: before=${round(before / MiB, 2)} max=${round(maxDuring / MiB, 2)} after=${after === null ? 'null' : round(after / MiB, 2)} MiB delta=${row.delta_mib} MiB drained=${drained}/${args.streams} exclusive=${exclusive}`);
   return row;
 }
 
 async function throughputRun(index) {
-  const { session, tls: info } = await connectSession();
+  let connected;
+  try {
+    connected = await connectSession();
+  } catch (e) {
+    const row = { index, status: null, bytes: 0, content_length: null, ok: false, issuer: null, mib_s: null, first_byte_ms: null, error: `connect: ${e.code || e.message}` };
+    run.raw({ measurement: 'P3-throughput', ...row });
+    run.log(`throughput run ${index}: FAILED ${row.error}`);
+    await sleep(1000);
+    return row;
+  }
+  const { session, tls: info } = connected;
   const s = openStream(session, args.path, { stallAfterFirstData: false });
   await Promise.race([s.finished, sleep(args['barrier-timeout'] * 1000)]);
   session.close();
@@ -238,7 +272,7 @@ const result = { measurement: 'P3', origin: args.origin, path: args.path, stream
 if (args.arm === 'throughput' || args.arm === 'both') {
   const rows = [];
   for (let i = 1; i <= args['throughput-runs']; i += 1) rows.push(await throughputRun(i));
-  if (rows.some((r) => r.issuer !== CA_ISSUER_CN)) run.invalid('throughput arm: a session was not served the FastAdHunter CA', { throughput: rows });
+  if (rows.some((r) => r.issuer !== null && r.issuer !== CA_ISSUER_CN)) run.invalid('throughput arm: a session was not served the FastAdHunter CA', { throughput: rows });
   const okRows = rows.filter((r) => r.ok);
   if (!okRows.length) run.invalid('throughput arm: no stream completed (the P3 BLOCKED state?)', { throughput: rows });
   const failPct = (100 * (rows.length - okRows.length)) / rows.length;

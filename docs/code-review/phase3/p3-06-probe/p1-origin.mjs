@@ -10,8 +10,14 @@
 //   openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:prime256v1 -nodes \
 //     -keyout p1-origin.key -out p1-origin.crt -days 30 \
 //     -subj "/CN=192-168-10-20.nip.io" \
-//     -addext "subjectAltName=DNS:192-168-10-20.nip.io"
+//     -addext "subjectAltName=DNS:192-168-10-20.nip.io" \
+//     -addext "basicConstraints=critical,CA:FALSE" \
+//     -addext "extendedKeyUsage=serverAuth"
 //
+// The two trailing -addext lines matter for any interception arm: without
+// them `openssl req -x509` marks the certificate CA:TRUE and rustls rejects
+// it as an end-entity certificate (CaUsedAsEndEntity). The splice arm never
+// validates it and would pass either way.
 // The client (p1-lan.mjs --origin-cert p1-origin.crt) trusts exactly this
 // certificate. Firewall: plan §Local firewall — inbound TCP 443 scoped to the
 // probe address (and to the client host for the P1-control arm), never

@@ -117,9 +117,10 @@ function pull(index) {
       t.last = now;
       bytes += c.length;
     });
-    sock.on('end', () => finish(null));
+    const closeReason = () => (bytes === expected ? null : t.secure === null ? 'closed_before_handshake' : bytes === 0 ? 'closed_zero_bytes' : 'closed_early');
+    sock.on('end', () => finish(closeReason()));
     sock.on('error', (e) => finish(e.code || e.message));
-    sock.on('close', () => finish(bytes === expected ? null : 'closed_early'));
+    sock.on('close', () => finish(closeReason()));
   });
 }
 
