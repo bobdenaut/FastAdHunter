@@ -1,0 +1,87 @@
+# syntax=docker/dockerfile:1
+#
+# Dockerfile.fahprobe — the probe FastAdHunter instance every LAN arm of
+# plan/wip/phase3/p3-06-testing-plan.md drives (§Scripts naming table).
+#
+# Identical to the root Dockerfile (same stages, base, Rust version, frontend
+# bundle, allocator) except:
+#   * the binary is installed as /fah-probe and the entrypoint is /fah-probe,
+#     so /tool/profile cpu=all on the router lists it apart from the live
+#     resolver's `fastadhunter` row (plan §Scope hard rule; Linux comm is 15
+#     chars, `fah-probe` is 9). The binary never reads its own name.
+#   * SPLICE_BUF_KIB (default 16 = the shipped const) patches
+#     crates/fah-http/src/https.rs at build time for the §Choosing SPLICE_BUF
+#     step-4 "pick" build. The repo source is not changed; the build fails if
+#     the pattern does not match, so a silently unpatched image cannot exist.
+#     Record the value in the run's §Measurements row.
+#
+# Build from the repo root (arm64, legacy docker-archive for RouterOS —
+# docs/routeros-traps.md §Build and deploy pipeline):
+#
+#   docker buildx build --platform linux/arm64 \
+#     -f docs/code-review/phase3/p3-06-probe/Dockerfile.fahprobe \
+#     --build-arg SPLICE_BUF_KIB=16 \
+#     -t fah-probe:<tip> -o type=docker,dest=fah-probe-<tip>-arm64.tar .
+#   tar -xOf fah-probe-<tip>-arm64.tar manifest.json      # "Layers" must not be blobs/sha256/...
+#   docker run --rm -v "$PWD:/work" quay.io/skopeo/stable copy \
+#     --insecure-policy oci-archive:/work/fah-probe-<tip>-arm64.tar \
+#     docker-archive:/work/fah-probe-<tip>-rosready.tar:fah-probe:<tip>
+#
+# Router side — proposed to the owner, never run by an agent (root CLAUDE.md):
+#   scp fah-probe-<tip>-rosready.tar <router>:kingston/          (rule 18: ask first)
+#   /container/stop [find comment="fah-probe"]
+#   /container/remove [find comment="fah-probe"]
+#   /container/add file=kingston/fah-probe-<tip>-rosready.tar interface=veth3 \
+#     root-dir=/kingston/probe/root mounts=probe-config,probe-data \
+#     envlist=fah-env workdir=/home/nonroot logging=yes start-on-boot=no \
+#     comment="fah-probe"
+#   /container/start [find comment="fah-probe"]
+# The probe's /config (API key, TOML, certificate store) lives in
+# /kingston/probe/config and survives the remove (docs/project-state.md).
+# Verify before the first /tool/profile read: /container/print detail shows
+# the entrypoint /fah-probe, and /tool/profile cpu=all lists `fastadhunter`
+# and `fah-probe` as separate rows.
+
+FROM --platform=$BUILDPLATFORM node:22.21.1-alpine AS frontend
+
+WORKDIR /app
+COPY dashboard/frontend/package.json dashboard/frontend/package-lock.json ./
+RUN npm ci
+COPY dashboard/frontend/ ./
+RUN npm run build && mkdir -p /web && cp -R dist/. /web/
+
+FROM rust:1.96.0-alpine AS builder
+
+ARG SPLICE_BUF_KIB=16
+
+RUN apk add --no-cache musl-dev
+
+WORKDIR /build
+COPY Cargo.toml Cargo.lock rust-toolchain.toml ./
+COPY crates ./crates
+COPY tui-monitor ./tui-monitor
+
+RUN sed -i -E "s/^const SPLICE_BUF: usize = [0-9]+ \* 1024;/const SPLICE_BUF: usize = ${SPLICE_BUF_KIB} * 1024;/" crates/fah-http/src/https.rs \
+    && grep -q "^const SPLICE_BUF: usize = ${SPLICE_BUF_KIB} \* 1024;" crates/fah-http/src/https.rs \
+    && echo "SPLICE_BUF = ${SPLICE_BUF_KIB} KiB"
+
+RUN cargo build --release --locked -p fastadhunter
+
+RUN mkdir -p /seed/config /seed/data
+
+FROM gcr.io/distroless/static-debian12:nonroot
+
+COPY --from=builder /build/target/release/fastadhunter /fah-probe
+COPY --from=builder --chown=65532:65532 /seed/config /config
+COPY --from=builder --chown=65532:65532 /seed/data /data
+COPY --from=frontend /web /web
+
+USER 0:0
+
+VOLUME ["/config", "/data"]
+EXPOSE 53/udp 53/tcp 853/tcp 8443/tcp 8444/tcp
+
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+    CMD ["/fah-probe", "--healthcheck"]
+
+ENTRYPOINT ["/fah-probe"]

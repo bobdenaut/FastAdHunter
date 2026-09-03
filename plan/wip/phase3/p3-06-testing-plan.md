@@ -31,7 +31,7 @@ changes nothing else.
 | SNI | a blocked domain closes at SNI, before any certificate | gate — the everyone path of the definition of done | probe, LAN client | a domain the probe's lists block |
 | P1-LAN | splice throughput on the deployment path — the shipped 16/16 build, then the sweep's pick | ≥ 100 MiB/s steady state (gigabit is 119 MiB/s); single connection must land in P1-control's range | probe; LAN client, LAN origin; 64 MiB, one connection, 5 runs, median + range; 8-connection aggregate arm with `/tool/profile` share (§Choosing `SPLICE_BUF`) | origin under a **publicly resolvable** name; `egress.allow_destinations`; the second LAN endpoint (below) |
 | P1-control | what the same LAN path carries without the probe | control for P1-LAN, no budget; without it P1-LAN has no ceiling to read against | LAN client → LAN origin, direct | the second LAN endpoint — **unsolved, owner decision** (§Traps) |
-| P1-loopback | CPU per relayed byte vs buffer size — the `SPLICE_BUF` sweep | diagnostic; picks the buffer (§Choosing `SPLICE_BUF`). Reads the buffer sensitivity of the whole in-device loop — client, proxy and origin in one process — and stands for CPU per byte **only if the run is shown CPU-bound** (`/tool/profile` during it); the LAN aggregate arm's `/tool/profile` share is the confirmatory CPU reading | bench container, criterion `proxy` on in-device loopback, up / down sizes as bench parameters, interleaved | **one** image; `workdir=/data` with a mount |
+| P1-loopback | CPU per relayed byte vs buffer size — the `SPLICE_BUF` sweep | diagnostic; picks the buffer (§Choosing `SPLICE_BUF`). Reads the buffer sensitivity of the whole in-device loop — client, proxy and origin in one process — and stands for CPU per byte **only if the run is shown CPU-bound** (`/tool/profile` during it); the LAN aggregate arm's `/tool/profile` share is the confirmatory CPU reading | bench container, the `splicebench` example (`crates/fah-http/examples/splicebench.rs`, shipped `TlsServer` / `TlsProxy` relay via `TlsProxy::with_splice_buffers`) on in-device loopback, up / down sizes as runtime parameters, interleaved | **one** image; stdout to the container log, no mount |
 | P2 | handshake cost: direct vs spliced vs intercepted | **two rows**: "SNI verdict + splice added latency" = spliced p50 − direct p50 (handshake and first-byte columns both recorded); "intercepted p50 ≤ 2 × spliced p50" on the handshake column | probe, one fixed public origin (name, TLS version, ALPN recorded), 200 rounds, three arms interleaved per round, min / p50 / p99 | CA PEM on the client; **all three arms from one host** — a bridged VM on a **wired** link with **two verified same-family LAN IPv4 source addresses**, one listed and one not (§Traps); never v4 vs v6, never one arm per machine, **no source-IP workaround on bobdenaut**. **Execution location: `p2-handshake.mjs` runs on that VM**; bobdenaut only launches it over ssh and copies the results back — every socket of all three arms binds a VM address, none originates on bobdenaut. Precondition the script proves before any round: both addresses on the VM's interface, each observed by the probe (`/api/v1/clients` after one DNS query bound to each source), exactly one of them in `https.interception.clients` — else `INVALID`. Path proof per row is the served issuer (§Invalidity rules); `/telemetry` + `/certificates` before and after each arm are **supporting evidence only**: `minted_total` delta recorded, **not** required to be +1 — the origin's leaf may already be cached and no API reads per-host state; `blocked = 0` |
 | P3 | intercepted h2 relay: throughput **and** per-session RSS under a 64-stream stall | ≥ 50 MiB/s (throughput arm). RSS: the reported quantity is the **session RSS delta** = max `process_rss` over the stall window − `process_rss` before the session, per run; gate statistic = the **max delta over 3 runs**, read against the ≈ 5.5 MiB worst case CONFIGURATION.md `[https] max_connections` states. Raw `process_rss` is never called "per-session RSS". P3 is the **sole authority** for that ceiling — a passing soak says nothing about it (MA-10) | probe, public h2 origin, 8 MiB per stream, 3 runs. **Warm-up first:** one small request to the same origin through the terminate leg, so the leaf mint and the first upstream connection are cached before "before" is read — otherwise they land in the delta. **Stall barrier:** the window opens only after all 64 streams are open **simultaneously**, each has received `:status 200` **and** a first DATA chunk, and the client has then stopped reading; `process_rss` sampled every second for the settle time, max taken; "after" follows the last close. **No-stall control — a separate matched run**, never the same session: its own warm-up, "before", window and "after"; same origin, same 64 streams **fully drained**, same sampling; 3 control runs interleaved with the 3 stall runs (S/C/S/C/S/C). The control delta is the allocator's band (mimalloc purge band alone is ± 6 MB — a single delta cannot resolve a 5.5 MiB question). **Report the raw stall delta and the control delta separately, never combined.** **Attribution:** `RESOLVED` when the smallest stall delta exceeds the largest control delta (disjoint ranges); otherwise **`UNRESOLVED`** — the stall delta sits inside the control / allocator band, is reported as such and is **not** read against 5.5 MiB as a session cost. A raw process RSS delta is never called "session-only memory". Throughput is a separate arm: one unstalled 8 MiB stream, 3 runs, median MiB/s | listed client; the barrier met, else no RSS figure; **nothing else enters the probe during the window** — `listeners.https.connections` delta = warm-up + 1 and the DNS query counters flat across it, read from `/telemetry` before / after |
 | P4 | DoT / DoH added latency vs UDP, p50 — in-engine, reused connection | TBD — this arm sets the row | **in-device**: the `encrypted_latency` harness cross-compiled beside the release binary, 3 interleaved rounds × 2 000 per transport, handshakes excluded (MA-8) | a second image (test binary + release binary); owner container add / remove |
@@ -150,7 +150,7 @@ knows about another, so a change to one measurement touches one file.
 | `p0-sni.mjs` | SNI gate | blocked domain | `sni.json` |
 | `p1-lan.mjs` | P1-LAN; `--direct` runs P1-control against the same origin; `--connections 8` the aggregate arm (§Choosing `SPLICE_BUF` step 4) | origin name, runs, bytes, connections | `p1.json` |
 | `p1-origin.mjs` | the P1 origin as its own process, on the second LAN endpoint | payload size, cert paths | serves N MiB over TLS on `:443` |
-| `Dockerfile.splicebench` | P1-loopback, the whole sweep | `up` / `down` sizes as bench parameters, one image | criterion output in the container log |
+| `Dockerfile.splicebench` | P1-loopback, the whole sweep — the `splicebench` example, matrix / repetitions / interleaving / pick rule as declared in §Choosing `SPLICE_BUF` | `up` / `down` sizes as runtime parameters, one image; `--budget-mib` (default 32) | per-candidate rows and the pick line in the container log |
 | `p2-handshake.mjs` | P2, three arms interleaved — **runs on the wired bridged VM**, launched from bobdenaut over ssh | public origin, CA PEM, rounds, listed / unlisted source address | `p2.json`, copied back to the results directory |
 | `p3-h2stall.mjs` | P3, throughput and RSS | CA PEM, h2 origin + path, streams | `p3.json` |
 | `Dockerfile.p4` | P4, in-device | `encrypted_latency` test binary + release `fastadhunter`, `aarch64-unknown-linux-musl` | harness output in the container log |
@@ -186,12 +186,21 @@ single layer, legacy docker-archive, never OCI layout
 (`docs/routeros-traps.md`).
 
 Results: raw output stays in the `results-<ts>/` directory under
-`p3-06-probe/`, committed with the run. **Figures are recorded in a separate
-file, `docs/code-review/phase3/p3-06-testing-results.md`** (root CLAUDE.md
-rule 19: measurements live under `docs/code-review/`) — one table per
-measurement with corpus, workload, device, tip hash, idle-baseline check, the
-gate statistic and the attribution label, each row citing its raw directory;
-the review file §Measurements links to it. **This plan carries no results and
+`p3-06-probe/`, committed with the run. **Figures are recorded in
+`docs/code-review/phase3/p3-06-testing-results.md`** (root CLAUDE.md rule 19:
+measurements live under `docs/code-review/`). That file has **one section per
+measurement ID, two tables each**:
+
+- **Runs** — one row per run: date, tip hash, device / workload / corpus,
+  idle check, validity / attribution, the declaration delta number if the run
+  followed one, raw directory.
+- **Figures** — shaped for the measurement (arms × min / p50 / p99,
+  candidates × median / min / max, runs × stall delta / control delta), the
+  **gate line as its last row**. Diagnostics go in this table, never in
+  prose.
+
+An `INVALID` or `degraded` run gets a Runs row and no Figures row. The review
+file §Measurements links to the section. **This plan carries no results and
 is not edited after a run** — §State below is the last result-shaped content
 it will hold. A figure that is in neither place is not a result.
 
@@ -226,12 +235,12 @@ only.
 | SNI | every attempt closed before any certificate — boolean | close latency |
 | P1-LAN | median of 5 runs ≥ 100 MiB/s **and** inside P1-control's min–max | min / max, aggregate-arm MiB/s, `/tool/profile` share |
 | P1-control | none — it is the band | min / p50 / max |
-| P1-loopback | none — selection statistic is the per-candidate median (§Choosing step 2) | min / max, `/tool/profile` share |
+| P1-loopback | none — selection statistic is the per-candidate median (§Choosing step 2), from the `splicebench` example's per-candidate rows | min / max, `/tool/profile` share |
 | P2 | handshake column: intercepted **p50** ≤ 2 × spliced **p50**; row value: spliced p50 − direct p50 (handshake and first-byte); p50 = median over 200 rounds | min, p99, per-round raw, first-byte ratio, counters |
 | P3 throughput | median of 3 runs ≥ 50 MiB/s | per-run MiB/s |
 | P3 RSS | **max over 3 runs** of the stall delta, read against ≈ 5.5 MiB **only when attribution is `RESOLVED`** (smallest stall delta > largest control delta); above it is a finding, not a fail. `UNRESOLVED` ⇒ both deltas reported, no reading against 5.5 MiB | per-run stall delta, per-run control delta, the per-second series |
 | P4 | per transport p50 − UDP p50 (sets the row) | p99, per-round, handshake time |
-| P4-LAN | none — diagnostic | p50 / p99 from kdig, batch wall-clock mean |
+| P4-LAN | none — diagnostic | p50 / p99 from `p4-lan.mjs` (send → matched reply, one connection per transport per batch), batch wall-clock mean |
 | P5 | median(first-sight) − median(repeat) < 1 ms | per-host raw, on-device `certs_mint`, `unwarmed_misses` / `evictions` deltas |
 | P6 | median of 5 on `time_starttransfer − time_appconnect`: generate < 100 ms, import < 50 ms | min, `time_total` |
 | P8-probe, P9-probe | none — diagnostic | as declared |
@@ -376,6 +385,27 @@ arm runs; the original block stays unedited.
    on the VM (bobdenaut launches and collects); the two-pass alternative is
    withdrawn (it loses interleaving and a restart clears the leaf cache
    between arms).
+10. **P4 image uid (2026-09-03)** — declared: the probe-image convention,
+    `USER 0:0`. Now: `Dockerfile.p4` runs as `65532:65532` with `/tmp` owned
+    by that uid (`TMPDIR=/tmp`). Reason: the harness creates its config /
+    data volumes with `tempfile` (0700, owner = the harness uid) and the
+    spawned binary drops to 65532 before its first-boot writes, so a root
+    harness produces a predictable `EACCES` and no figure. Started as 65532
+    the binary performs no drop and binds ephemeral loopback ports, which
+    need no privilege; the measured quantity (per-query latency, in-engine)
+    never includes the drop. Recorded before the first P4 run.
+11. **Origin-failure-rate budget, P1-LAN, P2 and the P3 throughput arm
+    (2026-09-03)** — declared: §Invalidity rules row "all", "origin failure
+    rate within budget, else `degraded`", no number. Now: the budget is
+    **2 %** of a stage's samples (`p1-lan.mjs` runs, `p2-handshake.mjs`
+    rows per arm, `p3-h2stall.mjs` throughput-arm streams; `--max-fail-pct`
+    default 2). Zero completed samples ⇒ `INVALID` (the P1 row's "a spliced
+    sample completed"); failures at or under 2 % ⇒ `valid`, figures from
+    the completed samples; above ⇒ `degraded`, not a gate. With 5 runs
+    (P1-LAN) or 3 (P3 throughput) one incomplete run is already above the
+    budget; P2's 200 rows per arm tolerate 4. P2's issuer rules stay
+    `INVALID` conditions, outside this budget. Gate statistics, quantities
+    and counts unchanged. Recorded before the first P1-LAN, P2 or P3 run.
 
 **Frozen at approval (2026-09-03).** The scripts implement this plan as
 written. A methodology change discovered while writing them is a new numbered

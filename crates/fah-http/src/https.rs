@@ -44,6 +44,8 @@ pub struct TlsProxy {
     no_sni: NoSni,
     pub(crate) allow_ip_literal_hosts: bool,
     interception: Option<Interception>,
+    splice_up: usize,
+    splice_down: usize,
 }
 
 impl TlsProxy {
@@ -68,7 +70,15 @@ impl TlsProxy {
             no_sni,
             allow_ip_literal_hosts: false,
             interception: None,
+            splice_up: SPLICE_BUF,
+            splice_down: SPLICE_BUF,
         }
+    }
+
+    pub fn with_splice_buffers(mut self, up: usize, down: usize) -> Self {
+        self.splice_up = up;
+        self.splice_down = down;
+        self
     }
 
     pub fn with_ip_literal_hosts(mut self, allow: bool) -> Self {
@@ -237,8 +247,12 @@ impl TlsProxy {
         let mut upstream = Activity::new(upstream, &last, Some(&to_upstream), clock);
 
         let idle_ms = as_millis(self.idle_timeout);
-        let copy =
-            copy_bidirectional_with_sizes(&mut client, &mut upstream, SPLICE_BUF, SPLICE_BUF);
+        let copy = copy_bidirectional_with_sizes(
+            &mut client,
+            &mut upstream,
+            self.splice_up,
+            self.splice_down,
+        );
         tokio::pin!(copy);
 
         tokio::select! {

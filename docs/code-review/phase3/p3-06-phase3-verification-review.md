@@ -124,6 +124,21 @@ runs (PERFORMANCE.md §Measuring reliably). **Control arm:**
   dev-box regression claim; both are covered on the device.
 - **D12 (MA-7):** the synthetic Zipf hit rate is struck from the proposed
   hit-rate row; the soak's `leaf_cache` counters are the only evidence.
+- **P4 image uid (2026-09-03, testing-plan delta 10):** `Dockerfile.p4`
+  runs as `65532:65532` with `/tmp` owned by that uid, not the probe-image
+  `USER 0:0` convention. The harness's `tempfile` volumes are 0700 to the
+  harness uid and the spawned binary drops to 65532 before its first-boot
+  writes, so a root harness yields a predictable `EACCES` and no figure. As
+  65532 the binary performs no drop and binds ephemeral loopback ports; the
+  per-query latency the row measures never includes the drop. Recorded
+  before the first P4 run.
+- **Origin-failure-rate budget (2026-09-03, testing-plan delta 11):** the
+  plan's "within budget, else `degraded`" rule carried no number. For
+  P1-LAN, P2 (rows per arm) and the P3 throughput arm the budget is **2 %**
+  of a stage's samples (`--max-fail-pct` default 2): zero completed samples
+  ⇒ `INVALID`, at or under 2 % ⇒ `valid` from the completed samples, above
+  ⇒ `degraded`. P2's issuer rules stay `INVALID` conditions outside this
+  budget. Gate statistics, quantities and counts unchanged.
 
 ## Measurements
 

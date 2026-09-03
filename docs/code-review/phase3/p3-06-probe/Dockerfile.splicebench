@@ -1,0 +1,62 @@
+# syntax=docker/dockerfile:1
+#
+# Dockerfile.splicebench — P1-loopback: the splice loop on device loopback
+# (plan §Measurements row P1-loopback, §Choosing SPLICE_BUF step 1).
+#
+# Same pattern as Dockerfile.httpprobe: a second container whose entrypoint
+# is the measurement — crates/fah-http/examples/splicebench.rs — client, the
+# shipped TlsServer/TlsProxy relay and origin on the container's own
+# loopback, results on stdout, which RouterOS copies into its log. No mount,
+# no writable cwd. The process is /fah-splicebench so /tool/profile lists it
+# apart from the live resolver (plan §Scope hard rule).
+#
+# The example builds one proxy per candidate through
+# TlsProxy::with_splice_buffers(up, down) — the production default path is
+# untouched (new() keeps SPLICE_BUF for both directions) — and runs the
+# declared matrix: up = 16 KiB, down in {16, 32, 64, 128} KiB, plus 64/64 as
+# the symmetry control; 64 MiB, one connection, steady state (first byte to
+# last byte); 5 repetitions, candidates interleaved within each repetition;
+# a loopback_origin arm per repetition, labelled as such (never "direct" or
+# "control" — P1-control is the LAN arm). It prints per-candidate median /
+# min / max, the worst case at max_connections = 1024, whether that fits the
+# declared budget (--budget-mib, default 32 = today's 16 + 16), and the
+# plan's pick rule applied — the pick is evidence for the owner's decision,
+# not the decision. Read /tool/profile cpu=all during the run: the arm is
+# CPU-bound, and its MiB/s a CPU-per-byte proxy, only if the share says so.
+#
+# Build from the repo root (arm64, legacy docker-archive for RouterOS):
+#
+#   docker buildx build --platform linux/arm64 \
+#     -f docs/code-review/phase3/p3-06-probe/Dockerfile.splicebench \
+#     -t fah-splicebench:<tip> -o type=docker,dest=fah-splicebench-<tip>-arm64.tar .
+#   # then the skopeo docker-archive conversion as in Dockerfile.fahprobe
+#
+# Dev box smoke run: cargo run --release -p fah-http --example splicebench
+#
+# Router side — proposed, owner runs:
+#   /container/add file=kingston/fah-splicebench-<tip>-rosready.tar interface=veth3 \
+#     root-dir=/kingston/splicebench/root logging=yes start-on-boot=no \
+#     comment="fah-splicebench"
+#   /container/start [find comment="fah-splicebench"]
+#   /tool/profile cpu=all duration=60     (read-only, during the run; idle baseline first)
+#   /log print where topics~"container"
+#   /container/remove [find comment="fah-splicebench"]
+
+FROM rust:1.96.0-alpine AS builder
+
+RUN apk add --no-cache musl-dev
+
+WORKDIR /build
+COPY Cargo.toml Cargo.lock rust-toolchain.toml ./
+COPY crates ./crates
+COPY tui-monitor ./tui-monitor
+
+RUN cargo build --release --locked -p fah-http --example splicebench
+
+FROM gcr.io/distroless/static-debian12:nonroot
+
+COPY --from=builder /build/target/release/examples/splicebench /fah-splicebench
+
+USER 0:0
+
+ENTRYPOINT ["/fah-splicebench"]
