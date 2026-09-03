@@ -1780,3 +1780,233 @@ async fn the_baseline_exclusions_ship_without_any_configuration() {
     }
     assert!(started.elapsed() < Duration::from_secs(1));
 }
+
+const STALL_STREAMS: usize = 64;
+const CLIENT_STREAM_WINDOW: u32 = 64 * 1024;
+const NODE_DEFAULT_CONNECTION_WINDOW: u32 = 65_535;
+const AMPLE_CONNECTION_WINDOW: u32 = 8 * 1024 * 1024;
+const STALL_HOLD: Duration = Duration::from_secs(2);
+const PENDING_PROBE: Duration = Duration::from_millis(250);
+
+async fn h2_client_with_windows(
+    harness: &Harness,
+    connection_window: u32,
+) -> http2::SendRequest<Full<Bytes>> {
+    let tls = tls_to(harness.addr, &harness.ours(Proto::H2))
+        .await
+        .unwrap();
+    let (sender, connection) = http2::Builder::new(TokioExecutor::new())
+        .initial_stream_window_size(CLIENT_STREAM_WINDOW)
+        .initial_connection_window_size(connection_window)
+        .handshake(TokioIo::new(tls))
+        .await
+        .unwrap();
+    tokio::spawn(async move {
+        let _ = connection.await;
+    });
+    sender
+}
+
+async fn open_page_streams(sender: &http2::SendRequest<Full<Bytes>>) -> Vec<Incoming> {
+    let mut bodies = Vec::with_capacity(STALL_STREAMS);
+    for index in 0..STALL_STREAMS {
+        let mut sender = sender.clone();
+        let request = Request::builder()
+            .uri(format!("https://{ORIGIN_NAME}/page?n={index}"))
+            .body(Full::new(Bytes::new()))
+            .unwrap();
+        let response = tokio::time::timeout(Duration::from_secs(10), sender.send_request(request))
+            .await
+            .expect("every stream must be answered with headers")
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK, "stream {index}");
+        bodies.push(response.into_body());
+    }
+    bodies
+}
+
+#[derive(Debug, PartialEq, Eq)]
+enum Poll1 {
+    Data(usize),
+    Pending,
+    Ended,
+    Failed,
+}
+
+async fn poll_once(body: &mut Incoming) -> Poll1 {
+    match tokio::time::timeout(PENDING_PROBE, body.frame()).await {
+        Err(_) => Poll1::Pending,
+        Ok(None) => Poll1::Ended,
+        Ok(Some(Err(_))) => Poll1::Failed,
+        Ok(Some(Ok(frame))) => match frame.into_data() {
+            Ok(data) => Poll1::Data(data.len()),
+            Err(_) => Poll1::Pending,
+        },
+    }
+}
+
+#[tokio::test]
+async fn sixty_four_stalled_h2_streams_all_receive_status_and_first_data_and_stay_open() {
+    let ca = origin_ca();
+    let (cert, key) = leaf_signed_by(&ca);
+    let origin = origin(Proto::H2, cert, key).await;
+    let harness = harness(origin.addr, Setup::intercepting(ca.root.clone())).await;
+
+    let sender = h2_client_with_windows(&harness, AMPLE_CONNECTION_WINDOW).await;
+    let mut bodies = open_page_streams(&sender).await;
+
+    let mut first = Vec::with_capacity(STALL_STREAMS);
+    for body in bodies.iter_mut() {
+        first.push(poll_once(body).await);
+    }
+    let with_data = first
+        .iter()
+        .filter(|p| matches!(p, Poll1::Data(n) if *n > 0))
+        .count();
+    assert_eq!(
+        with_data, STALL_STREAMS,
+        "every stream carries a first DATA chunk when the client window allows it: {first:?}"
+    );
+
+    tokio::time::sleep(STALL_HOLD).await;
+    let mut delivered: Vec<usize> = first
+        .iter()
+        .map(|p| if let Poll1::Data(n) = p { *n } else { 0 })
+        .collect();
+    for (index, body) in bodies.iter_mut().enumerate() {
+        let state = poll_once(body).await;
+        assert!(
+            matches!(state, Poll1::Pending | Poll1::Data(_)),
+            "stream {index} must stay open under backpressure, saw {state:?}"
+        );
+        if let Poll1::Data(n) = state {
+            delivered[index] += n;
+        }
+    }
+
+    drain_in_order(bodies, &mut delivered).await;
+    assert_eq!(
+        origin.requests.load(Ordering::Relaxed),
+        STALL_STREAMS as u64
+    );
+    assert_eq!(origin.connections.load(Ordering::Relaxed), 1);
+    harness.shutdown();
+}
+
+async fn drain_in_order(bodies: Vec<Incoming>, delivered: &mut [usize]) {
+    for (index, body) in bodies.into_iter().enumerate() {
+        let rest = tokio::time::timeout(Duration::from_secs(10), body.collect())
+            .await
+            .unwrap_or_else(|_| {
+                panic!("stream {index} starved: a sibling the client is not reading must not hold the relay's window")
+            })
+            .unwrap_or_else(|err| panic!("stream {index} failed while siblings were stalled: {err}"))
+            .to_bytes();
+        delivered[index] += rest.len();
+        assert_eq!(
+            delivered[index], PAGE_BYTES,
+            "stream {index} delivered the whole page exactly once"
+        );
+    }
+}
+
+#[tokio::test]
+async fn a_client_with_a_node_default_connection_window_still_gets_every_first_chunk_and_no_stream_is_ended(
+) {
+    let ca = origin_ca();
+    let (cert, key) = leaf_signed_by(&ca);
+    let origin = origin(Proto::H2, cert, key).await;
+    let harness = harness(origin.addr, Setup::intercepting(ca.root.clone())).await;
+
+    let sender = h2_client_with_windows(&harness, NODE_DEFAULT_CONNECTION_WINDOW).await;
+    let mut bodies = open_page_streams(&sender).await;
+
+    let mut first = Vec::with_capacity(STALL_STREAMS);
+    for body in bodies.iter_mut() {
+        first.push(poll_once(body).await);
+    }
+    let with_data = first.iter().filter(|p| matches!(p, Poll1::Data(_))).count();
+    assert_eq!(
+        with_data, STALL_STREAMS,
+        "the relay shares a 64 KiB client connection window fairly: every stream gets its first chunk, none is ended: {first:?}"
+    );
+
+    tokio::time::sleep(STALL_HOLD).await;
+    let mut delivered: Vec<usize> = first
+        .iter()
+        .map(|p| if let Poll1::Data(n) = p { *n } else { 0 })
+        .collect();
+    for (index, body) in bodies.iter_mut().enumerate() {
+        let state = poll_once(body).await;
+        assert!(
+            matches!(state, Poll1::Pending | Poll1::Data(_)),
+            "starved stream {index} must stay pending, never silently ended: {state:?}"
+        );
+        if let Poll1::Data(n) = state {
+            delivered[index] += n;
+        }
+    }
+
+    let mut drains = Vec::with_capacity(STALL_STREAMS);
+    for (index, body) in bodies.into_iter().enumerate() {
+        let already = delivered[index];
+        drains.push(tokio::spawn(async move {
+            let rest = tokio::time::timeout(Duration::from_secs(10), body.collect())
+                .await
+                .unwrap_or_else(|_| {
+                    panic!("stream {index} starved while every stream was being read")
+                })
+                .unwrap_or_else(|err| panic!("stream {index} failed: {err}"))
+                .to_bytes();
+            assert_eq!(
+                already + rest.len(),
+                PAGE_BYTES,
+                "stream {index} delivered the whole page exactly once"
+            );
+        }));
+    }
+    for drain in drains {
+        drain.await.unwrap();
+    }
+    assert_eq!(origin.connections.load(Ordering::Relaxed), 1);
+    harness.shutdown();
+}
+
+#[tokio::test]
+async fn the_idle_watchdog_ends_a_fully_stalled_session_and_no_stream_is_left_pending() {
+    let ca = origin_ca();
+    let (cert, key) = leaf_signed_by(&ca);
+    let origin = origin(Proto::H2, cert, key).await;
+    let mut setup = Setup::intercepting(ca.root.clone());
+    setup.idle = Duration::from_secs(1);
+    let harness = harness(origin.addr, setup).await;
+
+    let sender = h2_client_with_windows(&harness, AMPLE_CONNECTION_WINDOW).await;
+    let mut bodies = open_page_streams(&sender).await;
+    for body in bodies.iter_mut() {
+        assert!(matches!(poll_once(body).await, Poll1::Data(_)));
+    }
+
+    tokio::time::sleep(Duration::from_secs(3)).await;
+    let mut ended = 0;
+    let mut failed = 0;
+    for body in bodies.iter_mut() {
+        loop {
+            match poll_once(body).await {
+                Poll1::Data(_) => continue,
+                Poll1::Ended => {
+                    ended += 1;
+                    break;
+                }
+                Poll1::Failed => {
+                    failed += 1;
+                    break;
+                }
+                Poll1::Pending => panic!("a stream is still pending after the idle watchdog fired"),
+            }
+        }
+    }
+    println!("after the idle watchdog: {ended} streams ended cleanly, {failed} failed");
+    assert_eq!(ended + failed, STALL_STREAMS);
+    harness.shutdown();
+}

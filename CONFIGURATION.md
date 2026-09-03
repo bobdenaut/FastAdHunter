@@ -219,23 +219,29 @@ max_connections = 1024        # boot    — ceiling on concurrent HTTPS sessions
                               #           INTERCEPTED session (listed client,
                               #           [https.interception]) is bounded by
                               #           fixed hyper limits set in code, not
-                              #           by hyper's defaults: h2 receive
-                              #           windows 256 KiB per connection and
-                              #           64 KiB per stream, 64 KiB send buffer
-                              #           PER STREAM, 64 concurrent streams, h1
-                              #           buffers 128 KiB — on BOTH the client
-                              #           and the origin side. Worst case per
-                              #           session, every stream stalled against
-                              #           a slow client: 64 x (64 + 16) KiB of
-                              #           response send buffers, ~5 MiB, plus
-                              #           the two 256 KiB receive windows —
-                              #           ~5.5 MiB; the same again only if 64
-                              #           uploads stall too. Typical is far
-                              #           below that: a send buffer fills only
-                              #           when the client stops reading. Plus
-                              #           two TLS sessions; bodies stream and
-                              #           are never held. A silent preconnect
-                              #           holds a permit for up to
+                              #           by hyper's defaults: 64 concurrent
+                              #           streams, h2 receive window 64 KiB per
+                              #           stream and 64 x 64 KiB = 4 MiB per
+                              #           connection (the connection window is
+                              #           derived from the other two so a few
+                              #           stalled streams cannot starve the
+                              #           rest), 64 KiB send buffer PER STREAM,
+                              #           h1 buffers 128 KiB — on BOTH the
+                              #           client and the origin side. These are
+                              #           flow-control CEILINGS, not a measured
+                              #           footprint: per leg they bound what a
+                              #           fully stalled session may hold at
+                              #           ~4 MiB of receive window plus the
+                              #           64 x 64 KiB send buffers; typical is
+                              #           far below, since a buffer fills only
+                              #           when the client stops reading. The
+                              #           observed per-session memory is
+                              #           measured on the device by p3-06 P3
+                              #           (docs/code-review/phase3/), which is
+                              #           the only authority for that figure.
+                              #           Plus two TLS sessions; bodies stream
+                              #           and are never held. A silent
+                              #           preconnect holds a permit for up to
                               #           hello_timeout_ms
 hello_timeout_ms = 10000      # boot    — deadline for a client to finish
                               #           sending its ClientHello, and the

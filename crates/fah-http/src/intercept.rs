@@ -35,8 +35,8 @@ use crate::tls::{certificate_error, connect_verified_upstream, negotiated, Alpn,
 const SCHEME: &str = "https";
 const UPSTREAM_CERT_FAILURE: u16 = 526;
 const H2_STREAM_WINDOW: u32 = 64 * 1024;
-const H2_CONNECTION_WINDOW: u32 = 256 * 1024;
 const H2_MAX_STREAMS: u32 = 64;
+const H2_CONNECTION_WINDOW: u32 = H2_MAX_STREAMS * H2_STREAM_WINDOW;
 const H2_SEND_BUF: usize = 64 * 1024;
 const H1_MAX_BUF: usize = 128 * 1024;
 

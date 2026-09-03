@@ -218,7 +218,7 @@ items are omitted — git has them. Still open:
 
 | id(s) | Issue | Status | Where |
 | --- | --- | --- | --- |
-| S1 | h2 limits (`H2_*`, 64 streams × 64 KiB send buffer, 256 KiB / 64 KiB windows) were set, not measured; worst case ≈ 5.5 MiB per stalled session, no per-leg cap | deferred | p3-06 review §Pre-declaration P3 (sole authority for the ceiling) |
+| S1 | h2 limits (`H2_*`, 64 streams × 64 KiB send buffer, 64 KiB stream window; connection window **4 MiB since 2026-09-03**, see S2 below) were set, not measured; the flow-control ceilings are per-leg bounds, not a measured footprint | deferred | p3-06 review §Pre-declaration P3 (sole authority for the observed per-session memory) |
 | L4 | an h2 session cut by the idle watchdog leaves its in-flight stream tasks and the upstream task alive until the origin answers or `hello_timeout`, outside `max_connections` | deferred | p3-06 review §Runbook 6 watch item (e): RSS must not trend with idle cuts |
 | L7 | a listed client loses ECH: the outer-SNI hello is terminated under the public name and the browser retries without ECH (documented, SECURITY.md) | deferred | p3-06 review §Runbook 2 step 6 (device check) |
 | N4 | prewarm-then-evict: the pre-warmed leaf can be evicted before `resolve` when > 512 first-sight hosts land inside one handshake; the handshake then aborts | deferred | p3-06 review §Runbook 6 watch item (c) (`unwarmed_misses` with a CA installed) |
@@ -234,3 +234,11 @@ items are omitted — git has them. Still open:
 | N5 | wall-clock assertion (`< 1 s` for 10 000 lookups) inside a correctness test | won't-fix | test hygiene; bench territory |
 
 **PASS WITH DEFERRED FINDINGS** — 14 open rows (8 deferred, 6 won't-fix). `AWAITING SOAK` until p3-06.
+
+### Fixed after consolidation — 2026-09-03, p3-06 smoke run F7
+
+| id | Issue | Root cause | Fix | Evidence |
+| --- | --- | --- | --- | --- |
+| S2 | with 64 intercepted h2 streams open and a few of them stalled by the client, every other stream on the session sat at `:status 200` with no body until the idle watchdog cut the session (the P3 "BLOCKED" state: control run 64/64, stall run 5/64) | head-of-line blocking through the relay's own flow control: `H2_CONNECTION_WINDOW` was 256 KiB against a 64 KiB `H2_STREAM_WINDOW` and 64 streams, so ≤ 4 stalled streams' unconsumed data filled the upstream connection window and the origin could send nothing for any stream the client *was* reading. The "clean end" the Node client reported was the watchdog tearing down the fully idle session | `H2_CONNECTION_WINDOW = H2_MAX_STREAMS × H2_STREAM_WINDOW` (4 MiB), both legs; stream window, stream count and send buffers unchanged. The idle-watchdog semantics stand as documented (L4) | `tests/interception.rs`: `sixty_four_stalled_h2_streams_all_receive_status_and_first_data_and_stay_open` (fails on the old constant: the drain deadlocks until the watchdog), `a_client_with_a_node_default_connection_window_still_gets_every_first_chunk_and_no_stream_is_ended`, `the_idle_watchdog_ends_a_fully_stalled_session_and_no_stream_is_left_pending` (cut surfaces as errors on all 64, never as delivered bodies). Not re-run through `p3-h2stall.mjs` in a container yet (smoke F22, environment) |
+
+Consequence for S1 / CONFIGURATION.md: the old "≈ 5.5 MiB per stalled session" text was a flow-control ceiling with the 256 KiB window; the ceilings are now ≈ 4 MiB of receive window plus the 64 × 64 KiB send buffers per leg. Neither number is a measurement — P3 on the device is the only authority for the observed per-session footprint.
