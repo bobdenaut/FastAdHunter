@@ -416,6 +416,21 @@ arm runs; the original block stays unedited.
     (smoke findings F17 / F26). D13's h1 seed is not the comparator for the
     DoH column; UDP and DoT columns, gate statistic and counts unchanged.
     Recorded before the first P4 run.
+13. **SNI invalidity rules and gate term (2026-09-03)** — declared: gate
+    "every attempt closed before any certificate — boolean", no §Invalidity
+    row for SNI. Now, as `p0-sni.mjs` implements it: (a) the allowed name
+    must reach ServerHello through the probe, else `INVALID` — a listener
+    that closes everything proves nothing about blocked rows; (b)
+    `listeners.https.blocked` must move by at least the blocked-attempt
+    count (attempts × 2 when `https.sni.no_sni = "block"`, × 1 when
+    `"pass"`), else `INVALID` — a close caused by a resolve failure is not
+    an SNI verdict (smoke F18); (c) the gate boolean covers the blocked and
+    the no-SNI attempts: every one `closed_silent` or `alert`, none reaching
+    ServerHello. Under `no_sni = "pass"` the no-SNI close is the listener
+    having nothing to splice to, not a rule verdict; it stays in the gate
+    because a certificate served on a hello without SNI is a finding under
+    either setting. Close latency stays diagnostic. Recorded before the
+    first SNI run.
 
 **Frozen at approval (2026-09-03).** The scripts implement this plan as
 written. A methodology change discovered while writing them is a new numbered

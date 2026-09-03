@@ -145,6 +145,13 @@ runs (PERFORMANCE.md §Measuring reliably). **Control arm:**
   P4 and P4-LAN describe one protocol on that transport (smoke findings
   F17 / F26). D13's HTTP/1.1 seed is not the comparator for the DoH column;
   UDP and DoT columns, gate statistic and counts unchanged.
+- **SNI invalidity rules and gate term (2026-09-03, testing-plan delta 13):**
+  `p0-sni.mjs` requires the allowed name to reach ServerHello and
+  `listeners.https.blocked` to move by the blocked-attempt count, else
+  `INVALID` (smoke F18: a resolve-failure close is not an SNI verdict); the
+  gate boolean covers blocked and no-SNI attempts, both closed before any
+  certificate. Close latency stays diagnostic; the gate statistic is
+  unchanged in kind.
 
 ## Measurements
 

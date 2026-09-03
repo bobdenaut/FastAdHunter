@@ -1,0 +1,16 @@
+image=fah-p4:f25-assert tip=761cc1c6f721-dirty platform=linux/amd64 docker-desktop finished=2026-09-03T20:01:40Z
+
+running 1 test
+FAH_E2E_BINARY override active: /fah-probe
+test per_query_latency_udp_vs_dot_vs_doh ... blocked-domain round trips from a loopback client, 3 rounds x 2000 sequential queries per transport, transports interleaved within each round
+round 1: p50 udp=53us dot=45us doh=127us; DoT handshake 517.597µs
+round 2: p50 udp=52us dot=43us doh=128us; DoT handshake 529.293µs
+round 3: p50 udp=53us dot=43us doh=128us; DoT handshake 621.139µs
+pooled over 3 rounds; DoT handshakes (excluded from per-query figures) [517.597µs, 529.293µs, 621.139µs]; DoH over Some(HTTP/2.0)
+udp        n=6000 min=23us p50=52us p90=58us p99=115us max=684us
+dot        n=6000 min=40us p50=44us p90=50us p99=110us max=382us
+doh-post   n=6000 min=96us p50=128us p90=153us p99=241us max=500us
+ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 1.54s
+
