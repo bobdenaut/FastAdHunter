@@ -127,8 +127,13 @@ async fn serve_connection<F: Forwarder>(
         Some(host) if tls.store.has_ca() => Some(host.to_owned()),
         _ => None,
     };
+    #[cfg(feature = "diag-timing")]
+    let mut diag = DiagTiming::at_sni();
     if let Some(host) = sni {
+        #[cfg(not(feature = "diag-timing"))]
         prewarm(&tls.store, host).await;
+        #[cfg(feature = "diag-timing")]
+        prewarm(&tls.store, host, &mut diag).await;
     }
     let mut stream = match timeout_at(deadline, start.into_stream(tls.config)).await {
         Ok(Ok(stream)) => stream,
@@ -141,21 +146,92 @@ async fn serve_connection<F: Forwarder>(
             return Ok(());
         }
     };
+    #[cfg(feature = "diag-timing")]
+    diag.emit(client);
     let served = tcp::handle_connection(&mut stream, pipeline, client.ip(), Transport::Dot).await;
     let _ = timeout(tcp::TCP_IDLE_TIMEOUT, stream.shutdown()).await;
     served
 }
 
-async fn prewarm(store: &Arc<CertStore>, host: String) {
+async fn prewarm(
+    store: &Arc<CertStore>,
+    host: String,
+    #[cfg(feature = "diag-timing")] diag: &mut DiagTiming,
+) {
     let store = Arc::clone(store);
     let logged = host.clone();
-    match tokio::task::spawn_blocking(move || store.prewarm(&host)).await {
+    #[cfg(feature = "diag-timing")]
+    let joined = {
+        diag.dispatching();
+        tokio::task::spawn_blocking(move || {
+            let entered = std::time::Instant::now();
+            let minted = store.prewarm(&host);
+            (minted, entered, std::time::Instant::now())
+        })
+        .await
+        .map(|(minted, entered, prewarmed)| {
+            diag.minted(entered, prewarmed);
+            minted
+        })
+    };
+    #[cfg(not(feature = "diag-timing"))]
+    let joined = tokio::task::spawn_blocking(move || store.prewarm(&host)).await;
+    match joined {
         Ok(Ok(_)) => {}
         Ok(Err(err)) => {
             debug!(host = %logged, error = %err, "DoT leaf not minted; serving the fallback certificate")
         }
         Err(err) => warn!(host = %logged, error = %err, "DoT leaf pre-warm task failed"),
     }
+}
+
+#[cfg(feature = "diag-timing")]
+struct DiagTiming {
+    sni_parsed: std::time::Instant,
+    dispatched: std::time::Instant,
+    entered: std::time::Instant,
+    prewarmed: std::time::Instant,
+}
+
+#[cfg(feature = "diag-timing")]
+impl DiagTiming {
+    fn at_sni() -> Self {
+        let now = std::time::Instant::now();
+        Self {
+            sni_parsed: now,
+            dispatched: now,
+            entered: now,
+            prewarmed: now,
+        }
+    }
+
+    fn dispatching(&mut self) {
+        self.dispatched = std::time::Instant::now();
+        self.entered = self.dispatched;
+        self.prewarmed = self.dispatched;
+    }
+
+    fn minted(&mut self, entered: std::time::Instant, prewarmed: std::time::Instant) {
+        self.entered = entered;
+        self.prewarmed = prewarmed;
+    }
+
+    fn emit(&self, client: SocketAddr) {
+        let handshaken = std::time::Instant::now();
+        tracing::info!(
+            client = %client,
+            sni_to_dispatch_us = micros_between(self.sni_parsed, self.dispatched),
+            dispatch_wait_us = micros_between(self.dispatched, self.entered),
+            prewarm_us = micros_between(self.entered, self.prewarmed),
+            handshake_after_prewarm_us = micros_between(self.prewarmed, handshaken),
+            "DoT first-sight timing"
+        );
+    }
+}
+
+#[cfg(feature = "diag-timing")]
+fn micros_between(from: std::time::Instant, to: std::time::Instant) -> u64 {
+    u64::try_from(to.duration_since(from).as_micros()).unwrap_or(u64::MAX)
 }
 
 #[cfg(test)]

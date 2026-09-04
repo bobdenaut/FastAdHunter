@@ -8,6 +8,15 @@ publish.workspace = true
 [lints]
 workspace = true
 
+# Diagnostic-only handshake timing on the DoT first-sight path (p3-06 P5):
+# one `tracing::info!` line per connection splitting SNI-to-dispatch, the
+# blocking-pool dispatch wait, the leaf pre-warm and the handshake after it,
+# in microseconds. Off by default and never enabled in a shipped build — the
+# Dockerfile does not pass it; only an explicit `--features diag-timing` (or
+# the test-only `--all-features`) turns it on.
+[features]
+diag-timing = []
+
 [dependencies]
 # L2 certificate machinery for the DoT listener (p3-05): the SNI-minting
 # resolver and the leaf cache it pre-warms on a handshake miss (ADR-0006).
