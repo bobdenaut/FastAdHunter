@@ -1,0 +1,92 @@
+{
+  "script": "p5",
+  "started_at": "2026-09-04T19:28:25.813Z",
+  "finished_at": "2026-09-04T19:28:28.783Z",
+  "tip": "a2d0802ddc55-dirty",
+  "probe": "172.17.0.4",
+  "probe_version": "0.3.1",
+  "host": {
+    "platform": "win32",
+    "idle": true,
+    "network": [
+      "Ethernet                Public"
+    ],
+    "busy": []
+  },
+  "args": {
+    "probe": "172.17.0.4",
+    "api-port": 8443,
+    "key": "<set>",
+    "out": "results-20260904T1928Z",
+    "tip": null,
+    "allow-busy": false,
+    "skip-host-checks": false,
+    "hosts": 256,
+    "seed": "20260904T192825Z",
+    "dot-port": 853,
+    "timeout": 10000
+  },
+  "valid": true,
+  "status": "valid",
+  "degraded_reasons": [],
+  "measurement": "P5",
+  "hosts": 256,
+  "seed": "20260904t192825z",
+  "figures": {
+    "first-sight": {
+      "n": 256,
+      "min": 1.861,
+      "p50": 3.322,
+      "p99": 5.753,
+      "max": 5.935,
+      "mean": 3.558,
+      "served_issuer": "FastAdHunter CA"
+    },
+    "repeat": {
+      "n": 256,
+      "min": 1.204,
+      "p50": 1.933,
+      "p99": 3.779,
+      "max": 3.884,
+      "mean": 1.947,
+      "served_issuer": "FastAdHunter CA"
+    },
+    "counters_delta": {
+      "minted_total": 256,
+      "unwarmed_misses": 0,
+      "evictions": 0,
+      "superseded": 0,
+      "prewarm_hits": 256,
+      "size": 256
+    }
+  },
+  "leaf_cache_before": {
+    "size": 1,
+    "capacity": 512,
+    "inflight": 0,
+    "hits": 3,
+    "unwarmed_misses": 0,
+    "prewarm_hits": 2,
+    "coalesced": 0,
+    "minted_total": 1,
+    "evictions": 0,
+    "superseded": 0
+  },
+  "leaf_cache_after": {
+    "size": 257,
+    "capacity": 512,
+    "inflight": 0,
+    "hits": 515,
+    "unwarmed_misses": 0,
+    "prewarm_hits": 258,
+    "coalesced": 0,
+    "minted_total": 257,
+    "evictions": 0,
+    "superseded": 0
+  },
+  "gate": {
+    "statistic": "p50(first-sight) - p50(repeat) < 1 ms (incremental p50 estimate of mint + insert)",
+    "value_ms": 1.389,
+    "pass": false
+  }
+}

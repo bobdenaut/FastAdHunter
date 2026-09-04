@@ -1,0 +1,95 @@
+# syntax=docker/dockerfile:1
+#
+# Dockerfile.bench - the on-device criterion diagnostics D5 / D6 / D7 / D8 / D9
+# for p3-06 (review file §Measurements; Runbook 5 "cross-compile the criterion
+# bench binaries for aarch64-unknown-linux-musl").
+#
+# These are DIAGNOSTICS, not acceptance figures. The review file is explicit:
+# the cross-compiled proxy / intercept binaries have no verdict, no DNS
+# resolution and no veth hop, and their loopback origins cannot be verified by
+# a release build. The acceptance arms for the same quantities are P2
+# (handshake, LAN, three arms) and P1-LAN (splice throughput). Nothing measured
+# from this image closes those.
+#
+# Four bench binaries in ONE image. /container/add takes entrypoint= and cmd=,
+# so the same image runs four times under four process names - one QEMU build
+# instead of four, and the naming rule (plan §Scope) still holds because no
+# process is ever called `fastadhunter`:
+#
+#   /fah-proxy      fah-http   proxy       D6 / D7  pass-through, opaque body, splice
+#   /fah-intercept  fah-http   intercept   D8 / D9  terminate leg, handshake
+#   /fah-matcher    fah-rules  matcher     D5       matcher_lookup, synthetic domains
+#   /fah-urlm       fah-rules  url_matcher          URL tier, real corpus (below)
+#   /fah-certs      fah-certs  certs       D11      certs_mint, cache_hit, prewarm_warm
+#
+# Corpus. url_matcher reads FAH_URL_CORPUS (';'-separated paths) and falls back
+# to a synthetic corpus when it is unset or empty. measurement-traps.md: "A
+# synthetic URL corpus can contain 0 unindexed rules and hide a real-corpus
+# regression entirely." The deployed list set is baked in at /corpus and
+# FAH_URL_CORPUS points at it; an envlist setting FAH_URL_CORPUS="" selects
+# synthetic instead. matcher (D5) uses its own synthetic domains, as the x86
+# run recorded in the review file did - no corpus needed for comparability.
+#
+# Criterion needs a writable cwd (plan §Traps). CRITERION_HOME points at /tmp
+# in the container's own writable layer; results are read from the container
+# log, so nothing has to survive /container/remove.
+#
+# Run criterion at DEFAULT warm-up and measurement time. Shortening either
+# makes the ARM figures incomparable with the x86 ones already recorded, which
+# is the whole reason for running them here.
+#
+# Build from the repo root:
+#
+#   docker buildx build --platform linux/arm64 \
+#     -f docs/code-review/phase3/p3-06-probe/Dockerfile.bench \
+#     -t fah-bench:<tip> -o type=docker,dest=fah-bench-<tip>-arm64.tar .
+#   # then the skopeo docker-archive conversion as in build-arm64.sh
+#
+# Router side - proposed, owner runs, ONE binary per add (veth3 carries one
+# container at a time, so fah-probe stops for the duration). These saturate all
+# four cores for minutes at a time and the live resolver shares them: pick the
+# window deliberately.
+#
+#   /container/stop [find comment="fah-probe"]
+#   /container/add file=kingston/fah-bench-<tip>-rosready.tar interface=veth3 \
+#     root-dir=/kingston/benchd/root entrypoint="/fah-proxy" cmd="--bench" \
+#     logging=yes start-on-boot=no comment="fah-bench"
+#   /container/start [find comment="fah-bench"]
+#   /tool/profile cpu=all duration=30s        (read-only, during the run)
+#   /log print where topics~"container"
+#   /container/remove [find comment="fah-bench"]
+#   ... repeat with entrypoint="/fah-intercept", "/fah-matcher", "/fah-urlm"
+#   /container/start [find comment="fah-probe"]
+
+FROM rust:1.96.0-alpine AS builder
+
+RUN apk add --no-cache musl-dev
+
+WORKDIR /build
+COPY Cargo.toml Cargo.lock rust-toolchain.toml ./
+COPY crates ./crates
+COPY tui-monitor ./tui-monitor
+
+RUN cargo build --release --locked -p fah-http --bench proxy --bench intercept \
+    && cargo build --release --locked -p fah-rules --bench matcher --bench url_matcher \
+    && cargo build --release --locked -p fah-certs --bench certs \
+    && for pair in "proxy fah-proxy" "intercept fah-intercept" "matcher fah-matcher" "url_matcher fah-urlm" "certs fah-certs"; do \
+         set -- $pair; \
+         cp "$(find /build/target/release/deps -maxdepth 1 -type f -name "$1-*" ! -name '*.d' | head -n 1)" "/$2"; \
+         test -x "/$2"; \
+       done
+
+FROM gcr.io/distroless/static-debian12:nonroot
+
+COPY --from=builder /fah-proxy /fah-proxy
+COPY --from=builder /fah-intercept /fah-intercept
+COPY --from=builder /fah-matcher /fah-matcher
+COPY --from=builder /fah-urlm /fah-urlm
+COPY --from=builder /fah-certs /fah-certs
+COPY .probe-corpus/deployed /corpus
+
+USER 0:0
+ENV CRITERION_HOME=/tmp/criterion
+ENV FAH_URL_CORPUS="/corpus/big.oisd.nl.raw;/corpus/filter_1.raw;/corpus/filter_18.raw;/corpus/filter_30.raw"
+
+ENTRYPOINT ["/fah-matcher", "--bench"]

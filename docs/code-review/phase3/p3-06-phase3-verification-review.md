@@ -303,7 +303,41 @@ working set (Windows `tasklist`, test build, Windows heap, rules = two user
 rules, CA + one minted leaf). Diagnostic only; the ≤ 128 MB row is
 re-affirmed by P7.
 
-### Proposed PERFORMANCE.md rows (owner decides; on-device column stays `TBD — must be measured during verification`)
+### On-device campaign, 2026-09-04 — figures live in `p3-06-testing-results.md`
+
+Everything above this line is x86. The first on-device figures for this task
+were taken on 2026-09-04 against `a2d0802` on the RB5009, driven from bobdenaut;
+they are recorded in
+[p3-06-testing-results.md](p3-06-testing-results.md), one section per
+measurement ID, and are **not** duplicated here.
+
+| Section | Result |
+| --- | --- |
+| [SNI](p3-06-testing-results.md#sni) | pass — every blocked and no-SNI attempt closed before a certificate |
+| [P1-loopback](p3-06-testing-results.md#p1-loopback) | no pick; the CPU axis is missing (the sweep outran no profile window) and the owner owes a buffer-budget decision |
+| [P4](p3-06-testing-results.md#p4) | sets the row: DoT +61 µs, DoH +915 µs |
+| [P4-LAN](p3-06-testing-results.md#p4-lan) | diagnostic; its DoH figure is less than half P4's and owes an attribution |
+| [P5](p3-06-testing-results.md#p5) | **FAIL** — 1.389 ms incremental against < 1 ms |
+| [D11-on-device](p3-06-testing-results.md#d11-on-device--certs-criterion-suite-on-the-rb5009) | **PASS** — `certs_mint` 450.88 µs, inside the < 1 ms row |
+| [P5-conc](p3-06-testing-results.md#p5-conc--diagnostic-p5-path-segmentation-by-concurrency) | diagnostic — P5's incremental reproduces at ~1.29 ms; 8× concurrency removes ~0.26 ms, bounding the concurrency-sensitive component without identifying it; ~0.6 ms unattributed |
+| [P5-diag](p3-06-testing-results.md#p5-diag--diagnostic-listener-side-segmentation-of-the-p5-gap) | diagnostic — listener-side timestamps reconcile P5 to 3 %: `dispatch_wait` +4.5 µs (refutes the `spawn_blocking` hypothesis), `prewarm` +940.5 µs, `handshake_after_prewarm` +647 µs (cause not identified) |
+| [P6](p3-06-testing-results.md#p6) | pass — 4.937 ms generate, 6.015 ms import |
+| [P7-store](p3-06-testing-results.md#p7-store) | pass — no key material over the API, traversal list clean |
+| [P8-probe](p3-06-testing-results.md#p8-probe) | diagnostic — the rename works, `fah-probe` is never summed with `fastadhunter` |
+| [P9-probe](p3-06-testing-results.md#p9-probe) | diagnostic — ~0.18 s boot-to-serving, a lower bound |
+
+**Two certificate results that must not be conflated.** Mint performance on
+target hardware **passes**; P5's LAN-observed incremental cost **fails**. The
+~0.94 ms between them is explained by neither the crypto nor the budget, and the
+next step on P5 is segmenting its path, not changing `fah-certs`. Any reading of
+this file that still attributes P5 to "minting is too slow" is superseded by
+D11-on-device.
+
+**P1-LAN, P1-control, P2 and P3 were not run** — no second LAN endpoint, and for
+P3 no h2 origin under a public name with a publicly trusted certificate. Their
+`TBD` rows below stand.
+
+### Proposed PERFORMANCE.md rows (owner decides; on-device column carries a figure only where the 2026-09-04 campaign measured one)
 
 | Metric | Proposed budget | Dev-box figure (this file) | On-device |
 | --- | --- | --- | --- |
@@ -312,9 +346,9 @@ re-affirmed by P7.
 | **HTTPS** interception handshake overhead vs splice | intercepted p50 ≤ 2 × spliced p50 | within intervals of each other unpinned (D8); 1.5–2.2× pinned to four cores (§Post-review work C) | TBD — P2 |
 | **HTTPS** intercepted h2 relay | ≥ 50 MiB/s | 481–485 MiB/s (D9, unpinned); 571–620 MiB/s pinned to four cores | TBD — P3 |
 | Minted-leaf cache hit rate, browsing load | ≥ 90 % (real replay decides) | **none** — D12 is synthetic (a property of `ZIPF_HOSTS = 4096`, not of browsing) and is not evidence for this row (MA-7) | TBD — soak: `leaf_cache.prewarm_hits / (prewarm_hits + minted_total)` on the listed device over 24 h; the `https-sni` domain list is the corpus for a 7-day replay |
-| **DoT** / **DoH** added latency vs UDP, p50 | TBD — must be measured during verification (P4 sets it; TLS/HTTP legs do not convert) | +17 µs / +130 µs loopback (D13) | TBD — P4 |
-| Cold `prewarm` per first-sight host (whole path, not raw keygen) | < 1 ms | 53.5 µs (D11) ⇒ ≈ 0.48 ms by the ×9 factor (CPU-bound, converts) | TBD — P5 |
-| CA generate / API-pair import wall time | < 100 ms / < 50 ms | ≈ 2 ms / ≈ 1.4 ms (p3-02, debug) | TBD — P6 |
+| **DoT** / **DoH** added latency vs UDP, p50 | TBD — must be measured during verification (P4 sets it; TLS/HTTP legs do not convert) | +17 µs / +130 µs loopback (D13) | **DoT +61 µs, DoH +915 µs** (P4, 2026-09-04, in-device harness). The DoH figure is contested by P4-LAN's +427 µs and owes an attribution before it is written into PERFORMANCE.md |
+| Cold `prewarm` per first-sight host (whole path, not raw keygen) | < 1 ms | 53.5 µs (D11) ⇒ ≈ 0.48 ms by the ×9 factor (CPU-bound, converts) | **450.88 µs** (D11-on-device, 2026-09-04) — inside the row, and 8.4× the dev box, so the ×9 prediction of ≈ 0.48 ms was right. **P5's end-to-end arm fails the same row at 1.389 ms**; the two are different measurements and both are recorded |
+| CA generate / API-pair import wall time | < 100 ms / < 50 ms | ≈ 2 ms / ≈ 1.4 ms (p3-02, debug) | **4.937 ms / 6.015 ms** (P6, 2026-09-04) — both inside the row |
 | RAM steady-state, full mode | ≤ 128 MB (existing row, re-affirmed) | 46.1 MiB test build (D14) | TBD — P7 (household browsing; the 64-stream intercepted-session ceiling is P3's question, not this row's — MA-10) |
 
 ## Implementation Summary

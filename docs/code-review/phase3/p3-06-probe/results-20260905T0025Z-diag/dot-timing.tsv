@@ -1,0 +1,73 @@
+# P5-diag - per-connection intervals emitted by fah-dns::dot under the diag-timing
+# feature, container fah-probediag on the RB5009, 2026-09-05 00:23:01 local (UTC+3).
+# 32 first-sight then 32 repeat DoT handshakes, --conc 1, --hosts 32.
+#
+# TRANSCRIBED from `/log print where message~"first-sight timing"`. The RouterOS
+# console wrapped every line mid-field, so this is a transcription of the four
+# numeric fields per row, not a byte-for-byte capture. sni_to_dispatch_us was 0
+# on all 64 rows and is omitted.
+arm	dispatch_wait_us	prewarm_us	handshake_after_prewarm_us
+first-sight	40	2227	2915
+first-sight	52	953	2534
+first-sight	38	973	2969
+first-sight	54	955	2391
+first-sight	44	983	2433
+first-sight	34	513	2141
+first-sight	46	522	3489
+first-sight	39	521	2078
+first-sight	45	625	3507
+first-sight	38	669	2738
+first-sight	51	1233	2614
+first-sight	72	1224	2272
+first-sight	72	953	2211
+first-sight	70	943	2244
+first-sight	72	944	1608
+first-sight	38	623	1479
+first-sight	38	624	1669
+first-sight	40	617	1491
+first-sight	40	616	1602
+first-sight	37	700	1559
+first-sight	38	730	1536
+first-sight	38	518	2392
+first-sight	72	942	2430
+first-sight	76	947	2288
+first-sight	65	1067	2223
+first-sight	73	945	2287
+first-sight	72	938	2578
+first-sight	73	1026	3957
+first-sight	54	947	4578
+first-sight	56	1052	3807
+first-sight	73	966	2627
+first-sight	76	1159	2570
+repeat	34	4	1917
+repeat	40	4	1743
+repeat	37	3	1746
+repeat	35	3	1688
+repeat	47	4	1903
+repeat	39	4	1695
+repeat	147	9	3936
+repeat	130	8	4044
+repeat	120	8	4142
+repeat	131	9	3374
+repeat	40	4	1548
+repeat	36	4	1641
+repeat	46	4	1654
+repeat	60	4	1653
+repeat	47	3	1531
+repeat	48	4	1606
+repeat	39	4	1622
+repeat	47	3	1815
+repeat	47	4	1543
+repeat	38	4	1546
+repeat	49	4	3413
+repeat	47	5	1581
+repeat	45	4	1649
+repeat	47	4	1556
+repeat	49	4	1647
+repeat	73	6	1930
+repeat	73	5	2336
+repeat	69	5	2353
+repeat	73	5	2406
+repeat	72	5	2348
+repeat	128	5	2291
+repeat	128	5	2638

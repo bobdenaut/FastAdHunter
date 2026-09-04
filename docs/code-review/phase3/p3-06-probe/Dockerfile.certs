@@ -1,0 +1,66 @@
+# syntax=docker/dockerfile:1
+#
+# Dockerfile.certs - the on-device certs_mint diagnostic (plan §Measurements
+# row P5: "On-device certs_mint (criterion) is the diagnostic beside it").
+#
+# Why it exists: P5 measured 1.389 ms incremental mint + insert over the LAN
+# (difference of DoT handshake medians, first-sight minus repeat) against a
+# < 1 ms budget. That budget came from the dev box's 53.64 us for the same
+# quantity, converted with the ~9x x86 -> RB5009 factor. The device says 25.9x,
+# not 9x. This image runs criterion's certs_mint - the same
+# CertStore::prewarm path, in-process, no network, no spawn_blocking - so the
+# LAN figure has an independent instrument beside it.
+#
+# crates/fah-certs/benches/certs.rs rotates 4096 hosts against a 512-entry
+# cache, so every iteration mints and the eviction scan is inside the sample.
+#
+# Names (plan §Scripts naming table): the process is /fah-certs, never
+# `fastadhunter`, so /tool/profile cpu=all lists it apart from the live
+# resolver. 9 characters, under the 15-char comm truncation.
+#
+# Criterion needs a writable cwd (docs/routeros-traps.md / plan §Traps: "bench
+# aborts before printing"). Rather than a mount, CRITERION_HOME points at /tmp
+# inside the container's own writable layer - the results are read from the
+# container log, not from disk, so nothing has to survive /container/remove.
+#
+# Build from the repo root:
+#
+#   docker buildx build --platform linux/arm64 \
+#     -f docs/code-review/phase3/p3-06-probe/Dockerfile.certs \
+#     -t fah-certs:<tip> -o type=docker,dest=fah-certs-<tip>-arm64.tar .
+#   # then the skopeo docker-archive conversion as in build-arm64.sh
+#
+# Dev box comparison run: cargo bench -p fah-certs --bench certs
+#
+# Router side - proposed, owner runs (veth3 carries one container at a time,
+# so fah-probe stops for the duration):
+#   /container/stop [find comment="fah-probe"]
+#   /container/add file=kingston/fah-certs-<tip>-rosready.tar interface=veth3 \
+#     root-dir=/kingston/certsbench/root logging=yes start-on-boot=no \
+#     comment="fah-certs"
+#   /container/start [find comment="fah-certs"]
+#   /log print where topics~"container"
+#   /container/remove [find comment="fah-certs"]
+#   /container/start [find comment="fah-probe"]
+
+FROM rust:1.96.0-alpine AS builder
+
+RUN apk add --no-cache musl-dev
+
+WORKDIR /build
+COPY Cargo.toml Cargo.lock rust-toolchain.toml ./
+COPY crates ./crates
+COPY tui-monitor ./tui-monitor
+
+RUN cargo build --release --locked -p fah-certs --bench certs \
+    && cp "$(find /build/target/release/deps -maxdepth 1 -type f -name 'certs-*' ! -name '*.d' | head -n 1)" /fah-certs \
+    && test -x /fah-certs
+
+FROM gcr.io/distroless/static-debian12:nonroot
+
+COPY --from=builder /fah-certs /fah-certs
+
+USER 0:0
+ENV CRITERION_HOME=/tmp/criterion
+
+ENTRYPOINT ["/fah-certs", "--bench"]

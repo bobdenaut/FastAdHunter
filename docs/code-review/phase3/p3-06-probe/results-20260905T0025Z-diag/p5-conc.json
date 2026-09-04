@@ -1,0 +1,95 @@
+{
+  "script": "p5-conc",
+  "started_at": "2026-09-04T21:23:00.563Z",
+  "finished_at": "2026-09-04T21:23:01.745Z",
+  "tip": "a2d0802ddc55-dirty",
+  "probe": "172.17.0.4",
+  "probe_version": "0.3.1",
+  "host": {
+    "platform": "win32",
+    "idle": true,
+    "network": [
+      "Ethernet                Public"
+    ],
+    "busy": []
+  },
+  "args": {
+    "probe": "172.17.0.4",
+    "api-port": 8443,
+    "key": "<set>",
+    "out": "results-20260905T0025Z-diag",
+    "tip": null,
+    "allow-busy": true,
+    "skip-host-checks": false,
+    "hosts": 32,
+    "conc": 1,
+    "seed": "20260904T212300Z",
+    "dot-port": 853,
+    "timeout": 10000
+  },
+  "valid": true,
+  "status": "valid",
+  "degraded_reasons": [],
+  "measurement": "P5-conc (diagnostic)",
+  "hosts": 32,
+  "conc": 1,
+  "seed": "20260904t212300z",
+  "figures": {
+    "first-sight": {
+      "n": 32,
+      "min": 2.045,
+      "p50": 3.196,
+      "p99": 5.366,
+      "max": 5.366,
+      "mean": 3.293,
+      "wall_ms": 142.571,
+      "handshakes_per_s": 224.45
+    },
+    "repeat": {
+      "n": 32,
+      "min": 1.446,
+      "p50": 1.651,
+      "p99": 4.925,
+      "max": 4.925,
+      "mean": 2.104,
+      "wall_ms": 100.685,
+      "handshakes_per_s": 317.823
+    },
+    "incremental_p50_ms": 1.545,
+    "counters_delta": {
+      "minted_total": 32,
+      "unwarmed_misses": 0,
+      "evictions": 0,
+      "prewarm_hits": 32
+    }
+  },
+  "leaf_cache_before": {
+    "size": 32,
+    "capacity": 512,
+    "inflight": 0,
+    "hits": 64,
+    "unwarmed_misses": 0,
+    "prewarm_hits": 32,
+    "coalesced": 0,
+    "minted_total": 32,
+    "evictions": 0,
+    "superseded": 0
+  },
+  "leaf_cache_after": {
+    "size": 64,
+    "capacity": 512,
+    "inflight": 0,
+    "hits": 128,
+    "unwarmed_misses": 0,
+    "prewarm_hits": 64,
+    "coalesced": 0,
+    "minted_total": 64,
+    "evictions": 0,
+    "superseded": 0
+  },
+  "gate": {
+    "statistic": "none — diagnostic (P5 path segmentation)",
+    "incremental_p50_ms": 1.545,
+    "conc": 1
+  }
+}

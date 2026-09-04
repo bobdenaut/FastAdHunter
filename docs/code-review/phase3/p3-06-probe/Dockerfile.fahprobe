@@ -53,6 +53,7 @@ RUN npm run build && mkdir -p /web && cp -R dist/. /web/
 FROM rust:1.96.0-alpine AS builder
 
 ARG SPLICE_BUF_KIB=16
+ARG CARGO_FEATURES=
 
 RUN apk add --no-cache musl-dev
 
@@ -65,7 +66,7 @@ RUN sed -i -E "s/^const SPLICE_BUF: usize = [0-9]+ \* 1024;/const SPLICE_BUF: us
     && grep -q "^const SPLICE_BUF: usize = ${SPLICE_BUF_KIB} \* 1024;" crates/fah-http/src/https.rs \
     && echo "SPLICE_BUF = ${SPLICE_BUF_KIB} KiB"
 
-RUN cargo build --release --locked -p fastadhunter
+RUN cargo build --release --locked -p fastadhunter ${CARGO_FEATURES}
 
 RUN mkdir -p /seed/config /seed/data
 

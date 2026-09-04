@@ -1,0 +1,95 @@
+{
+  "script": "p5-conc",
+  "started_at": "2026-09-04T20:28:46.935Z",
+  "finished_at": "2026-09-04T20:28:51.250Z",
+  "tip": "a2d0802ddc55-dirty",
+  "probe": "172.17.0.4",
+  "probe_version": "0.3.1",
+  "host": {
+    "platform": "win32",
+    "idle": true,
+    "network": [
+      "Ethernet                Public"
+    ],
+    "busy": []
+  },
+  "args": {
+    "probe": "172.17.0.4",
+    "api-port": 8443,
+    "key": "<set>",
+    "out": "results-20260904T2030Z-conc",
+    "tip": null,
+    "allow-busy": false,
+    "skip-host-checks": false,
+    "hosts": 256,
+    "conc": 1,
+    "seed": "20260904T202846Z",
+    "dot-port": 853,
+    "timeout": 10000
+  },
+  "valid": true,
+  "status": "valid",
+  "degraded_reasons": [],
+  "measurement": "P5-conc (diagnostic)",
+  "hosts": 256,
+  "conc": 1,
+  "seed": "20260904t202846z",
+  "figures": {
+    "first-sight": {
+      "n": 256,
+      "min": 1.846,
+      "p50": 3.699,
+      "p99": 6.837,
+      "max": 7.069,
+      "mean": 3.944,
+      "wall_ms": 1511.723,
+      "handshakes_per_s": 169.343
+    },
+    "repeat": {
+      "n": 256,
+      "min": 1.342,
+      "p50": 2.378,
+      "p99": 4.548,
+      "max": 5.316,
+      "mean": 2.673,
+      "wall_ms": 1204.164,
+      "handshakes_per_s": 212.596
+    },
+    "incremental_p50_ms": 1.321,
+    "counters_delta": {
+      "minted_total": 256,
+      "unwarmed_misses": 0,
+      "evictions": 0,
+      "prewarm_hits": 256
+    }
+  },
+  "leaf_cache_before": {
+    "size": 0,
+    "capacity": 512,
+    "inflight": 0,
+    "hits": 0,
+    "unwarmed_misses": 0,
+    "prewarm_hits": 0,
+    "coalesced": 0,
+    "minted_total": 0,
+    "evictions": 0,
+    "superseded": 0
+  },
+  "leaf_cache_after": {
+    "size": 256,
+    "capacity": 512,
+    "inflight": 0,
+    "hits": 512,
+    "unwarmed_misses": 0,
+    "prewarm_hits": 256,
+    "coalesced": 0,
+    "minted_total": 256,
+    "evictions": 0,
+    "superseded": 0
+  },
+  "gate": {
+    "statistic": "none — diagnostic (P5 path segmentation)",
+    "incremental_p50_ms": 1.321,
+    "conc": 1
+  }
+}

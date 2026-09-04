@@ -1,0 +1,95 @@
+{
+  "script": "p5-conc",
+  "started_at": "2026-09-04T20:29:07.011Z",
+  "finished_at": "2026-09-04T20:29:08.724Z",
+  "tip": "a2d0802ddc55-dirty",
+  "probe": "172.17.0.4",
+  "probe_version": "0.3.1",
+  "host": {
+    "platform": "win32",
+    "idle": true,
+    "network": [
+      "Ethernet                Public"
+    ],
+    "busy": []
+  },
+  "args": {
+    "probe": "172.17.0.4",
+    "api-port": 8443,
+    "key": "<set>",
+    "out": "results-20260904T2030Z-conc8",
+    "tip": null,
+    "allow-busy": false,
+    "skip-host-checks": false,
+    "hosts": 256,
+    "conc": 8,
+    "seed": "20260904T202907Z",
+    "dot-port": 853,
+    "timeout": 10000
+  },
+  "valid": true,
+  "status": "valid",
+  "degraded_reasons": [],
+  "measurement": "P5-conc (diagnostic)",
+  "hosts": 256,
+  "conc": 8,
+  "seed": "20260904t202907z",
+  "figures": {
+    "first-sight": {
+      "n": 256,
+      "min": 2.568,
+      "p50": 5.794,
+      "p99": 13.378,
+      "max": 16.356,
+      "mean": 6.328,
+      "wall_ms": 340.309,
+      "handshakes_per_s": 752.258
+    },
+    "repeat": {
+      "n": 256,
+      "min": 1.661,
+      "p50": 4.763,
+      "p99": 12.476,
+      "max": 13.525,
+      "mean": 5.001,
+      "wall_ms": 296.799,
+      "handshakes_per_s": 862.537
+    },
+    "incremental_p50_ms": 1.031,
+    "counters_delta": {
+      "minted_total": 256,
+      "unwarmed_misses": 0,
+      "evictions": 0,
+      "prewarm_hits": 256
+    }
+  },
+  "leaf_cache_before": {
+    "size": 0,
+    "capacity": 512,
+    "inflight": 0,
+    "hits": 512,
+    "unwarmed_misses": 0,
+    "prewarm_hits": 256,
+    "coalesced": 0,
+    "minted_total": 256,
+    "evictions": 0,
+    "superseded": 0
+  },
+  "leaf_cache_after": {
+    "size": 256,
+    "capacity": 512,
+    "inflight": 0,
+    "hits": 1024,
+    "unwarmed_misses": 0,
+    "prewarm_hits": 512,
+    "coalesced": 0,
+    "minted_total": 512,
+    "evictions": 0,
+    "superseded": 0
+  },
+  "gate": {
+    "statistic": "none — diagnostic (P5 path segmentation)",
+    "incremental_p50_ms": 1.031,
+    "conc": 8
+  }
+}

@@ -1,0 +1,143 @@
+{
+  "script": "p4-lan",
+  "started_at": "2026-09-04T19:25:31.397Z",
+  "finished_at": "2026-09-04T19:25:46.983Z",
+  "tip": "a2d0802ddc55-dirty",
+  "probe": "172.17.0.4",
+  "probe_version": "0.3.1",
+  "host": {
+    "platform": "win32",
+    "idle": true,
+    "network": [
+      "Ethernet                Public"
+    ],
+    "busy": []
+  },
+  "args": {
+    "probe": "172.17.0.4",
+    "api-port": 8443,
+    "key": "<set>",
+    "out": "results-20260904T1925Z",
+    "tip": null,
+    "allow-busy": false,
+    "skip-host-checks": false,
+    "domain": "analytics.google.com",
+    "dot-host": "dns.fah.test",
+    "dns-port": 53,
+    "dot-port": 853,
+    "queries": 2000,
+    "rounds": 3,
+    "timeout": 2000
+  },
+  "valid": true,
+  "status": "valid",
+  "degraded_reasons": [],
+  "measurement": "P4-LAN",
+  "domain": "analytics.google.com",
+  "dot_host": "dns.fah.test",
+  "figures": {
+    "udp": {
+      "label": "P4-LAN (LAN hop + one handshake per batch inside; diagnostic, not the row)",
+      "n": 6000,
+      "min": 0.188,
+      "p50": 0.334,
+      "p99": 0.637,
+      "max": 4.48,
+      "mean": 0.358,
+      "per_round_p50": [
+        0.34,
+        0.305,
+        0.343
+      ],
+      "unanswered": 0,
+      "unmatched": 0,
+      "batch_wall_ms_mean": 734.39,
+      "handshake_ms": [
+        null,
+        null,
+        null
+      ],
+      "protocol": "udp",
+      "served_issuer": [
+        null
+      ],
+      "first_answer": {
+        "rcode": 0,
+        "answers": [
+          "0.0.0.0"
+        ]
+      }
+    },
+    "dot": {
+      "label": "P4-LAN (LAN hop + one handshake per batch inside; diagnostic, not the row)",
+      "n": 6000,
+      "min": 0.25,
+      "p50": 0.405,
+      "p99": 0.728,
+      "max": 6.391,
+      "mean": 0.429,
+      "per_round_p50": [
+        0.405,
+        0.407,
+        0.403
+      ],
+      "unanswered": 0,
+      "unmatched": 0,
+      "batch_wall_ms_mean": 903.125,
+      "handshake_ms": [
+        12.077,
+        7.457,
+        7.478
+      ],
+      "protocol": "tls TLSv1.3",
+      "served_issuer": [
+        "FastAdHunter CA"
+      ],
+      "first_answer": {
+        "rcode": 0,
+        "answers": [
+          "0.0.0.0"
+        ]
+      },
+      "p50_minus_udp_p50": 0.071
+    },
+    "doh": {
+      "label": "P4-LAN (LAN hop + one handshake per batch inside; diagnostic, not the row)",
+      "n": 6000,
+      "min": 0.408,
+      "p50": 0.761,
+      "p99": 1.337,
+      "max": 57.629,
+      "mean": 0.839,
+      "per_round_p50": [
+        0.79,
+        0.755,
+        0.748
+      ],
+      "unanswered": 0,
+      "unmatched": 0,
+      "batch_wall_ms_mean": 1702.922,
+      "handshake_ms": [
+        13.386,
+        6.933,
+        6.067
+      ],
+      "protocol": "doh over h2",
+      "served_issuer": [
+        "FastAdHunter"
+      ],
+      "first_answer": {
+        "rcode": 0,
+        "answers": [
+          "0.0.0.0"
+        ]
+      },
+      "p50_minus_udp_p50": 0.427
+    }
+  },
+  "gate": {
+    "statistic": "none — diagnostic",
+    "dot_p50_minus_udp_p50_ms": 0.071,
+    "doh_p50_minus_udp_p50_ms": 0.427
+  }
+}

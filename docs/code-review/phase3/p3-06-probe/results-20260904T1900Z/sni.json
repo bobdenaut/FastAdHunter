@@ -1,0 +1,319 @@
+{
+  "script": "sni",
+  "started_at": "2026-09-04T19:00:03.016Z",
+  "finished_at": "2026-09-04T19:00:04.552Z",
+  "tip": "a2d0802ddc55-dirty",
+  "probe": "172.17.0.4",
+  "probe_version": "0.3.1",
+  "host": {
+    "platform": "win32",
+    "idle": true,
+    "network": [
+      "Ethernet                Public"
+    ],
+    "busy": []
+  },
+  "args": {
+    "probe": "172.17.0.4",
+    "api-port": 8443,
+    "key": "<set>",
+    "out": "results-20260904T1900Z",
+    "tip": null,
+    "allow-busy": false,
+    "skip-host-checks": false,
+    "blocked": "analytics.google.com",
+    "allowed": "example.com",
+    "port": 8444,
+    "attempts": 5,
+    "timeout": 5000
+  },
+  "valid": true,
+  "status": "valid",
+  "degraded_reasons": [],
+  "measurement": "SNI",
+  "no_sni_setting": "pass",
+  "figures": {
+    "blocked": {
+      "n": 5,
+      "outcomes": {
+        "closed_silent": 5
+      },
+      "closed_before_certificate": true,
+      "close_ms": {
+        "n": 5,
+        "min": 0.89,
+        "p50": 1.443,
+        "p99": 1.74,
+        "max": 1.74,
+        "mean": 1.395
+      }
+    },
+    "allowed": {
+      "n": 5,
+      "outcomes": {
+        "server_hello": 5
+      },
+      "closed_before_certificate": false,
+      "close_ms": {
+        "n": 5,
+        "min": 18.805,
+        "p50": 24.009,
+        "p99": 38.366,
+        "max": 38.366,
+        "mean": 26.579
+      }
+    },
+    "no_sni": {
+      "n": 5,
+      "outcomes": {
+        "closed_silent": 5
+      },
+      "closed_before_certificate": true,
+      "close_ms": {
+        "n": 5,
+        "min": 0.955,
+        "p50": 1.646,
+        "p99": 2.266,
+        "max": 2.266,
+        "mean": 1.537
+      }
+    }
+  },
+  "telemetry_delta": {
+    "connections": 15,
+    "requests": 15,
+    "blocked": 5,
+    "refused_claim": 0,
+    "refused_destination": 0,
+    "resolve_failures": 0,
+    "upstream_failures": 0,
+    "upstream_cert_failures": 0,
+    "non_http": 0,
+    "non_tls": 0,
+    "hello_timeouts": 0,
+    "dropped_events": 0
+  },
+  "supporting": {
+    "blocked_delta_expected_at_least": 5,
+    "blocked_delta_observed": 5
+  },
+  "rows": [
+    {
+      "kind": "blocked",
+      "sni": "analytics.google.com",
+      "outcome": "closed_silent",
+      "how": "fin",
+      "error": null,
+      "bytes_received": 0,
+      "first_bytes_hex": "",
+      "alert": null,
+      "connect_ms": 0.728,
+      "close_ms": 1.694,
+      "closed_before_certificate": true,
+      "attempt": 1
+    },
+    {
+      "kind": "allowed",
+      "sni": "example.com",
+      "outcome": "server_hello",
+      "how": "server_hello_seen",
+      "error": null,
+      "bytes_received": 95,
+      "first_bytes_hex": "160303005a020000",
+      "alert": null,
+      "connect_ms": 0.601,
+      "close_ms": 28.04,
+      "closed_before_certificate": false,
+      "attempt": 1
+    },
+    {
+      "kind": "no_sni",
+      "sni": null,
+      "outcome": "closed_silent",
+      "how": "fin",
+      "error": null,
+      "bytes_received": 0,
+      "first_bytes_hex": "",
+      "alert": null,
+      "connect_ms": 0.787,
+      "close_ms": 2.266,
+      "closed_before_certificate": true,
+      "attempt": 1
+    },
+    {
+      "kind": "blocked",
+      "sni": "analytics.google.com",
+      "outcome": "closed_silent",
+      "how": "fin",
+      "error": null,
+      "bytes_received": 0,
+      "first_bytes_hex": "",
+      "alert": null,
+      "connect_ms": 0.856,
+      "close_ms": 1.443,
+      "closed_before_certificate": true,
+      "attempt": 2
+    },
+    {
+      "kind": "allowed",
+      "sni": "example.com",
+      "outcome": "server_hello",
+      "how": "server_hello_seen",
+      "error": null,
+      "bytes_received": 682,
+      "first_bytes_hex": "160303005a020000",
+      "alert": null,
+      "connect_ms": 0.516,
+      "close_ms": 38.366,
+      "closed_before_certificate": false,
+      "attempt": 2
+    },
+    {
+      "kind": "no_sni",
+      "sni": null,
+      "outcome": "closed_silent",
+      "how": "fin",
+      "error": null,
+      "bytes_received": 0,
+      "first_bytes_hex": "",
+      "alert": null,
+      "connect_ms": 0.554,
+      "close_ms": 0.955,
+      "closed_before_certificate": true,
+      "attempt": 2
+    },
+    {
+      "kind": "blocked",
+      "sni": "analytics.google.com",
+      "outcome": "closed_silent",
+      "how": "fin",
+      "error": null,
+      "bytes_received": 0,
+      "first_bytes_hex": "",
+      "alert": null,
+      "connect_ms": 0.538,
+      "close_ms": 0.89,
+      "closed_before_certificate": true,
+      "attempt": 3
+    },
+    {
+      "kind": "allowed",
+      "sni": "example.com",
+      "outcome": "server_hello",
+      "how": "server_hello_seen",
+      "error": null,
+      "bytes_received": 95,
+      "first_bytes_hex": "160303005a020000",
+      "alert": null,
+      "connect_ms": 0.395,
+      "close_ms": 18.805,
+      "closed_before_certificate": false,
+      "attempt": 3
+    },
+    {
+      "kind": "no_sni",
+      "sni": null,
+      "outcome": "closed_silent",
+      "how": "fin",
+      "error": null,
+      "bytes_received": 0,
+      "first_bytes_hex": "",
+      "alert": null,
+      "connect_ms": 0.767,
+      "close_ms": 1.646,
+      "closed_before_certificate": true,
+      "attempt": 3
+    },
+    {
+      "kind": "blocked",
+      "sni": "analytics.google.com",
+      "outcome": "closed_silent",
+      "how": "fin",
+      "error": null,
+      "bytes_received": 0,
+      "first_bytes_hex": "",
+      "alert": null,
+      "connect_ms": 0.682,
+      "close_ms": 1.74,
+      "closed_before_certificate": true,
+      "attempt": 4
+    },
+    {
+      "kind": "allowed",
+      "sni": "example.com",
+      "outcome": "server_hello",
+      "how": "server_hello_seen",
+      "error": null,
+      "bytes_received": 101,
+      "first_bytes_hex": "160303005a020000",
+      "alert": null,
+      "connect_ms": 0.554,
+      "close_ms": 24.009,
+      "closed_before_certificate": false,
+      "attempt": 4
+    },
+    {
+      "kind": "no_sni",
+      "sni": null,
+      "outcome": "closed_silent",
+      "how": "fin",
+      "error": null,
+      "bytes_received": 0,
+      "first_bytes_hex": "",
+      "alert": null,
+      "connect_ms": 0.562,
+      "close_ms": 1.131,
+      "closed_before_certificate": true,
+      "attempt": 4
+    },
+    {
+      "kind": "blocked",
+      "sni": "analytics.google.com",
+      "outcome": "closed_silent",
+      "how": "fin",
+      "error": null,
+      "bytes_received": 0,
+      "first_bytes_hex": "",
+      "alert": null,
+      "connect_ms": 0.617,
+      "close_ms": 1.21,
+      "closed_before_certificate": true,
+      "attempt": 5
+    },
+    {
+      "kind": "allowed",
+      "sni": "example.com",
+      "outcome": "server_hello",
+      "how": "server_hello_seen",
+      "error": null,
+      "bytes_received": 95,
+      "first_bytes_hex": "160303005a020000",
+      "alert": null,
+      "connect_ms": 0.423,
+      "close_ms": 23.676,
+      "closed_before_certificate": false,
+      "attempt": 5
+    },
+    {
+      "kind": "no_sni",
+      "sni": null,
+      "outcome": "closed_silent",
+      "how": "fin",
+      "error": null,
+      "bytes_received": 0,
+      "first_bytes_hex": "",
+      "alert": null,
+      "connect_ms": 1.226,
+      "close_ms": 1.688,
+      "closed_before_certificate": true,
+      "attempt": 5
+    }
+  ],
+  "gate": {
+    "statistic": "every blocked and no-SNI attempt closed before a certificate (boolean)",
+    "blocked_closed": true,
+    "no_sni_closed": true,
+    "allowed_opened": true,
+    "pass": true
+  }
+}
