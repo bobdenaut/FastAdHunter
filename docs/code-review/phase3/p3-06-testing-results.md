@@ -25,6 +25,8 @@ must be attributed rather than read as a regression. Windows observed so far:
 | 2026-09-04 20:14:19–20:15:16 | D11-on-device, container `fah-certs` | criterion at defaults, ~57 s; `fah-probe` stopped throughout |
 | 2026-09-04 20:28:47–20:31:07 | P5-conc A / B / A′ (`p5-conc-diag.mjs`) | 1 536 DoT handshakes and 768 leaf mints, plus three CA regenerates to purge the cache between arms |
 | 2026-09-04 21:18:48–21:23:02 | P5-diag, container `fah-probediag` (`diag-timing` build) | 128 DoT handshakes across two attempts; `fah-probe` stopped throughout |
+| 2026-09-05 01:22:31–01:22:41 | P4 rerun 1, container `fah-p4`, with `/tool/profile cpu=all duration=10s` over it | 18 000 loopback queries in 9.36 s; `fah-probe` stopped throughout |
+| 2026-09-05 01:23:39–01:23:48 | P4 rerun 2, same container and profile | 18 000 loopback queries in 9.26 s; `fah-probe` stopped throughout |
 
 `veth3` carries one container at a time, so `fah-probe` was stopped for both
 in-device stages and restarted at 19:19:58. `fastadhunter` on `veth1` was never
@@ -39,8 +41,8 @@ stopped, reconfigured or profiled.
 | P1-LAN, P1-control | **parked** | no second LAN endpoint; the origin would sit on the driving host, which the plan excludes from the gate |
 | P2 | **parked** | needs one host with two same-family LAN IPv4 addresses; bridged WSL was assessed and rejected — it would unblock P2 but leaves P1-control measuring a Hyper-V switch, and it risks this laptop's static DHCP lease, which two probe boot keys name |
 | P3 (throughput, RSS) | **parked** | needs an h2 origin under a public name with a publicly trusted certificate on a second LAN endpoint (delta 14) |
-| P4 | run | sets the row: **DoT +61 µs, DoH +915 µs** |
-| P4-LAN | run | diagnostic: DoT +71 µs, DoH +427 µs — the DoH gap against P4 is owed an attribution |
+| P4 | run ×3, all valid | **row-setter withdrawn 2026-09-05 — DoT and DoH rows return to `TBD`.** The declared statistic is not robust across sessions (§P4-reruns): the UDP control moved 101 / 175 / 148 µs, carrying DoT added from +61 to +17 / +16 µs. Transport paths are healthy — both beat their ×9 prediction |
+| P4-LAN | run | diagnostic: DoT +71 µs, DoH +427 µs. The attribution against P4 was attempted 2026-09-05 and is **unresolved** (§P4-reruns) |
 | P5 | run | **fail at 1.389 ms against < 1 ms** — not attributable to minting (see D11-on-device); ~0.94 ms unexplained |
 | D11-on-device | run | diagnostic: `certs_mint` **450.88 µs**, inside the < 1 ms row; ARM/x86 8.4× |
 | P5-conc | run | diagnostic: incremental reproducible at ~1.29 ms (conc 1); 8× concurrency removes ~0.26 ms; ~0.6 ms unattributed |
@@ -64,9 +66,11 @@ segmented the difference from inside the probe and reconciled it to 3 %:
 store → TLS handshake, **not** in the minting algorithm. `fah-certs` is not to
 be changed on this evidence.
 
-One measurement still owes an attribution: the P4 vs P4-LAN DoH gap, testable
-with `/tool/profile cpu=all` during an in-device P4 run. Until it is run, **no
-code change should follow from it.**
+The P4 vs P4-LAN DoH gap was probed on 2026-09-05 with `/tool/profile cpu=all`
+over two in-device P4 reruns. **The instrument cannot separate the harness
+client from the server** — RouterOS reports one aggregate `container` task —
+so the attribution stays **unresolved**, and **no code change follows from
+it** (§P4-reruns).
 
 ## Session state and environment (end of the 2026-09-04 session)
 
@@ -298,7 +302,7 @@ each arm — one line per run in the Runs row's raw directory, summarised here.
 | udp | 6 000 | 97 µs | 101 µs | 282 µs | — |
 | dot | 6 000 | 116 µs | 162 µs | 396 µs | **+61 µs** |
 | doh (POST, `HTTP/2.0`) | 6 000 | 579 µs | 1 016 µs | 1 980 µs | **+915 µs** |
-| row: sets PERFORMANCE.md "DoT / DoH added latency vs UDP, p50" | | | | | **DoT +61 µs, DoH +915 µs** |
+| row: was to set PERFORMANCE.md "DoT / DoH added latency vs UDP, p50" | | | | | ~~DoT +61 µs, DoH +915 µs~~ — **withdrawn 2026-09-05**, see §P4-reruns |
 
 Diagnostics: p90 udp 190 µs, dot 279 µs, doh 1 341 µs; max udp 677 µs, dot
 3 304 µs, doh 6 984 µs. DoT handshakes, excluded from the per-query figures,
@@ -310,7 +314,9 @@ this is recorded, not corrected. Delta 12 is satisfied: the harness asserted
 protocol.
 
 DoH costs ~6 × DoT and ~10 × UDP on this device. There is no budget to fail —
-P4 is the arm that sets the row — but +915 µs is the figure that row carries.
+P4 is the arm that was to set the row. **Two reruns on 2026-09-05 withdrew
+these added-latency figures as row-setters** (§P4-reruns); the absolute
+columns above stand as measured.
 
 ## P4-LAN
 
@@ -343,10 +349,85 @@ explain on its own. The difference between the arms is where the h2 client
 runs: in-device it competes for the same four ARM cores as the server, over the
 LAN it sits on bobdenaut. DoT shows no such gap, consistent with its 2-byte
 length framing against h2 framing plus HPACK. If that holds, the in-device
-+915 µs that sets the PERFORMANCE.md row contains client cost a real DoH client
-would not impose on the device. **Neither figure is adjusted here** — P4 is the
-declared row-setter and both stand as measured. Testable by a `/tool/profile
-cpu=all` read during an in-device P4 run, which would show the `fah-p4` share.
++915 µs contains client cost a real DoH client would not impose on the device.
+**Neither figure is adjusted here** — both stand as measured. The
+`/tool/profile cpu=all` read this paragraph proposed was taken on 2026-09-05
+and **could not separate the two processes**; see §P4-reruns.
+
+## P4-reruns — diagnostic, session-to-session stability of the P4 statistic
+
+Not a stage. Two further runs of the **unchanged** `fah-p4` container and the
+unchanged declared workload (3 rounds × 2 000 per transport, interleaved,
+handshakes excluded), taken to answer the attribution §P4-LAN left open and,
+incidentally, to see whether P4's figures reproduce. The container was re-added
+from the image already on the store; `fah-probe` was stopped for both, and
+`fastadhunter` on `veth1` was not touched.
+
+The attribution rule was declared before the runs: with `S_client` the
+`fah-p4` share and `S_server` the `fah-probe` share summed over cores,
+`S_client < 0.2 × S_server` would leave P4's DoH figure standing as in-engine,
+and anything else would make it an upper bound.
+
+### Runs
+
+| Date (UTC) | Tip hash | Device / workload / corpus | Idle check | Validity | Delta | Raw directory |
+| --- | --- | --- | --- | --- | --- | --- |
+| 2026-09-05 01:22 | `a2d0802` | RB5009, in-device, container `fah-p4` on `veth3` (`fah-probe` stopped); as §P4 — `encrypted_latency` spawning `/fah-probe` on loopback, blocked domain answered in-engine; run 9.36 s | `/tool/profile` idle baseline first: cpu0–3 at 1.5 / 1.5 / 0 / 1 %, no `container` row | valid (diagnostic) | 10, 12 | not kept — figures read off the container log, which is not tracked |
+| 2026-09-05 01:23 | `a2d0802` | as above, second start of the same container; run 9.26 s | same baseline | valid (diagnostic) | 10, 12 | not kept — as above |
+
+### Figures
+
+| Session | UDP p50 | DoT p50 | DoH p50 | DoT − UDP | DoH − UDP |
+| --- | --- | --- | --- | --- | --- |
+| 2026-09-04 19:18 (§P4) | 101 µs | 162 µs | 1 016 µs | **+61 µs** | **+915 µs** |
+| 2026-09-05 01:22 | 175 µs | 192 µs | 1 044 µs | **+17 µs** | **+869 µs** |
+| 2026-09-05 01:23 | 148 µs | 164 µs | 1 041 µs | **+16 µs** | **+893 µs** |
+| spread across the three | **73 %** | 18 % | **3 %** | 61 → 16 | 915 → 869 |
+| diagnostic — no gate | n = 6 000 per transport per session, `Some(HTTP/2.0)` asserted on every DoH arm (delta 12) | | | | |
+
+| `/tool/profile cpu=all`, 10 s over each run | cpu0 | cpu1 | cpu2 | cpu3 | summed |
+| --- | --- | --- | --- | --- | --- |
+| read 1 — `container` | 21.5 % | 32.5 % | 35.5 % | 33 % | **122.5 %** |
+| read 2 — `container` | 34 % | 27.5 % | 32.5 % | 28 % | **122 %** |
+| `fah-p4` | 0 % (read 1, cpu0 only) | — | — | — | — |
+| `fah-probe` | absent from both reads | | | | |
+
+**The attribution instrument does not work here.** RouterOS charged all
+container work to one aggregate `container` task — ~1.22 cores, stable across
+both reads — and never named the two processes separately. `fah-p4` appeared
+once at 0 % and the spawned `/fah-probe` never appeared at all. The 18:58 read
+in §P8-probe separated `fah-probe` because it was the container's PID 1 under
+external load; here PID 1 is the harness and the server is its child. Neither
+`S_client` nor `S_server` is obtainable, so the pre-declared rule cannot be
+evaluated and **client/server CPU attribution stays unresolved**. The
+observation that in-device DoH absolute p50 (1 041 µs) exceeds P4-LAN's
+(761 µs) despite the LAN's extra hop is **suggestive of harness cost and does
+not establish it**.
+
+**What the reruns do settle: the declared statistic is not robust.** The gate
+quantity is a difference of two p50s where the subtrahend moved 73 % between
+sessions while the difference is roughly a sixth of either operand. DoT added
+latency therefore reads +61, +17 and +16 µs across three valid sessions of the
+same workload on the same build. **`p50(DoT) − p50(UDP) = +61 µs` is withdrawn
+as a row-setter**, and no replacement is chosen from the other two — picking
+one of three would repeat the error.
+
+**The transport paths are healthy, and no code change follows.** Both beat the
+project's ×9 x86 → RB5009 conversion: D13's x86 DoT 45 µs and DoH 158 µs
+predict ≈ 405 µs and ≈ 1 422 µs on this device, against 162–192 µs and
+1 016–1 044 µs measured. DoH is the *most* stable quantity in the set at ~3 %
+across three sessions, and the transport ratios match x86's shape (DoH ≈ 6 ×
+DoT in both). The unstable element is the UDP control, which is not the path
+under evaluation. **Nothing here justifies touching `dot.rs`, the DoH path or
+opening an implementation investigation** — this is benchmark metrology, not a
+defect.
+
+**Consequence for the row.** Both the DoT and the DoH PERFORMANCE.md rows
+return to `TBD`, pending a more robust declared statistic. The methodology fix
+this points at: pool the UDP control across sessions rather than reading it
+once per session, so the control's own variance cannot dominate a
+transport − UDP difference. Every future in-device latency arm inherits that
+jitter — the baseline moved 101 → 175 µs on an otherwise idle router.
 
 ## P5
 
