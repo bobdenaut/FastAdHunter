@@ -324,7 +324,7 @@ measurement ID, and are **not** duplicated here.
 | Section | Result |
 | --- | --- |
 | [SNI](p3-06-testing-results.md#sni) | pass — every blocked and no-SNI attempt closed before a certificate |
-| [P1-loopback](p3-06-testing-results.md#p1-loopback) | no pick; the CPU axis is missing (the sweep outran no profile window) and the owner owes a buffer-budget decision |
+| [P1-loopback](p3-06-testing-results.md#p1-loopback) | no pick; the CPU axis is missing (the sweep outran no profile window). **Buffer decision taken 2026-09-05: `SPLICE_BUF` stays 16 KiB per direction, budget stays 32 MiB, `max_connections` unmoved** — no CPU-per-relayed-byte advantage is established for a larger buffer. That is the shipped configuration only; **P1-LAN still owes the ≥ 100 MiB/s confirmation** and stays parked |
 | [P4](p3-06-testing-results.md#p4) | sets the row: DoT +61 µs, DoH +915 µs |
 | [P4-LAN](p3-06-testing-results.md#p4-lan) | diagnostic; its DoH figure is less than half P4's and owes an attribution |
 | [P5](p3-06-testing-results.md#p5) | **FAIL** — 1.389 ms incremental against < 1 ms |

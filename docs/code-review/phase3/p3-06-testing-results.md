@@ -35,7 +35,7 @@ stopped, reconfigured or profiled.
 | ID | State | Gate |
 | --- | --- | --- |
 | SNI | run | **pass** |
-| P1-loopback | run, CPU axis missing | no pick — every candidate that clears 0.9 × best is over the 32 MiB budget; owner decision owed |
+| P1-loopback | run, CPU axis missing | no pick — every candidate that clears 0.9 × best is over the 32 MiB budget. Buffer decision taken 2026-09-05: **16/16 stays, budget stays 32 MiB** (§P1-loopback) — the shipped configuration, not a P1 pass |
 | P1-LAN, P1-control | **parked** | no second LAN endpoint; the origin would sit on the driving host, which the plan excludes from the gate |
 | P2 | **parked** | needs one host with two same-family LAN IPv4 addresses; bridged WSL was assessed and rejected — it would unblock P2 but leaves P1-control measuring a Hyper-V switch, and it risks this laptop's static DHCP lease, which two probe boot keys name |
 | P3 (throughput, RSS) | **parked** | needs an h2 origin under a public name with a publicly trusted certificate on a second LAN endpoint (delta 14) |
@@ -214,10 +214,25 @@ figure** — the sweep finished in 5 s, shorter than the profile window, so the
 "throughput of the loop". Step 4's confirmatory CPU reading is the P1-LAN
 aggregate arm, which is parked. Nothing here justifies changing `SPLICE_BUF`.
 
-**Owner decision owed (plan §Choosing step 3, never taken inside the
-procedure):** every candidate that clears the 0.9 × best bar exceeds the
-declared 32 MiB budget at `max_connections = 1024`. Either raise the buffer
-budget or change `max_connections` with its own justification — or keep 16/16.
+**Owner decision, taken 2026-09-05** (plan §Choosing step 3, outside the
+procedure as the plan requires): `SPLICE_BUF` stays **16 KiB per direction**
+(32 KiB per session) and the budget stays **32 MiB** at `max_connections =
+1024`. Grounds: the sweep establishes no CPU-per-relayed-byte advantage for a
+larger buffer — it carries no `/tool/profile` share, so its figures are
+throughput of the loop (§Invalidity rules), never CPU per byte — and every
+candidate already sits 3–4 × above the 119 MiB/s NIC, where the wire ties them.
+`max_connections` does not move. **This is the shipped configuration, not a P1
+result: P1-LAN remains the required confirmation of the ≥ 100 MiB/s row and is
+still parked.** One consequence for step 4 — with no pick, P1-LAN carries one
+build rather than two.
+
+What the decision does **not** claim: 16/16's and 16/32's ranges are disjoint
+over 5 interleaved repetitions, so a real effect exists between 16 and 32 KiB
+down. It is simply not attributed to the relay (the loopback loop contains the
+client and origin halves too) and not observable on a gigabit wire. 16/16 is
+also the weakest candidate by that margin, so a future P1-LAN that misses the
+≥ 100 MiB/s row at 16/16 reopens this decision against the same budget.
+
 The plan's three predictions all held: 32 KiB down captures 86 % of the
 16 → 64 gain, 128 ≈ 64 (479.5 vs 480.1), and `up` is irrelevant for a download.
 
