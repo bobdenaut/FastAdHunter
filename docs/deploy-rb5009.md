@@ -299,9 +299,9 @@ your LAN.
 /container/config/set tmpdir=kingston/fastadhunter/tmp \
   ram-high=256M
 
-/container/mounts/add name=fah-config \
+/container/mounts/add list=fah-config \
   src=kingston/fastadhunter/config dst=/config
-/container/mounts/add name=fah-data \
+/container/mounts/add list=fah-data \
   src=kingston/fastadhunter/data   dst=/data
 ```
 
@@ -327,7 +327,7 @@ FastAdHunter now resolves its own list sources through the servers in
 have the mount, drop it:
 
 ```routeros
-/container/mounts/remove [find name=fah-resolv]
+/container/mounts/remove [find list=fah-resolv]
 ```
 
 `ram-high=256M` mirrors the PERFORMANCE.md hard ceiling — the container is
