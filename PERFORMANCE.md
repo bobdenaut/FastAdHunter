@@ -61,8 +61,8 @@ breach.
 | **HTTPS** intercepted h2 relay | ≥ 50 MiB/s | TBD — must be measured during verification |
 | **HTTPS** minted-leaf cache hit rate, browsing load | ≥ 90 % (a real-session replay decides) | TBD — soak `https-sni` feed |
 | **DoT** / **DoH** added latency vs UDP, p50 | TBD — set from the RB5009 (TLS/HTTP legs do not convert) | TBD — must be measured during verification |
-| Cold `prewarm` per first-sight host (whole path incl. eviction scan, not raw keygen) | < 1 ms | TBD — must be measured during verification |
-| CA generate / API-pair import wall time | < 100 ms / < 50 ms | TBD — must be measured during verification |
+| Cold `prewarm` per first-sight host (whole path incl. eviction scan, not raw keygen) | < 1 ms | **450.88 µs** — `certs_mint` on the device, criterion, 2026-09-04; 8.4× the dev box's 53.64 µs, so the ~9× factor holds. P5's end-to-end DoT increment misses the same budget at 1.389 ms: it tracks the CPU speed regime, not the mint, and is a recorded budget miss rather than a defect ([p3-06-testing-results.md](docs/code-review/phase3/p3-06-testing-results.md) §P5, §P5-regime) |
+| CA generate / API-pair import wall time | < 100 ms / < 50 ms | **4.937 ms / 6.015 ms** — both inside, generate at ~5 % of its allowance (P6, 2026-09-04, median of 5 on `time_starttransfer − time_appconnect`, the client-observed request-processing time excluding the TLS handshake) |
 
 In-engine latency excludes upstream RTT — we measure what we add. The served
 `forward` histogram (`duration_forward`; `forward_p50/p99` on `/history/perf`)

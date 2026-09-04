@@ -15,14 +15,16 @@ RB5009, not merely written.
 | 2 — HTTP | ✅ done | `v0.2.17-phase2` |
 | 2.5 — pre-Adaptive hardening | ✅ done | `v0.2.19-phase2.5` |
 | 2.6 — Adaptive DNS Stage 1 | 🚧 built, deployed opt-in; default flip pending | `soak-p2.6-11` |
-| 5 — web dashboard | 🚧 all ten tasks built and merged; on-device leg pending | `0.3.0` |
-| 3 — HTTPS | ⬜ not started | — |
+| 5 — web dashboard | ✅ done — closed 2026-09-01, four verification rows deferred | `0.3.0` |
+| 3 — HTTPS | 🚧 p3-01…p3-05 done, p3-06 `AWAITING SOAK` | — |
 | 4 — HTML filtering | ⬜ not started | — |
 
-Phases 2.6 and 5 both sit on the same open item: the **7-day re-soak of 0.3.0**
-on the RB5009, started 2026-08-29T19:18 Z. It carries 2.6's `adaptive`
-acceptance and Phase 5's Stage-B on-device measurements at once, because
-deploying either restarts the same container.
+Phase 2.6 sits on the **7-day soak of 0.3.1**, started 2026-09-01T07:27 Z and
+closing **2026-09-08**, which carries `p2.6-11`'s `adaptive` acceptance. It is
+the third: the 0.3.0 re-soak before it was terminated at T0+59 h to change the
+measurement method, not on a gate, and carries no verdict. Phase 5's Stage B
+needed no deploy of its own — 0.3.1 already is the phase-5 build — so it was
+collected read-only against the same container.
 
 ---
 
@@ -219,8 +221,10 @@ Tasks 1–10 and 13 are `DONE`. **p2.6-11's 7-day soak was terminated on day 5**
 (owner decision, 2026-08-29): its RSS excursions were traced to list refreshes
 re-downloading unchanged bodies — not to the adaptive path — and two more
 observation days added no information. That defect is fixed in 0.3.0
-(conditional GET, below), and the **re-soak of 0.3.0** now carries the
-acceptance the terminated run no longer can. Sequencing:
+(conditional GET, below). The re-soak of 0.3.0 that was to carry the acceptance
+was itself **terminated at T0+59 h to change the measurement method, not on a
+gate**, so the acceptance now rides a third soak: **0.3.1, 2026-09-01T07:27 Z →
+2026-09-08**. Sequencing:
 [plan/resoak-orchestration.md](plan/resoak-orchestration.md).
 
 **p2.6-12 — the default flip — remains open, and its precondition is weaker
@@ -245,7 +249,7 @@ Not a Stage 1 feature; the repair the terminated soak paid for.
       2026-08-29 hunt only closed because the owner opened the router's
       bandwidth graph; that dependency is now removed.
 
-## Phase 5 — Web Dashboard 🚧 **BUILT, on-device leg pending** (`plan/wip/phase5/`)
+## Phase 5 — Web Dashboard ✅ **DONE** — closed 2026-09-01 (`plan/closed/phase5/`)
 
 **Numbered 5, scheduled ahead of 3 and 4.** Execution order is
 2.5 → 2.6 → **5** → 3 → 4: the number follows the capability roadmap, the
@@ -275,10 +279,12 @@ faked.
       Settings · Health · Memory · Live Feed
 - [ ] **p5-10** verification — **Stage A passed** on the dev box: e2e, route
       ordering, bundle, image, per-figure API trace, route-scoped fetching,
-      socket load, emulated mobile pass. **Stage B needs the RB5009** — the
-      deploy itself, three RSS readings, Argon2id cost on-device, polled-endpoint
-      costs, the `constants.ts` refresh-default correction and the certificate
-      re-check — and rides the 0.3.0 re-soak
+      socket load, emulated mobile pass. **Stage B ran read-only against the
+      deployed 0.3.1** and needed no deploy of its own — that build already is
+      the phase-5 build, so the p2.6 dependency the plan assumed never applied.
+      Four rows are **deferred, not passed**: concurrent Argon2id peak RSS, RSS
+      deltas above the drift floor, `/cache` at a second occupancy, and the
+      real-phone leg
 
 Three things decided whether it succeeds, and all three are measured:
 **128,730 B gzip against the 150 KB budget** (83.8 %), an inactive page performs
@@ -293,12 +299,22 @@ Evidence: [docs/code-review/phase5/](docs/code-review/phase5/).
 cosmetic rules out of `rules_inactive` and changes the Lists partition. Neither
 is designed for in advance.
 
-## Phase 3 — HTTPS
+## Phase 3 — HTTPS 🚧 **IN PROGRESS** (`plan/wip/phase3/`)
 
-After Phase 5 closes, and conditional on §5.7–14 of the reconciled architecture
-review (certificate machinery home, connector redesign, DoH/DoT listener
-placement, telemetry taxonomy, memory caps per new state owner, 443 steering
-v4+v6, on-device TLS measurements, opt-in bound to a stable identity).
+Conditional on §5.7–14 of the reconciled architecture review (certificate
+machinery home, connector redesign, DoH/DoT listener placement, telemetry
+taxonomy, memory caps per new state owner, 443 steering v4+v6, on-device TLS
+measurements, opt-in bound to a stable identity). Items 7–11 and 14 are closed;
+**12 (443 steering) and 13 (on-device TLS measurements) stay open, owner-side.**
+
+`p3-01`…`p3-05` are `DONE`; **`p3-06` is `AWAITING SOAK`.** Its dev-box suite
+and the on-device probe campaign have run — SNI, P6 and P7-store pass, P5 is a
+recorded budget miss that does not block closure, and P4's PERFORMANCE.md rows
+returned to `TBD` when its declared statistic proved unstable across sessions.
+Four arms (P1-LAN, P1-control, P2, P3) are **parked on hardware**: they need a
+second wired LAN endpoint. The row flips on the 24 h full-mode soak, which
+cannot start before the 0.3.1 soak ends 2026-09-08. Evidence:
+[docs/code-review/phase3/](docs/code-review/phase3/).
 
 - SNI-level HTTPS filtering for every client, no setup and no decryption
   (`p3-03`) — blocked domains die at the ClientHello; ECH/no-SNI is closed, not

@@ -32,8 +32,8 @@ numbers below are measured on the target hardware, not estimated.
 | 2 | HTTP engine + Policies | ✅ done | `v0.2.17-phase2` |
 | 2.5 | Pre-Adaptive hardening | ✅ done | `v0.2.19-phase2.5` |
 | 2.6 | Adaptive DNS Stage 1 | 🚧 built and deployed opt-in; default flip pending | — |
-| 5 | Web dashboard | 🚧 all ten tasks built and merged; on-device verification in the re-soak | `0.3.0` |
-| 3 | HTTPS interception | 🚧 built and verified on the dev box (p3-01…p3-05 done, p3-06 awaiting the on-device soak) | `phase3-06` |
+| 5 | Web dashboard | ✅ done — closed 2026-09-01, four verification rows deferred to the next deploy window | `0.3.0` |
+| 3 | HTTPS interception | 🚧 dev box done (p3-01…p3-05); p3-06's on-device campaign ran, four arms parked on hardware, awaiting the 24 h soak | `phase3-06` |
 | 4 | HTML filtering | ⬜ not started | — |
 
 Rows are in **execution** order, which is not numeric order: the dashboard is
@@ -62,9 +62,12 @@ since 2026-08-25. Its first 7-day soak was **terminated on day 5** once the RSS
 excursions it was watching were traced to their real cause — list refreshes
 downloading unchanged bodies, not the adaptive code — and two more observation
 days would have added nothing. The fix (conditional GET, `If-None-Match` /
-`If-Modified-Since` with a 304 short-circuit) shipped in 0.3.0, and the re-soak
-that judges it started **2026-08-29T19:18 Z** against six gates fixed in writing
-before any evidence was read. The default flip has to be earned: two deployment
+`If-Modified-Since` with a 304 short-circuit) shipped in 0.3.0. The re-soak on
+0.3.0 was then **terminated at T0+59 h to change the measurement method, not on
+a gate**, so it carries no verdict. The soak that judges the feature is the
+third: **0.3.1, started 2026-09-01T07:27 Z, closing 2026-09-08**, against gates
+fixed in writing before any evidence was read. The default flip has to be
+earned: two deployment
 gates closed **unvalidated** — the observed failure window held three runs, all
 of length 1, too few to calibrate `penalty_failures`, which therefore stays at
 its compiled default of 2, provisional and uncalibrated. If the deployment only
@@ -75,9 +78,13 @@ Phase 5 is the web dashboard, and it is **built** — thirteen screens across al
 ten tasks, merged and released as 0.3.0. The shipped bundle is **128,730 B
 gzip**, 83.8 % of the 150 KB budget, served by `fah-api` itself from the same
 image and the same TLS listener: no second container, no Node in the runtime
-image, no new port. On-device verification (Stage B — Argon2id cost, polled
-endpoint costs, three RSS readings) rides the same re-soak. Design record:
-[docs/dashboard/](docs/dashboard/).
+image, no new port. On-device verification is **done** — Stage B ran read-only
+against the deployed 0.3.1, which already is the phase-5 build: `/health`,
+`/telemetry` and `/cache` answer in 0.89–1.05 ms warm, sequential Argon2id
+verification sits at ~120 ms p50 with peak RSS unmoved. Four rows are
+**deferred, not passed**, and want the next deploy window: concurrent Argon2id
+peak RSS, RSS deltas above the drift floor, `/cache` at a second occupancy, and
+the real-phone leg. Design record: [docs/dashboard/](docs/dashboard/).
 
 ### Measured, on the RB5009
 
@@ -88,7 +95,7 @@ same reading. **Each row carries the build it was measured on.** The ruleset and
 boot rows are 0.3.0; the steady-state memory, refresh transient, latency and
 throughput rows still describe 0.2.x, because the equivalent 0.3.0 readings need
 a warm cache and a list refresh that the running deployment has not reached yet
-— the re-soak closing 2026-09-05 produces them.
+— the 0.3.1 soak closing 2026-09-08 produces them.
 
 | | Measured | Build | Budget |
 | --- | ---: | :---: | ---: |
@@ -683,8 +690,8 @@ firewall · a replacement for a good browser extension.
 | **2** ✅ | HTTP proxy, URL-path rules, Policies, telemetry consolidation, compile-transient attribution |
 | **2.5** ✅ | Listener resilience, list-refresh integrity, encrypted-transport fixes, outcome telemetry, failure run-length telemetry — hardening before adaptive upstream selection |
 | **2.6** 🚧 | Adaptive DNS Stage 1 — per-endpoint health, penalty and skip on repeated transport failure, on-path recovery probing; deployed opt-in since 2026-08-25, default flip still unearned |
-| **5** 🚧 | Web dashboard — thirteen screens, 128,730 B gzip, served by `fah-api` on one origin, session-cookie auth, every figure backed by an endpoint that exists; released as 0.3.0, on-device verification in the re-soak |
-| **3** | HTTPS interception, certificate management, DoT/DoH listeners |
+| **5** ✅ | Web dashboard — thirteen screens, 128,730 B gzip, served by `fah-api` on one origin, session-cookie auth, every figure backed by an endpoint that exists; released as 0.3.0, closed 2026-09-01 with four verification rows deferred |
+| **3** 🚧 | HTTPS interception, certificate management, DoT/DoH listeners — dev box done, on-device campaign run, awaiting the 24 h soak |
 | **4** | HTML filtering with `lol_html`, cosmetic rules |
 
 Execution order is 2.5 → 2.6 → **5** → 3 → 4. Phases 3 and 4 each send the
@@ -714,7 +721,7 @@ if the decision is being reversed.
 ├── CONTRIBUTING.md       conventions and local quality gates
 │
 └── docs/
-    ├── decisions/            ADRs 0001–0005
+    ├── decisions/            ADRs 0001–0006
     ├── design/               accepted designs not yet built, with their
     │                         benchmark protocols
     ├── dashboard/            capability matrix, information architecture,

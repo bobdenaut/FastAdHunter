@@ -1170,7 +1170,11 @@ set): `cargo fmt --all -- --check` clean; `cargo clippy --workspace
 full leg 5, `interception` 28/28, `api` 116/116); `cargo check --release -p
 fastadhunter` clean.
 
-**Uncommitted, per owner instruction ("do not commit"):** product code
+**Superseded 2026-09-05 — read §Hand-off state, 2026-09-05 below first.** The
+list that follows was true at the end of the 2026-09-02 session and is kept as
+history: **all of it has since been committed.** Nothing in it is outstanding.
+
+**Uncommitted at the time, per owner instruction ("do not commit"):** product code
 `fah-model/src/{engine,lib}.rs`, `fah-http/src/{proxy,https,intercept}.rs`,
 `fah-api/src/{certs,lib,ports,state,telemetry}.rs`,
 `fastadhunter/src/{main,adapters}.rs`, `fastadhunter/Cargo.toml`, `Cargo.lock`;
@@ -1191,5 +1195,44 @@ covered above (deploy-rb5009.md §5c after the walkthrough, README modes row,
 SECURITY.md row 3, ROADMAP, project-state); X2 follow-up task
 (`cargo bench -p fastadhunter`); `FastAdHunter-pre3` worktree removal at phase
 close; Runbook 1–7 on the device, P1–P7, the 24 h soak.
+
+## Hand-off state, 2026-09-05 — current
+
+Supersedes the 2026-09-02 section above, whose "uncommitted" list is history.
+Tree clean on `phase3-06` apart from the owner's own `docs/code-review/phase2.6/`
+files; `origin` and `backup` both at the same commit.
+
+**Decided this session, all recorded in
+[p3-06-testing-results.md](p3-06-testing-results.md):**
+
+| Item | Disposition |
+| --- | --- |
+| `SPLICE_BUF` | **16 KiB per direction stays, budget stays 32 MiB**, `max_connections` unmoved. The sweep establishes no CPU-per-relayed-byte advantage. Shipped configuration, **not** a P1 pass — P1-LAN still owes the ≥ 100 MiB/s confirmation and now carries one build, not two |
+| P4 | **row-setter withdrawn.** Three valid sessions; the declared `p50(transport) − p50(UDP)` statistic is not robust — the UDP control moved 73 % and carried DoT added from +61 to +17 / +16 µs. Both PERFORMANCE.md rows return to `TBD`, no replacement picked. Transport paths healthy, both beat their ×9 prediction. Client/server CPU attribution **unresolved** — `/tool/profile` charges all container work to one aggregate task |
+| P5 | **closed.** FAIL at 1.389 ms under the frozen statistic, which is not reinterpreted. The increment tracks the CPU speed regime, not the mint; paired per host 0.728 ms, 74 of 240 pairs still over 1 ms. `certs_mint` passes at 450.88 µs and **is** the PERFORMANCE.md row-setter for the cold-`prewarm` row, now filled. **A recorded budget miss, not a demonstrated defect — it does not block Phase 3 closure.** No further experiment, no `fah-certs` change |
+
+**Flip condition, restated.** The 2026-09-02 wording ("Runbook 1–5 and 7 done")
+predates these dispositions and should not be read as requiring every P-arm.
+`AWAITING SOAK` flips when the 24 h full-mode soak on the RB5009 records
+RSS ≤ 128 MB steady and the §Runbook 6 watch items, with Runbook 1–4 and 7 done
+and recorded here. **P5 does not gate it.** Runbook 5's parked arms — P1-LAN,
+P1-control, P2, P3 — are blocked on a second wired LAN endpoint and are their
+own decision, not a soak precondition.
+
+**Ordering constraints a later session should not rediscover:**
+
+- Runbook 6 cannot start before the 0.3.1 soak ends **2026-09-08**, needs a
+  phase-3 deploy (its own approval), and needs N3 (`dot` state) plus the L5
+  `listeners` telemetry block first — watch item (b) has no read path without
+  them. It carries **P7, P8 and P9 proper**.
+- Runbook 4 needs `BASELINE_EXCLUSIONS` settled first, or it proves nothing
+  about exclusions.
+- Runbook 7's ninth `ca/generate` is the `409 archive_full` check and the
+  archive sits at **7 of 8** — do not spend it. Restart the probe to purge the
+  leaf cache instead.
+- P1-LAN, P1-control, P2 and P3 all unblock from one thing: a second **wired**
+  LAN endpoint with Node. P2 additionally needs two same-family IPv4 addresses
+  on it, P3 an h2 origin under a public name with a publicly trusted
+  certificate (delta 14).
 
 **Deferred, accepted:** F10, F16. **Withdrawn:** F6.
