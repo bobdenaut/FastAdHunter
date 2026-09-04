@@ -1,0 +1,95 @@
+{
+  "script": "p5-conc",
+  "started_at": "2026-09-04T23:08:38.832Z",
+  "finished_at": "2026-09-04T23:08:41.243Z",
+  "tip": "3bb12c040335-dirty",
+  "probe": "172.17.0.4",
+  "probe_version": "0.3.1",
+  "host": {
+    "platform": "win32",
+    "idle": true,
+    "network": [
+      "Ethernet                Public"
+    ],
+    "busy": []
+  },
+  "args": {
+    "probe": "172.17.0.4",
+    "api-port": 8443,
+    "key": "<set>",
+    "out": "results-20260904T2308Z-c0",
+    "tip": null,
+    "allow-busy": false,
+    "skip-host-checks": false,
+    "hosts": 240,
+    "conc": 1,
+    "seed": "c0",
+    "dot-port": 853,
+    "timeout": 10000
+  },
+  "valid": true,
+  "status": "valid",
+  "degraded_reasons": [],
+  "measurement": "P5-conc (diagnostic)",
+  "hosts": 240,
+  "conc": 1,
+  "seed": "c0",
+  "figures": {
+    "first-sight": {
+      "n": 240,
+      "min": 1.715,
+      "p50": 2.883,
+      "p99": 6.444,
+      "max": 8.062,
+      "mean": 2.936,
+      "wall_ms": 963.428,
+      "handshakes_per_s": 249.11
+    },
+    "repeat": {
+      "n": 240,
+      "min": 1.164,
+      "p50": 1.49,
+      "p99": 3.593,
+      "max": 3.622,
+      "mean": 1.816,
+      "wall_ms": 667.234,
+      "handshakes_per_s": 359.694
+    },
+    "incremental_p50_ms": 1.393,
+    "counters_delta": {
+      "minted_total": 240,
+      "unwarmed_misses": 0,
+      "evictions": 0,
+      "prewarm_hits": 240
+    }
+  },
+  "leaf_cache_before": {
+    "size": 0,
+    "capacity": 512,
+    "inflight": 0,
+    "hits": 0,
+    "unwarmed_misses": 0,
+    "prewarm_hits": 0,
+    "coalesced": 0,
+    "minted_total": 0,
+    "evictions": 0,
+    "superseded": 0
+  },
+  "leaf_cache_after": {
+    "size": 240,
+    "capacity": 512,
+    "inflight": 0,
+    "hits": 480,
+    "unwarmed_misses": 0,
+    "prewarm_hits": 240,
+    "coalesced": 0,
+    "minted_total": 240,
+    "evictions": 0,
+    "superseded": 0
+  },
+  "gate": {
+    "statistic": "none — diagnostic (P5 path segmentation)",
+    "incremental_p50_ms": 1.393,
+    "conc": 1
+  }
+}

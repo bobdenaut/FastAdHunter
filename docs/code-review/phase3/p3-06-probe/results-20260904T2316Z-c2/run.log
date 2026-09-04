@@ -1,0 +1,13 @@
+2026-09-04T23:16:31.841Z [p5-paired] == p5-paired start 2026-09-04T23:16:31.798Z tip=3bb12c040335-dirty out=results-20260904T2316Z-c2
+2026-09-04T23:16:31.842Z [p5-paired] args {"probe":"172.17.0.4","api-port":8443,"key":"<set>","out":"results-20260904T2316Z-c2","tip":null,"allow-busy":false,"skip-host-checks":false,"hosts":240,"seed":"c2","dot-port":853,"timeout":10000}
+2026-09-04T23:16:32.190Z [p5-paired] Get-NetConnectionProfile: Ethernet                Public
+2026-09-04T23:16:32.662Z [p5-paired] idle check: PASS (recorded; each stage decides)
+2026-09-04T23:16:32.688Z [p5-paired] GET /health -> 200 {"status":"ok","version":"0.3.1","uptime_seconds":54}
+2026-09-04T23:16:32.698Z [p5-paired] config snapshot -> results-20260904T2316Z-c2\config.json
+2026-09-04T23:16:32.701Z [p5-paired] engine.mode = dns+http+https
+2026-09-04T23:16:32.710Z [p5-paired] certificates before: ca.present=true leaf_cache={"size":0,"capacity":512,"inflight":0,"hits":0,"unwarmed_misses":0,"prewarm_hits":0,"coalesced":0,"minted_total":0,"evictions":0,"superseded":0}
+2026-09-04T23:16:34.456Z [p5-paired] leaf_cache delta {"size":240,"capacity":0,"inflight":0,"hits":480,"unwarmed_misses":0,"prewarm_hits":240,"coalesced":0,"minted_total":240,"evictions":0,"superseded":0}
+2026-09-04T23:16:34.457Z [p5-paired] pairs=240 wall=1734.169 ms; first-sight p50=2.94 ms, repeat p50=2.049 ms
+2026-09-04T23:16:34.457Z [p5-paired] paired median(first - repeat) = 0.728 ms; median(first) - median(repeat) = 0.891 ms; pairs under 1 ms: 166/240
+2026-09-04T23:16:34.458Z [p5-paired] wrote results-20260904T2316Z-c2\p5-paired.json
+2026-09-04T23:16:34.458Z [p5-paired] == p5-paired done (valid)

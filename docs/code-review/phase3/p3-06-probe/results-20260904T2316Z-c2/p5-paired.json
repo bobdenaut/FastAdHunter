@@ -1,0 +1,102 @@
+{
+  "script": "p5-paired",
+  "started_at": "2026-09-04T23:16:31.798Z",
+  "finished_at": "2026-09-04T23:16:34.457Z",
+  "tip": "3bb12c040335-dirty",
+  "probe": "172.17.0.4",
+  "probe_version": "0.3.1",
+  "host": {
+    "platform": "win32",
+    "idle": true,
+    "network": [
+      "Ethernet                Public"
+    ],
+    "busy": []
+  },
+  "args": {
+    "probe": "172.17.0.4",
+    "api-port": 8443,
+    "key": "<set>",
+    "out": "results-20260904T2316Z-c2",
+    "tip": null,
+    "allow-busy": false,
+    "skip-host-checks": false,
+    "hosts": 240,
+    "seed": "c2",
+    "dot-port": 853,
+    "timeout": 10000
+  },
+  "valid": true,
+  "status": "valid",
+  "degraded_reasons": [],
+  "measurement": "P5-paired (diagnostic)",
+  "hosts": 240,
+  "seed": "c2",
+  "figures": {
+    "paired_median_ms": 0.728,
+    "unpaired_incremental_ms": 0.891,
+    "pairs_under_1ms": 166,
+    "pairs": 240,
+    "wall_ms": 1734.169,
+    "first_sight": {
+      "n": 240,
+      "min": 1.748,
+      "p50": 2.94,
+      "p99": 5.993,
+      "max": 7.207,
+      "mean": 3.011
+    },
+    "repeat": {
+      "n": 240,
+      "min": 1.252,
+      "p50": 2.049,
+      "p99": 4.672,
+      "max": 7.75,
+      "mean": 2.214
+    },
+    "diff": {
+      "n": 240,
+      "min": -5.257,
+      "p50": 0.728,
+      "p99": 4.32,
+      "max": 4.75,
+      "mean": 0.798
+    },
+    "leaf_cache_before": {
+      "size": 0,
+      "capacity": 512,
+      "inflight": 0,
+      "hits": 0,
+      "unwarmed_misses": 0,
+      "prewarm_hits": 0,
+      "coalesced": 0,
+      "minted_total": 0,
+      "evictions": 0,
+      "superseded": 0
+    },
+    "leaf_cache_after": {
+      "size": 240,
+      "capacity": 512,
+      "inflight": 0,
+      "hits": 480,
+      "unwarmed_misses": 0,
+      "prewarm_hits": 240,
+      "coalesced": 0,
+      "minted_total": 240,
+      "evictions": 0,
+      "superseded": 0
+    },
+    "delta": {
+      "size": 240,
+      "capacity": 0,
+      "inflight": 0,
+      "hits": 480,
+      "unwarmed_misses": 0,
+      "prewarm_hits": 240,
+      "coalesced": 0,
+      "minted_total": 240,
+      "evictions": 0,
+      "superseded": 0
+    }
+  }
+}

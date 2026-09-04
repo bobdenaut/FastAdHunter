@@ -1,0 +1,14 @@
+2026-09-04T23:09:07.247Z [p5-conc] == p5-conc start 2026-09-04T23:09:07.207Z tip=3bb12c040335-dirty out=results-20260904T2308Z-c1
+2026-09-04T23:09:07.248Z [p5-conc] args {"probe":"172.17.0.4","api-port":8443,"key":"<set>","out":"results-20260904T2308Z-c1","tip":null,"allow-busy":false,"skip-host-checks":false,"hosts":240,"conc":1,"seed":"c1","dot-port":853,"timeout":10000}
+2026-09-04T23:09:07.544Z [p5-conc] Get-NetConnectionProfile: Ethernet                Public
+2026-09-04T23:09:07.992Z [p5-conc] idle check: PASS (recorded; each stage decides)
+2026-09-04T23:09:08.014Z [p5-conc] GET /health -> 200 {"status":"ok","version":"0.3.1","uptime_seconds":2680}
+2026-09-04T23:09:08.023Z [p5-conc] config snapshot -> results-20260904T2308Z-c1\config.json
+2026-09-04T23:09:08.027Z [p5-conc] engine.mode = dns+http+https
+2026-09-04T23:09:08.038Z [p5-conc] certificates before: ca.present=true leaf_cache={"size":256,"capacity":512,"inflight":0,"hits":8316,"unwarmed_misses":0,"prewarm_hits":8060,"coalesced":0,"minted_total":256,"evictions":0,"superseded":0}
+2026-09-04T23:09:09.021Z [p5-conc] first-sight conc=1: 240/240 handshakes, p50=2.799 ms, wall=983.02 ms, 244.146 handshakes/s, issuers=FastAdHunter CA, errors=0
+2026-09-04T23:09:09.755Z [p5-conc] repeat conc=1: 240/240 handshakes, p50=1.982 ms, wall=723.539 ms, 331.703 handshakes/s, issuers=FastAdHunter CA, errors=0
+2026-09-04T23:09:09.764Z [p5-conc] leaf_cache delta whole run {"size":240,"capacity":0,"inflight":0,"hits":1520,"unwarmed_misses":0,"prewarm_hits":1280,"coalesced":0,"minted_total":240,"evictions":0,"superseded":0}; repeat pass {"size":0,"capacity":0,"inflight":0,"hits":690,"unwarmed_misses":0,"prewarm_hits":690,"coalesced":0,"minted_total":0,"evictions":0,"superseded":0}
+2026-09-04T23:09:09.764Z [p5-conc] wrote results-20260904T2308Z-c1\p5-conc.json
+2026-09-04T23:09:09.765Z [p5-conc] GATE {"statistic":"none — diagnostic (P5 path segmentation)","incremental_p50_ms":0.817,"conc":1}
+2026-09-04T23:09:09.765Z [p5-conc] == p5-conc done (valid)

@@ -1,0 +1,14 @@
+2026-09-04T23:08:38.870Z [p5-conc] == p5-conc start 2026-09-04T23:08:38.832Z tip=3bb12c040335-dirty out=results-20260904T2308Z-c0
+2026-09-04T23:08:38.871Z [p5-conc] args {"probe":"172.17.0.4","api-port":8443,"key":"<set>","out":"results-20260904T2308Z-c0","tip":null,"allow-busy":false,"skip-host-checks":false,"hosts":240,"conc":1,"seed":"c0","dot-port":853,"timeout":10000}
+2026-09-04T23:08:39.154Z [p5-conc] Get-NetConnectionProfile: Ethernet                Public
+2026-09-04T23:08:39.537Z [p5-conc] idle check: PASS (recorded; each stage decides)
+2026-09-04T23:08:39.562Z [p5-conc] GET /health -> 200 {"status":"ok","version":"0.3.1","uptime_seconds":2652}
+2026-09-04T23:08:39.571Z [p5-conc] config snapshot -> results-20260904T2308Z-c0\config.json
+2026-09-04T23:08:39.575Z [p5-conc] engine.mode = dns+http+https
+2026-09-04T23:08:39.584Z [p5-conc] certificates before: ca.present=true leaf_cache={"size":0,"capacity":512,"inflight":0,"hits":0,"unwarmed_misses":0,"prewarm_hits":0,"coalesced":0,"minted_total":0,"evictions":0,"superseded":0}
+2026-09-04T23:08:40.548Z [p5-conc] first-sight conc=1: 240/240 handshakes, p50=2.883 ms, wall=963.428 ms, 249.11 handshakes/s, issuers=FastAdHunter CA, errors=0
+2026-09-04T23:08:41.228Z [p5-conc] repeat conc=1: 240/240 handshakes, p50=1.49 ms, wall=667.234 ms, 359.694 handshakes/s, issuers=FastAdHunter CA, errors=0
+2026-09-04T23:08:41.242Z [p5-conc] leaf_cache delta whole run {"size":240,"capacity":0,"inflight":0,"hits":480,"unwarmed_misses":0,"prewarm_hits":240,"coalesced":0,"minted_total":240,"evictions":0,"superseded":0}; repeat pass {"size":0,"capacity":0,"inflight":0,"hits":240,"unwarmed_misses":0,"prewarm_hits":240,"coalesced":0,"minted_total":0,"evictions":0,"superseded":0}
+2026-09-04T23:08:41.243Z [p5-conc] wrote results-20260904T2308Z-c0\p5-conc.json
+2026-09-04T23:08:41.243Z [p5-conc] GATE {"statistic":"none — diagnostic (P5 path segmentation)","incremental_p50_ms":1.393,"conc":1}
+2026-09-04T23:08:41.243Z [p5-conc] == p5-conc done (valid)

@@ -43,9 +43,9 @@ stopped, reconfigured or profiled.
 | P3 (throughput, RSS) | **parked** | needs an h2 origin under a public name with a publicly trusted certificate on a second LAN endpoint (delta 14) |
 | P4 | run ×3, all valid | **row-setter withdrawn 2026-09-05 — DoT and DoH rows return to `TBD`.** The declared statistic is not robust across sessions (§P4-reruns): the UDP control moved 101 / 175 / 148 µs, carrying DoT added from +61 to +17 / +16 µs. Transport paths are healthy — both beat their ×9 prediction |
 | P4-LAN | run | diagnostic: DoT +71 µs, DoH +427 µs. The attribution against P4 was attempted 2026-09-05 and is **unresolved** (§P4-reruns) |
-| P5 | run | **fail at 1.389 ms against < 1 ms** — not attributable to minting (see D11-on-device); ~0.94 ms unexplained |
+| P5 | run | **fail at 1.389 ms against < 1 ms** under the frozen statistic — not attributable to minting (see D11-on-device); the increment tracks the CPU speed regime, like-for-like 0.728 ms (C2, §P5-regime). Closed as a diagnostic, no code change. **Owner disposition 2026-09-05: a recorded budget miss, not a demonstrated defect — it does not block Phase 3 closure** |
 | D11-on-device | run | diagnostic: `certs_mint` **450.88 µs**, inside the < 1 ms row; ARM/x86 8.4× |
-| P5-conc | run | diagnostic: incremental reproducible at ~1.29 ms (conc 1); 8× concurrency removes ~0.26 ms; ~0.6 ms unattributed |
+| P5-conc | run | diagnostic: incremental reproducible at ~1.29 ms (conc 1); 8× concurrency removes ~0.26 ms. The remainder is not an integration cost — §P5-regime attributes it to arm order and clock regime (C2 like-for-like 0.728 ms) |
 | P5-diag | run | diagnostic: server-side split reconciles P5 to 3 % — `dispatch_wait` +4.5 µs, `prewarm` +940.5 µs, `handshake_after_prewarm` +647 µs |
 | P6 | run | **pass** — 4.937 ms / 6.015 ms |
 | P7-store | run, script side | **pass** |
@@ -59,12 +59,18 @@ the production container, and P8 / P9 proper on the soak deploy.
 
 **The two certificate results must not be conflated.** Mint performance on
 target hardware **passes** (D11-on-device, 450.88 µs against < 1 ms). P5's
-LAN-observed incremental cost **fails** (1.389 ms against < 1 ms). P5-diag
-segmented the difference from inside the probe and reconciled it to 3 %:
-`dispatch_wait` +4.5 µs, `prewarm` +940.5 µs, `handshake_after_prewarm`
-+647 µs. So the failure is located in the integration of listener → certificate
-store → TLS handshake, **not** in the minting algorithm. `fah-certs` is not to
-be changed on this evidence.
+LAN-observed incremental cost **fails** (1.389 ms against < 1 ms) under the
+plan's frozen statistic, median(first-sight pass) − median(repeat pass). P5-diag
+segmented the difference from inside the probe and reconciled it to 3 %
+(`prewarm` +940.5 µs, `handshake_after_prewarm` +647 µs); §P5-regime then
+showed both terms are the two passes running in different clock regimes, not a
+cost the first-sight path pays: paired per host on the same device the
+incremental is **0.728 ms** median (C2), and at equal clock the post-pre-warm
+handshake is the same in both arms. The diagnosis points at arm order and
+clock regime, inferred from timings without a per-connection clock trace, and
+**not** at a demonstrated extra cost in `certs_mint` or in the listener →
+certificate store → TLS handshake integration. P5 is closed as a diagnostic:
+no further experiment, no code change, `fah-certs` unchanged.
 
 The P4 vs P4-LAN DoH gap was probed on 2026-09-05 with `/tool/profile cpu=all`
 over two in-device P4 reruns. **The instrument cannot separate the harness
@@ -449,28 +455,30 @@ jitter — the baseline moved 101 → 175 µs on an otherwise idle router.
 Every precondition held and the run took the shipped path, so this is a gate
 failure — a performance miss against the budget — not a defect.
 
-**Attribution, settled by the D11-on-device run below: the failure is not the
-mint.** `certs_mint` measured **450.88 µs** in-process on the same device,
-inside the < 1 ms budget, and at **8.4×** the dev box's 53.64 µs — the project's
-~9× x86 → RB5009 factor, holding. So roughly **940 µs of P5's 1 389 µs is not
-certificate minting** and remains unexplained by the mint benchmark.
+**Attribution, settled below: the failure is not the mint.** `certs_mint`
+measured **450.88 µs** in-process on the same device (§D11-on-device), inside
+the < 1 ms budget, and at **8.4×** the dev box's 53.64 µs — the project's ~9×
+x86 → RB5009 factor, holding.
 
-The plan assumed the `spawn_blocking` hop "is paid by both arms and cancels".
-The two figures argue against that: `certs_prewarm_warm` is **563 ns**, so the
-repeat arm's pre-warm is effectively free, while the first-sight arm dispatches
-a 451 µs blocking task and waits for a worker thread to pick it up. A
-dispatch-and-wake asymmetry of that size sits in the listener's path, not in the
-crypto. That is a hypothesis this run does not prove.
+**Conclusion.** P5's increment depends on the CPU speed regime the device is
+in, not on the mint. Under the frozen pass-vs-pass statistic it is reproducibly
+over budget (1.25–1.39 ms, four sessions); paired per host the median is
+0.728 ms with 74 of 240 pairs still over 1 ms. The mint itself is inside budget
+(450.88 µs, D11-on-device). Mechanism inferred from the 1 : 2 : 4 interval
+levels, including on the crypto-free `dispatch_wait` path; no per-connection
+clock trace exists. Evidence in §P5-regime, dispositions at the end of
+§P5-diag. **Nothing in `fah-certs` changes on this evidence.**
 
-**Next step is segmentation of the P5 path, not optimisation of the mint.**
-Nothing in `fah-certs` should change on this evidence — the component it points
-at measures inside its budget. The first segmentation attempt is P5-conc below:
-it bounds the concurrency-sensitive part at ~0.26 ms and leaves ~0.6 ms
-unattributed.
+**Phase-3 disposition (owner, 2026-09-05).** P5 is a recorded
+performance-budget miss, **not a demonstrated implementation defect**, and
+**does not block Phase 3 closure**. `certs_mint` meets the D11-on-device
+budget; the P5 end-to-end increment is not reliably < 1 ms on this device.
 
-An earlier revision of this section attributed the miss to the ~9× factor
-failing for crypto workloads. The D11-on-device run refutes that; the paragraph
-was replaced rather than kept, and this note records that it existed.
+Two hypotheses this section carried are refuted, and are recorded rather than
+deleted: that a `spawn_blocking` dispatch-and-wake asymmetry explains the gap —
+§P5-diag measured `dispatch_wait` at **+4.5 µs**, so the plan's "paid by both
+arms and cancels" was right; and, in an earlier revision, that the ~9× factor
+fails for crypto workloads — §D11-on-device measured **8.4×**.
 
 ## D11-on-device — `certs` criterion suite on the RB5009
 
@@ -553,8 +561,10 @@ partial — about a fifth of the difference between the incremental and
 `certs_mint`'s 451 µs — so concurrency sensitivity is not shown to be the main
 cause.
 
-**Roughly 0.6 ms remains unattributed** and must not be split between scheduling
-and CPU without instrumentation.
+**Roughly 0.6 ms remained unattributed at the time of this run**, and was not to
+be split between scheduling and CPU without instrumentation. It is no longer
+open: §P5-regime attributes it to the execution-regime difference between two
+sequential passes.
 
 **Withdrawn:** an estimate of ~0.68 ms of CPU per first-sight handshake, derived
 from the wall-clock difference between the two passes at conc 8. A′ refutes the
@@ -563,9 +573,12 @@ a 35 % spread — and the raw throughputs moved 27–56 % between A and A′ (pr
 uptime 31 s against 146 s). Differencing the medians cancels that drift; the
 wall-clock comparison does not. No conclusion rests on it.
 
-The next experiment is instrumenting the listener path — timestamps at request,
-dispatch, worker start, mint completion, response. That is a code change and is
-not made on this evidence.
+The next experiment named here — instrumenting the listener path with
+timestamps at request, dispatch, worker start, mint completion and response —
+was built as the `diag-timing` feature and run as §P5-diag. It **refuted** the
+dispatch-and-wake hypothesis (`dispatch_wait` +4.5 µs), and §P5-regime then
+attributed the remainder to arm order and CPU speed regime. No further
+experiment follows.
 
 ## P5-diag — diagnostic, listener-side segmentation of the P5 gap
 
@@ -610,17 +623,184 @@ Read strictly as measured:
   both serve an already-cached leaf by that point. The cause is **not
   identified**.
 
-Two facts sit beside each other and are not reconciled here: the same
+Two facts sit beside each other and are not reconciled **by this run**: the same
 `store.prewarm()` call measures **944.5 µs** inside the listener and **451 µs**
 under criterion (§D11-on-device). Why the two contexts differ, and why the
-post-pre-warm handshake differs between arms, are open questions. Neither is
-answered by this run and neither is inferred from it.
+post-pre-warm handshake differs between arms, were open questions when this run
+was recorded. Neither is answered here and neither is inferred from it.
+
+**Both were closed afterwards by §P5-regime**, which is the update to read
+against this section. The 944.5 µs is the mixed-regime median of a mint whose
+fastest listener rows read 513–522 µs against criterion's 450.88 µs — +14 %,
+~60 µs of real context cost. The +647 µs is the **repeat arm's advantage** from
+running as its own dense pass after the first-sight pass: at the fastest regime
+level the two arms' post-pre-warm handshakes are equal.
 
 **Verdict unchanged.** P5 remains **FAIL** at 1.389 ms against < 1 ms, and the
 failure is **not** a `certs_mint` performance failure — D11-on-device passes
-independently at 450.88 µs. What this run changes is where to look: the
-integration of listener → certificate store → TLS handshake, not the minting
-algorithm in isolation. **No change to `fah-certs` follows from this.**
+independently at 450.88 µs. **No change to `fah-certs` follows from this.**
+
+This section originally pointed the next step at the integration of listener →
+certificate store → TLS handshake. **§P5-regime rejected that direction**: at
+equal regime the post-pre-warm handshake is the same in both arms, which bounds
+cache eviction, allocator cross-thread frees, lazy key setup, a cold `Arc` and
+core migration together to under ~100 µs. The direction is recorded as
+superseded, not deleted.
+
+## P5-regime — diagnostic, arm order and clock regime (C0 / C1 / C2)
+
+Not a stage. Takes the two open questions from §P5-diag — the +647 µs
+`handshake_after_prewarm` difference between arms that both serve a cached
+leaf, and `prewarm` at 944.5 µs in the listener against 450.88 µs under
+criterion — first by re-reading the rows already in this file, then with three
+client-side runs on 2026-09-04/05. No Rust change, no `diag-timing`; the
+regular probe image `a2d0802` (`fah-probe-a2d0802-rosready` on `veth3`), the
+client scripts from tree `3bb12c0-dirty`. The production container was not
+touched.
+
+**Re-reading §P5-diag's rows (`dot-timing.tsv`, n = 32 per arm).** Every
+interval sits on discrete levels at ratios ≈ 1 : 2 : 4, including the pure
+kernel wake path that carries no crypto: `dispatch_wait` 34–49 / 69–76 /
+120–147 µs; `prewarm` 513–522 / 940–1060 / 2 227 µs; `handshake_after_prewarm`
+1 479–1 669 / ~2 350 / 3 374–4 142 µs. Consecutive rows share a level in blocks
+of 4–10. The **repeat arm shows the same levels with no mint in it** (rows
+7–10: `dispatch_wait` 120–147, handshake 3 374–4 142). At the fastest level the
+first-sight handshake (1 479–1 669 µs, n = 7) equals the repeat handshake
+(1 531–1 815 µs, n = 17): there is no cost paid after the mint at equal clock,
+which bounds cache eviction, mimalloc cross-thread frees, lazy key setup, a
+cold `Arc` and core migration together to under ~100 µs. §P5-conc's client
+rows agree: floor-to-floor the arms differ by 0.5–0.8 ms (A: min 1.85 vs 1.34
+ms, p10 2.27 vs 1.50; A′: min 1.85 vs 1.23, p10 2.02 vs 1.33) while the medians
+differ by 1.25–1.32 ms. The median incremental is a regime-mix difference.
+
+### Runs
+
+| Date (UTC) | Tip hash | Device / workload / corpus | Idle check | Validity | Delta | Raw directory |
+| --- | --- | --- | --- | --- | --- | --- |
+| 2026-09-04 23:08 (C0) | `a2d0802` / `3bb12c0-dirty` | RB5009 `fah-probe` over the LAN, `p5-conc-diag.mjs --conc 1 --hosts 240`, cache empty at start, alone | PASS | valid (diagnostic) | — | `results-20260904T2308Z-c0/` |
+| 2026-09-04 23:08 | `a2d0802` / `3bb12c0-dirty` | `p5-clock-load.mjs --hosts 16 --conc 2 --duration 90`: 16 hosts minted, then closed-loop repeat handshakes, 597–598/s at p50 2.06 ms for the first 20 s, 0 errors in that window; after ~12 000 connections the client ran out of ephemeral ports and the load collapsed (82 663 client-side errors, all after C1 finished) | PASS | degraded (client port exhaustion, after C1) | — | `results-20260904T2308Z-c1-load/` |
+| 2026-09-04 23:09 (C1) | `a2d0802` / `3bb12c0-dirty` | as C0, run inside the load's second clean window (598/s, 0 errors), nothing changed on the probe between C0 and C1, cache 240 + 16 → 496 | PASS | valid (diagnostic) | — | `results-20260904T2308Z-c1/` |
+| 2026-09-04 23:15 | — | owner restarted `fah-probe` to purge the cache (496 of 512; no CA generate, archive stays 7 of 8) | — | — | — | — |
+| 2026-09-04 23:16 (C2) | `a2d0802` / `3bb12c0-dirty` | `p5-paired-diag.mjs --hosts 240`: per host one first-sight handshake then immediately its repeat, cache empty at start, alone | PASS | valid (diagnostic) | — | `results-20260904T2316Z-c2/` |
+
+Every arm: 240/240 handshakes, 0 errors, `minted_total` +240 exactly,
+`evictions` 0, served issuer `FastAdHunter CA` on every row. `cpu-load` peaked
+at 53 % during C1. A read-only 5 Hz `/system/resource/print` poll over ssh ran
+beside C0, C1 and C2 symmetrically; its logs sit outside the repo and are not
+part of the record (see the retraction below).
+
+### Figures
+
+| Arm | design | first-sight p50 | repeat p50 | incremental |
+| --- | --- | --- | --- | --- |
+| C0 | sequential passes, alone | 2.883 ms | 1.490 ms | **1.393 ms** |
+| C1 | sequential passes, beside 598/s background load | 2.799 ms | 1.982 ms | **0.817 ms** |
+| C2 | paired per host | 2.930 ms | 2.049 ms | **0.728 ms** paired median (p25 0.49, p75 1.06); 0.891 ms median − median; 166/240 pairs under 1 ms |
+| diagnostic — no gate | C0 reproduces P5 (1.389) and §P5-conc A / A′ (1.321 / 1.252): fourth session, same figure | | | |
+
+Read strictly as measured:
+
+- **C0 → C1.** With the clock kept busy the incremental falls under 1 ms. The
+  load adds contention to both arms (repeat +0.49 ms at p50), so the absolute
+  figures are confounded; the incremental is not, both arms carry the same
+  contention. Underneath it the first-sight arm sped up by ~0.57 ms.
+- **C0 → C2.** The first-sight arm is unchanged (2.883 → 2.930 ms). The repeat
+  arm slows by 0.56 ms once it is interleaved with the mints (1.490 → 2.049 ms).
+  The +647 µs of §P5-diag was the **repeat arm's advantage** from running as
+  its own dense pass after the first-sight pass, not a cost the first-sight
+  handshake pays. Regime blocks persist in both arms of C2 and switch together
+  (within-pair correlation 0.44, diff sd 1.10 ms, 32 pairs above 1.5 ms, 9
+  negative): pairing cancels most of the regime variation, not all of it.
+- **Q1, the listener-vs-criterion `prewarm` gap.** 944.5 µs is the
+  mixed-regime median of a mint whose fastest listener rows read 513–522 µs
+  against 450.88 µs under criterion: +14 %, ~60 µs of real context cost. Not
+  worth chasing. The x86 1.49× (85 vs 57 µs, 2026-09-05, one degraded session)
+  is the same class.
+
+### x86 comparison — supporting diagnostic, no gate, no row-setting
+
+The same instrument on the dev box, to separate the mint from the rest of the
+end-to-end increment on a platform whose clock does not step the same way.
+**Raw output is outside the repo, at `E:\tmp\p5x86\`** — this subsection is the
+only record of it, and it is supporting evidence, not a repo-complete artefact.
+It sets no row and changes no verdict.
+
+Dev box x86_64 Windows 11, 2026-09-05, tree `3bb12c0-dirty`. Release binary
+built with `cargo build --release -p fastadhunter --features
+fah-dns/diag-timing`, run as a local full-mode instance on loopback;
+`p5-conc-diag.mjs --conc 1 --hosts 32` against it. Both arms **degraded** — the
+box was not idle and its editor cannot be closed. n = 32 per arm, 32/32
+handshakes, `minted_total` +32 exactly, `evictions` 0, served issuer
+`FastAdHunter CA` on every row. Control `certs_mint` **re-run in the same
+session**: 57.055 µs [56.342 57.942] unpinned, against the stored pinned
+53.64 µs.
+
+| Interval, p50 | x86 first-sight | x86 repeat | x86 delta | RB5009 delta |
+| --- | --- | --- | --- | --- |
+| `sni_to_dispatch` | 0 µs | 0 µs | 0 | 0 |
+| `dispatch_wait` | 9 µs | 8 µs | +1 µs | +4.5 µs |
+| `prewarm` | 85 µs | 1 µs | **+84 µs** | +940.5 µs |
+| `handshake_after_prewarm` | 747 µs | 760 µs | **−13 µs** | +647 µs |
+| server-side sum | 841 µs | 769 µs | **+72 µs** | +1 592 µs |
+| supporting diagnostic — no gate | client incremental 65 µs against the 72 µs server sum, 10 % apart | | | |
+
+- **The mint and the rest separate cleanly.** Listener `prewarm` 85 µs against
+  criterion 57.055 µs is **1.49×** — the same class as the device's +14 % over
+  its fastest listener rows, and the only real context cost either platform
+  shows.
+- **No post-mint cost on either platform once regime is controlled.** On x86 the
+  two arms' post-pre-warm handshakes are equal, with the repeat marginally
+  *slower* (747 vs 760 µs). That is what the device shows at its fastest regime
+  level, and it is why the device's mixed-regime +647 µs is not a first-sight
+  cost.
+- **The whole x86 increment converts to 648 µs** by the ~9× factor — inside the
+  < 1 ms row. The device's pass-vs-pass 1.389 ms exceeds that prediction; its
+  paired 0.728 ms does not.
+- Absolute handshakes do **not** take the factor: 747 µs here against 1 479–1 815
+  µs at the device's fastest level, ~2.2×. Consistent with PERFORMANCE.md
+  §Converting — TLS legs do not convert.
+
+Caveats: one session, n = 32, both arms degraded, Windows heap against musl +
+mimalloc on the device, and a different governor. Scope is this box and this
+session; it corroborates the device diagnosis and cannot stand in for it.
+
+**Retraction.** The 5 Hz `cpu-frequency` poll read 350 MHz through C0's
+first-sight pass and 700/1400 through C1; that was reported during the session
+as corroboration. During C2 it read 350 for 9 of 13 samples while the paired
+differences say the mint ran near full clock. A 5 Hz read of an instantaneous
+value cannot see inside a ~2 ms connection, so the C0 reading is consistent
+with the diagnosis and is **not evidence** for it. `measurement-traps.md`'s
+rule stands unchanged: the reported frequency never scales, and after this run
+it does not corroborate either. The diagnosis rests on timings only: C0 1.393,
+C1 0.817, C2 0.728 ms.
+
+**What is inferred and what is measured.** Measured: the arms sample different
+speed regimes when run as sequential passes, and the difference disappears when
+they are paired or when the device is kept busy. Inferred, not measured: that
+the regimes are the CPU clock stepping under a light bursty workload, chosen by
+the governor from the arms' order and duty cycle. There is no per-connection
+clock trace, so the governor's mechanism stays an inference. Scope: RB5009 with
+the live resolver co-resident, probe `a2d0802`, 240 synthetic hosts, one LAN
+client, `--conc 1`; superseded only by a run with the clock held, which the
+client cannot arrange.
+
+**Dispositions.**
+
+- **P5 remains FAIL at 1.389 ms** under the plan's frozen statistic,
+  median(first-sight pass) − median(repeat pass) < 1 ms. The plan is not edited
+  after a run and the statistic is not reinterpreted.
+- **C2's 0.728 ms paired median is the like-for-like figure.** It shows the P5
+  FAIL is dominated by the execution-regime difference between the two passes,
+  not by `certs_mint`.
+- **D11-on-device stays the row-setter** for PERFORMANCE.md's "cold `prewarm`
+  per first-sight host" row at 450.88 µs; P5 is recorded beside it as a gate
+  failure of the end-to-end measurement. **No code change follows.**
+- **No further experiment after C2.** P5 is closed as a diagnostic.
+
+Instruments, both diagnostic, beside `p5-conc-diag.mjs`: `p5-clock-load.mjs`
+(known defects before any reuse: no error-kind logging, no stop on an error
+burst, and its "load phase minted N leaves" line is misleading when a diag run
+mints beside it by design) and `p5-paired-diag.mjs`.
 
 ## P6
 

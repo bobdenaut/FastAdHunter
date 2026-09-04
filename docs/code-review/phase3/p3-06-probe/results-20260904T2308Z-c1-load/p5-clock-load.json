@@ -1,0 +1,96 @@
+{
+  "script": "p5-clock-load",
+  "started_at": "2026-09-04T23:08:54.031Z",
+  "finished_at": "2026-09-04T23:10:24.912Z",
+  "tip": "3bb12c040335-dirty",
+  "probe": "172.17.0.4",
+  "probe_version": "0.3.1",
+  "host": {
+    "platform": "win32",
+    "idle": true,
+    "network": [
+      "Ethernet                Public"
+    ],
+    "busy": []
+  },
+  "args": {
+    "probe": "172.17.0.4",
+    "api-port": 8443,
+    "key": "<set>",
+    "out": "results-20260904T2308Z-c1-load",
+    "tip": null,
+    "allow-busy": false,
+    "skip-host-checks": false,
+    "hosts": 16,
+    "conc": 2,
+    "rate": 0,
+    "duration": 90,
+    "seed": "c1load",
+    "dot-port": 853,
+    "timeout": 10000
+  },
+  "valid": true,
+  "status": "degraded",
+  "degraded_reasons": [
+    "load phase minted 240 leaves; a diag run beside it would have over-counted"
+  ],
+  "measurement": "P5-clock-load (diagnostic)",
+  "hosts": 16,
+  "conc": 2,
+  "rate": 0,
+  "duration_s": 90,
+  "seed": "c1load",
+  "figures": {
+    "handshakes": 97237,
+    "handshakes_per_s": 1080.4,
+    "errors": 82663,
+    "leaf_cache_before": {
+      "size": 240,
+      "capacity": 512,
+      "inflight": 0,
+      "hits": 480,
+      "unwarmed_misses": 0,
+      "prewarm_hits": 240,
+      "coalesced": 0,
+      "minted_total": 240,
+      "evictions": 0,
+      "superseded": 0
+    },
+    "leaf_cache_after_mint": {
+      "size": 256,
+      "capacity": 512,
+      "inflight": 0,
+      "hits": 496,
+      "unwarmed_misses": 0,
+      "prewarm_hits": 240,
+      "coalesced": 0,
+      "minted_total": 256,
+      "evictions": 0,
+      "superseded": 0
+    },
+    "leaf_cache_after_load": {
+      "size": 496,
+      "capacity": 512,
+      "inflight": 0,
+      "hits": 15550,
+      "unwarmed_misses": 0,
+      "prewarm_hits": 15054,
+      "coalesced": 0,
+      "minted_total": 496,
+      "evictions": 0,
+      "superseded": 0
+    },
+    "load_delta": {
+      "size": 240,
+      "capacity": 0,
+      "inflight": 0,
+      "hits": 15054,
+      "unwarmed_misses": 0,
+      "prewarm_hits": 14814,
+      "coalesced": 0,
+      "minted_total": 240,
+      "evictions": 0,
+      "superseded": 0
+    }
+  }
+}

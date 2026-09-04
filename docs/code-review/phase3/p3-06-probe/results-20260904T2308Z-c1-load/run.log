@@ -1,0 +1,22 @@
+2026-09-04T23:08:54.069Z [p5-clock-load] == p5-clock-load start 2026-09-04T23:08:54.031Z tip=3bb12c040335-dirty out=results-20260904T2308Z-c1-load
+2026-09-04T23:08:54.070Z [p5-clock-load] args {"probe":"172.17.0.4","api-port":8443,"key":"<set>","out":"results-20260904T2308Z-c1-load","tip":null,"allow-busy":false,"skip-host-checks":false,"hosts":16,"conc":2,"rate":0,"duration":90,"seed":"c1load","dot-port":853,"timeout":10000}
+2026-09-04T23:08:54.350Z [p5-clock-load] Get-NetConnectionProfile: Ethernet                Public
+2026-09-04T23:08:54.741Z [p5-clock-load] idle check: PASS (recorded; each stage decides)
+2026-09-04T23:08:54.764Z [p5-clock-load] GET /health -> 200 {"status":"ok","version":"0.3.1","uptime_seconds":2667}
+2026-09-04T23:08:54.773Z [p5-clock-load] config snapshot -> results-20260904T2308Z-c1-load\config.json
+2026-09-04T23:08:54.777Z [p5-clock-load] engine.mode = dns+http+https
+2026-09-04T23:08:54.793Z [p5-clock-load] certificates before: ca.present=true leaf_cache={"size":240,"capacity":512,"inflight":0,"hits":480,"unwarmed_misses":0,"prewarm_hits":240,"coalesced":0,"minted_total":240,"evictions":0,"superseded":0}
+2026-09-04T23:08:54.891Z [p5-clock-load] mint pass: 16/16 ok, minted_total delta 16 (expected 16)
+2026-09-04T23:08:54.891Z [p5-clock-load] load: conc=2 rate=closed-loop duration=90s over 16 cached hosts — READY for the diag run
+2026-09-04T23:09:04.893Z [p5-clock-load] load window: 5967 ok in 10 s = 596.7/s, p50=2.058 ms, errors so far 0
+2026-09-04T23:09:14.895Z [p5-clock-load] load window: 5980 ok in 10 s = 598/s, p50=2.066 ms, errors so far 0
+2026-09-04T23:09:24.900Z [p5-clock-load] load window: 2600 ok in 10 s = 259.8/s, p50=2.134 ms, errors so far 7219
+2026-09-04T23:09:34.899Z [p5-clock-load] load window: 13 ok in 10 s = 1.3/s, p50=2.627 ms, errors so far 19883
+2026-09-04T23:09:44.900Z [p5-clock-load] load window: 1 ok in 10 s = 0.1/s, p50=3.672 ms, errors so far 32479
+2026-09-04T23:09:54.901Z [p5-clock-load] load window: 1 ok in 10 s = 0.1/s, p50=4.151 ms, errors so far 44894
+2026-09-04T23:10:04.902Z [p5-clock-load] load window: 12 ok in 10 s = 1.2/s, p50=3.667 ms, errors so far 57667
+2026-09-04T23:10:14.903Z [p5-clock-load] load window: 0 ok in 10 s = 0/s, p50=null ms, errors so far 70059
+2026-09-04T23:10:24.911Z [p5-clock-load] load done: 97237 handshakes in 90 s = 1080.4/s, errors 82663; leaf_cache delta across load {"size":240,"capacity":0,"inflight":0,"hits":15054,"unwarmed_misses":0,"prewarm_hits":14814,"coalesced":0,"minted_total":240,"evictions":0,"superseded":0}
+2026-09-04T23:10:24.912Z [p5-clock-load] degraded: load phase minted 240 leaves; a diag run beside it would have over-counted
+2026-09-04T23:10:24.913Z [p5-clock-load] wrote results-20260904T2308Z-c1-load\p5-clock-load.json
+2026-09-04T23:10:24.913Z [p5-clock-load] == p5-clock-load done (degraded)
