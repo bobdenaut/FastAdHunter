@@ -170,6 +170,15 @@ it into the new `root-dir` and auto-suffixes the derived name (`…-0.2.19` →
 `root-dir`, its own mount lists, and a `comment` that is **not** `fastadhunter`
 — `[find comment="fastadhunter"]` is exact equality and would match both.
 
+**One veth carries one container at a time.** A second container cannot run on a
+veth another container already holds (confirmed on the device 2026-09-04), so
+every in-device bench is a *stop the probe, add, start, read, remove, start the
+probe again* sequence — budget the probe's downtime into the plan, not just the
+bench's runtime. The comment rule above generalises with it: `[find
+comment="…"]` is exact equality for **any** value, so two containers sharing a
+comment make `stop`, `start` and `remove` hit whichever matched first. Give every
+test container its own.
+
 **A mount list can exist while its target directory does not.** Creating
 `/container/mounts` entries does not create the directories they point at; the
 container then starts, silently writes into the container store instead, and

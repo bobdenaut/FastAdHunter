@@ -4,32 +4,40 @@ Where the work is right now. **Rewrite this file — never append.** History
 belongs in `git log`, `docs/code-review/` and the phase tables; this file is only
 what is true today.
 
-**Last updated:** 2026-09-03
+**Last updated:** 2026-09-05
 
 ## Now
 
 | | |
 | --- | --- |
-| Branch | `phase3-06` at `d99cd90`. `origin` and `backup` are at `2df5f5e`; `d99cd90` (probe scripts + delta 14, no Rust) is **not pushed** |
-| Tree | clean apart from the owner's two uncommitted 0.3.1 soak-log files under `docs/code-review/phase2.6/` |
-| Tests | green at `145bc17` — fmt, clippy `-D warnings`, `cargo test --all-features --workspace`. No Rust changed since |
+| Branch | `phase3-06` at `29e6792` |
+| Tree | clean apart from the owner's uncommitted `docs/code-review/phase2.6/` files |
+| Tests | green at `7bd1a2d` — fmt, clippy `-D warnings` on the workspace **and** on `fah-dns --features diag-timing`, `cargo test --all-features --workspace`. The only Rust since `145bc17` is `diag-timing`, an **off-by-default** feature on `fah-dns` that timestamps four segments of a first-sight DoT handshake (`dot.rs`). Shipped builds are byte-identical to before it |
 | Version | 0.3.1 (workspace). **No phase-5 tag exists.** Newest tags are `soak-p2.6-11` (`1c430aa`, 0.2.20) and `v0.2.19-phase2.5` |
 | Deployed | container **`fastadhunter-0.3.1`** on `veth1` (`172.17.0.2`), image `b45b8a90…`, **`strategy = "adaptive"`**, soaking since **2026-09-01T07:27:49Z** (`T0`). First deployed build carrying the phase-5 dashboard |
 | Build ≠ tip | `0.3.1` is `db2f9b2`. **Four commits landed after it and are not deployed** — `36ed749` (cache hit-rate divisor, `fah-stats`), `003aedb` (query-types donut), `e6cbf08` (memory residual verdict), `7ea9175` (upstream RTT attribution) |
-| Phase | **5 closed**. **Two phases in `wip`:** `phase2.6-adaptive-stage1` — 11 `DONE`, `p2.6-11` awaiting the 0.3.1 day-7 acceptance; `phase3` — p3-06 `AWAITING SOAK`, probe campaign not started (§Phase 3 below) |
+| Phase | **5 closed**. **Two phases in `wip`:** `phase2.6-adaptive-stage1` — 11 `DONE`, `p2.6-11` awaiting the 0.3.1 day-7 acceptance; `phase3` — p3-06 `AWAITING SOAK`, probe campaign **run on 2026-09-04** with four stages parked (§Phase 3 below) |
 | 0.3.1 soak at T0+48 h | on the predeclaration's own gates: **G1 drift fails W1 (3.49 MiB) and W2 (2.82 MiB)** against < 2; floor W1 → W2 43.4 → 58.2 MiB, six-hour minima after h24 climb **+5.7 MiB/day**, the rate the predeclaration said fails G2. Growth is anonymous heap in `residual_bytes` (+19 MiB / 48 h; `rss_file` flat at 8.8 MiB; ruleset, cache, stats flat). Floor steps at h18, h24, h36, h44, not aligned with the two list recompiles. Third soak with this shape; no fix in between targeted it |
 | Gate | [Global Architecture Review-Reconciled.md](code-review/Global%20Architecture%20Review-Reconciled.md): §5.1–6 **cleared** — §5.1 p2.5-01, §5.2 p2.5-02, §5.4 p2.5-03, §5.5 p2.5-04, §5.6 p2.5-05 + p2.5-10. §5.7–14 gate Phase 3. **S1-G2 tiers 1, 2 and 3 all met**; **S1-G4 and S1-G5 route 2 are not validated and will not be** |
-| **Next** | (1) arm64 probe images finish building (detached, see §Phase 3); (2) **heap diagnosis of the 0.3.1 floor climb** on the dev box — owner go pending — 0.3.1 build, replayed traffic for hours, `debug/memory` pulls, then allocator-level attribution of what accrues in steps; (3) the p3-06 campaign on the router, owner-run router steps proposed first. The soak itself runs to **2026-09-08**; its day-7 verdict closes `p2.6-11` |
+| **Next** | (1) **a second wired LAN machine with Node** — the only thing blocking P1-LAN, P1-control, P2 and P3, which have no evidence at all and decide whether Phase 3 ships (§Phase 3); (2) **0.3.1 floor climb diagnosed on the dev box — REPRODUCED**, [resoak-0.3.1-memory-diagnosis.md](code-review/phase2.6/resoak-0.3.1-memory-diagnosis.md): two components — a slow drift (+0.34 MiB/h at 2 QPS on x86, allocator retention under mixed-lifetime churn, 40 % allocator-independent) and step residues of ~20 MiB left by household HTTP-proxy connection bursts that mimalloc never returns (musl returns all but 1.3 MiB); thread churn, recompile rate, history/stats ticks and the HTTP body path are excluded. Arms still running on the dev box for the drift split (`serve_stale`, `page_full_retain`, musl at 2 QPS) and the burst levers; next reads and the decision table are in the diagnosis §Proposed fix. No fix chosen, no code changed; (3) `/tool/profile cpu=all` during an in-device P4 run — ten minutes of router time, and it decides whether the DoH figure that sets a PERFORMANCE.md row carries the harness client's own CPU. The soak itself runs to **2026-09-08**; its day-7 verdict closes `p2.6-11`, and Runbook 6 (the 24 h full-mode soak, which carries P7, P8 and P9 proper) cannot start before it ends |
 
-## Phase 3 — p3-06 verification, campaign pending (2026-09-03)
+## Phase 3 — p3-06, campaign run 2026-09-04, four stages parked
+
+**Every figure and the full open list live in
+[p3-06-testing-results.md](code-review/phase3/p3-06-testing-results.md)** —
+§Campaign status is the per-ID state, §Session state and environment is what a
+later run needs (containers, images, probe config, credentials, the traps that
+cost runs). Do not duplicate them here.
 
 | | |
 | --- | --- |
-| Commits today | `145bc17` harness DoT client framed in one write + `TCP_NODELAY`, DoH arm over h2 with an `HTTP/2.0` assertion (smoke F25 / F26, delta 12); `4dbbfb2` delta 13 (SNI invalidity rules) + fixed lines; `2df5f5e` smoke-1844Z raw output and its verification tracked; `d99cd90` delta 14, `h2-origin.mjs` HEAD, `smoke/h2-preflight.mjs` |
-| Smoke status | scripts match the frozen testing plan (`p3-06-smoke-20260903T1844Z-verification.md`, PASS WITH DEFERRED FINDINGS). F25 / F26 proven fixed in-container (`smoke-20260903T1949Z/layer3-p4-run.log`). Older smoke sessions removed in `761cc1c`; F1–F13 exist in history only, F14–F22 nowhere |
-| Images | building detached on bobdenaut, `docs/code-review/phase3/p3-06-probe/results-20260903T2114Z/build-arm64.sh`, log `build-arm64.log` beside it; started 20:39Z at tip `d99cd90`. Order: `fah-probe`, `fah-p4`, `fah-splicebench`, each then converted with skopeo to `<name>-d99cd90-rosready.tar` in the repo root (gitignored). Not uploaded |
-| Parked | **P3**: needs an origin under a public name with a publicly trusted certificate (delta 14); every path found touches production (dyndns zones blocked by the live resolver, soak forbids changes) or the router. **P2**: no wired bridged VM. Both stages skip; the rest of the campaign does not depend on them |
-| Campaign order | SNI, P1 (control + spliced + aggregate, then the `splicebench` sweep container), P4 in-device (`fah-p4` add / remove), P4-LAN, P5, P6, P7. Router steps first, owner-run, proposed only: read-only `/container/print` and firewall prints, tar upload to `kingston`, `/container/add` for `fah-probe` on `veth3`, three boot keys via `POST /api/v1/config`, restart |
+| Ran | SNI **pass** · P6 **pass** · P7-store **pass** · P4 sets the row (DoT +61 µs, DoH +915 µs) · P4-LAN, P8-probe, P9-probe diagnostics · P1-loopback no pick · **P5 FAIL** |
+| P5 | fails `< 1 ms` at **1.389 ms**, and the failure is **not** `certs_mint`, which passes independently on the device at **450.88 µs** (D11-on-device, 8.4× the dev box, so the ~9× factor holds). P5-diag reconciled the gap from inside the probe to 3 %: `dispatch_wait` +4.5 µs, `prewarm` +940.5 µs, `handshake_after_prewarm` +647 µs. Two questions are open and **unattributed** — why `store.prewarm()` costs 944.5 µs in the listener against 451 µs under criterion, and why the post-pre-warm handshake differs between arms. **No `fah-certs` change follows from this** |
+| Parked | **P1-LAN, P1-control, P2, P3** — all four need a second **wired** LAN machine with Node; P2 additionally needs two same-family IPv4 addresses on it, P3 an h2 origin under a public name with a publicly trusted certificate (delta 14). Bridged WSL was assessed and **rejected**: it would leave P1-control measuring a Hyper-V switch and risks this laptop's static DHCP lease, which two probe boot keys name |
+| Owner decision owed | the `SPLICE_BUF` budget — every candidate clearing 0.9 × best exceeds the declared 32 MiB at `max_connections = 1024`, so either the buffer budget rises, `max_connections` changes with its own justification, or 16/16 stays |
+| Built, not run | `fah-bench-a2d0802-rosready.tar` in the repo root — one image, five bench binaries selected by `entrypoint=`, for D5–D9 and D11 on ARM. Saturates four cores for minutes and the live resolver shares them, so the owner picks the window; criterion stays at **default** warm-up and measurement time or the ARM figures stop comparing with the x86 ones |
+| Still owner-side on the device | Runbook 1 (dst-nat 443 v4 + the v6 decision), Runbook 2–4 (Android CA trust, Private DNS, pinned-app check, ECH retry), Runbook 7's import-then-restart and the ninth-generate `409` (archives are at **7 of 8**), Runbook 6's 24 h soak — which carries P7, P8 and P9 proper and cannot start before 2026-09-08 |
+| Delta 15 | recorded 2026-09-05: the P1 origin's inbound allow is scoped to **`192.168.10.1`**, not `172.17.0.4`. srcnat rule 1 masquerades `172.17.0.0/24` with no `out-interface` restriction, so the declared rule matches nothing and every spliced connection is dropped silently |
 | Dashboard | I1 (p3-06 review): Live Feed lacks the `https-sni` / `https` kinds — frontend-only, no task file yet |
 
 ## Phase 5 — Web Dashboard, closed 2026-09-01

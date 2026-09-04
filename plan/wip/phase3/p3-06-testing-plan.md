@@ -448,6 +448,21 @@ arm runs; the original block stays unedited.
     output saved to `results-<ts>/p3-origin-preflight.log`. Barrier,
     exclusive-window proof, gate statistics and counts unchanged.
     Recorded before the first P3 run.
+15. **P1 firewall scoping (2026-09-05)** — declared: §Running from the laptop,
+    the Local firewall table, an inbound allow on TCP 443 for the P1 origin
+    scoped to the probe, `-RemoteAddress 172.17.0.4`. Now: scoped to
+    **`192.168.10.1`**. Reason: `/ip/firewall/nat` srcnat rule 1 is
+    `action=masquerade src-address=172.17.0.0/24` with **no** `out-interface`
+    restriction, so traffic from the probe to a LAN host is masqueraded and
+    arrives from the router's LAN address, not from `172.17.0.4`. The declared
+    rule matches nothing and Windows drops the connection silently — the arm
+    fails with no local error, the same shape §Running item 2 warns about for a
+    `Public` adapter. Verified on the device 2026-09-04 (`/ip/firewall/nat
+    print`). Unaffected: the reverse direction (LAN → container is not matched
+    by rule 1, so the probe still sees real client addresses and P2's identity
+    precondition stands), and the P1-control rule, which is LAN → LAN and never
+    crosses the container subnet. Gate statistics, quantities and counts
+    unchanged. Recorded before the first P1-LAN or P1-control run.
 
 **Frozen at approval (2026-09-03).** The scripts implement this plan as
 written. A methodology change discovered while writing them is a new numbered

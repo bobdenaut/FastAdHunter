@@ -161,6 +161,16 @@ runs (PERFORMANCE.md §Measuring reliably). **Control arm:**
   (`smoke/h2-preflight.mjs`: HEAD + GET over h2, `PASS` on ALPN h2, 200,
   `content-length` and body of exactly 8 MiB) saved beside the results.
   Barrier, exclusive-window proof, gate statistics and counts unchanged.
+- **P1 firewall scoping (2026-09-05, testing-plan delta 15):** the origin host's
+  inbound allow on TCP 443 is scoped to **`192.168.10.1`**, not to the probe's
+  `172.17.0.4` as the plan's Local firewall table declares. srcnat rule 1 on the
+  device is `action=masquerade src-address=172.17.0.0/24` with no
+  `out-interface` restriction, so probe traffic to a LAN host arrives from the
+  router's LAN address; the declared rule matches nothing and the connection is
+  dropped silently. Verified 2026-09-04 from `/ip/firewall/nat print`. LAN →
+  container is not masqueraded, so P2's identity precondition and P1-control's
+  LAN → LAN path are unaffected. Gate statistics, quantities and counts
+  unchanged.
 
 ## Measurements
 

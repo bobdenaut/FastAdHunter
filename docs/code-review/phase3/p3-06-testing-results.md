@@ -68,6 +68,61 @@ One measurement still owes an attribution: the P4 vs P4-LAN DoH gap, testable
 with `/tool/profile cpu=all` during an in-device P4 run. Until it is run, **no
 code change should follow from it.**
 
+## Session state and environment (end of the 2026-09-04 session)
+
+What a later run needs and cannot derive from the figures.
+
+| Container | Where | State |
+| --- | --- | --- |
+| `fastadhunter-0.3.1`, comment `fastadhunter` | `veth1`, `172.17.0.2` | production, soaking to 2026-09-08. **Never stopped, reconfigured or profiled** during the campaign |
+| comment `fah-probe` | `veth3`, `172.17.0.4` | the campaign's probe. `root-dir /kingston/fahprobe/root`, `mountlists fahprobe-config,fahprobe-data`, `envlists fah-env`, `logging=yes`, `start-on-boot=no`, no `cpu-list`, no `memory-high`. Running |
+
+`veth3` carries one container at a time and every `comment=` must be unique —
+[routeros-traps.md](../../routeros-traps.md) §On-device measurement.
+
+| Image | Where | Notes |
+| --- | --- | --- |
+| `fah-probe-a2d0802-rosready.tar` | on `kingston` | the probe instance |
+| `fah-p4-a2d0802-rosready.tar` | on `kingston` | P4, `/fah-p4` spawning `/fah-probe`, uid 65532 (delta 10) |
+| `fah-splicebench-a2d0802-rosready.tar` | on `kingston` | P1-loopback sweep |
+| `fah-certs-a2d0802-rosready.tar` | on `kingston` | D11-on-device |
+| `fah-probediag-a2d0802-rosready.tar` | on `kingston` | the `diag-timing` probe build used by P5-diag |
+| `fah-bench-a2d0802-rosready.tar` | **repo root only, not uploaded** | 43.3 MB, five bench binaries in one image, run one at a time via `entrypoint=`: `/fah-proxy` (D6/D7), `/fah-intercept` (D8/D9), `/fah-matcher` (D5), `/fah-urlm` (URL tier, real corpus baked in at `/corpus`), `/fah-certs` (D11). Criterion must stay at **default** warm-up and measurement time or the ARM figures stop being comparable with the recorded x86 ones |
+
+Probe configuration, already correct — the three boot keys need no further
+`POST /api/v1/config` and no restart:
+
+| Key | Value |
+| --- | --- |
+| `engine.mode` | `dns+http+https` |
+| `egress.allow_destinations` | `["192.168.10.10"]` |
+| `https.interception.clients` | `["192.168.10.10"]` — bobdenaut is the **listed** client, so its traffic takes the terminate leg |
+| upstreams | `1.1.1.1`, `9.9.9.9`, UDP, `strategy = "fallback"` |
+| list | `oisd-basic`, 63 109 rules, `compiled_rules` 63 110 |
+| blocked domain used by SNI and P4-LAN | `analytics.google.com` (`\|\|analytics.google.com^`) |
+| allowed name used by SNI | `example.com` |
+
+Certificate store, as the campaign left it:
+
+- CA fingerprint `61:F5:44:BE…` plus two further regenerates during P5-conc.
+  Every earlier CA export is invalid.
+- **`ca-archive` is at 7 of 8.** The next `ca/generate` is the ninth, which
+  Runbook 7 owns as its `409 archive_full` check — do not spend it. To clear the
+  leaf cache without a generate, restart the probe.
+- `api_certificate.source = "imported"`: P6 imported a throwaway self-signed
+  pair, so `curl -k` everywhere.
+- The probe's bearer key is at `.vscode/probe.key` (gitignored); every script
+  takes `--key <file>`. **Do not read `.vscode/settings.json`** — it holds
+  secrets in plaintext.
+
+Three traps that cost runs in this session:
+
+| Trap | Effect | Avoidance |
+| --- | --- | --- |
+| `chrome.exe` running on the driving host | every stage prints `INVALID` at the idle precondition (plan §Running item 3); `--allow-busy` only yields `degraded`, which answers no gate. Cost four aborted runs | close it before starting a stage. `--allow-busy` is legitimate only when the figures are timestamped inside the probe, as in P5-diag |
+| Git Bash path conversion | any command with a bare `/path`, a `docker -v` mount or an `openssl -subj` is mangled | `MSYS2_ARG_CONV_EXCL='*'` |
+| A client calling `sock.destroy()` on `secureConnect` | the RST arrives before the server finishes `into_stream`, so the DoT listener takes its handshake-failed arm and never reaches code after it. P5-diag's first attempt emitted nothing for this reason | close with `sock.end()`. `p5-conc-diag.mjs` does; `p5-mint.mjs` is a frozen stage script and still destroys, which is consistent across its own arms |
+
 ## Legend — what each ID means
 
 | ID | Question | Method (script, arms, count) | Gate statistic |
