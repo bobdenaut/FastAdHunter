@@ -25,9 +25,9 @@ use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use fah_model::{
-    AnswerCounters, CacheStatsSample, ClientHits, DailyTopN, DomainHits, HistoryPoint,
-    HistoryRange, HistoryResolution, HistorySeries, HourRollup, LatencySummary, ListFetchCounters,
-    MemoryComponents, PerfSample, PerfSeries, TopItems, TopKind,
+    AnswerCounters, CacheStatsSample, ClientHits, ConcurrentConnections, DailyTopN, DomainHits,
+    HistoryPoint, HistoryRange, HistoryResolution, HistorySeries, HourRollup, LatencySummary,
+    ListFetchCounters, MemoryComponents, PerfSample, PerfSeries, TopItems, TopKind,
 };
 use serde::Deserialize;
 
@@ -356,6 +356,8 @@ struct SlimPerfSample {
     allocator_committed_bytes: u64,
     #[serde(default)]
     list_fetch: ListFetchCounters,
+    #[serde(default)]
+    concurrent_connections: ConcurrentConnections,
 }
 
 impl From<SlimPerfSample> for PerfSample {
@@ -378,6 +380,7 @@ impl From<SlimPerfSample> for PerfSample {
             answers_delta: slim.answers_delta,
             allocator_committed_bytes: slim.allocator_committed_bytes,
             list_fetch: slim.list_fetch,
+            concurrent_connections: slim.concurrent_connections,
         }
     }
 }
@@ -488,6 +491,7 @@ mod tests {
             answers_delta: Default::default(),
             allocator_committed_bytes: 0,
             list_fetch: Default::default(),
+            concurrent_connections: Default::default(),
             rss_bytes: 55_000_000,
             peak_rss: 123_539_456,
             qps: 1.0,
@@ -756,6 +760,7 @@ mod tests {
                 not_modified: 3,
                 bytes_fetched: 27_580_000,
             },
+            concurrent_connections: ConcurrentConnections { http: 3, https: 1 },
         }
     }
 

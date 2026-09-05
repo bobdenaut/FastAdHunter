@@ -16,6 +16,7 @@ use tokio::net::TcpListener;
 use tokio::sync::Semaphore;
 use tokio::task::JoinHandle;
 
+use crate::connections::ConnectionGauge;
 use crate::proxy::Proxy;
 
 /// Named in bind failures so the operator is sent to the right setting.
@@ -32,6 +33,7 @@ pub struct Server {
     /// the life of a connection, so memory is bounded by configuration rather
     /// than by how many clients show up (CLAUDE.md hard rule 4).
     permits: Arc<Semaphore>,
+    connections: Arc<ConnectionGauge>,
     handle: Option<JoinHandle<()>>,
 }
 
@@ -54,6 +56,7 @@ impl Server {
             local_addr,
             listener: Some(listener),
             permits: Arc::new(Semaphore::new(config.max_connections)),
+            connections: Arc::new(ConnectionGauge::default()),
             handle: None,
         })
     }
@@ -65,11 +68,21 @@ impl Server {
             return;
         };
         let permits = Arc::clone(&self.permits);
-        self.handle = Some(tokio::spawn(accept_loop(listener, permits, proxy)));
+        let connections = Arc::clone(&self.connections);
+        self.handle = Some(tokio::spawn(accept_loop(
+            listener,
+            permits,
+            connections,
+            proxy,
+        )));
     }
 
     pub fn local_addr(&self) -> SocketAddr {
         self.local_addr
+    }
+
+    pub fn connections(&self) -> Arc<ConnectionGauge> {
+        Arc::clone(&self.connections)
     }
 
     pub fn shutdown(&self) {
@@ -89,7 +102,12 @@ impl Server {
 ///
 /// Since p2-02 the permit is held for the whole transfer rather than released
 /// immediately, so the ceiling now genuinely binds — the gap p2-01 documented.
-async fn accept_loop(listener: TcpListener, permits: Arc<Semaphore>, proxy: Arc<Proxy>) {
+async fn accept_loop(
+    listener: TcpListener,
+    permits: Arc<Semaphore>,
+    connections: Arc<ConnectionGauge>,
+    proxy: Arc<Proxy>,
+) {
     loop {
         let Ok(permit) = Arc::clone(&permits).acquire_owned().await else {
             // Semaphore closed — only on shutdown.
@@ -98,8 +116,10 @@ async fn accept_loop(listener: TcpListener, permits: Arc<Semaphore>, proxy: Arc<
         match listener.accept().await {
             Ok((stream, peer)) => {
                 let proxy = Arc::clone(&proxy);
+                let open = connections.enter();
                 tokio::spawn(async move {
                     let _permit = permit;
+                    let _open = open;
                     // Proxied writes are small and latency-visible; Nagle would
                     // hold a request head waiting for more to send.
                     if let Err(err) = stream.set_nodelay(true) {
@@ -288,6 +308,29 @@ mod tests {
 
     /// The gap p2-01 documented and could not close: with the proxy holding a
     /// permit for the life of a connection, `max_connections` finally binds.
+    #[tokio::test]
+    async fn the_gauge_counts_open_connections_and_keeps_the_interval_peak() {
+        let mut server = Server::bind(&config(0)).await.unwrap();
+        let addr = server.local_addr();
+        let connections = server.connections();
+        server.serve(proxy());
+
+        let mut first = TcpStream::connect(addr).await.unwrap();
+        first.write_all(b"GET / HTTP/1.1\r\n").await.unwrap();
+        let mut second = TcpStream::connect(addr).await.unwrap();
+        second.write_all(b"GET / HTTP/1.1\r\n").await.unwrap();
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        assert_eq!(connections.open(), 2);
+
+        drop(first);
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        assert_eq!(connections.open(), 1);
+        assert_eq!(connections.take_peak(), 2);
+        assert_eq!(connections.take_peak(), 1);
+        drop(second);
+        server.shutdown();
+    }
+
     #[tokio::test]
     async fn max_connections_actually_blocks_the_second_connection() {
         let config = HttpConfig {

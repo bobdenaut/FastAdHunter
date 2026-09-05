@@ -380,6 +380,8 @@ pub struct PerfSampleResponse {
     pub allocator_committed_bytes: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub list_fetch: Option<fah_model::ListFetchCounters>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub concurrent_connections: Option<fah_model::ConcurrentConnections>,
 }
 
 /// Which [`PerfSampleResponse`] keys `?fields=` kept. Names match the response
@@ -404,6 +406,7 @@ pub struct PerfFields {
     pub answers_delta: bool,
     pub allocator_committed_bytes: bool,
     pub list_fetch: bool,
+    pub concurrent_connections: bool,
 }
 
 impl PerfFields {
@@ -425,6 +428,7 @@ impl PerfFields {
         answers_delta: true,
         allocator_committed_bytes: true,
         list_fetch: true,
+        concurrent_connections: true,
     };
 
     pub const NONE: Self = Self {
@@ -444,11 +448,12 @@ impl PerfFields {
         answers_delta: false,
         allocator_committed_bytes: false,
         list_fetch: false,
+        concurrent_connections: false,
     };
 
     /// The accepted `?fields=` names, in response order — also what a rejection
     /// message lists back.
-    pub const NAMES: [&'static str; 16] = [
+    pub const NAMES: [&'static str; 17] = [
         "rss_bytes",
         "peak_rss",
         "qps",
@@ -465,6 +470,7 @@ impl PerfFields {
         "answers_delta",
         "allocator_committed_bytes",
         "list_fetch",
+        "concurrent_connections",
     ];
 
     /// Turns one `?fields=` name on; `false` for a name that is not a key.
@@ -486,6 +492,7 @@ impl PerfFields {
             "answers_delta" => self.answers_delta = true,
             "allocator_committed_bytes" => self.allocator_committed_bytes = true,
             "list_fetch" => self.list_fetch = true,
+            "concurrent_connections" => self.concurrent_connections = true,
             _ => return false,
         }
         true
@@ -531,6 +538,9 @@ impl HistoryPerfResponse {
                         .allocator_committed_bytes
                         .then_some(sample.allocator_committed_bytes),
                     list_fetch: fields.list_fetch.then_some(sample.list_fetch),
+                    concurrent_connections: fields
+                        .concurrent_connections
+                        .then_some(sample.concurrent_connections),
                     upstreams: fields.upstreams.then_some(sample.upstreams),
                 })
                 .collect(),

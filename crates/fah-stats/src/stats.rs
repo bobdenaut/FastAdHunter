@@ -873,6 +873,7 @@ mod tests {
                 answers_delta: Default::default(),
                 allocator_committed_bytes: 0,
                 list_fetch: Default::default(),
+                concurrent_connections: Default::default(),
                 rss_bytes: 55_000_000,
                 peak_rss: 123_539_456,
                 qps: 12.0,

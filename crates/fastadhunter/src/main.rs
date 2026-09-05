@@ -526,6 +526,8 @@ impl Engine {
                 Arc::clone(&metrics),
                 Arc::clone(&pipeline),
                 Arc::clone(&rules),
+                http.as_ref().map(fah_http::Server::connections),
+                None,
                 perf_sample_interval_seconds,
             ),
             spawn_telemetry_poll(
@@ -866,6 +868,8 @@ fn spawn_perf_sampler(
     metrics: Arc<fah_metrics::Metrics>,
     pipeline: Arc<fah_dns::Pipeline<fah_dns::UpstreamPool>>,
     rules: Arc<fah_rules::ListManager>,
+    http_connections: Option<Arc<fah_http::ConnectionGauge>>,
+    https_connections: Option<Arc<fah_http::ConnectionGauge>>,
     sample_interval_seconds: u32,
 ) -> tokio::task::JoinHandle<()> {
     // Boot-class: the ticker is built once here. `history.retention_days` and
@@ -897,8 +901,23 @@ fn spawn_perf_sampler(
             // persists as 0 — which the history reader already charts as "not
             // recorded" rather than as a real measurement.
             let rss = memory.rss.unwrap_or(0);
-            let sample =
-                build_perf_sample(&current, prev.as_ref(), &cache, rss, &memory, interval_secs);
+            let concurrent_connections = fah_model::ConcurrentConnections {
+                http: http_connections
+                    .as_ref()
+                    .map_or(0, |gauge| gauge.take_peak()),
+                https: https_connections
+                    .as_ref()
+                    .map_or(0, |gauge| gauge.take_peak()),
+            };
+            let sample = build_perf_sample(
+                &current,
+                prev.as_ref(),
+                &cache,
+                rss,
+                &memory,
+                interval_secs,
+                concurrent_connections,
+            );
             stats.persist_perf_sample(sample).await;
             prev = Some(current);
         }
@@ -915,6 +934,7 @@ fn build_perf_sample(
     rss_bytes: u64,
     memory: &fah_model::MemoryBreakdown,
     interval_secs: f64,
+    concurrent_connections: fah_model::ConcurrentConnections,
 ) -> fah_model::PerfSample {
     let ts = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -981,6 +1001,7 @@ fn build_perf_sample(
         answers_delta,
         allocator_committed_bytes: memory.allocator.map_or(0, |a| a.current_commit),
         list_fetch: current.lists,
+        concurrent_connections,
         latency: latency_summary(current, prev),
         // One type end to end (`fah_model::UpstreamSample`), so this is a clone
         // rather than a field-by-field remap into a structurally identical
@@ -1248,8 +1269,11 @@ mod tests {
             1000,
             &breakdown(),
             60.0,
+            fah_model::ConcurrentConnections { http: 7, https: 2 },
         );
         assert_eq!(sample.queries_delta, 75);
+        assert_eq!(sample.concurrent_connections.http, 7);
+        assert_eq!(sample.concurrent_connections.https, 2);
         assert_eq!(sample.blocked_delta, 14);
         assert_eq!(sample.allowed_delta, 1);
         assert!((sample.qps - 75.0 / 60.0).abs() < 1e-9);
@@ -1258,7 +1282,15 @@ mod tests {
     #[test]
     fn perf_sample_first_reading_has_zero_deltas_and_qps() {
         let current = snapshot(160, 6, 34);
-        let sample = build_perf_sample(&current, None, &empty_cache(), 1000, &breakdown(), 60.0);
+        let sample = build_perf_sample(
+            &current,
+            None,
+            &empty_cache(),
+            1000,
+            &breakdown(),
+            60.0,
+            fah_model::ConcurrentConnections::default(),
+        );
         assert_eq!(sample.queries_delta, 0);
         assert_eq!(sample.blocked_delta, 0);
         assert_eq!(sample.allowed_delta, 0);
@@ -1275,6 +1307,7 @@ mod tests {
             1000,
             &memory,
             60.0,
+            fah_model::ConcurrentConnections::default(),
         );
 
         assert_eq!(sample.memory, memory.components);
@@ -1302,6 +1335,7 @@ mod tests {
             1000,
             &memory,
             60.0,
+            fah_model::ConcurrentConnections::default(),
         );
         assert_eq!(sample.peak_rss, 0);
         assert_eq!(sample.minor_page_faults, 0);
