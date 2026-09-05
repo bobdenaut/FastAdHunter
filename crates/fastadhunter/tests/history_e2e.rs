@@ -314,6 +314,7 @@ fn perf_sample(ts: u64) -> PerfSample {
         answers_delta: Default::default(),
         allocator_committed_bytes: 0,
         list_fetch: Default::default(),
+        concurrent_connections: Default::default(),
         rss_bytes: SAMPLE_RSS_BYTES,
         peak_rss: SAMPLE_PEAK_RSS,
         qps: 12.0,

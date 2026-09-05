@@ -415,7 +415,8 @@ single day is 1440 samples, so this is the endpoint `stride` usually applies to.
 `rss_bytes`, `peak_rss`, `qps`, `queries_delta`, `blocked_delta`,
 `allowed_delta`, `cache`, `latency`, `upstreams`, `memory`,
 `minor_page_faults`, `rss_anon_bytes`, `rss_file_bytes`,
-`answers_delta`, `allocator_committed_bytes`, `list_fetch` — and drops the rest
+`answers_delta`, `allocator_committed_bytes`, `list_fetch`,
+`concurrent_connections` — and drops the rest
 (**absent**, not null). `ts` is always present. An unknown name is a `400`
 rather than being ignored, so a typo cannot silently remove the series a chart
 wanted. `fields` trims the response, not the read.
@@ -456,6 +457,7 @@ wanted. `fields` trims the response, not the read.
       "allocator_committed_bytes": 210100224,
       "list_fetch": { "bodies": 17, "not_modified": 3,
                       "bytes_fetched": 27580000 },
+      "concurrent_connections": { "http": 3, "https": 0 },
       "upstreams": [
         { "address": "1.1.1.1", "protocol": "dot",
           "attempts": 12000, "failures": 3,
@@ -490,6 +492,13 @@ of `/telemetry`'s `counters.dns.answers` — the same three figures, deltaed
 rather than cumulative, so "how many clients saw an error during that outage"
 survives a restart. Rows written before it shipped read back as three zeros,
 which charts as "not recorded" rather than "no failures".
+
+`concurrent_connections` is the per-listener high-water mark of proxy
+connections open at once during the interval — `http` for the `[http]`
+listener, `https` for the `[https]` SNI listener — reset at every sample, each
+bounded by that listener's `max_connections`. `0` for a listener the operating
+mode does not bind and for rows written before it shipped. It is what lets an
+RSS step be attributed to a connection burst from this series alone.
 
 `upstreams[].failure_runs` carries the same closed-run histogram `/telemetry`
 publishes, cumulative rather than per-interval — deltaing two rows gives the

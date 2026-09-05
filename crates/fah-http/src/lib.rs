@@ -22,6 +22,7 @@
 
 mod block;
 mod claim;
+mod connections;
 mod exclusions;
 mod https;
 mod intercept;
@@ -34,6 +35,7 @@ mod tls_server;
 
 pub use block::BlockStyle;
 pub use claim::{ClaimError, Destination};
+pub use connections::ConnectionGauge;
 pub use exclusions::{ExclusionSet, InvalidExclusion, BASELINE_EXCLUSIONS};
 pub use https::TlsProxy;
 pub use intercept::Interception;

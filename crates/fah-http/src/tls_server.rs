@@ -8,6 +8,7 @@ use tokio::net::TcpListener;
 use tokio::sync::Semaphore;
 use tokio::task::JoinHandle;
 
+use crate::connections::ConnectionGauge;
 use crate::https::TlsProxy;
 use crate::server::accept_loop;
 
@@ -18,6 +19,7 @@ pub struct TlsServer {
     local_addr: SocketAddr,
     listener: Option<TcpListener>,
     permits: Arc<Semaphore>,
+    connections: Arc<ConnectionGauge>,
     handle: Option<JoinHandle<()>>,
 }
 
@@ -33,6 +35,7 @@ impl TlsServer {
             local_addr,
             listener: Some(listener),
             permits: Arc::new(Semaphore::new(config.max_connections)),
+            connections: Arc::new(ConnectionGauge::default()),
             handle: None,
         })
     }
@@ -42,9 +45,11 @@ impl TlsServer {
             return;
         };
         let permits = Arc::clone(&self.permits);
+        let connections = Arc::clone(&self.connections);
         self.handle = Some(tokio::spawn(accept_loop(
             listener,
             permits,
+            connections,
             move |stream, peer| {
                 let proxy = Arc::clone(&proxy);
                 async move { proxy.serve_connection(stream, peer).await }
@@ -54,6 +59,10 @@ impl TlsServer {
 
     pub fn local_addr(&self) -> SocketAddr {
         self.local_addr
+    }
+
+    pub fn connections(&self) -> Arc<ConnectionGauge> {
+        Arc::clone(&self.connections)
     }
 
     pub fn shutdown(&self) {
@@ -191,6 +200,29 @@ mod tests {
         let counters = counters.snapshot();
         assert_eq!(counters.hello_timeouts, 1);
         assert_eq!(counters.non_tls, 0);
+        server.shutdown();
+    }
+
+    #[tokio::test]
+    async fn the_gauge_counts_open_connections_and_keeps_the_interval_peak() {
+        let mut server = TlsServer::bind(&config(0)).await.unwrap();
+        let addr = server.local_addr();
+        let connections = server.connections();
+        server.serve(proxy_with(Duration::from_secs(30)));
+
+        let mut first = TcpStream::connect(addr).await.unwrap();
+        first.write_all(&[0x16, 0x03, 0x01]).await.unwrap();
+        let mut second = TcpStream::connect(addr).await.unwrap();
+        second.write_all(&[0x16, 0x03, 0x01]).await.unwrap();
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        assert_eq!(connections.open(), 2);
+
+        drop(first);
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        assert_eq!(connections.open(), 1);
+        assert_eq!(connections.take_peak(), 2);
+        assert_eq!(connections.take_peak(), 1);
+        drop(second);
         server.shutdown();
     }
 

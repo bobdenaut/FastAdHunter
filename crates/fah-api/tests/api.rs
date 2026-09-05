@@ -222,6 +222,7 @@ impl HistorySource for FakeHistory {
                 ts: 3_600,
                 allocator_committed_bytes: 0,
                 list_fetch: Default::default(),
+                concurrent_connections: fah_model::ConcurrentConnections { http: 3, https: 0 },
                 answers_delta: fah_model::AnswerCounters {
                     servfail_synthesized: 9,
                     servfail_relayed: 4,
