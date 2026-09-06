@@ -270,17 +270,19 @@ cut (43 MB of 100, curl exit 18).
 
 ### Reading
 
-- Memory: B's peak step is a third of A's (+22 vs +58..+61) and its held
-  residue a quarter (+14..+17 vs +56..+60), stable from +3 to +15 min; three
-  further waves neither ratchet it nor return it while the process is idle.
-  The predeclared absolute return-band criterion (floor ±6 MB by +3 min) was
-  not met, but repeated A/B evidence showed a large reduction in retained
-  memory, no per-burst accumulation, and materially faster reclamation
-  behavior. Observed behavior is
-  consistent with deferred allocator reclamation on the owning HTTP runtime,
-  with reclamation triggered by subsequent allocation activity. A single
-  small request does not trigger it (−0.7); a wave does (wave 1 ended 3.6
-  below its pre-wave level, wave 3 4.9 below).
+- MEMORY: strong improvement / architectural win; formal predeclared
+  return-band criterion (floor ±6 MB by +3 min) not met. No ratchet across
+  repeated waves; held residue is bounded and materially lower than the
+  shared-runtime control. B's peak step is a third of A's (+22 vs +58..+61)
+  and its held residue a quarter (+14..+17 vs +56..+60), stable from +3 to
+  +15 min; three further waves neither ratchet it nor return it while the
+  process is idle. A single small request does not trigger the return
+  (−0.7); a wave does (wave 1 ended 3.6 below its pre-wave level, wave 3 4.9
+  below). Observed behavior is consistent with improved allocator locality
+  and deferred reclamation being exercised on the dedicated HTTP runtimes.
+  The A/B does not isolate thread locality from the separate per-runtime
+  Hyper clients/pools; the experiment establishes the architectural effect,
+  not a uniquely proven allocator mechanism.
 - CPU: B −17..−24 % against the same-hour A pair (8.91 / 9.69 s vs
   11.66 / 12.18 s for 900 MiB).
 - HTTP: B par8 and p95 inside the A pair's spread (84.6–89.7 MiB/s,
