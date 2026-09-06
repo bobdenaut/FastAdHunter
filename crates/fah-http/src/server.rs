@@ -239,7 +239,7 @@ impl Dispatch {
                         Ok(()) => return,
                         Err(mpsc::error::SendError(returned)) => {
                             tracing::error!(
-                                domain = index,
+                                http_domain = index,
                                 "HTTP domain is not accepting; removed from the rotation"
                             );
                             senders.remove(index);

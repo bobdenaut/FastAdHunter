@@ -430,3 +430,14 @@ client's side, from a hung proxy.
 The reload mechanism for compiled rulesets and config: build the new value
 completely, then replace the old one in a single pointer swap. Queries in
 flight never observe a partial state; the hot path takes no lock.
+
+### Allocation Domain
+
+One `current_thread` Tokio runtime on its own OS thread that serves whole HTTP
+connections end to end — accept hand-off, request, upstream fetch, response,
+close — so that everything a connection allocates is freed by the thread that
+allocated it (ADR-0006). `[runtime] http_runtimes` sets how many the HTTP
+Engine runs behind its one acceptor; `0` serves on the shared runtime instead.
+
+Not a domain *name*. In `fah-http` the word with an index (`fah-http-0`,
+`http_domain = 0`) always means this; the DNS sense is never shortened to it.

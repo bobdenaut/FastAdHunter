@@ -267,8 +267,14 @@ against this document.
    full pipeline  full pipeline  full pipeline
 ```
 
-- Every worker runs the complete pipeline; no stage is pinned to a thread and
-  there is no central dispatcher.
+- Every worker runs the complete DNS pipeline; no stage is pinned to a thread
+  and there is no central dispatcher.
+- **HTTP allocation domains** (ADR-0006, CONTEXT.md) are the one exception to
+  "nothing is pinned": the HTTP Engine serves each connection on one of
+  `[runtime] http_runtimes` single-thread runtimes, each on its own OS thread,
+  so a connection's allocations are freed by the thread that made them. One
+  acceptor on the shared runtime holds the `max_connections` permit and hands
+  sockets over bounded channels; `0` serves on the shared runtime as before.
 - **Ingest socket topology:** today one `recv_from` loop pulls UDP datagrams off
   a single socket and spawns a task per datagram, so the expensive stages (match,
   cache, forward, reply) already spread across all workers — only *reception* is

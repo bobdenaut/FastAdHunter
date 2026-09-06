@@ -902,7 +902,7 @@ back to `/config/fastadhunter.toml`, and applied:
 { "applied": true, "restart_required": false }
 ```
 
-Most options are boot-only: `[dns.cache]`, `[dns.upstreams]`, `[dns.blocking]`,
+Most options are boot-only: `[runtime]`, `[dns.cache]`, `[dns.upstreams]`, `[dns.blocking]`,
 `[stats]`, `log.level` and `history.sample_interval_seconds` are
 each read once during startup, so they persist and ask for a restart rather
 than reporting an apply that no code performs. The runtime set is
@@ -1050,8 +1050,8 @@ Where the RAM goes — for checking the PERFORMANCE.md memory budget against a
 live box. Every **bounded** structure reports its own heap; `residual_bytes` is
 what RSS holds beyond all of them.
 
-**This is `/api/v1/telemetry`'s `memory` block plus exactly the two
-`allocator_committed_*` fields**, and both are gathered in the same pass, so
+**This is `/api/v1/telemetry`'s `memory` block plus the two
+`allocator_committed_*` fields and the two `cpu_*_ms` fields**, and both are gathered in the same pass, so
 the two endpoints can never report a different RSS or residual for one instant.
 The split is the producer boundary: the allocator fields describe whichever
 allocator is linked in and carry **no** compatibility promise, where everything
@@ -1078,7 +1078,9 @@ rather than merely intended.
   "allocator_committed_peak_bytes": 318046208,
   "process_peak_rss": 71303168,
   "major_page_faults": 0,
-  "minor_page_faults": 4211337
+  "minor_page_faults": 4211337,
+  "cpu_user_ms": 12180,
+  "cpu_system_ms": 3410
 }
 ```
 
@@ -1130,6 +1132,12 @@ one.
 > with 70 MiB resident. Nothing resident can exceed RSS, so the field was not
 > imprecise but impossible. Do not reintroduce this derivation. Judge retention
 > from `residual_bytes` against its own history.
+
+`cpu_user_ms` and `cpu_system_ms` are `getrusage`'s `ru_utime` / `ru_stime`
+in milliseconds, process-lifetime cumulative, `null` off Unix. Read them as a
+rate between two polls — CPU seconds per MiB relayed is what the HTTP A/Bs
+compare — never as a level. Present here and not in `/api/v1/telemetry`: they
+are a diagnostic, not a dashboard figure.
 
 `process_peak_rss`, `major_page_faults` and `minor_page_faults` come from
 `getrusage` and are **process-lifetime monotonic**: they never decrease, so read
