@@ -42,6 +42,10 @@ fn apply_one(
     match seg.as_slice() {
         ["engine", "mode"] => config.engine.mode = coerce_enum(var, path, value)?,
 
+        ["runtime", "http_runtimes"] => {
+            config.runtime.http_runtimes = coerce_usize(var, path, value)?
+        }
+
         ["dns", "listen", "address"] => config.dns.listen.address = value.to_string(),
         ["dns", "listen", "port"] => config.dns.listen.port = coerce_u16(var, path, value)?,
 
@@ -140,6 +144,12 @@ fn coerce_u64(var: &str, path: &str, value: &str) -> Result<u64, ConfigError> {
     value
         .parse::<u64>()
         .map_err(|_| invalid(var, path, value, "a u64 integer"))
+}
+
+fn coerce_usize(var: &str, path: &str, value: &str) -> Result<usize, ConfigError> {
+    value
+        .parse::<usize>()
+        .map_err(|_| invalid(var, path, value, "a usize integer"))
 }
 
 fn coerce_enum<T>(var: &str, path: &str, value: &str) -> Result<T, ConfigError>

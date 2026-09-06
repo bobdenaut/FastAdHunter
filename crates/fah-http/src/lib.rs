@@ -23,6 +23,7 @@
 mod block;
 mod claim;
 mod connections;
+mod domain;
 mod proxy;
 mod request;
 mod server;

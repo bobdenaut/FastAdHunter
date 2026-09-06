@@ -15,6 +15,7 @@ mod process;
 
 use std::io;
 use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr, UdpSocket};
+use std::num::NonZeroUsize;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use std::sync::Arc;
@@ -393,20 +394,22 @@ impl Engine {
         // The proxy itself (p2-02). Built here, before `config` is moved into
         // the ConfigStore below, and only in a mode that serves HTTP — the
         // upstream connection pool should not exist in `dns` mode.
+        let http_runtimes = config.runtime.http_runtimes;
         let http_proxy = if http.is_some() {
-            Some(Arc::new(
-                build_http_proxy(&config, upstreams.clone())?
-                    // p2-04: the same compiled ruleset the DNS pipeline
-                    // answers from, and the same event channel it writes to.
-                    .with_rules(Arc::clone(&rules) as Arc<dyn fah_http::Ruleset>)
-                    // The same snapshot the DNS pipeline reads, so a client is
-                    // judged under one policy by both.
-                    .with_policies(Arc::clone(&policy_state))
-                    .with_events(events_tx.clone()),
-            ))
+            let counters = Arc::new(fah_http::ProxyCounters::default());
+            let make_proxy = http_proxy_factory(
+                &config,
+                upstreams.clone(),
+                Arc::clone(&rules) as Arc<dyn fah_http::Ruleset>,
+                Arc::clone(&policy_state),
+                events_tx.clone(),
+                Arc::clone(&counters),
+            )?;
+            Some((counters, make_proxy))
         } else {
             None
         };
+        let (proxy_counters, make_proxy) = http_proxy.unzip();
 
         // ── Privilege drop (ADR-0004) ──
         // Port 53 is the only thing here that needs root, and it is now bound.
@@ -506,8 +509,23 @@ impl Engine {
 
         // Unprivileged from here — start answering (ADR-0004).
         dns.serve(Arc::clone(&pipeline));
-        if let (Some(http), Some(proxy)) = (http.as_mut(), http_proxy.as_ref()) {
-            http.serve(Arc::clone(proxy));
+        if let (Some(http), Some(make_proxy)) = (http.as_mut(), make_proxy) {
+            match NonZeroUsize::new(http_runtimes) {
+                None => {
+                    tracing::info!(
+                        http_runtimes = 0,
+                        "HTTP proxy serving on the shared runtime"
+                    );
+                    http.serve(Arc::new(make_proxy()));
+                }
+                Some(domains) => {
+                    http.serve_domains(domains, HTTP_DRAIN_TIMEOUT, make_proxy)?;
+                    tracing::info!(
+                        http_runtimes = domains.get(),
+                        "HTTP proxy serving on its own single-thread runtimes"
+                    );
+                }
+            }
         }
 
         // ── The edges between the siblings ──
@@ -535,7 +553,7 @@ impl Engine {
                 Arc::clone(&rules),
                 Arc::clone(&pipeline),
                 upstreams,
-                http_proxy.as_ref().map(|proxy| proxy.counters()),
+                proxy_counters,
             ),
             spawn_policy_ticker(policy_state, rules, Arc::clone(&stats)),
         ];
@@ -568,9 +586,9 @@ impl Engine {
         })
     }
 
-    fn shutdown(&self) {
+    fn shutdown(&mut self) {
         self.dns.shutdown();
-        if let Some(http) = &self.http {
+        if let Some(http) = &mut self.http {
             http.shutdown();
         }
         self.api.shutdown();
@@ -608,6 +626,8 @@ const HTTP_ORIGIN_PORT: u16 = 80;
 /// that is memory held against the 128 MB budget for no gain.
 const MAX_IDLE_UPSTREAMS_PER_HOST: usize = 8;
 
+const HTTP_DRAIN_TIMEOUT: Duration = Duration::from_secs(5);
+
 /// Assembles the HTTP proxy from config: the injected resolver port, and the
 /// egress policy that decides where it may connect.
 ///
@@ -615,10 +635,14 @@ const MAX_IDLE_UPSTREAMS_PER_HOST: usize = 8;
 /// that crate is L1 and cannot import `fah_common::egress`, so it can only
 /// check the shape. This is the authoritative parse, and it fails startup
 /// rather than degrading to a policy the operator did not write.
-fn build_http_proxy(
+fn http_proxy_factory(
     config: &fah_config::Config,
     upstreams: fah_dns::UpstreamPool,
-) -> Result<fah_http::Proxy, Box<dyn std::error::Error>> {
+    rules: Arc<dyn fah_http::Ruleset>,
+    policies: Arc<fah_rules::PolicyState>,
+    events: tokio::sync::mpsc::Sender<fah_model::Event>,
+    counters: Arc<fah_http::ProxyCounters>,
+) -> Result<impl Fn() -> fah_http::Proxy + Send + Sync + 'static, Box<dyn std::error::Error>> {
     let exceptions = config
         .egress
         .allow_destinations
@@ -638,15 +662,26 @@ fn build_http_proxy(
         );
     }
 
-    Ok(fah_http::Proxy::new(
-        Arc::new(adapters::UpstreamResolver::new(upstreams)),
-        fah_common::egress::DestinationPolicy::new(HTTP_ORIGIN_PORT, exceptions),
-        HTTP_ORIGIN_PORT,
-        Duration::from_millis(config.http.header_timeout_ms),
-        Duration::from_millis(config.http.idle_timeout_ms),
-        MAX_IDLE_UPSTREAMS_PER_HOST,
-        config.egress.allow_ip_literal_hosts,
-    ))
+    let resolver: Arc<dyn fah_common::resolve::HostResolver> =
+        Arc::new(adapters::UpstreamResolver::new(upstreams));
+    let header_timeout = Duration::from_millis(config.http.header_timeout_ms);
+    let idle_timeout = Duration::from_millis(config.http.idle_timeout_ms);
+    let allow_ip_literal_hosts = config.egress.allow_ip_literal_hosts;
+    Ok(move || {
+        fah_http::Proxy::new(
+            Arc::clone(&resolver),
+            fah_common::egress::DestinationPolicy::new(HTTP_ORIGIN_PORT, exceptions.clone()),
+            HTTP_ORIGIN_PORT,
+            header_timeout,
+            idle_timeout,
+            MAX_IDLE_UPSTREAMS_PER_HOST,
+            allow_ip_literal_hosts,
+        )
+        .with_counters(Arc::clone(&counters))
+        .with_rules(Arc::clone(&rules))
+        .with_policies(Arc::clone(&policies))
+        .with_events(events.clone())
+    })
 }
 
 /// The one consumer of the shared event channel, feeding all three observers.
