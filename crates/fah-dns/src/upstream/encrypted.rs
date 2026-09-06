@@ -18,9 +18,11 @@ use hickory_net::NetError;
 use hickory_proto::op::{DnsRequest, DnsRequestOptions, Message};
 use rustls::pki_types::ServerName;
 use rustls::ClientConfig;
+use tokio::runtime::Handle;
 use tokio::sync::Mutex;
 use tokio::time::timeout;
 
+#[derive(Clone)]
 pub(super) enum ConnectTarget {
     Dot {
         addr: SocketAddr,
@@ -46,6 +48,7 @@ pub(super) struct ExchangeConn {
     /// Owns the JoinSet the exchanges' background I/O tasks spawn into —
     /// it must live as long as this upstream, or the tasks are aborted.
     provider: TokioRuntimeProvider,
+    runtime: Option<Handle>,
     handshakes: AtomicU64,
 }
 
@@ -75,6 +78,7 @@ impl ExchangeConn {
             tls,
             slot: Mutex::new(Slot::default()),
             provider: TokioRuntimeProvider::new(),
+            runtime: Handle::try_current().ok(),
             handshakes: AtomicU64::new(0),
         }
     }
@@ -157,15 +161,18 @@ impl ExchangeConn {
     ) -> io::Result<DnsExchange<TokioRuntimeProvider>> {
         self.handshakes.fetch_add(1, Ordering::Relaxed);
         let mux_timeout = attempt_timeout * 2;
-        let connecting = async {
-            match &self.target {
+        let target = self.target.clone();
+        let tls = Arc::clone(&self.tls);
+        let provider = self.provider.clone();
+        let connecting = async move {
+            match target {
                 ConnectTarget::Dot { addr, server_name } => tls_exchange(
-                    *addr,
-                    server_name.clone(),
-                    (*self.tls).clone(),
+                    addr,
+                    server_name,
+                    (*tls).clone(),
                     mux_timeout,
                     None,
-                    self.provider.clone(),
+                    provider,
                 )
                 .await
                 .map_err(transport_error),
@@ -175,17 +182,31 @@ impl ExchangeConn {
                     server_name,
                     path,
                 } => {
-                    let addr = resolve(host, *port).await?;
-                    HttpsClientStream::builder(Arc::clone(&self.tls), self.provider.clone())
-                        .exchange(addr, Arc::clone(server_name), Arc::clone(path))
+                    let addr = resolve(&host, port).await?;
+                    HttpsClientStream::builder(tls, provider)
+                        .exchange(addr, server_name, path)
                         .await
                         .map_err(transport_error)
                 }
             }
         };
-        timeout(attempt_timeout, connecting)
-            .await
-            .map_err(|_| io::Error::new(io::ErrorKind::TimedOut, "upstream connect timed out"))?
+        let timed_out = || io::Error::new(io::ErrorKind::TimedOut, "upstream connect timed out");
+        match &self.runtime {
+            Some(runtime) => {
+                let task = runtime.spawn(connecting);
+                let abort = task.abort_handle();
+                match timeout(attempt_timeout, task).await {
+                    Ok(joined) => joined.map_err(io::Error::other)?,
+                    Err(_) => {
+                        abort.abort();
+                        Err(timed_out())
+                    }
+                }
+            }
+            None => timeout(attempt_timeout, connecting)
+                .await
+                .map_err(|_| timed_out())?,
+        }
     }
 }
 
@@ -644,6 +665,47 @@ mod tests {
         assert_eq!(status[0].failures, 1);
         assert_eq!(status[0].consecutive_failures, 1);
         assert_eq!(status[1].failures, 0);
+    }
+
+    #[tokio::test]
+    async fn the_exchange_lives_on_the_runtime_that_built_the_conn_not_the_caller() {
+        let server = dot_server(None).await;
+        let conn = Arc::new(ExchangeConn::new(
+            ConnectTarget::Dot {
+                addr: server.addr,
+                server_name: ServerName::try_from("localhost").unwrap(),
+            },
+            client_tls(&[&server.cert]),
+        ));
+        let attempt_timeout = Duration::from_secs(2);
+
+        let caller = Arc::clone(&conn);
+        tokio::task::spawn_blocking(move || {
+            let other = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .unwrap();
+            let held = other
+                .block_on(caller.acquire(attempt_timeout, None))
+                .unwrap();
+            assert!(held.fresh);
+        })
+        .await
+        .unwrap();
+
+        let held = conn.acquire(attempt_timeout, None).await.unwrap();
+        assert!(
+            !held.fresh,
+            "the connection installed from the other runtime is reused"
+        );
+        send_once(
+            &held.exchange,
+            DnsRequest::new(a_query(), DnsRequestOptions::default()),
+            attempt_timeout,
+        )
+        .await
+        .expect("the exchange must outlive the runtime that first used it");
+        assert_eq!(conn.handshakes.load(Ordering::Relaxed), 1);
     }
 
     #[tokio::test]
