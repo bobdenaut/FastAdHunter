@@ -226,17 +226,28 @@ impl Dispatch {
                         return;
                     }
                 };
-                let index = *next;
-                *next = (index + 1) % senders.len();
-                let handoff = Accepted {
+                let mut handoff = Accepted {
                     stream,
                     peer,
                     permit,
                     open,
                 };
-                if senders[index].send(handoff).await.is_err() {
-                    tracing::warn!(domain = index, "HTTP domain is gone; connection dropped");
+                while !senders.is_empty() {
+                    let index = *next % senders.len();
+                    *next = (index + 1) % senders.len();
+                    match senders[index].send(handoff).await {
+                        Ok(()) => return,
+                        Err(mpsc::error::SendError(returned)) => {
+                            tracing::error!(
+                                domain = index,
+                                "HTTP domain is not accepting; removed from the rotation"
+                            );
+                            senders.remove(index);
+                            handoff = returned;
+                        }
+                    }
                 }
+                tracing::error!("no HTTP domain left; connection dropped");
             }
         }
     }
@@ -681,5 +692,42 @@ mod tests {
             .await
             .expect("an aborted connection must be closed, not left hanging");
         assert!(matches!(read, Ok(0) | Err(_)), "got: {read:?}");
+    }
+    #[tokio::test]
+    async fn a_domain_that_fails_to_start_is_dropped_from_the_rotation() {
+        let mut server = Server::bind(&config(0)).await.unwrap();
+        let addr = server.local_addr();
+        let calls = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let counter = Arc::clone(&calls);
+        let factory = move || {
+            if counter.fetch_add(1, std::sync::atomic::Ordering::SeqCst) == 0 {
+                panic!("first domain refuses to start");
+            }
+            new_proxy(Duration::from_secs(5))
+        };
+        server
+            .serve_domains(
+                NonZeroUsize::new(2).unwrap(),
+                Duration::from_secs(1),
+                factory,
+            )
+            .unwrap();
+        tokio::time::sleep(Duration::from_millis(200)).await;
+
+        for _ in 0..3 {
+            let mut stream = TcpStream::connect(addr).await.unwrap();
+            stream.write_all(b"GET / HTTP/1.0\r\n\r\n").await.unwrap();
+            let mut response = Vec::new();
+            tokio::time::timeout(Duration::from_secs(5), stream.read_to_end(&mut response))
+                .await
+                .expect("the surviving domain must answer every connection")
+                .unwrap();
+            assert!(
+                String::from_utf8_lossy(&response).contains(" 400 "),
+                "got: {response:?}"
+            );
+        }
+        assert_eq!(calls.load(std::sync::atomic::Ordering::SeqCst), 2);
+        server.shutdown();
     }
 }

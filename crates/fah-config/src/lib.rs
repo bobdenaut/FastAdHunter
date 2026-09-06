@@ -115,6 +115,8 @@ const MIN_CACHE_MAX_BYTES: u64 = 1024 * 1024;
 
 pub const MAX_UPSTREAM_SERVERS: usize = 8;
 
+pub const MAX_HTTP_RUNTIMES: usize = 64;
+
 fn validate(config: &Config) -> Result<(), ConfigError> {
     validate_ip("dns.listen.address", &config.dns.listen.address)?;
     validate_ip("api.address", &config.api.address)?;
@@ -133,6 +135,13 @@ fn validate(config: &Config) -> Result<(), ConfigError> {
         return Err(ConfigError::Validation {
             key: "http.max_connections",
             message: "must be at least 1".to_string(),
+        });
+    }
+
+    if config.runtime.http_runtimes > MAX_HTTP_RUNTIMES {
+        return Err(ConfigError::Validation {
+            key: "runtime.http_runtimes",
+            message: format!("must be at most {MAX_HTTP_RUNTIMES}"),
         });
     }
 
@@ -932,6 +941,24 @@ format = "text"
                 "{bad:?} must be rejected by key, got {err:?}"
             );
         }
+    }
+
+    #[test]
+    fn validation_rejects_too_many_http_runtimes() {
+        let mut config = Config::default();
+        config.runtime.http_runtimes = MAX_HTTP_RUNTIMES + 1;
+        let err = validate(&config).unwrap_err();
+        assert!(matches!(
+            err,
+            ConfigError::Validation {
+                key: "runtime.http_runtimes",
+                ..
+            }
+        ));
+        config.runtime.http_runtimes = MAX_HTTP_RUNTIMES;
+        validate(&config).unwrap();
+        config.runtime.http_runtimes = 0;
+        validate(&config).unwrap();
     }
 
     #[test]
