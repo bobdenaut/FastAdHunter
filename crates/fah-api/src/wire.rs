@@ -1052,6 +1052,8 @@ pub struct MemoryResponse {
     /// `RssFile:` — the file-backed part of `process_rss`. What the two do not
     /// cover is shared memory, derivable rather than served as a fourth key.
     pub process_rss_file: Option<u64>,
+    pub cpu_user_ms: Option<u64>,
+    pub cpu_system_ms: Option<u64>,
 }
 
 impl MemoryResponse {
@@ -1070,6 +1072,8 @@ impl MemoryResponse {
             minor_page_faults: memory.process.map(|p| p.minor_page_faults),
             process_rss_anon: memory.rss_anon,
             process_rss_file: memory.rss_file,
+            cpu_user_ms: memory.process.map(|p| p.cpu_user_ms),
+            cpu_system_ms: memory.process.map(|p| p.cpu_system_ms),
         }
     }
 }

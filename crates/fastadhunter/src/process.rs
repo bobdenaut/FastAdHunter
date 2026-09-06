@@ -31,7 +31,16 @@ pub fn stats() -> Option<ProcessStats> {
         peak_rss: (usage.ru_maxrss as u64).saturating_mul(1024),
         major_page_faults: usage.ru_majflt as u64,
         minor_page_faults: usage.ru_minflt as u64,
+        cpu_user_ms: timeval_ms(usage.ru_utime),
+        cpu_system_ms: timeval_ms(usage.ru_stime),
     })
+}
+
+#[cfg(unix)]
+fn timeval_ms(tv: libc::timeval) -> u64 {
+    (tv.tv_sec as u64)
+        .saturating_mul(1000)
+        .saturating_add((tv.tv_usec as u64) / 1000)
 }
 
 #[cfg(not(unix))]

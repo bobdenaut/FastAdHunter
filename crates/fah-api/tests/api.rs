@@ -351,6 +351,7 @@ impl TelemetrySource for FakeTelemetry {
             peak_rss: 150_700_000,
             major_page_faults: 0,
             minor_page_faults: 4_211_337,
+            ..Default::default()
         })
     }
 
