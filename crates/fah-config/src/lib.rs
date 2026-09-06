@@ -658,6 +658,26 @@ format = "text"
     }
 
     #[test]
+    fn runtime_env_override_applies_and_is_validated() {
+        let pairs = vec![("FAH__RUNTIME__HTTP_RUNTIMES".to_string(), "2".to_string())];
+        let config = apply_env_overrides(Config::default(), &pairs).unwrap();
+        assert_eq!(config.runtime.http_runtimes, 2);
+
+        let pairs = vec![("FAH__RUNTIME__HTTP_RUNTIMES".to_string(), "x".to_string())];
+        assert!(apply_env_overrides(Config::default(), &pairs).is_err());
+
+        let pairs = vec![("FAH__RUNTIME__HTTP_RUNTIMES".to_string(), "65".to_string())];
+        let config = apply_env_overrides(Config::default(), &pairs).unwrap();
+        assert!(matches!(
+            validate(&config).unwrap_err(),
+            ConfigError::Validation {
+                key: "runtime.http_runtimes",
+                ..
+            }
+        ));
+    }
+
+    #[test]
     fn env_override_wins_over_file_and_defaults() {
         let config = Config::from_toml_str("[dns.cache]\nmax_entries = 500\n").unwrap();
         let pairs = vec![(

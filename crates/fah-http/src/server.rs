@@ -712,7 +712,17 @@ mod tests {
                 factory,
             )
             .unwrap();
-        tokio::time::sleep(Duration::from_millis(200)).await;
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while server
+            .domains
+            .iter()
+            .filter(|thread| thread.is_finished())
+            .count()
+            != 1
+        {
+            assert!(Instant::now() < deadline, "the panicking domain must exit");
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
 
         for _ in 0..3 {
             let mut stream = TcpStream::connect(addr).await.unwrap();

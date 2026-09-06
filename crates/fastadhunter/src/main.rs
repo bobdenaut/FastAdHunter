@@ -587,10 +587,10 @@ impl Engine {
     }
 
     fn shutdown(&mut self) {
-        self.dns.shutdown();
         if let Some(http) = &mut self.http {
             http.shutdown();
         }
+        self.dns.shutdown();
         self.api.shutdown();
         for task in &self.tasks {
             task.abort();

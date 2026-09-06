@@ -33,13 +33,28 @@ pub(crate) fn spawn_domain(
     drain: Duration,
     make_proxy: ProxyFactory,
 ) -> io::Result<JoinHandle<()>> {
-    let runtime = Builder::new_current_thread().enable_all().build()?;
-    std::thread::Builder::new()
+    let (built, ready) = std::sync::mpsc::sync_channel(1);
+    let thread = std::thread::Builder::new()
         .name(format!("fah-http-{index}"))
         .spawn(move || {
+            let runtime = match Builder::new_current_thread().enable_all().build() {
+                Ok(runtime) => runtime,
+                Err(err) => {
+                    let _ = built.send(Err(err));
+                    return;
+                }
+            };
+            let _ = built.send(Ok(()));
+            drop(built);
             runtime.block_on(serve_domain(inbox, stop, drain, make_proxy));
             runtime.shutdown_timeout(RUNTIME_SHUTDOWN);
-        })
+        })?;
+    ready.recv().unwrap_or_else(|_| {
+        Err(io::Error::other(
+            "HTTP domain thread exited before building its runtime",
+        ))
+    })?;
+    Ok(thread)
 }
 
 async fn serve_domain(
