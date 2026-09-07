@@ -34,9 +34,10 @@ import {
  */
 const PAGE_SIZES = [50, 100, 200] as const;
 
-/** Outlined amber over `SLOW_MS`, red over `VERY_SLOW_MS`: a cache hit and a
- *  blocked answer land in microseconds, so tens of milliseconds is an upstream
- *  the row waited on. Both layouts mark it — a phone reads the same feed. */
+/** The figure reads amber over `SLOW_MS`, red over `VERY_SLOW_MS`: a cache hit
+ *  and a blocked answer land in microseconds, so tens of milliseconds is an
+ *  upstream the row waited on. Both layouts mark it — a phone reads the same
+ *  feed. */
 const SLOW_MS = 50;
 const VERY_SLOW_MS = 100;
 
