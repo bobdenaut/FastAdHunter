@@ -34,17 +34,12 @@ import {
  */
 const PAGE_SIZES = [50, 100, 200] as const;
 
-/** The figure reads amber over `SLOW_MS`, red over `VERY_SLOW_MS`: a cache hit
- *  and a blocked answer land in microseconds, so tens of milliseconds is an
- *  upstream the row waited on. Both layouts mark it — a phone reads the same
- *  feed. */
-const SLOW_MS = 50;
-const VERY_SLOW_MS = 100;
-
-/** Appended to a class list, so it carries its own leading space. */
+/** The figure reads amber over 50 ms and red over 100 ms: a cache hit and a
+ *  blocked answer land in microseconds, so tens of milliseconds is an upstream
+ *  the row waited on. Appended to a class list, so it carries its own space. */
 function durationBand(ms: number): string {
-  if (ms > VERY_SLOW_MS) return ' feed-ms-bad';
-  if (ms > SLOW_MS) return ' feed-ms-warn';
+  if (ms > 100) return ' feed-ms-bad';
+  if (ms > 50) return ' feed-ms-warn';
   return '';
 }
 
@@ -384,9 +379,7 @@ export function LiveFeed(_props: PageProps) {
                         <td>
                           <Detail row={row} />
                         </td>
-                        <td
-                          class={`num mono${durationBand(row.duration_ms)}`}
-                        >
+                        <td class={`num mono${durationBand(row.duration_ms)}`}>
                           {row.duration_ms.toFixed(3)}
                         </td>
                       </tr>

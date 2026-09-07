@@ -4791,17 +4791,13 @@ table.feed-table tbody tr:hover td {
   font-size: 11.5px;
 }
 
-/* The figure itself carries the band, so nothing is drawn around it: no
-   geometry changes in either layout, and the card's inline span needs no
-   padding to sit in. */
+/* A slow duration, in the table cell and the phone card alike. The red is
+   `--memory-over` rather than `--pill-bad-fg`: the pill foreground is
+   lightened for the dark theme, which drains it to a salmon. */
 .feed-ms-warn {
   color: var(--pill-warn-fg);
 }
 
-/* The status red, not the pill's foreground: `--pill-bad-fg` is lightened for
-   the dark theme and lands on a salmon. `--memory-over` is the one red the
-   token sheet holds at the same value in both themes, for exactly this — a
-   figure over its threshold. */
 .feed-ms-bad {
   color: var(--memory-over);
 }

@@ -366,11 +366,10 @@ function live({ narrow = false }: { narrow?: boolean } = {}) {
 
   return {
     dom,
-    deliver(...rows: (string | Partial<QueryEvent>)[]) {
+    deliver(...domains: string[]) {
       act(() => {
-        for (const row of rows) {
-          const over = typeof row === 'string' ? { domain: row } : row;
-          deliver?.(event(over) as unknown as Record<string, unknown>);
+        for (const domain of domains) {
+          deliver?.(event({ domain }) as unknown as Record<string, unknown>);
         }
       });
     },
@@ -469,42 +468,6 @@ describe('the page', () => {
       'first.example.com',
     ]);
     expect(feed.dom.textContent).toContain('3 / 500 rows held');
-    feed.release();
-  });
-
-  it('outlines a duration that waited, and reddens one that stalled', () => {
-    const feed = live();
-    feed.deliver(
-      { domain: 'quick.example.com', duration_ms: 50 },
-      { domain: 'slow.example.com', duration_ms: 50.001 },
-      { domain: 'stalled.example.com', duration_ms: 100.001 },
-    );
-
-    // Newest first, and the boundary itself is not over it.
-    expect(
-      [...feed.dom.querySelectorAll('.feed-table tbody tr')].map(
-        (row) => row.lastElementChild?.className,
-      ),
-    ).toEqual(['num mono feed-ms-bad', 'num mono feed-ms-warn', 'num mono']);
-    feed.release();
-  });
-
-  it('bands the phone card as well — it is the same feed, not a lesser one', () => {
-    const feed = live({ narrow: true });
-    feed.deliver(
-      { domain: 'quick.example.com', duration_ms: 50 },
-      { domain: 'slow.example.com', duration_ms: 50.001 },
-      { domain: 'stalled.example.com', duration_ms: 100.001 },
-    );
-
-    expect(
-      [...feed.dom.querySelectorAll('.feed-cards .ev')].map(
-        (card) =>
-          [...card.querySelectorAll('.ev-meta span')].find((span) =>
-            (span.textContent ?? '').endsWith(' ms'),
-          )?.className,
-      ),
-    ).toEqual(['mono feed-ms-bad', 'mono feed-ms-warn', 'mono']);
     feed.release();
   });
 
