@@ -10,15 +10,15 @@ what is true today.
 
 | | |
 | --- | --- |
-| Branch | `alloc-domains/http` at `144ef91`, pushed to **both** `origin` and `backup`. `main` at `0a716ec` (= `64be513` + the IP-literal fix), pushed to both. Tag `pre-alloc-domain-2026-09-06` = `64be513`, the rollback point before the HTTP allocation domains, pushed to both |
-| Tree | uncommitted on the branch: `p2.6-11` closed in the phase table, the three `resoak-0.3.*` evidence folders and their predeclarations/audit deleted (47 files), this file |
-| Tests | green at `6d591ad` (fmt, clippy `-D warnings`, `cargo test --all-features --workspace`, 33 suites); `144ef91` is docs only |
-| Version | 0.3.1 (workspace, unchanged on the branch). Newest tags `pre-alloc-domain-2026-09-06`, `soak-p2.6-11`, `v0.2.19-phase2.5` |
-| Deployed | production swapped **2026-09-07** (owner-run) from `fastadhunter-0.3.1` (`db2f9b2`) to image **`fastadhunter:alloc-6d591ad`** (`kingston/fastadhunter-alloc-6d591ad-rosready.tar`) on `veth1` / `172.17.0.2`, mount lists `fah-config,fah-data`, envlist `fah-env` now carrying **`FAH__RUNTIME__HTTP_RUNTIMES=2`** explicitly. **T0 = the container start time in the router log; day 7 = 2026-09-14** |
-| Build ≠ tip | deployed code = `6d591ad` = branch tip minus one docs commit. `main` lacks the branch (by design until the soak verdict); the branch carries everything `main` has |
-| Phase | **5 closed.** **2.6 in `plan/wip/phase2.6-adaptive-stage1`** — 12 of 13 `DONE` (`p2.6-11` closed 2026-09-07 by owner decision, its soak stopped at day 6 for the swap); `p2.6-12` `WAITING` |
+| Branch | `phase3-06` = `main` (`857865d`, 0.3.3) + Phase 3, with the HTTPS listener re-homed on the allocation domains (merge `e0c6071`, 2026-09-07). Local: the merge, two docs commits and this docs pass are not pushed. Tag `pre-alloc-domain-2026-09-06` = `64be513` stays the rollback point before the allocation domains |
+| Tree | uncommitted on `phase3-06`: this docs pass — the certificate ADR renumbered to `0007`, README/ROADMAP/ARCHITECTURE/CONTEXT/SECURITY/API and the diagrams reconciled with the merge, this file |
+| Tests | green at `e0c6071` (fmt, clippy `-D warnings`, `cargo test --all-features --workspace`, 1468 tests across 52 binaries); everything after it is docs only |
+| Version | 0.3.3 (workspace). Newest tags `v0.3.2`, `pre-alloc-domain-2026-09-06`, `soak-p2.6-11` |
+| Deployed | production on **0.3.3** — HTTP allocation domains, N=2 (`FAH__RUNTIME__HTTP_RUNTIMES=2` on `fah-env`) — since the owner-run swap of **2026-09-07** on `veth1` / `172.17.0.2`, mount lists `fah-config,fah-data`; the 0.3.1 soak was stopped on day 6 for it. **T0 = the container start time in the router log; day 7 = 2026-09-14** |
+| Build ≠ tip | deployed code = `main` at `1c61f9c` (`7d03e95`…`857865d` are plan and docs). `phase3-06` is not deployed: Phase 3 waits on this soak's verdict and then its own 24 h full-mode soak |
+| Phase | **5 closed. 2.6 closed 2026-09-07** — `adaptive` shipped opt-in; `p2.6-12` is closed in the table without the flip, the compiled default is still `fallback`. **3 in `plan/wip/phase3`** — `p3-01`…`p3-05` `DONE`, `p3-06` `AWAITING SOAK` |
 | Gate | [Global Architecture Review-Reconciled.md](code-review/Global%20Architecture%20Review-Reconciled.md): §5.1–6 cleared; §5.7–14 gate Phase 3. S1-G2 tiers 1–3 met; S1-G4 and S1-G5 route 2 not validated and will not be |
-| **Next** | the allocation-domain soak runs to **2026-09-14**; merge `alloc-domains/http` → `main` on its verdict. Meanwhile, off the critical path: `p2.6-12` on `main`, the TLS / lol_html capacity microbench on the probe, dashboard metadata for `runtime.http_runtimes` |
+| **Next** | the 0.3.3 soak runs to **2026-09-14**; its verdict is ADR-0006's plateau. Then, on `phase3-06`: remeasure N with TLS on the RB5009 (ADR-0006 revisit trigger), the `p3-06` 24 h full-mode soak, and only then `phase3-06` → `main`. Off the critical path: dashboard settings metadata for `runtime.http_runtimes`, the TLS / lol_html capacity microbench on the probe |
 
 ## HTTP allocation domains — soak in progress
 
@@ -79,8 +79,7 @@ transient (peak 141.3 MiB on 0.3.1, monitored via `peak_rss`); policy
 fail-open window and name-assignments-on-LRU; SWR no-EDNS truncation tax;
 fah-common scope creep; `blocking_mode` inert; histogram 100 ms ceiling;
 p2.5-10 n1 (test-helper readability in `fah-api`, test-only); 11b graceful
-HTTP shutdown; `spawn_perf_sampler`'s always-`None` `https_connections`
-parameter (Phase 3 hook).
+HTTP shutdown.
 
 ## Known-good gate note
 

@@ -138,7 +138,7 @@ branch.
   crypto set above has no PKCS#12 parser and real `.pfx` files are encrypted, so
   supporting them would mean adding several crypto crates. Convert first with
   `openssl pkcs12 -in cert.pfx -out cert.pem -nodes`
-  ([ADR-0006](docs/decisions/0006-certificate-machinery-home.md)).
+  ([ADR-0007](docs/decisions/0007-certificate-machinery-home.md)).
 - An imported certificate is re-encoded from the parsed DER before it is stored,
   so private key material pasted into the certificate field is discarded rather
   than written to a world-readable file or handed back by an export endpoint.
@@ -276,7 +276,7 @@ exactly the failure worth finding.
   endpoints export the **public** certificate only, re-encoded from the parsed
   certificate DER so no export path can reach a key. Interception uses rustls;
   certificate minting uses rcgen; parsing uses x509-parser. All of it lives in
-  `fah-certs` ([ADR-0006](docs/decisions/0006-certificate-machinery-home.md)).
+  `fah-certs` ([ADR-0007](docs/decisions/0007-certificate-machinery-home.md)).
   - **Verify before present.** The upstream is connected to the
     egress-approved address and its certificate verified against the SNI
     hostname (compiled-in webpki roots — distroless has no system store)

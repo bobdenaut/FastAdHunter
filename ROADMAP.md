@@ -14,17 +14,20 @@ RB5009, not merely written.
 | 1.5 — observability persistence | ✅ done | `v0.3.0-phase1.5` |
 | 2 — HTTP | ✅ done | `v0.2.17-phase2` |
 | 2.5 — pre-Adaptive hardening | ✅ done | `v0.2.19-phase2.5` |
-| 2.6 — Adaptive DNS Stage 1 | 🚧 built, deployed opt-in; default flip pending | `soak-p2.6-11` |
+| 2.6 — Adaptive DNS Stage 1 | ✅ done — closed 2026-09-07, shipped opt-in, default not flipped | `soak-p2.6-11` · `v0.3.2` |
 | 5 — web dashboard | ✅ done — closed 2026-09-01, four verification rows deferred | `0.3.0` |
 | 3 — HTTPS | 🚧 p3-01…p3-05 done, p3-06 `AWAITING SOAK` | — |
 | 4 — HTML filtering | ⬜ not started | — |
 
-Phase 2.6 sits on the **7-day soak of 0.3.1**, started 2026-09-01T07:27 Z and
-closing **2026-09-08**, which carries `p2.6-11`'s `adaptive` acceptance. It is
-the third: the 0.3.0 re-soak before it was terminated at T0+59 h to change the
-measurement method, not on a gate, and carries no verdict. Phase 5's Stage B
-needed no deploy of its own — 0.3.1 already is the phase-5 build — so it was
-collected read-only against the same container.
+Production runs **0.3.3** — HTTP served on allocation domains
+([ADR-0006](docs/decisions/0006-http-allocation-domains.md)), N=2, plus the
+dashboard fixes on top of 0.3.2 — on a **7-day soak from 2026-09-07 to
+2026-09-14**. It replaced the 0.3.1 soak that was to carry `p2.6-11`'s
+acceptance, stopped on day 6 for the swap by owner decision; the 0.3.0 re-soak
+before that was terminated at T0+59 h to change the measurement method, not on a
+gate, and carries no verdict. Phase 5's Stage B needed no deploy of its own —
+0.3.1 already was the phase-5 build — so it was collected read-only against that
+container.
 
 ---
 
@@ -184,7 +187,7 @@ and the Adaptive DNS Stage 1 ship-gates a global architecture review raised.
 run-length distribution want **deployment time**, since every day they run
 before Stage 1 lands is measurement data for judging it.
 
-## Phase 2.6 — Adaptive DNS Stage 1 🚧 **IN PROGRESS** (`plan/wip/phase2.6-adaptive-stage1/`)
+## Phase 2.6 — Adaptive DNS Stage 1 ✅ **DONE** — closed 2026-09-07 (`plan/closed/phase2.6-adaptive-stage1/`)
 
 Failure-aware upstream selection, behind `strategy = "adaptive"`, opt-in.
 Specification frozen: [docs/design/adaptive-upstream-selection.md](docs/design/adaptive-upstream-selection.md)
@@ -217,24 +220,25 @@ Two tiers of acceptance:
   Stage 1's constants as calibrated on this deployment. The window cannot be
   reopened without reverting the strategy.
 
-Tasks 1–10 and 13 are `DONE`. **p2.6-11's 7-day soak was terminated on day 5**
-(owner decision, 2026-08-29): its RSS excursions were traced to list refreshes
-re-downloading unchanged bodies — not to the adaptive path — and two more
-observation days added no information. That defect is fixed in 0.3.0
-(conditional GET, below). The re-soak of 0.3.0 that was to carry the acceptance
-was itself **terminated at T0+59 h to change the measurement method, not on a
-gate**, so the acceptance now rides a third soak: **0.3.1, 2026-09-01T07:27 Z →
-2026-09-08**. Sequencing:
-[plan/resoak-orchestration.md](plan/resoak-orchestration.md).
+All thirteen tasks are closed. **p2.6-11's first 7-day soak was terminated on
+day 5** (owner decision, 2026-08-29): its RSS excursions were traced to list
+refreshes re-downloading unchanged bodies — not to the adaptive path — and two
+more observation days added no information. That defect is fixed in 0.3.0
+(conditional GET, below). The re-soak of 0.3.0 was **terminated at T0+59 h to
+change the measurement method, not on a gate**, and the third soak, **0.3.1 from
+2026-09-01T07:27 Z, was stopped on day 6 (2026-09-07)** for the allocation-domain
+production swap; `p2.6-11` closed on its RSS-drift evidence
+(`docs/code-review/phase2.6/resoak-0.3.1-memory-diagnosis.md`). Sequencing of
+the three: [plan/resoak-orchestration.md](plan/resoak-orchestration.md).
 
-**p2.6-12 — the default flip — remains open, and its precondition is weaker
-than the plan assumed.** The flip was gated on every deployment-tier gate
-passing; two closed unvalidated instead. The spec's narrow rejection route
-still stands: if this deployment only ever produces isolated single losses,
-Stage 1 at `penalty_failures = 2` never engages and **not flipping the default
-is the correct outcome**. Three length-1 runs are equally consistent with that
-and with too small a sample; nothing measured distinguishes them. That call is
-an explicit owner decision, not an inference from the other gates.
+**p2.6-12 — the default flip — closed without flipping.** The flip was gated on
+every deployment-tier gate passing; two closed unvalidated instead. The spec's
+narrow rejection route applied: if this deployment only ever produces isolated
+single losses, Stage 1 at `penalty_failures = 2` never engages and **not
+flipping the default is the correct outcome**. Three length-1 runs are equally
+consistent with that and with too small a sample; nothing measured
+distinguishes them. The phase closed on 2026-09-07 by owner decision with
+`adaptive` opt-in and the compiled default still `fallback`.
 
 ### Shipped alongside — list refresh, conditional GET (0.3.0)
 
@@ -248,6 +252,21 @@ Not a Stage 1 feature; the repair the terminated soak paid for.
       a future RSS step is attributable from `/history/perf` alone. The
       2026-08-29 hunt only closed because the owner opened the router's
       bandwidth graph; that dependency is now removed.
+
+### Shipped alongside — HTTP allocation domains (0.3.2)
+
+Not a Stage 1 feature either; what the 0.3.1 soak's memory diagnosis led to.
+
+- [x] Each HTTP connection served end to end on one of `[runtime]
+      http_runtimes` single-thread runtimes on their own OS threads, behind one
+      acceptor — a connection's allocations are freed by the thread that made
+      them ([ADR-0006](docs/decisions/0006-http-allocation-domains.md)). N=2 on
+      the RB5009 from the N sweep: a third less CPU per request, DNS p50 under
+      HTTP load 0.96 ms against 3.35, +19 MiB held after a 900 MiB burst against
+      +56..+60
+- [ ] The 7-day soak at N=2 (0.3.3, to 2026-09-14) is the verdict on the memory
+      plateau; the predeclared floor criterion was not met in the A/B and the
+      adoption is recorded as an owner decision in the ADR
 
 ## Phase 5 — Web Dashboard ✅ **DONE** — closed 2026-09-01 (`plan/closed/phase5/`)
 
@@ -313,8 +332,15 @@ recorded budget miss that does not block closure, and P4's PERFORMANCE.md rows
 returned to `TBD` when its declared statistic proved unstable across sessions.
 Four arms (P1-LAN, P1-control, P2, P3) are **parked on hardware**: they need a
 second wired LAN endpoint. The row flips on the 24 h full-mode soak, which
-cannot start before the 0.3.1 soak ends 2026-09-08. Evidence:
+cannot start before the 0.3.3 allocation-domain soak ends 2026-09-14. Evidence:
 [docs/code-review/phase3/](docs/code-review/phase3/).
+
+**2026-09-07: `main` (857865d) merged into `phase3-06`.** The HTTPS listener now
+feeds the same allocation domains as HTTP
+([ADR-0006](docs/decisions/0006-http-allocation-domains.md)): one acceptor per
+listener, and the ClientHello peek, SNI verdict, splice or MITM handshake all run
+on the domain thread. ADR-0006's revisit trigger — remeasure N with TLS on the
+RB5009 — is open, owner-side.
 
 - SNI-level HTTPS filtering for every client, no setup and no decryption
   (`p3-03`) — blocked domains die at the ClientHello; ECH/no-SNI is closed, not

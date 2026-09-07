@@ -124,7 +124,7 @@ Owner approved after the second fix round. The task's acceptance criterion
 
 | File | Change |
 | --- | --- |
-| `docs/decisions/0006-certificate-machinery-home.md` | **New.** Placement (L2 `fah-certs`, the p2-01 admission test, why not `fah-common` or L1), the PEM-only/PFX-descope decision and its reasoning, the structural export guarantee, revisit criteria for both decisions |
+| `docs/decisions/0007-certificate-machinery-home.md` | **New.** Placement (L2 `fah-certs`, the p2-01 admission test, why not `fah-common` or L1), the PEM-only/PFX-descope decision and its reasoning, the structural export guarantee, revisit criteria for both decisions |
 | `ARCHITECTURE.md` | `fah-certs` in §Workspace Layout; added to L2 in §Dependency Layering with a paragraph on why it is L2 and what it owns, pointing at ADR-0006 |
 | `SECURITY.md` | §TLS for the API: user-supplied certificate is **PEM**, PFX explicitly not accepted with the `openssl pkcs12` conversion command; new bullet on import re-encoding from parsed DER. §Later phases: export is re-encoded from certificate DER, machinery lives in `fah-certs`. Guiding rule: notes `pem` is base64 framing, not a widening of the fixed crypto set |
 | `API.md` | §Certificates: dropped "import PFX" from the reserved namespace, added the descope note and conversion command, pointed the endpoint spec at p3-02 |

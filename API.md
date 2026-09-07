@@ -1292,7 +1292,7 @@ at **256 KB**; a larger body is `400` `bad_request` naming the limit.
 no PKCS#12 parser and real `.pfx` files are encrypted, so import would need
 several new crypto crates. Import is PEM-only; convert with
 `openssl pkcs12 -in cert.pfx -out cert.pem -nodes`. See
-[ADR-0006](docs/decisions/0006-certificate-machinery-home.md).
+[ADR-0007](docs/decisions/0007-certificate-machinery-home.md).
 
 ### `GET /api/v1/certificates`
 
@@ -1387,7 +1387,7 @@ cannot be driven up by calling this route in a loop.
 
 The **public certificate only**. The export is re-encoded from the parsed
 certificate DER, so it cannot carry key material even if a combined
-`cert + key` blob was pasted in at import time (SECURITY.md, ADR-0006).
+`cert + key` blob was pasted in at import time (SECURITY.md, ADR-0007).
 
 | `format` | `Content-Type` | `Content-Disposition` filename |
 | -------- | -------------- | ------------------------------ |

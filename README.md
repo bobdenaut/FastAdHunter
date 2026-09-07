@@ -31,7 +31,7 @@ numbers below are measured on the target hardware, not estimated.
 | 1.5 | Observability persistence | ✅ done | `v0.3.0-phase1.5` |
 | 2 | HTTP engine + Policies | ✅ done | `v0.2.17-phase2` |
 | 2.5 | Pre-Adaptive hardening | ✅ done | `v0.2.19-phase2.5` |
-| 2.6 | Adaptive DNS Stage 1 | 🚧 built and deployed opt-in; default flip pending | — |
+| 2.6 | Adaptive DNS Stage 1 | ✅ closed 2026-09-07 — shipped opt-in (`strategy = "adaptive"`); the compiled default stays `fallback` by owner decision | `soak-p2.6-11` |
 | 5 | Web dashboard | ✅ done — closed 2026-09-01, four verification rows deferred to the next deploy window | `0.3.0` |
 | 3 | HTTPS interception | 🚧 dev box done (p3-01…p3-05); p3-06's on-device campaign ran, four arms parked on hardware, awaiting the 24 h soak | `phase3-06` |
 | 4 | HTML filtering | ⬜ not started | — |
@@ -41,9 +41,11 @@ numbered 5 by capability and scheduled ahead of HTTPS and HTML filtering because
 that is what the household needs next.
 
 Running in production on a MikroTik RB5009 as the household's only resolver, in
-`dns+http` mode, on **0.3.1** since 2026-09-01. Phase 2's engine work is deployed
-— the transparent HTTP proxy, URL-path rules, per-client Policies and the single
-JSON telemetry surface — and so is the Phase 5 dashboard.
+`dns+http` mode, on **0.3.3** since 2026-09-07 — the first build serving HTTP on
+allocation domains ([ADR-0006](docs/decisions/0006-http-allocation-domains.md)),
+on its 7-day soak to 2026-09-14. Phase 2's engine work is deployed — the
+transparent HTTP proxy, URL-path rules, per-client Policies and the single JSON
+telemetry surface — and so is the Phase 5 dashboard.
 
 Phase 2.5 was hardening, not features: the live-resolver defects an architecture
 review found (a DNS listener that could die silently, a 200-OK garbage list body
@@ -64,15 +66,15 @@ downloading unchanged bodies, not the adaptive code — and two more observation
 days would have added nothing. The fix (conditional GET, `If-None-Match` /
 `If-Modified-Since` with a 304 short-circuit) shipped in 0.3.0. The re-soak on
 0.3.0 was then **terminated at T0+59 h to change the measurement method, not on
-a gate**, so it carries no verdict. The soak that judges the feature is the
-third: **0.3.1, started 2026-09-01T07:27 Z, closing 2026-09-08**, against gates
-fixed in writing before any evidence was read. The default flip has to be
-earned: two deployment
-gates closed **unvalidated** — the observed failure window held three runs, all
-of length 1, too few to calibrate `penalty_failures`, which therefore stays at
-its compiled default of 2, provisional and uncalibrated. If the deployment only
-ever produces isolated single losses, not flipping the default is the correct
-outcome.
+a gate**, so it carries no verdict. The third soak, **0.3.1 from
+2026-09-01T07:27 Z, was stopped on day 6 (2026-09-07)** for the
+allocation-domain production swap, and the phase closed that day by owner
+decision. The default was **not flipped**: two deployment gates closed
+**unvalidated** — the observed failure window held three runs, all of length 1,
+too few to calibrate `penalty_failures`, which therefore stays at its compiled
+default of 2, provisional and uncalibrated — so `adaptive` stays opt-in and the
+compiled default is `fallback`. If the deployment only ever produces isolated
+single losses, that is the correct outcome.
 
 Phase 5 is the web dashboard, and it is **built** — thirteen screens across all
 ten tasks, merged and released as 0.3.0. The shipped bundle is **128,730 B
@@ -95,7 +97,7 @@ same reading. **Each row carries the build it was measured on.** The ruleset and
 boot rows are 0.3.0; the steady-state memory, refresh transient, latency and
 throughput rows still describe 0.2.x, because the equivalent 0.3.0 readings need
 a warm cache and a list refresh that the running deployment has not reached yet
-— the 0.3.1 soak closing 2026-09-08 produces them.
+— the 0.3.3 soak closing 2026-09-14 produces them.
 
 | | Measured | Build | Budget |
 | --- | ---: | :---: | ---: |
@@ -245,7 +247,7 @@ Full diagram: [SVG](docs/diagrams/architecture.svg) ·
 ```text
 L4:  fastadhunter (binary — wires everything)
 L3:  fah-dns   fah-http   fah-api   fah-stats   fah-metrics
-L2:  fah-rules
+L2:  fah-rules   fah-certs
 L1:  fah-model   fah-config   fah-common   fah-logging
 ```
 
@@ -442,20 +444,33 @@ bound** — not bound and idle.
 ## Runtime model
 
 ```text
-               Tokio Runtime
+               Tokio Runtime (multi-thread)
                      │
       ┌──────────────┼──────────────┐
       │              │              │
  Worker 1       Worker 2       Worker N
       │              │              │
       ├── DNS        ├── DNS        ├── DNS
-      ├── HTTP       ├── HTTP       ├── HTTP
+      ├── API        ├── API        ├── API
       └── Rules      └── Rules      └── Rules
+
+ HTTP + HTTPS acceptors (one each, on the shared runtime)
+      │ round-robin hand-off over bounded channels
+      ├── fah-http-0   current_thread runtime on its own OS thread,
+      └── fah-http-1   serves the connection end to end
 ```
 
-Work is distributed across Tokio workers; the architecture avoids centralised
-processing. One task per datagram, one shared compiled ruleset behind an atomic
-swap, and no lock on the path that answers a query.
+DNS and the API are distributed across Tokio workers; the architecture avoids
+centralised processing. One task per datagram, one shared compiled ruleset
+behind an atomic swap, and no lock on the path that answers a query.
+
+HTTP and HTTPS connections are the one exception
+([ADR-0006](docs/decisions/0006-http-allocation-domains.md)): each listener
+keeps one acceptor on the shared runtime, and every accepted socket is handed
+to one of `[runtime] http_runtimes` **allocation domains** — single-thread
+runtimes on their own OS threads that serve the connection end to end, hello
+peek and TLS handshake included, so what a connection allocates is freed by the
+thread that allocated it. The RB5009 runs two.
 
 ---
 
@@ -632,6 +647,7 @@ FastAdHunter/
 │   ├── fah-config/       # TOML, precedence, validation
 │   ├── fah-model/        # domain model + shared DTOs (pure data types)
 │   ├── fah-rules/        # Rule Engine: parsers + compiled matchers
+│   ├── fah-certs/        # CA + leaf minting, PEM import, public-only export
 │   ├── fah-dns/          # listeners, pipeline, cache, upstreams
 │   ├── fah-http/         # HTTP engine: proxy, pass-through, URL filtering
 │   ├── fah-api/          # Axum REST + WebSocket
@@ -655,7 +671,7 @@ FastAdHunter/
 | Area | Choice | Why |
 | ---- | ------ | --- |
 | Language | Rust | no GC pauses, no runtime, predictable memory |
-| Runtime | Tokio | multi-threaded work stealing |
+| Runtime | Tokio | work-stealing workers for DNS and the API; current-thread allocation domains for HTTP and HTTPS |
 | HTTP | Hyper / Axum | streaming-first |
 | DNS | Hickory | pure-Rust wire format and upstream clients |
 | TLS | rustls | no OpenSSL, no C dependency |
@@ -690,7 +706,7 @@ firewall · a replacement for a good browser extension.
 | **1.5** ✅ | Persisted history, perf series, byte-bounded cache |
 | **2** ✅ | HTTP proxy, URL-path rules, Policies, telemetry consolidation, compile-transient attribution |
 | **2.5** ✅ | Listener resilience, list-refresh integrity, encrypted-transport fixes, outcome telemetry, failure run-length telemetry — hardening before adaptive upstream selection |
-| **2.6** 🚧 | Adaptive DNS Stage 1 — per-endpoint health, penalty and skip on repeated transport failure, on-path recovery probing; deployed opt-in since 2026-08-25, default flip still unearned |
+| **2.6** ✅ | Adaptive DNS Stage 1 — per-endpoint health, penalty and skip on repeated transport failure, on-path recovery probing; deployed opt-in since 2026-08-25, closed 2026-09-07 with the default left at `fallback`. Shipped alongside as 0.3.2: HTTP allocation domains (ADR-0006) |
 | **5** ✅ | Web dashboard — thirteen screens, 128,730 B gzip, served by `fah-api` on one origin, session-cookie auth, every figure backed by an endpoint that exists; released as 0.3.0, closed 2026-09-01 with four verification rows deferred |
 | **3** 🚧 | HTTPS interception, certificate management, DoT/DoH listeners — dev box done, on-device campaign run, awaiting the 24 h soak |
 | **4** | HTML filtering with `lol_html`, cosmetic rules |
@@ -722,7 +738,7 @@ if the decision is being reversed.
 ├── CONTRIBUTING.md       conventions and local quality gates
 │
 └── docs/
-    ├── decisions/            ADRs 0001–0006
+    ├── decisions/            ADRs 0001–0007
     ├── design/               accepted designs not yet built, with their
     │                         benchmark protocols
     ├── dashboard/            capability matrix, information architecture,

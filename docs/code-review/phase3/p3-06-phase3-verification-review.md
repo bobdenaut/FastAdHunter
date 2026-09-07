@@ -887,7 +887,7 @@ The measurement-validity findings MA-1–MA-11 and their resolutions live in
 
 | # | Item | Where it is discharged | Status |
 | --- | --- | --- | --- |
-| 7 | cert home / ADR-0006 | `docs/decisions/0006-certificate-machinery-home.md`; `fah-certs` (L2) consumed by `fah-http` and `fah-api` (L3); `layering.rs` green | closed (p3-01) |
+| 7 | cert home / ADR-0006 | `docs/decisions/0007-certificate-machinery-home.md`; `fah-certs` (L2) consumed by `fah-http` and `fah-api` (L3); `layering.rs` green | closed (p3-01) |
 | 8 | connector redesign — hostname-verified upstream TLS | `crates/fah-http/src/tls.rs:65` `connect_verified_upstream`, roots from `client_config()` (`tls.rs:36`); suite `bad_upstream_cert_is_not_masked` proves fail-closed at the binary level | closed (p3-04 decision 4) |
 | 9 | DoH/DoT placement | DoT inside `fah-dns` (`main.rs:377` `dns.dot_addr()`); DoH on the API listener, route gated on `state.tls && state.doh` (`routes.rs:118-125`, `main.rs:548-582`); shared 64-permit consequence → soak watch item (a) | closed (p3-05 decision 4); watch item open |
 | 10 | event/telemetry taxonomy | `fah-model/src/request_event.rs:126-127` `EventKind::{HttpsSni, Https}`; `fah-model/src/client_transport.rs:5` `ClientTransport`; suite and e2e assert `kind: https-sni` / `https` on the WS feed | closed (p3-03/04/05) |

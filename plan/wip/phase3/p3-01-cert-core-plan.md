@@ -291,7 +291,7 @@ p3-06 from measured data.
 
 - ARCHITECTURE.md: `fah-certs` in §Workspace Layout and §Dependency Layering
   (L2).
-- New `docs/decisions/0006-certificate-machinery-home.md` (placement + PFX
+- New `docs/decisions/0007-certificate-machinery-home.md` (placement + PFX
   decision).
 - SECURITY.md: only if PFX Option A (set amendment).
 - Finish the code first, then list these edits and wait, per the working

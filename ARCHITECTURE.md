@@ -252,7 +252,7 @@ three L3 siblings need it (`fah-api` for the API server pair and the
 import/status endpoints, `fah-http` for interception leaves, `fah-dns` for the
 DoT listener) and siblings may not import each other. It is pure logic: no
 tokio, no listeners, no async — the binary owns the wiring. See
-[ADR-0006](docs/decisions/0006-certificate-machinery-home.md).
+[ADR-0007](docs/decisions/0007-certificate-machinery-home.md).
 
 `crates/fastadhunter/tests/layering.rs` enforces this by parsing every
 manifest: an internal dependency that does not point strictly downward fails
