@@ -71,6 +71,19 @@
   box-shadow: inset 3px 0 0 var(--rail-accent);
 }
 
+/* A group head is a disclosure button, so the element's own chrome has to go
+   for it to sit in the rail as one of the links. Font size stays with `.it`:
+   `font: inherit` here would win on source order and hand the row the body
+   size instead of the rail's 13.5px. */
+.it-group {
+  width: 100%;
+  background: none;
+  border: 0;
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
 .sub2 {
   display: flex;
   align-items: center;
