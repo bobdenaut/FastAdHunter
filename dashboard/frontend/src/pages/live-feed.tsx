@@ -34,6 +34,18 @@ import {
  */
 const PAGE_SIZES = [50, 100, 200] as const;
 
+/** Outlined amber over `SLOW_MS`, red over `STALLED_MS`: a cache hit and a
+ *  blocked answer land in microseconds, so tens of milliseconds is an upstream
+ *  the row waited on. */
+const SLOW_MS = 50;
+const STALLED_MS = 100;
+
+function durationBand(ms: number): string {
+  if (ms > STALLED_MS) return ' feed-ms-bad';
+  if (ms > SLOW_MS) return ' feed-ms-warn';
+  return '';
+}
+
 /**
  * Every query and request as it is decided.
  *
@@ -370,7 +382,11 @@ export function LiveFeed(_props: PageProps) {
                         <td>
                           <Detail row={row} />
                         </td>
-                        <td class="num mono">{row.duration_ms.toFixed(3)}</td>
+                        <td
+                          class={`num mono${durationBand(row.duration_ms)}`}
+                        >
+                          {row.duration_ms.toFixed(3)}
+                        </td>
                       </tr>
                     ))}
                   </tbody>

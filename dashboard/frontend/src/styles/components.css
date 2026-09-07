@@ -4791,6 +4791,20 @@ table.feed-table tbody tr:hover td {
   font-size: 11.5px;
 }
 
+/* An outline drawn inside the cell, not a border: the table collapses its
+   borders, so a real one would fight the row separator it shares and widen the
+   column as rows stream in and out of the band. */
+.feed-ms-warn,
+.feed-ms-bad {
+  outline: 1px solid var(--pill-warn-fg);
+  outline-offset: -1px;
+  border-radius: 3px;
+}
+
+.feed-ms-bad {
+  outline-color: var(--pill-bad-fg);
+}
+
 /* A marker on a row, not a verdict — deliberately unlike a pill. */
 .feed-marker {
   margin-left: 6px;
