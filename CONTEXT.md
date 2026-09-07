@@ -466,11 +466,26 @@ flight never observe a partial state; the hot path takes no lock.
 
 ### Allocation Domain
 
-One `current_thread` Tokio runtime on its own OS thread that serves whole HTTP
-connections end to end — accept hand-off, request, upstream fetch, response,
-close — so that everything a connection allocates is freed by the thread that
-allocated it (ADR-0006). `[runtime] http_runtimes` sets how many the HTTP
-Engine runs behind its one acceptor; `0` serves on the shared runtime instead.
+One `current_thread` Tokio runtime on its own OS thread (`fah-http-k`) that
+serves whole connections end to end — hand-off, request, upstream fetch,
+response, close — so that a connection's local allocations (read buffers,
+request and upstream state) are freed by the thread that made them (ADR-0006);
+the request event it emits is the one thing that leaves. The thread owns the
+runtime, its own HTTP `Proxy` with its own upstream pool, and every task a
+connection spawns; what it shares with the other domains is read-only `Arc`s
+(resolver, ruleset, policies, counters, the `TlsProxy`).
+
+Domains sit behind the listeners, not inside them. Each listener keeps one
+acceptor on the shared runtime: it takes the listener's own `max_connections`
+permit (one semaphore across all domains), accepts, sets `TCP_NODELAY`,
+detaches the socket and hands it to the next domain in round-robin over a
+bounded channel; the permit and the connection-gauge guard travel with the
+hand-off and drop with the connection task. Both listeners feed the same
+domains: a plain-HTTP socket is served by the domain's `Proxy`, an HTTPS socket
+by the shared `TlsProxy`, so the ClientHello peek, the SNI verdict, the splice
+or the MITM handshake and the session all run on the domain thread. The
+acceptor never does TLS work. `[runtime] http_runtimes` sets how many domains
+the HTTP Engine runs; `0` serves both listeners on the shared runtime instead.
 
 Not a domain *name*. In `fah-http` the word with an index (`fah-http-0`,
 `http_domain = 0`) always means this; the DNS sense is never shortened to it.
