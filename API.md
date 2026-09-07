@@ -505,7 +505,9 @@ dominated this week", not "the exact order".
 
 ### `GET /api/v1/clients`
 
-Observed clients (by source IP) with stats and optional names.
+Observed clients (by source IP) with stats and optional names. `family` is
+`v4` or `v6` and keeps one address family; absent keeps both. Any other value
+is `400`.
 
 ```json
 {
