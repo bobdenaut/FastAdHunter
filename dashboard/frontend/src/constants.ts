@@ -3,24 +3,30 @@
  *  `lists` take `telemetry`'s pair rather than a shorter option. */
 export const REFRESH_OPTIONS_SECS = {
   health: [30, 60, 300],
-  telemetry: [60, 300],
-  cache: [60, 300],
-  clients: [60, 300],
-  lists: [60, 300],
+  telemetry: [60, 300, 3600],
+  cache: [60, 300, 3600],
+  clients: [60, 300, 3600],
+  lists: [60, 300, 3600],
 } as const;
 
+/** The hour is the default for the four the Dashboard reads: none of them is a
+ *  liveness reading, and a page left open all day was issuing 288 requests an
+ *  endpoint to redraw figures that move on the hour. `health` keeps its minute
+ *  — it is what says the box is still answering, and an hour-old `live` badge
+ *  would be a claim nobody made. */
 export const REFRESH_DEFAULT_SECS = {
   health: 60,
-  telemetry: 300,
-  cache: 300,
-  clients: 300,
-  lists: 300,
+  telemetry: 3600,
+  cache: 3600,
+  clients: 3600,
+  lists: 3600,
 } as const;
 
 export const REFRESH_LABELS: Record<number, string> = {
   30: '30 s',
   60: '1 m',
   300: '5 m',
+  3600: '1 h',
 };
 
 export const AGE_TICK_MS = 30_000;
