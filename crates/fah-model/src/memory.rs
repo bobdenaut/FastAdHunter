@@ -73,6 +73,8 @@ pub struct ProcessStats {
     /// on memory it is about to reuse. Read it as a rate against query volume,
     /// not as an absolute.
     pub minor_page_faults: u64,
+    pub cpu_user_ms: u64,
+    pub cpu_system_ms: u64,
 }
 
 /// What the process allocator reports about itself — **only** figures that
@@ -254,6 +256,7 @@ mod tests {
                 peak_rss: 150_700_000,
                 major_page_faults: 0,
                 minor_page_faults: 4_211_337,
+                ..Default::default()
             }),
             allocator: None,
             ..breakdown(Some(200))

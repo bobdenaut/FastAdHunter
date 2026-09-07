@@ -38,6 +38,10 @@ The whole `[http]` section is **boot** for the same reason, including
 sized once when the listener binds. Promoting a key means giving it a live
 consumer first — never relabelling it and hoping.
 
+`[runtime]` is **boot** too: `http_runtimes` is read once when the HTTP
+listener starts its allocation domains (CONTEXT.md), so `POST /api/v1/config`
+persists it and answers `restart_required: true`.
+
 `[schedule]` and `[[policies]]` became **runtime** in p2-06, through their own
 endpoints (API.md §Policies) rather than `POST /api/v1/config`, which rejects
 `policies` with 422 for the same one-owner reason `[[rules.lists]]` is rejected.
@@ -58,6 +62,17 @@ Values below are the built-in defaults.
 # ─── Engine ────────────────────────────────────────────────────────────
 [engine]
 mode = "dns"                  # boot    — "dns" | "dns+http" | "dns+http+https"
+
+# ─── Runtime ───────────────────────────────────────────────────────────
+[runtime]
+http_runtimes = 2             # boot    — HTTP allocation domains (CONTEXT.md):
+                              #           N single-thread runtimes, one OS thread
+                              #           each, behind one acceptor; 0 = serve on
+                              #           the shared runtime. Default max(1, cores/2)
+                              #           — 2 on the RB5009 — computed by the
+                              #           machine that writes the file, so a first
+                              #           boot pins it. Max 64.
+                              #           Env: FAH__RUNTIME__HTTP_RUNTIMES
 
 # ─── DNS listener ──────────────────────────────────────────────────────
 [dns.listen]

@@ -22,11 +22,14 @@
 
 mod block;
 mod claim;
+mod connections;
+mod domain;
 mod proxy;
 mod request;
 mod server;
 
 pub use block::BlockStyle;
 pub use claim::{ClaimError, Destination};
+pub use connections::ConnectionGauge;
 pub use proxy::{Proxy, ProxyCounters, ProxyStats, Ruleset};
 pub use server::Server;

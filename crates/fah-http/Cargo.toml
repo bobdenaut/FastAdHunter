@@ -24,7 +24,7 @@ hyper = { version = "1", features = ["http1", "server", "client"] }
 # `client-legacy` is hyper-util's pooling client — the connection reuse the
 # proxy needs upstream. Already in-tree via fah-api, so this adds no new crate.
 hyper-util = { version = "0.1", features = ["client", "client-legacy", "http1", "tokio"] }
-tokio = { workspace = true, features = ["io-util", "net", "sync", "time"] }
+tokio = { workspace = true, features = ["io-util", "macros", "net", "rt", "sync", "time"] }
 # The connector is a `tower_service::Service<Uri>`; the one trait, not the
 # whole tower stack.
 tower-service = "0.3"

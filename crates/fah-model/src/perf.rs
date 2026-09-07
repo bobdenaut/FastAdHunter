@@ -71,6 +71,14 @@ pub struct PerfSample {
     pub allocator_committed_bytes: u64,
     #[serde(default)]
     pub list_fetch: crate::engine::ListFetchCounters,
+    #[serde(default)]
+    pub concurrent_connections: ConcurrentConnections,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ConcurrentConnections {
+    pub http: u32,
+    pub https: u32,
 }
 
 /// A range of [`PerfSample`]s plus the decimation applied to fit the caller's
@@ -203,6 +211,7 @@ mod tests {
             ts: 1_695_600_000,
             answers_delta: crate::engine::AnswerCounters::default(),
             allocator_committed_bytes: 210_100_224,
+            concurrent_connections: ConcurrentConnections { http: 3, https: 1 },
             list_fetch: crate::engine::ListFetchCounters {
                 bodies: 17,
                 not_modified: 3,

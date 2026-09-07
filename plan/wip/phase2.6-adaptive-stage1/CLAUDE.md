@@ -36,7 +36,7 @@ approved.
 | 8 | `p2.6-08-microbench.md` | S1-M: healthy-path selection cost `adaptive` vs `fallback`, pinned, zero allocations — G2 tier 1 | Opus | DONE |
 | 9 | `p2.6-09-injected-failure-bench.md` | S1-G3 scenarios pass; net timeout cost avoided reported in two rows | Opus | DONE |
 | 10 | `p2.6-10-null-ab.md` | Harness noise band N from suite S1-N; G2 tier 3 threshold frozen or dropped. **N = 0.1094 % on total upstream attempts (K = 8, RB5009); tier 3 frozen at 5.00 %.** `forward` p99 N = 156.10 %, descriptive only | Opus | DONE |
-| 11 | `p2.6-11-optin-deploy-soak.md` | `adaptive` deployed opt-in; G2 tiers 2–3, G4 and G5 decided from on-device evidence | Opus | AWAITING SOAK — flips to `DONE` when the 7-day L.3 soak closes 2026-09-01T07:57Z and its RSS-drift rows are recorded. All implementation and measurement work is complete |
+| 11 | `p2.6-11-optin-deploy-soak.md` | `adaptive` deployed opt-in; G2 tiers 2–3, G4 and G5 decided from on-device evidence | Opus | DONE — the 0.3.1 soak was stopped by the owner on 2026-09-07 (day 6) for the `alloc-domains/http` production swap; its RSS-drift evidence is `docs/code-review/phase2.6/resoak-0.3.1-memory-diagnosis.md` and `resoak-0.3.1-predeclaration.md` (raw pulls deleted). The 7-day plateau question moves to the allocation-domain soak (ADR-0006) |
 | 12 | `p2.6-12-default-flip.md` | `adaptive` is the default; `fallback` path deleted; docs and project state updated | Opus | WAITING |
 | 13 | `p2.6-13-measurement-harness.md` | Probe container, on-device load generator, mock upstreams and veth exist as a repeatable owner-run procedure; one trial repetition completes | Opus | DONE |
 

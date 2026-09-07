@@ -257,6 +257,11 @@ impl Proxy {
         self
     }
 
+    pub fn with_counters(mut self, counters: Arc<ProxyCounters>) -> Self {
+        self.counters = counters;
+        self
+    }
+
     pub fn counters(&self) -> Arc<ProxyCounters> {
         Arc::clone(&self.counters)
     }
