@@ -192,3 +192,117 @@ Owner decision required. Ranked cheapest first; none started.
 
 Option 1 is worth shipping whichever of 2 or 3 is chosen. Rejected: `/64`
 assignment, and a `/64` fallback in `resolve` — see Decisions.
+
+## Solution (2026-09-07)
+
+Architecture pass over the findings above. Read-only; nothing changed, nothing
+deployed. Two separate problems, three fixes.
+
+### Additional evidence
+
+| Fact | Source |
+| --- | --- |
+| RA on `BRIDGE` carries `advertise-dns=yes dns=fd6c:7f32:8e91:1::2`; `other-configuration=no`; no `/ipv6/dhcp-server`, no options | `/ipv6/nd/print detail`, `/ipv6/dhcp-server/print`, 2026-09-07 |
+| RDNSS is therefore the **only** IPv6 DNS source; every dual-stack device sends DNS over IPv6 from an RFC 4941 temporary address | above + [routeros-traps.md](../../routeros-traps.md) §IPv6 |
+| ISP `/56` lease shows `never`, yet 33 GUA `/64` in 37 days: re-delegated on reconnect. ULA is the only stable v6 prefix | `/ipv6/dhcp-client/print` + §GUA prefix churn |
+| Container sits on `veth1` in the `CONTAINERS` bridge, routed from `BRIDGE`. Its neighbour table holds the gateway only | [routeros-traps.md](../../routeros-traps.md) §Container network |
+| Registry: cap 4096, no time expiry, no delete endpoint, persisted in the stats snapshot; `GET /api/v1/clients` filters on `family` only | `client_registry.rs:16,79-105`, `routes.rs:58-81,388` |
+| Growth ~19 addresses/day: 486 on 2026-09-01, ~600 on 2026-09-07 | dashboard |
+
+**Correction to Option 3 above:** "neighbour-table lookup" returns nothing on this
+deployment. The container is not L2-adjacent to LAN clients. See Fix 3.
+
+### Fix 1 — registry bloat (product, small, ship regardless)
+
+| Item | Where | Hot path | Memory |
+| --- | --- | --- | --- |
+| Idle expiry of **unnamed** entries, compiled-in default 7 d, run on the 20 s policy ticker (`main.rs:812`) or the snapshot tick | `fah-stats` registry + binary wiring | none | shrinks |
+| `GET /api/v1/clients?seen_within=<duration>`; dashboard default 24 h with a "show all" toggle | `fah-api` routes/wire, `clients` page | none | none |
+| Option 1 above: flag a name or assignment whose address is unseen for N h | dashboard only | none | none |
+
+Makes Finding 2 moot: dead addresses leave by age, not by cap. Named entries never
+expire. Until this ships the ~580 stale v6 rows stay listed even after Fix 2.
+
+### Fix 2 — identity lapse on this LAN, now (router, zero code)
+
+Stop advertising IPv6 DNS. Clients fall back to the DHCPv4 DNS server, so every
+query arrives from a stable IPv4 address (reservations already cover the named
+devices). AAAA still resolves, IPv6 connectivity is untouched, filtering coverage
+is unchanged because verdicts are by name, not transport. The two `/ipv6/firewall/nat`
+`:53` dstnat rules stay as the safety net for hard-coded v6 resolvers.
+
+Proposed command, to be run by the owner, not by an agent:
+
+```routeros
+/ipv6/nd/set [find interface=BRIDGE] advertise-dns=no
+```
+
+- What it does: drops the RDNSS option from Router Advertisements on `BRIDGE`.
+  `dns=` stays stored but unused.
+- When it takes effect: next RA, within `ra-interval` (30 s–2 m). Clients keep
+  the learned server until the RDNSS lifetime expires (expected ≤ `ra-lifetime`,
+  10 m); stragglers drop it on Wi-Fi reconnect.
+- Revert: `/ipv6/nd/set [find interface=BRIDGE] advertise-dns=yes`.
+- Verify (read-only): `/ipv6/nd/print detail` shows `advertise-dns=no`; on a
+  Windows client `ipconfig /all` lists only `192.168.10.x` under DNS Servers;
+  `GET /api/v1/clients?family=ipv6` shows no `last_seen` newer than the change
+  after ~15 min, save for hard-coded v6 resolvers caught by dstnat.
+
+Trade-offs: IPv6-only hosts lose DNS (none on this LAN). Per-operator choice, not
+a product fix. Does not help Phase 3/4: a proxied TCP connection still carries a
+temporary GUA as source.
+
+### Fix 3 — durable identity (product, large, ADR first, later phase)
+
+Identity = MAC. `ClientSelector::Mac`, names keyed by MAC, MAC resolved to its
+current IP set at snapshot build, the same pattern `Name` uses today
+(`fah-rules/src/policy.rs:353`). Hot path untouched.
+
+Two ways to obtain the MAC. Owner picks one; **B is recommended**.
+
+| | A — RouterOS REST connector | B — local neighbour table |
+| --- | --- | --- |
+| Container placement | stays on `CONTAINERS` (routed) | moved onto `BRIDGE` (same L2 as clients) |
+| MAC source | poll `/rest/ip/arp` + `/rest/ipv6/neighbor` with a read-only RouterOS user | kernel neighbour table of the container's own namespace, read via rtnetlink `RTM_GETNEIGH` (what `ip neigh` shows) |
+| Product cost | HTTP client in the binary, credentials in config, MikroTik-specific | netlink dump parsing, no credentials, works on any Linux host |
+| Router cost | enable REST, create user | one-time re-plumb (below) |
+| Precedent | none | Pi-hole, AdGuard Home |
+
+Way B router work, one-time, owner-run, none of it proposed as commands yet:
+
+- `veth1` becomes a port of `BRIDGE`; container gets an address in
+  `192.168.10.0/24` plus the LAN ULA `fd6c:7f32:8e91::/64`.
+- Repoint: DHCPv4 network `dns=`, RA `dns=`, both `/ipv6/firewall/nat` `:53`
+  dstnat targets, the `/ip/dns` watchdog script, every firewall rule naming
+  `172.17.0.2`. Docs: [routeros-traps.md](../../routeros-traps.md),
+  [deploy-rb5009.md](../../deploy-rb5009.md).
+- Trade-off: LAN reaches the container at L2, the router firewall no longer sits
+  between them. Ports 53 and 8443 are LAN-facing already, so the loss is small.
+
+Way B product work:
+
+| Item | Hot path |
+| --- | --- |
+| Background task in the binary: neighbour dump on the 20 s policy ticker, or on demand when the registry first sees an IP | none |
+| Registry stores IP → MAC once learned. Kernel garbage-collects idle entries after 60 s once the table exceeds 128, so the registry remembers, never re-reads | none |
+| `ClientSelector::Mac`; names keyed by MAC; snapshot build resolves MAC → live IP set, same shape as `Name` today | none |
+| Applies to IPv4 too: one row per device on the clients page | none |
+| Policy gap per rotation: first reply + one poll, ≤ 20 s on `default` | — |
+
+Caveats:
+
+- Unverified: RouterOS containers permitting `NETLINK_ROUTE` reads. Test is a
+  probe container on `veth3` running `ip neigh`; starting it is owner-run.
+- Phone MAC randomisation is stable per SSID by default. iOS 18 offers a
+  "rotating" private address; controlled devices must use "fixed".
+
+Changes [CONTEXT.md §Client](../../../CONTEXT.md). Required before per-client
+HTTPS interception opt-in ([SECURITY.md](../../../SECURITY.md)): an opt-in keyed
+to a rotating address is a worse failure than a lapsed policy.
+
+### Decisions held and added
+
+- `/64` selector and `/64` fallback in `resolve` stay rejected.
+- No interface-identifier correlation: temporary IIDs are random, RFC 7217 stable
+  IIDs differ per prefix. Dead end.
+- Fix 1 and Fix 2 are independent; Fix 2 is the owner's call and needs no code.
