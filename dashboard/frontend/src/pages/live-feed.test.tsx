@@ -489,6 +489,25 @@ describe('the page', () => {
     feed.release();
   });
 
+  it('bands the phone card as well — it is the same feed, not a lesser one', () => {
+    const feed = live({ narrow: true });
+    feed.deliver(
+      { domain: 'quick.example.com', duration_ms: 50 },
+      { domain: 'slow.example.com', duration_ms: 50.001 },
+      { domain: 'stalled.example.com', duration_ms: 100.001 },
+    );
+
+    expect(
+      [...feed.dom.querySelectorAll('.feed-cards .ev')].map(
+        (card) =>
+          [...card.querySelectorAll('.ev-meta span')].find((span) =>
+            (span.textContent ?? '').endsWith(' ms'),
+          )?.className,
+      ),
+    ).toEqual(['mono feed-ms-bad', 'mono feed-ms-warn', 'mono']);
+    feed.release();
+  });
+
   it('builds one tree, not both — the table at a wide viewport', () => {
     // `display: none` is not "out of the tree": building the ten-column table
     // *and* the card list for every visible row doubled exactly the per-flush

@@ -34,14 +34,15 @@ import {
  */
 const PAGE_SIZES = [50, 100, 200] as const;
 
-/** Outlined amber over `SLOW_MS`, red over `STALLED_MS`: a cache hit and a
+/** Outlined amber over `SLOW_MS`, red over `VERY_SLOW_MS`: a cache hit and a
  *  blocked answer land in microseconds, so tens of milliseconds is an upstream
- *  the row waited on. */
+ *  the row waited on. Both layouts mark it — a phone reads the same feed. */
 const SLOW_MS = 50;
-const STALLED_MS = 100;
+const VERY_SLOW_MS = 100;
 
+/** Appended to a class list, so it carries its own leading space. */
 function durationBand(ms: number): string {
-  if (ms > STALLED_MS) return ' feed-ms-bad';
+  if (ms > VERY_SLOW_MS) return ' feed-ms-bad';
   if (ms > SLOW_MS) return ' feed-ms-warn';
   return '';
 }
@@ -420,7 +421,9 @@ export function LiveFeed(_props: PageProps) {
                       {row.list !== null && <span>{row.list}</span>}
                       <FeedCache row={row} />
                       <Detail row={row} />
-                      <span class="mono">{row.duration_ms.toFixed(3)} ms</span>
+                      <span class={`mono${durationBand(row.duration_ms)}`}>
+                        {row.duration_ms.toFixed(3)} ms
+                      </span>
                     </div>
                   </article>
                 ))}

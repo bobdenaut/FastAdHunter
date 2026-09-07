@@ -4805,6 +4805,17 @@ table.feed-table tbody tr:hover td {
   outline-color: var(--pill-bad-fg);
 }
 
+/* The card's figure is an inline span with none of the table cell's padding,
+   so the inset outline would sit on the glyphs. The negative margin gives the
+   outline the 3px back out of the flex gap rather than out of the row: the
+   item's outer width is unchanged, so the text does not move and the wrap
+   points stay where they were. */
+.ev-meta .feed-ms-warn,
+.ev-meta .feed-ms-bad {
+  padding: 0 3px;
+  margin: 0 -3px;
+}
+
 /* A marker on a row, not a verdict — deliberately unlike a pill. */
 .feed-marker {
   margin-left: 6px;
