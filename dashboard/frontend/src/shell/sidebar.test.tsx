@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { render } from 'preact';
+import { act } from 'preact/test-utils';
 import { afterEach, describe, expect, it } from 'vitest';
 import { GROUP_LABELS, ROUTES } from '../router/routes';
 import { ConnectionIndicator } from './connection-indicator';
@@ -59,6 +60,95 @@ describe('the sidebar', () => {
   it('keeps the Diagnostics group collapsed off a diagnostics route', () => {
     const el = mount(<Sidebar path="/cache" open={false} onNavigate={() => {}} />);
     expect(el.querySelectorAll('.sub2')).toHaveLength(0);
+  });
+
+  it('opens the group from its head without navigating anywhere', () => {
+    // The head used to be a link to the first child, so asking to see what was
+    // in the group loaded Health — and on a phone closed the drawer with it.
+    let navigated = 0;
+    const el = mount(
+      <Sidebar
+        path="/cache"
+        open={false}
+        onNavigate={() => {
+          navigated += 1;
+        }}
+      />,
+    );
+    const head = [...el.querySelectorAll('.it')].find(
+      (node) => node.textContent === GROUP_LABELS.diagnostics,
+    ) as HTMLElement;
+
+    expect(head.tagName).toBe('BUTTON');
+    expect(head.getAttribute('href')).toBeNull();
+    expect(head.getAttribute('aria-expanded')).toBe('false');
+
+    act(() => head.click());
+    expect([...el.querySelectorAll('.sub2')].map((n) => n.textContent)).toEqual([
+      'Health',
+      'Memory',
+    ]);
+    expect(head.getAttribute('aria-expanded')).toBe('true');
+    // Still on Cache: nothing was routed, and the drawer was never told to
+    // close, so a phone can reach the children it just revealed.
+    expect(el.querySelector('.sub2.on')).toBeNull();
+    expect(navigated).toBe(0);
+
+    act(() => head.click());
+    expect(el.querySelectorAll('.sub2')).toHaveLength(0);
+    expect(head.getAttribute('aria-expanded')).toBe('false');
+  });
+
+  it('opens the group on arriving inside it, and closes it on leaving', () => {
+    // The sidebar outlives every navigation, so the disclosure has to follow
+    // the path rather than only seed from it: a Back into Memory must not
+    // leave the active row hidden.
+    const el = mount(
+      <Sidebar path="/cache" open={false} onNavigate={() => {}} />,
+    );
+    expect(el.querySelectorAll('.sub2')).toHaveLength(0);
+
+    act(() => {
+      render(
+        <Sidebar
+          path="/diagnostics/memory"
+          open={false}
+          onNavigate={() => {}}
+        />,
+        el,
+      );
+    });
+    expect(el.querySelector('.sub2.on')?.textContent).toBe('Memory');
+
+    act(() => {
+      render(<Sidebar path="/cache" open={false} onNavigate={() => {}} />, el);
+    });
+    expect(el.querySelectorAll('.sub2')).toHaveLength(0);
+  });
+
+  it('marks the group head active only while its own screens are on show', () => {
+    const el = mount(
+      <Sidebar path="/cache" open={false} onNavigate={() => {}} />,
+    );
+    const head = [...el.querySelectorAll('.it')].find(
+      (node) => node.textContent === GROUP_LABELS.diagnostics,
+    ) as HTMLElement;
+
+    // Expanded off-route: revealed, but not where you are.
+    act(() => head.click());
+    expect(head.classList.contains('on')).toBe(false);
+
+    act(() => {
+      render(
+        <Sidebar
+          path="/diagnostics/health"
+          open={false}
+          onNavigate={() => {}}
+        />,
+        el,
+      );
+    });
+    expect(head.classList.contains('on')).toBe(true);
   });
 
   it('expands it on a diagnostics route, as Memory draws it', () => {

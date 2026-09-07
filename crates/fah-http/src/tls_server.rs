@@ -10,7 +10,7 @@ use tokio::task::JoinHandle;
 
 use crate::connections::ConnectionGauge;
 use crate::https::TlsProxy;
-use crate::server::accept_loop;
+use crate::server::{accept_loop, Dispatch, Lane, Server};
 
 const PORT_SETTING: &str = "[https.listen] port, or FAH__HTTPS__LISTEN__PORT";
 
@@ -41,6 +41,24 @@ impl TlsServer {
     }
 
     pub fn serve(&mut self, proxy: Arc<TlsProxy>) {
+        self.start(Dispatch::SharedTls(proxy));
+    }
+
+    pub fn serve_domains(&mut self, proxy: Arc<TlsProxy>, http: &Server) -> io::Result<()> {
+        let rotation = http.rotation();
+        if rotation.is_empty() {
+            return Err(io::Error::other(
+                "the HTTP listener runs no allocation domain for HTTPS to feed",
+            ));
+        }
+        self.start(Dispatch::Domains {
+            rotation,
+            lane: Lane::Https(proxy),
+        });
+        Ok(())
+    }
+
+    fn start(&mut self, dispatch: Dispatch) {
         let Some(listener) = self.listener.take() else {
             return;
         };
@@ -50,10 +68,7 @@ impl TlsServer {
             listener,
             permits,
             connections,
-            move |stream, peer| {
-                let proxy = Arc::clone(&proxy);
-                async move { proxy.serve_connection(stream, peer).await }
-            },
+            dispatch,
         )));
     }
 

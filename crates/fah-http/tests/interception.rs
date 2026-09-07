@@ -2,9 +2,10 @@ use std::convert::Infallible;
 use std::future::Future;
 use std::io;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
+use std::num::NonZeroUsize;
 use std::pin::Pin;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::task::{Context, Poll};
 use std::time::{Duration, Instant};
 
@@ -12,7 +13,7 @@ use bytes::Bytes;
 use fah_certs::{CaParams, CertStore};
 use fah_common::egress::{AllowedNet, DestinationPolicy};
 use fah_common::resolve::{HostResolver, Resolving};
-use fah_config::{HttpsConfig, HttpsListenConfig, NoSni};
+use fah_config::{HttpConfig, HttpListenConfig, HttpsConfig, HttpsListenConfig, NoSni};
 use fah_model::{Event, EventKind, ResourceType, Verdict};
 use fah_rules::{Matcher, MatcherBuilder};
 use http_body_util::combinators::UnsyncBoxBody;
@@ -32,7 +33,7 @@ use tokio::sync::{mpsc, Notify};
 use tokio_rustls::client::TlsStream;
 use tokio_rustls::{TlsAcceptor, TlsConnector};
 
-use fah_http::{ExclusionSet, Interception, ProxyCounters, TlsProxy, TlsServer};
+use fah_http::{ExclusionSet, Interception, Proxy, ProxyCounters, Server, TlsProxy, TlsServer};
 
 const ORIGIN_NAME: &str = "origin.test";
 const PAGE_BYTES: usize = 200 * 1024;
@@ -415,6 +416,7 @@ async fn body_of(response: Response<Incoming>) -> Bytes {
 
 struct Harness {
     server: TlsServer,
+    http: Mutex<Option<Server>>,
     addr: SocketAddr,
     counters: Arc<ProxyCounters>,
     store: Arc<CertStore>,
@@ -425,6 +427,9 @@ struct Harness {
 impl Harness {
     fn shutdown(&self) {
         self.server.shutdown();
+        if let Some(http) = self.http.lock().unwrap().as_mut() {
+            http.shutdown();
+        }
     }
 
     fn ours(&self, proto: Proto) -> TlsConnector {
@@ -442,6 +447,7 @@ struct Setup {
     hello: Duration,
     ca: bool,
     max_connections: usize,
+    domains: usize,
     listen: IpAddr,
 }
 
@@ -457,6 +463,7 @@ impl Setup {
             hello: Duration::from_secs(5),
             ca: true,
             max_connections: HttpsConfig::default().max_connections,
+            domains: 0,
             listen: IpAddr::V4(Ipv4Addr::LOCALHOST),
         }
     }
@@ -532,9 +539,24 @@ async fn harness(origin: SocketAddr, setup: Setup) -> Harness {
     };
     let mut server = TlsServer::bind(&config).await.unwrap();
     let addr = server.local_addr();
-    server.serve(proxy);
+    let http = match NonZeroUsize::new(setup.domains) {
+        Some(domains) => {
+            let mut http = Server::bind(&plain_http_config(setup.listen))
+                .await
+                .unwrap();
+            http.serve_domains(domains, Duration::from_millis(200), plain_proxy)
+                .unwrap();
+            server.serve_domains(proxy, &http).unwrap();
+            Some(http)
+        }
+        None => {
+            server.serve(proxy);
+            None
+        }
+    };
     Harness {
         server,
+        http: Mutex::new(http),
         addr,
         counters,
         store,
@@ -2008,5 +2030,125 @@ async fn the_idle_watchdog_ends_a_fully_stalled_session_and_no_stream_is_left_pe
     }
     println!("after the idle watchdog: {ended} streams ended cleanly, {failed} failed");
     assert_eq!(ended + failed, STALL_STREAMS);
+    harness.shutdown();
+}
+
+fn plain_http_config(listen: IpAddr) -> HttpConfig {
+    HttpConfig {
+        listen: HttpListenConfig {
+            address: listen.to_string(),
+            port: 0,
+        },
+        ..HttpConfig::default()
+    }
+}
+
+fn plain_proxy() -> Proxy {
+    Proxy::new(
+        Arc::new(FixedResolver(Vec::new())),
+        DestinationPolicy::new(80, Vec::new()),
+        80,
+        Duration::from_secs(5),
+        Duration::from_secs(1),
+        1,
+        false,
+    )
+}
+
+struct OnThread {
+    inner: Arc<dyn fah_http::Ruleset>,
+    served_on: Arc<Mutex<Vec<String>>>,
+}
+
+impl fah_http::Ruleset for OnThread {
+    fn matcher(&self) -> Arc<Matcher> {
+        let thread = std::thread::current().name().unwrap_or("").to_string();
+        self.served_on.lock().unwrap().push(thread);
+        self.inner.matcher()
+    }
+}
+
+async fn gauge_settles_at_zero(gauge: &fah_http::ConnectionGauge) {
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while gauge.open() != 0 {
+        assert!(
+            Instant::now() < deadline,
+            "the gauge must return to zero, open = {}",
+            gauge.open()
+        );
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+}
+
+#[tokio::test]
+async fn an_intercepted_session_is_served_on_an_allocation_domain() {
+    let ca = origin_ca();
+    let (cert, key) = leaf_signed_by(&ca);
+    let origin = origin(Proto::H1, cert, key).await;
+    let served_on: Arc<Mutex<Vec<String>>> = Arc::default();
+    let harness = harness(
+        origin.addr,
+        Setup {
+            domains: 1,
+            rules: Some(Arc::new(OnThread {
+                inner: rules_with("||blocked.invalid^\n"),
+                served_on: Arc::clone(&served_on),
+            })),
+            ..Setup::intercepting(ca.root.clone())
+        },
+    )
+    .await;
+
+    let tls = tls_to(harness.addr, &harness.ours(Proto::H1))
+        .await
+        .expect("a listed client trusting the CA must complete our handshake");
+    let mut client = Client::over(tls, Proto::H1).await;
+    let response = client.get("/page", "text/html").await;
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(body_of(response).await.len(), PAGE_BYTES);
+    drop(client);
+
+    let served_on = served_on.lock().unwrap().clone();
+    assert!(
+        served_on.len() >= 2,
+        "the SNI verdict and the request verdict both consult the rules: {served_on:?}"
+    );
+    assert!(
+        served_on.iter().all(|thread| thread == "fah-http-0"),
+        "every verdict, including the one after the handshake, runs on the domain: {served_on:?}"
+    );
+    harness.shutdown();
+}
+
+#[tokio::test]
+async fn a_failed_handshake_on_a_domain_returns_the_permit_and_the_gauge() {
+    let ca = origin_ca();
+    let (cert, key) = leaf_signed_by(&ca);
+    let origin = origin(Proto::H1, cert, key).await;
+    let harness = harness(
+        origin.addr,
+        Setup {
+            domains: 1,
+            max_connections: 1,
+            ..Setup::intercepting(ca.root.clone())
+        },
+    )
+    .await;
+    let gauge = harness.server.connections();
+
+    let distrusting = connector(&[], Proto::H1);
+    let refused = tls_to(harness.addr, &distrusting).await;
+    assert!(
+        refused.is_err(),
+        "a client that does not trust the CA must fail the handshake"
+    );
+    gauge_settles_at_zero(&gauge).await;
+
+    second_session_gets_the_only_permit(&harness).await;
+    assert_eq!(
+        gauge.take_peak(),
+        1,
+        "the failed handshake and the served session never overlapped"
+    );
     harness.shutdown();
 }

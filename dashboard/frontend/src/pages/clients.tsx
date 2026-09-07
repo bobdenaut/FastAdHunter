@@ -7,7 +7,12 @@ import {
 } from '../api/clients';
 import { ApiError } from '../api/core';
 import { getPolicies } from '../api/policies';
-import type { Client, ClientPolicyBody, PoliciesResponse } from '../api/types';
+import type {
+  Client,
+  ClientFamily,
+  ClientPolicyBody,
+  PoliciesResponse,
+} from '../api/types';
 import { Card } from '../components/card';
 import { Chip } from '../components/chip';
 import { EmptyState } from '../components/empty-state';
@@ -17,7 +22,7 @@ import { classifyAssignment } from '../policy/assignment';
 import type { PageProps } from '../router/routes';
 import { ContentHeader } from '../shell/content-header';
 
-import { compareAddressesDesc, isV6 } from './clients/address';
+import { compareAddressesDesc } from './clients/address';
 import { AssignDialog } from './clients/assign-dialog';
 import { ClientRow } from './clients/client-row';
 import {
@@ -40,6 +45,12 @@ import { RenameField } from './clients/rename-field';
  * assign-policy picker, and it carries the selectors and schedules the row
  * notes are worded from.
  *
+ * **A family chip re-reads, search does not.** The registry keys on the
+ * address, not the device, so one dual-stack machine is two rows and its IPv6
+ * privacy addresses churn through as more. `?family=` leaves that half on the
+ * server, and the page opens on IPv4 so it is the length of the household
+ * rather than of the address space. Search narrows the rows already here.
+ *
  * **Both are re-read after every mutation, together.** The two responses are
  * cross-referenced, so they have to describe one instant: a rename can move a
  * client into or out of a name assignment, and an assignment moves a row
@@ -51,43 +62,19 @@ import { RenameField } from './clients/rename-field';
  * detail. No timer, no event subscription, no clock: every "in force" and
  * "window shut" statement is read off `client.policy` rather than evaluated.
  */
-type Family = 'all' | 'v4' | 'v6';
+type Family = 'all' | ClientFamily;
 
-const FAMILIES: readonly { value: Family; label: string }[] = [
-  { value: 'all', label: 'all' },
-  { value: 'v4', label: 'IPv4' },
-  { value: 'v6', label: 'IPv6' },
+const FAMILIES: readonly { value: Family; label: string; noun: string }[] = [
+  { value: 'all', label: 'all', noun: 'client' },
+  { value: 'v4', label: 'IPv4', noun: 'IPv4 client' },
+  { value: 'v6', label: 'IPv6', noun: 'IPv6 client' },
 ];
 
-function familyOf(ip: string): Family {
-  return isV6(ip) ? 'v6' : 'v4';
-}
-
-function familyLabel(family: Family): string {
-  return FAMILIES.find((entry) => entry.value === family)?.label ?? family;
-}
-
-/**
- * The "none matching …" tail in one place, one shape per filter combination —
- * both filters, family only, search only, or (belt and braces) neither.
- */
-function NoMatchDescription({
-  family,
-  needle,
-}: {
-  family: Family;
-  needle: string;
-}) {
-  const familyPart = family === 'all' ? null : familyLabel(family);
-  const needlePart = needle === '' ? null : <span class="mono">{needle}</span>;
-  if (familyPart !== null && needlePart !== null) {
-    return (
-      <>
-        {familyPart} {needlePart}
-      </>
-    );
-  }
-  return needlePart ?? <>{familyPart ?? 'the filters'}</>;
+/** "client", "IPv4 clients" — the empty states name the family they read. */
+function clientNoun(family: Family, count: number): string {
+  const noun =
+    FAMILIES.find((entry) => entry.value === family)?.noun ?? 'client';
+  return count === 1 ? noun : `${noun}s`;
 }
 
 export function Clients(_props: PageProps) {
@@ -96,7 +83,7 @@ export function Clients(_props: PageProps) {
   const [loadError, setLoadError] = useState<Error | null>(null);
   const [mutationError, setMutationError] = useState<Error | null>(null);
   const [search, setSearch] = useState('');
-  const [family, setFamily] = useState<Family>('all');
+  const [family, setFamily] = useState<Family>('v4');
   const [openIp, setOpenIp] = useState<string | null>(null);
   const [renamingIp, setRenamingIp] = useState<string | null>(null);
   const [assigningIp, setAssigningIp] = useState<string | null>(null);
@@ -111,7 +98,7 @@ export function Clients(_props: PageProps) {
     const next = new AbortController();
     controller.current = next;
     return Promise.all([
-      getClients(next.signal),
+      getClients(next.signal, family === 'all' ? undefined : family),
       getPolicies(next.signal),
     ])
       .then(([clientList, policyList]) => {
@@ -124,15 +111,19 @@ export function Clients(_props: PageProps) {
         if (cause instanceof DOMException && cause.name === 'AbortError') return;
         setLoadError(cause instanceof Error ? cause : new Error(String(cause)));
       });
-  }, []);
+  }, [family]);
 
   useEffect(() => {
     void load();
-    return () => {
+  }, [load]);
+
+  useEffect(
+    () => () => {
       disposed.current = true;
       controller.current?.abort();
-    };
-  }, [load]);
+    },
+    [],
+  );
 
   /**
    * Every mutation is live in milliseconds and lands server-side even if the
@@ -204,19 +195,15 @@ export function Clients(_props: PageProps) {
   const policyItems = policies?.items ?? [];
 
   /**
-   * Family filter, then search, then order — and the order is **descending by
-   * address**, on the numeric key rather than the string
-   * ([`addressKey`](./clients/address)).
-   *
-   * The filter earns its place because the registry keys on the address, not
-   * the device ([`client_registry.rs`](../../../crates/fah-stats/src/client_registry.rs)):
-   * one dual-stack machine is two rows, and on a dual-stack LAN that doubles
-   * the table for no new information.
+   * Search, then order — and the order is **descending by address**, on the
+   * numeric key rather than the string ([`addressKey`](./clients/address)).
+   * The family is already narrowed by the read
+   * ([`client_registry.rs`](../../../crates/fah-stats/src/client_registry.rs)
+   * keys on the address, not the device).
    */
   const visible = useMemo(() => {
     const needle = search.trim().toLowerCase();
     return items
-      .filter((client) => family === 'all' || familyOf(client.ip) === family)
       .filter(
         (client) =>
           needle === '' ||
@@ -224,7 +211,7 @@ export function Clients(_props: PageProps) {
           (client.name ?? '').toLowerCase().includes(needle),
       )
       .sort((left, right) => compareAddressesDesc(left.ip, right.ip));
-  }, [items, search, family]);
+  }, [items, search]);
 
   const assigning = items.find((client) => client.ip === assigningIp) ?? null;
 
@@ -277,15 +264,16 @@ export function Clients(_props: PageProps) {
           {loadError !== null && clients === null ? (
             <ErrorState error={loadError} />
           ) : items.length === 0 ? (
-            <EmptyState title="No client has asked anything yet">
+            <EmptyState
+              title={`No ${clientNoun(family, 1)} has asked anything yet`}
+            >
               Clients appear here as they send their first query — there is no
               inventory to read from.
             </EmptyState>
           ) : visible.length === 0 ? (
-            <EmptyState title="No client matches those filters">
-              {items.length} observed{' '}
-              {items.length === 1 ? 'client' : 'clients'}, none matching{' '}
-              <NoMatchDescription family={family} needle={search.trim()} />.
+            <EmptyState title="No client matches that search">
+              {items.length} observed {clientNoun(family, items.length)}, none
+              matching <span class="mono">{search.trim()}</span>.
             </EmptyState>
           ) : (
             <div class="clients-scroll">

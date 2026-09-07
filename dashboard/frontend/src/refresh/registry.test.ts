@@ -387,6 +387,24 @@ describe('the interval selector', () => {
     h.registry.dispose();
   });
 
+  // The hour is the Dashboard's default, so the timer it builds is the one
+  // running on an idle page — and a wrong unit here is invisible on screen
+  // until the card is an hour stale.
+  it('schedules the hour as an hour', async () => {
+    const h = counting();
+    h.registry.subscribe('cache', () => {});
+    h.resolve('cache', {});
+    await h.settleAll();
+    expect(h.calls.cache).toBe(1);
+
+    expect(h.registry.setRefreshInterval('cache', 3600)).toBe(true);
+    vi.advanceTimersByTime(3_599_000);
+    expect(h.calls.cache).toBe(1);
+    vi.advanceTimersByTime(2_000);
+    expect(h.calls.cache).toBe(2);
+    h.registry.dispose();
+  });
+
   it('is a no-op with nothing subscribed', () => {
     const h = counting();
     expect(h.registry.setRefreshInterval('telemetry', 60)).toBe(true);

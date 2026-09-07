@@ -34,6 +34,15 @@ import {
  */
 const PAGE_SIZES = [50, 100, 200] as const;
 
+/** The figure reads amber over 50 ms and red over 100 ms: a cache hit and a
+ *  blocked answer land in microseconds, so tens of milliseconds is an upstream
+ *  the row waited on. Appended to a class list, so it carries its own space. */
+function durationBand(ms: number): string {
+  if (ms > 100) return ' feed-ms-bad';
+  if (ms > 50) return ' feed-ms-warn';
+  return '';
+}
+
 /**
  * Every query and request as it is decided.
  *
@@ -370,7 +379,9 @@ export function LiveFeed(_props: PageProps) {
                         <td>
                           <Detail row={row} />
                         </td>
-                        <td class="num mono">{row.duration_ms.toFixed(3)}</td>
+                        <td class={`num mono${durationBand(row.duration_ms)}`}>
+                          {row.duration_ms.toFixed(3)}
+                        </td>
                       </tr>
                     ))}
                   </tbody>
@@ -404,7 +415,9 @@ export function LiveFeed(_props: PageProps) {
                       {row.list !== null && <span>{row.list}</span>}
                       <FeedCache row={row} />
                       <Detail row={row} />
-                      <span class="mono">{row.duration_ms.toFixed(3)} ms</span>
+                      <span class={`mono${durationBand(row.duration_ms)}`}>
+                        {row.duration_ms.toFixed(3)} ms
+                      </span>
                     </div>
                   </article>
                 ))}

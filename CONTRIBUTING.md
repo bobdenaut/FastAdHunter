@@ -17,6 +17,21 @@ cargo bench            # when touching a hot path — compare against main
 
 An optional git pre-commit hook running the first three is recommended.
 
+### The dashboard has its own two gates
+
+Run both from `dashboard/frontend/`:
+
+```sh
+npm run typecheck      # tsc --noEmit
+npx vitest run
+```
+
+**Never run Prettier here.** The frontend ships no Prettier config, so
+`npx prettier --write` reformats to Prettier's defaults rather than to the
+repo's style — double quotes for single, its own line breaks — and rewrites
+every file it is pointed at, burying the actual change in a hundred lines of
+churn. Match the formatting of the file you are editing by hand.
+
 ### `test-harness` is a dev-profile-only feature
 
 `fah-api` and `fastadhunter` each carry a non-default `test-harness` feature. It

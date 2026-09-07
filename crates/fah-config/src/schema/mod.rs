@@ -8,6 +8,7 @@ mod https;
 mod log;
 mod policy;
 mod rules;
+mod runtime;
 mod stats;
 
 pub use api::ApiConfig;
@@ -23,6 +24,7 @@ pub use https::{HttpsConfig, HttpsListenConfig, InterceptionConfig, NoSni, SniCo
 pub use log::{LogConfig, LogFormat, LogLevel};
 pub use policy::{parse_days, parse_time_of_day, AssignmentConfig, PolicyConfig, ScheduleConfig};
 pub use rules::{RuleListConfig, RulesConfig};
+pub use runtime::RuntimeConfig;
 pub use stats::StatsConfig;
 
 use serde::{Deserialize, Serialize};
@@ -38,6 +40,7 @@ pub(crate) fn default_true() -> bool {
 #[serde(deny_unknown_fields, default)]
 pub struct Config {
     pub engine: EngineConfig,
+    pub runtime: RuntimeConfig,
     pub dns: DnsConfig,
     /// Inert unless `engine.mode` includes `http` (Phase 2).
     pub http: HttpConfig,

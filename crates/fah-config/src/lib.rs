@@ -15,8 +15,8 @@ pub use schema::{
     DnsBlockingConfig, DnsCacheConfig, DnsConfig, DnsListenConfig, DnsUpstreamsConfig,
     EngineConfig, EngineMode, HistoryConfig, HttpConfig, HttpListenConfig, HttpsConfig,
     HttpsListenConfig, InterceptionConfig, LogConfig, LogFormat, LogLevel, NoSni, PolicyConfig,
-    RuleListConfig, RulesConfig, ScheduleConfig, SniConfig, StatsConfig, UpstreamProtocol,
-    UpstreamServerConfig, UpstreamStrategy,
+    RuleListConfig, RulesConfig, RuntimeConfig, ScheduleConfig, SniConfig, StatsConfig,
+    UpstreamProtocol, UpstreamServerConfig, UpstreamStrategy,
 };
 pub use tz::{LocalTime, PosixTz, TzError};
 
@@ -116,6 +116,8 @@ const MIN_CACHE_MAX_BYTES: u64 = 1024 * 1024;
 
 pub const MAX_UPSTREAM_SERVERS: usize = 8;
 
+pub const MAX_HTTP_RUNTIMES: usize = 64;
+
 fn validate(config: &Config) -> Result<(), ConfigError> {
     validate_ip("dns.listen.address", &config.dns.listen.address)?;
     validate_ip("api.address", &config.api.address)?;
@@ -189,6 +191,13 @@ fn validate(config: &Config) -> Result<(), ConfigError> {
         return Err(ConfigError::Validation {
             key: "http.max_connections",
             message: "must be at least 1".to_string(),
+        });
+    }
+
+    if config.runtime.http_runtimes > MAX_HTTP_RUNTIMES {
+        return Err(ConfigError::Validation {
+            key: "runtime.http_runtimes",
+            message: format!("must be at most {MAX_HTTP_RUNTIMES}"),
         });
     }
 
@@ -784,6 +793,26 @@ format = "text"
     }
 
     #[test]
+    fn runtime_env_override_applies_and_is_validated() {
+        let pairs = vec![("FAH__RUNTIME__HTTP_RUNTIMES".to_string(), "2".to_string())];
+        let config = apply_env_overrides(Config::default(), &pairs).unwrap();
+        assert_eq!(config.runtime.http_runtimes, 2);
+
+        let pairs = vec![("FAH__RUNTIME__HTTP_RUNTIMES".to_string(), "x".to_string())];
+        assert!(apply_env_overrides(Config::default(), &pairs).is_err());
+
+        let pairs = vec![("FAH__RUNTIME__HTTP_RUNTIMES".to_string(), "65".to_string())];
+        let config = apply_env_overrides(Config::default(), &pairs).unwrap();
+        assert!(matches!(
+            validate(&config).unwrap_err(),
+            ConfigError::Validation {
+                key: "runtime.http_runtimes",
+                ..
+            }
+        ));
+    }
+
+    #[test]
     fn env_override_wins_over_file_and_defaults() {
         let config = Config::from_toml_str("[dns.cache]\nmax_entries = 500\n").unwrap();
         let pairs = vec![(
@@ -1067,6 +1096,24 @@ format = "text"
                 "{bad:?} must be rejected by key, got {err:?}"
             );
         }
+    }
+
+    #[test]
+    fn validation_rejects_too_many_http_runtimes() {
+        let mut config = Config::default();
+        config.runtime.http_runtimes = MAX_HTTP_RUNTIMES + 1;
+        let err = validate(&config).unwrap_err();
+        assert!(matches!(
+            err,
+            ConfigError::Validation {
+                key: "runtime.http_runtimes",
+                ..
+            }
+        ));
+        config.runtime.http_runtimes = MAX_HTTP_RUNTIMES;
+        validate(&config).unwrap();
+        config.runtime.http_runtimes = 0;
+        validate(&config).unwrap();
     }
 
     #[test]

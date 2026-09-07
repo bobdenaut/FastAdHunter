@@ -38,11 +38,13 @@ afterEach(() => {
 
 describe('the option sets are the validator', () => {
   it('offers exactly what the plan settled', () => {
+    // `health` is the liveness reading and keeps the short end of the scale,
+    // without the hour; the other four carry it and default to it.
     expect(intervalOptions('health')).toEqual([30, 60, 300]);
-    expect(intervalOptions('telemetry')).toEqual([60, 300]);
-    expect(intervalOptions('cache')).toEqual([60, 300]);
-    expect(intervalOptions('clients')).toEqual([60, 300]);
-    expect(intervalOptions('lists')).toEqual([60, 300]);
+    expect(intervalOptions('telemetry')).toEqual([60, 300, 3600]);
+    expect(intervalOptions('cache')).toEqual([60, 300, 3600]);
+    expect(intervalOptions('clients')).toEqual([60, 300, 3600]);
+    expect(intervalOptions('lists')).toEqual([60, 300, 3600]);
   });
 
   it('refuses a value the UI cannot offer', () => {

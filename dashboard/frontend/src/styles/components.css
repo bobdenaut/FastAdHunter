@@ -2213,10 +2213,18 @@ table.t tbody tr:hover td {
   gap: 0 10px;
   /* The address track's floor is a full IPv6: 39 monospace characters at
      6.87px. At 118px the cell overflowed its track by 25px and the address ran
-     under the Name column — a grid item does not clip, so nothing stopped it. */
+     under the Name column — a grid item does not clip, so nothing stopped it.
+
+     The share track's floor is its own header: BLOCKED SHARE, uppercase 12px
+     with 0.06em tracking, runs ~108px and at 92px overran into Last seen.
+
+     Policy grows at 1fr, not 1.5fr, so the spare width goes to Name. Its floor
+     is the one-line chip-and-note, measured at 197px ("default" beside
+     "inherited · no assignment"): at 196px the note dropped under the chip and
+     every row grew by a line. */
   grid-template-columns:
-    minmax(268px, 1.1fr) minmax(96px, 1.7fr) minmax(196px, 1.5fr)
-    88px 74px 92px 76px 44px;
+    minmax(268px, 1.1fr) minmax(96px, 1.7fr) minmax(204px, 1fr)
+    88px 74px 120px 76px 44px;
   align-items: start;
   min-width: min-content;
 }
@@ -2294,7 +2302,7 @@ table.t tbody tr:hover td {
 
 .c-share-figure {
   margin-top: 3px;
-  text-align: right;
+  text-align: center;
 }
 
 .c-actions {
@@ -3336,6 +3344,20 @@ table.t.counters td.bad {
   border-radius: 3px;
 }
 
+/* The role badge, in the accent rather than in a status colour: serving is not
+   a fifth health state, it is which of the healthy endpoints the pool reaches
+   first. Standby wears the same chip in the muted ink, so the row that matters
+   is the only coloured word in the column. */
+.ep-role {
+  background: var(--pill-neutral-bg);
+  color: var(--accent);
+}
+
+.ep-role.standby {
+  color: var(--pill-neutral-fg);
+  font-weight: 500;
+}
+
 .ep-address {
   font-size: 13.5px;
   font-weight: 500;
@@ -3534,10 +3556,18 @@ table.t.counters td.bad {
   color: var(--text-control);
 }
 
+/* Two states, two signals: the fill follows the pointer, the rule stays on the
+   anchor the page is parked on. Sharing both made a hovered neighbour read as
+   a second mark. */
 .set-nav a:hover {
-  border-left-color: var(--accent);
   background: var(--surface-sunken);
   text-decoration: none;
+}
+
+.set-nav a[aria-current] {
+  border-left-color: var(--accent);
+  background: var(--surface-sunken);
+  color: var(--text);
 }
 
 .set-sections {
@@ -4783,6 +4813,17 @@ table.feed-table tbody tr:hover td {
   font-size: 11.5px;
 }
 
+/* A slow duration, in the table cell and the phone card alike. The red is
+   `--memory-over` rather than `--pill-bad-fg`: the pill foreground is
+   lightened for the dark theme, which drains it to a salmon. */
+.feed-ms-warn {
+  color: var(--pill-warn-fg);
+}
+
+.feed-ms-bad {
+  color: var(--memory-over);
+}
+
 /* A marker on a row, not a verdict — deliberately unlike a pill. */
 .feed-marker {
   margin-left: 6px;
@@ -4893,7 +4934,7 @@ table.feed-table tbody tr:hover td {
     white-space: nowrap;
   }
 
-  .set-nav a:hover {
+  .set-nav a[aria-current] {
     border-left: 0;
     border-bottom-color: var(--accent);
   }

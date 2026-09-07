@@ -22,6 +22,7 @@ import {
   queryTypeSlices,
   restartIndices,
   shareOfMax,
+  servingIndex,
   sinceLastRestart,
   sliceShare,
   sumOver,
@@ -41,6 +42,7 @@ import {
   percent1,
   qpsLabel,
 } from './charts/format';
+import type { UpstreamState } from './api/types';
 import { formatUptime, lastRefreshLabel, nextRefreshLabel } from './time';
 import {
   WATCH_THRESHOLD,
@@ -415,6 +417,34 @@ describe('the upstream rendering mode', () => {
     expect(upstreamMode(null)).toBe('unknown');
     expect(upstreamMode(undefined)).toBe('unknown');
     expect(upstreamMode('something-new')).toBe('unknown');
+  });
+});
+
+describe('which endpoint is serving', () => {
+  const at = (...states: UpstreamState[]) =>
+    states.map((state) => ({ state }));
+
+  it('is the first healthy endpoint in configured order', () => {
+    expect(servingIndex(at('healthy', 'healthy', 'healthy'), 'adaptive')).toBe(0);
+  });
+
+  it('moves past an endpoint that is out of rotation', () => {
+    // The pool's own rule: `select` skips a penalized endpoint until its
+    // deadline passes, so index 1 is answering while index 0 sits out.
+    expect(servingIndex(at('penalized', 'healthy'), 'adaptive')).toBe(1);
+    expect(servingIndex(at('probing', 'healthy'), 'adaptive')).toBe(1);
+  });
+
+  it('names none when no endpoint is healthy', () => {
+    expect(servingIndex(at('penalized', 'probing'), 'adaptive')).toBeNull();
+    expect(servingIndex([], 'adaptive')).toBeNull();
+  });
+
+  it('names none under a strategy that publishes no health state', () => {
+    // Under `fallback` every row reads `healthy` because none of them is
+    // reporting — index 0 would be named whatever is happening to it.
+    expect(servingIndex(at('healthy', 'healthy'), 'fallback')).toBeNull();
+    expect(servingIndex(at('healthy', 'healthy'), 'unknown')).toBeNull();
   });
 });
 

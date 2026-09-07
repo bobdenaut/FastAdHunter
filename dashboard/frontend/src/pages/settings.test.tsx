@@ -229,6 +229,7 @@ afterEach(() => {
   harness = null;
   resetRestartBanner();
   vi.unstubAllGlobals();
+  window.history.replaceState(null, '', '/settings');
 });
 
 describe('the write body', () => {
@@ -780,5 +781,46 @@ describe('two reads in flight at once', () => {
 
     on.mockRestore();
     now.mockRestore();
+  });
+});
+
+/**
+ * The nav marks the anchor the page is parked on, and the hash is the only
+ * state behind it — a click, a back button and a pasted URL are the same
+ * event. Without it the mark was `:hover` alone and vanished with the pointer.
+ */
+describe('the section nav’s mark', () => {
+  function marks(dom: HTMLElement): readonly string[] {
+    return [...dom.querySelectorAll('.set-nav a[aria-current]')].map(
+      (link) => link.textContent ?? '',
+    );
+  }
+
+  it('marks nothing on a plain /settings', async () => {
+    const dom = await mountPage();
+    expect(marks(dom)).toEqual([]);
+  });
+
+  it('marks the section the entry hash names', async () => {
+    window.history.replaceState(null, '', '/settings#set-section-dns.cache');
+    const dom = await mountPage();
+    expect(marks(dom)).toEqual(['dns.cache']);
+  });
+
+  it('follows the hash, so a back button moves the mark', async () => {
+    window.history.replaceState(null, '', '/settings#set-section-engine');
+    const dom = await mountPage();
+    await act(async () => {
+      window.history.replaceState(null, '', '/settings#set-section-log');
+      window.dispatchEvent(new Event('hashchange'));
+      await Promise.resolve();
+    });
+    expect(marks(dom)).toEqual(['log']);
+  });
+
+  it('ignores a hash that is not a section anchor', async () => {
+    window.history.replaceState(null, '', '/settings#somewhere-else');
+    const dom = await mountPage();
+    expect(marks(dom)).toEqual([]);
   });
 });

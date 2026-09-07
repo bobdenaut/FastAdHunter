@@ -125,6 +125,17 @@ describe('the refresh cluster', () => {
     h.registry.dispose();
   });
 
+  it('carries the hour on the endpoints that are not liveness readings', () => {
+    const h = counting();
+    const el = mount(<RefreshCluster registry={h.registry} endpoint="cache" />);
+    expect(
+      [...el.querySelectorAll('option')].map((n) => n.textContent),
+    ).toEqual(['1 m', '5 m', '1 h']);
+    // The default, so a browser that has never chosen opens on the hour.
+    expect(el.querySelector('select')?.value).toBe('3600');
+    h.registry.dispose();
+  });
+
   it('subscribes the widget without starting a second request', () => {
     const h = counting();
     h.registry.subscribe('cache', () => {});

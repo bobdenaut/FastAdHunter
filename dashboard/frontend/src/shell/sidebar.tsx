@@ -1,4 +1,5 @@
 import type { ComponentChildren } from 'preact';
+import { useState } from 'preact/hooks';
 import { Link } from '../router/link';
 import {
   GROUP_LABELS,
@@ -33,8 +34,9 @@ const SECTION_ORDER: Section[] = [
 ];
 
 /**
- * A group's landing route and the prefix that marks a path as inside it, both
- * read off the group's own routes.
+ * The prefix that marks a path as inside a group, read off the group's own
+ * routes. There is no landing route to derive: the group head opens the group
+ * rather than going anywhere.
  *
  * **No group name is written in this file.** `GROUP_LABELS` forces a label for
  * a new group, but the block that draws one was still keyed on the literal
@@ -42,9 +44,9 @@ const SECTION_ORDER: Section[] = [
  * from the sidebar in silence, which is the failure the label record was added
  * to remove.
  */
-function groupNest(members: readonly Route[]): { root: string; prefix: string } {
+function groupPrefix(members: readonly Route[]): string {
   const root = members[0]?.path ?? '/';
-  return { root, prefix: root.slice(0, root.lastIndexOf('/') + 1) };
+  return root.slice(0, root.lastIndexOf('/') + 1);
 }
 
 /**
@@ -131,10 +133,13 @@ export function Sidebar({
 }
 
 /**
- * One nested group: its parent line, and its children while a path inside it is
- * active. The group key is also the sprite name — `sidebar.test.tsx` asserts
- * that every group has both a label and a symbol, so a new group cannot ship
- * with a blank tile.
+ * One nested group: a disclosure head and the children it reveals. The group
+ * key is also the sprite name — `sidebar.test.tsx` asserts that every group has
+ * both a label and a symbol, so a new group cannot ship with a blank tile.
+ *
+ * **The head is a button, not a link.** It has no landing route of its own:
+ * pointing it at the first child made "show me what is in here" load a screen
+ * nobody asked for, and on a phone it closed the drawer on the way.
  */
 function Group({
   group,
@@ -147,22 +152,43 @@ function Group({
   path: string;
   onNavigate: () => void;
 }) {
-  const { root, prefix } = groupNest(members);
-  const expanded = path.startsWith(prefix);
+  const inside = path.startsWith(groupPrefix(members));
+
+  /**
+   * The path governs across a navigation, the button between them: entering
+   * the group opens it, leaving closes it back to the one line the artboards
+   * draw, and off-route it is whatever it was last set to.
+   *
+   * The state is therefore *which path a toggle was made on*, not a second
+   * copy of "open". Seeding `useState(inside)` would not do — the sidebar
+   * outlives every navigation, so arriving at a child by Back or by typed URL
+   * would leave the active row hidden inside a collapsed group. Nor would
+   * syncing that copy in an effect: effects flush after the click that reads
+   * them, so a mount whose effect was still pending swallowed the first press.
+   * Held this way there is nothing to keep in step — any navigation makes the
+   * toggle stale and the path speaks again.
+   */
+  const [toggledOn, setToggledOn] = useState<string | null>(null);
+  const expanded = toggledOn === path ? !inside : inside;
 
   return (
     <>
-      {/* No `aria-current` on the parent: the active child carries `page`, and
-          two current markers in one subtree is a worse answer to "where am I"
-          than one. */}
-      <Link
-        href={root}
-        class={`it${expanded ? ' on' : ''}`}
-        onClickCapture={onNavigate}
+      {/* `on` tracks the active group, not the disclosure: an expanded group
+          whose screens are not the one on show must not read as where you are.
+          No `aria-current` either — the active child carries `page`, and two
+          current markers in one subtree is a worse answer to "where am I" than
+          one. */}
+      <button
+        type="button"
+        class={`it it-group${inside ? ' on' : ''}`}
+        aria-expanded={expanded}
+        onClick={() =>
+          setToggledOn((current) => (current === path ? null : path))
+        }
       >
         <Icon name={group} />
         <span>{GROUP_LABELS[group]}</span>
-      </Link>
+      </button>
       {expanded &&
         members.map((route) => (
           <Link

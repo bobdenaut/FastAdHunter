@@ -23,6 +23,7 @@
 mod block;
 mod claim;
 mod connections;
+mod domain;
 mod exclusions;
 mod https;
 mod intercept;

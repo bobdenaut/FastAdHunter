@@ -352,6 +352,7 @@ impl TelemetrySource for FakeTelemetry {
             peak_rss: 150_700_000,
             major_page_faults: 0,
             minor_page_faults: 4_211_337,
+            ..Default::default()
         })
     }
 
@@ -1666,6 +1667,44 @@ async fn clients_list_and_naming_round_trip() {
         .await
         .unwrap();
     assert!(cleared["name"].is_null());
+}
+
+#[tokio::test]
+async fn clients_narrow_to_one_address_family_on_request() {
+    let harness = start().await;
+    harness.stats.clients.lock().unwrap().push(ClientEntry {
+        ip: "2001:db8::15".parse().unwrap(),
+        name: None,
+        first_seen: SystemTime::UNIX_EPOCH,
+        last_seen: SystemTime::UNIX_EPOCH,
+        queries_24h: 1,
+        blocked_24h: 0,
+    });
+
+    let listed = |body: Value| -> Vec<String> {
+        body["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|item| item["ip"].as_str().unwrap().to_string())
+            .collect()
+    };
+
+    assert_eq!(
+        listed(harness.get_json("/api/v1/clients").await),
+        ["192.168.10.15", "2001:db8::15"]
+    );
+    assert_eq!(
+        listed(harness.get_json("/api/v1/clients?family=v4").await),
+        ["192.168.10.15"]
+    );
+    assert_eq!(
+        listed(harness.get_json("/api/v1/clients?family=v6").await),
+        ["2001:db8::15"]
+    );
+
+    let rejected = harness.get("/api/v1/clients?family=ipv4").await;
+    assert_eq!(rejected.status().as_u16(), 400);
 }
 
 #[tokio::test]

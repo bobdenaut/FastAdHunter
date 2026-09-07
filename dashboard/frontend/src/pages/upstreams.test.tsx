@@ -71,7 +71,7 @@ afterEach(() => {
 describe('an adaptive endpoint row', () => {
   it('carries the state pill and all eight counters', () => {
     const dom = mount(
-      <EndpointRow index={0} upstream={endpoint()} mode="adaptive" />,
+      <EndpointRow index={0} upstream={endpoint()} mode="adaptive" role={null} />,
     );
     expect(dom.querySelector('.pill')?.textContent).toBe('healthy');
     expect(dom.querySelectorAll('.ep-counters > div')).toHaveLength(8);
@@ -84,7 +84,7 @@ describe('an adaptive endpoint row', () => {
 
   it('names its index, which is the answering-endpoint identity', () => {
     const dom = mount(
-      <EndpointRow index={2} upstream={endpoint()} mode="adaptive" />,
+      <EndpointRow index={2} upstream={endpoint()} mode="adaptive" role={null} />,
     );
     expect(dom.querySelector('.ep-index')?.textContent).toBe('2');
   });
@@ -95,6 +95,7 @@ describe('an adaptive endpoint row', () => {
         index={0}
         upstream={endpoint({ penalty_round: 3 })}
         mode="adaptive"
+        role={null}
       />,
     );
     // `penalty_round` is never cleared by recovery, so a healthy endpoint still
@@ -108,6 +109,7 @@ describe('an adaptive endpoint row', () => {
         index={1}
         upstream={endpoint({ state: 'penalized', penalty_round: 3 })}
         mode="adaptive"
+        role={null}
       />,
     );
     expect(dom.textContent).toContain('round 3');
@@ -120,16 +122,46 @@ describe('an adaptive endpoint row', () => {
         index={0}
         upstream={endpoint({ consecutive_failures: 7 })}
         mode="adaptive"
+        role={null}
       />,
     );
     expect(dom.querySelector('.ep-counters .bad')?.textContent).toBe('7');
   });
 });
 
+describe('the role badge', () => {
+  it('names the serving endpoint beside its state', () => {
+    const dom = mount(
+      <EndpointRow index={0} upstream={endpoint()} mode="adaptive" role="serving" />,
+    );
+    const pills = [...dom.querySelectorAll('.ep-state .pill')].map(
+      (pill) => pill.textContent,
+    );
+    expect(pills).toEqual(['healthy', 'serving']);
+  });
+
+  it('marks a healthy endpoint that is not being reached', () => {
+    const dom = mount(
+      <EndpointRow index={1} upstream={endpoint()} mode="adaptive" role="standby" />,
+    );
+    expect(dom.querySelector('.ep-role')?.textContent).toBe('standby');
+    expect(dom.querySelector('.ep-role')?.className).toContain('standby');
+  });
+
+  // A row with no role draws no chip at all — an empty one would be a slot the
+  // eye looks at and finds nothing in.
+  it('draws nothing where there is no role to state', () => {
+    const dom = mount(
+      <EndpointRow index={0} upstream={endpoint()} mode="adaptive" role={null} />,
+    );
+    expect(dom.querySelector('.ep-role')).toBeNull();
+  });
+});
+
 describe('a fallback endpoint row', () => {
   it('omits the state pill and the four health cells', () => {
     const dom = mount(
-      <EndpointRow index={0} upstream={endpoint()} mode="fallback" />,
+      <EndpointRow index={0} upstream={endpoint()} mode="fallback" role={null} />,
     );
     expect(dom.querySelector('.pill')).toBeNull();
     expect(dom.querySelectorAll('.ep-counters > div')).toHaveLength(4);
@@ -146,7 +178,7 @@ describe('a fallback endpoint row', () => {
 
   it('keeps the counters that mean the same thing under either strategy', () => {
     const dom = mount(
-      <EndpointRow index={0} upstream={endpoint()} mode="fallback" />,
+      <EndpointRow index={0} upstream={endpoint()} mode="fallback" role={null} />,
     );
     const text = (dom.textContent ?? '').replace(/\s+/g, ' ');
     for (const present of [
@@ -172,6 +204,7 @@ describe('the address family', () => {
           family: null,
         })}
         mode="adaptive"
+        role={null}
       />,
     );
     const text = dom.textContent ?? '';
@@ -181,7 +214,7 @@ describe('the address family', () => {
 
   it('prints the family verbatim when the config gave one', () => {
     const dom = mount(
-      <EndpointRow index={0} upstream={endpoint({ family: 'v6' })} mode="adaptive" />,
+      <EndpointRow index={0} upstream={endpoint({ family: 'v6' })} mode="adaptive" role={null} />,
     );
     expect(dom.querySelector('.ep-state .note')?.textContent).toContain(
       'dot · v6',
@@ -196,6 +229,7 @@ describe('the failure-run histogram', () => {
         index={1}
         upstream={endpoint({ failure_runs: [12, 21, 30, 39] })}
         mode="adaptive"
+        role={null}
       />,
     );
     const heights = [...dom.querySelectorAll<HTMLElement>('.run-bar')].map(
@@ -214,6 +248,7 @@ describe('the failure-run histogram', () => {
         index={0}
         upstream={endpoint({ failure_runs: [0, 0, 0, 0] })}
         mode="adaptive"
+        role={null}
       />,
     );
     expect(dom.querySelectorAll('.run-track')).toHaveLength(4);
@@ -231,6 +266,7 @@ describe('the failure-run histogram', () => {
         index={1}
         upstream={endpoint({ state: 'penalized', failure_runs: [12, 21, 30, 39] })}
         mode="adaptive"
+        role={null}
       />,
     );
     for (const bar of dom.querySelectorAll<HTMLElement>('.run-bar')) {
@@ -327,6 +363,7 @@ async function flushPage(): Promise<void> {
 async function mountPage(
   config: unknown,
   status: 'ok' | 'degraded' = 'ok',
+  telemetry: Telemetry = TELEMETRY,
 ): Promise<HTMLElement> {
   const fetchMock = vi.fn((url: string) => {
     if (url === '/api/v1/config') {
@@ -336,7 +373,7 @@ async function mountPage(
           : respond(200, config),
       );
     }
-    if (url === '/api/v1/telemetry') return Promise.resolve(respond(200, TELEMETRY));
+    if (url === '/api/v1/telemetry') return Promise.resolve(respond(200, telemetry));
     if (url === '/health') {
       return Promise.resolve(
         respond(200, { status, version: '0.2.20', uptime_seconds: 1 }),
@@ -354,6 +391,36 @@ async function mountPage(
   await flushPage();
   return dom;
 }
+
+describe('which row the page marks as serving', () => {
+  // The composition the two unit suites cannot pin: `servingIndex` decides
+  // which index serves, `EndpointRow` draws whatever badge it is handed, and
+  // only the page decides that a penalized row gets neither.
+  it('walks past an endpoint that is out of rotation', async () => {
+    const dom = await mountPage(
+      { dns: { upstreams: { strategy: 'adaptive' } } },
+      'ok',
+      {
+        upstreams: [
+          endpoint({ address: '1.1.1.1:853', state: 'penalized' }),
+          endpoint({ address: '9.9.9.9:853' }),
+          endpoint({ address: '8.8.8.8:853' }),
+        ],
+      } as unknown as Telemetry,
+    );
+    const rows = [...dom.querySelectorAll('.ep')];
+    expect(
+      rows.map((row) => row.querySelector('.ep-role')?.textContent ?? null),
+    ).toEqual([null, 'serving', 'standby']);
+    // The row that lost the role still says why, in its own pill.
+    expect(rows[0]?.querySelector('.pill')?.textContent).toBe('penalized');
+  });
+
+  it('marks no row when the strategy publishes no health state', async () => {
+    const dom = await mountPage({ dns: { upstreams: { strategy: 'fallback' } } });
+    expect(dom.querySelectorAll('.ep-role')).toHaveLength(0);
+  });
+});
 
 describe('naming the strategy', () => {
   it('puts it in the subtitle when `/config` answered', async () => {
@@ -438,6 +505,7 @@ describe('the round-trip cells on an endpoint row', () => {
           rtt: { count: 1000, sum_seconds: 12.5, p50: 0.01, p99: 0.05 },
         })}
         mode="adaptive"
+        role={null}
       />,
     );
     const text = (dom.textContent ?? '').replace(/\s+/g, ' ');
@@ -453,7 +521,7 @@ describe('the round-trip cells on an endpoint row', () => {
   // has forwarded nothing serves zeros. Neither is a round trip of zero.
   it('prints nothing rather than a zero when there is no measurement', () => {
     const absent = mount(
-      <EndpointRow index={0} upstream={endpoint()} mode="adaptive" />,
+      <EndpointRow index={0} upstream={endpoint()} mode="adaptive" role={null} />,
     );
     expect(
       [...absent.querySelectorAll('.ep-rtt-cells > div')].every((cell) =>
@@ -470,6 +538,7 @@ describe('the round-trip cells on an endpoint row', () => {
           rtt: { count: 0, sum_seconds: 0, p50: 0, p99: 0 },
         })}
         mode="adaptive"
+        role={null}
       />,
     );
     const text = (dom.textContent ?? '').replace(/\s+/g, ' ');
@@ -487,6 +556,7 @@ describe('the round-trip cells on an endpoint row', () => {
           rtt: { count: 10, sum_seconds: 0.1, p50: 0.01, p99: 0.01 },
         })}
         mode="fallback"
+        role={null}
       />,
     );
     expect(dom.querySelectorAll('.ep-counters > div')).toHaveLength(4);
