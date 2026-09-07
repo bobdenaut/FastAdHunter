@@ -106,6 +106,13 @@ describe('the read-only accessors', () => {
       expect(init.body).toBeUndefined();
     }
   });
+
+  it('narrows the client list by address family in the query string', async () => {
+    fetchMock.mockReset();
+    fetchMock.mockResolvedValue(respond(200, {}));
+    await getClients(undefined, 'v6');
+    expect(calledWith()[0]).toBe('/api/v1/clients?family=v6');
+  });
 });
 
 describe('the list mutations', () => {

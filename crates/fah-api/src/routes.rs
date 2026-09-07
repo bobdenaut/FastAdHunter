@@ -15,7 +15,7 @@ use axum::response::{IntoResponse, Response};
 use axum::routing::{any, get, post, put, MethodRouter};
 use axum::{Extension, Json, Router};
 use fah_config::{AssignmentConfig, Config, PolicyConfig, RuleListConfig};
-use fah_model::{HistoryRange, HistoryResolution, TopKind};
+use fah_model::{AddressFamily, HistoryRange, HistoryResolution, TopKind};
 use fah_rules::{ListPatch, ListStatus, RefreshResult};
 use tower_http::set_header::SetResponseHeaderLayer;
 
@@ -381,13 +381,18 @@ fn client_response(
     }
 }
 
-async fn clients(State(state): State<Arc<AppState>>) -> Json<ClientsResponse> {
+async fn clients(
+    State(state): State<Arc<AppState>>,
+    Query(params): Query<HashMap<String, String>>,
+) -> ApiResult<Json<ClientsResponse>> {
+    let family = parse_family(&params)?;
     let resolver = PolicyResolver::build(&state);
-    Json(ClientsResponse {
+    Ok(Json(ClientsResponse {
         items: state
             .stats
             .clients(SystemTime::now())
             .into_iter()
+            .filter(|entry| family.is_none_or(|family| in_family(entry.ip, family)))
             .map(|entry| {
                 let ip = entry.ip;
                 client_response(
@@ -397,7 +402,25 @@ async fn clients(State(state): State<Arc<AppState>>) -> Json<ClientsResponse> {
                 )
             })
             .collect(),
-    })
+    }))
+}
+
+fn parse_family(params: &HashMap<String, String>) -> Result<Option<AddressFamily>, ApiError> {
+    match params.get("family").map(String::as_str) {
+        None => Ok(None),
+        Some("v4") => Ok(Some(AddressFamily::V4)),
+        Some("v6") => Ok(Some(AddressFamily::V6)),
+        Some(other) => Err(ApiError::BadRequest(format!(
+            "family must be one of v4|v6, got {other:?}"
+        ))),
+    }
+}
+
+fn in_family(ip: IpAddr, family: AddressFamily) -> bool {
+    match family {
+        AddressFamily::V4 => ip.is_ipv4(),
+        AddressFamily::V6 => ip.is_ipv6(),
+    }
 }
 
 async fn set_client_name(

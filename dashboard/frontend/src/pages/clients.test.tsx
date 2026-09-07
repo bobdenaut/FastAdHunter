@@ -97,10 +97,16 @@ function respond(status: number, body?: unknown): Response {
 const fetchMock = vi.fn();
 let host: HTMLElement | null = null;
 
+/** What the page reads on mount: it opens on IPv4. */
+const CLIENTS_V4 = '/api/v1/clients?family=v4';
+
 function route(path: string, init?: RequestInit): Response {
   const method = init?.method ?? 'GET';
-  if (method === 'GET' && path === '/api/v1/clients') {
-    return respond(200, { items: CLIENTS });
+  const [pathname, query] = path.split('?');
+  if (method === 'GET' && pathname === '/api/v1/clients') {
+    // Every fixture address is IPv4, so the API narrows `v6` to nothing.
+    const family = new URLSearchParams(query).get('family');
+    return respond(200, { items: family === 'v6' ? [] : CLIENTS });
   }
   if (method === 'GET' && path === '/api/v1/policies') return respond(200, POLICIES);
   if (method === 'PUT' && path.endsWith('/policy')) {
@@ -178,7 +184,7 @@ describe('what loading the page costs', () => {
     const dom = await mount();
     expect(rows(dom)).toHaveLength(CLIENTS.length);
     expect(calls()).toEqual([
-      ['GET', '/api/v1/clients'],
+      ['GET', CLIENTS_V4],
       ['GET', '/api/v1/policies'],
     ]);
     expect(
@@ -196,6 +202,30 @@ describe('what loading the page costs', () => {
     expect(rows(dom)).toHaveLength(1);
     expect(rows(dom)[0]?.querySelector('.c-name')?.textContent).toBe('tv');
     expect(calls()).toHaveLength(2);
+  });
+
+  it('opens on IPv4 and re-reads with `?family=` when a chip is picked', async () => {
+    const dom = await mount();
+    const group = dom.querySelector('[aria-label="Filter by address family"]');
+    const chip = (label: string) =>
+      [...(group?.querySelectorAll('button') ?? [])].find(
+        (button) => button.textContent === label,
+      );
+    expect(chip('IPv4')?.getAttribute('aria-pressed')).toBe('true');
+
+    await click(chip('IPv6'));
+    expect(rows(dom)).toHaveLength(0);
+    expect(dom.querySelector('.empty-state-title')?.textContent).toBe(
+      'No IPv6 client has asked anything yet',
+    );
+    await click(chip('all'));
+    expect(rows(dom)).toHaveLength(CLIENTS.length);
+    expect(calls().slice(2)).toEqual([
+      ['GET', '/api/v1/clients?family=v6'],
+      ['GET', '/api/v1/policies'],
+      ['GET', '/api/v1/clients'],
+      ['GET', '/api/v1/policies'],
+    ]);
   });
 });
 
@@ -266,7 +296,7 @@ describe('the three mutations', () => {
     );
     expect(calls().slice(2)).toEqual([
       ['PUT', '/api/v1/clients/192.168.10.7'],
-      ['GET', '/api/v1/clients'],
+      ['GET', CLIENTS_V4],
       ['GET', '/api/v1/policies'],
     ]);
   });
@@ -335,7 +365,7 @@ describe('the three mutations', () => {
     });
     expect(calls().slice(2)).toEqual([
       ['PUT', '/api/v1/clients/192.168.10.15/policy'],
-      ['GET', '/api/v1/clients'],
+      ['GET', CLIENTS_V4],
       ['GET', '/api/v1/policies'],
     ]);
   });
@@ -360,7 +390,7 @@ describe('the three mutations', () => {
     );
     expect(calls().slice(2)).toEqual([
       ['DELETE', '/api/v1/clients/192.168.10.50/policy'],
-      ['GET', '/api/v1/clients'],
+      ['GET', CLIENTS_V4],
       ['GET', '/api/v1/policies'],
     ]);
   });
@@ -444,14 +474,14 @@ describe('empty states', () => {
   it('says no client has asked yet rather than reporting a failure', async () => {
     fetchMock.mockImplementation((path: string, init?: RequestInit) =>
       Promise.resolve(
-        path === '/api/v1/clients'
+        path === CLIENTS_V4
           ? respond(200, { items: [] })
           : route(path, init),
       ),
     );
     const dom = await mount();
     expect(dom.querySelector('.empty-state-title')?.textContent).toBe(
-      'No client has asked anything yet',
+      'No IPv4 client has asked anything yet',
     );
     expect(dom.querySelector('.error-state')).toBeNull();
   });

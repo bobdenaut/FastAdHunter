@@ -1,6 +1,7 @@
 import { request } from './core';
 import type {
   Client,
+  ClientFamily,
   ClientPolicyBody,
   ClientPolicyResponse,
   ClientsResponse,
@@ -18,11 +19,20 @@ export const CLIENTS_PATH = '/api/v1/clients';
  * per-row read of `GET /clients/{ip}/policy` anywhere in this application, and
  * no accessor for it, because a household with forty observed clients would
  * pay forty extra requests per page load.
+ *
+ * `family` narrows the list to one address family on the server; absent lists
+ * both. The Clients page reads IPv4 by default, the Top-clients card reads all.
  */
-export function getClients(signal?: AbortSignal): Promise<ClientsResponse> {
-  return request<ClientsResponse>(CLIENTS_PATH, {
-    ...(signal === undefined ? {} : { signal }),
-  });
+export function getClients(
+  signal?: AbortSignal,
+  family?: ClientFamily,
+): Promise<ClientsResponse> {
+  return request<ClientsResponse>(
+    family === undefined ? CLIENTS_PATH : `${CLIENTS_PATH}?family=${family}`,
+    {
+      ...(signal === undefined ? {} : { signal }),
+    },
+  );
 }
 
 function clientPath(ip: string): string {

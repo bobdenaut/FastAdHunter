@@ -431,6 +431,9 @@ export interface ClientsResponse {
   items: Client[];
 }
 
+/** `GET /clients?family=`. Absent lists both families. */
+export type ClientFamily = 'v4' | 'v6';
+
 /* --------------------------------------------------------------------- lists */
 
 /**
