@@ -9,10 +9,7 @@ use hickory_proto::op::{Message, OpCode, Query as WireQuery, ResponseCode};
 use hickory_proto::rr::{Name, RecordType};
 use tokio::net::UdpSocket;
 
-const STRATEGIES: [(UpstreamStrategy, &str); 2] = [
-    (UpstreamStrategy::Fallback, ""),
-    (UpstreamStrategy::Adaptive, "_adaptive"),
-];
+const STRATEGIES: [(UpstreamStrategy, &str); 1] = [(UpstreamStrategy::Adaptive, "_adaptive")];
 
 fn config_for(addr: SocketAddr, strategy: UpstreamStrategy) -> DnsUpstreamsConfig {
     DnsUpstreamsConfig {
@@ -81,13 +78,10 @@ fn bench_answered(c: &mut Criterion) {
     group.finish();
 }
 
-const REFUSED_ARMS: [(UpstreamStrategy, &str); 2] = [
-    (UpstreamStrategy::Fallback, "forward_udp_refused"),
-    (
-        UpstreamStrategy::Adaptive,
-        "forward_udp_refused_adaptive_penalized_forced",
-    ),
-];
+const REFUSED_ARMS: [(UpstreamStrategy, &str); 1] = [(
+    UpstreamStrategy::Adaptive,
+    "forward_udp_refused_adaptive_penalized_forced",
+)];
 
 const REFUSED_WARMUPS: usize = 4;
 

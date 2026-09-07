@@ -81,7 +81,7 @@ fn pool_for(addr: SocketAddr, strategy: UpstreamStrategy) -> UpstreamPool {
 }
 
 #[test]
-fn adaptive_forwards_allocate_exactly_as_much_as_fallback_forwards() {
+fn warm_adaptive_forwards_allocate_a_steady_amount() {
     const FORWARDS: usize = 64;
 
     let rt = tokio::runtime::Builder::new_current_thread()
@@ -91,13 +91,13 @@ fn adaptive_forwards_allocate_exactly_as_much_as_fallback_forwards() {
     let addr = rt.block_on(answering_server());
     let query = a_query();
 
-    let mut measured = Vec::new();
-    for strategy in [UpstreamStrategy::Fallback, UpstreamStrategy::Adaptive] {
-        let pool = pool_for(addr, strategy);
-        for _ in 0..FORWARDS {
-            rt.block_on(pool.forward(black_box(&query))).unwrap();
-        }
+    let pool = pool_for(addr, UpstreamStrategy::Adaptive);
+    for _ in 0..FORWARDS {
+        rt.block_on(pool.forward(black_box(&query))).unwrap();
+    }
 
+    let mut measured = Vec::new();
+    for _ in 0..2 {
         let before = ALLOCATIONS.load(Ordering::Relaxed);
         for _ in 0..FORWARDS {
             rt.block_on(pool.forward(black_box(&query))).unwrap();
@@ -106,14 +106,13 @@ fn adaptive_forwards_allocate_exactly_as_much_as_fallback_forwards() {
     }
 
     println!(
-        "forward/allocations over {FORWARDS} forwards: fallback {} adaptive {}",
+        "forward/allocations over {FORWARDS} warm forwards: first batch {} second batch {}",
         measured[0], measured[1]
     );
 
     assert_eq!(
         measured[1], measured[0],
-        "{FORWARDS} adaptive forwards allocated {} against fallback's {}; \
-         Stage 1 must add none",
-        measured[1], measured[0]
+        "{FORWARDS} warm adaptive forwards allocated {} then {}; the walk must not accumulate",
+        measured[0], measured[1]
     );
 }

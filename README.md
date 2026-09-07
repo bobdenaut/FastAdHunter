@@ -31,7 +31,7 @@ numbers below are measured on the target hardware, not estimated.
 | 1.5 | Observability persistence | ✅ done | `v0.3.0-phase1.5` |
 | 2 | HTTP engine + Policies | ✅ done | `v0.2.17-phase2` |
 | 2.5 | Pre-Adaptive hardening | ✅ done | `v0.2.19-phase2.5` |
-| 2.6 | Adaptive DNS Stage 1 | ✅ closed 2026-09-07 — shipped opt-in (`strategy = "adaptive"`); the compiled default stays `fallback` by owner decision | `soak-p2.6-11` |
+| 2.6 | Adaptive DNS Stage 1 | ✅ closed 2026-09-07 — `adaptive` shipped opt-in; compiled-in default flipped and the `fallback` walk deleted with p2.6-12 (on `phase3-06`) | `soak-p2.6-11` |
 | 5 | Web dashboard | ✅ done — closed 2026-09-01, four verification rows deferred to the next deploy window | `0.3.0` |
 | 3 | HTTPS interception | 🚧 dev box done (p3-01…p3-05); p3-06's on-device campaign ran, four arms parked on hardware, awaiting the 24 h soak | `phase3-06` |
 | 4 | HTML filtering | ⬜ not started | — |
@@ -69,12 +69,12 @@ days would have added nothing. The fix (conditional GET, `If-None-Match` /
 a gate**, so it carries no verdict. The third soak, **0.3.1 from
 2026-09-01T07:27 Z, was stopped on day 6 (2026-09-07)** for the
 allocation-domain production swap, and the phase closed that day by owner
-decision. The default was **not flipped**: two deployment gates closed
-**unvalidated** — the observed failure window held three runs, all of length 1,
-too few to calibrate `penalty_failures`, which therefore stays at its compiled
-default of 2, provisional and uncalibrated — so `adaptive` stays opt-in and the
-compiled default is `fallback`. If the deployment only ever produces isolated
-single losses, that is the correct outcome.
+decision. Two deployment gates closed **unvalidated** — the observed failure
+window held three runs, all of length 1, too few to calibrate
+`penalty_failures`, which therefore stays at its compiled default of 2,
+provisional and uncalibrated. The default flip (p2.6-12) then landed on
+`phase3-06`: `adaptive` is the compiled-in default, the `fallback` walk is
+deleted, and a config still naming it fails at load.
 
 Phase 5 is the web dashboard, and it is **built** — thirteen screens across all
 ten tasks, merged and released as 0.3.0. The shipped bundle is **128,730 B
@@ -706,7 +706,7 @@ firewall · a replacement for a good browser extension.
 | **1.5** ✅ | Persisted history, perf series, byte-bounded cache |
 | **2** ✅ | HTTP proxy, URL-path rules, Policies, telemetry consolidation, compile-transient attribution |
 | **2.5** ✅ | Listener resilience, list-refresh integrity, encrypted-transport fixes, outcome telemetry, failure run-length telemetry — hardening before adaptive upstream selection |
-| **2.6** ✅ | Adaptive DNS Stage 1 — per-endpoint health, penalty and skip on repeated transport failure, on-path recovery probing; deployed opt-in since 2026-08-25, closed 2026-09-07 with the default left at `fallback`. Shipped alongside as 0.3.2: HTTP allocation domains (ADR-0006) |
+| **2.6** ✅ | Adaptive DNS Stage 1 — per-endpoint health, penalty and skip on repeated transport failure, on-path recovery probing; deployed opt-in since 2026-08-25, closed 2026-09-07; `adaptive` became the compiled-in default and `fallback` was deleted in p2.6-12. Shipped alongside as 0.3.2: HTTP allocation domains (ADR-0006) |
 | **5** ✅ | Web dashboard — thirteen screens, 128,730 B gzip, served by `fah-api` on one origin, session-cookie auth, every figure backed by an endpoint that exists; released as 0.3.0, closed 2026-09-01 with four verification rows deferred |
 | **3** 🚧 | HTTPS interception, certificate management, DoT/DoH listeners — dev box done, on-device campaign run, awaiting the 24 h soak |
 | **4** | HTML filtering with `lol_html`, cosmetic rules |

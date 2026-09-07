@@ -28,7 +28,7 @@ impl Default for DnsUpstreamsConfig {
 }
 
 fn default_strategy() -> UpstreamStrategy {
-    UpstreamStrategy::Fallback
+    UpstreamStrategy::Adaptive
 }
 
 fn default_timeout_ms() -> u32 {
@@ -61,14 +61,22 @@ fn default_servers() -> Vec<UpstreamServerConfig> {
     ]
 }
 
-/// `[dns.upstreams] strategy`. Only `fallback` (ordered parallel fallback) is
-/// implemented today; more strategies are documented as future work.
+const REMOVED_FALLBACK: &str =
+    r#""fallback" was removed after 0.3.3; "adaptive" is the only strategy"#;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(try_from = "String")]
 pub enum UpstreamStrategy {
-    #[serde(rename = "fallback")]
-    Fallback,
     #[serde(rename = "adaptive")]
     Adaptive,
+}
+
+impl TryFrom<String> for UpstreamStrategy {
+    type Error = &'static str;
+
+    fn try_from(value: String) -> Result<Self, Self::Error> {
+        value.parse()
+    }
 }
 
 impl FromStr for UpstreamStrategy {
@@ -76,9 +84,9 @@ impl FromStr for UpstreamStrategy {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
-            "fallback" => Ok(UpstreamStrategy::Fallback),
             "adaptive" => Ok(UpstreamStrategy::Adaptive),
-            _ => Err("one of: fallback, adaptive"),
+            "fallback" => Err(REMOVED_FALLBACK),
+            _ => Err("one of: adaptive"),
         }
     }
 }

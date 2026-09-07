@@ -434,7 +434,7 @@ mode = "null_ip"
 ttl_seconds = {BLOCK_TTL}
 
 [dns.upstreams]
-strategy = "fallback"
+strategy = "adaptive"
 timeout_ms = 2000
 
 [[dns.upstreams.servers]]

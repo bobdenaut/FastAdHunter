@@ -36,7 +36,7 @@ port = {dns_port}
 dot_port = {dot_port}
 
 [dns.upstreams]
-strategy = "fallback"
+strategy = "adaptive"
 timeout_ms = 2000
 
 [[dns.upstreams.servers]]

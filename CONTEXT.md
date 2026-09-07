@@ -238,8 +238,6 @@ Which of three states an Endpoint is in under `[dns.upstreams] strategy =
 - **Probing** — claimed by exactly one query as the recovery attempt for the
   current deadline.
 
-Under `strategy = "fallback"` no Endpoint has health; every one reads Healthy.
-
 ### Probe
 
 The single on-path attempt that tests whether a Penalized Endpoint has

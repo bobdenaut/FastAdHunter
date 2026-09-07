@@ -1,6 +1,6 @@
 //! Upstream resolution (ARCHITECTURE.md §Upstreams): the configured
-//! `[[dns.upstreams.servers]]` are tried in order — primary first, next on
-//! timeout or transport error (`strategy = "fallback"`). Plain UDP retries
+//! `[[dns.upstreams.servers]]` are walked in order — primary first, a
+//! penalized endpoint skipped (`strategy = "adaptive"`). Plain UDP retries
 //! over TCP against the same server when the answer comes back truncated;
 //! DoT/DoH hold one persistent multiplexed connection each, so steady-state
 //! traffic performs no TLS handshakes. DNSSEC is pass-through: the client's
@@ -19,7 +19,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use fah_common::histogram::AtomicHistogram;
-use fah_config::{DnsUpstreamsConfig, UpstreamProtocol, UpstreamServerConfig, UpstreamStrategy};
+use fah_config::{DnsUpstreamsConfig, UpstreamProtocol, UpstreamServerConfig};
 use fah_model::UPSTREAM_RTT_BUCKETS_SECONDS;
 use hickory_proto::op::{Message, Query as WireQuery};
 use hickory_proto::rr::{Name, RData, RecordType};
@@ -75,7 +75,6 @@ pub struct UpstreamPool {
     timeout: Duration,
     policy: Policy,
     epoch: Instant,
-    strategy: UpstreamStrategy,
     /// Shared, not cloned: the pool is handed out by cheap `Arc` clone (see
     /// `fastadhunter`'s adapters), and a per-clone alarm would let every holder
     /// warn once for the same outage.
@@ -111,7 +110,6 @@ impl UpstreamPool {
             timeout: Duration::from_millis(u64::from(config.timeout_ms)),
             policy: Policy::from_timeout(u64::from(config.timeout_ms), penalty_failures),
             epoch: Instant::now(),
-            strategy: config.strategy,
             alarm: Arc::new(FailureAlarm::new()),
         })
     }
@@ -189,10 +187,6 @@ impl UpstreamPool {
             .collect())
     }
 
-    pub fn strategy(&self) -> UpstreamStrategy {
-        self.strategy
-    }
-
     pub fn status(&self) -> Vec<UpstreamStatus> {
         self.servers
             .iter()
@@ -204,12 +198,7 @@ impl UpstreamPool {
                     protocol: server.protocol,
                     attempts: health.attempts.load(Ordering::Relaxed),
                     failures: health.failures.load(Ordering::Relaxed),
-                    consecutive_failures: match self.strategy {
-                        UpstreamStrategy::Fallback => {
-                            server.consecutive_failures.load(Ordering::Relaxed)
-                        }
-                        UpstreamStrategy::Adaptive => u64::from(word.consecutive_failures),
-                    },
+                    consecutive_failures: u64::from(word.consecutive_failures),
                     tls_handshakes: match &server.transport {
                         Transport::Udp { .. } => 0,
                         Transport::Encrypted(conn) => conn.handshakes(),
@@ -250,49 +239,10 @@ impl Forwarder for UpstreamPool {
 
 impl UpstreamPool {
     async fn forward_with(&self, query: &Message, mode: HealthMode) -> io::Result<ForwardOutcome> {
-        let mut last_err = None;
-        match self.strategy {
-            UpstreamStrategy::Adaptive => match self.walk_adaptive(query, mode).await {
-                Ok(outcome) => return Ok(outcome),
-                Err(err) => last_err = err,
-            },
-            UpstreamStrategy::Fallback => {
-                for (index, (server, health)) in
-                    self.servers.iter().zip(self.health.iter()).enumerate()
-                {
-                    health.attempts.fetch_add(1, Ordering::Relaxed);
-                    let started = Instant::now();
-                    match server.query(query, self.timeout).await {
-                        Ok(response) => {
-                            server.rtt.observe(started.elapsed());
-                            if server.consecutive_failures.load(Ordering::Relaxed) != 0 {
-                                let run = server.consecutive_failures.swap(0, Ordering::Relaxed);
-                                if run != 0 {
-                                    server.run_buckets[run_bucket(run)]
-                                        .fetch_add(1, Ordering::Relaxed);
-                                }
-                            }
-                            if self.alarm.clear() {
-                                info!(
-                                    upstreams = self.servers.len(),
-                                    "upstreams recovered — answering from the network again"
-                                );
-                            }
-                            return Ok(ForwardOutcome::new(
-                                response,
-                                u8::try_from(index).unwrap_or(u8::MAX),
-                            ));
-                        }
-                        Err(err) => {
-                            debug!(upstream = %server.address, error = %err, "upstream attempt failed");
-                            health.failures.fetch_add(1, Ordering::Relaxed);
-                            server.consecutive_failures.fetch_add(1, Ordering::Relaxed);
-                            last_err = Some(err);
-                        }
-                    }
-                }
-            }
-        }
+        let last_err = match self.walk_adaptive(query, mode).await {
+            Ok(outcome) => return Ok(outcome),
+            Err(err) => err,
+        };
         // Every configured upstream failed this query. With encrypted-only
         // upstreams nothing plaintext waits behind them, so clients are now
         // living on whatever the cache can still serve — the operator has to
@@ -408,7 +358,6 @@ struct UpstreamServer {
     address: String,
     protocol: fah_model::Protocol,
     transport: Transport,
-    consecutive_failures: AtomicU64,
     run_buckets: [AtomicU64; 4],
     family: Option<fah_model::AddressFamily>,
     rtt: AtomicHistogram<{ UPSTREAM_RTT_BUCKETS_SECONDS.len() }>,
@@ -514,7 +463,6 @@ impl UpstreamServer {
             address: config.address.clone(),
             protocol,
             transport,
-            consecutive_failures: AtomicU64::new(0),
             run_buckets: std::array::from_fn(|_| AtomicU64::new(0)),
             family,
             rtt: AtomicHistogram::new(&UPSTREAM_RTT_BUCKETS_SECONDS),
@@ -580,6 +528,8 @@ fn invalid(message: String) -> io::Error {
 #[cfg(test)]
 mod tests {
     use std::net::Ipv4Addr;
+
+    use fah_config::UpstreamStrategy;
     use std::str::FromStr;
     use std::time::Instant;
 
@@ -600,12 +550,22 @@ mod tests {
 
     fn pool_of(servers: Vec<UpstreamServerConfig>, timeout_ms: u32) -> UpstreamPool {
         UpstreamPool::from_config(&DnsUpstreamsConfig {
-            strategy: UpstreamStrategy::Fallback,
+            strategy: UpstreamStrategy::Adaptive,
             timeout_ms,
             servers,
             ..Default::default()
         })
         .unwrap()
+    }
+
+    fn pool_probing_at_once(servers: Vec<UpstreamServerConfig>, timeout_ms: u32) -> UpstreamPool {
+        let mut pool = pool_of(servers, timeout_ms);
+        pool.policy = Policy {
+            penalty_failures: 2,
+            penalty_base_ms: 0,
+            penalty_max_ms: 0,
+        };
+        pool
     }
 
     fn a_query() -> Message {
@@ -677,9 +637,9 @@ mod tests {
                 vec![udp_server_config(primary), udp_server_config(secondary)],
                 2000,
             );
-            pool.servers[0]
-                .consecutive_failures
-                .store(7, Ordering::Relaxed);
+            pool.health[0]
+                .state
+                .store(health::pack(State::Healthy, 0, 1, 0));
 
             let response = pool.forward(&a_query()).await.unwrap().message;
 
@@ -691,7 +651,7 @@ mod tests {
                 "{code} must not move the failure counter"
             );
             assert_eq!(
-                pool.servers[0].consecutive_failures.load(Ordering::Relaxed),
+                pool.status()[0].consecutive_failures,
                 0,
                 "{code} is a successful exchange and resets the streak"
             );
@@ -729,6 +689,13 @@ mod tests {
     const RUN_TIMEOUT_MS: u32 = 200;
 
     async fn scripted_udp_server(script: Vec<bool>) -> SocketAddr {
+        scripted_udp_server_with(script, answer_for).await
+    }
+
+    async fn scripted_udp_server_with(
+        script: Vec<bool>,
+        reply: impl Fn(&Message) -> Message + Send + 'static,
+    ) -> SocketAddr {
         let socket = UdpSocket::bind("127.0.0.1:0").await.unwrap();
         let addr = socket.local_addr().unwrap();
         tokio::spawn(async move {
@@ -740,8 +707,8 @@ mod tests {
                     continue;
                 }
                 let request = Message::from_vec(&buf[..len]).unwrap();
-                let reply = answer_for(&request).to_vec().unwrap();
-                socket.send_to(&reply, client).await.unwrap();
+                let bytes = reply(&request).to_vec().unwrap();
+                socket.send_to(&bytes, client).await.unwrap();
             }
         });
         addr
@@ -799,7 +766,7 @@ mod tests {
     async fn interleaved_endpoints_do_not_cross_contaminate() {
         let primary = failing_then_answering_udp_server(2).await;
         let secondary = answering_udp_server(2).await;
-        let pool = pool_of(
+        let pool = pool_probing_at_once(
             vec![udp_server_config(primary), udp_server_config(secondary)],
             RUN_TIMEOUT_MS,
         );
@@ -821,11 +788,14 @@ mod tests {
 
     #[tokio::test]
     async fn an_rcode_closes_an_open_failure_run() {
-        let primary = rcode_udp_server(1, ResponseCode::ServFail).await;
-        let pool = pool_of(vec![udp_server_config(primary)], 2000);
-        pool.servers[0]
-            .consecutive_failures
-            .store(2, Ordering::Relaxed);
+        let primary = scripted_udp_server_with(vec![false, false], |request| {
+            rcode_response(request, ResponseCode::ServFail)
+        })
+        .await;
+        let pool = pool_of(vec![udp_server_config(primary)], RUN_TIMEOUT_MS);
+        for _ in 0..2 {
+            assert!(pool.forward(&a_query()).await.is_err());
+        }
 
         pool.forward(&a_query()).await.unwrap();
 
@@ -1288,7 +1258,7 @@ mod tests {
         let timeout_ms = 100;
         let pool = UpstreamPool::with_tls_config(
             &DnsUpstreamsConfig {
-                strategy: UpstreamStrategy::Fallback,
+                strategy: UpstreamStrategy::Adaptive,
                 timeout_ms,
                 servers: vec![
                     dot_server_config("127.0.0.1:853"),
@@ -1309,16 +1279,16 @@ mod tests {
         assert_eq!(
             start.elapsed(),
             worst_case_walk(&DnsUpstreamsConfig {
-                strategy: UpstreamStrategy::Fallback,
+                strategy: UpstreamStrategy::Adaptive,
                 timeout_ms,
                 servers: vec![dot_server_config("a"), dot_server_config("b")],
                 ..Default::default()
             })
         );
-        for (server, health) in pool.servers.iter().zip(pool.health.iter()) {
+        for health in pool.health.iter() {
             assert_eq!(health.attempts.load(Ordering::Relaxed), 1);
             assert_eq!(health.failures.load(Ordering::Relaxed), 1);
-            assert_eq!(server.consecutive_failures.load(Ordering::Relaxed), 1);
+            assert_eq!(unpack(health.state.load()).consecutive_failures, 1);
         }
     }
 
@@ -1604,21 +1574,6 @@ mod tests {
             let after_forward = pool.status();
             assert_eq!(after_forward[0].attempts, 1);
             assert_eq!(after_forward[0].rtt.count, 1);
-        }
-
-        #[tokio::test]
-        async fn resolve_host_still_counts_attempts_under_fallback() {
-            let addr = family_aware_udp_server(2, true).await;
-            let pool = pool_of(vec![udp_server_config(addr)], 2000);
-
-            pool.resolve_host("lists.example.com").await.unwrap();
-
-            assert_eq!(
-                pool.status()[0].attempts,
-                2,
-                "HealthMode is an adaptive-only parameter: fallback counts both legs, \
-                 which is what M5 records as the coverage difference between strategies"
-            );
         }
 
         #[tokio::test]
