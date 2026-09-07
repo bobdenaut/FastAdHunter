@@ -221,7 +221,8 @@ and the cache never stores verdicts
  ┌─────────────────────────────────────┐
  │ DNS Engine        (fah-dns)         │
  │ HTTP Engine       (fah-http)        │
- │ HTTPS Engine      (Phase 3)         │
+ │   HTTP + HTTPS listeners, one       │
+ │   accept loop, shared domains       │
  │ Rule Engine       (fah-rules)       │
  │ Statistics        (fah-stats)       │
  │ Metrics           (fah-metrics)     │

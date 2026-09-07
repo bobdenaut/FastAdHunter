@@ -313,7 +313,9 @@ the percentiles at `timeout_ms`. This is network time, the part of the
 The component that filters unencrypted HTTP by **URL**, not just by hostname —
 `fah-http`. It sees the request line, so a rule can target one path on a host
 the rest of the site still needs, which the DNS Engine structurally cannot do.
-Phase 2.
+Phase 2. Since Phase 3 it also owns the HTTPS listener (SNI verdict, splice,
+opt-in interception) behind the same accept loop and allocation domains; there
+is no separate HTTPS engine.
 
 ### Pass-through
 

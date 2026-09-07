@@ -21,7 +21,8 @@ Full-page version: [docs/diagrams/architecture.html](docs/diagrams/architecture.
  ┌─────────────────────────────────────┐
  │ DNS Engine        (fah-dns)         │
  │ HTTP Engine       (fah-http)        │
- │ HTTPS Engine      (Phase 3)         │
+ │   HTTP + HTTPS listeners, one       │
+ │   accept loop, shared domains       │
  │ Rule Engine       (fah-rules)       │
  │ Statistics        (fah-stats)       │
  │ Metrics           (fah-metrics)     │
@@ -106,9 +107,13 @@ must not have it (ADR-0004).
   config setting them equal is rejected at load). The router dst-nats 443 here.
 - Bound **only** when `engine.mode` is `dns+http+https`, on the same reasoning
   as HTTP above.
-- The accept loop is **the same code** as HTTP's: `server::accept_loop` is
-  generic over the per-connection handler, so the permit-before-accept ceiling
-  cannot drift between the two listeners.
+- The accept loop is **the same code** as HTTP's: `server::accept_loop` takes
+  a `Dispatch`, so the permit-before-accept ceiling cannot drift between the
+  two listeners. With `[runtime] http_runtimes > 0` the HTTPS acceptor hands
+  its sockets to the same allocation domains (CONTEXT.md) as HTTP; the
+  ClientHello peek, the SNI verdict, the splice or the MITM handshake and the
+  session all run on the domain thread, never on the acceptor. `0` serves it
+  on the shared runtime.
 
 ## Upstreams
 
@@ -308,11 +313,12 @@ against this document.
 - Every worker runs the complete DNS pipeline; no stage is pinned to a thread
   and there is no central dispatcher.
 - **HTTP allocation domains** (ADR-0006, CONTEXT.md) are the one exception to
-  "nothing is pinned": the HTTP Engine serves each connection on one of
-  `[runtime] http_runtimes` single-thread runtimes, each on its own OS thread,
-  so a connection's allocations are freed by the thread that made them. One
-  acceptor on the shared runtime holds the `max_connections` permit and hands
-  sockets over bounded channels; `0` serves on the shared runtime as before.
+  "nothing is pinned": the HTTP and HTTPS listeners serve each connection on
+  one of `[runtime] http_runtimes` single-thread runtimes, each on its own OS
+  thread, so a connection's local allocations are freed by the thread that
+  made them. Each listener keeps one acceptor on the shared runtime that holds
+  its own `max_connections` permit and hands sockets over bounded channels to
+  the same domains; `0` serves both on the shared runtime as before.
 - **Ingest socket topology:** today one `recv_from` loop pulls UDP datagrams off
   a single socket and spawns a task per datagram, so the expensive stages (match,
   cache, forward, reply) already spread across all workers — only *reception* is
