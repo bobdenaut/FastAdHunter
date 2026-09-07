@@ -125,8 +125,6 @@ const RULE_DASH = [1, 4];
 /** Annotation and threshold-caption size. 9 px was unreadable on the chart at
  *  a normal viewing distance; the axis runs 11 px and these read alongside it. */
 const LABEL_PX = 13;
-/** How much room `now` needs at the right edge, in CSS pixels. */
-const NOW_GUTTER = 34;
 
 function pixelRatio(): number {
   return loadedUPlot()?.pxRatio ?? 1;
@@ -435,16 +433,6 @@ function thresholdPlugin(theme: ChartTheme, range: RangeKey): uPlot.Plugin {
 
         ctx.setLineDash([]);
 
-        // `now` at the right edge — an extra label beside the last tick, not a
-        // tick relabelled. The window ends at the server's own now, which is
-        // never a round clock time, so a tick there would be a time nobody
-        // sampled at.
-        ctx.font = `${String(LABEL_PX * ratio)}px ${theme.mono}`;
-        ctx.fillStyle = theme.tick;
-        ctx.textAlign = 'right';
-        ctx.textBaseline = 'top';
-        ctx.fillText('now', right, u.bbox.top + u.bbox.height + 8 * ratio);
-
         // Midnight, drawn stronger and named. On a 24 h window the reader is
         // looking at two calendar days and the axis alone does not say where
         // one ends — and on 7 d and 30 d every tick is a midnight, so the
@@ -673,20 +661,13 @@ export function memoryTrendOptions({
         // Room for eight-ish labels rather than twenty-four: a tick per hour is
         // a wall of digits nobody reads, and the artboard draws one every three.
         space: 130,
-        // The last tick is dropped when it would sit under `now`, which the
-        // threshold plugin draws hard against the right edge. Two labels in one
-        // place read as one unreadable label, and `now` is the one that has to
-        // survive: it names the end of the window, which no tick does.
-        values: (u, splits) => {
-          const right = u.bbox.left + u.bbox.width;
-          return splits.map((value, index) => {
-            const label = format.format(new Date(value * 1000));
-            const collides =
-              index === splits.length - 1 &&
-              u.valToPos(value, 'x', true) > right - NOW_GUTTER * pixelRatio();
-            return collides ? '' : label;
-          });
-        },
+        // Every tick, including the last. The final label used to be given up
+        // to a `now` drawn hard against the right edge, which named the end of
+        // the window — but the window ends at the last *sample*, up to a
+        // sampling interval before now, so `now` was a claim the series could
+        // not support and the tick it displaced was a time that was sampled.
+        values: (_u, splits) =>
+          splits.map((value) => format.format(new Date(value * 1000))),
       },
       // The MiB scale on both edges. The plot is wide enough that a value near
       // the right edge is a long way from the axis that reads it, and the eye
