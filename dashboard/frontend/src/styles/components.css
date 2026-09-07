@@ -3556,10 +3556,18 @@ table.t.counters td.bad {
   color: var(--text-control);
 }
 
+/* Two states, two signals: the fill follows the pointer, the rule stays on the
+   anchor the page is parked on. Sharing both made a hovered neighbour read as
+   a second mark. */
 .set-nav a:hover {
-  border-left-color: var(--accent);
   background: var(--surface-sunken);
   text-decoration: none;
+}
+
+.set-nav a[aria-current] {
+  border-left-color: var(--accent);
+  background: var(--surface-sunken);
+  color: var(--text);
 }
 
 .set-sections {
@@ -4926,7 +4934,7 @@ table.feed-table tbody tr:hover td {
     white-space: nowrap;
   }
 
-  .set-nav a:hover {
+  .set-nav a[aria-current] {
     border-left: 0;
     border-bottom-color: var(--accent);
   }

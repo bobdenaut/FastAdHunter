@@ -60,7 +60,10 @@
   text-decoration: none;
 }
 
+/* The fill follows the pointer, the accent rule stays on the open page — the
+   same split the settings section nav uses. */
 .it:hover {
+  background: var(--rail-active);
   color: var(--rail-text-strong);
   text-decoration: none;
 }

@@ -36,6 +36,16 @@ interface Read {
   startedAt: number;
 }
 
+const ANCHOR_PREFIX = '#set-section-';
+
+/** The section id the URL points at, or `null` for a plain `/settings`. */
+function readAnchor(): string | null {
+  const hash = window.location.hash;
+  return hash.startsWith(ANCHOR_PREFIX)
+    ? hash.slice(ANCHOR_PREFIX.length)
+    : null;
+}
+
 /**
  * The effective configuration, edited one section at a time.
  *
@@ -60,6 +70,11 @@ export function Settings(_props: PageProps) {
   const [gate, setGate] = useState<readonly string[] | null>(null);
   const [saving, setSaving] = useState(false);
   const [loadError, setLoadError] = useState<Error | null>(null);
+  /** Which anchor the nav marks. The hash is the whole state — the anchors are
+   *  plain links, so a click, a back button and a pasted URL all arrive the
+   *  same way. */
+  const [anchored, setAnchored] = useState(readAnchor);
+  const navRef = useRef<HTMLElement | null>(null);
   const inFlight = useRef<Read | null>(null);
   /** The stamp of the newest document already adopted, so a read that settles
    *  out of order cannot walk the baseline backwards. */
@@ -116,6 +131,31 @@ export function Settings(_props: PageProps) {
     setBaseline(fresh);
     setEdits((current) => rebase(fresh, current));
   }, []);
+
+  useEffect(() => {
+    const onHashChange = () => setAnchored(readAnchor());
+    window.addEventListener('hashchange', onHashChange);
+    return () => window.removeEventListener('hashchange', onHashChange);
+  }, []);
+
+  /**
+   * Below 1200 px the nav is a horizontal strip, so a mark can sit off its
+   * right edge — a reload on `#set-section-log` would show the strip parked at
+   * `engine` with nothing marked on screen. Rects, not `offsetLeft`: the strip
+   * is `position: static` there, so its offset parent is not itself. Nothing
+   * moves when the mark is already inside the strip, and this never scrolls the
+   * page — `scrollIntoView` would.
+   */
+  useEffect(() => {
+    const nav = navRef.current;
+    if (nav === null) return;
+    const mark = nav.querySelector('a[aria-current]');
+    if (mark === null) return;
+    const strip = nav.getBoundingClientRect();
+    const link = mark.getBoundingClientRect();
+    if (link.left < strip.left) nav.scrollLeft -= strip.left - link.left;
+    else if (link.right > strip.right) nav.scrollLeft += link.right - strip.right;
+  }, [anchored]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -246,9 +286,17 @@ export function Settings(_props: PageProps) {
         {loadError !== null && <ErrorState error={loadError} />}
 
         <div class="set-layout">
-          <nav class="set-nav" aria-label="Configuration sections">
+          <nav
+            class="set-nav"
+            aria-label="Configuration sections"
+            ref={navRef}
+          >
             {SECTIONS.map((section) => (
-              <a key={section.id} href={`#set-section-${section.id}`}>
+              <a
+                key={section.id}
+                href={`${ANCHOR_PREFIX}${section.id}`}
+                aria-current={anchored === section.id ? 'location' : undefined}
+              >
                 <span class="mono">{section.id}</span>
               </a>
             ))}
