@@ -471,15 +471,18 @@ impl Proxy {
         claim: &Destination,
         peer: SocketAddr,
     ) -> Result<SocketAddr, StatusCode> {
-        let addresses = match self.resolver.resolve(claim.host.clone()).await {
-            Ok(addresses) => addresses,
-            Err(err) => {
-                self.counters
-                    .resolve_failures
-                    .fetch_add(1, Ordering::Relaxed);
-                debug!(%peer, host = %claim.host, error = %err, "could not resolve upstream");
-                return Err(StatusCode::BAD_GATEWAY);
-            }
+        let addresses = match claim.host.parse::<std::net::IpAddr>() {
+            Ok(ip) => vec![ip],
+            Err(_) => match self.resolver.resolve(claim.host.clone()).await {
+                Ok(addresses) => addresses,
+                Err(err) => {
+                    self.counters
+                        .resolve_failures
+                        .fetch_add(1, Ordering::Relaxed);
+                    debug!(%peer, host = %claim.host, error = %err, "could not resolve upstream");
+                    return Err(StatusCode::BAD_GATEWAY);
+                }
+            },
         };
 
         let mut refusal = None;
@@ -661,6 +664,49 @@ mod tests {
             .unwrap_err();
         assert_eq!(err.kind(), io::ErrorKind::InvalidInput);
         assert!(err.to_string().contains("literal address"), "got: {err}");
+    }
+
+    struct RefusingResolver;
+
+    impl HostResolver for RefusingResolver {
+        fn resolve(&self, host: String) -> fah_common::resolve::Resolving {
+            Box::pin(async move { Err(io::Error::other(format!("resolver asked for {host}"))) })
+        }
+    }
+
+    #[tokio::test]
+    async fn an_allowed_ip_literal_host_never_touches_the_resolver() {
+        let proxy = Proxy::new(
+            Arc::new(RefusingResolver),
+            DestinationPolicy::new(
+                80,
+                vec![
+                    "192.168.10.10/32".parse().unwrap(),
+                    "2001:db8::/32".parse().unwrap(),
+                ],
+            ),
+            80,
+            Duration::from_secs(1),
+            Duration::from_secs(1),
+            1,
+            true,
+        );
+        let peer: SocketAddr = "192.168.10.50:4242".parse().unwrap();
+        for (host, expected) in [
+            ("192.168.10.10", "192.168.10.10:80"),
+            ("2001:db8::10", "[2001:db8::10]:80"),
+        ] {
+            let claim = Destination {
+                host: host.to_string(),
+                port: 80,
+            };
+            assert_eq!(
+                proxy.approved_address(&claim, peer).await,
+                Ok(expected.parse().unwrap()),
+                "{host}"
+            );
+        }
+        assert_eq!(proxy.counters().snapshot().resolve_failures, 0);
     }
 
     #[test]
