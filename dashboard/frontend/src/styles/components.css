@@ -2213,10 +2213,18 @@ table.t tbody tr:hover td {
   gap: 0 10px;
   /* The address track's floor is a full IPv6: 39 monospace characters at
      6.87px. At 118px the cell overflowed its track by 25px and the address ran
-     under the Name column — a grid item does not clip, so nothing stopped it. */
+     under the Name column — a grid item does not clip, so nothing stopped it.
+
+     The share track's floor is its own header: BLOCKED SHARE, uppercase 12px
+     with 0.06em tracking, runs ~108px and at 92px overran into Last seen.
+
+     Policy grows at 1fr, not 1.5fr, so the spare width goes to Name. Its floor
+     is the one-line chip-and-note, measured at 197px ("default" beside
+     "inherited · no assignment"): at 196px the note dropped under the chip and
+     every row grew by a line. */
   grid-template-columns:
-    minmax(268px, 1.1fr) minmax(96px, 1.7fr) minmax(196px, 1.5fr)
-    88px 74px 92px 76px 44px;
+    minmax(268px, 1.1fr) minmax(96px, 1.7fr) minmax(204px, 1fr)
+    88px 74px 120px 76px 44px;
   align-items: start;
   min-width: min-content;
 }
@@ -2294,7 +2302,7 @@ table.t tbody tr:hover td {
 
 .c-share-figure {
   margin-top: 3px;
-  text-align: right;
+  text-align: center;
 }
 
 .c-actions {
