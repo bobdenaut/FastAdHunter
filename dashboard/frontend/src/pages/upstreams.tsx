@@ -1,15 +1,20 @@
 import { useEffect, useState } from 'preact/hooks';
-import type { Config, Health, Telemetry } from '../api/types';
+import type {
+  Config,
+  Health,
+  Telemetry,
+  UpstreamState,
+} from '../api/types';
 import { Card } from '../components/card';
 import { EmptyState } from '../components/empty-state';
 import { RefreshCluster } from '../components/refresh-cluster';
-import { upstreamMode } from '../derive';
+import { servingIndex, upstreamMode } from '../derive';
 import { useRefresh } from '../refresh/use-refresh';
 import type { PageProps } from '../router/routes';
 import { refresh } from '../services';
 import { ContentHeader } from '../shell/content-header';
 import { DegradedBanner } from '../components/degraded-banner';
-import { EndpointRow } from './upstreams/endpoint-row';
+import { EndpointRow, type EndpointRole } from './upstreams/endpoint-row';
 import { NoPieCard } from './upstreams/no-pie-card';
 import { RttChart } from './upstreams/rtt-chart';
 import { StatesCard } from './upstreams/states-card';
@@ -62,6 +67,7 @@ export function Upstreams(_props: PageProps) {
   const upstreams = telemetry.data?.upstreams ?? null;
   const unknownFamily =
     upstreams !== null && upstreams.some((row) => row.family === null);
+  const serving = servingIndex(upstreams ?? [], mode);
 
   return (
     <>
@@ -115,6 +121,10 @@ export function Upstreams(_props: PageProps) {
                   index={index}
                   upstream={upstream}
                   mode={mode}
+                  // Decided once for the card rather than per row: the role is a
+                  // statement about the array, and a row cannot see the rows
+                  // above it to know whether one of them is already serving.
+                  role={role(serving, upstream.state, index)}
                 />
               ))}
               <p class="note ep-foot">
@@ -172,6 +182,23 @@ export function Upstreams(_props: PageProps) {
       </main>
     </>
   );
+}
+
+/**
+ * The row's role, given the card's one reading of which endpoint serves.
+ *
+ * Only a healthy row can be a standby. A penalized or probing endpoint is not
+ * waiting its turn — it is out of rotation until a probe returns it — and its
+ * state pill already says so, where a second badge would say the opposite.
+ */
+function role(
+  serving: number | null,
+  state: UpstreamState,
+  index: number,
+): EndpointRole {
+  if (serving === null) return null;
+  if (serving === index) return 'serving';
+  return state === 'healthy' ? 'standby' : null;
 }
 
 export default Upstreams;

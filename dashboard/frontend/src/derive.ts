@@ -334,6 +334,31 @@ export function upstreamMode(strategy: string | null | undefined): UpstreamMode 
   return 'unknown';
 }
 
+/**
+ * Which endpoint is answering queries — the first one reading `healthy`, in
+ * configured order.
+ *
+ * That is the pool's own rule, not an inference from the counters: `adaptive`
+ * walks the configured order and takes the first healthy endpoint
+ * (`crates/fah-dns/src/upstream/health.rs`, `select`). So the answer moves on
+ * its own — an endpoint that earns a penalty hands the role to the next one
+ * until a probe brings it back.
+ *
+ * **`null` under any other mode.** Under `fallback` every row publishes
+ * `state: healthy` because no health state exists to report, so "the first
+ * healthy one" would name index 0 whatever is happening to it; and `unknown`
+ * is not knowing which rule applies at all. A page that cannot read the
+ * strategy cannot claim which endpoint serves.
+ */
+export function servingIndex(
+  upstreams: readonly { state: UpstreamState }[],
+  mode: UpstreamMode,
+): number | null {
+  if (mode !== 'adaptive') return null;
+  const index = upstreams.findIndex((upstream) => upstream.state === 'healthy');
+  return index === -1 ? null : index;
+}
+
 /* ─────────────────────────────────────────── p5-09 · Diagnostics · Health ── */
 
 /**

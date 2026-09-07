@@ -3344,6 +3344,20 @@ table.t.counters td.bad {
   border-radius: 3px;
 }
 
+/* The role badge, in the accent rather than in a status colour: serving is not
+   a fifth health state, it is which of the healthy endpoints the pool reaches
+   first. Standby wears the same chip in the muted ink, so the row that matters
+   is the only coloured word in the column. */
+.ep-role {
+  background: var(--pill-neutral-bg);
+  color: var(--accent);
+}
+
+.ep-role.standby {
+  color: var(--pill-neutral-fg);
+  font-weight: 500;
+}
+
 .ep-address {
   font-size: 13.5px;
   font-weight: 500;

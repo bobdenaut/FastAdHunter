@@ -15,6 +15,24 @@ const FAMILY_TITLE =
 const RUN_LENGTHS = 'runs of length 1,2,3,4+';
 
 /**
+ * Which endpoint is answering, said on the row rather than left to be inferred.
+ *
+ * The counters already carry the answer — the serving endpoint holds nearly
+ * every attempt — but that is arithmetic across four rows, and it reads the
+ * past rather than the present. `serving` is the endpoint the pool picks now,
+ * `standby` is a healthy endpoint it has not reached, and `null` is a row where
+ * the question does not apply: a penalized or probing endpoint says so in its
+ * own pill, and no row carries a role under `fallback`.
+ */
+export type EndpointRole = 'serving' | 'standby' | null;
+
+const ROLE_TITLE: Record<'serving' | 'standby', string> = {
+  serving:
+    'Adaptive takes the first healthy endpoint in configured order. This is it — a penalty here hands the role to the next one.',
+  standby: 'Healthy, but an endpoint above it in configured order is serving.',
+};
+
+/**
  * One configured endpoint. The index is the row's position in configured
  * order, which is the same identity a query reports as its answering endpoint
  * (CONTEXT.md §Answering Endpoint) — it is read off the array, never invented.
@@ -29,10 +47,12 @@ export function EndpointRow({
   index,
   upstream,
   mode,
+  role,
 }: {
   index: number;
   upstream: Upstream;
   mode: UpstreamMode;
+  role: EndpointRole;
 }) {
   const health = mode !== 'fallback';
   const penalized = health && upstream.state === 'penalized';
@@ -51,6 +71,14 @@ export function EndpointRow({
         </div>
         <div class="ep-state">
           {health && <StatusPill status={upstream.state} />}
+          {role !== null && (
+            <span
+              class={role === 'serving' ? 'pill ep-role' : 'pill ep-role standby'}
+              title={ROLE_TITLE[role]}
+            >
+              {role}
+            </span>
+          )}
           <span class="note mono">
             {upstream.protocol} ·{' '}
             {upstream.family === null ? (
