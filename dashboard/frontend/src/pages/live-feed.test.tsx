@@ -312,6 +312,66 @@ describe('the row vocabulary', () => {
     );
     expect(dom.textContent).toBe('GET · image · 200 · 0 B');
   });
+
+  /**
+   * An intercepted HTTPS request carries the same shape as an HTTP one — the
+   * wire builds both through `ports.rs::as_http` — so it must read the same.
+   * Branching on `kind === 'http'` sent it through the DNS branch instead,
+   * where it drew an empty record type and lost method, status and bytes.
+   */
+  it('draws an intercepted HTTPS request like an HTTP one', () => {
+    const dom = mount(
+      <Detail
+        row={event({
+          kind: 'https',
+          method: 'GET',
+          resource_type: 'script',
+          status: 200,
+          bytes: 1024,
+          qtype: null,
+        })}
+      />,
+    );
+    expect(dom.textContent).toBe('GET · script · 200 · 1 KiB');
+  });
+
+  /**
+   * The SNI leg decides before a request exists. `session_event` fills method
+   * and path with empty strings and status with 0 as placeholders, so only the
+   * relayed byte count is a real reading and only it is drawn.
+   */
+  it('draws only the relayed bytes on an SNI row, never placeholder fields', () => {
+    const dom = mount(
+      <Detail
+        row={event({
+          kind: 'https-sni',
+          method: '',
+          path: '',
+          resource_type: 'unknown',
+          status: 0,
+          bytes: 2048,
+          qtype: null,
+        })}
+      />,
+    );
+    expect(dom.textContent).toBe('2 KiB');
+  });
+
+  /**
+   * `cached: false` on a Phase 3 row means the cache was never asked, not that
+   * it missed. Both kinds must read as "no outcome", exactly like HTTP.
+   */
+  it('shows no cache outcome on either Phase 3 kind', () => {
+    for (const kind of ['https-sni', 'https']) {
+      const dom = mount(<FeedCache row={event({ kind, cached: false })} />);
+      expect(dom.textContent).toBe('—');
+      act(() => {
+        render(null, host as HTMLElement);
+      });
+      host?.remove();
+      host = null;
+    }
+  });
 });
 
 function names(count: number): string[] {
@@ -441,7 +501,17 @@ describe('the page', () => {
     const chips = [...dom.querySelectorAll('.feed-chipset .chip')].map(
       (node) => node.textContent,
     );
-    expect(chips).toEqual(['all', 'pass', 'allow', 'block', 'all', 'dns', 'http']);
+    expect(chips).toEqual([
+      'all',
+      'pass',
+      'allow',
+      'block',
+      'all',
+      'dns',
+      'http',
+      'https-sni',
+      'https',
+    ]);
     expect(chips).not.toContain('refused');
   });
 

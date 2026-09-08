@@ -11,7 +11,7 @@ export interface FeedFilters {
   /** `''` is "all". The vocabulary is closed — `pass`, `allow`, `block` — and
    *  is the whole of `ports.rs::verdict_str`. */
   verdict: string;
-  /** `''` is "all"; otherwise `dns` or `http`. */
+  /** `''` is "all"; otherwise one of [`KINDS`]. */
   kind: string;
   /** Matched against the client name **and** the address, because the row
    *  shows whichever exists and an operator types whichever they know. */
@@ -27,7 +27,13 @@ export const EMPTY_FILTERS: FeedFilters = {
 };
 
 export const VERDICTS = ['pass', 'allow', 'block'] as const;
-export const KINDS = ['dns', 'http'] as const;
+/**
+ * The whole of `EventKind::as_str` — four values, not two. Phase 3 added
+ * `https-sni` (the SNI-level decision, taken before any request exists) and
+ * `https` (a request read inside an intercepted session). Listing only the
+ * first two left both unfilterable while they streamed into the feed.
+ */
+export const KINDS = ['dns', 'http', 'https-sni', 'https'] as const;
 
 export function isFiltered(filters: FeedFilters): boolean {
   return (
