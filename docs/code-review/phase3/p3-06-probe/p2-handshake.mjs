@@ -6,7 +6,8 @@
 // results directory back. Two verified same-family IPv4 addresses on the
 // VM's bridged interface — --listed is in [https.interception] clients,
 // --unlisted is not. Identity precondition, proven before round 1, else
-// INVALID: both addresses on the interface (`ip -4 -o addr`), each observed by
+// INVALID: both addresses on the interface (`os.networkInterfaces()`, so Linux,
+// macOS and Windows alike), each observed by
 // the probe (/api/v1/clients after one UDP/53 query bound to each), exactly
 // one listed (/api/v1/config).
 //
@@ -31,7 +32,7 @@
 import fs from 'node:fs';
 import tls from 'node:tls';
 import dgram from 'node:dgram';
-import { execFileSync } from 'node:child_process';
+import os from 'node:os';
 import { performance } from 'node:perf_hooks';
 import { parseArgs, Run, CA_ISSUER_CN, summary, round, dnsQuery, dnsId, ipInList, peerInfo } from './lib.mjs';
 
@@ -56,10 +57,31 @@ if (run.host.idle === false) {
 }
 const caPem = fs.readFileSync(args.ca, 'utf8');
 
+function prefixOf(netmask) {
+  if (typeof netmask !== 'string') return null;
+  const octets = netmask.split('.').map(Number);
+  if (octets.length !== 4 || octets.some((o) => !Number.isInteger(o) || o < 0 || o > 255)) return null;
+  return octets.reduce((n, o) => n + (o.toString(2).match(/1/g)?.length ?? 0), 0);
+}
+
+// `ip -4 -o addr` exists only on Linux: smoke Layer 1 got `spawnSync ip ENOENT`
+// on this host and P2 went INVALID before round 1. os.networkInterfaces() needs
+// no subprocess, works on Linux, macOS and Windows alike, and names the
+// interface each address sits on — which is what the wired-alias precondition
+// (plan §The Mac endpoint item 5) is actually about. Same pass/fail semantics
+// as before: presence of both addresses, nothing new asserted.
 function addressesOnInterfaces() {
   try {
-    const out = execFileSync('ip', ['-4', '-o', 'addr'], { encoding: 'utf8' });
-    return out.split('\n').map((l) => l.match(/inet (\d+\.\d+\.\d+\.\d+)\/(\d+)/)).filter(Boolean).map((m) => ({ ip: m[1], prefix: m[2], line: undefined }));
+    const out = [];
+    for (const [iface, entries] of Object.entries(os.networkInterfaces())) {
+      for (const entry of entries ?? []) {
+        // Node >= 18 reports 'IPv4'; older builds reported the number 4.
+        if (entry.family !== 'IPv4' && entry.family !== 4) continue;
+        if (entry.internal) continue;
+        out.push({ ip: entry.address, prefix: prefixOf(entry.netmask), iface });
+      }
+    }
+    return out;
   } catch (e) {
     return { error: e.message };
   }
@@ -90,7 +112,7 @@ function identityQuery(localAddress) {
 }
 
 const iface = addressesOnInterfaces();
-run.log(`ip -4 -o addr: ${JSON.stringify(iface)}`);
+run.log(`os.networkInterfaces() IPv4 (${os.platform()}): ${JSON.stringify(iface)}`);
 const present = Array.isArray(iface) ? [args.listed, args.unlisted].filter((a) => iface.some((x) => x.ip === a)) : [];
 if (present.length !== 2) run.invalid(`identity precondition: both --listed and --unlisted must be on this host's interfaces (found ${present.join(',') || 'none'})`, { iface });
 const seen = [await identityQuery(args.listed), await identityQuery(args.unlisted)];
