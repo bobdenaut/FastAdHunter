@@ -1,0 +1,93 @@
+{
+  "script": "p5",
+  "started_at": "2026-09-08T17:18:19.172Z",
+  "finished_at": "2026-09-08T17:18:20.250Z",
+  "tip": "7ae474aec5f9",
+  "probe": "172.17.0.4",
+  "probe_version": "0.3.3",
+  "http_runtimes": 2,
+  "host": {
+    "platform": "win32",
+    "idle": true,
+    "network": [
+      "Ethernet                Public"
+    ],
+    "busy": []
+  },
+  "args": {
+    "probe": "172.17.0.4",
+    "api-port": 8443,
+    "key": "<set>",
+    "out": "campaign2/p5-20260908T171819Z",
+    "tip": null,
+    "allow-busy": false,
+    "skip-host-checks": false,
+    "hosts": 16,
+    "seed": "20260908T171819Z",
+    "dot-port": 853,
+    "timeout": 10000
+  },
+  "valid": true,
+  "status": "valid",
+  "degraded_reasons": [],
+  "measurement": "P5",
+  "hosts": 16,
+  "seed": "20260908t171819z",
+  "figures": {
+    "first-sight": {
+      "n": 16,
+      "min": 3.503,
+      "p50": 3.696,
+      "p99": 6.404,
+      "max": 6.404,
+      "mean": 4.043,
+      "served_issuer": "FastAdHunter CA"
+    },
+    "repeat": {
+      "n": 16,
+      "min": 1.354,
+      "p50": 1.579,
+      "p99": 2.686,
+      "max": 2.686,
+      "mean": 1.799,
+      "served_issuer": "FastAdHunter CA"
+    },
+    "counters_delta": {
+      "minted_total": 16,
+      "unwarmed_misses": 0,
+      "evictions": 0,
+      "superseded": 0,
+      "prewarm_hits": 16,
+      "size": 16
+    }
+  },
+  "leaf_cache_before": {
+    "size": 1,
+    "capacity": 512,
+    "inflight": 0,
+    "hits": 3,
+    "unwarmed_misses": 0,
+    "prewarm_hits": 2,
+    "coalesced": 0,
+    "minted_total": 1,
+    "evictions": 0,
+    "superseded": 0
+  },
+  "leaf_cache_after": {
+    "size": 17,
+    "capacity": 512,
+    "inflight": 0,
+    "hits": 35,
+    "unwarmed_misses": 0,
+    "prewarm_hits": 18,
+    "coalesced": 0,
+    "minted_total": 17,
+    "evictions": 0,
+    "superseded": 0
+  },
+  "gate": {
+    "statistic": "p50(first-sight) - p50(repeat) < 1 ms (incremental p50 estimate of mint + insert)",
+    "value_ms": 2.117,
+    "pass": false
+  }
+}

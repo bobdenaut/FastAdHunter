@@ -1,0 +1,36 @@
+{
+  "script": "sni",
+  "started_at": "2026-09-08T17:13:52.046Z",
+  "finished_at": "2026-09-08T17:13:53.138Z",
+  "tip": "7ae474aec5f9",
+  "probe": "172.17.0.4",
+  "probe_version": "0.3.3",
+  "http_runtimes": 2,
+  "host": {
+    "platform": "win32",
+    "idle": false,
+    "network": [
+      "Ethernet                Public"
+    ],
+    "busy": [
+      "brave"
+    ]
+  },
+  "args": {
+    "probe": "172.17.0.4",
+    "api-port": 8443,
+    "key": "<set>",
+    "out": "campaign2/sni-20260908T171351Z",
+    "tip": null,
+    "allow-busy": false,
+    "skip-host-checks": false,
+    "blocked": "analytics.google.com",
+    "allowed": "example.com",
+    "port": 8444,
+    "attempts": 5,
+    "timeout": 5000
+  },
+  "valid": false,
+  "status": "INVALID",
+  "reason": "host not idle: brave running (plan §Running item 3); --allow-busy to proceed degraded"
+}

@@ -1,0 +1,19 @@
+2026-09-08T17:18:19.204Z [p5] == p5 start 2026-09-08T17:18:19.172Z tip=7ae474aec5f9 out=campaign2/p5-20260908T171819Z
+2026-09-08T17:18:19.204Z [p5] args {"probe":"172.17.0.4","api-port":8443,"key":"<set>","out":"campaign2/p5-20260908T171819Z","tip":null,"allow-busy":false,"skip-host-checks":false,"hosts":16,"seed":"20260908T171819Z","dot-port":853,"timeout":10000}
+2026-09-08T17:18:19.637Z [p5] Get-NetConnectionProfile: Ethernet                Public
+2026-09-08T17:18:20.066Z [p5] idle check: PASS (recorded; each stage decides)
+2026-09-08T17:18:20.083Z [p5] GET /health -> 200 {"status":"ok","version":"0.3.3","uptime_seconds":393}
+2026-09-08T17:18:20.090Z [p5] config snapshot -> campaign2\p5-20260908T171819Z\config.json
+2026-09-08T17:18:20.090Z [p5] engine.mode = dns+http+https
+2026-09-08T17:18:20.090Z [p5] runtime.http_runtimes = 2 (every HTTPS figure records it — plan §The N axis)
+2026-09-08T17:18:20.096Z [p5] certificates before: ca.present=true dot={"state":"listening","address":"[::]:853"} leaf_cache={"size":1,"capacity":512,"inflight":0,"hits":3,"unwarmed_misses":0,"prewarm_hits":2,"coalesced":0,"minted_total":1,"evictions":0,"superseded":0}
+2026-09-08T17:18:20.193Z [p5] first-sight: 16/16 handshakes, p50=3.696 ms, issuers=FastAdHunter CA, errors=0
+2026-09-08T17:18:20.243Z [p5] repeat: 16/16 handshakes, p50=1.579 ms, issuers=FastAdHunter CA, errors=0
+2026-09-08T17:18:20.249Z [p5] leaf_cache delta whole run {"size":16,"capacity":0,"inflight":0,"hits":32,"unwarmed_misses":0,"prewarm_hits":16,"coalesced":0,"minted_total":16,"evictions":0,"superseded":0}; repeat pass {"size":0,"capacity":0,"inflight":0,"hits":16,"unwarmed_misses":0,"prewarm_hits":16,"coalesced":0,"minted_total":0,"evictions":0,"superseded":0}
+2026-09-08T17:18:20.250Z [p5] wrote campaign2\p5-20260908T171819Z\p5.json
+2026-09-08T17:18:20.250Z [p5] GATE {"statistic":"p50(first-sight) - p50(repeat) < 1 ms (incremental p50 estimate of mint + insert)","value_ms":2.117,"pass":false}
+2026-09-08T17:18:20.250Z [p5] == p5 done (valid)
+ewarm_hits":16,"coalesced":0,"minted_total":0,"evictions":0,"superseded":0}
+2026-09-08T17:18:20.250Z [p5] wrote campaign2\p5-20260908T171819Z\p5.json
+2026-09-08T17:18:20.250Z [p5] GATE {"statistic":"p50(first-sight) - p50(repeat) < 1 ms (incremental p50 estimate of mint + insert)","value_ms":2.117,"pass":false}
+2026-09-08T17:18:20.250Z [p5] == p5 done (valid)

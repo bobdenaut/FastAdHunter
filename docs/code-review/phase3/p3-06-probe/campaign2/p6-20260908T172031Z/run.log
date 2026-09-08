@@ -1,0 +1,21 @@
+2026-09-08T17:20:31.616Z [p6] == p6 start 2026-09-08T17:20:31.584Z tip=7ae474aec5f9 out=campaign2/p6-20260908T172031Z
+2026-09-08T17:20:31.617Z [p6] args {"probe":"172.17.0.4","api-port":8443,"key":"<set>","out":"campaign2/p6-20260908T172031Z","tip":null,"allow-busy":false,"skip-host-checks":false,"generate":2,"import":2,"cert":"smoke-20260908T0905Z/work/p1.crt","key-file":"smoke-20260908T0905Z/work/p1.key","ca-archive-count":0,"api-archive-count":0,"ca-out":null}
+2026-09-08T17:20:31.991Z [p6] Get-NetConnectionProfile: Ethernet                Public
+2026-09-08T17:20:32.503Z [p6] idle check: PASS (recorded; each stage decides)
+2026-09-08T17:20:32.514Z [p6] GET /health -> 200 {"status":"ok","version":"0.3.3","uptime_seconds":526}
+2026-09-08T17:20:32.519Z [p6] config snapshot -> campaign2\p6-20260908T172031Z\config.json
+2026-09-08T17:20:32.519Z [p6] engine.mode = dns+http+https
+2026-09-08T17:20:32.519Z [p6] runtime.http_runtimes = 2 (every HTTPS figure records it — plan §The N axis)
+2026-09-08T17:20:32.524Z [p6] before: ca={"present":true,"fingerprint_sha256":"33:FC:D4:50:F2:61:58:5C:EE:48:7E:2B:83:37:8B:BC:1E:CA:A3:B9:42:4F:24:43:55:F1:DC:C2:35:43:A7:79","not_before":"2026-09-07T17:13:07Z","not_after":"2036-09-04T17:13:07Z","subject":"CN=FastAdHunter CA"} api_certificate={"source":"self_signed"}
+2026-09-08T17:20:32.534Z [p6] ca/generate #1: 200 starttransfer-appconnect=5.895 ms total=9.431 ms
+2026-09-08T17:20:32.547Z [p6] ca/generate #2: 200 starttransfer-appconnect=5.438 ms total=9.073 ms
+2026-09-08T17:20:32.564Z [p6] import #1: 200 starttransfer-appconnect=11.127 ms total=16.522 ms
+2026-09-08T17:20:32.576Z [p6] import #2: 200 starttransfer-appconnect=6.09 ms total=11.839 ms
+2026-09-08T17:20:32.581Z [p6] after: ca={"present":true,"fingerprint_sha256":"6B:AF:F2:F9:9A:5D:AC:64:50:D3:A2:F6:B3:67:6C:DD:CE:6A:C5:10:E9:BF:AB:DC:AF:62:40:B6:62:58:AB:06","not_before":"2026-09-07T17:20:31Z","not_after":"2036-09-04T17:20:31Z","subject":"CN=FastAdHunter CA"} api_certificate={"source":"imported"}
+2026-09-08T17:20:32.588Z [p6] re-exported CA -> campaign2\p6-20260908T172031Z\ca-after-p6.pem (fingerprint 6B:AF:F2:F9:9A:5D:AC:64:50:D3:A2:F6:B3:67:6C:DD:CE:6A:C5:10:E9:BF:AB:DC:AF:62:40:B6:62:58:AB:06); every earlier export is invalid
+2026-09-08T17:20:32.588Z [p6] wrote campaign2\p6-20260908T172031Z\p6.json
+2026-09-08T17:20:32.589Z [p6] GATE {"statistic":"median of starttransfer - appconnect: generate < 100 ms, import < 50 ms","generate_median_ms":5.895,"import_median_ms":11.127,"generate_pass":true,"import_pass":true,"pass":true}
+2026-09-08T17:20:32.589Z [p6] == p6 done (valid)
+026-09-08T17:20:32.588Z [p6] wrote campaign2\p6-20260908T172031Z\p6.json
+2026-09-08T17:20:32.589Z [p6] GATE {"statistic":"median of starttransfer - appconnect: generate < 100 ms, import < 50 ms","generate_median_ms":5.895,"import_median_ms":11.127,"generate_pass":true,"import_pass":true,"pass":true}
+2026-09-08T17:20:32.589Z [p6] == p6 done (valid)

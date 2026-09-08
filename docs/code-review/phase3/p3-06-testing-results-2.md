@@ -254,6 +254,141 @@ healthy (flat direct control), and the variance belongs to the proxied path.
    handshake row and is unaffected by this. The declaration already says
    TLS/HTTP figures do not convert from the dev box.
 
+## Session 2 — RB5009, 2026-09-08
+
+**Device:** RB5009UG+S+, RouterOS 7.21.5, 4× ARMv8, 1 GB shared with RouterOS.
+**Probe:** `fah-probe` container on `veth3` / `172.17.0.4`, tip build, image
+`fah-probe-arm64.tar`, `envlists=fahprobe-env`, `cpu-list=""`,
+`mode=dns+http+https`, **N = 2** (`http_runtimes=2`, read back from
+`/api/v1/config`). Production `fastadhunter` 0.3.3 stayed up on `veth1`
+throughout and was never touched.
+
+**Corpus:** `oisd-basic`, 60 748 active DNS rules, refreshed 2026-09-08T17:12Z.
+**Client:** the dev box over the LAN, idle-checked per run.
+**Raw output:** `p3-06-probe/campaign2/<arm>-<ts>/`, one directory per arm,
+each with `run.log` and the arm's JSON.
+
+Setup context worth carrying: the container's first list refresh fires before
+its network is up, so `oisd-basic` failed at every boot with `upstream timed
+out` and would not have retried for 24 h. `POST /api/v1/lists/oisd-basic/refresh`
+fixes it. Upstreams themselves are healthy — the boot warning is a startup
+race, not an upstream fault.
+
+### SNI — the gate
+
+| Statistic | Value |
+| --- | --- |
+| blocked closed before any certificate | **true** |
+| no-SNI closed | **true** |
+| allowed reached ServerHello | **true** |
+| `listeners.https` delta | connections 15, requests 15, **blocked 5**, refused_claim 0, refused_destination 0, upstream_failures 0 |
+
+Blocked name `analytics.google.com` (`||analytics.google.com^`, oisd-basic),
+allowed `example.com`, 5 attempts each of blocked / allowed / no-SNI.
+**PASS** — the everyone path of the definition of done, confirmed on target
+hardware.
+
+`blocked = 5 ≤ requests = 15` holds here too, consistent with the p3-04 L5
+refutation recorded in the review file.
+
+### P4-LAN — DNS per-query latency, three transports
+
+18 000 queries, 3 rounds × 2000 per transport, transports interleaved within
+each round. Blocked name, so every answer is `0.0.0.0` from the rule engine.
+
+| Transport | n | min | **p50** | p99 | max | unanswered | unmatched |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| udp | 6000 | 0.184 | **0.341** | 0.733 | 2.641 | 0 | 0 |
+| dot | 6000 | 0.226 | **0.442** | 0.828 | 3.744 | 0 | 0 |
+| doh | 6000 | 0.460 | **0.951** | 1.612 | 55.94 | 0 | 0 |
+
+All in ms. DoT costs **+0.101 ms** over UDP, DoH **+0.610 ms**, handshakes
+excluded. DoT handshakes, recorded separately and not in the per-query figures:
+19.534 / 10.293 / 4.596 ms across the three rounds — warming as the session
+cache fills.
+
+`served_issuer`: DoT `FastAdHunter CA`, DoH `FastAdHunter` (the API
+certificate — DoH rides the API listener). Both as designed.
+
+DoH's 55.94 ms max is a single event; p99 at 1.612 ms says it is not a
+pattern. Recorded, not attributed.
+
+### P5 — leaf mint, first-sight vs repeat
+
+16 hosts over DoT, `--hosts 16`.
+
+| Arm | n | min | **p50** | p99 | max | issuer |
+| --- | --- | --- | --- | --- | --- | --- |
+| first-sight | 16 | 3.503 | **3.696** | 6.404 | 6.404 | FastAdHunter CA |
+| repeat | 16 | 1.354 | **1.579** | 2.686 | 2.686 | FastAdHunter CA |
+
+Correctness, all met: `minted_total` +16, `evictions` 0, `unwarmed_misses` 0,
+`superseded` 0, cache 1 → 17 of 512.
+
+**Gate reports fail: 3.696 − 1.579 = 2.117 ms against `< 1 ms`. It does not
+overturn the budget row, for two reasons.**
+
+1. **It is not the budget's measurement.** [PERFORMANCE.md](../../../PERFORMANCE.md)
+   §Budgets sets `< 1 ms` for cold prewarm and records **450.88 µs** from
+   `certs_mint` criterion **on this device**, 2026-09-04. P5 measures a DoT
+   handshake delta from a LAN client and carries handshake and network
+   variance the criterion bench does not.
+2. **It scales as expected.** The dev box measured 0.275 ms for the same
+   statistic (smoke Layer 3). 2.117 / 0.275 = **7.7×**, against the measured
+   ~9× x86 → RB5009 factor. Consistent scaling, not a regression.
+
+**Disposition: diagnostic, unresolved until `fah-certs:arm64` runs.** That
+container is the same criterion bench on the same device and is directly
+comparable to the 450.88 µs row; it is the arm that settles whether the budget
+holds. Nothing here is a budget failure yet, and nothing here should be
+recorded as one.
+
+### P6 — certificate generate and import, wall time
+
+| Operation | n | **median** | budget | verdict |
+| --- | --- | --- | --- | --- |
+| CA generate | 2 | **5.895 ms** | < 100 ms | pass, 6 % of budget |
+| certificate import | 2 | **11.127 ms** | < 50 ms | pass, 22 % of budget |
+
+Statistic is `starttransfer − appconnect`, so it excludes connection and TLS
+setup. Four rows, all `200`; `api_certificate_after.source = "imported"`.
+
+P6 replaces the CA on every generate, so any CA exported before it is stale.
+
+### P7 — certificate store, traversal and leak checks
+
+| Check | Result |
+| --- | --- |
+| `ca/export?format=pem` | 200, `application/x-pem-file`, blocks `["CERTIFICATE"]`, **no key material** |
+| `ca/export?format=der` | 200, `application/pkix-cert`, 382 bytes, valid DER |
+| `GET /api/v1/config` | 200, no leaks |
+| traversal, 20 paths / 40 requests | 24 SPA shell, **0 `other_200`**, 16 rejected, `failing: []` |
+
+**PASS.** No private key is reachable over the API on the device. The image
+ships `/web`, so unmatched routes answer the SPA shell — the suite asserts
+needles, never status, which is why that is not a finding.
+
+The `--ca-key` precondition was satisfied with an owner-taken SFTP copy of
+`/config/ca-key.pem`, held outside the repository and deleted after the run.
+
+### Not run in this session
+
+| Arm | Blocker |
+| --- | --- |
+| P1-LAN, P1-control | needs an origin under a publicly resolvable name; the Mac is Wi-Fi only this session — see below |
+| P3 | needs a **publicly trusted** h2 origin; still owed, unchanged since smoke Layer 3 |
+| P10 | needs `static-web-server` as origin, and it sweeps N — so it runs before any other arm at a settled N |
+| P2 | runs on the Mac; preconditions not yet met |
+| D11, `fah-splicebench`, `fah-certs`, `fah-p4` | the three one-shot containers; each needs the probe stopped, since one veth carries one container at a time |
+
+**Wi-Fi delta, owner decision 2026-09-08.** The Mac has no wired path — no
+USB-C, so the adapter cannot be used. P1/P2/P3 will run over Wi-Fi. This is
+tolerable for P1 because its gate is already **relative** (median ≥ 0.9 ×
+control median) and the absolute row was withdrawn as unmeasurable on this
+topology; both arms cross the same air, so the ratio largely survives. It is
+**not** tolerable for any absolute MiB/s figure, and it raises variance enough
+that medians need more runs. Every Wi-Fi row carries this delta.
+
 ## Owed
 
 | Item | Why it is not here |

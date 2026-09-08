@@ -1,0 +1,25 @@
+2026-09-08T17:16:38.128Z [p4-lan] == p4-lan start 2026-09-08T17:16:38.093Z tip=7ae474aec5f9 out=campaign2/p4lan-20260908T171638Z
+2026-09-08T17:16:38.128Z [p4-lan] args {"probe":"172.17.0.4","api-port":8443,"key":"<set>","out":"campaign2/p4lan-20260908T171638Z","tip":null,"allow-busy":false,"skip-host-checks":false,"domain":"analytics.google.com","dot-host":"dns.smoke.test","dns-port":53,"dot-port":853,"queries":2000,"rounds":3,"timeout":2000}
+2026-09-08T17:16:38.411Z [p4-lan] Get-NetConnectionProfile: Ethernet                Public
+2026-09-08T17:16:38.926Z [p4-lan] idle check: PASS (recorded; each stage decides)
+2026-09-08T17:16:38.939Z [p4-lan] GET /health -> 200 {"status":"ok","version":"0.3.3","uptime_seconds":292}
+2026-09-08T17:16:38.946Z [p4-lan] config snapshot -> campaign2\p4lan-20260908T171638Z\config.json
+2026-09-08T17:16:38.946Z [p4-lan] engine.mode = dns+http+https
+2026-09-08T17:16:38.946Z [p4-lan] runtime.http_runtimes = 2 (every HTTPS figure records it — plan §The N axis)
+2026-09-08T17:16:38.946Z [p4-lan] dns.listen.dot_enabled=true doh_enabled=true
+2026-09-08T17:16:39.698Z [p4-lan] round 1 udp p50=0.335 p99=0.68 ms n=2000 unanswered=0 unmatched=0 wall=749.38ms hs=-
+2026-09-08T17:16:41.090Z [p4-lan] round 1 dot p50=0.381 p99=0.845 ms n=2000 unanswered=0 unmatched=0 wall=857.237ms hs=19.534
+2026-09-08T17:16:43.791Z [p4-lan] round 1 doh p50=0.993 p99=1.612 ms n=2000 unanswered=0 unmatched=0 wall=2182.21ms hs=11.823
+2026-09-08T17:16:44.998Z [p4-lan] round 2 udp p50=0.314 p99=0.687 ms n=2000 unanswered=0 unmatched=0 wall=704.711ms hs=-
+2026-09-08T17:16:46.534Z [p4-lan] round 2 dot p50=0.471 p99=0.842 ms n=2000 unanswered=0 unmatched=0 wall=1023.028ms hs=10.293
+2026-09-08T17:16:49.119Z [p4-lan] round 2 doh p50=0.94 p99=1.658 ms n=2000 unanswered=0 unmatched=0 wall=2068.356ms hs=8.741
+2026-09-08T17:16:50.494Z [p4-lan] round 3 udp p50=0.39 p99=0.83 ms n=2000 unanswered=0 unmatched=0 wall=867.433ms hs=-
+2026-09-08T17:16:52.002Z [p4-lan] round 3 dot p50=0.461 p99=0.813 ms n=2000 unanswered=0 unmatched=0 wall=998.27ms hs=4.596
+2026-09-08T17:16:54.520Z [p4-lan] round 3 doh p50=0.914 p99=1.563 ms n=2000 unanswered=0 unmatched=0 wall=2008.162ms hs=7.242
+2026-09-08T17:16:55.043Z [p4-lan] wrote campaign2\p4lan-20260908T171638Z\p4-lan.json
+2026-09-08T17:16:55.043Z [p4-lan] GATE {"statistic":"none — diagnostic","dot_p50_minus_udp_p50_ms":0.101,"doh_p50_minus_udp_p50_ms":0.61}
+2026-09-08T17:16:55.043Z [p4-lan] == p4-lan done (valid)
+nmatched=0 wall=2008.162ms hs=7.242
+2026-09-08T17:16:55.043Z [p4-lan] wrote campaign2\p4lan-20260908T171638Z\p4-lan.json
+2026-09-08T17:16:55.043Z [p4-lan] GATE {"statistic":"none — diagnostic","dot_p50_minus_udp_p50_ms":0.101,"doh_p50_minus_udp_p50_ms":0.61}
+2026-09-08T17:16:55.043Z [p4-lan] == p4-lan done (valid)

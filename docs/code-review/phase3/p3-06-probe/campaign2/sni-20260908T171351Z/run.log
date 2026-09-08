@@ -1,0 +1,13 @@
+2026-09-08T17:13:52.079Z [sni] == sni start 2026-09-08T17:13:52.046Z tip=7ae474aec5f9 out=campaign2/sni-20260908T171351Z
+2026-09-08T17:13:52.080Z [sni] args {"probe":"172.17.0.4","api-port":8443,"key":"<set>","out":"campaign2/sni-20260908T171351Z","tip":null,"allow-busy":false,"skip-host-checks":false,"blocked":"analytics.google.com","allowed":"example.com","port":8444,"attempts":5,"timeout":5000}
+2026-09-08T17:13:52.554Z [sni] Get-NetConnectionProfile: Ethernet                Public
+2026-09-08T17:13:53.116Z [sni] idle check: FAIL brave (recorded; each stage decides)
+2026-09-08T17:13:53.132Z [sni] GET /health -> 200 {"status":"ok","version":"0.3.3","uptime_seconds":126}
+2026-09-08T17:13:53.138Z [sni] config snapshot -> campaign2\sni-20260908T171351Z\config.json
+2026-09-08T17:13:53.138Z [sni] engine.mode = dns+http+https
+2026-09-08T17:13:53.138Z [sni] runtime.http_runtimes = 2 (every HTTPS figure records it — plan §The N axis)
+2026-09-08T17:13:53.138Z [sni] INVALID: host not idle: brave running (plan §Running item 3); --allow-busy to proceed degraded
+2026-09-08T17:13:53.138Z [sni] wrote campaign2\sni-20260908T171351Z\sni.json
+ime.http_runtimes = 2 (every HTTPS figure records it — plan §The N axis)
+2026-09-08T17:13:53.138Z [sni] INVALID: host not idle: brave running (plan §Running item 3); --allow-busy to proceed degraded
+2026-09-08T17:13:53.138Z [sni] wrote campaign2\sni-20260908T171351Z\sni.json
