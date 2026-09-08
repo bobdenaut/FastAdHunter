@@ -311,12 +311,16 @@ compare like with like). Watch items:
 - b. `non_tls` vs `hello_timeouts` over the window — the ratio says whether
   silent browser preconnects dominate the port, which decides if the
   `hello_timeout_ms` default (10 s of permit per silent socket) needs
-  revisiting. **Prerequisite:** these and `upstream_cert_failures` are counted
-  in `fah_http::ProxyCounters`; the per-listener block on
-  `GET /api/v1/telemetry` must be settled first (API.md edit, owner approval),
-  and with it p3-04 L5 — on the terminate leg `requests` is per connection
-  while `blocked`/`refused_claim` are per request, so `blocked > requests` is
-  possible on one listener.
+  revisiting. **No longer blocked** (verified 2026-09-08, review file
+  §Telemetry prerequisite): these and `upstream_cert_failures` are counted in
+  `fah_http::ProxyCounters` and the per-listener block already ships —
+  `GET /api/v1/telemetry` returns `listeners.{http,https}`, documented in
+  API.md with all twelve fields, so there is no API.md edit owed. p3-04 L5 is
+  **refuted**: every `blocked` increment is preceded by a `requests` increment
+  on the same path, so `blocked ≤ requests` holds per listener by
+  construction, and the terminate leg counts per request — the D8 intercepted
+  arm reports `connections=3061 requests=6122`, exactly one SNI verdict plus
+  one inner request per connection.
 - c. `GET /api/v1/certificates` `leaf_cache.unwarmed_misses` reads 0 after the
   browsing workload and at the end of the soak — **with a CA installed**.
   Attribute before filing: no CA means every SNI hello counts, which is
