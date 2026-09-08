@@ -875,7 +875,10 @@ and the watch items above`.
 | Archive cap | `POST /api/v1/certificates/ca/generate {"confirm":true}` nine times | the ninth answers `409 conflict` `archive_full:`, the live pair unchanged (`fingerprint_sha256` stable); record the operator's retention story (move directories out of `ca-archive/`) |
 | Generate / import wall time (P6) | `curl -w '%{time_total}\n'` ×5 each | min / median → PERFORMANCE.md rows |
 
-## Proposed documentation edits (Step 5) — none applied
+## Proposed documentation edits (Step 5) — items 2, 3 and 4 applied 2026-09-09
+
+Status per item below. Items 1 and 5–9 remain proposals; 1 is blocked on
+figures that do not exist yet, and the rest await the owner or phase close.
 
 1. **PERFORMANCE.md §Budgets** — new rows, each `Measured on the RB5009` =
    `TBD — must be measured during verification` until Step 4 lands, dev-box
@@ -887,10 +890,19 @@ and the watch items above`.
    time. Proposed budget values in §Measurements once the dev-box figures are
    in. Plus one line under §Converting dev-box numbers: TLS/splice/handshake
    figures do not convert.
-2. **SECURITY.md** — §What a household should do, row 3: "Out of scope until
-   Phase 3" → "Import the pair with `POST /api/v1/certificates/import` (Phase
-   3); renewal stays an operator action". §Later phases already reads in the
-   present tense for p3-03/p3-04/p3-05; no other change.
+   **Two of those row names are superseded by campaign-2 declaration change 4**
+   — take the wording from §Proposed PERFORMANCE.md rows, not from this
+   sentence. "SNI verdict + splice added latency" gains "+ one upstream
+   resolve", and "interception **handshake** overhead" drops the word, because
+   on the proxied arms the measured quantity is proxy setup + relayed
+   handshake, never a TLS handshake (§Post-review work F, F1).
+2. **SECURITY.md** — **already applied before 2026-09-09; this row was stale.**
+   §What a household should do, row 3 already reads "Import the pair with
+   `POST /api/v1/certificates/import` (Phase 3, API.md §Certificates); the DoT
+   listener serves it too. Renewal stays an operator action", and §Later phases
+   already reads in the present tense. Verified, no edit made. Recorded because
+   a proposal list that still asks for an applied change wastes the next
+   session's time re-deciding it.
 3. **docs/deploy-rb5009.md** — new §5c "HTTPS (Phase 3, `dns+http+https`)"
    mirroring §5b: turn on the mode (API or a *separate* `envlists` entry, never
    `fah-env`), prove the listener, the two v4 rules + the three v6 rules above,
@@ -899,6 +911,13 @@ and the watch items above`.
    Private DNS bootstrap rule, rollback. §5b rollback regex tightened to
    `[find comment="fastadhunter http"]` + `[find comment="fastadhunter http: leave local traffic alone"]`
    (exact) so it stops matching the https rules.
+   **Applied 2026-09-09, commit `29ae326`** — 150 lines. Two departures from
+   the sketch: the no-SNI/ECH warning is its own section placed *before* the
+   redirect rather than after it, because it is the one step that can break
+   sites the DNS layer never touched; and the Private DNS bootstrap rule is
+   **not** included — it belongs to §4 of the runbook, is device-side, and
+   restating it here would duplicate a document that already owns it. The CA
+   walkthrough is linked, not copied, for the same reason.
 4. **Dashboard re-review (code, owner decision):**
    `dashboard/frontend/src/pages/live-feed/filters.ts` `KINDS = ['dns', 'http']`
    lacks `https-sni` and `https`; `detail.tsx:15` gates the HTTP detail on
@@ -907,6 +926,18 @@ and the watch items above`.
    method/path and an `https-sni` row cannot be filtered. Either add both
    kinds (+ a detail branch each) in this task or record the owner's deferral
    to a dashboard task — **unfiltered kinds are a finding** either way.
+   **Fixed 2026-09-09, commit `bac7454`.** All three sites branched on
+   `kind === 'http'` where they meant "not DNS"; each now tests DNS instead, so
+   the three request-shaped kinds share one path. A third defect was found
+   while fixing it and is not in the sketch above: `FeedCache` drew `MISS` on a
+   Phase 3 row, because the wire sets `cached: false` on a pipeline that never
+   asked the cache — the cell's own doc comment forbids exactly that. One
+   judgment call: `session_event` fills an `https-sni` row's method and path
+   with empty strings and its status with 0, so the row draws only its relayed
+   byte count and the shared branch drops empty parts and a zero status.
+   996 dashboard tests pass, four added. Verified against a live engine with
+   user rules installed, not only in unit tests: the SNI block row reads
+   `BLOCK` with its rule and list, `0 B`, no cache outcome.
 5. **README.md §Operating modes** row `dns+http+https`: "…plus HTTPS
    interception, for managed environments" → "…plus SNI-level HTTPS filtering
    for every client, opt-in per-client HTTPS interception, and DoT/DoH
@@ -937,7 +968,16 @@ and the watch items above`.
 | `crates/fah-certs/benches/certs.rs` | `certs_replay_zipf` |
 | `docs/code-review/phase3/p3-06-bench/` | `run-ab.ps1`, `session.log`, `r{1,2}-{A,B}-{cache,matcher,pipeline,proxy}`, `r{1,2}-splice{16,64}`, `r{1,2}-{intercept,certs}`, `isolated-handshake.out.txt` — raw criterion output |
 | `docs/code-review/phase3/p3-06-phase3-verification-review.md` | this file |
+| `docs/code-review/phase3/p3-06-testing-results{,-2}.md` | campaign 1 (superseded) and campaign 2 figures |
+| `docs/code-review/phase3/p3-06-probe/` | the probe script set, its `lib.mjs`, and the `smoke-*` / `results-*` / `campaign2` artifact directories |
+| `dashboard/frontend/src/pages/live-feed/{filters.ts,detail.tsx}`, `live-feed.test.tsx` | the two Phase 3 event kinds render and filter (Step 5 item 4, commit `bac7454`) |
+| `docs/deploy-rb5009.md` | new §5c HTTPS steering; §5b rollback tightened to exact comments (Step 5 item 3, commit `29ae326`) |
 | (outside the repo) `../FastAdHunter-pre3` | detached worktree at `64be513` with its own `target/`, left in place for re-runs; `git worktree remove ../FastAdHunter-pre3` drops it |
+
+Rows above the review file are Steps 1–3 (code, tests, benches). The four below
+it are Step 5 documentation and dashboard work, added 2026-09-09 — the table
+listed only crate and bench files until then, so it did not show that this task
+had changed the deploy guide or the dashboard at all.
 
 ## Known limitations / deferred
 
