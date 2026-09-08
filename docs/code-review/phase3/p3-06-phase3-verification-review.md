@@ -1530,3 +1530,165 @@ listener"). **Both were already discharged by §Post-review work A on
 states `blocked > requests` is possible. That is the only place the stale
 wording remains; it is a plan-file edit, not a review-file one, so it is
 proposed rather than made.
+
+## Smoke session, 2026-09-08 — Layers 0–2 complete, Layer 3 in progress
+
+Output root
+[p3-06-probe/smoke-20260908T0905Z/](p3-06-probe/smoke-20260908T0905Z/), one
+directory per layer and posture. Per the smoke plan, **nothing in this section
+is a measurement** — no number here is cited, budgeted or copied into
+[p3-06-testing-results-2.md](p3-06-testing-results-2.md). Runs after
+2026-09-08 10:45Z carry `host not idle: brave` because the owner resumed
+browsing; Layer 1 passes on properties (issuers, counters, byte counts), not
+timings, so the label is recorded and does not weaken a row.
+
+`run.log` in every directory carries `tip=b53968ca3b1b-dirty` — the campaign
+must not start from a dirty tree, and this session's script fixes are why it
+is dirty.
+
+### Layer 0 — the two new boot paths, first run ever
+
+| Check | Result |
+| --- | --- |
+| removed strategy | **PASS** — boot refused, exit 1, `"fallback" was removed after 0.3.3; "adaptive" is the only strategy`. This is the shape the probe hits on the router. The message names `strategy` with line/column but not the dotted path the plan quotes — cosmetic |
+| N readable | **PASS** — `[runtime] http_runtimes = 1` reads back `1` from `GET /api/v1/config` |
+| N default on this box | **PASS** — **16** (32 cores, `max(1, cores/2)`), not 2 |
+| `oha` pinned | **PASS here, NOT RUN on the Mac** — bobdenaut has 1.16.0; the Mac half is owner-owed |
+| **`--connect-to` preserves SNI** | **PASS.** Blocked name drove `listeners.https.blocked` 0 to 1 with `oha` at 0 % success and `resolve_failures`/`refused_destination` both 0; an allowed name over the **same socket target** answered 200 with `blocked` unchanged. Splice served the origin's own certificate, identical to direct |
+
+That last row is the prerequisite every `oha` arm depends on. It is met.
+
+### Layer 1 — all 11 scripts, N ∈ {0,1,2}, both client postures
+
+| Script | Result |
+| --- | --- |
+| `p0-sni` | **valid, gate pass at N=0/1/2.** Blocked and no-SNI 5/5 `closed_silent`, allowed 5/5 `server_hello`, `telemetry_delta.blocked = 5`. N=0 confirms the pre-merge shared-runtime path still works |
+| `p1-lan --direct` | **valid.** Control band 668.95 / 863.84 / 1170.62 MiB/s, 5/5 runs |
+| `p1-lan` spliced | **valid, gate pass at N=0/1/2** after fix 1 — 1.43 / 1.44 / 1.34 × control, floor 777.45. `served_issuer = smoke-origin`, so the splice served the origin's own certificate |
+| `p1-lan --connections 8` | `p1-aggregate.json` written, `degraded` — `/tool/profile` is router-only. Correct |
+| `p2-handshake` | **INVALID as designed** — `ip -4 -o addr: spawnSync ip ENOENT`. Confirms the missing Darwin/Windows branch on the real script |
+| `p3-h2stall` throughput | **valid, gate pass at N=0/1/2** — 242.2 / 192.0 / 198.7 MiB/s, exactly 8 388 608 bytes each |
+| `p3-h2stall` RSS | **INVALID as designed** — `process_rss is null on this probe`. See §The S2 barrier below |
+| `p4-lan` | **valid.** All transports n=200, `unanswered`/`unmatched` 0, `first_answer.answers = ["0.0.0.0"]`. DoT `served_issuer = FastAdHunter CA`, `tls TLSv1.3`; DoH `doh over h2` |
+| `p5-mint` | **valid, gate pass.** `minted_total = 16`, `evictions = 0`, both arms `FastAdHunter CA`; repeat pass 16 prewarm hits and 0 mints |
+| `p6-certs-time` | **valid, gate pass** on a fresh store. Four rows 200, `api_certificate_after.source = "imported"`, generate 2.541 ms / import 10.376 ms, `ca-after-p6.pem` written with a new fingerprint |
+| `p7-store` | **valid, gate pass.** 20 traversal paths × 40 requests, all rejected, `leaks: []` on every row |
+| `p10-domains` | all five arms **valid** at N=2 (close, mixed, tls-spliced, tls-intercepted, transfers) and close/mixed/tls-spliced at N=0/1. `oha_version 1.16.0` and `--worker-threads` recorded in every file; N read back from `/config` matches `--n` every time. Issuer samples before and after: spliced legs `smoke-origin`, intercepted leg `FastAdHunter CA` / subject `127-0-0-1.nip.io` |
+| `p10-connrate` | keep-alive arm produced **both `rps` and `conns_per_s`** — the field that makes the phase-2.6 comparison possible — plus percentiles and 20 requests per connection (full 2816/2860) |
+| `p10-dnsload` | sent 5997/6000 at 299.8 qps, `timeouts = 0`, `unmatched = 0`, blocked share 1233/1233 answering `0.0.0.0` |
+
+Every arm is `degraded` for one reason that is not a defect: `cpu_user_ms` /
+`cpu_system_ms` are null off-container, so no `cores` figure exists on this
+box. Same class as `process_rss`.
+
+### Layer 2 — 21 negative-path rows, every one produced its expected refusal
+
+`no API key`, `/health unreachable`, `N mismatch`, `--worker-threads unset`,
+`oha for the keep-alive arm`, `oha version drift`, `--ca-key unreadable`,
+`--ca-key not a private key`, `allowed name does not open`,
+`p1 byte count wrong`, `p1 control missing` (after fix 3),
+`p5 cache headroom`, `p5 no CA`, `p6 archive cap`,
+`engine.mode without https`, `origin outside egress`,
+`p3 host not listed`, `busy host`, `issuer sample skipped`,
+`identity precondition (p2)`, `dirty checkout`.
+
+Two rows fired without being asked for, which is the better kind of evidence:
+**busy host** caught the owner's browser (`host not idle: brave`), and the
+**toy-origin** row reproduced itself — see §The toy-origin trap.
+
+Not runnable here, recorded rather than skipped silently: `N unreadable`
+(needs a build whose `/config` omits `runtime`), `both addresses unlisted`
+(needs the Mac), `barrier not met` (needs `process_rss`).
+
+### Script fixes — three, all under the smoke plan's own remedy
+
+The plan's rule: *a script bug found here is fixed in the script, re-run, and
+listed; nothing in `p3-06-testing-plan.md` changes.* That plan is untouched.
+
+1. **`p1-lan.mjs` carried campaign 1's gate.** It tested
+   `median ≥ 100 MiB/s AND inside P1-control's min–max`. The min–max half is
+   two-sided, so it **failed a run for being faster than the control**: N=1
+   measured 1213.224 MiB/s and was reported `pass: false`. Testing-plan
+   delta 1 withdrew that gate for `median ≥ 0.9 × control median`, absolute
+   MiB/s demoted to a diagnostic column. Now implemented as declared, with
+   `floor_mib_s` and `ratio_to_control` recorded. Re-run at all three N: pass.
+2. **`p10-domains.mjs` counted failures that never reached the listener.** The
+   blocked-arm check required `blocked ≥ requests + failed`, so
+   `tls-spliced-blocked` was INVALID on a 4-socket shortfall out of 318 196,
+   and again at N=0 on **19 `os error 10048`** — Windows ephemeral-port
+   exhaustion. Both classes are client-side and cannot appear in `blocked`.
+   Now excluded by kind (deadline aborts, `os error 10048`,
+   `usage of each socket address`). Re-run at N=0 and N=2: valid.
+3. **`p1-lan.mjs` was silent without a control.** With no `--control` it
+   reported `pass: null` and carried on — a row that looks like a result and
+   is none. Under delta 1 the gate is purely relative, so no control is not a
+   weaker gate but no gate. Now it auto-discovers `p1-control.json` from
+   `--out` (which is what the plan's Layer 2 row means by "no prior `--direct`
+   result in the run directory") and is INVALID when neither the flag nor the
+   file is present. Both branches verified.
+
+**New file, not a fix:** `smoke/static-origin.mjs`. `p10-domains.mjs` names
+the origin it wants — `static-web-server`, as in phase 2.6, "never a toy one"
+— which is an external binary, not a repo script. The stand-in serves the five
+objects from memory over plaintext and TLS so the p10 rows can run on this box
+at all. Its header says plainly that it is not that server and that no figure
+may be carried from it.
+
+### The toy-origin trap, reproduced by accident
+
+`p10-connrate` at 48 concurrent keep-alive loops drove **11 486 502s out of
+68 200 (17 %)** through `static-origin.mjs`, and the script flagged the arm
+`degraded` exactly as the plan's §Traps row says it should. Two things follow:
+the detection works, and the plan's insistence on a real static server for
+anything load-bearing is now backed by a measurement on this box rather than
+by assertion.
+
+### The S2 barrier is still owed
+
+The p3-04 S2 stall barrier (control 64/64) lives inside `p3-h2stall`'s **RSS**
+arm, and that arm invalidates on `process_rss is null` before producing a
+barrier figure — the kernel reading is `/proc`-backed and in-container only.
+The warm-up succeeded on both the stall and control runs (`200`, 3 B, issuer
+`FastAdHunter CA`), so the terminate leg is healthy, but **Layer 1 did not
+discharge the regression check.**
+
+Layer 3's `fah-probe` container is the first place `process_rss` is non-null.
+It is likely still not enough: that image is a plain release build, so
+`FAH_TEST_UPSTREAM_ROOT` is inert and a local self-signed origin fails
+`UnknownIssuer`. The plan requires a **publicly trusted** h2 origin under a
+public name, proven first with `smoke/h2-preflight.mjs`. That is the same
+outstanding blocker as the device-side P3. If it holds, the barrier moves to
+the device campaign and stays owed.
+
+### Correction — one D8 refutation is withdrawn
+
+[p3-06-testing-results-2.md](p3-06-testing-results-2.md) §D8 attribution lists
+Windows TIME_WAIT pressure as refuted, on a reading of 165 TIME_WAIT against
+16 384 ephemeral ports. **That reading was taken after the run had drained and
+does not support the conclusion.** During Layer 1's `p10` close arm this box
+reached **15 543 TIME_WAIT — 95 % of the ephemeral range** — and was observed
+draining to 12 within about 100 seconds. The D8 attribution runs were four
+back-to-back `Connection: close` arms inside roughly two minutes, and the
+spliced path burns two sockets per request where direct burns one, which fits
+the observed 7 → 12 → 21 ms drift against a flat direct control.
+
+**D8 therefore stands at four hypotheses refuted, not five, with port
+pressure re-opened as the leading candidate.** Not chased further, per the
+owner's instruction; recorded because a wrong refutation is worse than an open
+question. P2 on the device remains the authority for that row.
+
+### Layer 3 — state
+
+All four images built at the tip for `linux/amd64`: `fah-certs:smoke`,
+`fah-splicebench:smoke`, `fah-p4:smoke`, `fah-fahprobe:smoke`. Campaign 1's
+`a2d0802` images are retired. **Nothing has been run against them yet.**
+
+Remaining, in order: the three one-shot images and their `docker inspect` /
+`docker top` checks; `smoke-config-l3/` with every listen `address` on
+`0.0.0.0` and the `fah-probe` container with published ports; Layer 1 re-run
+against it; then the two things only the container shows — the P3 RSS arm
+(blocked as above) and `p10-domains` driven by
+`-e FAH__RUNTIME__HTTP_RUNTIMES=<n>`, the dress rehearsal for `fahprobe-env`.
+Two rows are recorded as not run by the plan's own instruction:
+`p1-lan --direct` (Docker Desktop on Windows does not route the bridge subnet
+to the host) and any timing from `p4-lan` (its UDP relay wedges under load).

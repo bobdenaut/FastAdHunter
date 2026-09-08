@@ -1,0 +1,265 @@
+2026-09-08T10:47:02.412Z [sni] == sni start 2026-09-08T10:47:02.379Z tip=b53968ca3b1b-dirty out=smoke-20260908T0905Z/layer2
+2026-09-08T10:47:02.412Z [sni] args {"probe":"127.0.0.1","api-port":8443,"key":null,"out":"smoke-20260908T0905Z/layer2","tip":null,"allow-busy":false,"skip-host-checks":false,"blocked":"ads.smoke.test","allowed":"example.com","port":8444,"attempts":5,"timeout":5000}
+2026-09-08T10:47:02.413Z [sni] INVALID: no API key: --key <key|file> or FAH_PROBE_KEY
+2026-09-08T10:47:02.413Z [sni] wrote smoke-20260908T0905Z\layer2\sni.json
+2026-09-08T10:47:02.527Z [sni] == sni start 2026-09-08T10:47:02.495Z tip=b53968ca3b1b-dirty out=smoke-20260908T0905Z/layer2
+2026-09-08T10:47:02.528Z [sni] args {"probe":"127.0.0.9","api-port":8443,"key":"<set>","out":"smoke-20260908T0905Z/layer2","tip":null,"allow-busy":false,"skip-host-checks":false,"blocked":"ads.smoke.test","allowed":"example.com","port":8444,"attempts":5,"timeout":5000}
+2026-09-08T10:47:02.822Z [sni] Get-NetConnectionProfile: Ethernet                Public
+2026-09-08T10:47:03.236Z [sni] idle check: FAIL brave (recorded; each stage decides)
+2026-09-08T10:47:03.242Z [sni] GET /health -> 0 Error: connect ECONNREFUSED 127.0.0.9:8443
+2026-09-08T10:47:03.242Z [sni] INVALID: probe /health answered 0
+2026-09-08T10:47:03.243Z [sni] wrote smoke-20260908T0905Z\layer2\sni.json
+2026-09-08T10:47:03.336Z [p10-domains] == p10-domains start 2026-09-08T10:47:03.307Z tip=b53968ca3b1b-dirty out=smoke-20260908T0905Z/layer2
+2026-09-08T10:47:03.337Z [p10-domains] args {"probe":"127.0.0.1","api-port":8443,"key":"<set>","out":"smoke-20260908T0905Z/layer2","tip":null,"allow-busy":true,"skip-host-checks":false,"n":4,"arm":["close"],"origin":"127-0-0-1.nip.io","origin-http-port":80,"origin-https-port":443,"port":8080,"https-port":8444,"files":["1k.bin","10k.bin","50k.bin"],"blocked":null,"ca":null,"intercepted-ssh":null,"intercepted-ca":null,"intercepted-oha":"oha","concurrency":48,"duration":300,"worker-threads":4,"ka-requests":20,"connrate-workers":6,"dns-qps":300,"dns-port":53,"single-path":"/100mb.bin","single-n":5,"par-path":"/10mb.bin","par-n":40,"par-c":8,"sample-interval":2,"tail-min":3,"transfers-tail-min":15,"driver":"auto","skip-issuer-sample":false,"oha":"oha","max-fail-pct":2}
+2026-09-08T10:47:03.592Z [p10-domains] Get-NetConnectionProfile: Ethernet                Public
+2026-09-08T10:47:03.980Z [p10-domains] idle check: FAIL brave (recorded; each stage decides)
+2026-09-08T10:47:03.987Z [p10-domains] GET /health -> 200 {"status":"ok","version":"0.3.3","uptime_seconds":136}
+2026-09-08T10:47:03.991Z [p10-domains] config snapshot -> smoke-20260908T0905Z\layer2\config.json
+2026-09-08T10:47:03.991Z [p10-domains] engine.mode = dns+http+https
+2026-09-08T10:47:03.992Z [p10-domains] runtime.http_runtimes = 0 (every HTTPS figure records it — plan §The N axis)
+2026-09-08T10:47:03.992Z [p10-domains] degraded: host not idle: brave
+2026-09-08T10:47:03.992Z [p10-domains] INVALID: probe reports http_runtimes=0, arm declared 4 — restart the probe at the intended N (fahprobe-env) before this arm
+2026-09-08T10:47:03.992Z [p10-domains] wrote smoke-20260908T0905Z\layer2\p10-N4.json
+2026-09-08T10:47:04.103Z [p10-domains] == p10-domains start 2026-09-08T10:47:04.074Z tip=b53968ca3b1b-dirty out=smoke-20260908T0905Z/layer2
+2026-09-08T10:47:04.104Z [p10-domains] args {"probe":"127.0.0.1","api-port":8443,"key":"<set>","out":"smoke-20260908T0905Z/layer2","tip":null,"allow-busy":true,"skip-host-checks":false,"n":0,"arm":["close"],"origin":"127-0-0-1.nip.io","origin-http-port":80,"origin-https-port":443,"port":8080,"https-port":8444,"files":["1k.bin","10k.bin","50k.bin"],"blocked":null,"ca":null,"intercepted-ssh":null,"intercepted-ca":null,"intercepted-oha":"oha","concurrency":48,"duration":300,"worker-threads":null,"ka-requests":20,"connrate-workers":6,"dns-qps":300,"dns-port":53,"single-path":"/100mb.bin","single-n":5,"par-path":"/10mb.bin","par-n":40,"par-c":8,"sample-interval":2,"tail-min":3,"transfers-tail-min":15,"driver":"auto","skip-issuer-sample":false,"oha":"oha","max-fail-pct":2}
+2026-09-08T10:47:04.385Z [p10-domains] Get-NetConnectionProfile: Ethernet                Public
+2026-09-08T10:47:04.727Z [p10-domains] idle check: FAIL brave (recorded; each stage decides)
+2026-09-08T10:47:04.735Z [p10-domains] GET /health -> 200 {"status":"ok","version":"0.3.3","uptime_seconds":137}
+2026-09-08T10:47:04.739Z [p10-domains] engine.mode = dns+http+https
+2026-09-08T10:47:04.739Z [p10-domains] runtime.http_runtimes = 0 (every HTTPS figure records it — plan §The N axis)
+2026-09-08T10:47:04.740Z [p10-domains] degraded: host not idle: brave
+2026-09-08T10:47:04.740Z [p10-domains] INVALID: --worker-threads must be set explicitly — oha defaults to the physical core count (24 on bobdenaut) and the client competes with the reading
+2026-09-08T10:47:04.740Z [p10-domains] wrote smoke-20260908T0905Z\layer2\p10-N0.json
+2026-09-08T10:47:04.849Z [p10-domains] == p10-domains start 2026-09-08T10:47:04.818Z tip=b53968ca3b1b-dirty out=smoke-20260908T0905Z/layer2
+2026-09-08T10:47:04.849Z [p10-domains] args {"probe":"127.0.0.1","api-port":8443,"key":"<set>","out":"smoke-20260908T0905Z/layer2","tip":null,"allow-busy":true,"skip-host-checks":false,"n":0,"arm":["keepalive"],"origin":"127-0-0-1.nip.io","origin-http-port":80,"origin-https-port":443,"port":8080,"https-port":8444,"files":["1k.bin","10k.bin","50k.bin"],"blocked":null,"ca":null,"intercepted-ssh":null,"intercepted-ca":null,"intercepted-oha":"oha","concurrency":48,"duration":300,"worker-threads":4,"ka-requests":20,"connrate-workers":6,"dns-qps":300,"dns-port":53,"single-path":"/100mb.bin","single-n":5,"par-path":"/10mb.bin","par-n":40,"par-c":8,"sample-interval":2,"tail-min":3,"transfers-tail-min":15,"driver":"oha","skip-issuer-sample":false,"oha":"oha","max-fail-pct":2}
+2026-09-08T10:47:05.109Z [p10-domains] Get-NetConnectionProfile: Ethernet                Public
+2026-09-08T10:47:05.491Z [p10-domains] idle check: FAIL brave (recorded; each stage decides)
+2026-09-08T10:47:05.499Z [p10-domains] GET /health -> 200 {"status":"ok","version":"0.3.3","uptime_seconds":138}
+2026-09-08T10:47:05.504Z [p10-domains] engine.mode = dns+http+https
+2026-09-08T10:47:05.504Z [p10-domains] runtime.http_runtimes = 0 (every HTTPS figure records it — plan §The N axis)
+2026-09-08T10:47:05.504Z [p10-domains] degraded: host not idle: brave
+2026-09-08T10:47:05.504Z [p10-domains] INVALID: keepalive is driven by p10-connrate.mjs; oha has no requests-per-connection control (plan §Load generators)
+2026-09-08T10:47:05.505Z [p10-domains] wrote smoke-20260908T0905Z\layer2\p10-N0.json
+2026-09-08T10:47:05.609Z [p7-store] == p7-store start 2026-09-08T10:47:05.574Z tip=b53968ca3b1b-dirty out=smoke-20260908T0905Z/layer2
+2026-09-08T10:47:05.610Z [p7-store] args {"probe":"127.0.0.1","api-port":8443,"key":"<set>","out":"smoke-20260908T0905Z/layer2","tip":null,"allow-busy":false,"skip-host-checks":false,"ca-key":"nope.pem"}
+2026-09-08T10:47:05.858Z [p7-store] Get-NetConnectionProfile: Ethernet                Public
+2026-09-08T10:47:06.243Z [p7-store] idle check: FAIL brave (recorded; each stage decides)
+2026-09-08T10:47:06.251Z [p7-store] GET /health -> 200 {"status":"ok","version":"0.3.3","uptime_seconds":139}
+2026-09-08T10:47:06.255Z [p7-store] engine.mode = dns+http+https
+2026-09-08T10:47:06.255Z [p7-store] runtime.http_runtimes = 0 (every HTTPS figure records it — plan §The N axis)
+2026-09-08T10:47:06.256Z [p7-store] INVALID: host not idle: brave running (plan §Running item 3); --allow-busy to proceed degraded
+2026-09-08T10:47:06.256Z [p7-store] wrote smoke-20260908T0905Z\layer2\certs.json
+2026-09-08T10:47:06.351Z [p7-store] == p7-store start 2026-09-08T10:47:06.321Z tip=b53968ca3b1b-dirty out=smoke-20260908T0905Z/layer2
+2026-09-08T10:47:06.352Z [p7-store] args {"probe":"127.0.0.1","api-port":8443,"key":"<set>","out":"smoke-20260908T0905Z/layer2","tip":null,"allow-busy":false,"skip-host-checks":false,"ca-key":"smoke-20260908T0905Z/work/p1.crt"}
+2026-09-08T10:47:06.603Z [p7-store] Get-NetConnectionProfile: Ethernet                Public
+2026-09-08T10:47:06.964Z [p7-store] idle check: FAIL brave (recorded; each stage decides)
+2026-09-08T10:47:06.972Z [p7-store] GET /health -> 200 {"status":"ok","version":"0.3.3","uptime_seconds":139}
+2026-09-08T10:47:06.976Z [p7-store] engine.mode = dns+http+https
+2026-09-08T10:47:06.976Z [p7-store] runtime.http_runtimes = 0 (every HTTPS figure records it — plan §The N axis)
+2026-09-08T10:47:06.976Z [p7-store] INVALID: host not idle: brave running (plan §Running item 3); --allow-busy to proceed degraded
+2026-09-08T10:47:06.977Z [p7-store] wrote smoke-20260908T0905Z\layer2\certs.json
+2026-09-08T10:47:21.238Z [p7-store] == p7-store start 2026-09-08T10:47:21.207Z tip=b53968ca3b1b-dirty out=smoke-20260908T0905Z/layer2
+2026-09-08T10:47:21.239Z [p7-store] args {"probe":"127.0.0.1","api-port":8443,"key":"<set>","out":"smoke-20260908T0905Z/layer2","tip":null,"allow-busy":true,"skip-host-checks":false,"ca-key":"nope.pem"}
+2026-09-08T10:47:21.525Z [p7-store] Get-NetConnectionProfile: Ethernet                Public
+2026-09-08T10:47:21.871Z [p7-store] idle check: FAIL brave (recorded; each stage decides)
+2026-09-08T10:47:21.879Z [p7-store] GET /health -> 200 {"status":"ok","version":"0.3.3","uptime_seconds":154}
+2026-09-08T10:47:21.883Z [p7-store] engine.mode = dns+http+https
+2026-09-08T10:47:21.884Z [p7-store] runtime.http_runtimes = 0 (every HTTPS figure records it — plan §The N axis)
+2026-09-08T10:47:21.884Z [p7-store] degraded: host not idle: brave
+2026-09-08T10:47:21.884Z [p7-store] INVALID: --ca-key unreadable: ENOENT: no such file or directory, open 'E:\FastAdHunter\docs\code-review\phase3\p3-06-probe\nope.pem'
+2026-09-08T10:47:21.884Z [p7-store] wrote smoke-20260908T0905Z\layer2\certs.json
+2026-09-08T10:47:21.988Z [p7-store] == p7-store start 2026-09-08T10:47:21.956Z tip=b53968ca3b1b-dirty out=smoke-20260908T0905Z/layer2
+2026-09-08T10:47:21.988Z [p7-store] args {"probe":"127.0.0.1","api-port":8443,"key":"<set>","out":"smoke-20260908T0905Z/layer2","tip":null,"allow-busy":true,"skip-host-checks":false,"ca-key":"smoke-20260908T0905Z/work/p1.crt"}
+2026-09-08T10:47:22.249Z [p7-store] Get-NetConnectionProfile: Ethernet                Public
+2026-09-08T10:47:22.592Z [p7-store] idle check: FAIL brave (recorded; each stage decides)
+2026-09-08T10:47:22.602Z [p7-store] GET /health -> 200 {"status":"ok","version":"0.3.3","uptime_seconds":155}
+2026-09-08T10:47:22.606Z [p7-store] engine.mode = dns+http+https
+2026-09-08T10:47:22.606Z [p7-store] runtime.http_runtimes = 0 (every HTTPS figure records it — plan §The N axis)
+2026-09-08T10:47:22.606Z [p7-store] degraded: host not idle: brave
+2026-09-08T10:47:22.607Z [p7-store] INVALID: --ca-key is not a private key: error:1E08010C:DECODER routines::unsupported
+2026-09-08T10:47:22.607Z [p7-store] wrote smoke-20260908T0905Z\layer2\certs.json
+2026-09-08T10:47:22.694Z [sni] == sni start 2026-09-08T10:47:22.665Z tip=b53968ca3b1b-dirty out=smoke-20260908T0905Z/layer2
+2026-09-08T10:47:22.695Z [sni] args {"probe":"127.0.0.1","api-port":8443,"key":"<set>","out":"smoke-20260908T0905Z/layer2","tip":null,"allow-busy":true,"skip-host-checks":false,"blocked":"ads.smoke.test","allowed":"ads.smoke.test","port":8444,"attempts":5,"timeout":5000}
+2026-09-08T10:47:22.954Z [sni] Get-NetConnectionProfile: Ethernet                Public
+2026-09-08T10:47:23.337Z [sni] idle check: FAIL brave (recorded; each stage decides)
+2026-09-08T10:47:23.346Z [sni] GET /health -> 200 {"status":"ok","version":"0.3.3","uptime_seconds":156}
+2026-09-08T10:47:23.350Z [sni] engine.mode = dns+http+https
+2026-09-08T10:47:23.350Z [sni] runtime.http_runtimes = 0 (every HTTPS figure records it — plan §The N axis)
+2026-09-08T10:47:23.350Z [sni] degraded: host not idle: brave
+2026-09-08T10:47:23.350Z [sni] https.sni.no_sni = pass
+2026-09-08T10:47:23.359Z [sni] blocked  #1 closed_silent bytes=0 close=1.643ms
+2026-09-08T10:47:23.360Z [sni] allowed  #1 closed_silent bytes=0 close=0.413ms
+2026-09-08T10:47:23.361Z [sni] no_sni   #1 closed_silent bytes=0 close=0.291ms
+2026-09-08T10:47:23.362Z [sni] blocked  #2 closed_silent bytes=0 close=0.838ms
+2026-09-08T10:47:23.363Z [sni] allowed  #2 closed_silent bytes=0 close=0.815ms
+2026-09-08T10:47:23.365Z [sni] no_sni   #2 closed_silent bytes=0 close=0.874ms
+2026-09-08T10:47:23.366Z [sni] blocked  #3 closed_silent bytes=0 close=0.806ms
+2026-09-08T10:47:23.367Z [sni] allowed  #3 closed_silent bytes=0 close=0.92ms
+2026-09-08T10:47:23.368Z [sni] no_sni   #3 closed_silent bytes=0 close=0.94ms
+2026-09-08T10:47:23.370Z [sni] blocked  #4 closed_silent bytes=0 close=0.831ms
+2026-09-08T10:47:23.371Z [sni] allowed  #4 closed_silent bytes=0 close=0.792ms
+2026-09-08T10:47:23.372Z [sni] no_sni   #4 closed_silent bytes=0 close=0.867ms
+2026-09-08T10:47:23.373Z [sni] blocked  #5 closed_silent bytes=0 close=0.788ms
+2026-09-08T10:47:23.374Z [sni] allowed  #5 closed_silent bytes=0 close=0.837ms
+2026-09-08T10:47:23.375Z [sni] no_sni   #5 closed_silent bytes=0 close=0.77ms
+2026-09-08T10:47:23.378Z [sni] listeners.https delta {"connections":15,"requests":15,"blocked":10,"refused_claim":0,"refused_destination":0,"resolve_failures":0,"upstream_failures":0,"upstream_cert_failures":0,"non_http":0,"non_tls":0,"hello_timeouts":0,"dropped_events":0}
+2026-09-08T10:47:23.378Z [sni] INVALID: allowed name did not reach ServerHello through the probe; the listener closing everything proves nothing about blocked rows
+2026-09-08T10:47:23.378Z [sni] wrote smoke-20260908T0905Z\layer2\sni.json
+2026-09-08T10:47:23.488Z [p1] == p1 start 2026-09-08T10:47:23.456Z tip=b53968ca3b1b-dirty out=smoke-20260908T0905Z/layer2
+2026-09-08T10:47:23.489Z [p1] args {"probe":"127.0.0.1","api-port":8443,"key":"<set>","out":"smoke-20260908T0905Z/layer2","tip":null,"allow-busy":true,"skip-host-checks":false,"origin":"127-0-0-1.nip.io","origin-ip":null,"origin-port":4443,"origin-cert":"smoke-20260908T0905Z/work/p1.crt","port":8444,"bytes":16,"runs":5,"connections":1,"direct":true,"control":null,"profile-share":null,"timeout":120000,"max-fail-pct":2}
+2026-09-08T10:47:23.755Z [p1] Get-NetConnectionProfile: Ethernet                Public
+2026-09-08T10:47:24.110Z [p1] idle check: FAIL brave (recorded; each stage decides)
+2026-09-08T10:47:24.119Z [p1] GET /health -> 200 {"status":"ok","version":"0.3.3","uptime_seconds":156}
+2026-09-08T10:47:24.124Z [p1] engine.mode = dns+http+https
+2026-09-08T10:47:24.124Z [p1] runtime.http_runtimes = 0 (every HTTPS figure records it — plan §The N axis)
+2026-09-08T10:47:24.124Z [p1] degraded: host not idle: brave
+2026-09-08T10:47:24.129Z [p1] origin 127-0-0-1.nip.io resolves locally to 127.0.0.1
+2026-09-08T10:47:24.129Z [p1] arm=p1_control target=127.0.0.1:4443 sni=127-0-0-1.nip.io expected=16 MiB x 1 conn x 5 runs
+2026-09-08T10:47:24.132Z [p1] run 1: ok=0/1 steady=- MiB/s total=- aggregate=- hs=nullms errors=[{"index":0,"error":"ECONNREFUSED","bytes":0}]
+2026-09-08T10:47:24.134Z [p1] run 2: ok=0/1 steady=- MiB/s total=- aggregate=- hs=nullms errors=[{"index":0,"error":"ECONNREFUSED","bytes":0}]
+2026-09-08T10:47:24.135Z [p1] run 3: ok=0/1 steady=- MiB/s total=- aggregate=- hs=nullms errors=[{"index":0,"error":"ECONNREFUSED","bytes":0}]
+2026-09-08T10:47:24.136Z [p1] run 4: ok=0/1 steady=- MiB/s total=- aggregate=- hs=nullms errors=[{"index":0,"error":"ECONNREFUSED","bytes":0}]
+2026-09-08T10:47:24.137Z [p1] run 5: ok=0/1 steady=- MiB/s total=- aggregate=- hs=nullms errors=[{"index":0,"error":"ECONNREFUSED","bytes":0}]
+2026-09-08T10:47:24.137Z [p1] INVALID: no p1_control sample completed 16 MiB on every connection
+2026-09-08T10:47:24.138Z [p1] wrote smoke-20260908T0905Z\layer2\p1-control.json
+2026-09-08T10:52:25.103Z [p5] == p5 start 2026-09-08T10:52:25.072Z tip=b53968ca3b1b-dirty out=smoke-20260908T0905Z/layer2
+2026-09-08T10:52:25.104Z [p5] args {"probe":"127.0.0.1","api-port":8443,"key":"<set>","out":"smoke-20260908T0905Z/layer2","tip":null,"allow-busy":true,"skip-host-checks":false,"hosts":600,"seed":"20260908T105225Z","dot-port":8853,"timeout":10000}
+2026-09-08T10:52:25.514Z [p5] Get-NetConnectionProfile: Ethernet                Public
+2026-09-08T10:52:25.990Z [p5] idle check: FAIL brave (recorded; each stage decides)
+2026-09-08T10:52:25.999Z [p5] GET /health -> 200 {"status":"ok","version":"0.3.3","uptime_seconds":458}
+2026-09-08T10:52:26.002Z [p5] engine.mode = dns+http+https
+2026-09-08T10:52:26.002Z [p5] runtime.http_runtimes = 0 (every HTTPS figure records it — plan §The N axis)
+2026-09-08T10:52:26.002Z [p5] degraded: host not idle: brave
+2026-09-08T10:52:26.004Z [p5] certificates before: ca.present=true dot={"state":"listening","address":"127.0.0.1:8853"} leaf_cache={"size":0,"capacity":512,"inflight":0,"hits":0,"unwarmed_misses":0,"prewarm_hits":0,"coalesced":0,"minted_total":0,"evictions":0,"superseded":0}
+2026-09-08T10:52:26.004Z [p5] INVALID: leaf_cache.size 0 + 600 hosts exceeds capacity 512: the repeat pass would evict
+2026-09-08T10:52:26.005Z [p5] wrote smoke-20260908T0905Z\layer2\p5.json
+2026-09-08T10:52:26.119Z [p6] == p6 start 2026-09-08T10:52:26.087Z tip=b53968ca3b1b-dirty out=smoke-20260908T0905Z/layer2
+2026-09-08T10:52:26.120Z [p6] args {"probe":"127.0.0.1","api-port":8443,"key":"<set>","out":"smoke-20260908T0905Z/layer2","tip":null,"allow-busy":true,"skip-host-checks":false,"generate":10,"import":0,"cert":"smoke-20260908T0905Z/work/p1.crt","key-file":"smoke-20260908T0905Z/work/p1.key","ca-archive-count":0,"api-archive-count":null,"ca-out":null}
+2026-09-08T10:52:26.384Z [p6] Get-NetConnectionProfile: Ethernet                Public
+2026-09-08T10:52:26.772Z [p6] idle check: FAIL brave (recorded; each stage decides)
+2026-09-08T10:52:26.780Z [p6] GET /health -> 200 {"status":"ok","version":"0.3.3","uptime_seconds":459}
+2026-09-08T10:52:26.782Z [p6] INVALID: GET /api/v1/config answered 401: {"error":{"code":"unauthorized","message":"missing or invalid credentials"}}
+2026-09-08T10:52:26.783Z [p6] wrote smoke-20260908T0905Z\layer2\p6.json
+2026-09-08T10:52:55.982Z [p6] == p6 start 2026-09-08T10:52:55.912Z tip=b53968ca3b1b-dirty out=smoke-20260908T0905Z/layer2
+2026-09-08T10:52:55.983Z [p6] args {"probe":"127.0.0.1","api-port":8443,"key":"<set>","out":"smoke-20260908T0905Z/layer2","tip":null,"allow-busy":true,"skip-host-checks":false,"generate":10,"import":0,"cert":"smoke-20260908T0905Z/work/p1.crt","key-file":"smoke-20260908T0905Z/work/p1.key","ca-archive-count":0,"api-archive-count":null,"ca-out":null}
+2026-09-08T10:52:56.239Z [p6] Get-NetConnectionProfile: Ethernet                Public
+2026-09-08T10:52:56.633Z [p6] idle check: FAIL brave (recorded; each stage decides)
+2026-09-08T10:52:56.642Z [p6] GET /health -> 200 {"status":"ok","version":"0.3.3","uptime_seconds":0}
+2026-09-08T10:52:56.646Z [p6] probe config differs from smoke-20260908T0905Z\layer2\config.json; live copy -> smoke-20260908T0905Z\layer2\config.p6.20260908T105256Z.json
+2026-09-08T10:52:56.646Z [p6] degraded: probe config changed since this results directory was opened
+2026-09-08T10:52:56.646Z [p6] engine.mode = dns+http+https
+2026-09-08T10:52:56.646Z [p6] runtime.http_runtimes = 2 (every HTTPS figure records it — plan §The N axis)
+2026-09-08T10:52:56.646Z [p6] degraded: host not idle: brave
+2026-09-08T10:52:56.649Z [p6] before: ca={"present":true,"fingerprint_sha256":"3E:44:00:69:92:D6:B8:11:30:62:C0:E2:AA:5B:1E:B9:9D:C0:CE:3A:75:3C:90:5A:D8:36:67:40:36:03:55:25","not_before":"2026-09-07T10:32:00Z","not_after":"2036-09-04T10:32:00Z","subject":"CN=FastAdHunter CA"} api_certificate={"source":"imported"}
+2026-09-08T10:52:56.649Z [p6] INVALID: ca-archive holds 0; 10 generates would add 10 (the first on an empty store archives nothing) and pass the cap of 8
+2026-09-08T10:52:56.649Z [p6] wrote smoke-20260908T0905Z\layer2\p6.json
+2026-09-08T10:53:17.672Z [sni] == sni start 2026-09-08T10:53:17.637Z tip=b53968ca3b1b-dirty out=smoke-20260908T0905Z/layer2
+2026-09-08T10:53:17.673Z [sni] args {"probe":"127.0.0.1","api-port":8443,"key":"<set>","out":"smoke-20260908T0905Z/layer2","tip":null,"allow-busy":true,"skip-host-checks":false,"blocked":"ads.smoke.test","allowed":"example.com","port":8444,"attempts":5,"timeout":5000}
+2026-09-08T10:53:17.922Z [sni] Get-NetConnectionProfile: Ethernet                Public
+2026-09-08T10:53:18.274Z [sni] idle check: FAIL brave (recorded; each stage decides)
+2026-09-08T10:53:18.282Z [sni] GET /health -> 200 {"status":"ok","version":"0.3.3","uptime_seconds":0}
+2026-09-08T10:53:18.285Z [sni] probe config differs from smoke-20260908T0905Z\layer2\config.json; live copy -> smoke-20260908T0905Z\layer2\config.sni.20260908T105318Z.json
+2026-09-08T10:53:18.285Z [sni] degraded: probe config changed since this results directory was opened
+2026-09-08T10:53:18.285Z [sni] engine.mode = dns
+2026-09-08T10:53:18.285Z [sni] INVALID: engine.mode dns carries no https listener
+2026-09-08T10:53:18.285Z [sni] wrote smoke-20260908T0905Z\layer2\sni.json
+2026-09-08T10:53:19.674Z [p1] == p1 start 2026-09-08T10:53:19.644Z tip=b53968ca3b1b-dirty out=smoke-20260908T0905Z/layer2
+2026-09-08T10:53:19.675Z [p1] args {"probe":"127.0.0.1","api-port":8443,"key":"<set>","out":"smoke-20260908T0905Z/layer2","tip":null,"allow-busy":true,"skip-host-checks":false,"origin":"127-0-0-1.nip.io","origin-ip":null,"origin-port":443,"origin-cert":"smoke-20260908T0905Z/work/p1.crt","port":8444,"bytes":8,"runs":5,"connections":1,"direct":false,"control":null,"profile-share":null,"timeout":120000,"max-fail-pct":2}
+2026-09-08T10:53:19.938Z [p1] Get-NetConnectionProfile: Ethernet                Public
+2026-09-08T10:53:20.331Z [p1] idle check: FAIL brave (recorded; each stage decides)
+2026-09-08T10:53:20.338Z [p1] GET /health -> 200 {"status":"ok","version":"0.3.3","uptime_seconds":0}
+2026-09-08T10:53:20.342Z [p1] probe config differs from smoke-20260908T0905Z\layer2\config.json; live copy -> smoke-20260908T0905Z\layer2\config.p1.20260908T105320Z.json
+2026-09-08T10:53:20.342Z [p1] degraded: probe config changed since this results directory was opened
+2026-09-08T10:53:20.342Z [p1] engine.mode = dns+http+https
+2026-09-08T10:53:20.342Z [p1] runtime.http_runtimes = 2 (every HTTPS figure records it — plan §The N axis)
+2026-09-08T10:53:20.342Z [p1] degraded: host not idle: brave
+2026-09-08T10:53:20.350Z [p1] origin 127-0-0-1.nip.io resolves locally to 127.0.0.1
+2026-09-08T10:53:20.350Z [p1] egress.allow_destinations = []
+2026-09-08T10:53:20.350Z [p1] INVALID: origin address 127.0.0.1 is not in egress.allow_destinations: the probe refuses the destination (plan §Environment)
+2026-09-08T10:53:20.350Z [p1] wrote smoke-20260908T0905Z\layer2\p1.json
+2026-09-08T10:53:21.795Z [p3] == p3 start 2026-09-08T10:53:21.765Z tip=b53968ca3b1b-dirty out=smoke-20260908T0905Z/layer2
+2026-09-08T10:53:21.796Z [p3] args {"probe":"127.0.0.1","api-port":8443,"key":"<set>","out":"smoke-20260908T0905Z/layer2","tip":null,"allow-busy":true,"skip-host-checks":false,"origin":"127-0-0-1.nip.io","path":"/8mib","warmup-path":"/","ca":"smoke-20260908T0905Z/work/smoke-ca.pem","port":8444,"bytes":8,"streams":64,"runs":3,"settle":30,"barrier-timeout":60,"throughput-runs":1,"arm":"throughput","max-fail-pct":2}
+2026-09-08T10:53:22.053Z [p3] Get-NetConnectionProfile: Ethernet                Public
+2026-09-08T10:53:22.414Z [p3] idle check: FAIL brave (recorded; each stage decides)
+2026-09-08T10:53:22.421Z [p3] GET /health -> 200 {"status":"ok","version":"0.3.3","uptime_seconds":0}
+2026-09-08T10:53:22.425Z [p3] probe config differs from smoke-20260908T0905Z\layer2\config.json; live copy -> smoke-20260908T0905Z\layer2\config.p3.20260908T105322Z.json
+2026-09-08T10:53:22.425Z [p3] degraded: probe config changed since this results directory was opened
+2026-09-08T10:53:22.425Z [p3] engine.mode = dns+http+https
+2026-09-08T10:53:22.425Z [p3] runtime.http_runtimes = 2 (every HTTPS figure records it — plan §The N axis)
+2026-09-08T10:53:22.425Z [p3] degraded: host not idle: brave
+2026-09-08T10:53:22.426Z [p3] local address toward the probe: 127.0.0.1; https.interception.clients = []
+2026-09-08T10:53:22.426Z [p3] INVALID: this host (127.0.0.1) is not in https.interception.clients: the terminate leg is not reachable from here
+2026-09-08T10:53:22.426Z [p3] wrote smoke-20260908T0905Z\layer2\p3.json
+2026-09-08T10:53:24.326Z [p5] == p5 start 2026-09-08T10:53:24.297Z tip=b53968ca3b1b-dirty out=smoke-20260908T0905Z/layer2
+2026-09-08T10:53:24.327Z [p5] args {"probe":"127.0.0.1","api-port":8443,"key":"<set>","out":"smoke-20260908T0905Z/layer2","tip":null,"allow-busy":true,"skip-host-checks":false,"hosts":16,"seed":"20260908T105324Z","dot-port":8853,"timeout":10000}
+2026-09-08T10:53:24.576Z [p5] Get-NetConnectionProfile: Ethernet                Public
+2026-09-08T10:53:24.927Z [p5] idle check: FAIL brave (recorded; each stage decides)
+2026-09-08T10:53:24.935Z [p5] GET /health -> 200 {"status":"ok","version":"0.3.3","uptime_seconds":1}
+2026-09-08T10:53:24.938Z [p5] probe config differs from smoke-20260908T0905Z\layer2\config.json; live copy -> smoke-20260908T0905Z\layer2\config.p5.20260908T105324Z.json
+2026-09-08T10:53:24.938Z [p5] degraded: probe config changed since this results directory was opened
+2026-09-08T10:53:24.938Z [p5] engine.mode = dns+http+https
+2026-09-08T10:53:24.938Z [p5] runtime.http_runtimes = 2 (every HTTPS figure records it — plan §The N axis)
+2026-09-08T10:53:24.938Z [p5] degraded: host not idle: brave
+2026-09-08T10:53:24.940Z [p5] certificates before: ca.present=false dot={"state":"listening","address":"127.0.0.1:8853"} leaf_cache={"size":0,"capacity":512,"inflight":0,"hits":0,"unwarmed_misses":0,"prewarm_hits":0,"coalesced":0,"minted_total":0,"evictions":0,"superseded":0}
+2026-09-08T10:53:24.941Z [p5] INVALID: no CA in the probe store: nothing would be minted (POST /api/v1/certificates/ca/generate first)
+2026-09-08T10:53:24.941Z [p5] wrote smoke-20260908T0905Z\layer2\p5.json
+2026-09-08T10:53:42.586Z [p10-domains] == p10-domains start 2026-09-08T10:53:42.554Z tip=b53968ca3b1b-dirty out=smoke-20260908T0905Z/layer2
+2026-09-08T10:53:42.587Z [p10-domains] args {"probe":"127.0.0.1","api-port":8443,"key":"<set>","out":"smoke-20260908T0905Z/layer2","tip":null,"allow-busy":true,"skip-host-checks":false,"n":2,"arm":["close"],"origin":"127-0-0-1.nip.io","origin-http-port":80,"origin-https-port":443,"port":8080,"https-port":8444,"files":["1k.bin","10k.bin","50k.bin"],"blocked":null,"ca":null,"intercepted-ssh":null,"intercepted-ca":null,"intercepted-oha":"oha","concurrency":48,"duration":300,"worker-threads":4,"ka-requests":20,"connrate-workers":6,"dns-qps":300,"dns-port":53,"single-path":"/100mb.bin","single-n":5,"par-path":"/10mb.bin","par-n":40,"par-c":8,"sample-interval":2,"tail-min":3,"transfers-tail-min":15,"driver":"auto","skip-issuer-sample":false,"oha":"/tmp/ohashim/oha","max-fail-pct":2}
+2026-09-08T10:53:42.926Z [p10-domains] Get-NetConnectionProfile: Ethernet                Public
+2026-09-08T10:53:43.380Z [p10-domains] idle check: FAIL brave (recorded; each stage decides)
+2026-09-08T10:53:43.387Z [p10-domains] GET /health -> 200 {"status":"ok","version":"0.3.3","uptime_seconds":19}
+2026-09-08T10:53:43.390Z [p10-domains] INVALID: GET /api/v1/config answered 401: {"error":{"code":"unauthorized","message":"missing or invalid credentials"}}
+2026-09-08T10:53:43.390Z [p10-domains] wrote smoke-20260908T0905Z\layer2\p10-N2.json
+2026-09-08T10:53:43.496Z [p10-domains] == p10-domains start 2026-09-08T10:53:43.466Z tip=b53968ca3b1b-dirty out=smoke-20260908T0905Z/layer2
+2026-09-08T10:53:43.497Z [p10-domains] args {"probe":"127.0.0.1","api-port":8443,"key":"<set>","out":"smoke-20260908T0905Z/layer2","tip":null,"allow-busy":true,"skip-host-checks":false,"n":2,"arm":["tls-spliced"],"origin":"127-0-0-1.nip.io","origin-http-port":80,"origin-https-port":443,"port":8080,"https-port":8444,"files":["1k.bin","10k.bin","50k.bin"],"blocked":"ads.smoke.test","ca":"smoke-20260908T0905Z/work/smoke-ca.pem","intercepted-ssh":null,"intercepted-ca":null,"intercepted-oha":"oha","concurrency":48,"duration":5,"worker-threads":4,"ka-requests":20,"connrate-workers":6,"dns-qps":300,"dns-port":53,"single-path":"/100mb.bin","single-n":5,"par-path":"/10mb.bin","par-n":40,"par-c":8,"sample-interval":2,"tail-min":3,"transfers-tail-min":15,"driver":"auto","skip-issuer-sample":true,"oha":"oha","max-fail-pct":2}
+2026-09-08T10:53:43.780Z [p10-domains] Get-NetConnectionProfile: Ethernet                Public
+2026-09-08T10:53:44.124Z [p10-domains] idle check: FAIL brave (recorded; each stage decides)
+2026-09-08T10:53:44.132Z [p10-domains] GET /health -> 200 {"status":"ok","version":"0.3.3","uptime_seconds":20}
+2026-09-08T10:53:44.134Z [p10-domains] INVALID: GET /api/v1/config answered 401: {"error":{"code":"unauthorized","message":"missing or invalid credentials"}}
+2026-09-08T10:53:44.135Z [p10-domains] wrote smoke-20260908T0905Z\layer2\p10-N2.json
+2026-09-08T10:53:58.455Z [p10-domains] == p10-domains start 2026-09-08T10:53:58.422Z tip=b53968ca3b1b-dirty out=smoke-20260908T0905Z/layer2
+2026-09-08T10:53:58.456Z [p10-domains] args {"probe":"127.0.0.1","api-port":8443,"key":"<set>","out":"smoke-20260908T0905Z/layer2","tip":null,"allow-busy":true,"skip-host-checks":false,"n":2,"arm":["close"],"origin":"127-0-0-1.nip.io","origin-http-port":80,"origin-https-port":443,"port":8080,"https-port":8444,"files":["1k.bin","10k.bin","50k.bin"],"blocked":null,"ca":null,"intercepted-ssh":null,"intercepted-ca":null,"intercepted-oha":"oha","concurrency":48,"duration":300,"worker-threads":4,"ka-requests":20,"connrate-workers":6,"dns-qps":300,"dns-port":53,"single-path":"/100mb.bin","single-n":5,"par-path":"/10mb.bin","par-n":40,"par-c":8,"sample-interval":2,"tail-min":3,"transfers-tail-min":15,"driver":"auto","skip-issuer-sample":false,"oha":"/tmp/ohashim/oha","max-fail-pct":2}
+2026-09-08T10:53:58.726Z [p10-domains] Get-NetConnectionProfile: Ethernet                Public
+2026-09-08T10:53:59.056Z [p10-domains] idle check: FAIL brave (recorded; each stage decides)
+2026-09-08T10:53:59.064Z [p10-domains] GET /health -> 200 {"status":"ok","version":"0.3.3","uptime_seconds":1}
+2026-09-08T10:53:59.067Z [p10-domains] probe config differs from smoke-20260908T0905Z\layer2\config.json; live copy -> smoke-20260908T0905Z\layer2\config.p10-domains.20260908T105359Z.json
+2026-09-08T10:53:59.067Z [p10-domains] degraded: probe config changed since this results directory was opened
+2026-09-08T10:53:59.067Z [p10-domains] engine.mode = dns+http+https
+2026-09-08T10:53:59.067Z [p10-domains] runtime.http_runtimes = 2 (every HTTPS figure records it — plan §The N axis)
+2026-09-08T10:53:59.067Z [p10-domains] degraded: host not idle: brave
+2026-09-08T10:53:59.068Z [p10-domains] INVALID: oha 1.16.0 required, found nothing (/tmp/ohashim/oha not runnable)
+2026-09-08T10:53:59.069Z [p10-domains] wrote smoke-20260908T0905Z\layer2\p10-N2.json
+2026-09-08T10:53:59.184Z [p10-domains] == p10-domains start 2026-09-08T10:53:59.155Z tip=b53968ca3b1b-dirty out=smoke-20260908T0905Z/layer2
+2026-09-08T10:53:59.185Z [p10-domains] args {"probe":"127.0.0.1","api-port":8443,"key":"<set>","out":"smoke-20260908T0905Z/layer2","tip":null,"allow-busy":true,"skip-host-checks":false,"n":2,"arm":["tls-spliced"],"origin":"127-0-0-1.nip.io","origin-http-port":80,"origin-https-port":443,"port":8080,"https-port":8444,"files":["1k.bin","10k.bin","50k.bin"],"blocked":"ads.smoke.test","ca":"smoke-20260908T0905Z/work/smoke-ca.pem","intercepted-ssh":null,"intercepted-ca":null,"intercepted-oha":"oha","concurrency":48,"duration":5,"worker-threads":4,"ka-requests":20,"connrate-workers":6,"dns-qps":300,"dns-port":53,"single-path":"/100mb.bin","single-n":5,"par-path":"/10mb.bin","par-n":40,"par-c":8,"sample-interval":2,"tail-min":3,"transfers-tail-min":15,"driver":"auto","skip-issuer-sample":true,"oha":"oha","max-fail-pct":2}
+2026-09-08T10:53:59.444Z [p10-domains] Get-NetConnectionProfile: Ethernet                Public
+2026-09-08T10:53:59.855Z [p10-domains] idle check: FAIL brave (recorded; each stage decides)
+2026-09-08T10:53:59.864Z [p10-domains] GET /health -> 200 {"status":"ok","version":"0.3.3","uptime_seconds":2}
+2026-09-08T10:53:59.867Z [p10-domains] probe config differs from smoke-20260908T0905Z\layer2\config.json; live copy -> smoke-20260908T0905Z\layer2\config.p10-domains.20260908T105359Z.json
+2026-09-08T10:53:59.867Z [p10-domains] degraded: probe config changed since this results directory was opened
+2026-09-08T10:53:59.867Z [p10-domains] engine.mode = dns+http+https
+2026-09-08T10:53:59.867Z [p10-domains] runtime.http_runtimes = 2 (every HTTPS figure records it — plan §The N axis)
+2026-09-08T10:53:59.867Z [p10-domains] degraded: host not idle: brave
+2026-09-08T10:53:59.886Z [p10-domains] oha 1.16.0 on this host; --worker-threads 4
+2026-09-08T10:53:59.886Z [p10-domains] tls-spliced: issuer sample before skipped (--skip-issuer-sample) — the arm is a diagnostic
+2026-09-08T10:53:59.886Z [p10-domains] == arm tls-spliced start
+2026-09-08T10:53:59.893Z [p10-domains] tls-spliced: oha --no-tui --output-format json --worker-threads 4 -z 5s -c 48 --disable-keepalive --connect-to 127-0-0-1.nip.io:443:127.0.0.1:8444 --insecure https://127-0-0-1.nip.io:443/1k.bin
+2026-09-08T10:54:04.934Z [p10-domains] tls-spliced: requests=9358 failed=49 rps=1877.6 p50/p95/p99=24.223/47.629/64.349 ms 502=0 MiB/s=1.82 errors={"aborted due to deadline":48,"tls handshake eof":1}
+2026-09-08T10:54:04.941Z [p10-domains] degraded: cpu_user_ms / cpu_system_ms are null on this probe (the kernel reading exists in-container only) — no cores figure
+2026-09-08T10:54:04.941Z [p10-domains] tls-spliced: wall=5s cores=- ms/req=- ΔRSS end=- max=- MiB (floor - MiB)
+2026-09-08T10:54:05.044Z [p10-domains] TIME_WAIT sockets on this host: 9012
+2026-09-08T10:54:05.045Z [p10-domains] degraded: 9012 TIME_WAIT sockets on this host — the client closed first somewhere; Windows port exhaustion caps the loop near 130 conn/s (§Traps)
+2026-09-08T10:54:05.045Z [p10-domains] tls-spliced: issuer sample after skipped (--skip-issuer-sample) — the arm is a diagnostic
+2026-09-08T10:54:05.045Z [p10-domains] tls-spliced: waiting 3 min for the tail sample
+2026-09-08T10:57:05.059Z [p10-domains] tls-spliced: +3 min ΔRSS=- MiB against the arm floor
+2026-09-08T10:57:05.059Z [p10-domains] tls-spliced-blocked: issuer sample before skipped (--skip-issuer-sample) — the arm is a diagnostic
+2026-09-08T10:57:05.060Z [p10-domains] == arm tls-spliced-blocked start
+2026-09-08T10:57:05.069Z [p10-domains] tls-spliced-blocked: oha --no-tui --output-format json --worker-threads 4 -z 5s -c 48 --disable-keepalive --connect-to ads.smoke.test:443:127.0.0.1:8444 --insecure https://ads.smoke.test:443/1k.bin
+2026-09-08T10:57:10.113Z [p10-domains] tls-spliced-blocked: requests=0 failed=96998 rps=19357.7 p50/p95/p99=null/null/null ms 502=0 MiB/s=0 errors={"aborted due to deadline":47,"tls handshake eof":96951}
+2026-09-08T10:57:10.117Z [p10-domains] tls-spliced-blocked: wall=5s cores=- ms/req=- ΔRSS end=- max=- MiB (floor - MiB)
+2026-09-08T10:57:10.279Z [p10-domains] TIME_WAIT sockets on this host: 15295
+2026-09-08T10:57:10.279Z [p10-domains] degraded: 15295 TIME_WAIT sockets on this host — the client closed first somewhere; Windows port exhaustion caps the loop near 130 conn/s (§Traps)
+2026-09-08T10:57:10.279Z [p10-domains] tls-spliced-blocked: waiting 3 min for the tail sample
+2026-09-08T11:00:10.290Z [p10-domains] tls-spliced-blocked: +3 min ΔRSS=- MiB against the arm floor
+2026-09-08T11:00:12.300Z [p10-domains] wrote smoke-20260908T0905Z\layer2\p10-N2.json
+2026-09-08T11:00:12.300Z [p10-domains] GATE (degraded, not a gate) {"statistic":"none — P10 proposes an N against the phase-2.6 criterion; the owner decides","n":2,"per_arm":{"tls-spliced":{"status":"diagnostic","rps":1877.6,"conns_per_s":null,"p50_ms":24.223,"p95_ms":47.629,"p99_ms":64.349,"cores":null,"cpu_ms_per_request":null,"count_502":0,"delta_rss_end_mib":null,"dns_p99_ms":null},"tls-spliced-blocked":{"status":"valid","rps":19357.7,"conns_per_s":null,"p50_ms":null,"p95_ms":null,"p99_ms":null,"cores":null,"cpu_ms_per_request":null,"count_502":0,"delta_rss_end_mib":null,"dns_p99_ms":null}}}
+2026-09-08T11:00:12.300Z [p10-domains] == p10-domains done (degraded)

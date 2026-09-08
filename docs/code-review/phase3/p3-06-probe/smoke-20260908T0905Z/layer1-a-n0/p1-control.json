@@ -1,0 +1,260 @@
+{
+  "script": "p1",
+  "started_at": "2026-09-08T10:24:21.212Z",
+  "finished_at": "2026-09-08T10:24:22.028Z",
+  "tip": "b53968ca3b1b-dirty",
+  "probe": "127.0.0.1",
+  "probe_version": "0.3.3",
+  "http_runtimes": 2,
+  "host": {
+    "platform": "win32",
+    "idle": true,
+    "network": [
+      "Ethernet                Public"
+    ],
+    "busy": []
+  },
+  "args": {
+    "probe": "127.0.0.1",
+    "api-port": 8443,
+    "key": "<set>",
+    "out": "smoke-20260908T0905Z/layer1-a-n2",
+    "tip": null,
+    "allow-busy": false,
+    "skip-host-checks": false,
+    "origin": "127-0-0-1.nip.io",
+    "origin-ip": null,
+    "origin-port": 4443,
+    "origin-cert": "smoke-20260908T0905Z/work/p1.crt",
+    "port": 8444,
+    "bytes": 8,
+    "runs": 5,
+    "connections": 1,
+    "direct": true,
+    "control": null,
+    "profile-share": null,
+    "timeout": 120000,
+    "max-fail-pct": 2
+  },
+  "valid": true,
+  "status": "valid",
+  "degraded_reasons": [],
+  "measurement": "P1-control",
+  "arm": "p1_control",
+  "origin": "127-0-0-1.nip.io",
+  "target": {
+    "host": "127.0.0.1",
+    "port": 4443
+  },
+  "bytes_mib": 8,
+  "connections": 1,
+  "served_issuer": "smoke-origin",
+  "figures": {
+    "steady_mib_s": {
+      "n": 5,
+      "min": 668.952,
+      "p50": 863.838,
+      "p99": 1170.618,
+      "max": 1170.618,
+      "mean": 928.725
+    },
+    "total_mib_s": {
+      "n": 5,
+      "min": 405.104,
+      "p50": 549.375,
+      "p99": 666.556,
+      "max": 666.556,
+      "mean": 545.303
+    },
+    "aggregate_mib_s": {
+      "n": 5,
+      "min": 668.924,
+      "p50": 863.791,
+      "p99": 1170.686,
+      "max": 1170.686,
+      "mean": 928.713
+    },
+    "median_steady_mib_s": 863.838
+  },
+  "telemetry_delta": null,
+  "runs": [
+    {
+      "run": 1,
+      "connections": 1,
+      "ok": 1,
+      "bytes_total": 8388608,
+      "steady_mib_s": 863.838,
+      "total_mib_s": 405.104,
+      "aggregate_mib_s": 863.791,
+      "handshake_ms": {
+        "n": 1,
+        "min": 5.393,
+        "p50": 5.393,
+        "p99": 5.393,
+        "max": 5.393,
+        "mean": 5.393
+      },
+      "first_byte_ms": {
+        "n": 1,
+        "min": 5.094,
+        "p50": 5.094,
+        "p99": 5.094,
+        "max": 5.094,
+        "mean": 5.094
+      },
+      "errors": [],
+      "tls": {
+        "issuerCN": "smoke-origin",
+        "subjectCN": "smoke-origin",
+        "fingerprint256": "03:3D:CF:7F:41:4E:77:F7:3B:57:2E:19:25:D6:BC:5E:E1:43:F1:63:3B:F0:3B:A7:D1:5A:62:2D:CC:9B:C0:9B",
+        "tls": "TLSv1.3",
+        "alpn": null,
+        "authorized": true
+      }
+    },
+    {
+      "run": 2,
+      "connections": 1,
+      "ok": 1,
+      "bytes_total": 8388608,
+      "steady_mib_s": 849.257,
+      "total_mib_s": 549.375,
+      "aggregate_mib_s": 849.248,
+      "handshake_ms": {
+        "n": 1,
+        "min": 1.11,
+        "p50": 1.11,
+        "p99": 1.11,
+        "max": 1.11,
+        "mean": 1.11
+      },
+      "first_byte_ms": {
+        "n": 1,
+        "min": 4.032,
+        "p50": 4.032,
+        "p99": 4.032,
+        "max": 4.032,
+        "mean": 4.032
+      },
+      "errors": [],
+      "tls": {
+        "issuerCN": "smoke-origin",
+        "subjectCN": "smoke-origin",
+        "fingerprint256": "03:3D:CF:7F:41:4E:77:F7:3B:57:2E:19:25:D6:BC:5E:E1:43:F1:63:3B:F0:3B:A7:D1:5A:62:2D:CC:9B:C0:9B",
+        "tls": "TLSv1.3",
+        "alpn": null,
+        "authorized": true
+      }
+    },
+    {
+      "run": 3,
+      "connections": 1,
+      "ok": 1,
+      "bytes_total": 8388608,
+      "steady_mib_s": 1090.959,
+      "total_mib_s": 638.978,
+      "aggregate_mib_s": 1090.914,
+      "handshake_ms": {
+        "n": 1,
+        "min": 1.116,
+        "p50": 1.116,
+        "p99": 1.116,
+        "max": 1.116,
+        "mean": 1.116
+      },
+      "first_byte_ms": {
+        "n": 1,
+        "min": 4.071,
+        "p50": 4.071,
+        "p99": 4.071,
+        "max": 4.071,
+        "mean": 4.071
+      },
+      "errors": [],
+      "tls": {
+        "issuerCN": "smoke-origin",
+        "subjectCN": "smoke-origin",
+        "fingerprint256": "03:3D:CF:7F:41:4E:77:F7:3B:57:2E:19:25:D6:BC:5E:E1:43:F1:63:3B:F0:3B:A7:D1:5A:62:2D:CC:9B:C0:9B",
+        "tls": "TLSv1.3",
+        "alpn": null,
+        "authorized": true
+      }
+    },
+    {
+      "run": 4,
+      "connections": 1,
+      "ok": 1,
+      "bytes_total": 8388608,
+      "steady_mib_s": 1170.618,
+      "total_mib_s": 666.556,
+      "aggregate_mib_s": 1170.686,
+      "handshake_ms": {
+        "n": 1,
+        "min": 1.166,
+        "p50": 1.166,
+        "p99": 1.166,
+        "max": 1.166,
+        "mean": 1.166
+      },
+      "first_byte_ms": {
+        "n": 1,
+        "min": 4.002,
+        "p50": 4.002,
+        "p99": 4.002,
+        "max": 4.002,
+        "mean": 4.002
+      },
+      "errors": [],
+      "tls": {
+        "issuerCN": "smoke-origin",
+        "subjectCN": "smoke-origin",
+        "fingerprint256": "03:3D:CF:7F:41:4E:77:F7:3B:57:2E:19:25:D6:BC:5E:E1:43:F1:63:3B:F0:3B:A7:D1:5A:62:2D:CC:9B:C0:9B",
+        "tls": "TLSv1.3",
+        "alpn": null,
+        "authorized": true
+      }
+    },
+    {
+      "run": 5,
+      "connections": 1,
+      "ok": 1,
+      "bytes_total": 8388608,
+      "steady_mib_s": 668.952,
+      "total_mib_s": 466.5,
+      "aggregate_mib_s": 668.924,
+      "handshake_ms": {
+        "n": 1,
+        "min": 1.103,
+        "p50": 1.103,
+        "p99": 1.103,
+        "max": 1.103,
+        "mean": 1.103
+      },
+      "first_byte_ms": {
+        "n": 1,
+        "min": 4.086,
+        "p50": 4.086,
+        "p99": 4.086,
+        "max": 4.086,
+        "mean": 4.086
+      },
+      "errors": [],
+      "tls": {
+        "issuerCN": "smoke-origin",
+        "subjectCN": "smoke-origin",
+        "fingerprint256": "03:3D:CF:7F:41:4E:77:F7:3B:57:2E:19:25:D6:BC:5E:E1:43:F1:63:3B:F0:3B:A7:D1:5A:62:2D:CC:9B:C0:9B",
+        "tls": "TLSv1.3",
+        "alpn": null,
+        "authorized": true
+      }
+    }
+  ],
+  "gate": {
+    "statistic": "none — this arm is the band",
+    "band": {
+      "min": 668.952,
+      "p50": 863.838,
+      "max": 1170.618
+    }
+  }
+}

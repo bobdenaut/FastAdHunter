@@ -1,0 +1,432 @@
+{
+  "script": "p10-domains",
+  "started_at": "2026-09-08T10:53:59.155Z",
+  "finished_at": "2026-09-08T11:00:12.299Z",
+  "tip": "b53968ca3b1b-dirty",
+  "probe": "127.0.0.1",
+  "probe_version": "0.3.3",
+  "http_runtimes": 2,
+  "host": {
+    "platform": "win32",
+    "idle": false,
+    "network": [
+      "Ethernet                Public"
+    ],
+    "busy": [
+      "brave"
+    ]
+  },
+  "args": {
+    "probe": "127.0.0.1",
+    "api-port": 8443,
+    "key": "<set>",
+    "out": "smoke-20260908T0905Z/layer2",
+    "tip": null,
+    "allow-busy": true,
+    "skip-host-checks": false,
+    "n": 2,
+    "arm": [
+      "tls-spliced"
+    ],
+    "origin": "127-0-0-1.nip.io",
+    "origin-http-port": 80,
+    "origin-https-port": 443,
+    "port": 8080,
+    "https-port": 8444,
+    "files": [
+      "1k.bin",
+      "10k.bin",
+      "50k.bin"
+    ],
+    "blocked": "ads.smoke.test",
+    "ca": "smoke-20260908T0905Z/work/smoke-ca.pem",
+    "intercepted-ssh": null,
+    "intercepted-ca": null,
+    "intercepted-oha": "oha",
+    "concurrency": 48,
+    "duration": 5,
+    "worker-threads": 4,
+    "ka-requests": 20,
+    "connrate-workers": 6,
+    "dns-qps": 300,
+    "dns-port": 53,
+    "single-path": "/100mb.bin",
+    "single-n": 5,
+    "par-path": "/10mb.bin",
+    "par-n": 40,
+    "par-c": 8,
+    "sample-interval": 2,
+    "tail-min": 3,
+    "transfers-tail-min": 15,
+    "driver": "auto",
+    "skip-issuer-sample": true,
+    "oha": "oha",
+    "max-fail-pct": 2
+  },
+  "valid": true,
+  "status": "degraded",
+  "degraded_reasons": [
+    "probe config changed since this results directory was opened",
+    "host not idle: brave",
+    "cpu_user_ms / cpu_system_ms are null on this probe (the kernel reading exists in-container only) — no cores figure",
+    "9012 TIME_WAIT sockets on this host — the client closed first somewhere; Windows port exhaustion caps the loop near 130 conn/s (§Traps)",
+    "15295 TIME_WAIT sockets on this host — the client closed first somewhere; Windows port exhaustion caps the loop near 130 conn/s (§Traps)"
+  ],
+  "measurement": "P10",
+  "n": 2,
+  "oha_version": "1.16.0",
+  "oha_version_remote": null,
+  "worker_threads": 4,
+  "concurrency": 48,
+  "duration_s": 5,
+  "origin": "127-0-0-1.nip.io",
+  "blocked": "ads.smoke.test",
+  "intercepted_host": "local",
+  "arms": {
+    "tls-spliced": {
+      "arm": "tls-spliced",
+      "status": "diagnostic",
+      "reason": "no issuer sample — path proof is certificate-based (plan §Load generators)",
+      "driver": "oha",
+      "name": "127-0-0-1.nip.io",
+      "http": {
+        "ok": true,
+        "requests": 9358,
+        "failed": 49,
+        "non_2xx": 0,
+        "count_502": 0,
+        "rps": 1877.6,
+        "attempts_per_s": 1877.6,
+        "success_rate": 0.9998931509776685,
+        "duration_s": 5.01,
+        "bytes": 9582592,
+        "size_per_sec_mib": 1.82,
+        "latency_ms": {
+          "p50": 24.223,
+          "p95": 47.629,
+          "p99": 64.349,
+          "mean": 25.545,
+          "max": 839.906
+        },
+        "first_byte_ms": {
+          "p50": 24.222,
+          "p95": 47.629,
+          "p99": 64.349
+        },
+        "rps_percentiles": {
+          "p50": 1841.5,
+          "p95": 4513.1,
+          "p99": 6492.6
+        },
+        "dns_dialup_ms": {
+          "average": 17.537,
+          "fastest": 1.359,
+          "slowest": 835.335
+        },
+        "status": {
+          "200": 9358
+        },
+        "error_distribution": {
+          "aborted due to deadline": 48,
+          "tls handshake eof": 1
+        },
+        "wall_s": 5,
+        "file": "smoke-20260908T0905Z\\layer2\\oha-tls-spliced.json"
+      },
+      "issuer": {
+        "before": {
+          "skipped": true
+        },
+        "after": {
+          "skipped": true
+        }
+      },
+      "metrics": {
+        "wall_s": 5,
+        "cpu_ms": null,
+        "cores": null,
+        "cpu_ms_per_request": null,
+        "rss_floor_mib": null,
+        "rss_end_mib": null,
+        "delta_rss_end_mib": null,
+        "delta_rss_max_mib": null,
+        "samples_during": 0
+      },
+      "telemetry_delta": {
+        "http": {
+          "connections": 0,
+          "requests": 0,
+          "blocked": 0,
+          "refused_claim": 0,
+          "refused_destination": 0,
+          "resolve_failures": 0,
+          "upstream_failures": 0,
+          "upstream_cert_failures": 0,
+          "non_http": 0,
+          "non_tls": 0,
+          "hello_timeouts": 0,
+          "dropped_events": 0
+        },
+        "https": {
+          "connections": 9407,
+          "requests": 9407,
+          "blocked": 0,
+          "refused_claim": 0,
+          "refused_destination": 0,
+          "resolve_failures": 1,
+          "upstream_failures": 0,
+          "upstream_cert_failures": 0,
+          "non_http": 0,
+          "non_tls": 0,
+          "hello_timeouts": 0,
+          "dropped_events": 0
+        }
+      },
+      "leaf_cache_delta": {
+        "size": 0,
+        "capacity": 0,
+        "inflight": 0,
+        "hits": 0,
+        "unwarmed_misses": 0,
+        "prewarm_hits": 0,
+        "coalesced": 0,
+        "minted_total": 0,
+        "evictions": 0,
+        "superseded": 0
+      },
+      "time_wait": 9012,
+      "tail": {
+        "minutes": 3,
+        "process_rss": null,
+        "delta_rss_mib": null
+      }
+    },
+    "tls-spliced-blocked": {
+      "arm": "tls-spliced-blocked",
+      "status": "valid",
+      "reason": null,
+      "driver": "oha",
+      "name": "ads.smoke.test",
+      "http": {
+        "ok": true,
+        "requests": 0,
+        "failed": 96998,
+        "non_2xx": 0,
+        "count_502": 0,
+        "rps": 19357.7,
+        "attempts_per_s": 19357.7,
+        "success_rate": 0,
+        "duration_s": 5.01,
+        "bytes": 0,
+        "size_per_sec_mib": 0,
+        "latency_ms": {
+          "p50": null,
+          "p95": null,
+          "p99": null,
+          "mean": null,
+          "max": null
+        },
+        "first_byte_ms": {
+          "p50": null,
+          "p95": null,
+          "p99": null
+        },
+        "rps_percentiles": {
+          "p50": null,
+          "p95": null,
+          "p99": null
+        },
+        "dns_dialup_ms": {
+          "average": null,
+          "fastest": null,
+          "slowest": null
+        },
+        "status": {},
+        "error_distribution": {
+          "aborted due to deadline": 47,
+          "tls handshake eof": 96951
+        },
+        "wall_s": 5,
+        "file": "smoke-20260908T0905Z\\layer2\\oha-tls-spliced-blocked.json"
+      },
+      "issuer": {
+        "before": {
+          "skipped": true
+        },
+        "after": null
+      },
+      "metrics": {
+        "wall_s": 5,
+        "cpu_ms": null,
+        "cores": null,
+        "cpu_ms_per_request": null,
+        "rss_floor_mib": null,
+        "rss_end_mib": null,
+        "delta_rss_end_mib": null,
+        "delta_rss_max_mib": null,
+        "samples_during": 0
+      },
+      "telemetry_delta": {
+        "http": {
+          "connections": 0,
+          "requests": 0,
+          "blocked": 0,
+          "refused_claim": 0,
+          "refused_destination": 0,
+          "resolve_failures": 0,
+          "upstream_failures": 0,
+          "upstream_cert_failures": 0,
+          "non_http": 0,
+          "non_tls": 0,
+          "hello_timeouts": 0,
+          "dropped_events": 0
+        },
+        "https": {
+          "connections": 96998,
+          "requests": 96971,
+          "blocked": 96971,
+          "refused_claim": 0,
+          "refused_destination": 0,
+          "resolve_failures": 0,
+          "upstream_failures": 0,
+          "upstream_cert_failures": 0,
+          "non_http": 0,
+          "non_tls": 0,
+          "hello_timeouts": 27,
+          "dropped_events": 0
+        }
+      },
+      "leaf_cache_delta": null,
+      "time_wait": 15295,
+      "tail": {
+        "minutes": 3,
+        "process_rss": null,
+        "delta_rss_mib": null
+      }
+    }
+  },
+  "samples": [
+    {
+      "t": "2026-09-08T10:53:59.889Z",
+      "arm": "tls-spliced",
+      "label": "before",
+      "status": 200,
+      "process_rss": null,
+      "cpu_user_ms": null,
+      "cpu_system_ms": null
+    },
+    {
+      "t": "2026-09-08T10:54:01.897Z",
+      "arm": "tls-spliced",
+      "label": "during",
+      "status": 200,
+      "process_rss": null,
+      "cpu_user_ms": null,
+      "cpu_system_ms": null
+    },
+    {
+      "t": "2026-09-08T10:54:03.905Z",
+      "arm": "tls-spliced",
+      "label": "during",
+      "status": 200,
+      "process_rss": null,
+      "cpu_user_ms": null,
+      "cpu_system_ms": null
+    },
+    {
+      "t": "2026-09-08T10:54:04.937Z",
+      "arm": "tls-spliced",
+      "label": "end",
+      "status": 200,
+      "process_rss": null,
+      "cpu_user_ms": null,
+      "cpu_system_ms": null
+    },
+    {
+      "t": "2026-09-08T10:57:05.059Z",
+      "arm": "tls-spliced",
+      "label": "plus3",
+      "status": 200,
+      "process_rss": null,
+      "cpu_user_ms": null,
+      "cpu_system_ms": null
+    },
+    {
+      "t": "2026-09-08T10:57:05.065Z",
+      "arm": "tls-spliced-blocked",
+      "label": "before",
+      "status": 200,
+      "process_rss": null,
+      "cpu_user_ms": null,
+      "cpu_system_ms": null
+    },
+    {
+      "t": "2026-09-08T10:57:07.075Z",
+      "arm": "tls-spliced-blocked",
+      "label": "during",
+      "status": 200,
+      "process_rss": null,
+      "cpu_user_ms": null,
+      "cpu_system_ms": null
+    },
+    {
+      "t": "2026-09-08T10:57:09.080Z",
+      "arm": "tls-spliced-blocked",
+      "label": "during",
+      "status": 200,
+      "process_rss": null,
+      "cpu_user_ms": null,
+      "cpu_system_ms": null
+    },
+    {
+      "t": "2026-09-08T10:57:10.115Z",
+      "arm": "tls-spliced-blocked",
+      "label": "end",
+      "status": 200,
+      "process_rss": null,
+      "cpu_user_ms": null,
+      "cpu_system_ms": null
+    },
+    {
+      "t": "2026-09-08T11:00:10.290Z",
+      "arm": "tls-spliced-blocked",
+      "label": "plus3",
+      "status": 200,
+      "process_rss": null,
+      "cpu_user_ms": null,
+      "cpu_system_ms": null
+    }
+  ],
+  "gate": {
+    "statistic": "none — P10 proposes an N against the phase-2.6 criterion; the owner decides",
+    "n": 2,
+    "per_arm": {
+      "tls-spliced": {
+        "status": "diagnostic",
+        "rps": 1877.6,
+        "conns_per_s": null,
+        "p50_ms": 24.223,
+        "p95_ms": 47.629,
+        "p99_ms": 64.349,
+        "cores": null,
+        "cpu_ms_per_request": null,
+        "count_502": 0,
+        "delta_rss_end_mib": null,
+        "dns_p99_ms": null
+      },
+      "tls-spliced-blocked": {
+        "status": "valid",
+        "rps": 19357.7,
+        "conns_per_s": null,
+        "p50_ms": null,
+        "p95_ms": null,
+        "p99_ms": null,
+        "cores": null,
+        "cpu_ms_per_request": null,
+        "count_502": 0,
+        "delta_rss_end_mib": null,
+        "dns_p99_ms": null
+      }
+    }
+  }
+}

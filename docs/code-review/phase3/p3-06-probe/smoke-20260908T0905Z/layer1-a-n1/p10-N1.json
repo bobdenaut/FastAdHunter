@@ -1,0 +1,930 @@
+{
+  "script": "p10-domains",
+  "started_at": "2026-09-08T10:43:00.508Z",
+  "finished_at": "2026-09-08T10:44:08.232Z",
+  "tip": "b53968ca3b1b-dirty",
+  "probe": "127.0.0.1",
+  "probe_version": "0.3.3",
+  "http_runtimes": 1,
+  "host": {
+    "platform": "win32",
+    "idle": false,
+    "network": [
+      "Ethernet                Public"
+    ],
+    "busy": [
+      "brave"
+    ]
+  },
+  "args": {
+    "probe": "127.0.0.1",
+    "api-port": 8443,
+    "key": "<set>",
+    "out": "smoke-20260908T0905Z/layer1-a-n1",
+    "tip": null,
+    "allow-busy": true,
+    "skip-host-checks": false,
+    "n": 1,
+    "arm": [
+      "close",
+      "mixed",
+      "tls-spliced"
+    ],
+    "origin": "127-0-0-1.nip.io",
+    "origin-http-port": 80,
+    "origin-https-port": 443,
+    "port": 8080,
+    "https-port": 8444,
+    "files": [
+      "1k.bin",
+      "10k.bin",
+      "50k.bin"
+    ],
+    "blocked": "ads.smoke.test",
+    "ca": "smoke-20260908T0905Z/work/smoke-ca.pem",
+    "intercepted-ssh": null,
+    "intercepted-ca": null,
+    "intercepted-oha": "oha",
+    "concurrency": 8,
+    "duration": 15,
+    "worker-threads": 4,
+    "ka-requests": 20,
+    "connrate-workers": 6,
+    "dns-qps": 300,
+    "dns-port": 5300,
+    "single-path": "/100mb.bin",
+    "single-n": 5,
+    "par-path": "/10mb.bin",
+    "par-n": 40,
+    "par-c": 8,
+    "sample-interval": 2,
+    "tail-min": 0,
+    "transfers-tail-min": 0,
+    "driver": "auto",
+    "skip-issuer-sample": false,
+    "oha": "oha",
+    "max-fail-pct": 2
+  },
+  "valid": true,
+  "status": "degraded",
+  "degraded_reasons": [
+    "host not idle: brave",
+    "cpu_user_ms / cpu_system_ms are null on this probe (the kernel reading exists in-container only) — no cores figure"
+  ],
+  "measurement": "P10",
+  "n": 1,
+  "oha_version": "1.16.0",
+  "oha_version_remote": null,
+  "worker_threads": 4,
+  "concurrency": 8,
+  "duration_s": 15,
+  "origin": "127-0-0-1.nip.io",
+  "blocked": "ads.smoke.test",
+  "intercepted_host": "local",
+  "arms": {
+    "close": {
+      "arm": "close",
+      "status": "valid",
+      "driver": "oha",
+      "http": {
+        "ok": true,
+        "requests": 20858,
+        "failed": 7,
+        "non_2xx": 0,
+        "count_502": 0,
+        "rps": 1390.4,
+        "attempts_per_s": 1390.4,
+        "success_rate": 1,
+        "duration_s": 15.01,
+        "bytes": 434913280,
+        "size_per_sec_mib": 27.64,
+        "latency_ms": {
+          "p50": 1.688,
+          "p95": 23.499,
+          "p99": 34.974,
+          "mean": 5.745,
+          "max": 51.166
+        },
+        "first_byte_ms": {
+          "p50": 1.593,
+          "p95": 23.302,
+          "p99": 34.517
+        },
+        "rps_percentiles": {
+          "p50": 1527.2,
+          "p95": 3608.1,
+          "p99": 4384.8
+        },
+        "dns_dialup_ms": {
+          "average": 2.187,
+          "fastest": 0.065,
+          "slowest": 30.616
+        },
+        "status": {
+          "200": 20858
+        },
+        "error_distribution": {
+          "aborted due to deadline": 7
+        },
+        "wall_s": 15,
+        "file": "smoke-20260908T0905Z\\layer1-a-n1\\oha-close-http.json"
+      },
+      "dns": null,
+      "metrics": {
+        "wall_s": 15,
+        "cpu_ms": null,
+        "cores": null,
+        "cpu_ms_per_request": null,
+        "rss_floor_mib": null,
+        "rss_end_mib": null,
+        "delta_rss_end_mib": null,
+        "delta_rss_max_mib": null,
+        "samples_during": 0
+      },
+      "telemetry_delta": {
+        "http": {
+          "connections": 20865,
+          "requests": 20861,
+          "blocked": 0,
+          "refused_claim": 0,
+          "refused_destination": 0,
+          "resolve_failures": 0,
+          "upstream_failures": 0,
+          "upstream_cert_failures": 0,
+          "non_http": 0,
+          "non_tls": 0,
+          "hello_timeouts": 0,
+          "dropped_events": 0
+        },
+        "https": {
+          "connections": 0,
+          "requests": 0,
+          "blocked": 0,
+          "refused_claim": 0,
+          "refused_destination": 0,
+          "resolve_failures": 0,
+          "upstream_failures": 0,
+          "upstream_cert_failures": 0,
+          "non_http": 0,
+          "non_tls": 0,
+          "hello_timeouts": 0,
+          "dropped_events": 0
+        }
+      },
+      "leaf_cache_delta": null,
+      "time_wait": null,
+      "tail": null
+    },
+    "mixed": {
+      "arm": "mixed",
+      "status": "valid",
+      "driver": "oha",
+      "http": {
+        "ok": true,
+        "requests": 22355,
+        "failed": 7,
+        "non_2xx": 0,
+        "count_502": 0,
+        "rps": 1490.2,
+        "attempts_per_s": 1490.2,
+        "success_rate": 1,
+        "duration_s": 15.01,
+        "bytes": 468868096,
+        "size_per_sec_mib": 29.8,
+        "latency_ms": {
+          "p50": 1.614,
+          "p95": 23.294,
+          "p99": 34.569,
+          "mean": 5.358,
+          "max": 51.371
+        },
+        "first_byte_ms": {
+          "p50": 1.522,
+          "p95": 22.972,
+          "p99": 34.021
+        },
+        "rps_percentiles": {
+          "p50": 1714.4,
+          "p95": 3760.5,
+          "p99": 4589.5
+        },
+        "dns_dialup_ms": {
+          "average": 2.015,
+          "fastest": 0.066,
+          "slowest": 28.876
+        },
+        "status": {
+          "200": 22355
+        },
+        "error_distribution": {
+          "aborted due to deadline": 7
+        },
+        "wall_s": 15,
+        "file": "smoke-20260908T0905Z\\layer1-a-n1\\oha-mixed-http.json"
+      },
+      "dns": {
+        "qps_target": 300,
+        "qps": 299.9,
+        "duration_s": 15,
+        "planned": 4500,
+        "sent": 4500,
+        "answered": 4500,
+        "timeouts": 0,
+        "unmatched": 0,
+        "errors": 0,
+        "still_outstanding": 0,
+        "rcode": {
+          "0": 4500
+        },
+        "lat_ms": {
+          "p50": 0.234,
+          "p95": 10.279,
+          "p99": 12.357
+        },
+        "by_class_ms": {
+          "cached": {
+            "n": 2246,
+            "p50": 0.158,
+            "p99": 0.679
+          },
+          "blocked": {
+            "n": 896,
+            "p50": 0.165,
+            "p99": 0.631,
+            "answered_0000": 896,
+            "answered_0000_share": 1
+          },
+          "uncached": {
+            "n": 1358,
+            "p50": 8.581,
+            "p99": 13.744
+          }
+        },
+        "mix": {
+          "cached": 0.5,
+          "blocked": 0.2,
+          "uncached": 0.3
+        },
+        "warmed": true
+      },
+      "metrics": {
+        "wall_s": 15,
+        "cpu_ms": null,
+        "cores": null,
+        "cpu_ms_per_request": null,
+        "rss_floor_mib": null,
+        "rss_end_mib": null,
+        "delta_rss_end_mib": null,
+        "delta_rss_max_mib": null,
+        "samples_during": 0
+      },
+      "telemetry_delta": {
+        "http": {
+          "connections": 22362,
+          "requests": 22361,
+          "blocked": 0,
+          "refused_claim": 0,
+          "refused_destination": 0,
+          "resolve_failures": 0,
+          "upstream_failures": 0,
+          "upstream_cert_failures": 0,
+          "non_http": 0,
+          "non_tls": 0,
+          "hello_timeouts": 0,
+          "dropped_events": 0
+        },
+        "https": {
+          "connections": 0,
+          "requests": 0,
+          "blocked": 0,
+          "refused_claim": 0,
+          "refused_destination": 0,
+          "resolve_failures": 0,
+          "upstream_failures": 0,
+          "upstream_cert_failures": 0,
+          "non_http": 0,
+          "non_tls": 0,
+          "hello_timeouts": 0,
+          "dropped_events": 0
+        }
+      },
+      "leaf_cache_delta": null,
+      "time_wait": null,
+      "tail": null
+    },
+    "tls-spliced": {
+      "arm": "tls-spliced",
+      "status": "valid",
+      "reason": null,
+      "driver": "oha",
+      "name": "127-0-0-1.nip.io",
+      "http": {
+        "ok": true,
+        "requests": 10532,
+        "failed": 8,
+        "non_2xx": 0,
+        "count_502": 0,
+        "rps": 702.2,
+        "attempts_per_s": 702.2,
+        "success_rate": 1,
+        "duration_s": 15.01,
+        "bytes": 10784768,
+        "size_per_sec_mib": 0.69,
+        "latency_ms": {
+          "p50": 4.818,
+          "p95": 37.157,
+          "p99": 49.694,
+          "mean": 11.381,
+          "max": 75.2
+        },
+        "first_byte_ms": {
+          "p50": 4.818,
+          "p95": 37.157,
+          "p99": 49.693
+        },
+        "rps_percentiles": {
+          "p50": 952.9,
+          "p95": 1815.8,
+          "p99": 3918.2
+        },
+        "dns_dialup_ms": {
+          "average": 9.361,
+          "fastest": 1.231,
+          "slowest": 66.918
+        },
+        "status": {
+          "200": 10532
+        },
+        "error_distribution": {
+          "aborted due to deadline": 8
+        },
+        "wall_s": 15,
+        "file": "smoke-20260908T0905Z\\layer1-a-n1\\oha-tls-spliced.json"
+      },
+      "issuer": {
+        "before": {
+          "issuerCN": "smoke-origin",
+          "subjectCN": "smoke-origin",
+          "tls": "TLSv1.3",
+          "host": "local",
+          "leg": "spliced",
+          "expected": "spliced",
+          "matches": true
+        },
+        "after": {
+          "issuerCN": "smoke-origin",
+          "subjectCN": "smoke-origin",
+          "tls": "TLSv1.3",
+          "host": "local",
+          "leg": "spliced",
+          "expected": "spliced",
+          "matches": true
+        }
+      },
+      "metrics": {
+        "wall_s": 15,
+        "cpu_ms": null,
+        "cores": null,
+        "cpu_ms_per_request": null,
+        "rss_floor_mib": null,
+        "rss_end_mib": null,
+        "delta_rss_end_mib": null,
+        "delta_rss_max_mib": null,
+        "samples_during": 0
+      },
+      "telemetry_delta": {
+        "http": {
+          "connections": 0,
+          "requests": 0,
+          "blocked": 0,
+          "refused_claim": 0,
+          "refused_destination": 0,
+          "resolve_failures": 0,
+          "upstream_failures": 0,
+          "upstream_cert_failures": 0,
+          "non_http": 0,
+          "non_tls": 0,
+          "hello_timeouts": 0,
+          "dropped_events": 0
+        },
+        "https": {
+          "connections": 10540,
+          "requests": 10540,
+          "blocked": 0,
+          "refused_claim": 0,
+          "refused_destination": 0,
+          "resolve_failures": 0,
+          "upstream_failures": 0,
+          "upstream_cert_failures": 0,
+          "non_http": 0,
+          "non_tls": 0,
+          "hello_timeouts": 0,
+          "dropped_events": 0
+        }
+      },
+      "leaf_cache_delta": {
+        "size": 0,
+        "capacity": 0,
+        "inflight": 0,
+        "hits": 0,
+        "unwarmed_misses": 0,
+        "prewarm_hits": 0,
+        "coalesced": 0,
+        "minted_total": 0,
+        "evictions": 0,
+        "superseded": 0
+      },
+      "time_wait": null,
+      "tail": null
+    },
+    "tls-spliced-blocked": {
+      "arm": "tls-spliced-blocked",
+      "status": "valid",
+      "reason": null,
+      "driver": "oha",
+      "name": "ads.smoke.test",
+      "http": {
+        "ok": true,
+        "requests": 0,
+        "failed": 94166,
+        "non_2xx": 0,
+        "count_502": 0,
+        "rps": 6276.6,
+        "attempts_per_s": 6276.6,
+        "success_rate": 0,
+        "duration_s": 15,
+        "bytes": 0,
+        "size_per_sec_mib": 0,
+        "latency_ms": {
+          "p50": null,
+          "p95": null,
+          "p99": null,
+          "mean": null,
+          "max": null
+        },
+        "first_byte_ms": {
+          "p50": null,
+          "p95": null,
+          "p99": null
+        },
+        "rps_percentiles": {
+          "p50": null,
+          "p95": null,
+          "p99": null
+        },
+        "dns_dialup_ms": {
+          "average": null,
+          "fastest": null,
+          "slowest": null
+        },
+        "status": {},
+        "error_distribution": {
+          "Only one usage of each socket address (protocol/network address/port) is normally permitted. (os error 10048)": 1,
+          "aborted due to deadline": 7,
+          "tls handshake eof": 94158
+        },
+        "wall_s": 15,
+        "file": "smoke-20260908T0905Z\\layer1-a-n1\\oha-tls-spliced-blocked.json"
+      },
+      "issuer": {
+        "before": {
+          "issuerCN": null,
+          "error": "ECONNRESET",
+          "host": "local",
+          "leg": null,
+          "expected": "spliced",
+          "matches": false
+        },
+        "after": null
+      },
+      "metrics": {
+        "wall_s": 15,
+        "cpu_ms": null,
+        "cores": null,
+        "cpu_ms_per_request": null,
+        "rss_floor_mib": null,
+        "rss_end_mib": null,
+        "delta_rss_end_mib": null,
+        "delta_rss_max_mib": null,
+        "samples_during": 0
+      },
+      "telemetry_delta": {
+        "http": {
+          "connections": 0,
+          "requests": 0,
+          "blocked": 0,
+          "refused_claim": 0,
+          "refused_destination": 0,
+          "resolve_failures": 0,
+          "upstream_failures": 0,
+          "upstream_cert_failures": 0,
+          "non_http": 0,
+          "non_tls": 0,
+          "hello_timeouts": 0,
+          "dropped_events": 0
+        },
+        "https": {
+          "connections": 94165,
+          "requests": 94162,
+          "blocked": 94162,
+          "refused_claim": 0,
+          "refused_destination": 0,
+          "resolve_failures": 0,
+          "upstream_failures": 0,
+          "upstream_cert_failures": 0,
+          "non_http": 0,
+          "non_tls": 0,
+          "hello_timeouts": 3,
+          "dropped_events": 0
+        }
+      },
+      "leaf_cache_delta": null,
+      "time_wait": null,
+      "tail": null
+    }
+  },
+  "samples": [
+    {
+      "t": "2026-09-08T10:43:01.229Z",
+      "arm": "close",
+      "label": "before",
+      "status": 200,
+      "process_rss": null,
+      "cpu_user_ms": null,
+      "cpu_system_ms": null
+    },
+    {
+      "t": "2026-09-08T10:43:03.240Z",
+      "arm": "close",
+      "label": "during",
+      "status": 200,
+      "process_rss": null,
+      "cpu_user_ms": null,
+      "cpu_system_ms": null
+    },
+    {
+      "t": "2026-09-08T10:43:05.248Z",
+      "arm": "close",
+      "label": "during",
+      "status": 200,
+      "process_rss": null,
+      "cpu_user_ms": null,
+      "cpu_system_ms": null
+    },
+    {
+      "t": "2026-09-08T10:43:07.248Z",
+      "arm": "close",
+      "label": "during",
+      "status": 200,
+      "process_rss": null,
+      "cpu_user_ms": null,
+      "cpu_system_ms": null
+    },
+    {
+      "t": "2026-09-08T10:43:09.253Z",
+      "arm": "close",
+      "label": "during",
+      "status": 200,
+      "process_rss": null,
+      "cpu_user_ms": null,
+      "cpu_system_ms": null
+    },
+    {
+      "t": "2026-09-08T10:43:11.256Z",
+      "arm": "close",
+      "label": "during",
+      "status": 200,
+      "process_rss": null,
+      "cpu_user_ms": null,
+      "cpu_system_ms": null
+    },
+    {
+      "t": "2026-09-08T10:43:13.261Z",
+      "arm": "close",
+      "label": "during",
+      "status": 200,
+      "process_rss": null,
+      "cpu_user_ms": null,
+      "cpu_system_ms": null
+    },
+    {
+      "t": "2026-09-08T10:43:15.272Z",
+      "arm": "close",
+      "label": "during",
+      "status": 200,
+      "process_rss": null,
+      "cpu_user_ms": null,
+      "cpu_system_ms": null
+    },
+    {
+      "t": "2026-09-08T10:43:16.275Z",
+      "arm": "close",
+      "label": "end",
+      "status": 200,
+      "process_rss": null,
+      "cpu_user_ms": null,
+      "cpu_system_ms": null
+    },
+    {
+      "t": "2026-09-08T10:43:18.498Z",
+      "arm": "mixed",
+      "label": "before",
+      "status": 200,
+      "process_rss": null,
+      "cpu_user_ms": null,
+      "cpu_system_ms": null
+    },
+    {
+      "t": "2026-09-08T10:43:20.503Z",
+      "arm": "mixed",
+      "label": "during",
+      "status": 200,
+      "process_rss": null,
+      "cpu_user_ms": null,
+      "cpu_system_ms": null
+    },
+    {
+      "t": "2026-09-08T10:43:22.505Z",
+      "arm": "mixed",
+      "label": "during",
+      "status": 200,
+      "process_rss": null,
+      "cpu_user_ms": null,
+      "cpu_system_ms": null
+    },
+    {
+      "t": "2026-09-08T10:43:24.513Z",
+      "arm": "mixed",
+      "label": "during",
+      "status": 200,
+      "process_rss": null,
+      "cpu_user_ms": null,
+      "cpu_system_ms": null
+    },
+    {
+      "t": "2026-09-08T10:43:26.518Z",
+      "arm": "mixed",
+      "label": "during",
+      "status": 200,
+      "process_rss": null,
+      "cpu_user_ms": null,
+      "cpu_system_ms": null
+    },
+    {
+      "t": "2026-09-08T10:43:28.524Z",
+      "arm": "mixed",
+      "label": "during",
+      "status": 200,
+      "process_rss": null,
+      "cpu_user_ms": null,
+      "cpu_system_ms": null
+    },
+    {
+      "t": "2026-09-08T10:43:30.532Z",
+      "arm": "mixed",
+      "label": "during",
+      "status": 200,
+      "process_rss": null,
+      "cpu_user_ms": null,
+      "cpu_system_ms": null
+    },
+    {
+      "t": "2026-09-08T10:43:32.534Z",
+      "arm": "mixed",
+      "label": "during",
+      "status": 200,
+      "process_rss": null,
+      "cpu_user_ms": null,
+      "cpu_system_ms": null
+    },
+    {
+      "t": "2026-09-08T10:43:33.541Z",
+      "arm": "mixed",
+      "label": "end",
+      "status": 200,
+      "process_rss": null,
+      "cpu_user_ms": null,
+      "cpu_system_ms": null
+    },
+    {
+      "t": "2026-09-08T10:43:35.755Z",
+      "arm": "tls-spliced",
+      "label": "before",
+      "status": 200,
+      "process_rss": null,
+      "cpu_user_ms": null,
+      "cpu_system_ms": null
+    },
+    {
+      "t": "2026-09-08T10:43:37.776Z",
+      "arm": "tls-spliced",
+      "label": "during",
+      "status": 200,
+      "process_rss": null,
+      "cpu_user_ms": null,
+      "cpu_system_ms": null
+    },
+    {
+      "t": "2026-09-08T10:43:39.782Z",
+      "arm": "tls-spliced",
+      "label": "during",
+      "status": 200,
+      "process_rss": null,
+      "cpu_user_ms": null,
+      "cpu_system_ms": null
+    },
+    {
+      "t": "2026-09-08T10:43:41.798Z",
+      "arm": "tls-spliced",
+      "label": "during",
+      "status": 200,
+      "process_rss": null,
+      "cpu_user_ms": null,
+      "cpu_system_ms": null
+    },
+    {
+      "t": "2026-09-08T10:43:43.802Z",
+      "arm": "tls-spliced",
+      "label": "during",
+      "status": 200,
+      "process_rss": null,
+      "cpu_user_ms": null,
+      "cpu_system_ms": null
+    },
+    {
+      "t": "2026-09-08T10:43:45.816Z",
+      "arm": "tls-spliced",
+      "label": "during",
+      "status": 200,
+      "process_rss": null,
+      "cpu_user_ms": null,
+      "cpu_system_ms": null
+    },
+    {
+      "t": "2026-09-08T10:43:47.821Z",
+      "arm": "tls-spliced",
+      "label": "during",
+      "status": 200,
+      "process_rss": null,
+      "cpu_user_ms": null,
+      "cpu_system_ms": null
+    },
+    {
+      "t": "2026-09-08T10:43:49.822Z",
+      "arm": "tls-spliced",
+      "label": "during",
+      "status": 200,
+      "process_rss": null,
+      "cpu_user_ms": null,
+      "cpu_system_ms": null
+    },
+    {
+      "t": "2026-09-08T10:43:50.804Z",
+      "arm": "tls-spliced",
+      "label": "end",
+      "status": 200,
+      "process_rss": null,
+      "cpu_user_ms": null,
+      "cpu_system_ms": null
+    },
+    {
+      "t": "2026-09-08T10:43:50.999Z",
+      "arm": "tls-spliced-blocked",
+      "label": "before",
+      "status": 200,
+      "process_rss": null,
+      "cpu_user_ms": null,
+      "cpu_system_ms": null
+    },
+    {
+      "t": "2026-09-08T10:43:53.008Z",
+      "arm": "tls-spliced-blocked",
+      "label": "during",
+      "status": 200,
+      "process_rss": null,
+      "cpu_user_ms": null,
+      "cpu_system_ms": null
+    },
+    {
+      "t": "2026-09-08T10:43:55.014Z",
+      "arm": "tls-spliced-blocked",
+      "label": "during",
+      "status": 200,
+      "process_rss": null,
+      "cpu_user_ms": null,
+      "cpu_system_ms": null
+    },
+    {
+      "t": "2026-09-08T10:43:57.022Z",
+      "arm": "tls-spliced-blocked",
+      "label": "during",
+      "status": 200,
+      "process_rss": null,
+      "cpu_user_ms": null,
+      "cpu_system_ms": null
+    },
+    {
+      "t": "2026-09-08T10:43:59.031Z",
+      "arm": "tls-spliced-blocked",
+      "label": "during",
+      "status": 200,
+      "process_rss": null,
+      "cpu_user_ms": null,
+      "cpu_system_ms": null
+    },
+    {
+      "t": "2026-09-08T10:44:01.033Z",
+      "arm": "tls-spliced-blocked",
+      "label": "during",
+      "status": 200,
+      "process_rss": null,
+      "cpu_user_ms": null,
+      "cpu_system_ms": null
+    },
+    {
+      "t": "2026-09-08T10:44:03.044Z",
+      "arm": "tls-spliced-blocked",
+      "label": "during",
+      "status": 200,
+      "process_rss": null,
+      "cpu_user_ms": null,
+      "cpu_system_ms": null
+    },
+    {
+      "t": "2026-09-08T10:44:05.048Z",
+      "arm": "tls-spliced-blocked",
+      "label": "during",
+      "status": 200,
+      "process_rss": null,
+      "cpu_user_ms": null,
+      "cpu_system_ms": null
+    },
+    {
+      "t": "2026-09-08T10:44:06.034Z",
+      "arm": "tls-spliced-blocked",
+      "label": "end",
+      "status": 200,
+      "process_rss": null,
+      "cpu_user_ms": null,
+      "cpu_system_ms": null
+    }
+  ],
+  "gate": {
+    "statistic": "none — P10 proposes an N against the phase-2.6 criterion; the owner decides",
+    "n": 1,
+    "per_arm": {
+      "close": {
+        "status": "valid",
+        "rps": 1390.4,
+        "conns_per_s": null,
+        "p50_ms": 1.688,
+        "p95_ms": 23.499,
+        "p99_ms": 34.974,
+        "cores": null,
+        "cpu_ms_per_request": null,
+        "count_502": 0,
+        "delta_rss_end_mib": null,
+        "dns_p99_ms": null
+      },
+      "mixed": {
+        "status": "valid",
+        "rps": 1490.2,
+        "conns_per_s": null,
+        "p50_ms": 1.614,
+        "p95_ms": 23.294,
+        "p99_ms": 34.569,
+        "cores": null,
+        "cpu_ms_per_request": null,
+        "count_502": 0,
+        "delta_rss_end_mib": null,
+        "dns_p99_ms": 12.357
+      },
+      "tls-spliced": {
+        "status": "valid",
+        "rps": 702.2,
+        "conns_per_s": null,
+        "p50_ms": 4.818,
+        "p95_ms": 37.157,
+        "p99_ms": 49.694,
+        "cores": null,
+        "cpu_ms_per_request": null,
+        "count_502": 0,
+        "delta_rss_end_mib": null,
+        "dns_p99_ms": null
+      },
+      "tls-spliced-blocked": {
+        "status": "valid",
+        "rps": 6276.6,
+        "conns_per_s": null,
+        "p50_ms": null,
+        "p95_ms": null,
+        "p99_ms": null,
+        "cores": null,
+        "cpu_ms_per_request": null,
+        "count_502": 0,
+        "delta_rss_end_mib": null,
+        "dns_p99_ms": null
+      }
+    }
+  }
+}

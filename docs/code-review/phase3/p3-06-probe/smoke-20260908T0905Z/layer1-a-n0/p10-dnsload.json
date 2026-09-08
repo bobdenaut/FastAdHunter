@@ -1,0 +1,115 @@
+{
+  "script": "p10-dnsload",
+  "started_at": "2026-09-08T10:46:14.053Z",
+  "finished_at": "2026-09-08T10:46:34.752Z",
+  "tip": "b53968ca3b1b-dirty",
+  "probe": "127.0.0.1",
+  "probe_version": "0.3.3",
+  "http_runtimes": 0,
+  "host": {
+    "platform": "win32",
+    "idle": false,
+    "network": [
+      "Ethernet                Public"
+    ],
+    "busy": [
+      "brave"
+    ]
+  },
+  "args": {
+    "probe": "127.0.0.1",
+    "api-port": 8443,
+    "key": "<set>",
+    "out": "smoke-20260908T0905Z/layer1-a-n0",
+    "tip": null,
+    "allow-busy": true,
+    "skip-host-checks": false,
+    "dns-port": 5300,
+    "qps": 300,
+    "duration": 20,
+    "timeout": 2000,
+    "cached": [
+      "example.com",
+      "cloudflare.com",
+      "google.com",
+      "wikipedia.org",
+      "github.com",
+      "microsoft.com",
+      "apple.com",
+      "amazon.com",
+      "mozilla.org",
+      "debian.org",
+      "kernel.org",
+      "rust-lang.org",
+      "python.org",
+      "archive.org",
+      "bbc.co.uk",
+      "reddit.com",
+      "stackoverflow.com",
+      "netflix.com",
+      "spotify.com",
+      "duckduckgo.com"
+    ],
+    "blocked": [
+      "ads.smoke.test"
+    ],
+    "uncached-zone": "example.com",
+    "no-warm": false
+  },
+  "valid": true,
+  "status": "degraded",
+  "degraded_reasons": [
+    "host not idle: brave"
+  ],
+  "measurement": "P10-dns",
+  "figures": {
+    "qps_target": 300,
+    "qps": 299.8,
+    "duration_s": 20,
+    "planned": 6000,
+    "sent": 5997,
+    "answered": 5997,
+    "timeouts": 0,
+    "unmatched": 0,
+    "errors": 0,
+    "still_outstanding": 0,
+    "rcode": {
+      "0": 5997
+    },
+    "lat_ms": {
+      "p50": 0.356,
+      "p95": 10.409,
+      "p99": 13.174
+    },
+    "by_class_ms": {
+      "cached": {
+        "n": 3019,
+        "p50": 0.279,
+        "p99": 0.669
+      },
+      "blocked": {
+        "n": 1233,
+        "p50": 0.272,
+        "p99": 0.637,
+        "answered_0000": 1233,
+        "answered_0000_share": 1
+      },
+      "uncached": {
+        "n": 1745,
+        "p50": 8.915,
+        "p99": 16.642
+      }
+    },
+    "mix": {
+      "cached": 0.5,
+      "blocked": 0.2,
+      "uncached": 0.3
+    },
+    "warmed": true
+  },
+  "gate": {
+    "statistic": "none — the DNS half of P10's mixed arm; P10 proposes an N, the owner decides",
+    "p50_ms": 0.356,
+    "p99_ms": 13.174
+  }
+}

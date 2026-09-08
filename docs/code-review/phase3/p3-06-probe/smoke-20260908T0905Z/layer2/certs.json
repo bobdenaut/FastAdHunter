@@ -1,0 +1,32 @@
+{
+  "script": "p7-store",
+  "started_at": "2026-09-08T10:47:21.956Z",
+  "finished_at": "2026-09-08T10:47:22.607Z",
+  "tip": "b53968ca3b1b-dirty",
+  "probe": "127.0.0.1",
+  "probe_version": "0.3.3",
+  "http_runtimes": 0,
+  "host": {
+    "platform": "win32",
+    "idle": false,
+    "network": [
+      "Ethernet                Public"
+    ],
+    "busy": [
+      "brave"
+    ]
+  },
+  "args": {
+    "probe": "127.0.0.1",
+    "api-port": 8443,
+    "key": "<set>",
+    "out": "smoke-20260908T0905Z/layer2",
+    "tip": null,
+    "allow-busy": true,
+    "skip-host-checks": false,
+    "ca-key": "smoke-20260908T0905Z/work/p1.crt"
+  },
+  "valid": false,
+  "status": "INVALID",
+  "reason": "--ca-key is not a private key: error:1E08010C:DECODER routines::unsupported"
+}

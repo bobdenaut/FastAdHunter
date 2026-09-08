@@ -468,11 +468,20 @@ async function tlsRun(arm, name, expectedLeg, { ssh = null, ca = null, expectFai
   const leg = expectFailures ? { status: 'valid', reason: null } : legStatus(arm, issuerBefore, issuerAfter);
   if (leg.status === 'INVALID') run.degraded(`${arm}: ${leg.reason}`);
   if (expectFailures) {
-    const attempts = (http.requests ?? 0) + (http.failed ?? 0);
+    // Failures the client never got onto the wire cannot appear in `blocked`:
+    // connections oha abandons at its own deadline, and local socket
+    // allocation failures (Windows os error 10048 once the ephemeral range is
+    // exhausted — the §Traps case this host hits at ~15k TIME_WAIT). Counting
+    // them fails the arm on a handful of sockets out of hundreds of thousands.
+    const CLIENT_SIDE = [/deadline/i, /os error 10048/i, /usage of each socket address/i];
+    const unsent = Object.entries(http.error_distribution ?? {})
+      .filter(([kind]) => CLIENT_SIDE.some((re) => re.test(kind)))
+      .reduce((a, [, n]) => a + n, 0);
+    const attempts = (http.requests ?? 0) + (http.failed ?? 0) - unsent;
     const blocked = fin.telemetry_delta.https?.blocked ?? null;
     if (blocked !== null && blocked < attempts) {
       leg.status = 'INVALID';
-      leg.reason = `listeners.https.blocked moved by ${blocked} for ${attempts} attempts — closes were not SNI verdicts`;
+      leg.reason = `listeners.https.blocked moved by ${blocked} for ${attempts} attempts that reached the listener (${unsent} never left the client) — closes were not SNI verdicts`;
       run.degraded(`${arm}: ${leg.reason}`);
     }
     if (http.requests > 0) {

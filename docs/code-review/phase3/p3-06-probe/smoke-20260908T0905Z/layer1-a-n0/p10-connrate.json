@@ -1,0 +1,112 @@
+{
+  "script": "p10-connrate",
+  "started_at": "2026-09-08T10:45:45.743Z",
+  "finished_at": "2026-09-08T10:45:56.672Z",
+  "tip": "b53968ca3b1b-dirty",
+  "probe": "127.0.0.1",
+  "probe_version": "0.3.3",
+  "http_runtimes": 0,
+  "host": {
+    "platform": "win32",
+    "idle": false,
+    "network": [
+      "Ethernet                Public"
+    ],
+    "busy": [
+      "brave"
+    ]
+  },
+  "args": {
+    "probe": "127.0.0.1",
+    "api-port": 8443,
+    "key": "<set>",
+    "out": "smoke-20260908T0905Z/layer1-a-n0",
+    "tip": null,
+    "allow-busy": true,
+    "skip-host-checks": false,
+    "origin": "127-0-0-1.nip.io",
+    "port": 8080,
+    "https-port": 8444,
+    "tls": false,
+    "ca": "smoke-20260908T0905Z/work/smoke-ca.pem",
+    "files": [
+      "1k.bin",
+      "10k.bin",
+      "50k.bin"
+    ],
+    "concurrency": 48,
+    "workers": 6,
+    "duration": 10,
+    "requests": 20,
+    "max-fail-pct": 2
+  },
+  "valid": true,
+  "status": "degraded",
+  "degraded_reasons": [
+    "host not idle: brave",
+    "11486 errors of 68200 attempts (budget 2 %): {} {\"200\":45228,\"502\":11486}"
+  ],
+  "measurement": "P10-keepalive",
+  "figures": {
+    "mode": "keepalive",
+    "transport": "plaintext",
+    "leg": "plaintext",
+    "served_issuer": null,
+    "tls": null,
+    "workers": 6,
+    "concurrency": 48,
+    "duration_s": 10,
+    "requests": 56714,
+    "connections": 2860,
+    "rps": 5655.7,
+    "conns_per_s": 285.2,
+    "bytes": 940612100,
+    "errors": 11486,
+    "errkind": {},
+    "status": {
+      "200": 45228,
+      "502": 11486
+    },
+    "lat_ms": {
+      "p50": 3.957,
+      "p95": 24.688,
+      "p99": 34.316,
+      "mean": 8.27
+    },
+    "connect_ms": {
+      "p50": 0.613,
+      "p95": 3.567,
+      "p99": 9.599
+    },
+    "requests_per_connection": {
+      "target": 20,
+      "histogram": {
+        "0": 1,
+        "1": 1,
+        "2": 5,
+        "4": 3,
+        "5": 4,
+        "6": 2,
+        "7": 4,
+        "8": 5,
+        "10": 4,
+        "11": 3,
+        "12": 1,
+        "13": 1,
+        "15": 2,
+        "17": 3,
+        "18": 3,
+        "19": 2,
+        "20": 2816
+      },
+      "full_connections": 2816,
+      "cut_by_deadline": 44,
+      "short_connections": 0
+    }
+  },
+  "gate": {
+    "statistic": "none — P10 proposes an N, the owner decides",
+    "rps": 5655.7,
+    "conns_per_s": 285.2
+  }
+}

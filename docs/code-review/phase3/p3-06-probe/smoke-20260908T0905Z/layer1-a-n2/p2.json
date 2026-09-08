@@ -1,0 +1,43 @@
+{
+  "script": "p2",
+  "started_at": "2026-09-08T10:27:46.704Z",
+  "finished_at": "2026-09-08T10:27:47.434Z",
+  "tip": "b53968ca3b1b-dirty",
+  "probe": "127.0.0.1",
+  "probe_version": "0.3.3",
+  "http_runtimes": 2,
+  "host": {
+    "platform": "win32",
+    "idle": true,
+    "network": [
+      "Ethernet                Public"
+    ],
+    "busy": []
+  },
+  "args": {
+    "probe": "127.0.0.1",
+    "api-port": 8443,
+    "key": "<set>",
+    "out": "smoke-20260908T0905Z/layer1-a-n2",
+    "tip": null,
+    "allow-busy": false,
+    "skip-host-checks": false,
+    "origin": "example.com",
+    "origin-port": 443,
+    "path": "/",
+    "ca": "smoke-20260908T0905Z/work/smoke-ca.pem",
+    "listed": "127.0.0.1",
+    "unlisted": "127.0.0.2",
+    "port": 8444,
+    "dns-port": 5300,
+    "rounds": 2,
+    "timeout": 10000,
+    "max-fail-pct": 2
+  },
+  "valid": false,
+  "status": "INVALID",
+  "reason": "identity precondition: both --listed and --unlisted must be on this host's interfaces (found none)",
+  "iface": {
+    "error": "spawnSync ip ENOENT"
+  }
+}

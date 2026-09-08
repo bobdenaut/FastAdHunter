@@ -1,0 +1,283 @@
+{
+  "script": "p1",
+  "started_at": "2026-09-08T11:03:03.972Z",
+  "finished_at": "2026-09-08T11:03:04.778Z",
+  "tip": "b53968ca3b1b-dirty",
+  "probe": "127.0.0.1",
+  "probe_version": "0.3.3",
+  "http_runtimes": 2,
+  "host": {
+    "platform": "win32",
+    "idle": false,
+    "network": [
+      "Ethernet                Public"
+    ],
+    "busy": [
+      "brave"
+    ]
+  },
+  "args": {
+    "probe": "127.0.0.1",
+    "api-port": 8443,
+    "key": "<set>",
+    "out": "smoke-20260908T0905Z/layer1-a-n2",
+    "tip": null,
+    "allow-busy": true,
+    "skip-host-checks": false,
+    "origin": "127-0-0-1.nip.io",
+    "origin-ip": null,
+    "origin-port": 443,
+    "origin-cert": "smoke-20260908T0905Z/work/p1.crt",
+    "port": 8444,
+    "bytes": 8,
+    "runs": 5,
+    "connections": 1,
+    "direct": false,
+    "control": null,
+    "profile-share": null,
+    "timeout": 120000,
+    "max-fail-pct": 2
+  },
+  "valid": true,
+  "status": "degraded",
+  "degraded_reasons": [
+    "host not idle: brave"
+  ],
+  "measurement": "P1-LAN",
+  "arm": "spliced",
+  "origin": "127-0-0-1.nip.io",
+  "target": {
+    "host": "127.0.0.1",
+    "port": 8444
+  },
+  "bytes_mib": 8,
+  "connections": 1,
+  "served_issuer": "smoke-origin",
+  "figures": {
+    "steady_mib_s": {
+      "n": 5,
+      "min": 1002.13,
+      "p50": 1126.443,
+      "p99": 1242.043,
+      "max": 1242.043,
+      "mean": 1121.548
+    },
+    "total_mib_s": {
+      "n": 5,
+      "min": 210.172,
+      "p50": 514.403,
+      "p99": 594.265,
+      "max": 594.265,
+      "mean": 440.81
+    },
+    "aggregate_mib_s": {
+      "n": 5,
+      "min": 1002.167,
+      "p50": 1126.443,
+      "p99": 1242.024,
+      "max": 1242.024,
+      "mean": 1121.564
+    },
+    "median_steady_mib_s": 1126.443
+  },
+  "telemetry_delta": {
+    "connections": 5,
+    "requests": 5,
+    "blocked": 0,
+    "refused_claim": 0,
+    "refused_destination": 0,
+    "resolve_failures": 0,
+    "upstream_failures": 0,
+    "upstream_cert_failures": 0,
+    "non_http": 0,
+    "non_tls": 0,
+    "hello_timeouts": 0,
+    "dropped_events": 0
+  },
+  "runs": [
+    {
+      "run": 1,
+      "connections": 1,
+      "ok": 1,
+      "bytes_total": 8388608,
+      "steady_mib_s": 1002.13,
+      "total_mib_s": 514.403,
+      "aggregate_mib_s": 1002.167,
+      "handshake_ms": {
+        "n": 1,
+        "min": 3.155,
+        "p50": 3.155,
+        "p99": 3.155,
+        "max": 3.155,
+        "mean": 3.155
+      },
+      "first_byte_ms": {
+        "n": 1,
+        "min": 4.414,
+        "p50": 4.414,
+        "p99": 4.414,
+        "max": 4.414,
+        "mean": 4.414
+      },
+      "errors": [],
+      "tls": {
+        "issuerCN": "smoke-origin",
+        "subjectCN": "smoke-origin",
+        "fingerprint256": "03:3D:CF:7F:41:4E:77:F7:3B:57:2E:19:25:D6:BC:5E:E1:43:F1:63:3B:F0:3B:A7:D1:5A:62:2D:CC:9B:C0:9B",
+        "tls": "TLSv1.3",
+        "alpn": null,
+        "authorized": true
+      }
+    },
+    {
+      "run": 2,
+      "connections": 1,
+      "ok": 1,
+      "bytes_total": 8388608,
+      "steady_mib_s": 1242.043,
+      "total_mib_s": 594.265,
+      "aggregate_mib_s": 1242.024,
+      "handshake_ms": {
+        "n": 1,
+        "min": 2.615,
+        "p50": 2.615,
+        "p99": 2.615,
+        "max": 2.615,
+        "mean": 2.615
+      },
+      "first_byte_ms": {
+        "n": 1,
+        "min": 4.406,
+        "p50": 4.406,
+        "p99": 4.406,
+        "max": 4.406,
+        "mean": 4.406
+      },
+      "errors": [],
+      "tls": {
+        "issuerCN": "smoke-origin",
+        "subjectCN": "smoke-origin",
+        "fingerprint256": "03:3D:CF:7F:41:4E:77:F7:3B:57:2E:19:25:D6:BC:5E:E1:43:F1:63:3B:F0:3B:A7:D1:5A:62:2D:CC:9B:C0:9B",
+        "tls": "TLSv1.3",
+        "alpn": null,
+        "authorized": true
+      }
+    },
+    {
+      "run": 3,
+      "connections": 1,
+      "ok": 1,
+      "bytes_total": 8388608,
+      "steady_mib_s": 1126.443,
+      "total_mib_s": 575.374,
+      "aggregate_mib_s": 1126.443,
+      "handshake_ms": {
+        "n": 1,
+        "min": 2.574,
+        "p50": 2.574,
+        "p99": 2.574,
+        "max": 2.574,
+        "mean": 2.574
+      },
+      "first_byte_ms": {
+        "n": 1,
+        "min": 4.228,
+        "p50": 4.228,
+        "p99": 4.228,
+        "max": 4.228,
+        "mean": 4.228
+      },
+      "errors": [],
+      "tls": {
+        "issuerCN": "smoke-origin",
+        "subjectCN": "smoke-origin",
+        "fingerprint256": "03:3D:CF:7F:41:4E:77:F7:3B:57:2E:19:25:D6:BC:5E:E1:43:F1:63:3B:F0:3B:A7:D1:5A:62:2D:CC:9B:C0:9B",
+        "tls": "TLSv1.3",
+        "alpn": null,
+        "authorized": true
+      }
+    },
+    {
+      "run": 4,
+      "connections": 1,
+      "ok": 1,
+      "bytes_total": 8388608,
+      "steady_mib_s": 1232.476,
+      "total_mib_s": 309.837,
+      "aggregate_mib_s": 1232.552,
+      "handshake_ms": {
+        "n": 1,
+        "min": 15.11,
+        "p50": 15.11,
+        "p99": 15.11,
+        "max": 15.11,
+        "mean": 15.11
+      },
+      "first_byte_ms": {
+        "n": 1,
+        "min": 4.22,
+        "p50": 4.22,
+        "p99": 4.22,
+        "max": 4.22,
+        "mean": 4.22
+      },
+      "errors": [],
+      "tls": {
+        "issuerCN": "smoke-origin",
+        "subjectCN": "smoke-origin",
+        "fingerprint256": "03:3D:CF:7F:41:4E:77:F7:3B:57:2E:19:25:D6:BC:5E:E1:43:F1:63:3B:F0:3B:A7:D1:5A:62:2D:CC:9B:C0:9B",
+        "tls": "TLSv1.3",
+        "alpn": null,
+        "authorized": true
+      }
+    },
+    {
+      "run": 5,
+      "connections": 1,
+      "ok": 1,
+      "bytes_total": 8388608,
+      "steady_mib_s": 1004.646,
+      "total_mib_s": 210.172,
+      "aggregate_mib_s": 1004.634,
+      "handshake_ms": {
+        "n": 1,
+        "min": 25.758,
+        "p50": 25.758,
+        "p99": 25.758,
+        "max": 25.758,
+        "mean": 25.758
+      },
+      "first_byte_ms": {
+        "n": 1,
+        "min": 4.343,
+        "p50": 4.343,
+        "p99": 4.343,
+        "max": 4.343,
+        "mean": 4.343
+      },
+      "errors": [],
+      "tls": {
+        "issuerCN": "smoke-origin",
+        "subjectCN": "smoke-origin",
+        "fingerprint256": "03:3D:CF:7F:41:4E:77:F7:3B:57:2E:19:25:D6:BC:5E:E1:43:F1:63:3B:F0:3B:A7:D1:5A:62:2D:CC:9B:C0:9B",
+        "tls": "TLSv1.3",
+        "alpn": null,
+        "authorized": true
+      }
+    }
+  ],
+  "gate": {
+    "statistic": "median of runs steady MiB/s >= 0.9 x P1-control median (testing plan delta 1)",
+    "median_steady_mib_s": 1126.443,
+    "band": {
+      "min": 668.952,
+      "p50": 863.838,
+      "max": 1170.618,
+      "source": "smoke-20260908T0905Z/layer1-a-n2/p1-control.json"
+    },
+    "floor_mib_s": 777.454,
+    "ratio_to_control": 1.304,
+    "absolute_mib_s": 1126.443,
+    "pass": true
+  }
+}

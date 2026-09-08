@@ -11,9 +11,14 @@
 // and teardown are outside it (p3-03 M4). Total MiB/s (bytes / (TCP connect
 // -> last byte)) is reported beside it as a diagnostic.
 //
-// Gate (single connection): median of --runs steady MiB/s >= 100 AND inside
-// P1-control's min-max. The band comes from a P1-control result file
-// (--control <p1-control.json>); without it the band half is "not evaluated".
+// Gate (single connection): median of --runs steady MiB/s >= 0.9 x the
+// P1-control median (testing plan delta 1). Campaign 1's absolute ">= 100
+// MiB/s AND inside P1-control's min-max" is withdrawn: the phase-2.6 sweep
+// measured this topology's LAN ceiling well under the declared absolute, and
+// a two-sided band fails a run for being faster than the control, which is
+// not a throughput gate. Absolute MiB/s stays as a diagnostic column. The
+// band comes from a P1-control result file (--control <p1-control.json>);
+// without it the gate is "not evaluated".
 // Invalidity: a run whose byte count differs from --bytes MiB is INVALID; the
 // spliced arm also reads listeners.https before/after and attributes a
 // handshake failure to resolve_failures / refused_destination /
@@ -163,8 +168,24 @@ if (failPct > args['max-fail-pct']) run.degraded(`${failed} of ${runs.length} ru
 const issuer = completed[0].tls?.issuerCN ?? null;
 if (!args.direct && ca && runs.some((r) => r.tls?.authorized === false)) run.invalid('origin certificate did not verify through the splice', { arm, runs }, resultName);
 
+const RELATIVE_FLOOR = 0.9;
+
+// The gate is relative, so without a control there is no gate at all — not a
+// weaker one. Reporting pass:null would look like a result and be none, so a
+// spliced run with no P1-control to read against is INVALID. --control wins;
+// otherwise the run directory's own p1-control.json is used, which is what
+// the smoke plan's "no prior --direct result in the run directory" row means.
 let band = null;
-if (args.control) {
+if (arm === 'spliced') {
+  const fallback = `${args.out}/p1-control.json`;
+  const source = args.control ?? (fs.existsSync(fallback) ? fallback : null);
+  if (!source) {
+    run.invalid('no P1-control median in this session: run --direct first, or pass --control <p1-control.json> (the gate is relative — testing plan delta 1)', { arm }, resultName);
+  }
+  const c = JSON.parse(fs.readFileSync(source, 'utf8'));
+  band = c.figures?.steady_mib_s ? { min: c.figures.steady_mib_s.min, p50: c.figures.steady_mib_s.p50, max: c.figures.steady_mib_s.max, source } : null;
+  if (!band) run.invalid(`P1-control at ${source} carries no steady_mib_s figure`, { arm }, resultName);
+} else if (args.control) {
   const c = JSON.parse(fs.readFileSync(args.control, 'utf8'));
   band = c.figures?.steady_mib_s ? { min: c.figures.steady_mib_s.min, p50: c.figures.steady_mib_s.p50, max: c.figures.steady_mib_s.max, source: args.control } : null;
 }
@@ -174,12 +195,13 @@ const aggregate = summary(runs.map((r) => r.aggregate_mib_s));
 const gate =
   arm === 'spliced'
     ? {
-        statistic: 'median of runs steady MiB/s >= 100 and inside P1-control min-max',
+        statistic: 'median of runs steady MiB/s >= 0.9 x P1-control median (testing plan delta 1)',
         median_steady_mib_s: steady.p50,
-        at_least_100: steady.p50 !== null && steady.p50 >= 100,
         band,
-        inside_band: band ? steady.p50 >= band.min && steady.p50 <= band.max : 'not evaluated (--control absent)',
-        pass: band ? steady.p50 >= 100 && steady.p50 >= band.min && steady.p50 <= band.max : null,
+        floor_mib_s: band ? round(band.p50 * RELATIVE_FLOOR, 3) : null,
+        ratio_to_control: band && steady.p50 !== null ? round(steady.p50 / band.p50, 4) : null,
+        absolute_mib_s: steady.p50,
+        pass: band && steady.p50 !== null ? steady.p50 >= band.p50 * RELATIVE_FLOOR : null,
       }
     : arm === 'p1_control'
       ? { statistic: 'none — this arm is the band', band: { min: steady.min, p50: steady.p50, max: steady.max } }

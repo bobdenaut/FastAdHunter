@@ -1,0 +1,44 @@
+{
+  "script": "p3",
+  "started_at": "2026-09-08T10:53:21.765Z",
+  "finished_at": "2026-09-08T10:53:22.426Z",
+  "tip": "b53968ca3b1b-dirty",
+  "probe": "127.0.0.1",
+  "probe_version": "0.3.3",
+  "http_runtimes": 2,
+  "host": {
+    "platform": "win32",
+    "idle": false,
+    "network": [
+      "Ethernet                Public"
+    ],
+    "busy": [
+      "brave"
+    ]
+  },
+  "args": {
+    "probe": "127.0.0.1",
+    "api-port": 8443,
+    "key": "<set>",
+    "out": "smoke-20260908T0905Z/layer2",
+    "tip": null,
+    "allow-busy": true,
+    "skip-host-checks": false,
+    "origin": "127-0-0-1.nip.io",
+    "path": "/8mib",
+    "warmup-path": "/",
+    "ca": "smoke-20260908T0905Z/work/smoke-ca.pem",
+    "port": 8444,
+    "bytes": 8,
+    "streams": 64,
+    "runs": 3,
+    "settle": 30,
+    "barrier-timeout": 60,
+    "throughput-runs": 1,
+    "arm": "throughput",
+    "max-fail-pct": 2
+  },
+  "valid": false,
+  "status": "INVALID",
+  "reason": "this host (127.0.0.1) is not in https.interception.clients: the terminate leg is not reachable from here"
+}

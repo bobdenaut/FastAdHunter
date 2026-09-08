@@ -1,0 +1,13 @@
+2026-09-08T10:31:36.963Z [p3] == p3 start 2026-09-08T10:31:36.931Z tip=b53968ca3b1b-dirty out=smoke-20260908T0905Z/layer1-b-n2-rss
+2026-09-08T10:31:36.963Z [p3] args {"probe":"127.0.0.1","api-port":8443,"key":"<set>","out":"smoke-20260908T0905Z/layer1-b-n2-rss","tip":null,"allow-busy":false,"skip-host-checks":false,"origin":"127-0-0-1.nip.io","path":"/8mib","warmup-path":"/","ca":"smoke-20260908T0905Z/work/smoke-ca.pem","port":8444,"bytes":8,"streams":64,"runs":1,"settle":5,"barrier-timeout":60,"throughput-runs":1,"arm":"rss","max-fail-pct":2}
+2026-09-08T10:31:37.229Z [p3] Get-NetConnectionProfile: Ethernet                Public
+2026-09-08T10:31:37.674Z [p3] idle check: PASS (recorded; each stage decides)
+2026-09-08T10:31:37.683Z [p3] GET /health -> 200 {"status":"ok","version":"0.3.3","uptime_seconds":18}
+2026-09-08T10:31:37.688Z [p3] config snapshot -> smoke-20260908T0905Z\layer1-b-n2-rss\config.json
+2026-09-08T10:31:37.688Z [p3] engine.mode = dns+http+https
+2026-09-08T10:31:37.688Z [p3] runtime.http_runtimes = 2 (every HTTPS figure records it — plan §The N axis)
+2026-09-08T10:31:37.689Z [p3] local address toward the probe: 127.0.0.1; https.interception.clients = ["127.0.0.1"]
+2026-09-08T10:31:38.708Z [p3] stall run 1: warm-up 200 3B issuer=FastAdHunter CA
+2026-09-08T10:31:39.747Z [p3] control run 1: warm-up 200 3B issuer=FastAdHunter CA
+2026-09-08T10:31:39.757Z [p3] INVALID: RSS arm: 2 run(s) produced no figure: stall#1 process_rss is null on this probe (kernel reading unavailable, e.g. Windows): the RSS arm is measurable in-container / on-device only; control#1 process_rss is null on this probe (kernel reading unavailable, e.g. Windows): the RSS arm is measurable in-container / on-device only
+2026-09-08T10:31:39.758Z [p3] wrote smoke-20260908T0905Z\layer1-b-n2-rss\p3.json

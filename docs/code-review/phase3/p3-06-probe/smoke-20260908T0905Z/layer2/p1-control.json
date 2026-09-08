@@ -1,0 +1,213 @@
+{
+  "script": "p1",
+  "started_at": "2026-09-08T10:47:23.456Z",
+  "finished_at": "2026-09-08T10:47:24.137Z",
+  "tip": "b53968ca3b1b-dirty",
+  "probe": "127.0.0.1",
+  "probe_version": "0.3.3",
+  "http_runtimes": 0,
+  "host": {
+    "platform": "win32",
+    "idle": false,
+    "network": [
+      "Ethernet                Public"
+    ],
+    "busy": [
+      "brave"
+    ]
+  },
+  "args": {
+    "probe": "127.0.0.1",
+    "api-port": 8443,
+    "key": "<set>",
+    "out": "smoke-20260908T0905Z/layer2",
+    "tip": null,
+    "allow-busy": true,
+    "skip-host-checks": false,
+    "origin": "127-0-0-1.nip.io",
+    "origin-ip": null,
+    "origin-port": 4443,
+    "origin-cert": "smoke-20260908T0905Z/work/p1.crt",
+    "port": 8444,
+    "bytes": 16,
+    "runs": 5,
+    "connections": 1,
+    "direct": true,
+    "control": null,
+    "profile-share": null,
+    "timeout": 120000,
+    "max-fail-pct": 2
+  },
+  "valid": false,
+  "status": "INVALID",
+  "reason": "no p1_control sample completed 16 MiB on every connection",
+  "arm": "p1_control",
+  "runs": [
+    {
+      "run": 1,
+      "connections": 1,
+      "ok": 0,
+      "bytes_total": 0,
+      "steady_mib_s": null,
+      "total_mib_s": null,
+      "aggregate_mib_s": null,
+      "handshake_ms": {
+        "n": 0,
+        "min": null,
+        "p50": null,
+        "p99": null,
+        "max": null,
+        "mean": null
+      },
+      "first_byte_ms": {
+        "n": 0,
+        "min": null,
+        "p50": null,
+        "p99": null,
+        "max": null,
+        "mean": null
+      },
+      "errors": [
+        {
+          "index": 0,
+          "error": "ECONNREFUSED",
+          "bytes": 0
+        }
+      ],
+      "tls": null
+    },
+    {
+      "run": 2,
+      "connections": 1,
+      "ok": 0,
+      "bytes_total": 0,
+      "steady_mib_s": null,
+      "total_mib_s": null,
+      "aggregate_mib_s": null,
+      "handshake_ms": {
+        "n": 0,
+        "min": null,
+        "p50": null,
+        "p99": null,
+        "max": null,
+        "mean": null
+      },
+      "first_byte_ms": {
+        "n": 0,
+        "min": null,
+        "p50": null,
+        "p99": null,
+        "max": null,
+        "mean": null
+      },
+      "errors": [
+        {
+          "index": 0,
+          "error": "ECONNREFUSED",
+          "bytes": 0
+        }
+      ],
+      "tls": null
+    },
+    {
+      "run": 3,
+      "connections": 1,
+      "ok": 0,
+      "bytes_total": 0,
+      "steady_mib_s": null,
+      "total_mib_s": null,
+      "aggregate_mib_s": null,
+      "handshake_ms": {
+        "n": 0,
+        "min": null,
+        "p50": null,
+        "p99": null,
+        "max": null,
+        "mean": null
+      },
+      "first_byte_ms": {
+        "n": 0,
+        "min": null,
+        "p50": null,
+        "p99": null,
+        "max": null,
+        "mean": null
+      },
+      "errors": [
+        {
+          "index": 0,
+          "error": "ECONNREFUSED",
+          "bytes": 0
+        }
+      ],
+      "tls": null
+    },
+    {
+      "run": 4,
+      "connections": 1,
+      "ok": 0,
+      "bytes_total": 0,
+      "steady_mib_s": null,
+      "total_mib_s": null,
+      "aggregate_mib_s": null,
+      "handshake_ms": {
+        "n": 0,
+        "min": null,
+        "p50": null,
+        "p99": null,
+        "max": null,
+        "mean": null
+      },
+      "first_byte_ms": {
+        "n": 0,
+        "min": null,
+        "p50": null,
+        "p99": null,
+        "max": null,
+        "mean": null
+      },
+      "errors": [
+        {
+          "index": 0,
+          "error": "ECONNREFUSED",
+          "bytes": 0
+        }
+      ],
+      "tls": null
+    },
+    {
+      "run": 5,
+      "connections": 1,
+      "ok": 0,
+      "bytes_total": 0,
+      "steady_mib_s": null,
+      "total_mib_s": null,
+      "aggregate_mib_s": null,
+      "handshake_ms": {
+        "n": 0,
+        "min": null,
+        "p50": null,
+        "p99": null,
+        "max": null,
+        "mean": null
+      },
+      "first_byte_ms": {
+        "n": 0,
+        "min": null,
+        "p50": null,
+        "p99": null,
+        "max": null,
+        "mean": null
+      },
+      "errors": [
+        {
+          "index": 0,
+          "error": "ECONNREFUSED",
+          "bytes": 0
+        }
+      ],
+      "tls": null
+    }
+  ],
+  "telemetry_delta": null
+}

@@ -1,0 +1,327 @@
+{
+  "script": "p10-domains",
+  "started_at": "2026-09-08T10:41:03.502Z",
+  "finished_at": "2026-09-08T10:41:26.475Z",
+  "tip": "b53968ca3b1b-dirty",
+  "probe": "127.0.0.1",
+  "probe_version": "0.3.3",
+  "http_runtimes": 2,
+  "host": {
+    "platform": "win32",
+    "idle": true,
+    "network": [
+      "Ethernet                Public"
+    ],
+    "busy": []
+  },
+  "args": {
+    "probe": "127.0.0.1",
+    "api-port": 8443,
+    "key": "<set>",
+    "out": "smoke-20260908T0905Z/layer1-b-n2",
+    "tip": null,
+    "allow-busy": false,
+    "skip-host-checks": false,
+    "n": 2,
+    "arm": [
+      "tls-intercepted"
+    ],
+    "origin": "127-0-0-1.nip.io",
+    "origin-http-port": 80,
+    "origin-https-port": 443,
+    "port": 8080,
+    "https-port": 8444,
+    "files": [
+      "1k.bin",
+      "10k.bin",
+      "50k.bin"
+    ],
+    "blocked": "ads.smoke.test",
+    "ca": "smoke-20260908T0905Z/work/smoke-ca.pem",
+    "intercepted-ssh": null,
+    "intercepted-ca": null,
+    "intercepted-oha": "oha",
+    "concurrency": 8,
+    "duration": 20,
+    "worker-threads": 4,
+    "ka-requests": 20,
+    "connrate-workers": 6,
+    "dns-qps": 300,
+    "dns-port": 53,
+    "single-path": "/100mb.bin",
+    "single-n": 5,
+    "par-path": "/10mb.bin",
+    "par-n": 40,
+    "par-c": 8,
+    "sample-interval": 2,
+    "tail-min": 0,
+    "transfers-tail-min": 0,
+    "driver": "auto",
+    "skip-issuer-sample": false,
+    "oha": "oha",
+    "max-fail-pct": 2
+  },
+  "valid": true,
+  "status": "degraded",
+  "degraded_reasons": [
+    "cpu_user_ms / cpu_system_ms are null on this probe (the kernel reading exists in-container only) — no cores figure",
+    "9496 TIME_WAIT sockets on this host — the client closed first somewhere; Windows port exhaustion caps the loop near 130 conn/s (§Traps)"
+  ],
+  "measurement": "P10",
+  "n": 2,
+  "oha_version": "1.16.0",
+  "oha_version_remote": null,
+  "worker_threads": 4,
+  "concurrency": 8,
+  "duration_s": 20,
+  "origin": "127-0-0-1.nip.io",
+  "blocked": "ads.smoke.test",
+  "intercepted_host": "local",
+  "arms": {
+    "tls-intercepted": {
+      "arm": "tls-intercepted",
+      "status": "valid",
+      "reason": null,
+      "driver": "oha",
+      "name": "127-0-0-1.nip.io",
+      "http": {
+        "ok": true,
+        "requests": 7164,
+        "failed": 8,
+        "non_2xx": 0,
+        "count_502": 0,
+        "rps": 358.6,
+        "attempts_per_s": 358.6,
+        "success_rate": 1,
+        "duration_s": 20,
+        "bytes": 7335936,
+        "size_per_sec_mib": 0.35,
+        "latency_ms": {
+          "p50": 21.534,
+          "p95": 42.42,
+          "p99": 51.953,
+          "mean": 22.318,
+          "max": 70.758
+        },
+        "first_byte_ms": {
+          "p50": 21.533,
+          "p95": 42.42,
+          "p99": 51.953
+        },
+        "rps_percentiles": {
+          "p50": 410.1,
+          "p95": 969.3,
+          "p99": 2466.8
+        },
+        "dns_dialup_ms": {
+          "average": 19.019,
+          "fastest": 4.028,
+          "slowest": 59.907
+        },
+        "status": {
+          "200": 7164
+        },
+        "error_distribution": {
+          "aborted due to deadline": 8
+        },
+        "wall_s": 20,
+        "file": "smoke-20260908T0905Z\\layer1-b-n2\\oha-tls-intercepted.json"
+      },
+      "issuer": {
+        "before": {
+          "issuerCN": "FastAdHunter CA",
+          "subjectCN": "127-0-0-1.nip.io",
+          "tls": "TLSv1.3",
+          "host": "local",
+          "leg": "intercepted",
+          "expected": "intercepted",
+          "matches": true
+        },
+        "after": {
+          "issuerCN": "FastAdHunter CA",
+          "subjectCN": "127-0-0-1.nip.io",
+          "tls": "TLSv1.3",
+          "host": "local",
+          "leg": "intercepted",
+          "expected": "intercepted",
+          "matches": true
+        }
+      },
+      "metrics": {
+        "wall_s": 20,
+        "cpu_ms": null,
+        "cores": null,
+        "cpu_ms_per_request": null,
+        "rss_floor_mib": null,
+        "rss_end_mib": null,
+        "delta_rss_end_mib": null,
+        "delta_rss_max_mib": null,
+        "samples_during": 0
+      },
+      "telemetry_delta": {
+        "http": {
+          "connections": 0,
+          "requests": 0,
+          "blocked": 0,
+          "refused_claim": 0,
+          "refused_destination": 0,
+          "resolve_failures": 0,
+          "upstream_failures": 0,
+          "upstream_cert_failures": 0,
+          "non_http": 0,
+          "non_tls": 0,
+          "hello_timeouts": 0,
+          "dropped_events": 0
+        },
+        "https": {
+          "connections": 7172,
+          "requests": 14337,
+          "blocked": 0,
+          "refused_claim": 0,
+          "refused_destination": 0,
+          "resolve_failures": 0,
+          "upstream_failures": 0,
+          "upstream_cert_failures": 0,
+          "non_http": 0,
+          "non_tls": 0,
+          "hello_timeouts": 0,
+          "dropped_events": 0
+        }
+      },
+      "leaf_cache_delta": {
+        "size": 0,
+        "capacity": 0,
+        "inflight": 0,
+        "hits": 7172,
+        "unwarmed_misses": 0,
+        "prewarm_hits": 7172,
+        "coalesced": 0,
+        "minted_total": 0,
+        "evictions": 0,
+        "superseded": 0
+      },
+      "time_wait": 9496,
+      "tail": null
+    }
+  },
+  "samples": [
+    {
+      "t": "2026-09-08T10:41:04.185Z",
+      "arm": "tls-intercepted",
+      "label": "before",
+      "status": 200,
+      "process_rss": null,
+      "cpu_user_ms": null,
+      "cpu_system_ms": null
+    },
+    {
+      "t": "2026-09-08T10:41:06.200Z",
+      "arm": "tls-intercepted",
+      "label": "during",
+      "status": 200,
+      "process_rss": null,
+      "cpu_user_ms": null,
+      "cpu_system_ms": null
+    },
+    {
+      "t": "2026-09-08T10:41:08.203Z",
+      "arm": "tls-intercepted",
+      "label": "during",
+      "status": 200,
+      "process_rss": null,
+      "cpu_user_ms": null,
+      "cpu_system_ms": null
+    },
+    {
+      "t": "2026-09-08T10:41:10.203Z",
+      "arm": "tls-intercepted",
+      "label": "during",
+      "status": 200,
+      "process_rss": null,
+      "cpu_user_ms": null,
+      "cpu_system_ms": null
+    },
+    {
+      "t": "2026-09-08T10:41:12.217Z",
+      "arm": "tls-intercepted",
+      "label": "during",
+      "status": 200,
+      "process_rss": null,
+      "cpu_user_ms": null,
+      "cpu_system_ms": null
+    },
+    {
+      "t": "2026-09-08T10:41:14.230Z",
+      "arm": "tls-intercepted",
+      "label": "during",
+      "status": 200,
+      "process_rss": null,
+      "cpu_user_ms": null,
+      "cpu_system_ms": null
+    },
+    {
+      "t": "2026-09-08T10:41:16.238Z",
+      "arm": "tls-intercepted",
+      "label": "during",
+      "status": 200,
+      "process_rss": null,
+      "cpu_user_ms": null,
+      "cpu_system_ms": null
+    },
+    {
+      "t": "2026-09-08T10:41:18.244Z",
+      "arm": "tls-intercepted",
+      "label": "during",
+      "status": 200,
+      "process_rss": null,
+      "cpu_user_ms": null,
+      "cpu_system_ms": null
+    },
+    {
+      "t": "2026-09-08T10:41:20.245Z",
+      "arm": "tls-intercepted",
+      "label": "during",
+      "status": 200,
+      "process_rss": null,
+      "cpu_user_ms": null,
+      "cpu_system_ms": null
+    },
+    {
+      "t": "2026-09-08T10:41:22.255Z",
+      "arm": "tls-intercepted",
+      "label": "during",
+      "status": 200,
+      "process_rss": null,
+      "cpu_user_ms": null,
+      "cpu_system_ms": null
+    },
+    {
+      "t": "2026-09-08T10:41:24.233Z",
+      "arm": "tls-intercepted",
+      "label": "end",
+      "status": 200,
+      "process_rss": null,
+      "cpu_user_ms": null,
+      "cpu_system_ms": null
+    }
+  ],
+  "gate": {
+    "statistic": "none — P10 proposes an N against the phase-2.6 criterion; the owner decides",
+    "n": 2,
+    "per_arm": {
+      "tls-intercepted": {
+        "status": "valid",
+        "rps": 358.6,
+        "conns_per_s": null,
+        "p50_ms": 21.534,
+        "p95_ms": 42.42,
+        "p99_ms": 51.953,
+        "cores": null,
+        "cpu_ms_per_request": null,
+        "count_502": 0,
+        "delta_rss_end_mib": null,
+        "dns_p99_ms": null
+      }
+    }
+  }
+}

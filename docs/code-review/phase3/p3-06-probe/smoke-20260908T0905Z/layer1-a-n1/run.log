@@ -1,0 +1,105 @@
+2026-09-08T10:23:51.302Z [sni] == sni start 2026-09-08T10:23:51.269Z tip=b53968ca3b1b-dirty out=smoke-20260908T0905Z/layer1-a-n1
+2026-09-08T10:23:51.303Z [sni] args {"probe":"127.0.0.1","api-port":8443,"key":"<set>","out":"smoke-20260908T0905Z/layer1-a-n1","tip":null,"allow-busy":false,"skip-host-checks":false,"blocked":"ads.smoke.test","allowed":"example.com","port":8444,"attempts":5,"timeout":5000}
+2026-09-08T10:23:51.577Z [sni] Get-NetConnectionProfile: Ethernet                Public
+2026-09-08T10:23:51.921Z [sni] idle check: PASS (recorded; each stage decides)
+2026-09-08T10:23:51.929Z [sni] GET /health -> 200 {"status":"ok","version":"0.3.3","uptime_seconds":0}
+2026-09-08T10:23:51.933Z [sni] config snapshot -> smoke-20260908T0905Z\layer1-a-n1\config.json
+2026-09-08T10:23:51.936Z [sni] engine.mode = dns+http+https
+2026-09-08T10:23:51.936Z [sni] runtime.http_runtimes = 1 (every HTTPS figure records it — plan §The N axis)
+2026-09-08T10:23:51.936Z [sni] https.sni.no_sni = pass
+2026-09-08T10:23:51.940Z [sni] blocked  #1 closed_silent bytes=0 close=0.641ms
+2026-09-08T10:23:51.961Z [sni] allowed  #1 server_hello  bytes=3933 close=20.569ms
+2026-09-08T10:23:51.962Z [sni] no_sni   #1 closed_silent bytes=0 close=0.425ms
+2026-09-08T10:23:51.963Z [sni] blocked  #2 closed_silent bytes=0 close=0.462ms
+2026-09-08T10:23:51.984Z [sni] allowed  #2 server_hello  bytes=3934 close=20.946ms
+2026-09-08T10:23:51.985Z [sni] no_sni   #2 closed_silent bytes=0 close=0.404ms
+2026-09-08T10:23:51.986Z [sni] blocked  #3 closed_silent bytes=0 close=0.302ms
+2026-09-08T10:23:52.012Z [sni] allowed  #3 server_hello  bytes=3935 close=25.783ms
+2026-09-08T10:23:52.012Z [sni] no_sni   #3 closed_silent bytes=0 close=0.409ms
+2026-09-08T10:23:52.013Z [sni] blocked  #4 closed_silent bytes=0 close=0.337ms
+2026-09-08T10:23:52.034Z [sni] allowed  #4 server_hello  bytes=3933 close=20.768ms
+2026-09-08T10:23:52.036Z [sni] no_sni   #4 closed_silent bytes=0 close=0.663ms
+2026-09-08T10:23:52.037Z [sni] blocked  #5 closed_silent bytes=0 close=0.266ms
+2026-09-08T10:23:52.047Z [sni] allowed  #5 server_hello  bytes=3935 close=10.266ms
+2026-09-08T10:23:52.048Z [sni] no_sni   #5 closed_silent bytes=0 close=0.291ms
+2026-09-08T10:23:52.051Z [sni] listeners.https delta {"connections":15,"requests":15,"blocked":5,"refused_claim":0,"refused_destination":0,"resolve_failures":0,"upstream_failures":0,"upstream_cert_failures":0,"non_http":0,"non_tls":0,"hello_timeouts":0,"dropped_events":0}
+2026-09-08T10:23:52.052Z [sni] wrote smoke-20260908T0905Z\layer1-a-n1\sni.json
+2026-09-08T10:23:52.052Z [sni] GATE {"statistic":"every blocked and no-SNI attempt closed before a certificate (boolean)","blocked_closed":true,"no_sni_closed":true,"allowed_opened":true,"pass":true}
+2026-09-08T10:23:52.052Z [sni] == sni done (valid)
+2026-09-08T10:25:42.736Z [p1] == p1 start 2026-09-08T10:25:42.705Z tip=b53968ca3b1b-dirty out=smoke-20260908T0905Z/layer1-a-n1
+2026-09-08T10:25:42.737Z [p1] args {"probe":"127.0.0.1","api-port":8443,"key":"<set>","out":"smoke-20260908T0905Z/layer1-a-n1","tip":null,"allow-busy":false,"skip-host-checks":false,"origin":"127-0-0-1.nip.io","origin-ip":null,"origin-port":443,"origin-cert":"smoke-20260908T0905Z/work/p1.crt","port":8444,"bytes":8,"runs":5,"connections":1,"direct":false,"control":"smoke-20260908T0905Z/layer1-a-n1/p1-control.json","profile-share":null,"timeout":120000,"max-fail-pct":2}
+2026-09-08T10:25:43.013Z [p1] Get-NetConnectionProfile: Ethernet                Public
+2026-09-08T10:25:43.385Z [p1] idle check: PASS (recorded; each stage decides)
+2026-09-08T10:25:43.392Z [p1] GET /health -> 200 {"status":"ok","version":"0.3.3","uptime_seconds":0}
+2026-09-08T10:25:43.395Z [p1] engine.mode = dns+http+https
+2026-09-08T10:25:43.395Z [p1] runtime.http_runtimes = 1 (every HTTPS figure records it — plan §The N axis)
+2026-09-08T10:25:43.401Z [p1] origin 127-0-0-1.nip.io resolves locally to 127.0.0.1
+2026-09-08T10:25:43.401Z [p1] egress.allow_destinations = ["127.0.0.0/8"]
+2026-09-08T10:25:43.401Z [p1] arm=spliced target=127.0.0.1:8444 sni=127-0-0-1.nip.io expected=8 MiB x 1 conn x 5 runs
+2026-09-08T10:25:43.421Z [p1] run 1: ok=1/1 steady=963.855 MiB/s total=494.438 aggregate=963.832 hs=3.458ms
+2026-09-08T10:25:43.452Z [p1] run 2: ok=1/1 steady=1266.825 MiB/s total=281.631 aggregate=1266.885 hs=18.108ms
+2026-09-08T10:25:43.468Z [p1] run 3: ok=1/1 steady=1243.008 MiB/s total=521.275 aggregate=1243.008 hs=4.34ms
+2026-09-08T10:25:43.483Z [p1] run 4: ok=1/1 steady=1213.224 MiB/s total=616.76 aggregate=1213.243 hs=2.401ms
+2026-09-08T10:25:43.526Z [p1] run 5: ok=1/1 steady=226.77 MiB/s total=191.177 aggregate=226.769 hs=2.481ms
+2026-09-08T10:25:43.528Z [p1] listeners.https delta {"connections":5,"requests":5,"blocked":0,"refused_claim":0,"refused_destination":0,"resolve_failures":0,"upstream_failures":0,"upstream_cert_failures":0,"non_http":0,"non_tls":0,"hello_timeouts":0,"dropped_events":0}
+2026-09-08T10:25:43.529Z [p1] wrote smoke-20260908T0905Z\layer1-a-n1\p1.json
+2026-09-08T10:25:43.529Z [p1] GATE {"statistic":"median of runs steady MiB/s >= 100 and inside P1-control min-max","median_steady_mib_s":1213.224,"at_least_100":true,"band":{"min":668.952,"p50":863.838,"max":1170.618,"source":"smoke-20260908T0905Z/layer1-a-n1/p1-control.json"},"inside_band":false,"pass":false}
+2026-09-08T10:25:43.529Z [p1] == p1 done (valid)
+2026-09-08T10:27:24.215Z [p1] == p1 start 2026-09-08T10:27:24.184Z tip=b53968ca3b1b-dirty out=smoke-20260908T0905Z/layer1-a-n1
+2026-09-08T10:27:24.216Z [p1] args {"probe":"127.0.0.1","api-port":8443,"key":"<set>","out":"smoke-20260908T0905Z/layer1-a-n1","tip":null,"allow-busy":false,"skip-host-checks":false,"origin":"127-0-0-1.nip.io","origin-ip":null,"origin-port":443,"origin-cert":"smoke-20260908T0905Z/work/p1.crt","port":8444,"bytes":8,"runs":5,"connections":1,"direct":false,"control":"smoke-20260908T0905Z/layer1-a-n1/p1-control.json","profile-share":null,"timeout":120000,"max-fail-pct":2}
+2026-09-08T10:27:24.465Z [p1] Get-NetConnectionProfile: Ethernet                Public
+2026-09-08T10:27:24.840Z [p1] idle check: PASS (recorded; each stage decides)
+2026-09-08T10:27:24.847Z [p1] GET /health -> 200 {"status":"ok","version":"0.3.3","uptime_seconds":0}
+2026-09-08T10:27:24.850Z [p1] engine.mode = dns+http+https
+2026-09-08T10:27:24.851Z [p1] runtime.http_runtimes = 1 (every HTTPS figure records it — plan §The N axis)
+2026-09-08T10:27:24.856Z [p1] origin 127-0-0-1.nip.io resolves locally to 127.0.0.1
+2026-09-08T10:27:24.856Z [p1] egress.allow_destinations = ["127.0.0.0/8"]
+2026-09-08T10:27:24.856Z [p1] arm=spliced target=127.0.0.1:8444 sni=127-0-0-1.nip.io expected=8 MiB x 1 conn x 5 runs
+2026-09-08T10:27:24.877Z [p1] run 1: ok=1/1 steady=931.099 MiB/s total=496.001 aggregate=931.142 hs=3.376ms
+2026-09-08T10:27:24.895Z [p1] run 2: ok=1/1 steady=1344.99 MiB/s total=493.492 aggregate=1345.013 hs=6.319ms
+2026-09-08T10:27:24.927Z [p1] run 3: ok=1/1 steady=1277.955 MiB/s total=258.44 aggregate=1277.853 hs=20.5ms
+2026-09-08T10:27:24.942Z [p1] run 4: ok=1/1 steady=1242.622 MiB/s total=597.505 aggregate=1242.68 hs=2.736ms
+2026-09-08T10:27:24.965Z [p1] run 5: ok=1/1 steady=532.481 MiB/s total=376.329 aggregate=532.485 hs=2.33ms
+2026-09-08T10:27:24.967Z [p1] listeners.https delta {"connections":5,"requests":5,"blocked":0,"refused_claim":0,"refused_destination":0,"resolve_failures":0,"upstream_failures":0,"upstream_cert_failures":0,"non_http":0,"non_tls":0,"hello_timeouts":0,"dropped_events":0}
+2026-09-08T10:27:24.968Z [p1] wrote smoke-20260908T0905Z\layer1-a-n1\p1.json
+2026-09-08T10:27:24.968Z [p1] GATE {"statistic":"median of runs steady MiB/s >= 0.9 x P1-control median (testing plan delta 1)","median_steady_mib_s":1242.622,"band":{"min":668.952,"p50":863.838,"max":1170.618,"source":"smoke-20260908T0905Z/layer1-a-n1/p1-control.json"},"floor_mib_s":777.454,"ratio_to_control":1.4385,"absolute_mib_s":1242.622,"pass":true}
+2026-09-08T10:27:24.968Z [p1] == p1 done (valid)
+2026-09-08T10:43:00.540Z [p10-domains] == p10-domains start 2026-09-08T10:43:00.508Z tip=b53968ca3b1b-dirty out=smoke-20260908T0905Z/layer1-a-n1
+2026-09-08T10:43:00.541Z [p10-domains] args {"probe":"127.0.0.1","api-port":8443,"key":"<set>","out":"smoke-20260908T0905Z/layer1-a-n1","tip":null,"allow-busy":true,"skip-host-checks":false,"n":1,"arm":["close","mixed","tls-spliced"],"origin":"127-0-0-1.nip.io","origin-http-port":80,"origin-https-port":443,"port":8080,"https-port":8444,"files":["1k.bin","10k.bin","50k.bin"],"blocked":"ads.smoke.test","ca":"smoke-20260908T0905Z/work/smoke-ca.pem","intercepted-ssh":null,"intercepted-ca":null,"intercepted-oha":"oha","concurrency":8,"duration":15,"worker-threads":4,"ka-requests":20,"connrate-workers":6,"dns-qps":300,"dns-port":5300,"single-path":"/100mb.bin","single-n":5,"par-path":"/10mb.bin","par-n":40,"par-c":8,"sample-interval":2,"tail-min":0,"transfers-tail-min":0,"driver":"auto","skip-issuer-sample":false,"oha":"oha","max-fail-pct":2}
+2026-09-08T10:43:00.827Z [p10-domains] Get-NetConnectionProfile: Ethernet                Public
+2026-09-08T10:43:01.195Z [p10-domains] idle check: FAIL brave (recorded; each stage decides)
+2026-09-08T10:43:01.203Z [p10-domains] GET /health -> 200 {"status":"ok","version":"0.3.3","uptime_seconds":1}
+2026-09-08T10:43:01.208Z [p10-domains] engine.mode = dns+http+https
+2026-09-08T10:43:01.208Z [p10-domains] runtime.http_runtimes = 1 (every HTTPS figure records it — plan §The N axis)
+2026-09-08T10:43:01.208Z [p10-domains] degraded: host not idle: brave
+2026-09-08T10:43:01.226Z [p10-domains] oha 1.16.0 on this host; --worker-threads 4
+2026-09-08T10:43:01.226Z [p10-domains] == arm close start
+2026-09-08T10:43:01.233Z [p10-domains] close-http: oha --no-tui --output-format json --worker-threads 4 -z 15s -c 8 --disable-keepalive -H Host: 127-0-0-1.nip.io --rand-regex-url http://127.0.0.1:8080/(1k[.]bin|10k[.]bin|50k[.]bin)
+2026-09-08T10:43:16.273Z [p10-domains] close-http: requests=20858 failed=7 rps=1390.4 p50/p95/p99=1.688/23.499/34.974 ms 502=0 MiB/s=27.64 errors={"aborted due to deadline":7}
+2026-09-08T10:43:16.277Z [p10-domains] degraded: cpu_user_ms / cpu_system_ms are null on this probe (the kernel reading exists in-container only) — no cores figure
+2026-09-08T10:43:16.277Z [p10-domains] close: wall=15s cores=- ms/req=- ΔRSS end=- max=- MiB (floor - MiB)
+2026-09-08T10:43:16.454Z [p10-domains] netstat failed: spawnSync netstat ENOBUFS
+2026-09-08T10:43:18.495Z [p10-domains] mixed-dns: warm: 25/25 names answered
+2026-09-08T10:43:18.495Z [p10-domains] == arm mixed start
+2026-09-08T10:43:18.501Z [p10-domains] mixed-http: oha --no-tui --output-format json --worker-threads 4 -z 15s -c 8 --disable-keepalive -H Host: 127-0-0-1.nip.io --rand-regex-url http://127.0.0.1:8080/(1k[.]bin|10k[.]bin|50k[.]bin)
+2026-09-08T10:43:28.505Z [p10-domains] mixed-dns: t=10s sent=3000 qps=300 timeouts=0 unmatched=0
+2026-09-08T10:43:33.539Z [p10-domains] mixed-http: requests=22355 failed=7 rps=1490.2 p50/p95/p99=1.614/23.294/34.569 ms 502=0 MiB/s=29.8 errors={"aborted due to deadline":7}
+2026-09-08T10:43:33.543Z [p10-domains] mixed: wall=15s cores=- ms/req=- ΔRSS end=- max=- MiB (floor - MiB)
+2026-09-08T10:43:33.724Z [p10-domains] netstat failed: spawnSync netstat ENOBUFS
+2026-09-08T10:43:33.724Z [p10-domains] mixed-dns: sent=4500/4500 qps=299.9 p50/p95/p99=0.234/10.279/12.357 ms timeouts=0 unmatched=0 blocked→0.0.0.0=896/896
+2026-09-08T10:43:35.750Z [p10-domains] tls-spliced: issuer sample before from local: issuer=smoke-origin subject=smoke-origin TLSv1.3 → leg=spliced expected=spliced
+2026-09-08T10:43:35.750Z [p10-domains] == arm tls-spliced start
+2026-09-08T10:43:35.760Z [p10-domains] tls-spliced: oha --no-tui --output-format json --worker-threads 4 -z 15s -c 8 --disable-keepalive --connect-to 127-0-0-1.nip.io:443:127.0.0.1:8444 --insecure https://127-0-0-1.nip.io:443/1k.bin
+2026-09-08T10:43:50.802Z [p10-domains] tls-spliced: requests=10532 failed=8 rps=702.2 p50/p95/p99=4.818/37.157/49.694 ms 502=0 MiB/s=0.69 errors={"aborted due to deadline":8}
+2026-09-08T10:43:50.808Z [p10-domains] tls-spliced: wall=15s cores=- ms/req=- ΔRSS end=- max=- MiB (floor - MiB)
+2026-09-08T10:43:50.990Z [p10-domains] netstat failed: spawnSync netstat ENOBUFS
+2026-09-08T10:43:50.995Z [p10-domains] tls-spliced: issuer sample after from local: issuer=smoke-origin subject=smoke-origin TLSv1.3 → leg=spliced expected=spliced
+2026-09-08T10:43:50.997Z [p10-domains] tls-spliced-blocked: issuer sample before from local: issuer=none subject=-  → leg=unknown expected=spliced error=ECONNRESET
+2026-09-08T10:43:50.997Z [p10-domains] == arm tls-spliced-blocked start
+2026-09-08T10:43:51.001Z [p10-domains] tls-spliced-blocked: oha --no-tui --output-format json --worker-threads 4 -z 15s -c 8 --disable-keepalive --connect-to ads.smoke.test:443:127.0.0.1:8444 --insecure https://ads.smoke.test:443/1k.bin
+2026-09-08T10:44:06.032Z [p10-domains] tls-spliced-blocked: requests=0 failed=94166 rps=6276.6 p50/p95/p99=null/null/null ms 502=0 MiB/s=0 errors={"Only one usage of each socket address (protocol/network address/port) is normally permitted. (os error 10048)":1,"aborted due to deadline":7,"tls handshake eof":94158}
+2026-09-08T10:44:06.036Z [p10-domains] tls-spliced-blocked: wall=15s cores=- ms/req=- ΔRSS end=- max=- MiB (floor - MiB)
+2026-09-08T10:44:06.219Z [p10-domains] netstat failed: spawnSync netstat ENOBUFS
+2026-09-08T10:44:08.234Z [p10-domains] wrote smoke-20260908T0905Z\layer1-a-n1\p10-N1.json
+2026-09-08T10:44:08.234Z [p10-domains] GATE (degraded, not a gate) {"statistic":"none — P10 proposes an N against the phase-2.6 criterion; the owner decides","n":1,"per_arm":{"close":{"status":"valid","rps":1390.4,"conns_per_s":null,"p50_ms":1.688,"p95_ms":23.499,"p99_ms":34.974,"cores":null,"cpu_ms_per_request":null,"count_502":0,"delta_rss_end_mib":null,"dns_p99_ms":null},"mixed":{"status":"valid","rps":1490.2,"conns_per_s":null,"p50_ms":1.614,"p95_ms":23.294,"p99_ms":34.569,"cores":null,"cpu_ms_per_request":null,"count_502":0,"delta_rss_end_mib":null,"dns_p99_ms":12.357},"tls-spliced":{"status":"valid","rps":702.2,"conns_per_s":null,"p50_ms":4.818,"p95_ms":37.157,"p99_ms":49.694,"cores":null,"cpu_ms_per_request":null,"count_502":0,"delta_rss_end_mib":null,"dns_p99_ms":null},"tls-spliced-blocked":{"status":"valid","rps":6276.6,"conns_per_s":null,"p50_ms":null,"p95_ms":null,"p99_ms":null,"cores":null,"cpu_ms_per_request":null,"count_502":0,"delta_rss_end_mib":null,"dns_p99_ms":null}}}
+2026-09-08T10:44:08.234Z [p10-domains] == p10-domains done (degraded)

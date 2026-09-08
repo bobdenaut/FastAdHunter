@@ -1,0 +1,20 @@
+2026-09-08T11:03:02.884Z [p1] == p1 start 2026-09-08T11:03:02.853Z tip=b53968ca3b1b-dirty out=smoke-20260908T0905Z/layer2-nocontrol2
+2026-09-08T11:03:02.885Z [p1] args {"probe":"127.0.0.1","api-port":8443,"key":"<set>","out":"smoke-20260908T0905Z/layer2-nocontrol2","tip":null,"allow-busy":true,"skip-host-checks":false,"origin":"127-0-0-1.nip.io","origin-ip":null,"origin-port":443,"origin-cert":"smoke-20260908T0905Z/work/p1.crt","port":8444,"bytes":8,"runs":5,"connections":1,"direct":false,"control":null,"profile-share":null,"timeout":120000,"max-fail-pct":2}
+2026-09-08T11:03:03.250Z [p1] Get-NetConnectionProfile: Ethernet                Public
+2026-09-08T11:03:03.743Z [p1] idle check: FAIL brave (recorded; each stage decides)
+2026-09-08T11:03:03.751Z [p1] GET /health -> 200 {"status":"ok","version":"0.3.3","uptime_seconds":3}
+2026-09-08T11:03:03.757Z [p1] config snapshot -> smoke-20260908T0905Z\layer2-nocontrol2\config.json
+2026-09-08T11:03:03.757Z [p1] engine.mode = dns+http+https
+2026-09-08T11:03:03.757Z [p1] runtime.http_runtimes = 2 (every HTTPS figure records it — plan §The N axis)
+2026-09-08T11:03:03.758Z [p1] degraded: host not idle: brave
+2026-09-08T11:03:03.763Z [p1] origin 127-0-0-1.nip.io resolves locally to 127.0.0.1
+2026-09-08T11:03:03.763Z [p1] egress.allow_destinations = ["127.0.0.0/8"]
+2026-09-08T11:03:03.763Z [p1] arm=spliced target=127.0.0.1:8444 sni=127-0-0-1.nip.io expected=8 MiB x 1 conn x 5 runs
+2026-09-08T11:03:03.805Z [p1] run 1: ok=1/1 steady=481.957 MiB/s total=212.309 aggregate=481.968 hs=16.59ms
+2026-09-08T11:03:03.834Z [p1] run 2: ok=1/1 steady=1257.664 MiB/s total=300.086 aggregate=1257.743 hs=15.991ms
+2026-09-08T11:03:03.866Z [p1] run 3: ok=1/1 steady=1222.681 MiB/s total=262.175 aggregate=1222.643 hs=19.251ms
+2026-09-08T11:03:03.884Z [p1] run 4: ok=1/1 steady=814.747 MiB/s total=472.004 aggregate=814.78 hs=2.807ms
+2026-09-08T11:03:03.912Z [p1] run 5: ok=1/1 steady=390.13 MiB/s total=292.772 aggregate=390.122 hs=2.544ms
+2026-09-08T11:03:03.914Z [p1] listeners.https delta {"connections":5,"requests":5,"blocked":0,"refused_claim":0,"refused_destination":0,"resolve_failures":0,"upstream_failures":0,"upstream_cert_failures":0,"non_http":0,"non_tls":0,"hello_timeouts":0,"dropped_events":0}
+2026-09-08T11:03:03.915Z [p1] INVALID: no P1-control median in this session: run --direct first, or pass --control <p1-control.json> (the gate is relative — testing plan delta 1)
+2026-09-08T11:03:03.915Z [p1] wrote smoke-20260908T0905Z\layer2-nocontrol2\p1.json

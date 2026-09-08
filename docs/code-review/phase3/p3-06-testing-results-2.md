@@ -216,7 +216,7 @@ Four hypotheses tested and refuted:
 | EOF / teardown propagation through the relay | `total − firstbyte` per arm | Refuted — splice is faster (0.22 vs 0.28 ms) |
 | Nagle on the upstream leg | code read, `crates/fah-http/src/https.rs:230` | Refuted — `set_nodelay(true)` is set on the upstream socket, and `server.rs:184` sets it on the accepted one |
 | The domain hand-off (detach → channel → re-register on another runtime's IO driver) | interleaved N = 0 / 2 / 0 / 2, phases each time | Refuted — N = 0 produced both the fastest (7.033 ms) and the slowest (21.314 ms) reading |
-| Windows ephemeral-port / TIME_WAIT pressure (the p10 trap) | `netstat` count vs `netsh int ipv4 show dynamicport tcp` | Refuted — 165 TIME_WAIT against 16 384 ephemeral ports, 1 % |
+| Windows ephemeral-port / TIME_WAIT pressure (the p10 trap) | `netstat` count vs `netsh int ipv4 show dynamicport tcp` | ~~Refuted — 165 TIME_WAIT against 16 384 ephemeral ports, 1 %~~ **Withdrawn 2026-09-08: the reading was taken after the run had drained. Re-opened as the leading candidate — see below** |
 | The SNI resolve the splice pays and `curl --resolve` skips | raw UDP query to `192.168.10.1`, 12 samples | Refuted — min 0.65, median 0.78, max 1.24 ms |
 
 The N sweep readings, interleaved, `tls − connect` for the splice arm:
@@ -225,6 +225,18 @@ direct control in the same four arms stayed flat at **4.116 → 4.228 → 4.157 
 4.466 ms**. The proxied path drifts by 3 × within one session; the direct path
 holds an 8 % band. The FAH process was restarted between every arm, so nothing
 accumulates inside it.
+
+**Correction, 2026-09-08 (later the same day).** The TIME_WAIT row above is
+**withdrawn**. That reading of 165 was taken after the run had drained, which
+does not support a refutation. During the smoke session's `p10` close arm this
+box reached **15 543 TIME_WAIT — 95 % of the 16 384-port ephemeral range** —
+and was watched draining to 12 in about 100 seconds. The D8 attribution runs
+were four back-to-back `Connection: close` arms inside roughly two minutes,
+and the spliced path opens two sockets per request where direct opens one,
+which fits the observed 7 -> 12 -> 21 ms drift against a flat direct control.
+Port pressure is therefore the **leading candidate**, not a refuted one. Not
+chased further (owner instruction); recorded because a wrong refutation is
+worse than an open question.
 
 **Status: UNRESOLVED, and bounded.** The cost is localised to the TLS handshake
 window, is independent of N, and is not explained by connect, DNS, Nagle,

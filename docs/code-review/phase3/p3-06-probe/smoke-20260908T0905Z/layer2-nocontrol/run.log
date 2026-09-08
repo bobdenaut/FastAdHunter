@@ -1,0 +1,20 @@
+2026-09-08T10:47:24.236Z [p1] == p1 start 2026-09-08T10:47:24.206Z tip=b53968ca3b1b-dirty out=smoke-20260908T0905Z/layer2-nocontrol
+2026-09-08T10:47:24.237Z [p1] args {"probe":"127.0.0.1","api-port":8443,"key":"<set>","out":"smoke-20260908T0905Z/layer2-nocontrol","tip":null,"allow-busy":true,"skip-host-checks":false,"origin":"127-0-0-1.nip.io","origin-ip":null,"origin-port":443,"origin-cert":"smoke-20260908T0905Z/work/p1.crt","port":8444,"bytes":8,"runs":5,"connections":1,"direct":false,"control":null,"profile-share":null,"timeout":120000,"max-fail-pct":2}
+2026-09-08T10:47:24.484Z [p1] Get-NetConnectionProfile: Ethernet                Public
+2026-09-08T10:47:24.878Z [p1] idle check: FAIL brave (recorded; each stage decides)
+2026-09-08T10:47:24.886Z [p1] GET /health -> 200 {"status":"ok","version":"0.3.3","uptime_seconds":157}
+2026-09-08T10:47:24.893Z [p1] config snapshot -> smoke-20260908T0905Z\layer2-nocontrol\config.json
+2026-09-08T10:47:24.893Z [p1] engine.mode = dns+http+https
+2026-09-08T10:47:24.894Z [p1] runtime.http_runtimes = 0 (every HTTPS figure records it — plan §The N axis)
+2026-09-08T10:47:24.894Z [p1] degraded: host not idle: brave
+2026-09-08T10:47:24.899Z [p1] origin 127-0-0-1.nip.io resolves locally to 127.0.0.1
+2026-09-08T10:47:24.899Z [p1] egress.allow_destinations = ["127.0.0.0/8"]
+2026-09-08T10:47:24.899Z [p1] arm=spliced target=127.0.0.1:8444 sni=127-0-0-1.nip.io expected=8 MiB x 1 conn x 5 runs
+2026-09-08T10:48:24.913Z [p1] run 1: ok=0/1 steady=- MiB/s total=- aggregate=- hs=3.504ms errors=[{"index":0,"error":"closed_zero_bytes","bytes":0}]
+2026-09-08T10:49:24.946Z [p1] run 2: ok=0/1 steady=- MiB/s total=- aggregate=- hs=12.669ms errors=[{"index":0,"error":"closed_zero_bytes","bytes":0}]
+2026-09-08T10:50:24.960Z [p1] run 3: ok=0/1 steady=- MiB/s total=- aggregate=- hs=4.902ms errors=[{"index":0,"error":"closed_zero_bytes","bytes":0}]
+2026-09-08T10:51:24.978Z [p1] run 4: ok=0/1 steady=- MiB/s total=- aggregate=- hs=5.34ms errors=[{"index":0,"error":"closed_zero_bytes","bytes":0}]
+2026-09-08T10:52:24.987Z [p1] run 5: ok=0/1 steady=- MiB/s total=- aggregate=- hs=2.743ms errors=[{"index":0,"error":"closed_zero_bytes","bytes":0}]
+2026-09-08T10:52:24.994Z [p1] listeners.https delta {"connections":5,"requests":5,"blocked":0,"refused_claim":0,"refused_destination":0,"resolve_failures":0,"upstream_failures":0,"upstream_cert_failures":0,"non_http":0,"non_tls":0,"hello_timeouts":0,"dropped_events":0}
+2026-09-08T10:52:24.994Z [p1] INVALID: no spliced sample completed 8 MiB on every connection
+2026-09-08T10:52:24.995Z [p1] wrote smoke-20260908T0905Z\layer2-nocontrol\p1.json

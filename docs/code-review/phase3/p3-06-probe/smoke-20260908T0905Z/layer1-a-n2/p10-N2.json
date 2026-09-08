@@ -1,0 +1,376 @@
+{
+  "script": "p10-domains",
+  "started_at": "2026-09-08T10:40:39.641Z",
+  "finished_at": "2026-09-08T10:40:44.889Z",
+  "tip": "b53968ca3b1b-dirty",
+  "probe": "127.0.0.1",
+  "probe_version": "0.3.3",
+  "http_runtimes": 2,
+  "host": {
+    "platform": "win32",
+    "idle": true,
+    "network": [
+      "Ethernet                Public"
+    ],
+    "busy": []
+  },
+  "args": {
+    "probe": "127.0.0.1",
+    "api-port": 8443,
+    "key": "<set>",
+    "out": "smoke-20260908T0905Z/layer1-a-n2",
+    "tip": null,
+    "allow-busy": false,
+    "skip-host-checks": false,
+    "n": 2,
+    "arm": [
+      "transfers"
+    ],
+    "origin": "127-0-0-1.nip.io",
+    "origin-http-port": 80,
+    "origin-https-port": 443,
+    "port": 8080,
+    "https-port": 8444,
+    "files": [
+      "1k.bin",
+      "10k.bin",
+      "50k.bin"
+    ],
+    "blocked": "ads.smoke.test",
+    "ca": "smoke-20260908T0905Z/work/smoke-ca.pem",
+    "intercepted-ssh": null,
+    "intercepted-ca": null,
+    "intercepted-oha": "oha",
+    "concurrency": 48,
+    "duration": 300,
+    "worker-threads": 4,
+    "ka-requests": 20,
+    "connrate-workers": 6,
+    "dns-qps": 300,
+    "dns-port": 53,
+    "single-path": "/100mb.bin",
+    "single-n": 5,
+    "par-path": "/10mb.bin",
+    "par-n": 40,
+    "par-c": 8,
+    "sample-interval": 2,
+    "tail-min": 0,
+    "transfers-tail-min": 0,
+    "driver": "auto",
+    "skip-issuer-sample": false,
+    "oha": "oha",
+    "max-fail-pct": 2
+  },
+  "valid": true,
+  "status": "degraded",
+  "degraded_reasons": [
+    "cpu_user_ms / cpu_system_ms are null on this probe (the kernel reading exists in-container only) — no cores figure"
+  ],
+  "measurement": "P10",
+  "n": 2,
+  "oha_version": "1.16.0",
+  "oha_version_remote": null,
+  "worker_threads": 4,
+  "concurrency": 48,
+  "duration_s": 300,
+  "origin": "127-0-0-1.nip.io",
+  "blocked": "ads.smoke.test",
+  "intercepted_host": "local",
+  "arms": {
+    "transfers": {
+      "arm": "transfers",
+      "status": "valid",
+      "reason": null,
+      "driver": "oha",
+      "note": "sizePerSec includes connect, handshake and teardown — a cross-check figure, not the P1 row (plan §Load generators)",
+      "spliced": {
+        "single": {
+          "ok": true,
+          "requests": 5,
+          "failed": 0,
+          "non_2xx": 0,
+          "count_502": 0,
+          "rps": 6,
+          "attempts_per_s": 6,
+          "success_rate": 1,
+          "duration_s": 0.84,
+          "bytes": 524288000,
+          "size_per_sec_mib": 595.04,
+          "latency_ms": {
+            "p50": 170.463,
+            "p95": 207.325,
+            "p99": 207.325,
+            "mean": 167.981,
+            "max": 207.325
+          },
+          "first_byte_ms": {
+            "p50": 80.465,
+            "p95": 117.838,
+            "p99": 117.838
+          },
+          "rps_percentiles": {
+            "p50": 5.9,
+            "p95": 7.4,
+            "p99": 7.4
+          },
+          "dns_dialup_ms": {
+            "average": 16.561,
+            "fastest": 2.298,
+            "slowest": 36.753
+          },
+          "status": {
+            "200": 5
+          },
+          "error_distribution": {},
+          "wall_s": 0.9,
+          "file": "smoke-20260908T0905Z\\layer1-a-n2\\oha-transfers-single-spliced.json"
+        },
+        "parallel": {
+          "ok": true,
+          "requests": 40,
+          "failed": 0,
+          "non_2xx": 0,
+          "count_502": 0,
+          "rps": 109.4,
+          "attempts_per_s": 109.4,
+          "success_rate": 1,
+          "duration_s": 0.37,
+          "bytes": 419430400,
+          "size_per_sec_mib": 1094.17,
+          "latency_ms": {
+            "p50": 68.726,
+            "p95": 94.536,
+            "p99": 102.898,
+            "mean": 68.408,
+            "max": 102.898
+          },
+          "first_byte_ms": {
+            "p50": 55.754,
+            "p95": 85.046,
+            "p99": 85.137
+          },
+          "rps_percentiles": {
+            "p50": 134.4,
+            "p95": 915.8,
+            "p99": 2175.8
+          },
+          "dns_dialup_ms": {
+            "average": 33.249,
+            "fastest": 17.95,
+            "slowest": 70.324
+          },
+          "status": {
+            "200": 40
+          },
+          "error_distribution": {},
+          "wall_s": 0.4,
+          "file": "smoke-20260908T0905Z\\layer1-a-n2\\oha-transfers-par-spliced.json"
+        }
+      },
+      "control": {
+        "single": {
+          "ok": true,
+          "requests": 5,
+          "failed": 0,
+          "non_2xx": 0,
+          "count_502": 0,
+          "rps": 7.6,
+          "attempts_per_s": 7.6,
+          "success_rate": 1,
+          "duration_s": 0.66,
+          "bytes": 524288000,
+          "size_per_sec_mib": 756,
+          "latency_ms": {
+            "p50": 135.908,
+            "p95": 142.936,
+            "p99": 142.936,
+            "mean": 132.202,
+            "max": 142.936
+          },
+          "first_byte_ms": {
+            "p50": 72.789,
+            "p95": 85.657,
+            "p99": 85.657
+          },
+          "rps_percentiles": {
+            "p50": 7.4,
+            "p95": 8.3,
+            "p99": 8.3
+          },
+          "dns_dialup_ms": {
+            "average": 9.585,
+            "fastest": 0.983,
+            "slowest": 21.768
+          },
+          "status": {
+            "200": 5
+          },
+          "error_distribution": {},
+          "wall_s": 0.7,
+          "file": "smoke-20260908T0905Z\\layer1-a-n2\\oha-transfers-single-control.json"
+        },
+        "parallel": {
+          "ok": true,
+          "requests": 40,
+          "failed": 0,
+          "non_2xx": 0,
+          "count_502": 0,
+          "rps": 117.1,
+          "attempts_per_s": 117.1,
+          "success_rate": 1,
+          "duration_s": 0.34,
+          "bytes": 419430400,
+          "size_per_sec_mib": 1170.96,
+          "latency_ms": {
+            "p50": 62.439,
+            "p95": 85.266,
+            "p99": 94.669,
+            "mean": 63.045,
+            "max": 94.669
+          },
+          "first_byte_ms": {
+            "p50": 55.209,
+            "p95": 76.038,
+            "p99": 87.89
+          },
+          "rps_percentiles": {
+            "p50": 133.7,
+            "p95": 583.5,
+            "p99": 860.7
+          },
+          "dns_dialup_ms": {
+            "average": 31.364,
+            "fastest": 10.53,
+            "slowest": 46.461
+          },
+          "status": {
+            "200": 40
+          },
+          "error_distribution": {},
+          "wall_s": 0.4,
+          "file": "smoke-20260908T0905Z\\layer1-a-n2\\oha-transfers-par-control.json"
+        }
+      },
+      "spliced_over_control": {
+        "single": 0.787,
+        "parallel": 0.934
+      },
+      "relayed_mib": 900,
+      "cores_per_900_mib": null,
+      "issuer": {
+        "before": {
+          "issuerCN": "smoke-origin",
+          "subjectCN": "smoke-origin",
+          "tls": "TLSv1.3",
+          "host": "local",
+          "leg": "spliced",
+          "expected": "spliced",
+          "matches": true
+        },
+        "after": {
+          "issuerCN": "smoke-origin",
+          "subjectCN": "smoke-origin",
+          "tls": "TLSv1.3",
+          "host": "local",
+          "leg": "spliced",
+          "expected": "spliced",
+          "matches": true
+        }
+      },
+      "metrics": {
+        "wall_s": 1.3,
+        "cpu_ms": null,
+        "cores": null,
+        "cpu_ms_per_request": null,
+        "rss_floor_mib": null,
+        "rss_end_mib": null,
+        "delta_rss_end_mib": null,
+        "delta_rss_max_mib": null,
+        "samples_during": 0
+      },
+      "telemetry_delta": {
+        "http": {
+          "connections": 0,
+          "requests": 0,
+          "blocked": 0,
+          "refused_claim": 0,
+          "refused_destination": 0,
+          "resolve_failures": 0,
+          "upstream_failures": 0,
+          "upstream_cert_failures": 0,
+          "non_http": 0,
+          "non_tls": 0,
+          "hello_timeouts": 0,
+          "dropped_events": 0
+        },
+        "https": {
+          "connections": 45,
+          "requests": 45,
+          "blocked": 0,
+          "refused_claim": 0,
+          "refused_destination": 0,
+          "resolve_failures": 0,
+          "upstream_failures": 0,
+          "upstream_cert_failures": 0,
+          "non_http": 0,
+          "non_tls": 0,
+          "hello_timeouts": 0,
+          "dropped_events": 0
+        }
+      },
+      "leaf_cache_delta": {
+        "size": 0,
+        "capacity": 0,
+        "inflight": 0,
+        "hits": 0,
+        "unwarmed_misses": 0,
+        "prewarm_hits": 0,
+        "coalesced": 0,
+        "minted_total": 0,
+        "evictions": 0,
+        "superseded": 0
+      },
+      "time_wait": null,
+      "tail": null
+    }
+  },
+  "samples": [
+    {
+      "t": "2026-09-08T10:40:40.366Z",
+      "arm": "transfers",
+      "label": "before",
+      "status": 200,
+      "process_rss": null,
+      "cpu_user_ms": null,
+      "cpu_system_ms": null
+    },
+    {
+      "t": "2026-09-08T10:40:41.633Z",
+      "arm": "transfers",
+      "label": "end",
+      "status": 200,
+      "process_rss": null,
+      "cpu_user_ms": null,
+      "cpu_system_ms": null
+    }
+  ],
+  "gate": {
+    "statistic": "none — P10 proposes an N against the phase-2.6 criterion; the owner decides",
+    "n": 2,
+    "per_arm": {
+      "transfers": {
+        "status": "valid",
+        "rps": 6,
+        "conns_per_s": null,
+        "p50_ms": 170.463,
+        "p95_ms": 207.325,
+        "p99_ms": 207.325,
+        "cores": null,
+        "cpu_ms_per_request": null,
+        "count_502": 0,
+        "delta_rss_end_mib": null,
+        "dns_p99_ms": null
+      }
+    }
+  }
+}

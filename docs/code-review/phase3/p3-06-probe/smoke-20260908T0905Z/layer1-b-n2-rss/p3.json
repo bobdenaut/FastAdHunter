@@ -1,0 +1,87 @@
+{
+  "script": "p3",
+  "started_at": "2026-09-08T10:31:36.931Z",
+  "finished_at": "2026-09-08T10:31:39.758Z",
+  "tip": "b53968ca3b1b-dirty",
+  "probe": "127.0.0.1",
+  "probe_version": "0.3.3",
+  "http_runtimes": 2,
+  "host": {
+    "platform": "win32",
+    "idle": true,
+    "network": [
+      "Ethernet                Public"
+    ],
+    "busy": []
+  },
+  "args": {
+    "probe": "127.0.0.1",
+    "api-port": 8443,
+    "key": "<set>",
+    "out": "smoke-20260908T0905Z/layer1-b-n2-rss",
+    "tip": null,
+    "allow-busy": false,
+    "skip-host-checks": false,
+    "origin": "127-0-0-1.nip.io",
+    "path": "/8mib",
+    "warmup-path": "/",
+    "ca": "smoke-20260908T0905Z/work/smoke-ca.pem",
+    "port": 8444,
+    "bytes": 8,
+    "streams": 64,
+    "runs": 1,
+    "settle": 5,
+    "barrier-timeout": 60,
+    "throughput-runs": 1,
+    "arm": "rss",
+    "max-fail-pct": 2
+  },
+  "valid": false,
+  "status": "INVALID",
+  "reason": "RSS arm: 2 run(s) produced no figure: stall#1 process_rss is null on this probe (kernel reading unavailable, e.g. Windows): the RSS arm is measurable in-container / on-device only; control#1 process_rss is null on this probe (kernel reading unavailable, e.g. Windows): the RSS arm is measurable in-container / on-device only",
+  "measurement": "P3",
+  "origin": "127-0-0-1.nip.io",
+  "path": "/8mib",
+  "streams": 64,
+  "local_address": "127.0.0.1",
+  "rss_runs": [
+    {
+      "kind": "stall",
+      "index": 1,
+      "valid": false,
+      "reason": "process_rss is null on this probe (kernel reading unavailable, e.g. Windows): the RSS arm is measurable in-container / on-device only",
+      "warmup": {
+        "status": 200,
+        "bytes": 3,
+        "error": null,
+        "tls": {
+          "issuerCN": "FastAdHunter CA",
+          "subjectCN": "127-0-0-1.nip.io",
+          "fingerprint256": "4F:7E:21:54:B1:76:87:C8:9B:01:A2:64:1B:6A:22:B0:F2:F0:35:80:62:DF:81:2C:93:A3:FF:F2:D2:03:12:9B",
+          "tls": "TLSv1.3",
+          "alpn": "h2",
+          "authorized": true
+        }
+      }
+    },
+    {
+      "kind": "control",
+      "index": 1,
+      "valid": false,
+      "reason": "process_rss is null on this probe (kernel reading unavailable, e.g. Windows): the RSS arm is measurable in-container / on-device only",
+      "warmup": {
+        "status": 200,
+        "bytes": 3,
+        "error": null,
+        "tls": {
+          "issuerCN": "FastAdHunter CA",
+          "subjectCN": "127-0-0-1.nip.io",
+          "fingerprint256": "4F:7E:21:54:B1:76:87:C8:9B:01:A2:64:1B:6A:22:B0:F2:F0:35:80:62:DF:81:2C:93:A3:FF:F2:D2:03:12:9B",
+          "tls": "TLSv1.3",
+          "alpn": "h2",
+          "authorized": true
+        }
+      }
+    }
+  ]
+}

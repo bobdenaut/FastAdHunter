@@ -1,0 +1,75 @@
+{
+  "script": "p3",
+  "started_at": "2026-09-08T10:31:19.710Z",
+  "finished_at": "2026-09-08T10:31:21.430Z",
+  "tip": "b53968ca3b1b-dirty",
+  "probe": "127.0.0.1",
+  "probe_version": "0.3.3",
+  "http_runtimes": 2,
+  "host": {
+    "platform": "win32",
+    "idle": true,
+    "network": [
+      "Ethernet                Public"
+    ],
+    "busy": []
+  },
+  "args": {
+    "probe": "127.0.0.1",
+    "api-port": 8443,
+    "key": "<set>",
+    "out": "smoke-20260908T0905Z/layer1-b-n2",
+    "tip": null,
+    "allow-busy": false,
+    "skip-host-checks": false,
+    "origin": "127-0-0-1.nip.io",
+    "path": "/8mib",
+    "warmup-path": "/",
+    "ca": "smoke-20260908T0905Z/work/smoke-ca.pem",
+    "port": 8444,
+    "bytes": 8,
+    "streams": 64,
+    "runs": 1,
+    "settle": 5,
+    "barrier-timeout": 60,
+    "throughput-runs": 1,
+    "arm": "throughput",
+    "max-fail-pct": 2
+  },
+  "valid": true,
+  "status": "valid",
+  "degraded_reasons": [],
+  "measurement": "P3",
+  "origin": "127-0-0-1.nip.io",
+  "path": "/8mib",
+  "streams": 64,
+  "local_address": "127.0.0.1",
+  "throughput": {
+    "runs": [
+      {
+        "index": 1,
+        "status": 200,
+        "bytes": 8388608,
+        "content_length": 8388608,
+        "ok": true,
+        "issuer": "FastAdHunter CA",
+        "mib_s": 198.723,
+        "first_byte_ms": 2.304
+      }
+    ],
+    "median_mib_s": 198.723,
+    "gate": {
+      "statistic": "median of runs >= 50 MiB/s",
+      "median_mib_s": 198.723,
+      "pass": true
+    }
+  },
+  "gate": {
+    "throughput": {
+      "statistic": "median of runs >= 50 MiB/s",
+      "median_mib_s": 198.723,
+      "pass": true
+    },
+    "rss": null
+  }
+}

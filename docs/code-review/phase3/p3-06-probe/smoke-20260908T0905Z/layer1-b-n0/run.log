@@ -1,0 +1,13 @@
+2026-09-08T10:31:12.452Z [p3] == p3 start 2026-09-08T10:31:12.418Z tip=b53968ca3b1b-dirty out=smoke-20260908T0905Z/layer1-b-n0
+2026-09-08T10:31:12.453Z [p3] args {"probe":"127.0.0.1","api-port":8443,"key":"<set>","out":"smoke-20260908T0905Z/layer1-b-n0","tip":null,"allow-busy":false,"skip-host-checks":false,"origin":"127-0-0-1.nip.io","path":"/8mib","warmup-path":"/","ca":"smoke-20260908T0905Z/work/smoke-ca.pem","port":8444,"bytes":8,"streams":64,"runs":1,"settle":5,"barrier-timeout":60,"throughput-runs":1,"arm":"throughput","max-fail-pct":2}
+2026-09-08T10:31:12.766Z [p3] Get-NetConnectionProfile: Ethernet                Public
+2026-09-08T10:31:13.134Z [p3] idle check: PASS (recorded; each stage decides)
+2026-09-08T10:31:13.142Z [p3] GET /health -> 200 {"status":"ok","version":"0.3.3","uptime_seconds":0}
+2026-09-08T10:31:13.150Z [p3] config snapshot -> smoke-20260908T0905Z\layer1-b-n0\config.json
+2026-09-08T10:31:13.150Z [p3] engine.mode = dns+http+https
+2026-09-08T10:31:13.150Z [p3] runtime.http_runtimes = 0 (every HTTPS figure records it — plan §The N axis)
+2026-09-08T10:31:13.151Z [p3] local address toward the probe: 127.0.0.1; https.interception.clients = ["127.0.0.1"]
+2026-09-08T10:31:13.199Z [p3] throughput run 1: 242.241 MiB/s bytes=8388608
+2026-09-08T10:31:14.209Z [p3] wrote smoke-20260908T0905Z\layer1-b-n0\p3.json
+2026-09-08T10:31:14.209Z [p3] GATE {"throughput":{"statistic":"median of runs >= 50 MiB/s","median_mib_s":242.241,"pass":true},"rss":null}
+2026-09-08T10:31:14.209Z [p3] == p3 done (valid)

@@ -1,0 +1,47 @@
+2026-09-08T10:30:11.524Z [p5] == p5 start 2026-09-08T10:30:11.477Z tip=b53968ca3b1b-dirty out=smoke-20260908T0905Z/layer1-b-n2
+2026-09-08T10:30:11.525Z [p5] args {"probe":"127.0.0.1","api-port":8443,"key":"<set>","out":"smoke-20260908T0905Z/layer1-b-n2","tip":null,"allow-busy":false,"skip-host-checks":false,"hosts":16,"seed":"20260908T103011Z","dot-port":8853,"timeout":10000}
+2026-09-08T10:30:12.612Z [p5] Get-NetConnectionProfile: Ethernet                Public
+2026-09-08T10:30:13.046Z [p5] idle check: PASS (recorded; each stage decides)
+2026-09-08T10:30:13.054Z [p5] GET /health -> 200 {"status":"ok","version":"0.3.3","uptime_seconds":2}
+2026-09-08T10:30:13.057Z [p5] config snapshot -> smoke-20260908T0905Z\layer1-b-n2\config.json
+2026-09-08T10:30:13.058Z [p5] engine.mode = dns+http+https
+2026-09-08T10:30:13.058Z [p5] runtime.http_runtimes = 2 (every HTTPS figure records it — plan §The N axis)
+2026-09-08T10:30:13.060Z [p5] certificates before: ca.present=true dot={"state":"listening","address":"127.0.0.1:8853"} leaf_cache={"size":0,"capacity":512,"inflight":0,"hits":0,"unwarmed_misses":0,"prewarm_hits":0,"coalesced":0,"minted_total":0,"evictions":0,"superseded":0}
+2026-09-08T10:30:13.090Z [p5] first-sight: 16/16 handshakes, p50=0.713 ms, issuers=FastAdHunter CA, errors=0
+2026-09-08T10:30:13.114Z [p5] repeat: 16/16 handshakes, p50=0.589 ms, issuers=FastAdHunter CA, errors=0
+2026-09-08T10:30:13.116Z [p5] leaf_cache delta whole run {"size":16,"capacity":0,"inflight":0,"hits":32,"unwarmed_misses":0,"prewarm_hits":16,"coalesced":0,"minted_total":16,"evictions":0,"superseded":0}; repeat pass {"size":0,"capacity":0,"inflight":0,"hits":16,"unwarmed_misses":0,"prewarm_hits":16,"coalesced":0,"minted_total":0,"evictions":0,"superseded":0}
+2026-09-08T10:30:13.116Z [p5] wrote smoke-20260908T0905Z\layer1-b-n2\p5.json
+2026-09-08T10:30:13.116Z [p5] GATE {"statistic":"p50(first-sight) - p50(repeat) < 1 ms (incremental p50 estimate of mint + insert)","value_ms":0.124,"pass":true}
+2026-09-08T10:30:13.116Z [p5] == p5 done (valid)
+2026-09-08T10:31:19.740Z [p3] == p3 start 2026-09-08T10:31:19.710Z tip=b53968ca3b1b-dirty out=smoke-20260908T0905Z/layer1-b-n2
+2026-09-08T10:31:19.741Z [p3] args {"probe":"127.0.0.1","api-port":8443,"key":"<set>","out":"smoke-20260908T0905Z/layer1-b-n2","tip":null,"allow-busy":false,"skip-host-checks":false,"origin":"127-0-0-1.nip.io","path":"/8mib","warmup-path":"/","ca":"smoke-20260908T0905Z/work/smoke-ca.pem","port":8444,"bytes":8,"streams":64,"runs":1,"settle":5,"barrier-timeout":60,"throughput-runs":1,"arm":"throughput","max-fail-pct":2}
+2026-09-08T10:31:19.987Z [p3] Get-NetConnectionProfile: Ethernet                Public
+2026-09-08T10:31:20.347Z [p3] idle check: PASS (recorded; each stage decides)
+2026-09-08T10:31:20.356Z [p3] GET /health -> 200 {"status":"ok","version":"0.3.3","uptime_seconds":1}
+2026-09-08T10:31:20.360Z [p3] engine.mode = dns+http+https
+2026-09-08T10:31:20.360Z [p3] runtime.http_runtimes = 2 (every HTTPS figure records it — plan §The N axis)
+2026-09-08T10:31:20.361Z [p3] local address toward the probe: 127.0.0.1; https.interception.clients = ["127.0.0.1"]
+2026-09-08T10:31:20.417Z [p3] throughput run 1: 198.723 MiB/s bytes=8388608
+2026-09-08T10:31:21.431Z [p3] wrote smoke-20260908T0905Z\layer1-b-n2\p3.json
+2026-09-08T10:31:21.432Z [p3] GATE {"throughput":{"statistic":"median of runs >= 50 MiB/s","median_mib_s":198.723,"pass":true},"rss":null}
+2026-09-08T10:31:21.432Z [p3] == p3 done (valid)
+2026-09-08T10:41:03.534Z [p10-domains] == p10-domains start 2026-09-08T10:41:03.502Z tip=b53968ca3b1b-dirty out=smoke-20260908T0905Z/layer1-b-n2
+2026-09-08T10:41:03.535Z [p10-domains] args {"probe":"127.0.0.1","api-port":8443,"key":"<set>","out":"smoke-20260908T0905Z/layer1-b-n2","tip":null,"allow-busy":false,"skip-host-checks":false,"n":2,"arm":["tls-intercepted"],"origin":"127-0-0-1.nip.io","origin-http-port":80,"origin-https-port":443,"port":8080,"https-port":8444,"files":["1k.bin","10k.bin","50k.bin"],"blocked":"ads.smoke.test","ca":"smoke-20260908T0905Z/work/smoke-ca.pem","intercepted-ssh":null,"intercepted-ca":null,"intercepted-oha":"oha","concurrency":8,"duration":20,"worker-threads":4,"ka-requests":20,"connrate-workers":6,"dns-qps":300,"dns-port":53,"single-path":"/100mb.bin","single-n":5,"par-path":"/10mb.bin","par-n":40,"par-c":8,"sample-interval":2,"tail-min":0,"transfers-tail-min":0,"driver":"auto","skip-issuer-sample":false,"oha":"oha","max-fail-pct":2}
+2026-09-08T10:41:03.801Z [p10-domains] Get-NetConnectionProfile: Ethernet                Public
+2026-09-08T10:41:04.134Z [p10-domains] idle check: PASS (recorded; each stage decides)
+2026-09-08T10:41:04.142Z [p10-domains] GET /health -> 200 {"status":"ok","version":"0.3.3","uptime_seconds":1}
+2026-09-08T10:41:04.147Z [p10-domains] engine.mode = dns+http+https
+2026-09-08T10:41:04.147Z [p10-domains] runtime.http_runtimes = 2 (every HTTPS figure records it — plan §The N axis)
+2026-09-08T10:41:04.169Z [p10-domains] oha 1.16.0 on this host; --worker-threads 4
+2026-09-08T10:41:04.181Z [p10-domains] tls-intercepted: issuer sample before from local: issuer=FastAdHunter CA subject=127-0-0-1.nip.io TLSv1.3 → leg=intercepted expected=intercepted
+2026-09-08T10:41:04.181Z [p10-domains] == arm tls-intercepted start
+2026-09-08T10:41:04.192Z [p10-domains] tls-intercepted: oha --no-tui --output-format json --worker-threads 4 -z 20s -c 8 --disable-keepalive --connect-to 127-0-0-1.nip.io:443:127.0.0.1:8444 --cacert smoke-20260908T0905Z/work/smoke-ca.pem https://127-0-0-1.nip.io:443/1k.bin
+2026-09-08T10:41:24.230Z [p10-domains] tls-intercepted: requests=7164 failed=8 rps=358.6 p50/p95/p99=21.534/42.42/51.953 ms 502=0 MiB/s=0.35 errors={"aborted due to deadline":8}
+2026-09-08T10:41:24.239Z [p10-domains] degraded: cpu_user_ms / cpu_system_ms are null on this probe (the kernel reading exists in-container only) — no cores figure
+2026-09-08T10:41:24.239Z [p10-domains] tls-intercepted: wall=20s cores=- ms/req=- ΔRSS end=- max=- MiB (floor - MiB)
+2026-09-08T10:41:24.438Z [p10-domains] TIME_WAIT sockets on this host: 9496
+2026-09-08T10:41:24.438Z [p10-domains] degraded: 9496 TIME_WAIT sockets on this host — the client closed first somewhere; Windows port exhaustion caps the loop near 130 conn/s (§Traps)
+2026-09-08T10:41:24.473Z [p10-domains] tls-intercepted: issuer sample after from local: issuer=FastAdHunter CA subject=127-0-0-1.nip.io TLSv1.3 → leg=intercepted expected=intercepted
+2026-09-08T10:41:26.480Z [p10-domains] wrote smoke-20260908T0905Z\layer1-b-n2\p10-N2.json
+2026-09-08T10:41:26.480Z [p10-domains] GATE (degraded, not a gate) {"statistic":"none — P10 proposes an N against the phase-2.6 criterion; the owner decides","n":2,"per_arm":{"tls-intercepted":{"status":"valid","rps":358.6,"conns_per_s":null,"p50_ms":21.534,"p95_ms":42.42,"p99_ms":51.953,"cores":null,"cpu_ms_per_request":null,"count_502":0,"delta_rss_end_mib":null,"dns_p99_ms":null}}}
+2026-09-08T10:41:26.480Z [p10-domains] == p10-domains done (degraded)

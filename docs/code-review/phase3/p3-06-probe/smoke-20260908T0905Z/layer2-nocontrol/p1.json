@@ -1,0 +1,261 @@
+{
+  "script": "p1",
+  "started_at": "2026-09-08T10:47:24.206Z",
+  "finished_at": "2026-09-08T10:52:24.995Z",
+  "tip": "b53968ca3b1b-dirty",
+  "probe": "127.0.0.1",
+  "probe_version": "0.3.3",
+  "http_runtimes": 0,
+  "host": {
+    "platform": "win32",
+    "idle": false,
+    "network": [
+      "Ethernet                Public"
+    ],
+    "busy": [
+      "brave"
+    ]
+  },
+  "args": {
+    "probe": "127.0.0.1",
+    "api-port": 8443,
+    "key": "<set>",
+    "out": "smoke-20260908T0905Z/layer2-nocontrol",
+    "tip": null,
+    "allow-busy": true,
+    "skip-host-checks": false,
+    "origin": "127-0-0-1.nip.io",
+    "origin-ip": null,
+    "origin-port": 443,
+    "origin-cert": "smoke-20260908T0905Z/work/p1.crt",
+    "port": 8444,
+    "bytes": 8,
+    "runs": 5,
+    "connections": 1,
+    "direct": false,
+    "control": null,
+    "profile-share": null,
+    "timeout": 120000,
+    "max-fail-pct": 2
+  },
+  "valid": false,
+  "status": "INVALID",
+  "reason": "no spliced sample completed 8 MiB on every connection",
+  "arm": "spliced",
+  "runs": [
+    {
+      "run": 1,
+      "connections": 1,
+      "ok": 0,
+      "bytes_total": 0,
+      "steady_mib_s": null,
+      "total_mib_s": null,
+      "aggregate_mib_s": null,
+      "handshake_ms": {
+        "n": 1,
+        "min": 3.504,
+        "p50": 3.504,
+        "p99": 3.504,
+        "max": 3.504,
+        "mean": 3.504
+      },
+      "first_byte_ms": {
+        "n": 0,
+        "min": null,
+        "p50": null,
+        "p99": null,
+        "max": null,
+        "mean": null
+      },
+      "errors": [
+        {
+          "index": 0,
+          "error": "closed_zero_bytes",
+          "bytes": 0
+        }
+      ],
+      "tls": {
+        "issuerCN": "smoke-origin",
+        "subjectCN": "smoke-origin",
+        "fingerprint256": "03:3D:CF:7F:41:4E:77:F7:3B:57:2E:19:25:D6:BC:5E:E1:43:F1:63:3B:F0:3B:A7:D1:5A:62:2D:CC:9B:C0:9B",
+        "tls": "TLSv1.3",
+        "alpn": null,
+        "authorized": true
+      }
+    },
+    {
+      "run": 2,
+      "connections": 1,
+      "ok": 0,
+      "bytes_total": 0,
+      "steady_mib_s": null,
+      "total_mib_s": null,
+      "aggregate_mib_s": null,
+      "handshake_ms": {
+        "n": 1,
+        "min": 12.669,
+        "p50": 12.669,
+        "p99": 12.669,
+        "max": 12.669,
+        "mean": 12.669
+      },
+      "first_byte_ms": {
+        "n": 0,
+        "min": null,
+        "p50": null,
+        "p99": null,
+        "max": null,
+        "mean": null
+      },
+      "errors": [
+        {
+          "index": 0,
+          "error": "closed_zero_bytes",
+          "bytes": 0
+        }
+      ],
+      "tls": {
+        "issuerCN": "smoke-origin",
+        "subjectCN": "smoke-origin",
+        "fingerprint256": "03:3D:CF:7F:41:4E:77:F7:3B:57:2E:19:25:D6:BC:5E:E1:43:F1:63:3B:F0:3B:A7:D1:5A:62:2D:CC:9B:C0:9B",
+        "tls": "TLSv1.3",
+        "alpn": null,
+        "authorized": true
+      }
+    },
+    {
+      "run": 3,
+      "connections": 1,
+      "ok": 0,
+      "bytes_total": 0,
+      "steady_mib_s": null,
+      "total_mib_s": null,
+      "aggregate_mib_s": null,
+      "handshake_ms": {
+        "n": 1,
+        "min": 4.902,
+        "p50": 4.902,
+        "p99": 4.902,
+        "max": 4.902,
+        "mean": 4.902
+      },
+      "first_byte_ms": {
+        "n": 0,
+        "min": null,
+        "p50": null,
+        "p99": null,
+        "max": null,
+        "mean": null
+      },
+      "errors": [
+        {
+          "index": 0,
+          "error": "closed_zero_bytes",
+          "bytes": 0
+        }
+      ],
+      "tls": {
+        "issuerCN": "smoke-origin",
+        "subjectCN": "smoke-origin",
+        "fingerprint256": "03:3D:CF:7F:41:4E:77:F7:3B:57:2E:19:25:D6:BC:5E:E1:43:F1:63:3B:F0:3B:A7:D1:5A:62:2D:CC:9B:C0:9B",
+        "tls": "TLSv1.3",
+        "alpn": null,
+        "authorized": true
+      }
+    },
+    {
+      "run": 4,
+      "connections": 1,
+      "ok": 0,
+      "bytes_total": 0,
+      "steady_mib_s": null,
+      "total_mib_s": null,
+      "aggregate_mib_s": null,
+      "handshake_ms": {
+        "n": 1,
+        "min": 5.34,
+        "p50": 5.34,
+        "p99": 5.34,
+        "max": 5.34,
+        "mean": 5.34
+      },
+      "first_byte_ms": {
+        "n": 0,
+        "min": null,
+        "p50": null,
+        "p99": null,
+        "max": null,
+        "mean": null
+      },
+      "errors": [
+        {
+          "index": 0,
+          "error": "closed_zero_bytes",
+          "bytes": 0
+        }
+      ],
+      "tls": {
+        "issuerCN": "smoke-origin",
+        "subjectCN": "smoke-origin",
+        "fingerprint256": "03:3D:CF:7F:41:4E:77:F7:3B:57:2E:19:25:D6:BC:5E:E1:43:F1:63:3B:F0:3B:A7:D1:5A:62:2D:CC:9B:C0:9B",
+        "tls": "TLSv1.3",
+        "alpn": null,
+        "authorized": true
+      }
+    },
+    {
+      "run": 5,
+      "connections": 1,
+      "ok": 0,
+      "bytes_total": 0,
+      "steady_mib_s": null,
+      "total_mib_s": null,
+      "aggregate_mib_s": null,
+      "handshake_ms": {
+        "n": 1,
+        "min": 2.743,
+        "p50": 2.743,
+        "p99": 2.743,
+        "max": 2.743,
+        "mean": 2.743
+      },
+      "first_byte_ms": {
+        "n": 0,
+        "min": null,
+        "p50": null,
+        "p99": null,
+        "max": null,
+        "mean": null
+      },
+      "errors": [
+        {
+          "index": 0,
+          "error": "closed_zero_bytes",
+          "bytes": 0
+        }
+      ],
+      "tls": {
+        "issuerCN": "smoke-origin",
+        "subjectCN": "smoke-origin",
+        "fingerprint256": "03:3D:CF:7F:41:4E:77:F7:3B:57:2E:19:25:D6:BC:5E:E1:43:F1:63:3B:F0:3B:A7:D1:5A:62:2D:CC:9B:C0:9B",
+        "tls": "TLSv1.3",
+        "alpn": null,
+        "authorized": true
+      }
+    }
+  ],
+  "telemetry_delta": {
+    "connections": 5,
+    "requests": 5,
+    "blocked": 0,
+    "refused_claim": 0,
+    "refused_destination": 0,
+    "resolve_failures": 0,
+    "upstream_failures": 0,
+    "upstream_cert_failures": 0,
+    "non_http": 0,
+    "non_tls": 0,
+    "hello_timeouts": 0,
+    "dropped_events": 0
+  }
+}
