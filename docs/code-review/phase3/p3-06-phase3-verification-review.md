@@ -223,6 +223,37 @@ is unedited):**
    P6's curl phase timings) it is not used, or it runs beside the row labelled
    a cross-check. Version and `--worker-threads` pinned and recorded;
    `--connect-to`'s SNI behaviour is a smoke prerequisite (smoke plan Layer 0).
+4. **P2's measured quantity is renamed, not changed.** `p2-handshake.mjs`
+   computes `secureConnect − connect`. On the `direct` arm that is a TLS
+   handshake. On `spliced` and `intercepted` it is **proxy setup + relayed
+   handshake**: ClientHello read, SNI verdict, one **uncached upstream A + AAAA
+   resolve** (`https.rs:180` → `upstream/mod.rs:142`, `tokio::join!`, no cache
+   by design), egress check, upstream TCP connect, then the handshake — the
+   upstream leg's own TLS handshake as well on `intercepted`. Same defect the
+   D8 curl figure carried (§Post-review work F, F1); caught here **before** the
+   arm runs. Consequences: the ratio gate `intercepted p50 ≤ 2 × spliced p50`
+   is **unaffected**, since both arms pay the setup and it cancels; the row
+   value `spliced p50 − direct p50` **is** affected and must ship named "SNI
+   verdict + splice + one upstream resolve, added per connection". No threshold
+   moves and no sample size changes. On the device that resolve is real
+   per-connection production cost, so it belongs in the figure — it must not be
+   called a handshake.
+5. **P2 additionally records the pre-relay split of the `spliced` arm, from
+   shipping telemetry.** `https.rs:216` captures `started.elapsed()` after the
+   upstream connect and before the relay, and it reaches the wire as
+   `duration_ms` on the `https-sni` event. `p2-handshake.mjs` subscribes to
+   `WS /api/v1/events` for the run and reports that distribution beside the
+   socket-side figure; `spliced p50 − pre-relay p50` is the relayed-handshake
+   remainder. **The `spliced` arm only** — `intercept.rs` calls `emit_session`
+   on failure paths exclusively, so a successful intercepted session emits no
+   pre-relay event, and the `direct` arm never reaches the probe. Rows are
+   attributed by client address, which the identity precondition already
+   guarantees is unique per arm. **Diagnostic, not a gate and not a row** — it
+   adds no arm, changes no threshold and no sample size, and a socket that
+   fails to open, drops, or lags degrades to the declared figure alone rather
+   than invalidating the run. It exists to settle F2/F3: whether the splice
+   arm's extra time is pre-relay (resolve + connect) or inside the relayed
+   handshake.
 
 ## Measurements
 
@@ -294,11 +325,15 @@ max_connections` = 32 MiB at 16 KiB, **128 MiB at 64 KiB** at the default
 device; the p3-03 25 MiB/s worry does not survive steady-state even at 16 KiB
 on this box, but loopback figures do not convert (PERFORMANCE.md §Converting).
 
-| D8 `https_handshake` — fresh connection, TLS handshake, h1 GET 1 KiB, close (ms) | r1 | r2 | isolated single-arm run |
+| D8 `https_handshake` — fresh connection, connection setup through to handshake complete, h1 GET 1 KiB, close (ms) | r1 | r2 | isolated single-arm run |
 | --- | --- | --- | --- |
 | `direct_to_origin` (control) | 1.130 [1.06 1.21] | 0.983 [0.95 1.01] | 1.141 [1.07 1.22] |
 | `spliced` | 5.666 [4.10 7.28] | 5.986 [4.58 7.33] | 4.892 [3.92 5.93] |
 | `intercepted` (leaf cache warm: `minted_total = 1`, `unwarmed_misses = 0`) | 2.726 [2.36 3.16] | 4.824 [3.73 6.02] | 4.304 [3.07 5.75] |
+
+The `direct_to_origin` row is a TLS handshake. The `spliced` and `intercepted`
+rows are **proxy setup + relayed handshake** and must not be quoted as handshake
+figures (§Post-review work F, F1).
 
 Reading: on this box a proxied connection costs ~+3.5 ms per connection
 **whichever leg**; splice and terminate are within each other's (wide)
@@ -404,9 +439,9 @@ P3 no h2 origin under a public name with a publicly trusted certificate. Their
 
 | Metric | Proposed budget | Dev-box figure (this file) | On-device |
 | --- | --- | --- | --- |
-| **HTTPS** SNI verdict + splice, added per connection | TBD — must be measured during verification (P2 sets it; a loopback figure does not convert, PERFORMANCE.md §Converting) | +3.5–4.9 ms loopback, harness-dominated (D8, old harness — see F6) | TBD — P2 |
+| **HTTPS** SNI verdict + splice **+ one upstream resolve**, added per connection | TBD — must be measured during verification (P2 sets it; a loopback figure does not convert, PERFORMANCE.md §Converting). **Not a handshake figure**: the quantity is proxy setup + relayed handshake and contains one uncached A + AAAA resolve per connection (campaign-2 declaration change 4) | +3.5–4.9 ms loopback, harness-dominated (D8, old harness — see F6) | TBD — P2 |
 | **HTTPS** splice throughput, steady state | ≥ 100 MiB/s (gigabit LAN is 119 MiB/s) | 0.93–1.01 GiB/s at 16 KiB, 1.48–1.60 GiB/s at 64 KiB (D7, unpinned); 1.06–1.13 / 1.56–1.61 GiB/s pinned to four cores (§Post-review work C) | TBD — P1 |
-| **HTTPS** interception handshake overhead vs splice | intercepted p50 ≤ 2 × spliced p50 | within intervals of each other unpinned (D8); 1.5–2.2× pinned to four cores (§Post-review work C) | TBD — P2 |
+| **HTTPS** interception overhead vs splice, per connection | intercepted p50 ≤ 2 × spliced p50 | within intervals of each other unpinned (D8); 1.5–2.2× pinned to four cores (§Post-review work C) | TBD — P2. **Ratio unaffected by declaration change 4** — both arms pay the same proxy setup and resolve, so it cancels; what the ratio isolates is the interception leg |
 | **HTTPS** intercepted h2 relay | ≥ 50 MiB/s | 481–485 MiB/s (D9, unpinned); 571–620 MiB/s pinned to four cores | TBD — P3 |
 | Minted-leaf cache hit rate, browsing load | ≥ 90 % (real replay decides) | **none** — D12 is synthetic (a property of `ZIPF_HOSTS = 4096`, not of browsing) and is not evidence for this row (MA-7) | TBD — soak: `leaf_cache.prewarm_hits / (prewarm_hits + minted_total)` on the listed device over 24 h; the `https-sni` domain list is the corpus for a 7-day replay |
 | **DoT** / **DoH** added latency vs UDP, p50 | TBD — must be measured during verification (P4 sets it; TLS/HTTP legs do not convert) | +17 µs / +130 µs loopback (D13) | **TBD — the 2026-09-04 figures (DoT +61 µs, DoH +915 µs) are withdrawn as row-setters** (§P4-reruns, 2026-09-05). Three valid sessions of the same workload on the same build give DoT added +61 / +17 / +16 µs: the declared statistic subtracts a UDP control that itself moved 73 % between sessions. The transport paths are healthy — DoT 162–192 µs and DoH 1 016–1 044 µs absolute, both faster than the ×9 conversion predicts — so the fix is the statistic (pool the control across sessions), not the code. No replacement value is picked from the three |
@@ -1368,7 +1403,7 @@ it (2026-09-05 disposition stands as a disposition; its figure does not).
 
 **Deferred, accepted:** F10, F16. **Withdrawn:** F6.
 
-## Hand-off state, 2026-09-08 (session 2) — current
+## Hand-off state, 2026-09-08 (session 2, dev box) — superseded
 
 Supersedes every hand-off section above. Working tree on `phase3-06` at
 `ce3c6e6`, **dirty**: four test-only files changed, plus three untracked
@@ -1467,9 +1502,10 @@ Unchanged from the previous hand-off except where noted:
 
 ### Open findings from this session
 
-**D8's spliced handshake is 8 × direct, and unresolved.** Owner-directed
+**D8's spliced arm is 8 × direct, and unresolved.** Owner-directed
 attribution (bounded, no implementation change): the whole difference sits in
-the TLS handshake window; TCP connect, time-to-first-byte and teardown are all
+the proxy setup + relayed handshake window — a TLS handshake only on the direct
+control; TCP connect, time-to-first-byte and teardown are all
 identical or faster through the splice. Five hypotheses tested and refuted —
 EOF propagation, Nagle on the upstream leg, the domain hand-off (N = 0 gave
 both the fastest and the slowest reading), Windows TIME_WAIT pressure (1 % of
@@ -1814,3 +1850,209 @@ The owner-executed on-device procedure lives in
 Entries `R0`–`R11`, each with the exact command, the resulting state, when it
 takes effect, whether a restart is required, and the rollback. Prepared
 2026-09-08; nothing in it has been run.
+
+## Hand-off state, 2026-09-08 (session 3, RB5009) — current
+
+**The campaign is on the device.** Step 4 R0–R6 and R10 are executed; nine arms
+are measured and recorded in
+[p3-06-testing-results-2.md](p3-06-testing-results-2.md) §Session 2. Production
+`fastadhunter` 0.3.3 on `veth1` was never touched at any point.
+
+### What exists on the router now
+
+| | |
+| --- | --- |
+| `fah-probe` | container on `veth3` / `172.17.0.4`, **stopped** at end of session, not removed |
+| its config | `/kingston/fah-probe/config`, mount list `fahprobe-config` — survived three remove/add cycles, so it is a real mount |
+| its data | `/kingston/fah-probe/data`, mount list `fahprobe-data` |
+| its env | `fahprobe-env`, four keys, `FAH__RUNTIME__HTTP_RUNTIMES=2` |
+| tars uploaded | `fah-probe`, `fah-splicebench`, `fah-p4`, `fah-certs`, all `-arm64.tar` under `kingston/` |
+| probe state | `mode=dns+http+https`, N=2, CA generated, oisd-basic 60 748 rules, egress `192.168.10.10/32` and `192.168.10.22/32` |
+| firewall | **untouched.** R7 was never run; nothing steers tcp/443 |
+| production | `fastadhunter` 0.3.3, `veth1`, `fah-env`, running throughout |
+
+Restart is one command — the `add` line is in
+[the runbook](p3-06-phase3-verification-runbook.md) R5, or just
+`/container/start [find comment="fah-probe"]` while the container still exists.
+
+### Settled this session, do not re-open without new evidence
+
+- **N=2 confirmed.** ADR-0006 unchanged. Two independent axes agree: the
+  `close` arm and the keep-alive arm. N=1 is now tested and rejected — a gap
+  phase 2.6 left open. The first sweep, at concurrency 16, is **withdrawn**;
+  it was underloaded and measured neither DNS-under-load nor CPU-per-request.
+- **D6 settled.** `SPLICE_BUF` stays 16/16. Up buffer settled at 16 (+2.8 %,
+  under the +10 % threshold, two runs agree). The down curve saturates after
+  64 KiB but only 16/16 fits the 32 MiB budget at `max_connections = 1024`.
+  Changing it is a product decision, not a benchmark conclusion.
+- **P5's gate failure is not a budget failure.** `fah-certs` measured
+  `certs_mint` at 447.12 µs against the 450.88 µs budget row. P5 measures a DoT
+  handshake delta, not the mint path.
+- **The ~9× x86 → RB5009 factor is confirmed** on four independent criterion
+  benches, 7.0× to 8.7×.
+
+### Owed, and why
+
+| Item | Blocker |
+| --- | --- |
+| **P1-LAN / P1-control** | the origin must live on a host that is not the client. Today both were the dev box, which P1 cannot use — its control arm fetches the origin directly |
+| **P3** | a **publicly trusted** h2 origin under a public name (Let's Encrypt DNS-01). Unchanged since smoke Layer 3, which proved no local substitute exists: `FAH_TEST_UPSTREAM_ROOT` is behind `#[cfg(feature = "test-harness")]` and the release image ignores it. **Longest-standing open item in the campaign** |
+| **P2** | runs *on* the second endpoint. The Mac is out — no USB-C so no wired path, Homebrew cannot write `/usr/local`, and Remote Login needs Full Disk Access, so no ssh |
+| TLS keep-alive figure | operator error: `--ca probe-ca.pem` asserts the terminate leg, but interception is empty so the probe splices and serves the origin's own certificate. Re-run with the origin's certificate |
+| P10 `mixed` / `tls-spliced` at N=0 and N=2 | 43k–120k client-side failures, Windows port exhaustion. Only the `close` arm was clean |
+| Step 4 items 4, 5, 6 | CA install walkthrough, Private DNS, pinned-app check — need a test device, not a laptop |
+| R11, the 24 h soak | blocked until the 0.3.3 soak ends **2026-09-14** |
+| R7, dst-nat 443 | **owner only, optional.** No measured arm needs it; it exists for transparent interception of real browsing |
+
+A second laptop is expected 2026-09-09, which unblocks P1 and P2.
+
+### Traps this session found, worth not rediscovering
+
+- **The container's first list refresh fires before its network is up.** Every
+  boot logs `all upstreams failed — upstream timed out` and `list refresh
+  failed`, and would not retry for 24 h. `POST /api/v1/lists/{id}/refresh`
+  fixes it. The upstreams themselves are healthy; the warning is a startup
+  race, not a fault. After the first successful refresh the ruleset is restored
+  from cache on later boots and the warning stops.
+- **`oisd-basic` does not block the obvious names.** `doubleclick.net`,
+  `ads.doubleclick.net`, `googleadservices.com` and `adservice.google.com` all
+  pass. `analytics.google.com` and `pagead2.googlesyndication.com` block —
+  verify with `POST /api/v1/rules/test` before assuming a name is blocked.
+- **Windows is the campaign's throughput ceiling, not the RB5009.** Every
+  concurrency-48 arm exhausted the 16 384 ephemeral ports; the `close` arm at
+  N=0 logged 33 004 client failures. Drain to under ~100 TIME_WAIT between
+  arms and read `failed` before trusting any rate.
+- **`/container/add` parameter names**: `mountlists`, `envlists`, `workdir`,
+  `cpu-list`. `/container/mounts/add` and `/container/envs/add` take `list=`,
+  not `name=`, while `[find …]` also matches on `list=`.
+- **The dev box browser breaks runs.** Three arms invalidated on
+  `host not idle: brave running`. That is the idle check working.
+
+## Post-review work F — targeted review of the splice TLS-handshake path, 2026-09-08
+
+Scope: read-only. Nothing was modified — not `https.rs`, not the benches, not
+`phases.sh`, not config, not the pre-declarations. Trigger: D8's spliced arm at
+7–20 ms `tls − connect` against a flat ~4.1 ms direct control
+(§D8 attribution, `p3-06-testing-results-2.md`), cause still open after the
+2026-09-08 TIME_WAIT withdrawal (§Correction).
+
+### Path traced
+
+| Step | Site | In the curl `tls − connect` window? |
+| --- | --- | --- |
+| accept, `set_nodelay(true)` on the client socket | `server.rs:180` | no (before `connect` completes) |
+| `started = Instant::now()` | `https.rs:127` | window opens here |
+| `read_client_hello`, under `hello_timeout` | `https.rs:129` | **yes** |
+| `scan_client_hello`, IP-literal refusal | `https.rs:150`, `:164` | **yes** |
+| `judge` — `matcher()` + `policies.current()`, arc-swap, no lock | `https.rs:169` | **yes** |
+| `approved_address` → `resolver.resolve(host.to_string())` | `https.rs:180`, `:298` | **yes** |
+| `UpstreamPool::resolve_host` — `tokio::join!(A, AAAA)` | `upstream/mod.rs:142` | **yes** |
+| `plain::query` — fresh `UdpSocket::bind(:0)` per query, ×2 | `upstream/plain.rs:52` | **yes** |
+| `DestinationPolicy::check` | `egress.rs:169` | **yes** |
+| `TcpStream::connect`, under `hello_timeout` | `https.rs:193` | **yes** |
+| `duration = started.elapsed()` — window measurable here | `https.rs:216` | boundary |
+| `set_nodelay(true)` upstream, `write_all(hello)` | `https.rs:224`, `:230` | **yes** |
+| `copy_bidirectional_with_sizes`, 2 × 16 KiB | `https.rs:245` | yes (relays the handshake) |
+
+### Answers to the ten questions
+
+| # | Question | Answer |
+| --- | --- | --- |
+| 1 | downstream TLS handshake | **none exists.** The splice never terminates TLS. Only the ClientHello is read, scanned and re-emitted; every later record is opaque |
+| 2 | upstream TCP + TLS | TCP at `https.rs:193`; **no upstream TLS handshake** on this path (the interception branch returns at `:187` before it) |
+| 3 | serialisation | ClientHello → judge → resolve → connect is structurally ordered (SNI feeds both the verdict and the address). One avoidable point: A and AAAA are `join!`ed, so resolve costs max(A, AAAA) |
+| 4 | DNS on the path | **one full `resolve_host` per spliced connection**, no cache, two queries, two fresh UDP sockets |
+| 5 | runtime / domain crossing | two modes: `SharedTls` (N=0) and `Domains` (N≥1: `into_std` → `mpsc(32)` → per-domain `new_current_thread` runtime → `from_std`). The D8 criterion rig uses `SharedTls` only; the N sweep already refuted the handoff |
+| 6 | socket setup | `TCP_NODELAY` on both sockets, once each. No flush before the hello forward, and none is needed on TCP |
+| 7 | certificate work | none — leaf mint, cache lookup and `prewarm` are all behind the interception branch |
+| 8 | retry / fallback in the window | `walk_adaptive` walks upstreams on failure with a per-attempt timeout; `plain::query` retries over TCP on TC=1; `hello_timeout` bounds both the hello read and the connect |
+| 9 | benchmark boundary | **does not isolate the handshake** — see F1 |
+| 10 | allocation / lock / spawn | per connection: ~2 KiB hello `Vec`, `host.to_string()` ×2, one `Box::pin`, one `Vec<IpAddr>`, two ~1232 B recv buffers, two 16 KiB copy buffers, one `try_send`. No mutex, no `spawn_blocking`, no regex. µs scale |
+
+### Findings
+
+| # | Severity | Class | Finding |
+| --- | --- | --- | --- |
+| F1 | high | **confirmed** | `phases.sh`'s `time_appconnect − time_connect` is not the same quantity in the two arms. Direct = TLS handshake only, with DNS removed by `--resolve`. Splice = hello read + verdict + **full recursive DNS** + egress check + **upstream TCP connect** + hello forward + relayed handshake. The two arms were compared as if they measured one thing |
+| F2 | high | **plausible, needs measurement** | The SNI host is `127-0-0-2.nip.io`, a public wildcard zone. Every spliced connection resolves it upstream, A and AAAA, uncached inside FAH. `x-x-x-x.nip.io` carries no AAAA, so that leg is a negative answer whose SOA-minimum TTL decides how often it leaves the LAN. A WAN recursion of 10–30 ms with high variance fits 7 → 12 → 21 ms against a flat direct control |
+| F3 | medium | **confirmed** | `resolve_host` uses `tokio::join!`, so the resolve waits for both families even though its own doc comment says either one carrying addresses is enough. Cost is max(A, AAAA), not first-usable. Directly amplifies F2 |
+| F4 | medium | **rules out DNS for the criterion figure** | `intercept.rs:35` uses `FixedResolver` — the D8 criterion arms pay no DNS at all. So `spliced` 5.67 ms vs `direct_to_origin` 1.13 ms and the curl 7–20 vs 4.1 ms are **two different gaps**. F2 cannot explain the criterion one; merging them mis-attributes both |
+| F5 | medium | **plausible, competing, not established** | Port pressure. Per iteration the splice opens 2 TCP sockets to direct's 1, plus 2 UDP binds in the shipped binary. But the 15 543 TIME_WAIT reading came from the `p10` close arm at concurrency 48, not from the D8 attribution run, which was serial `curl`. Nothing yet ties it to these four arms — it stays a hypothesis, not the answer |
+| F6 | low | **confirmed, magnitude unknown** | DNS retry paths sit inside the measured window: the upstream walk on failure, and the RFC 1035 §4.2.2 TCP retry on TC=1. Neither was excluded when the arms ran |
+| F7 | low | **no issue for latency** | `approved_address` returns the first policy-approved address and never tries the next if `connect` fails. Robustness gap, not a cost |
+| F8 | low | **design question, owner** | The resolver bypasses the DNS cache as well as the Rule Engine. The documented reason (a blocklist blocking the host serving its own next copy) is about the Rule Engine only; hard rule 3 says the cache never stores verdicts, so a cache read carries none. `UpstreamResolver` is L4 and already sits beside the pipeline, so consulting the cache is layering-legal |
+| F9 | info | **no issue found** | No lock, no `spawn_blocking`, no certificate work, no regex on the splice path. The allocation set is µs-scale against a ms-scale gap |
+| F10 | info | **no issue found** | `TCP_NODELAY` is correct on both legs and set once each; the earlier Nagle refutation holds |
+
+### Most likely explanations
+
+1. **The curl 7–20 ms figure (F1 + F2 + F3).** The splice window contains a
+   recursive lookup the direct window does not, and that lookup waits on a
+   negative AAAA answer from a public zone. The 2026-09-08 refutation measured
+   one warmed query against `192.168.10.1`; it did not test the AAAA leg, the
+   two-socket bind, or a cold TTL.
+2. **The criterion 5.67 vs 1.13 ms figure (F4).** Not DNS. What remains is
+   doubled connection setup on loopback under criterion's per-iteration
+   `block_on`, which is the proxied-path constant §Measurements already reads as
+   "the socket/task path, not TLS termination".
+3. **Port pressure (F5)** stays live for both and is settled neither way.
+
+### Smallest experiment
+
+No code change, no rig change. The instrumentation already ships.
+
+`https.rs:216` captures `started.elapsed()` **after** the upstream connect and
+**before** the relay, and it reaches the wire as `duration_ms` on the
+`https-sni` record streamed by `WS /api/v1/events`. Run the splice arm of
+`phases.sh` with that socket open and read the two halves:
+
+| `duration_ms` reads | Conclusion |
+| --- | --- |
+| ≈ curl's `tls − connect` | cost is pre-relay — DNS plus connect. Follow with 30 back-to-back `AAAA 127-0-0-2.nip.io @192.168.10.1` to see whether the AAAA leg carries the spread |
+| ≈ 1 ms | cost is inside the relayed handshake; F5 and scheduling move to the front |
+
+Cheaper still, and needing no socket: re-run `phases.sh` unchanged except for an
+SNI host whose A and AAAA both answer from the router's cache on a long TTL. If
+the spread collapses, F2 owns it.
+
+### Is a code change justified?
+
+**No — not yet.** Nothing found is a correctness or security defect, and the
+splice path does what it is specified to do. Two changes become justified only
+if the experiment implicates them, and both are hot-path behaviour changes that
+principle 8 says must follow the measurement:
+
+- race A and AAAA instead of `join!` (F3);
+- let the L4 resolver read the DNS cache before going upstream (F8) — owner
+  decision, since it edits a documented deliberate bypass.
+
+F1 is a reading correction, not a code change: the spliced `tls − connect`
+figure must be labelled "proxy setup + relayed handshake" wherever it appears,
+never "TLS handshake". P2 on the device is unaffected and stays the authority
+for the handshake row.
+
+**Verdict: PASS WITH DEFERRED FINDINGS** (F1/F4 are reading corrections owed to
+the D8 narrative; F2/F3/F5 await the experiment above; F7/F8 deferred to owner;
+F6 noted; F9/F10 clean). No implementation was touched by the review itself.
+
+### Acted on after the review — owner-approved, same day
+
+The review ran read-only. Everything below was approved separately afterwards.
+No crate source, no criterion bench and no runtime configuration changed; F3 and
+F8 remain unimplemented, as the verdict requires.
+
+| Action | Where | Note |
+| --- | --- | --- |
+| F1 relabel of the D8 narrative | `p3-06-testing-results-2.md` §D8 attribution + declaration rows; this file's D8 table and open-finding restatement | `direct_to_origin` keeps the TLS-handshake label; only the proxied arms are renamed |
+| The SNI-resolve refutation marked **weakened**, not refuted, and the status line's "not explained by DNS" withdrawn | `p3-06-testing-results-2.md` §D8 attribution | the 12 samples were one warmed record type; the AAAA leg `resolve_host` waits on was never sampled |
+| P2's quantity renamed and the split declared | campaign-2 declaration changes 4 and 5, above | recorded **before** the arm runs; no threshold, arm or sample size moved |
+| Pre-relay split instrumented | `p3-06-probe/p2-handshake.mjs` | probe-side telemetry reader only, `--no-events` opts out, socket failure degrades rather than invalidates |
+
+The events reader was exercised against a running probe before being trusted:
+upgrade, subscribe, ping/pong and three decoded `query` events with
+`duration_ms` populated. That test caught a defect in it — `servername` set to
+the probe address, which Node rejects for an IP, so the run would have crashed
+on the device where `--probe` is `172.17.0.4`. Fixed. **Not yet exercised: a
+frame whose `kind` is `https-sni`**; producing one means firing TLS connections
+at a live rig mid-campaign, so it is left to P2's first run, which degrades
+rather than fails if the filter misses.

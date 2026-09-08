@@ -23,6 +23,20 @@
 // the authoritative leg proof; counters (minted_total, blocked, connections)
 // before/after the whole run are supporting only, never asserted (+1 is not
 // required — the origin's leaf may already be cached).
+// NAMING (review file, campaign-2 declaration change 4): `handshake_ms` is
+// secureConnect - connect. On `direct` that is a TLS handshake. On `spliced`
+// and `intercepted` it is PROXY SETUP + RELAYED HANDSHAKE — ClientHello read,
+// SNI verdict, one uncached upstream A+AAAA resolve, egress check, upstream
+// TCP connect, then the handshake. The ratio gate is unaffected (both arms pay
+// it, it cancels); the row value spliced-minus-direct is not, and ships named.
+//
+// PRE-RELAY SPLIT (declaration change 5, diagnostic only, never a gate): the
+// probe emits `https-sni` events whose `duration_ms` is measured before the
+// relay starts, so it isolates resolve + connect from the relayed handshake.
+// Spliced arm only — a successful intercepted session emits no such event, and
+// direct never reaches the probe. Rows attribute by client address. Any socket
+// failure degrades the run, never invalidates it. --no-events opts out.
+//
 // Gate: handshake p50(intercepted) <= 2 x p50(spliced). Row value:
 // spliced p50 - direct p50, handshake and first-byte.
 //
@@ -32,6 +46,7 @@
 import fs from 'node:fs';
 import tls from 'node:tls';
 import dgram from 'node:dgram';
+import crypto from 'node:crypto';
 import os from 'node:os';
 import { performance } from 'node:perf_hooks';
 import { parseArgs, Run, CA_ISSUER_CN, summary, round, dnsQuery, dnsId, ipInList, peerInfo } from './lib.mjs';
@@ -48,6 +63,7 @@ const args = parseArgs({
   rounds: { type: 'number', default: 200, help: 'rounds; each round runs all three arms' },
   timeout: { type: 'number', default: 10000, help: 'ms per attempt' },
   'max-fail-pct': { type: 'number', default: 2, help: 'failure rate per arm above which the run is degraded' },
+  'no-events': { type: 'boolean', default: false, help: 'skip the pre-relay split (declaration change 5); the declared figures are unaffected' },
 });
 
 const run = await new Run('p2', args, { needsHttps: true }).init();
@@ -178,6 +194,157 @@ function attempt(arm) {
   });
 }
 
+// Minimal RFC 6455 client over the API's own TLS socket. No dependency: the
+// probe image carries no `ws` package, and Node's global WebSocket cannot be
+// pointed at the API's self-signed certificate the way lib.mjs's timedRequest
+// is. Server frames are unmasked, client frames must be masked.
+function wsFrame(opcode, text) {
+  const data = Buffer.from(text, 'utf8');
+  const mask = crypto.randomBytes(4);
+  let header;
+  if (data.length < 126) {
+    header = Buffer.alloc(2);
+    header[1] = 0x80 | data.length;
+  } else if (data.length < 65536) {
+    header = Buffer.alloc(4);
+    header[1] = 0x80 | 126;
+    header.writeUInt16BE(data.length, 2);
+  } else {
+    header = Buffer.alloc(10);
+    header[1] = 0x80 | 127;
+    header.writeBigUInt64BE(BigInt(data.length), 2);
+  }
+  header[0] = 0x80 | opcode;
+  const body = Buffer.allocUnsafe(data.length);
+  for (let i = 0; i < data.length; i += 1) body[i] = data[i] ^ mask[i % 4];
+  return Buffer.concat([header, mask, body]);
+}
+
+function openEvents() {
+  const state = { rows: [], opened: false, done: false, failure: null, frames: 0, sock: null };
+  if (args['no-events']) {
+    state.failure = 'disabled by --no-events';
+    return state;
+  }
+  const fail = (why) => {
+    if (state.done) return;
+    if (state.failure === null) state.failure = state.opened ? `${why} after ${state.frames} events` : why;
+  };
+  // No `servername`: --probe is an IP on the device (172.17.0.4) and Node
+  // refuses an IP as SNI. lib.mjs's API calls omit it for the same reason.
+  const sock = tls.connect({ host: args.probe, port: args['api-port'], rejectUnauthorized: false });
+  state.sock = sock;
+  sock.on('error', (e) => fail(e.code || e.message));
+  sock.on('close', () => fail('socket closed before the run ended'));
+
+  let buf = Buffer.alloc(0);
+  let upgraded = false;
+  let pending = null;
+  let pendingOpcode = 0;
+
+  const onText = (text) => {
+    let message;
+    try {
+      message = JSON.parse(text);
+    } catch {
+      return;
+    }
+    if (message?.type !== 'query') return;
+    const d = message.data;
+    if (d?.kind !== 'https-sni') return;
+    state.frames += 1;
+    state.rows.push({ client: d.client, domain: d.domain, verdict: d.verdict, duration_ms: d.duration_ms });
+  };
+
+  const parseFrames = () => {
+    for (;;) {
+      if (buf.length < 2) return;
+      const fin = (buf[0] & 0x80) !== 0;
+      const opcode = buf[0] & 0x0f;
+      const masked = (buf[1] & 0x80) !== 0;
+      let len = buf[1] & 0x7f;
+      let offset = 2;
+      if (len === 126) {
+        if (buf.length < 4) return;
+        len = buf.readUInt16BE(2);
+        offset = 4;
+      } else if (len === 127) {
+        if (buf.length < 10) return;
+        len = Number(buf.readBigUInt64BE(2));
+        offset = 10;
+      }
+      let mask = null;
+      if (masked) {
+        if (buf.length < offset + 4) return;
+        mask = buf.subarray(offset, offset + 4);
+        offset += 4;
+      }
+      if (buf.length < offset + len) return;
+      let payload = buf.subarray(offset, offset + len);
+      if (mask) {
+        const un = Buffer.allocUnsafe(len);
+        for (let i = 0; i < len; i += 1) un[i] = payload[i] ^ mask[i % 4];
+        payload = un;
+      }
+      buf = buf.subarray(offset + len);
+
+      if (opcode === 0x9) {
+        sock.write(wsFrame(0xa, payload.toString('utf8')));
+        continue;
+      }
+      if (opcode === 0x8) {
+        state.done = true;
+        sock.destroy();
+        return;
+      }
+      if (opcode === 0xa) continue;
+      if (opcode === 0x0) {
+        pending = pending ? Buffer.concat([pending, payload]) : payload;
+      } else {
+        pending = payload;
+        pendingOpcode = opcode;
+      }
+      if (fin) {
+        if (pendingOpcode === 0x1 && pending) onText(pending.toString('utf8'));
+        pending = null;
+      }
+    }
+  };
+
+  sock.on('data', (chunk) => {
+    buf = Buffer.concat([buf, chunk]);
+    if (!upgraded) {
+      const end = buf.indexOf('\r\n\r\n');
+      if (end < 0) return;
+      const head = buf.subarray(0, end).toString('utf8');
+      buf = buf.subarray(end + 4);
+      if (!/^HTTP\/1\.1 101/.test(head)) {
+        fail(`events upgrade answered ${head.split('\r\n')[0]}`);
+        sock.destroy();
+        return;
+      }
+      upgraded = true;
+      state.opened = true;
+      // Query events only: the periodic stats push becomes a Ping we answer,
+      // which keeps the socket alive without adding frames to parse.
+      sock.write(wsFrame(0x1, JSON.stringify({ subscribe: ['query'] })));
+    }
+    parseFrames();
+  });
+
+  sock.on('secureConnect', () => {
+    const nonce = crypto.randomBytes(16).toString('base64');
+    sock.write(
+      `GET /api/v1/events HTTP/1.1\r\nHost: ${args.probe}:${args['api-port']}\r\n` +
+        `Upgrade: websocket\r\nConnection: Upgrade\r\n` +
+        `Sec-WebSocket-Key: ${nonce}\r\nSec-WebSocket-Version: 13\r\n` +
+        `Authorization: Bearer ${run.key}\r\n\r\n`,
+    );
+  });
+  return state;
+}
+
+const events = openEvents();
 const certsBefore = (await run.certificates()).leaf_cache;
 const telBefore = (await run.telemetry()).listeners.https;
 const rows = [];
@@ -197,6 +364,15 @@ for (let r = 1; r <= args.rounds; r += 1) {
     run.log(`round ${r}/${args.rounds} handshake ms ${last.join(' ')}`);
   }
 }
+// The https-sni event is published when the session closes, carrying the
+// pre-relay duration measured before the relay began. Give the last rounds'
+// events time to land before reading them.
+if (events.sock && !events.done) {
+  await new Promise((r) => setTimeout(r, 1500));
+  events.done = true;
+  events.sock.destroy();
+}
+
 const certsAfter = (await run.certificates()).leaf_cache;
 const telAfter = (await run.telemetry()).listeners.https;
 const counters = {
@@ -236,13 +412,45 @@ const rowValue = {
 };
 const ratio = figures.spliced.handshake_ms.p50 ? round(figures.intercepted.handshake_ms.p50 / figures.spliced.handshake_ms.p50) : null;
 
+// Diagnostic (declaration change 5): splits the spliced arm's socket-side
+// figure into pre-relay work (SNI verdict + uncached A+AAAA resolve + egress
+// check + upstream connect) and the relayed handshake. Never a gate.
+const sniRows = events.rows.filter((x) => x.client === args.unlisted);
+const preRelay = sniRows.length ? summary(sniRows.map((x) => x.duration_ms)) : null;
+const preRelaySplit = {
+  source: 'https-sni events, duration_ms (fah-http/src/https.rs:216)',
+  arm: 'spliced',
+  note: 'intercepted emits no pre-relay event on success; direct never reaches the probe',
+  events_seen: events.rows.length,
+  events_matched: sniRows.length,
+  domains: [...new Set(sniRows.map((x) => x.domain))],
+  verdicts: [...new Set(sniRows.map((x) => x.verdict))],
+  pre_relay_ms: preRelay,
+  relayed_handshake_p50_ms:
+    preRelay && figures.spliced.handshake_ms.p50 !== null
+      ? round(figures.spliced.handshake_ms.p50 - preRelay.p50)
+      : null,
+  failure: events.failure,
+};
+run.log(`pre-relay split ${JSON.stringify(preRelaySplit)}`);
+if (events.failure) run.degraded(`pre-relay split unavailable: ${events.failure} (diagnostic only, declared figures unaffected)`);
+else if (sniRows.length === 0) run.degraded('pre-relay split: no https-sni events matched the spliced arm (diagnostic only)');
+
 run.finish({
   measurement: 'P2',
+  quantity: {
+    handshake_ms: 'secureConnect - connect',
+    direct: 'TLS handshake',
+    spliced: 'proxy setup + relayed handshake (includes one uncached upstream A+AAAA resolve)',
+    intercepted: 'proxy setup + upstream TLS + relayed handshake',
+    note: 'campaign-2 declaration change 4: the ratio gate cancels this cost, the spliced-minus-direct row does not',
+  },
   origin: { name: args.origin, port: args['origin-port'], path: args.path, tls: provenance.direct.tls, alpn: provenance.direct.alpn },
   identities: { listed: args.listed, unlisted: args.unlisted, direct_arm_source: args.unlisted },
   rounds: args.rounds,
   figures,
   row_spliced_minus_direct_p50: rowValue,
+  pre_relay_split_spliced: preRelaySplit,
   first_byte_ratio_intercepted_over_spliced: figures.spliced.first_byte_ms.p50 ? round(figures.intercepted.first_byte_ms.p50 / figures.spliced.first_byte_ms.p50) : null,
   provenance,
   counters,

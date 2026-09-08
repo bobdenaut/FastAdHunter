@@ -95,8 +95,8 @@ No A/B by construction — these paths do not exist at `857865d`. All at
 | D7 | `https_sni_splice_steady_state/direct_to_origin` | one connection, 64 MiB | 22.576 ms = **2.7684 GiB/s** |
 | D7 | `https_sni_splice_steady_state/through_splice` | same | 56.676 ms = **1.1028 GiB/s** = **39.8 % of direct** |
 | D8 | `https_handshake/direct_to_origin` | TLS origin (rcgen CA, h1), fresh connection per iteration, `Connection: close` | 959.91 µs |
-| D8 | `https_handshake/spliced` | same, client trusts the origin CA | 7.9066 ms — **see §D8 attribution; not a budget row** |
-| D8 | `https_handshake/intercepted` | same, client trusts the FAH CA | 8.1878 ms — **+3.6 % over spliced** |
+| D8 | `https_handshake/spliced` | same, client trusts the origin CA | 7.9066 ms **proxy setup + relayed handshake**, not a TLS handshake — **see §D8 attribution; not a budget row** |
+| D8 | `https_handshake/intercepted` | same, client trusts the FAH CA | 8.1878 ms **proxy setup + relayed handshake**, not a TLS handshake — **+3.6 % over spliced** |
 | D9 | `https_h2_download/direct_to_origin` | h2 origin, one connection, one 8 MiB GET | 6.1806 ms = **1.2640 GiB/s** |
 | D9 | `https_h2_download/spliced` | same | 8.7907 ms = **910.05 MiB/s** |
 | D9 | `https_h2_download/intercepted` | same | 15.755 ms = **507.78 MiB/s** (÷ direct 0.39, ÷ spliced 0.56) |
@@ -182,7 +182,7 @@ Listener counters after the workload: `https` 300 connections / 300 requests /
 `upstream_failures: 300`, expected: the HTTP lane proxies to port 80 and
 nothing listens there.
 
-### D8 attribution — why the spliced handshake is 8 × direct
+### D8 attribution — why the spliced arm is 8 × direct
 
 Owner-directed, **attribution only; no implementation changed and the figure is
 not promoted to a budget or gate row.**
@@ -203,13 +203,20 @@ origin = node HTTPS on `127.0.0.2:443` with an RSA-2048 leaf:
 | direct, keep-alive | 0.344 | **4.224** | 0.386 | 0.034 |
 | splice, keep-alive | 0.360 | **12.067** | 0.385 | 0.037 |
 
-**The whole difference is inside the TLS handshake window.** TCP connect is
+`tls − connect` is **not the same quantity per arm**. For the two direct rows it
+is the TLS handshake. For the two proxied rows it is **proxy setup + relayed
+handshake** — ClientHello read, SNI verdict, the upstream name resolution the
+proxy pays and `curl --resolve` skips, the egress check, the upstream TCP
+connect, then the relayed handshake. Read the proxied numbers under that name
+everywhere, never as "TLS handshake".
+
+**The whole difference is inside that window.** TCP connect is
 identical (0.33–0.36 ms). Time to first byte after the handshake is identical
 (≈ 0.4 ms). Teardown is *faster* through the splice (0.22 vs 0.28 ms), which
 refutes the first hypothesis — EOF propagation through the relay is not the
 cost.
 
-Four hypotheses tested and refuted:
+Five hypotheses tested; three refuted, two re-opened:
 
 | Hypothesis | Test | Result |
 | --- | --- | --- |
@@ -217,7 +224,7 @@ Four hypotheses tested and refuted:
 | Nagle on the upstream leg | code read, `crates/fah-http/src/https.rs:230` | Refuted — `set_nodelay(true)` is set on the upstream socket, and `server.rs:184` sets it on the accepted one |
 | The domain hand-off (detach → channel → re-register on another runtime's IO driver) | interleaved N = 0 / 2 / 0 / 2, phases each time | Refuted — N = 0 produced both the fastest (7.033 ms) and the slowest (21.314 ms) reading |
 | Windows ephemeral-port / TIME_WAIT pressure (the p10 trap) | `netstat` count vs `netsh int ipv4 show dynamicport tcp` | ~~Refuted — 165 TIME_WAIT against 16 384 ephemeral ports, 1 %~~ **Withdrawn 2026-09-08: the reading was taken after the run had drained. Re-opened as the leading candidate — see below** |
-| The SNI resolve the splice pays and `curl --resolve` skips | raw UDP query to `192.168.10.1`, 12 samples | Refuted — min 0.65, median 0.78, max 1.24 ms |
+| The SNI resolve the splice pays and `curl --resolve` skips | raw UDP query to `192.168.10.1`, 12 samples | ~~Refuted — min 0.65, median 0.78, max 1.24 ms~~ **Weakened 2026-09-08: the samples were one warmed record type against the LAN router. `resolve_host` issues A *and* AAAA under `tokio::join!`, so the resolve costs max of the two, and `127-0-0-2.nip.io` has no AAAA — that leg is a negative answer from a public zone whose SOA minimum decides how often it leaves the LAN. The leg that can carry the spread was never sampled. Not refuted; untested** |
 
 The N sweep readings, interleaved, `tls − connect` for the splice arm:
 **7.033 → 11.686 → 21.314 → 20.031 ms** across four consecutive arms, while the
@@ -238,9 +245,11 @@ Port pressure is therefore the **leading candidate**, not a refuted one. Not
 chased further (owner instruction); recorded because a wrong refutation is
 worse than an open question.
 
-**Status: UNRESOLVED, and bounded.** The cost is localised to the TLS handshake
-window, is independent of N, and is not explained by connect, DNS, Nagle,
-teardown or port pressure. What is established: the box and the origin are
+**Status: UNRESOLVED, and bounded.** The cost is localised to the proxy setup +
+relayed handshake window, is independent of N, and is not explained by connect,
+Nagle or teardown. **DNS and port pressure are both open**, not eliminated —
+their refutations were withdrawn and weakened respectively on 2026-09-08. What
+is established: the box and the origin are
 healthy (flat direct control), and the variance belongs to the proxied path.
 
 **Consequences.**
