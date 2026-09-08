@@ -34,3 +34,10 @@ dashboard/frontend/dist/
 /p[13]*.crt
 /p[13]*.key
 /p[13]*.der
+
+# The rules above are root-anchored and never matched the probe's own smoke
+# sessions, which live under docs/code-review/. A `git add -A` there staged 18
+# private-key blocks before a scan caught them. The per-session work/ directory
+# is the store — CA key, API key, session secret — and is never committed; the
+# layer directories beside it are committed evidence and stay tracked.
+docs/code-review/**/smoke-*/work/
