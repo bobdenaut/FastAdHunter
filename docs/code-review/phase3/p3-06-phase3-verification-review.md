@@ -1,11 +1,12 @@
 # P3-06 — Phase 3 Verification — Review
 
 **Task:** `plan/wip/phase3/p3-06-phase3-verification.md` · **Plan:**
-`p3-06-phase3-verification-plan.md` · **Status:** agent-side work complete
-(Steps 1–3 on the dev box, Step 4 runbook proposed, Step 5 edits listed);
-on-device items and every doc edit await the owner; review not started.
-Phase row untouched (`WAITING` until the owner flips it; `AWAITING SOAK` is
-the expected next state).
+`p3-06-phase3-verification-plan.md` · **Status:** **campaign 2 planned, not
+executed.** The three p3-06 plans are rewritten for the post-merge tip and
+committed; campaign 1's figures are superseded in full and nothing is carried.
+No campaign-2 step has run — Steps 1–3 owe a re-run plus three coverage
+additions, Step 4 is not started, Step 5 is a list. Phase row `AWAITING SOAK`;
+flip condition and per-step state in §Hand-off state, 2026-09-08.
 
 ## Pre-declaration (written 2026-09-02, before any measurement ran)
 
@@ -171,6 +172,57 @@ runs (PERFORMANCE.md §Measuring reliably). **Control arm:**
   container is not masqueraded, so P2's identity precondition and P1-control's
   LAN → LAN path are unaffected. Gate statistics, quantities and counts
   unchanged.
+
+## Pre-declaration — campaign 2 (written 2026-09-08, before any measurement ran)
+
+The block above is campaign 1's and stays unedited. It described measurements
+taken on images built at `a2d0802`, which predates merge `e0c6071`; those
+figures are superseded in full (header of
+[p3-06-testing-results.md](p3-06-testing-results.md)). Campaign 2 re-runs every
+arm from zero — owner decision 2026-09-08, nothing carried.
+
+**Binding declaration:**
+[p3-06-testing-plan.md](../../../plan/wip/phase3/p3-06-testing-plan.md) — arms,
+workloads, sample sizes, invalidity rules and gate statistics live there and
+are not restated here. This section carries the campaign-2 declaration changes
+only, per that plan's §Declaration deltas.
+
+**What changed in the declaration frame:**
+
+| Item | Campaign 1 | Campaign 2 |
+| --- | --- | --- |
+| Pre-phase-3 A/B checkout | `64be513`, which also predates the allocation domains | `main` at `857865d` (0.3.3) — same execution model, so the delta isolates Phase 3 (verification plan §Step 1) |
+| Execution model | HTTPS on the base runtime | HTTPS on N `current_thread` allocation domains |
+| N | not a config key | `runtime.http_runtimes` recorded on **every** HTTPS figure; a figure with no N is diagnostic. Arms run at N = 2 unless the arm sweeps it |
+| Results file | `p3-06-testing-results.md` | `p3-06-testing-results-2.md`, created when the first arm produces a figure |
+
+**Declaration changes (recorded before the arm runs; the campaign-1 block above
+is unedited):**
+
+1. **P1-LAN's absolute gate withdrawn — owner decision outstanding.** Campaign
+   1 declared "≥ 100 MiB/s steady state" from gigabit link speed. Campaign 2
+   gates P1-LAN **relative to P1-control** (median ≥ 0.9 × control median),
+   absolute MiB/s recorded as a diagnostic. Reason: the phase-2.6 sweep
+   measured this device's LAN-through-router ceiling at 58–60 MiB/s single
+   stream and 67–70 par8, at every N, with a 380 MB/s origin
+   ([alloc-domains-n-sweep.md](../phase2.6/alloc-domains-n-sweep.md)), so the
+   declared gate is unreachable by topology. Reinstating an absolute row needs
+   a host on the far side of the router — separate decision.
+2. **P10 inherits the phase-2.6 rig rather than declaring a new one.**
+   Campaign 1 had no N arm. P10's arms, statistics (cores from the container's
+   own CPU counters, ΔRSS against the arm-local floor), sampling cadence and
+   client discipline are `alloc-domains-n-sweep.md`'s, so the two tables are
+   comparable. New: the TLS arms and N = 1. N = 3 is deferred, not dropped.
+3. **`oha` 1.16.0 adopted for the arms it reproduces exactly.** It drives
+   close-mode HTTP, both TLS connection-rate arms, the P3 throughput arm and
+   the transfer arms; `p10-connrate.mjs` keeps the keep-alive arm alone and
+   `p10-dnsload.mjs` is ported in full, because `oha` expresses neither
+   requests-per-connection nor DNS. **No declared quantity changes** — where
+   `oha` would change one (P1's exclusion of setup, P2's bound source
+   addresses and handshake p50, P3's stall barrier, P5/SNI's raw TLS work,
+   P6's curl phase timings) it is not used, or it runs beside the row labelled
+   a cross-check. Version and `--worker-threads` pinned and recorded;
+   `--connect-to`'s SNI behaviour is a smoke prerequisite (smoke plan Layer 0).
 
 ## Measurements
 
@@ -1196,7 +1248,14 @@ SECURITY.md row 3, ROADMAP, project-state); X2 follow-up task
 (`cargo bench -p fastadhunter`); `FastAdHunter-pre3` worktree removal at phase
 close; Runbook 1–7 on the device, P1–P7, the 24 h soak.
 
-## Hand-off state, 2026-09-05 — current
+## Hand-off state, 2026-09-05 (superseded)
+
+**Superseded 2026-09-08 — read §Hand-off state, 2026-09-08 below first.** Kept
+as history. Two things in it are now wrong: the P-arm dispositions below belong
+to campaign 1 and do not carry to the tip, and the ordering constraint reading
+"the 0.3.1 soak ends 2026-09-08" is stale — the 0.3.1 soak was stopped on day 6
+for the 0.3.3 deploy of 2026-09-07, and the 0.3.3 soak runs to **2026-09-14**
+(integration audit F6, [project-state.md](../../project-state.md) §Now).
 
 Supersedes the 2026-09-02 section above, whose "uncommitted" list is history.
 Tree clean on `phase3-06` apart from the owner's own `docs/code-review/phase2.6/`
@@ -1234,5 +1293,76 @@ own decision, not a soak precondition.
   LAN endpoint with Node. P2 additionally needs two same-family IPv4 addresses
   on it, P3 an h2 origin under a public name with a publicly trusted
   certificate (delta 14).
+
+**Deferred, accepted:** F10, F16. **Withdrawn:** F6.
+
+## Hand-off state, 2026-09-08 — current
+
+Supersedes both sections above. Tree clean on `phase3-06` at **`61ea35c`**
+("docs(phase3/p3-06): re-plan the probe campaign for the post-merge tip");
+`origin` and `backup` both at that commit.
+
+**What this session changed:** merge `e0c6071` re-homed the HTTPS listener onto
+the HTTP allocation domains, so campaign 1's on-device figures — taken on
+images built at `a2d0802`, where `fah-http/src/domain.rs` does not exist and
+`runtime.http_runtimes` is not a config key — measure an execution model that
+is no longer shipped. Owner decision: **full re-run from zero, nothing
+carried.** The three p3-06 plans were rewritten for campaign 2, this file
+gained §Pre-declaration — campaign 2, and
+[p3-06-testing-results.md](p3-06-testing-results.md) gained a supersession
+header. No figure and no `results-*/` directory was edited.
+
+**Nothing has been executed.** State per step of the leading document
+([p3-06-phase3-verification-plan.md](../../../plan/wip/phase3/p3-06-phase3-verification-plan.md)):
+
+| Step | State |
+| --- | --- |
+| 1 — dev-box benches | **re-run owed.** Campaign 1's D1–D14 A/B'd against `64be513`, which also predates the allocation domains; the baseline is now `main` `857865d`. Setup first: the `https_sni_splice` harness rebuilt on `TlsServer::bind/serve`, a second checkout at `857865d`, a recorded browsing-host corpus for the leaf-cache arm |
+| 2 — security suite + coverage gaps | suite green at the tip (`security_phase3` 7/7, `interception` 33/33, `sni` 9/9 — integration audit §Measurements). Owed: F2 (`domains: 1` splice test in `fah-http/tests/sni.rs`), F5 (one `https.*` key in the `fah-api` boot-key classification test), and the F3 hand-off saturation property |
+| 3 — offline full-mode E2E | `e2e_https` 2/2 at the tip. Owed: A4 — pin `runtime.http_runtimes` in the fixture and assert the thread name, so the green line means "full mode on the domain lane" rather than an accident of the box's core count |
+| 4 — on-device | not started. 4.0 (probe preconditions) blocks everything below it; 4.1 (P10) must precede 4.2 because it fixes the N every later figure is taken at |
+| 5 — documentation sweep | not started |
+
+**Flip condition, unchanged in substance.** `AWAITING SOAK` flips when the 24 h
+full-mode soak on the RB5009 records RSS ≤ 128 MB steady and the §Runbook 6
+watch items, with Runbook 1–4 and 7 done and recorded here. P5 does not gate
+it (2026-09-05 disposition stands as a disposition; its figure does not).
+
+**Ordering constraints a later session should not rediscover:**
+
+- The 24 h full-mode soak (Step 4.8) cannot start before **2026-09-14** — the
+  0.3.3 soak owns the production container until then. It needs its own deploy
+  approval, and it needs N3 (`dot` state) plus the L5 `listeners` telemetry
+  block first, or watch item (b) has no read path. It carries P7, P8 and P9
+  proper.
+- P10 (Step 4.1) cannot run while the probe is attached to envlist `fah-env`:
+  that list pins production's `FAH__RUNTIME__HTTP_RUNTIMES=2`, and precedence
+  is `defaults < file < FAH__ env`, so neither the probe's TOML nor
+  `POST /api/v1/config` can move N. The probe needs its own env list.
+- The probe's stored config carries `strategy = "fallback"`, rejected at load
+  since `fa9451a`. **The probe will not boot on a tip build until it is
+  fixed.**
+- Runbook 4 needs `BASELINE_EXCLUSIONS` settled first, or it proves nothing
+  about exclusions.
+- Runbook 7's ninth `ca/generate` is the `409 archive_full` check — do not
+  spend it. Restart the probe to purge the leaf cache instead.
+- P1-LAN, P1-control, P2 and P3 need the Mac as second LAN endpoint. P2
+  additionally needs two same-family IPv4 addresses on it; P3 an h2 origin
+  under a public name with a **publicly trusted** certificate, which the Mac
+  does not supply. The Mac is currently on Wi-Fi, which the testing plan's Mac
+  precondition 1 does not allow.
+- `p2-handshake.mjs` has no Darwin branch — it calls `ip -4 addr`, which macOS
+  does not have — so the Mac cannot run P2 until that lands.
+- The smoke plan's Layer 0 `--connect-to` SNI proof gates every `oha` arm and
+  has never been run.
+
+**Owner decisions outstanding:**
+
+| # | Decision |
+| --- | --- |
+| Delta 1 | P1-LAN's absolute ≥ 100 MiB/s gate withdrawn in favour of a relative one (§Pre-declaration — campaign 2). Needs sign-off |
+| Audit F1 | `main`'s IP-literal fix covers `Proxy` only; on the HTTPS path an allowed IP-literal SNI goes to the resolver and fails every time, while CONFIGURATION.md says the switch governs both. Port the fix, or narrow the doc and the `tls_server` test to HTTP-only |
+| Wi-Fi vs wired | whether the Mac's Wi-Fi link stands for P1/P2/P3 or the plan's wired precondition holds. The deciding measurement — 5 P1-control runs, min/max spread against the 10 % relative gate — needs no probe and no router |
+| p3-04 h2-stall | campaign 1 found one h2 stream of 64 answering through the terminate leg and reproduced it on the dev box (control 64/64, stall 5/64). **Never filed as a finding.** The plan requires it filed before P3 runs on the device |
 
 **Deferred, accepted:** F10, F16. **Withdrawn:** F6.
