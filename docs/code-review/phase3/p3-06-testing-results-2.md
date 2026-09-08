@@ -337,11 +337,11 @@ overturn the budget row, for two reasons.**
    statistic (smoke Layer 3). 2.117 / 0.275 = **7.7×**, against the measured
    ~9× x86 → RB5009 factor. Consistent scaling, not a regression.
 
-**Disposition: diagnostic, unresolved until `fah-certs:arm64` runs.** That
-container is the same criterion bench on the same device and is directly
-comparable to the 450.88 µs row; it is the arm that settles whether the budget
-holds. Nothing here is a budget failure yet, and nothing here should be
-recorded as one.
+**Disposition: RESOLVED — see §The one-shot containers below.** `fah-certs`
+ran the same criterion bench on this device at **447.12 µs**, 0.8 % from the
+450.88 µs budget row. The budget holds; P5's 2.117 ms is the DoT handshake
+delta, not the mint path. **This is not a budget failure and must not be
+recorded as one.**
 
 ### P6 — certificate generate and import, wall time
 
@@ -495,6 +495,116 @@ relayed at every N — bounded memory holds on target hardware regardless of N.
   client failures. Only the `close` arm is clean enough to compare across N,
   which is why the table is built from it.
 
+
+### The one-shot containers — `fah-certs`, `fah-splicebench`, `fah-p4`
+
+Both run on `veth3`, which carries one container at a time, so each cost the
+probe's downtime as well as its own runtime. Output is read from the container
+log; neither writes a file.
+
+#### `fah-certs` — criterion on the device, and P5's open question closed
+
+Criterion at **default** 3 s warm-up and 5 s measurement, exit 0.
+
+| Bench | RB5009 | dev box (amd64, smoke Layer 3) | factor |
+| --- | --- | --- | --- |
+| `certs_mint` | **447.12 µs** | 51.651 µs | 8.7× |
+| `certs_cache_hit` | 382.31 ns | 52.910 ns | 7.2× |
+| `certs_prewarm_warm` | 554.15 ns | 79.325 ns | 7.0× |
+| `certs_replay_zipf` | 143.86 µs | 17.040 µs | 8.4× |
+
+**The cold-prewarm budget holds.** [PERFORMANCE.md](../../../PERFORMANCE.md)
+§Budgets records 450.88 µs from `certs_mint` on this device, 2026-09-04; this
+run reproduces it at 447.12 µs — **0.8 % apart**, at 45 % of the `< 1 ms`
+budget.
+
+**This closes P5's open question.** P5's gate read 2.117 ms against the same
+`< 1 ms` budget and was recorded above as an unresolved diagnostic. It is now
+resolved: P5 measures a **DoT handshake delta from a LAN client**, not the mint
+path, and carries handshake and network variance the criterion bench does not.
+The mint path itself is 447 µs. **P5's gate failure is not a budget failure and
+must not be recorded as one.**
+
+The four factors — 7.0× to 8.7× — also confirm the measured ~9× x86 → RB5009
+conversion on four independent benches.
+
+Zipf replay, 100 000 handshakes over 4096 hosts against an LRU of 512:
+`prewarm_hits=67323`, `minted_total=32677`, `evictions=32165`,
+**hit rate 0.6732** at 8× oversubscription.
+
+#### D6 — `SPLICE_BUF`, settled
+
+Two runs. The first, `--reps 1 --size-mib 8`, produced a non-monotonic down
+curve (16/32 below 16/16) and is a shakedown, not a figure. The second,
+**`--reps 5 --size-mib 64`**, is the D6 result.
+
+| up / down KiB | median MiB/s | min | max | worst case MiB at 1024 conns | in budget |
+| --- | --- | --- | --- | --- | --- |
+| loopback origin | 957.3 | 840.2 | 998.8 | — | — |
+| **16 / 16 — shipped** | **351.1** | 341.3 | 362.3 | **32** | **true** |
+| 16 / 32 | 450.4 | 417.2 | 481.5 | 48 | false |
+| 16 / 64 | 484.8 | 465.7 | 515.8 | 80 | false |
+| 16 / 128 | 493.2 | 422.5 | 541.2 | 144 | false |
+| 64 / 64 | 498.5 | 495.3 | 506.3 | 128 | false |
+
+`pick: none — no in-budget candidate reaches 0.9 x best 498.5`.
+
+**Verdict, owner decision 2026-09-08: keep 16/16 as shipped. `SPLICE_BUF` is
+not changed on this benchmark.**
+
+1. **Up-buffer is 16 KiB.** 64/64 over 16/64 is **+2.8 %**, well below the
+   +10 % threshold, and two independent runs agree (−4.1 % at 1 rep, +2.8 % at
+   5). Raising `up` buys nothing.
+2. **The down curve is clean and monotonic**, saturating after 64 KiB: +28 % at
+   32, **+38 % at 64**, +40 % at 128. The step from 64 to 128 is worth about
+   two percentage points for 64 MiB more worst-case memory.
+3. **Only 16/16 fits the declared 32 MiB worst-case budget** at
+   `max_connections = 1024`. Holding that ceiling costs 38 % of splice
+   throughput, and that is the trade being accepted.
+4. The alternatives — a higher memory budget, a lower `max_connections`, or
+   accepting the current throughput — are **configuration and product
+   decisions requiring an explicit call**, not conclusions this benchmark can
+   draw. Changing `SPLICE_BUF` is a `src` edit with its own gates.
+5. The LAN is 1 GbE and 351 MiB/s is about 2.9 Gbit/s, so the ceiling is
+   unlikely to bind in practice. **This is context only and is not a reason to
+   relax the declared memory ceiling.**
+
+Counters were clean on every candidate: 6 connections, 6 requests, 0 blocked,
+0 `refused_destination`, 0 `resolve_failures`, 0 `dropped_events`.
+
+#### `fah-p4` — DNS latency from a loopback client, in-container
+
+The harness boots its own `/fah-probe` via `FAH_E2E_BINARY`, so both the client
+and the resolver are inside the container and no network is involved. 3 rounds
+× 2000 sequential queries per transport, transports interleaved, blocked
+domain. `test result: ok` in 8.97 s, exit 0, no `EACCES`.
+
+| Transport | n | min | **p50** | p90 | p99 | max |
+| --- | --- | --- | --- | --- | --- | --- |
+| udp | 6000 | 92 | **120** | 198 | 299 | 5836 |
+| dot | 6000 | 108 | **174** | 309 | 391 | 1798 |
+| doh-post | 6000 | 512 | **1025** | 1351 | 1967 | 6763 |
+
+All µs. DoH negotiated `HTTP/2.0`. DoT handshakes, excluded from the
+per-query figures: 2.076 / 2.744 / 1.933 ms.
+
+**The LAN hop costs about 220 µs.** In-container UDP p50 is 120 µs against
+P4-LAN's 341 µs over the wire — a clean separation of engine cost from network
+cost, which is what this container exists to give.
+
+**DoH's cost is not transport.** In-container DoH is 1025 µs against P4-LAN's
+951 µs — *slower with no network at all*. The cost is TLS plus HTTP/2 framing
+on the API listener. Against the dev box it is 7.9× (1025 µs vs 129 µs), close
+to the measured ~9× factor, while UDP is only 2.3× — UDP is dominated by fixed
+overhead that does not scale with CPU. DoH at **8.5× UDP** on this hardware is
+recorded as a shape, not a fault.
+
+One incidental result: the probe was removed and re-added around these three
+containers, and its `/config` survived intact — N=2 and `dns+http+https` read
+back after the restore. The `fahprobe-config` and `fahprobe-data` mount lists
+are therefore real mounts, not the silently-ineffective kind
+([routeros-traps.md](../../routeros-traps.md) §Container configuration).
+
 ### Not run in this session
 
 | Arm | Blocker |
@@ -502,7 +612,6 @@ relayed at every N — bounded memory holds on target hardware regardless of N.
 | P1-LAN, P1-control | needs an origin under a publicly resolvable name on a **second** host; the origin currently shares the dev box with the client, which P1 cannot use |
 | P3 | needs a **publicly trusted** h2 origin; still owed, unchanged since smoke Layer 3 |
 | P2 | runs on the Mac; preconditions not yet met |
-| D11, `fah-splicebench`, `fah-certs`, `fah-p4` | the three one-shot containers; each needs the probe stopped, since one veth carries one container at a time |
 
 **The Mac is out of the rig this session, owner decision 2026-09-08.** It has
 no wired path (no USB-C, so the adapter cannot be used), Homebrew could not
