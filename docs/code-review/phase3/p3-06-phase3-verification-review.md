@@ -1531,7 +1531,7 @@ states `blocked > requests` is possible. That is the only place the stale
 wording remains; it is a plan-file edit, not a review-file one, so it is
 proposed rather than made.
 
-## Smoke session, 2026-09-08 — Layers 0–2 complete, Layer 3 in progress
+## Smoke session, 2026-09-08 — Layers 0–3 complete
 
 Output root
 [p3-06-probe/smoke-20260908T0905Z/](p3-06-probe/smoke-20260908T0905Z/), one
@@ -1653,12 +1653,15 @@ The warm-up succeeded on both the stall and control runs (`200`, 3 B, issuer
 discharge the regression check.**
 
 Layer 3's `fah-probe` container is the first place `process_rss` is non-null.
-It is likely still not enough: that image is a plain release build, so
+**It was not enough, and that is now measured rather than predicted** — see
+the Layer 3 S2 subsection below, where the probe answered
+`upstream_cert_failures = 1`. The image is a plain release build, so
 `FAH_TEST_UPSTREAM_ROOT` is inert and a local self-signed origin fails
-`UnknownIssuer`. The plan requires a **publicly trusted** h2 origin under a
-public name, proven first with `smoke/h2-preflight.mjs`. That is the same
-outstanding blocker as the device-side P3. If it holds, the barrier moves to
-the device campaign and stays owed.
+certificate validation on the upstream leg. The plan requires a **publicly
+trusted** h2 origin under a public name, proven first with
+`smoke/h2-preflight.mjs`. That is the same outstanding blocker as the
+device-side P3. The barrier therefore moves to the device campaign and stays
+owed.
 
 ### Correction — one D8 refutation is withdrawn
 
@@ -1677,18 +1680,129 @@ pressure re-opened as the leading candidate.** Not chased further, per the
 owner's instruction; recorded because a wrong refutation is worse than an open
 question. P2 on the device remains the authority for that row.
 
-### Layer 3 — state
+### Layer 3 — the four images, x86 Docker on the dev box, 2026-09-08
 
-All four images built at the tip for `linux/amd64`: `fah-certs:smoke`,
-`fah-splicebench:smoke`, `fah-p4:smoke`, `fah-fahprobe:smoke`. Campaign 1's
-`a2d0802` images are retired. **Nothing has been run against them yet.**
+All four built at the tip for `linux/amd64`; campaign 1's `a2d0802` images are
+retired. Raw output in `p3-06-probe/smoke-20260908T0905Z/layer3/` (image runs)
+and `layer3-l1/` (the Layer 1 re-run). Neither directory is committed — they
+are generated artifacts, and `work/` additionally holds a CA private key, an
+API key and a session secret.
 
-Remaining, in order: the three one-shot images and their `docker inspect` /
-`docker top` checks; `smoke-config-l3/` with every listen `address` on
-`0.0.0.0` and the `fah-probe` container with published ports; Layer 1 re-run
-against it; then the two things only the container shows — the P3 RSS arm
-(blocked as above) and `p10-domains` driven by
-`-e FAH__RUNTIME__HTTP_RUNTIMES=<n>`, the dress rehearsal for `fahprobe-env`.
-Two rows are recorded as not run by the plan's own instruction:
-`p1-lan --direct` (Docker Desktop on Windows does not route the bridge subnet
-to the host) and any timing from `p4-lan` (its UDP relay wedges under load).
+| Image | Verdict | Evidence |
+| --- | --- | --- |
+| `Dockerfile.certs` | pass | four benches at **default** 3.0000 s warm-up and 5 s measurement; `certs_mint` point estimate 51.651 µs; `docker top` shows `/fah-certs --bench`; exit 0 |
+| `Dockerfile.splicebench` | pass | five `rep=1 arm=splice` lines, one `loopback_origin`, the candidate table, `pick: none — no in-budget candidate reaches 0.9 x best 5598.3`, five `counters` lines; exit 0 |
+| `Dockerfile.p4` | pass | `FAH_E2E_BINARY override active: /fah-probe`; three transports x 3 rounds x 2000 (n = 6000 each); `DoH over Some(HTTP/2.0)`; no `EACCES`; `docker inspect` shows `User=65532:65532`; `test result: ok` in 1.56 s |
+| `Dockerfile.fahprobe` | pass (boot) | all four listeners bound on `0.0.0.0`; `dropped privileges after binding uid=65532 gid=65532`; `docker top` shows `/fah-probe` as 65532; health `healthy`; oisd refreshed, 60 673 rules — so both the upstream at `192.168.10.1:53` and outbound HTTPS work from inside |
+
+`docker top` cannot sample the documented `splicebench --reps 1 --size-mib 8`
+run: it completes in under a second. The line above was taken from
+`--reps 6 --size-mib 512`, which changes nothing that row asserts.
+
+#### Layer 1 re-run against the container
+
+| Script | Verdict | Note |
+| --- | --- | --- |
+| `p0-sni` | valid | `blocked` moved 5 on 15 connections / 15 requests, gate `pass: true`. The **first** attempt was correctly `INVALID` — `resolve_failures 5`, "`--blocked` is not blocked by the probe" — because a fresh `/config` carries no user rule. Seeding the blocking user rule and a CA fixed it. The invalidity rule doing its job, not a defect |
+| `p5-mint` | valid | `minted_total` 0 to 16, `evictions = 0`, both arms `served_issuer = FastAdHunter CA` |
+| `p4-lan` | valid | udp / dot / doh each `n = 200`, `unanswered = 0`, `unmatched = 0`, `["0.0.0.0"]`, dot issuer `FastAdHunter CA`. Docker Desktop's UDP relay held at `--queries 200`, as the plan requires |
+| `p7-store` | valid | 20 paths / 40 requests, `other_200: 0`, `leaks: []`, gate `pass: true`; the image ships `/web`, so 24 rows answer the SPA shell |
+| `p6-certs-time` | valid | four rows `200`, `api_certificate_after.source = "imported"`, `ca-after-p6.pem` written and differs |
+| `p10-domains` (N = 1) | degraded | spliced halves 5/5 and 40/40, 0 failed, 0 x 502. Control halves 0/40 — the host cannot route the bridge subnet, the same limitation the plan already records for `p1-lan --direct` |
+| `p3-h2stall` | INVALID | see the S2 subsection below — `upstream_cert_failures = 1` |
+| `p1-lan --direct` | not run | plan's own instruction |
+| `p2-handshake` | not run | Mac only |
+
+#### The two things only the container shows
+
+**`fahprobe-env` precedence — proven.** The file says
+`runtime.http_runtimes = 2`; the container was started with
+`-e FAH__RUNTIME__HTTP_RUNTIMES=1`. The boot log reads `http_runtimes=1` and
+`GET /api/v1/config` reads back `1`. Env beats file, and `p10` reads the value
+back from the API — the dress rehearsal the router's `fahprobe-env` needs.
+What remains owed for item 3 of the campaign checklist is the attachment, not
+the mechanism.
+
+**`process_rss` is non-null — proven.** `p10`'s close arm reported
+`cores=0.15`, derived from `cpu_user_ms + cpu_system_ms` deltas, and
+`ΔRSS end=11.23 max=12.26 MiB (floor 41.33 MiB)`. All three are null on
+Windows. This is the reading the P3 RSS arm needs; it is the *origin*, not the
+telemetry, that still blocks that arm.
+
+#### Environment deviations — every one deliberate, none silent
+
+1. The image is tagged `fah-fahprobe:smoke`; the plan's table says
+   `fah-probe:smoke`. Tag only — the entrypoint is `/fah-probe`.
+2. The config is **not** only the Layer 1 TOML with `0.0.0.0` addresses. Two
+   further keys changed: `egress.allow_destinations` gained
+   `"172.16.0.0/12"`, without which the container reaches no origin at all;
+   and `https.interception.clients = ["127.0.0.1", "172.30.0.1"]`. The second
+   entry is what the probe actually sees after Docker's SNAT; the first is
+   there only because `p3-h2stall` tests its own precondition against the
+   **host-side** local address and would otherwise refuse before connecting.
+   On the device neither entry is needed in this form.
+3. A user-defined network `fah-l3` (172.30.0.0/16) with fixed addresses —
+   probe `.10`, origin `.20` — replaces the default bridge, so the origin has
+   a stable name (`172-30-0-20.nip.io`, which the LAN resolver returns
+   unfiltered). The default bridge gives no address control.
+4. Port 8080 is published in addition to the plan's four, so the HTTP lane can
+   be driven.
+5. The origin is `smoke/static-origin.mjs` in a `node:22-alpine` container —
+   the stand-in, never `static-web-server`. No figure is carried from it, per
+   that file's own header and the toy-origin subsection above.
+6. `/config` was seeded in-container exactly as smoke plan section 1.1
+   requires of a fresh boot: `PUT /api/v1/rules/user` with
+   `||ads.smoke.test^`, then `POST /api/v1/certificates/ca/generate` and a CA
+   export.
+
+#### Harness robustness finding — `p10-domains` loses completed arms on a mid-run throw
+
+`p10-domains` ended its first N = 1 run with
+`INVALID: uncaught exception: ENOBUFS bind ENOBUFS 0.0.0.0`, thrown after the
+close arm had finished. The arm's figures had been computed and were written
+to `run.log` — `requests=11250 failed=8 rps=562.7 p50/p95/p99=4.706/24.518/41.788 ms 502=72`,
+plus the `cores` and RSS line quoted above — but `p10-N1.json` was written
+with `arms: {}`. Any error between two arms currently discards every arm
+already completed.
+
+The trigger was host-side: this box was carrying **12 530 TIME_WAIT** sockets
+against an ephemeral range of 16 384 when the throw happened, the same
+exhaustion recorded in the D8 correction subsection above. `netstat` itself
+failed first, with `spawnSync netstat ENOBUFS`.
+
+**Recorded, not fixed, on the owner's instruction.** No gate failed, and the
+condition is specific to Windows ephemeral-port exhaustion — the RB5009 will
+not reproduce it. If it is ever fixed, the change is to persist each arm as it
+completes rather than at the end.
+
+#### The S2 barrier — still owed, now with the cause on record
+
+Layer 3 was the first place the P3 RSS arm could have been discharged, and it
+was not. It did not fail: it could not run.
+
+Against the container, `p3-h2stall`'s throughput arm reported
+`FAILED connect: ECONNRESET`, and the probe's own telemetry names the reason —
+`upstream_cert_failures = 1`, `refused_claim = 0`. Interception was claimed and
+the terminate leg served the FastAdHunter CA correctly; the probe then refused
+the **origin's** self-signed certificate on the upstream leg. There is no way
+around it in a release image: `FAH_TEST_UPSTREAM_ROOT` is read inside
+`#[cfg(feature = "test-harness")]` in `crates/fastadhunter/src/main.rs`
+(`test_harness_upstream_client_config`), and `CONFIGURATION.md` exposes no
+file-level equivalent.
+
+**So the barrier is neither met nor missed — it is unexercised, and the
+publicly trusted h2 origin is genuinely still owed.** It must not be recorded
+as a pass, and a `barrier: not met` reading from this topology would be an
+artefact of the origin, not a p3-04 regression. The requirement is unchanged:
+a publicly trusted h2 origin under a public name, proven first with
+`smoke/h2-preflight.mjs` (`alpn h2`, exactly 8 388 608 bytes with
+`content-length`), with the origin, path and that line recorded. Campaign
+checklist items 6 and 7 both remain open on it.
+
+#### Layer 3 verdict
+
+The container-only mechanisms the campaign depends on are proven: env-over-file
+precedence, `process_rss`, and every Layer 1 script that does not need a
+routable origin. What Layer 3 cannot supply is an origin — neither a publicly
+trusted one for P3, nor a host-routable one for any `--direct` control arm.
+Both move to the device campaign.
