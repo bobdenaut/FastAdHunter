@@ -534,7 +534,7 @@ or, for items 5 and 7, to the probe container.
    + `/container/set [find comment="fastadhunter"] envlists=fah-env,fah-mode`)
    — **never** add the key to `fah-env`, which the probe shares.
    Effect: at the restart. Rollback: `POST /api/v1/config` back to `dns+http`
-   (or remove the envlist) + restart.
+   (or detach the envlists entry) + restart.
 2. **Prove the listener before steering** (read-only):
    `/log print where message~"HTTPS SNI listener bound"` → `addr=[::]:8444`;
    from a LAN host, `openssl s_client -connect 172.17.0.2:8444 -servername neverssl.com </dev/null | openssl x509 -noout -subject`
@@ -857,7 +857,7 @@ and the watch items above`.
    3); renewal stays an operator action". §Later phases already reads in the
    present tense for p3-03/p3-04/p3-05; no other change.
 3. **docs/deploy-rb5009.md** — new §5c "HTTPS (Phase 3, `dns+http+https`)"
-   mirroring §5b: turn on the mode (API or a *separate* envlist, never
+   mirroring §5b: turn on the mode (API or a *separate* `envlists` entry, never
    `fah-env`), prove the listener, the two v4 rules + the three v6 rules above,
    verify (`nat print stats`, WS `https-sni`), the no-SNI/ECH operator warning
    with the measured `ENOENT`, CA install + list-after-install sequencing,
@@ -1336,7 +1336,7 @@ it (2026-09-05 disposition stands as a disposition; its figure does not).
   approval, and it needs N3 (`dot` state) plus the L5 `listeners` telemetry
   block first, or watch item (b) has no read path. It carries P7, P8 and P9
   proper.
-- P10 (Step 4.1) cannot run while the probe is attached to envlist `fah-env`:
+- P10 (Step 4.1) cannot run while the probe is attached to `envlists=fah-env`:
   that list pins production's `FAH__RUNTIME__HTTP_RUNTIMES=2`, and precedence
   is `defaults < file < FAH__ env`, so neither the probe's TOML nor
   `POST /api/v1/config` can move N. The probe needs its own env list.
@@ -1446,7 +1446,7 @@ Unchanged from the previous hand-off except where noted:
 - The 24 h full-mode soak (Step 4.8) cannot start before **2026-09-14**. It
   needs its own deploy approval. **Its stated prerequisites are already met** —
   see §Telemetry prerequisite, verified below. Watch item (b) is unblocked.
-- P10 (Step 4.1) cannot run while the probe is on envlist `fah-env`.
+- P10 (Step 4.1) cannot run while the probe is on `envlists=fah-env`.
 - The probe's stored config carries `strategy = "fallback"` and **will not boot
   on a tip build**. Layer 0 confirmed the exact failure shape. **The fix is to
   delete the line, not set it to `"adaptive"`** — `UpstreamStrategy` is a
@@ -1806,3 +1806,11 @@ precedence, `process_rss`, and every Layer 1 script that does not need a
 routable origin. What Layer 3 cannot supply is an origin — neither a publicly
 trusted one for P3, nor a host-routable one for any `--direct` control arm.
 Both move to the device campaign.
+
+## Step 4 runbook — separate file
+
+The owner-executed on-device procedure lives in
+[p3-06-phase3-verification-runbook.md](p3-06-phase3-verification-runbook.md).
+Entries `R0`–`R11`, each with the exact command, the resulting state, when it
+takes effect, whether a restart is required, and the rollback. Prepared
+2026-09-08; nothing in it has been run.
