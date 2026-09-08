@@ -1,0 +1,14 @@
+2026-09-08T11:27:59.711Z [p5] == p5 start 2026-09-08T11:27:59.680Z tip=b3576332e99d out=smoke-20260908T0905Z/layer3-l1
+2026-09-08T11:27:59.711Z [p5] args {"probe":"127.0.0.1","api-port":8443,"key":"<set>","out":"smoke-20260908T0905Z/layer3-l1","tip":null,"allow-busy":false,"skip-host-checks":false,"hosts":16,"seed":"20260908T112759Z","dot-port":8853,"timeout":10000}
+2026-09-08T11:28:00.000Z [p5] Get-NetConnectionProfile: Ethernet                Public
+2026-09-08T11:28:00.384Z [p5] idle check: PASS (recorded; each stage decides)
+2026-09-08T11:28:00.394Z [p5] GET /health -> 200 {"status":"ok","version":"0.3.3","uptime_seconds":148}
+2026-09-08T11:28:00.398Z [p5] engine.mode = dns+http+https
+2026-09-08T11:28:00.398Z [p5] runtime.http_runtimes = 2 (every HTTPS figure records it — plan §The N axis)
+2026-09-08T11:28:00.404Z [p5] certificates before: ca.present=true dot={"state":"listening","address":"0.0.0.0:8853"} leaf_cache={"size":0,"capacity":512,"inflight":0,"hits":0,"unwarmed_misses":0,"prewarm_hits":0,"coalesced":0,"minted_total":0,"evictions":0,"superseded":0}
+2026-09-08T11:28:00.459Z [p5] first-sight: 16/16 handshakes, p50=1.268 ms, issuers=FastAdHunter CA, errors=0
+2026-09-08T11:28:00.493Z [p5] repeat: 16/16 handshakes, p50=0.993 ms, issuers=FastAdHunter CA, errors=0
+2026-09-08T11:28:00.495Z [p5] leaf_cache delta whole run {"size":16,"capacity":0,"inflight":0,"hits":32,"unwarmed_misses":0,"prewarm_hits":16,"coalesced":0,"minted_total":16,"evictions":0,"superseded":0}; repeat pass {"size":0,"capacity":0,"inflight":0,"hits":16,"unwarmed_misses":0,"prewarm_hits":16,"coalesced":0,"minted_total":0,"evictions":0,"superseded":0}
+2026-09-08T11:28:00.496Z [p5] wrote smoke-20260908T0905Z\layer3-l1\p5.json
+2026-09-08T11:28:00.497Z [p5] GATE {"statistic":"p50(first-sight) - p50(repeat) < 1 ms (incremental p50 estimate of mint + insert)","value_ms":0.275,"pass":true}
+2026-09-08T11:28:00.497Z [p5] == p5 done (valid)

@@ -1,0 +1,28 @@
+2026-09-08T11:34:30.830Z [p10-domains] == p10-domains start 2026-09-08T11:34:30.799Z tip=b3576332e99d out=smoke-20260908T0905Z/layer3-l1
+2026-09-08T11:34:30.831Z [p10-domains] args {"probe":"127.0.0.1","api-port":8443,"key":"<set>","out":"smoke-20260908T0905Z/layer3-l1","tip":null,"allow-busy":false,"skip-host-checks":false,"n":1,"arm":["transfers"],"origin":"172-30-0-20.nip.io","origin-http-port":80,"origin-https-port":443,"port":8080,"https-port":8444,"files":["1k.bin","10k.bin","50k.bin"],"blocked":"ads.smoke.test","ca":"smoke-20260908T0905Z/layer3-l1/ca-after-p6.pem","intercepted-ssh":null,"intercepted-ca":null,"intercepted-oha":"oha","concurrency":8,"duration":20,"worker-threads":4,"ka-requests":20,"connrate-workers":6,"dns-qps":300,"dns-port":5300,"single-path":"/100mb.bin","single-n":5,"par-path":"/10mb.bin","par-n":40,"par-c":8,"sample-interval":2,"tail-min":0,"transfers-tail-min":0,"driver":"auto","skip-issuer-sample":false,"oha":"oha","max-fail-pct":2}
+2026-09-08T11:34:31.113Z [p10-domains] Get-NetConnectionProfile: Ethernet                Public
+2026-09-08T11:34:31.526Z [p10-domains] idle check: PASS (recorded; each stage decides)
+2026-09-08T11:34:31.536Z [p10-domains] GET /health -> 200 {"status":"ok","version":"0.3.3","uptime_seconds":244}
+2026-09-08T11:34:31.540Z [p10-domains] probe config differs from smoke-20260908T0905Z\layer3-l1\config.json; live copy -> smoke-20260908T0905Z\layer3-l1\config.p10-domains.20260908T113431Z.json
+2026-09-08T11:34:31.540Z [p10-domains] degraded: probe config changed since this results directory was opened
+2026-09-08T11:34:31.540Z [p10-domains] engine.mode = dns+http+https
+2026-09-08T11:34:31.540Z [p10-domains] runtime.http_runtimes = 1 (every HTTPS figure records it — plan §The N axis)
+2026-09-08T11:34:31.563Z [p10-domains] oha 1.16.0 on this host; --worker-threads 4
+2026-09-08T11:34:31.572Z [p10-domains] transfers: issuer sample before from local: issuer=172-30-0-20.nip.io subject=172-30-0-20.nip.io TLSv1.3 → leg=spliced expected=spliced
+2026-09-08T11:34:31.572Z [p10-domains] == arm transfers start
+2026-09-08T11:34:31.583Z [p10-domains] transfers-single-spliced: oha --no-tui --output-format json --worker-threads 4 -n 5 -c 1 --disable-keepalive --connect-to 172-30-0-20.nip.io:443:127.0.0.1:8444 --insecure https://172-30-0-20.nip.io:443/100mb.bin
+2026-09-08T11:34:37.568Z [p10-domains] transfers-single-spliced: requests=5 failed=0 rps=0.8 p50/p95/p99=1168.254/1372.675/1372.675 ms 502=0 MiB/s=84.08
+2026-09-08T11:34:37.568Z [p10-domains] transfers-par-spliced: oha --no-tui --output-format json --worker-threads 4 -n 40 -c 8 --disable-keepalive --connect-to 172-30-0-20.nip.io:443:127.0.0.1:8444 --insecure https://172-30-0-20.nip.io:443/10mb.bin
+2026-09-08T11:34:41.810Z [p10-domains] transfers-par-spliced: requests=40 failed=0 rps=9.5 p50/p95/p99=824.507/930.112/937.726 ms 502=0 MiB/s=94.89
+2026-09-08T11:34:41.822Z [p10-domains] transfers: wall=10.2s cores=0.04 ms/req=8.067 ΔRSS end=-2.01 max=0 MiB (floor 52.41 MiB)
+2026-09-08T11:34:41.844Z [p10-domains] TIME_WAIT sockets on this host: 163
+2026-09-08T11:34:41.852Z [p10-domains] transfers: issuer sample after from local: issuer=172-30-0-20.nip.io subject=172-30-0-20.nip.io TLSv1.3 → leg=spliced expected=spliced
+2026-09-08T11:34:41.852Z [p10-domains] transfers-single-control: oha --no-tui --output-format json --worker-threads 4 -n 5 -c 1 --disable-keepalive --insecure https://172-30-0-20.nip.io:443/100mb.bin
+2026-09-08T11:35:06.936Z [p10-domains] transfers-single-control: requests=0 failed=5 rps=0.2 p50/p95/p99=null/null/null ms 502=0 MiB/s=0 errors={"timeout":5}
+2026-09-08T11:35:06.936Z [p10-domains] transfers-par-control: oha --no-tui --output-format json --worker-threads 4 -n 40 -c 8 --disable-keepalive --insecure https://172-30-0-20.nip.io:443/10mb.bin
+2026-09-08T11:35:32.025Z [p10-domains] transfers-par-control: requests=0 failed=40 rps=1.6 p50/p95/p99=null/null/null ms 502=0 MiB/s=0 errors={"timeout":40}
+2026-09-08T11:35:32.025Z [p10-domains] degraded: transfers-single-control: 100 % of 5 attempts failed or non-2xx (budget 2 %; 0 × 502 — a toy origin refuses upstream connects)
+2026-09-08T11:35:32.025Z [p10-domains] degraded: transfers-par-control: 100 % of 40 attempts failed or non-2xx (budget 2 %; 0 × 502 — a toy origin refuses upstream connects)
+2026-09-08T11:35:34.039Z [p10-domains] wrote smoke-20260908T0905Z\layer3-l1\p10-N1.json
+2026-09-08T11:35:34.039Z [p10-domains] GATE (degraded, not a gate) {"statistic":"none — P10 proposes an N against the phase-2.6 criterion; the owner decides","n":1,"per_arm":{"transfers":{"status":"valid","rps":0.8,"conns_per_s":null,"p50_ms":1168.254,"p95_ms":1372.675,"p99_ms":1372.675,"cores":0.04,"cpu_ms_per_request":8.067,"count_502":0,"delta_rss_end_mib":-2.01,"dns_p99_ms":null}}}
+2026-09-08T11:35:34.039Z [p10-domains] == p10-domains done (degraded)

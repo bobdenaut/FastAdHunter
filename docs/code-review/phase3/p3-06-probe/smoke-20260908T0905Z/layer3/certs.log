@@ -1,0 +1,39 @@
+Benchmarking certs_mint
+Benchmarking certs_mint: Warming up for 3.0000 s
+Benchmarking certs_mint: Collecting 100 samples in estimated 5.0684 s (96k iterations)
+Benchmarking certs_mint: Analyzing
+certs_mint              time:   [51.134 µs 51.651 µs 52.280 µs]
+Found 8 outliers among 100 measurements (8.00%)
+  1 (1.00%) low mild
+  2 (2.00%) high mild
+  5 (5.00%) high severe
+
+Benchmarking certs_cache_hit
+Benchmarking certs_cache_hit: Warming up for 3.0000 s
+Benchmarking certs_cache_hit: Collecting 100 samples in estimated 5.0001 s (95M iterations)
+Benchmarking certs_cache_hit: Analyzing
+certs_cache_hit         time:   [52.616 ns 52.910 ns 53.221 ns]
+Found 8 outliers among 100 measurements (8.00%)
+  1 (1.00%) low mild
+  5 (5.00%) high mild
+  2 (2.00%) high severe
+
+Benchmarking certs_prewarm_warm
+Benchmarking certs_prewarm_warm: Warming up for 3.0000 s
+Benchmarking certs_prewarm_warm: Collecting 100 samples in estimated 5.0003 s (63M iterations)
+Benchmarking certs_prewarm_warm: Analyzing
+certs_prewarm_warm      time:   [78.964 ns 79.325 ns 79.718 ns]
+Found 11 outliers among 100 measurements (11.00%)
+  8 (8.00%) high mild
+  3 (3.00%) high severe
+
+certs_replay_zipf: 100000 handshakes, Zipf(s=1) over 4096 hosts, LRU 512: prewarm_hits=67323 minted_total=32677 evictions=32165 hit_rate=0.6732
+Benchmarking certs_replay_zipf
+Benchmarking certs_replay_zipf: Warming up for 3.0000 s
+Benchmarking certs_replay_zipf: Collecting 100 samples in estimated 5.0588 s (298k iterations)
+Benchmarking certs_replay_zipf: Analyzing
+certs_replay_zipf       time:   [16.838 µs 17.040 µs 17.265 µs]
+Found 5 outliers among 100 measurements (5.00%)
+  3 (3.00%) high mild
+  2 (2.00%) high severe
+

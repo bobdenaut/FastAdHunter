@@ -1,0 +1,17 @@
+2026-09-08T11:28:57.075Z [p6] == p6 start 2026-09-08T11:28:57.042Z tip=b3576332e99d out=smoke-20260908T0905Z/layer3-l1
+2026-09-08T11:28:57.076Z [p6] args {"probe":"127.0.0.1","api-port":8443,"key":"<set>","out":"smoke-20260908T0905Z/layer3-l1","tip":null,"allow-busy":false,"skip-host-checks":false,"generate":2,"import":2,"cert":"smoke-20260908T0905Z/work/p1.crt","key-file":"smoke-20260908T0905Z/work/p1.key","ca-archive-count":0,"api-archive-count":0,"ca-out":null}
+2026-09-08T11:28:57.375Z [p6] Get-NetConnectionProfile: Ethernet                Public
+2026-09-08T11:28:57.797Z [p6] idle check: PASS (recorded; each stage decides)
+2026-09-08T11:28:57.806Z [p6] GET /health -> 200 {"status":"ok","version":"0.3.3","uptime_seconds":206}
+2026-09-08T11:28:57.814Z [p6] engine.mode = dns+http+https
+2026-09-08T11:28:57.814Z [p6] runtime.http_runtimes = 2 (every HTTPS figure records it — plan §The N axis)
+2026-09-08T11:28:57.818Z [p6] before: ca={"present":true,"fingerprint_sha256":"52:FB:D8:75:70:FA:27:32:9D:E7:27:BA:D2:34:63:EF:AF:D2:3A:4C:91:07:A3:AE:21:3C:43:C5:21:12:6A:89","not_before":"2026-09-07T11:27:41Z","not_after":"2036-09-04T11:27:41Z","subject":"CN=FastAdHunter CA"} api_certificate={"source":"self_signed"}
+2026-09-08T11:28:57.867Z [p6] ca/generate #1: 200 starttransfer-appconnect=45.206 ms total=48.4 ms
+2026-09-08T11:28:57.905Z [p6] ca/generate #2: 200 starttransfer-appconnect=35.675 ms total=37.938 ms
+2026-09-08T11:28:57.923Z [p6] import #1: 200 starttransfer-appconnect=14.566 ms total=16.828 ms
+2026-09-08T11:28:57.940Z [p6] import #2: 200 starttransfer-appconnect=14.878 ms total=16.938 ms
+2026-09-08T11:28:57.942Z [p6] after: ca={"present":true,"fingerprint_sha256":"31:18:13:F0:24:32:29:63:29:B7:90:44:62:3B:9A:2F:D3:66:93:FB:6E:CE:C5:1C:65:41:FA:A5:4B:D9:3C:6C","not_before":"2026-09-07T11:28:57Z","not_after":"2036-09-04T11:28:57Z","subject":"CN=FastAdHunter CA"} api_certificate={"source":"imported"}
+2026-09-08T11:28:57.945Z [p6] re-exported CA -> smoke-20260908T0905Z\layer3-l1\ca-after-p6.pem (fingerprint 31:18:13:F0:24:32:29:63:29:B7:90:44:62:3B:9A:2F:D3:66:93:FB:6E:CE:C5:1C:65:41:FA:A5:4B:D9:3C:6C); every earlier export is invalid
+2026-09-08T11:28:57.946Z [p6] wrote smoke-20260908T0905Z\layer3-l1\p6.json
+2026-09-08T11:28:57.946Z [p6] GATE {"statistic":"median of starttransfer - appconnect: generate < 100 ms, import < 50 ms","generate_median_ms":45.206,"import_median_ms":14.878,"generate_pass":true,"import_pass":true,"pass":true}
+2026-09-08T11:28:57.946Z [p6] == p6 done (valid)

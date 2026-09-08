@@ -1,0 +1,55 @@
+{
+  "script": "p3",
+  "started_at": "2026-09-08T11:36:27.244Z",
+  "finished_at": "2026-09-08T11:36:29.026Z",
+  "tip": "b3576332e99d",
+  "probe": "127.0.0.1",
+  "probe_version": "0.3.3",
+  "http_runtimes": 1,
+  "host": {
+    "platform": "win32",
+    "idle": true,
+    "network": [
+      "Ethernet                Public"
+    ],
+    "busy": []
+  },
+  "args": {
+    "probe": "127.0.0.1",
+    "api-port": 8443,
+    "key": "<set>",
+    "out": "smoke-20260908T0905Z/layer3-l1",
+    "tip": null,
+    "allow-busy": false,
+    "skip-host-checks": false,
+    "origin": "172-30-0-20.nip.io",
+    "path": "C:/Program Files/Git/10mb.bin",
+    "warmup-path": "C:/Program Files/Git/",
+    "ca": "smoke-20260908T0905Z/layer3-l1/ca-after-p6.pem",
+    "port": 8444,
+    "bytes": 10,
+    "streams": 64,
+    "runs": 1,
+    "settle": 5,
+    "barrier-timeout": 30,
+    "throughput-runs": 1,
+    "arm": "both",
+    "max-fail-pct": 2
+  },
+  "valid": false,
+  "status": "INVALID",
+  "reason": "throughput arm: no stream completed (the P3 BLOCKED state?)",
+  "throughput": [
+    {
+      "index": 1,
+      "status": null,
+      "bytes": 0,
+      "content_length": null,
+      "ok": false,
+      "issuer": null,
+      "mib_s": null,
+      "first_byte_ms": null,
+      "error": "connect: ECONNRESET"
+    }
+  ]
+}

@@ -1,0 +1,93 @@
+{
+  "script": "p5",
+  "started_at": "2026-09-08T11:27:59.680Z",
+  "finished_at": "2026-09-08T11:28:00.496Z",
+  "tip": "b3576332e99d",
+  "probe": "127.0.0.1",
+  "probe_version": "0.3.3",
+  "http_runtimes": 2,
+  "host": {
+    "platform": "win32",
+    "idle": true,
+    "network": [
+      "Ethernet                Public"
+    ],
+    "busy": []
+  },
+  "args": {
+    "probe": "127.0.0.1",
+    "api-port": 8443,
+    "key": "<set>",
+    "out": "smoke-20260908T0905Z/layer3-l1",
+    "tip": null,
+    "allow-busy": false,
+    "skip-host-checks": false,
+    "hosts": 16,
+    "seed": "20260908T112759Z",
+    "dot-port": 8853,
+    "timeout": 10000
+  },
+  "valid": true,
+  "status": "valid",
+  "degraded_reasons": [],
+  "measurement": "P5",
+  "hosts": 16,
+  "seed": "20260908t112759z",
+  "figures": {
+    "first-sight": {
+      "n": 16,
+      "min": 1.074,
+      "p50": 1.268,
+      "p99": 9.102,
+      "max": 9.102,
+      "mean": 2.121,
+      "served_issuer": "FastAdHunter CA"
+    },
+    "repeat": {
+      "n": 16,
+      "min": 0.835,
+      "p50": 0.993,
+      "p99": 2.974,
+      "max": 2.974,
+      "mean": 1.137,
+      "served_issuer": "FastAdHunter CA"
+    },
+    "counters_delta": {
+      "minted_total": 16,
+      "unwarmed_misses": 0,
+      "evictions": 0,
+      "superseded": 0,
+      "prewarm_hits": 16,
+      "size": 16
+    }
+  },
+  "leaf_cache_before": {
+    "size": 0,
+    "capacity": 512,
+    "inflight": 0,
+    "hits": 0,
+    "unwarmed_misses": 0,
+    "prewarm_hits": 0,
+    "coalesced": 0,
+    "minted_total": 0,
+    "evictions": 0,
+    "superseded": 0
+  },
+  "leaf_cache_after": {
+    "size": 16,
+    "capacity": 512,
+    "inflight": 0,
+    "hits": 32,
+    "unwarmed_misses": 0,
+    "prewarm_hits": 16,
+    "coalesced": 0,
+    "minted_total": 16,
+    "evictions": 0,
+    "superseded": 0
+  },
+  "gate": {
+    "statistic": "p50(first-sight) - p50(repeat) < 1 ms (incremental p50 estimate of mint + insert)",
+    "value_ms": 0.275,
+    "pass": true
+  }
+}

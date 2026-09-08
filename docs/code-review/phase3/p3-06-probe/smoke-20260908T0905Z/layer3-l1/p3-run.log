@@ -1,0 +1,13 @@
+2026-09-08T11:36:27.278Z [p3] == p3 start 2026-09-08T11:36:27.244Z tip=b3576332e99d out=smoke-20260908T0905Z/layer3-l1
+2026-09-08T11:36:27.279Z [p3] args {"probe":"127.0.0.1","api-port":8443,"key":"<set>","out":"smoke-20260908T0905Z/layer3-l1","tip":null,"allow-busy":false,"skip-host-checks":false,"origin":"172-30-0-20.nip.io","path":"C:/Program Files/Git/10mb.bin","warmup-path":"C:/Program Files/Git/","ca":"smoke-20260908T0905Z/layer3-l1/ca-after-p6.pem","port":8444,"bytes":10,"streams":64,"runs":1,"settle":5,"barrier-timeout":30,"throughput-runs":1,"arm":"both","max-fail-pct":2}
+2026-09-08T11:36:27.567Z [p3] Get-NetConnectionProfile: Ethernet                Public
+2026-09-08T11:36:27.972Z [p3] idle check: PASS (recorded; each stage decides)
+2026-09-08T11:36:28.000Z [p3] GET /health -> 200 {"status":"ok","version":"0.3.3","uptime_seconds":12}
+2026-09-08T11:36:28.005Z [p3] probe config differs from smoke-20260908T0905Z\layer3-l1\config.json; live copy -> smoke-20260908T0905Z\layer3-l1\config.p3.20260908T113628Z.json
+2026-09-08T11:36:28.005Z [p3] degraded: probe config changed since this results directory was opened
+2026-09-08T11:36:28.006Z [p3] engine.mode = dns+http+https
+2026-09-08T11:36:28.006Z [p3] runtime.http_runtimes = 1 (every HTTPS figure records it — plan §The N axis)
+2026-09-08T11:36:28.007Z [p3] local address toward the probe: 127.0.0.1; https.interception.clients = ["127.0.0.1","172.30.0.1"]
+2026-09-08T11:36:28.017Z [p3] throughput run 1: FAILED connect: ECONNRESET
+2026-09-08T11:36:29.025Z [p3] INVALID: throughput arm: no stream completed (the P3 BLOCKED state?)
+2026-09-08T11:36:29.026Z [p3] wrote smoke-20260908T0905Z\layer3-l1\p3.json

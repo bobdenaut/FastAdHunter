@@ -1,0 +1,490 @@
+{
+  "script": "p7-store",
+  "started_at": "2026-09-08T11:28:45.605Z",
+  "finished_at": "2026-09-08T11:28:46.461Z",
+  "tip": "b3576332e99d",
+  "probe": "127.0.0.1",
+  "probe_version": "0.3.3",
+  "http_runtimes": 2,
+  "host": {
+    "platform": "win32",
+    "idle": true,
+    "network": [
+      "Ethernet                Public"
+    ],
+    "busy": []
+  },
+  "args": {
+    "probe": "127.0.0.1",
+    "api-port": 8443,
+    "key": "<set>",
+    "out": "smoke-20260908T0905Z/layer3-l1",
+    "tip": null,
+    "allow-busy": false,
+    "skip-host-checks": false,
+    "ca-key": "smoke-20260908T0905Z/work/config-l3/ca-key.pem"
+  },
+  "valid": true,
+  "status": "valid",
+  "degraded_reasons": [],
+  "measurement": "P7-store",
+  "ca_key": {
+    "type": "ec",
+    "curve": "prime256v1",
+    "der_bytes": 138
+  },
+  "checks": [
+    {
+      "check": "ca/export?format=pem",
+      "pass": true,
+      "detail": {
+        "status": 200,
+        "content_type": "application/x-pem-file",
+        "blocks": [
+          "CERTIFICATE"
+        ],
+        "leaks": []
+      }
+    },
+    {
+      "check": "ca/export?format=der",
+      "pass": true,
+      "detail": {
+        "status": 200,
+        "content_type": "application/pkix-cert",
+        "bytes": 383,
+        "first_byte": 48,
+        "leaks": []
+      }
+    },
+    {
+      "check": "/api/v1/config",
+      "pass": true,
+      "detail": {
+        "status": 200,
+        "leaks": []
+      }
+    },
+    {
+      "check": "traversal list against the API listener",
+      "pass": true,
+      "detail": {
+        "paths": 20,
+        "requests": 40,
+        "served": {
+          "spa_shell": 24,
+          "other_200": 0,
+          "rejected": 16
+        },
+        "failing": []
+      }
+    }
+  ],
+  "traversal": [
+    {
+      "path": "/",
+      "auth": true,
+      "status": 200,
+      "content_type": "text/html",
+      "bytes": 1130,
+      "leaks": [],
+      "served": "spa_shell",
+      "pass": true
+    },
+    {
+      "path": "/",
+      "auth": false,
+      "status": 200,
+      "content_type": "text/html",
+      "bytes": 1130,
+      "leaks": [],
+      "served": "spa_shell",
+      "pass": true
+    },
+    {
+      "path": "/index.html",
+      "auth": true,
+      "status": 200,
+      "content_type": "text/html",
+      "bytes": 1130,
+      "leaks": [],
+      "served": "spa_shell",
+      "pass": true
+    },
+    {
+      "path": "/index.html",
+      "auth": false,
+      "status": 200,
+      "content_type": "text/html",
+      "bytes": 1130,
+      "leaks": [],
+      "served": "spa_shell",
+      "pass": true
+    },
+    {
+      "path": "/assets/",
+      "auth": true,
+      "status": 404,
+      "content_type": null,
+      "bytes": 0,
+      "leaks": [],
+      "served": "rejected",
+      "pass": true
+    },
+    {
+      "path": "/assets/",
+      "auth": false,
+      "status": 404,
+      "content_type": null,
+      "bytes": 0,
+      "leaks": [],
+      "served": "rejected",
+      "pass": true
+    },
+    {
+      "path": "/assets/nope.js",
+      "auth": true,
+      "status": 404,
+      "content_type": null,
+      "bytes": 0,
+      "leaks": [],
+      "served": "rejected",
+      "pass": true
+    },
+    {
+      "path": "/assets/nope.js",
+      "auth": false,
+      "status": 404,
+      "content_type": null,
+      "bytes": 0,
+      "leaks": [],
+      "served": "rejected",
+      "pass": true
+    },
+    {
+      "path": "/config/ca-key.pem",
+      "auth": true,
+      "status": 200,
+      "content_type": "text/html",
+      "bytes": 1130,
+      "leaks": [],
+      "served": "spa_shell",
+      "pass": true
+    },
+    {
+      "path": "/config/ca-key.pem",
+      "auth": false,
+      "status": 200,
+      "content_type": "text/html",
+      "bytes": 1130,
+      "leaks": [],
+      "served": "spa_shell",
+      "pass": true
+    },
+    {
+      "path": "/ca-key.pem",
+      "auth": true,
+      "status": 200,
+      "content_type": "text/html",
+      "bytes": 1130,
+      "leaks": [],
+      "served": "spa_shell",
+      "pass": true
+    },
+    {
+      "path": "/ca-key.pem",
+      "auth": false,
+      "status": 200,
+      "content_type": "text/html",
+      "bytes": 1130,
+      "leaks": [],
+      "served": "spa_shell",
+      "pass": true
+    },
+    {
+      "path": "/../config/ca-key.pem",
+      "auth": true,
+      "status": 200,
+      "content_type": "text/html",
+      "bytes": 1130,
+      "leaks": [],
+      "served": "spa_shell",
+      "pass": true
+    },
+    {
+      "path": "/../config/ca-key.pem",
+      "auth": false,
+      "status": 200,
+      "content_type": "text/html",
+      "bytes": 1130,
+      "leaks": [],
+      "served": "spa_shell",
+      "pass": true
+    },
+    {
+      "path": "/..%2fconfig%2fca-key.pem",
+      "auth": true,
+      "status": 200,
+      "content_type": "text/html",
+      "bytes": 1130,
+      "leaks": [],
+      "served": "spa_shell",
+      "pass": true
+    },
+    {
+      "path": "/..%2fconfig%2fca-key.pem",
+      "auth": false,
+      "status": 200,
+      "content_type": "text/html",
+      "bytes": 1130,
+      "leaks": [],
+      "served": "spa_shell",
+      "pass": true
+    },
+    {
+      "path": "/%2e%2e/config/ca-key.pem",
+      "auth": true,
+      "status": 200,
+      "content_type": "text/html",
+      "bytes": 1130,
+      "leaks": [],
+      "served": "spa_shell",
+      "pass": true
+    },
+    {
+      "path": "/%2e%2e/config/ca-key.pem",
+      "auth": false,
+      "status": 200,
+      "content_type": "text/html",
+      "bytes": 1130,
+      "leaks": [],
+      "served": "spa_shell",
+      "pass": true
+    },
+    {
+      "path": "/assets/../../config/ca-key.pem",
+      "auth": true,
+      "status": 404,
+      "content_type": null,
+      "bytes": 0,
+      "leaks": [],
+      "served": "rejected",
+      "pass": true
+    },
+    {
+      "path": "/assets/../../config/ca-key.pem",
+      "auth": false,
+      "status": 404,
+      "content_type": null,
+      "bytes": 0,
+      "leaks": [],
+      "served": "rejected",
+      "pass": true
+    },
+    {
+      "path": "/assets/..%2f..%2fconfig%2fca-key.pem",
+      "auth": true,
+      "status": 404,
+      "content_type": null,
+      "bytes": 0,
+      "leaks": [],
+      "served": "rejected",
+      "pass": true
+    },
+    {
+      "path": "/assets/..%2f..%2fconfig%2fca-key.pem",
+      "auth": false,
+      "status": 404,
+      "content_type": null,
+      "bytes": 0,
+      "leaks": [],
+      "served": "rejected",
+      "pass": true
+    },
+    {
+      "path": "/assets/..%5c..%5cconfig%5cca-key.pem",
+      "auth": true,
+      "status": 404,
+      "content_type": null,
+      "bytes": 0,
+      "leaks": [],
+      "served": "rejected",
+      "pass": true
+    },
+    {
+      "path": "/assets/..%5c..%5cconfig%5cca-key.pem",
+      "auth": false,
+      "status": 404,
+      "content_type": null,
+      "bytes": 0,
+      "leaks": [],
+      "served": "rejected",
+      "pass": true
+    },
+    {
+      "path": "/assets/..\\..\\config\\ca-key.pem",
+      "auth": true,
+      "status": 404,
+      "content_type": null,
+      "bytes": 0,
+      "leaks": [],
+      "served": "rejected",
+      "pass": true
+    },
+    {
+      "path": "/assets/..\\..\\config\\ca-key.pem",
+      "auth": false,
+      "status": 404,
+      "content_type": null,
+      "bytes": 0,
+      "leaks": [],
+      "served": "rejected",
+      "pass": true
+    },
+    {
+      "path": "/web/../config/ca-key.pem",
+      "auth": true,
+      "status": 200,
+      "content_type": "text/html",
+      "bytes": 1130,
+      "leaks": [],
+      "served": "spa_shell",
+      "pass": true
+    },
+    {
+      "path": "/web/../config/ca-key.pem",
+      "auth": false,
+      "status": 200,
+      "content_type": "text/html",
+      "bytes": 1130,
+      "leaks": [],
+      "served": "spa_shell",
+      "pass": true
+    },
+    {
+      "path": "/api/v1/../../config/ca-key.pem",
+      "auth": true,
+      "status": 404,
+      "content_type": "application/json",
+      "bytes": 59,
+      "leaks": [],
+      "served": "rejected",
+      "pass": true
+    },
+    {
+      "path": "/api/v1/../../config/ca-key.pem",
+      "auth": false,
+      "status": 401,
+      "content_type": "application/json",
+      "bytes": 76,
+      "leaks": [],
+      "served": "rejected",
+      "pass": true
+    },
+    {
+      "path": "/api/v1/certificates/ca/../../../../config/ca-key.pem",
+      "auth": true,
+      "status": 404,
+      "content_type": "application/json",
+      "bytes": 59,
+      "leaks": [],
+      "served": "rejected",
+      "pass": true
+    },
+    {
+      "path": "/api/v1/certificates/ca/../../../../config/ca-key.pem",
+      "auth": false,
+      "status": 401,
+      "content_type": "application/json",
+      "bytes": 76,
+      "leaks": [],
+      "served": "rejected",
+      "pass": true
+    },
+    {
+      "path": "/config/api-key.pem",
+      "auth": true,
+      "status": 200,
+      "content_type": "text/html",
+      "bytes": 1130,
+      "leaks": [],
+      "served": "spa_shell",
+      "pass": true
+    },
+    {
+      "path": "/config/api-key.pem",
+      "auth": false,
+      "status": 200,
+      "content_type": "text/html",
+      "bytes": 1130,
+      "leaks": [],
+      "served": "spa_shell",
+      "pass": true
+    },
+    {
+      "path": "/config/fastadhunter.toml",
+      "auth": true,
+      "status": 200,
+      "content_type": "text/html",
+      "bytes": 1130,
+      "leaks": [],
+      "served": "spa_shell",
+      "pass": true
+    },
+    {
+      "path": "/config/fastadhunter.toml",
+      "auth": false,
+      "status": 200,
+      "content_type": "text/html",
+      "bytes": 1130,
+      "leaks": [],
+      "served": "spa_shell",
+      "pass": true
+    },
+    {
+      "path": "/config/apikey",
+      "auth": true,
+      "status": 200,
+      "content_type": "text/html",
+      "bytes": 1130,
+      "leaks": [],
+      "served": "spa_shell",
+      "pass": true
+    },
+    {
+      "path": "/config/apikey",
+      "auth": false,
+      "status": 200,
+      "content_type": "text/html",
+      "bytes": 1130,
+      "leaks": [],
+      "served": "spa_shell",
+      "pass": true
+    },
+    {
+      "path": "/data/session-secret",
+      "auth": true,
+      "status": 200,
+      "content_type": "text/html",
+      "bytes": 1130,
+      "leaks": [],
+      "served": "spa_shell",
+      "pass": true
+    },
+    {
+      "path": "/data/session-secret",
+      "auth": false,
+      "status": 200,
+      "content_type": "text/html",
+      "bytes": 1130,
+      "leaks": [],
+      "served": "spa_shell",
+      "pass": true
+    }
+  ],
+  "gate": {
+    "statistic": "every check pass",
+    "pass": true,
+    "failing": []
+  }
+}

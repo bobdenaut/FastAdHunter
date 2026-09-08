@@ -1,0 +1,27 @@
+2026-09-08T11:27:47.054Z [sni] == sni start 2026-09-08T11:27:47.019Z tip=b3576332e99d out=smoke-20260908T0905Z/layer3-l1
+2026-09-08T11:27:47.055Z [sni] args {"probe":"127.0.0.1","api-port":8443,"key":"<set>","out":"smoke-20260908T0905Z/layer3-l1","tip":null,"allow-busy":false,"skip-host-checks":false,"blocked":"ads.smoke.test","allowed":"example.com","port":8444,"attempts":5,"timeout":5000}
+2026-09-08T11:27:47.395Z [sni] Get-NetConnectionProfile: Ethernet                Public
+2026-09-08T11:27:47.820Z [sni] idle check: PASS (recorded; each stage decides)
+2026-09-08T11:27:47.829Z [sni] GET /health -> 200 {"status":"ok","version":"0.3.3","uptime_seconds":136}
+2026-09-08T11:27:47.834Z [sni] engine.mode = dns+http+https
+2026-09-08T11:27:47.834Z [sni] runtime.http_runtimes = 2 (every HTTPS figure records it — plan §The N axis)
+2026-09-08T11:27:47.834Z [sni] https.sni.no_sni = pass
+2026-09-08T11:27:47.839Z [sni] blocked  #1 closed_silent bytes=0 close=1.222ms
+2026-09-08T11:27:47.852Z [sni] allowed  #1 server_hello  bytes=1420 close=11.959ms
+2026-09-08T11:27:47.854Z [sni] no_sni   #1 closed_silent bytes=0 close=1.006ms
+2026-09-08T11:27:47.855Z [sni] blocked  #2 closed_silent bytes=0 close=1.115ms
+2026-09-08T11:27:47.875Z [sni] allowed  #2 server_hello  bytes=3934 close=18.773ms
+2026-09-08T11:27:47.878Z [sni] no_sni   #2 closed_silent bytes=0 close=3.005ms
+2026-09-08T11:27:47.881Z [sni] blocked  #3 closed_silent bytes=0 close=2.099ms
+2026-09-08T11:27:47.897Z [sni] allowed  #3 server_hello  bytes=2840 close=15.707ms
+2026-09-08T11:27:47.899Z [sni] no_sni   #3 closed_silent bytes=0 close=1.445ms
+2026-09-08T11:27:47.900Z [sni] blocked  #4 closed_silent bytes=0 close=1.114ms
+2026-09-08T11:27:47.911Z [sni] allowed  #4 server_hello  bytes=3935 close=10.578ms
+2026-09-08T11:27:47.913Z [sni] no_sni   #4 closed_silent bytes=0 close=0.948ms
+2026-09-08T11:27:47.914Z [sni] blocked  #5 closed_silent bytes=0 close=1.1ms
+2026-09-08T11:27:47.927Z [sni] allowed  #5 server_hello  bytes=1420 close=12.008ms
+2026-09-08T11:27:47.932Z [sni] no_sni   #5 closed_silent bytes=0 close=4.715ms
+2026-09-08T11:27:47.936Z [sni] listeners.https delta {"connections":15,"requests":15,"blocked":5,"refused_claim":0,"refused_destination":0,"resolve_failures":0,"upstream_failures":0,"upstream_cert_failures":0,"non_http":0,"non_tls":0,"hello_timeouts":0,"dropped_events":0}
+2026-09-08T11:27:47.936Z [sni] wrote smoke-20260908T0905Z\layer3-l1\sni.json
+2026-09-08T11:27:47.936Z [sni] GATE {"statistic":"every blocked and no-SNI attempt closed before a certificate (boolean)","blocked_closed":true,"no_sni_closed":true,"allowed_opened":true,"pass":true}
+2026-09-08T11:27:47.936Z [sni] == sni done (valid)

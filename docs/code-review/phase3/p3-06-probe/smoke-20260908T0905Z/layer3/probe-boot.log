@@ -1,0 +1,21 @@
+2026-09-08T11:25:31.299240Z  INFO fastadhunter: fastadhunter starting config_path=/config/fastadhunter.toml data_dir=/data mode=DnsHttpHttps
+2026-09-08T11:25:31.309395Z  INFO fastadhunter: ruleset compiled from cache rules=0 policies=1
+2026-09-08T11:25:31.340562Z  INFO fastadhunter: DNS listeners bound udp=0.0.0.0:5300 tcp=0.0.0.0:5300 dot=Some(0.0.0.0:8853)
+2026-09-08T11:25:31.340589Z  INFO fastadhunter: HTTP listener bound addr=0.0.0.0:8080
+2026-09-08T11:25:31.340597Z  INFO fastadhunter: HTTPS SNI listener bound addr=0.0.0.0:8444
+2026-09-08T11:25:31.340602Z  INFO fastadhunter: egress allow-list active — private destinations permitted count=1
+2026-09-08T11:25:31.341934Z  INFO fastadhunter::privilege::imp: adopting state directory for the service user path=/config
+2026-09-08T11:25:31.356481Z  INFO fastadhunter::privilege::imp: adopting state directory for the service user path=/data
+2026-09-08T11:25:31.429001Z  INFO fastadhunter::privilege::imp: dropped privileges after binding uid=65532 gid=65532
+2026-09-08T11:25:31.447361Z  INFO fastadhunter: generated API key — store it now; it is not shown again api_key=<redacted — disposable smoke container>
+2026-09-08T11:25:31.495234Z  INFO fastadhunter: generated dashboard password — store it now; it is not shown again dashboard_password=<redacted — disposable smoke container>
+2026-09-08T11:25:31.514208Z  INFO fah_certs::api: generated self-signed API certificate dns=["fastadhunter", "localhost"] ip=[127.0.0.1, ::1, 172.17.0.6] not_after=2027-10-10 10:25:31.496085464 +00:00:00
+2026-09-08T11:25:31.539888Z  INFO fastadhunter: egress allow-list active — private destinations permitted count=1
+2026-09-08T11:25:31.549317Z  INFO fastadhunter: DoT serves the API certificate; generate or import a CA via /api/v1/certificates for Android Private DNS hostname mode port=8853
+2026-09-08T11:25:31.549699Z  INFO fastadhunter: API listening url=https://0.0.0.0:8443
+2026-09-08T11:25:31.550297Z  INFO fastadhunter: HTTP proxy serving on its own single-thread runtimes http_runtimes=2
+2026-09-08T11:25:31.550369Z  INFO fastadhunter: HTTPS proxy serving on the HTTP allocation domains
+2026-09-08T11:25:31.550431Z  INFO fastadhunter: stale-while-refresh pool started workers=3
+2026-09-08T11:25:31.550496Z  INFO fastadhunter: cache cleanup scheduler started
+2026-09-08T11:25:32.147049Z  INFO fah_rules::lifecycle: list refreshed list=oisd-basic active=60673 inactive=0 parse_errors=0
+2026-09-08T11:25:32.147072Z  INFO fah_rules::lifecycle: scheduled refresh complete lists=1 refreshed=1 unchanged=0 failed=0 rules=60673

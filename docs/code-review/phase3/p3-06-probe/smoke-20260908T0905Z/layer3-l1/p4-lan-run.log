@@ -1,0 +1,14 @@
+2026-09-08T11:28:00.618Z [p4-lan] == p4-lan start 2026-09-08T11:28:00.588Z tip=b3576332e99d out=smoke-20260908T0905Z/layer3-l1
+2026-09-08T11:28:00.619Z [p4-lan] args {"probe":"127.0.0.1","api-port":8443,"key":"<set>","out":"smoke-20260908T0905Z/layer3-l1","tip":null,"allow-busy":false,"skip-host-checks":false,"domain":"ads.smoke.test","dot-host":"dns.smoke.test","dns-port":5300,"dot-port":8853,"queries":200,"rounds":1,"timeout":2000}
+2026-09-08T11:28:00.873Z [p4-lan] Get-NetConnectionProfile: Ethernet                Public
+2026-09-08T11:28:01.278Z [p4-lan] idle check: PASS (recorded; each stage decides)
+2026-09-08T11:28:01.287Z [p4-lan] GET /health -> 200 {"status":"ok","version":"0.3.3","uptime_seconds":149}
+2026-09-08T11:28:01.291Z [p4-lan] engine.mode = dns+http+https
+2026-09-08T11:28:01.292Z [p4-lan] runtime.http_runtimes = 2 (every HTTPS figure records it — plan §The N axis)
+2026-09-08T11:28:01.292Z [p4-lan] dns.listen.dot_enabled=true doh_enabled=true
+2026-09-08T11:28:01.378Z [p4-lan] round 1 udp p50=0.382 p99=0.966 ms n=200 unanswered=0 unmatched=0 wall=83.797ms hs=-
+2026-09-08T11:28:01.979Z [p4-lan] round 1 dot p50=0.382 p99=0.731 ms n=200 unanswered=0 unmatched=0 wall=87.232ms hs=13.191
+2026-09-08T11:28:02.663Z [p4-lan] round 1 doh p50=0.518 p99=1.792 ms n=200 unanswered=0 unmatched=0 wall=162.667ms hs=9.508
+2026-09-08T11:28:03.167Z [p4-lan] wrote smoke-20260908T0905Z\layer3-l1\p4-lan.json
+2026-09-08T11:28:03.167Z [p4-lan] GATE {"statistic":"none — diagnostic","dot_p50_minus_udp_p50_ms":0,"doh_p50_minus_udp_p50_ms":0.136}
+2026-09-08T11:28:03.167Z [p4-lan] == p4-lan done (valid)

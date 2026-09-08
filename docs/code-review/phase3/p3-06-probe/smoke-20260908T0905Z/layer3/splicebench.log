@@ -1,0 +1,21 @@
+splicebench: 8 MiB per connection, 1 reps, candidates interleaved per rep, budget 32 MiB at max_connections = 1024, allocator mimalloc
+rep=1 arm=loopback_origin steady_mib_s=10152.4
+rep=1 arm=splice up_kib=16 down_kib=16 steady_mib_s=2143.8 total_mib_s=1997.1
+rep=1 arm=splice up_kib=16 down_kib=32 steady_mib_s=3389.6 total_mib_s=3082.1
+rep=1 arm=splice up_kib=16 down_kib=64 steady_mib_s=3999.7 total_mib_s=3635.9
+rep=1 arm=splice up_kib=16 down_kib=128 steady_mib_s=5598.3 total_mib_s=3558.0
+rep=1 arm=splice up_kib=64 down_kib=64 steady_mib_s=4074.1 total_mib_s=3651.0
+candidate up_kib down_kib n median_mib_s min max median_total worst_case_mib in_budget
+loopback_origin - - 1 10152.4 10152.4 10152.4 - - -
+splice 16 16 1 2143.8 2143.8 2143.8 1997.1 32 true
+splice 16 32 1 3389.6 3389.6 3389.6 3082.1 48 false
+splice 16 64 1 3999.7 3999.7 3999.7 3635.9 80 false
+splice 16 128 1 5598.3 5598.3 5598.3 3558.0 144 false
+splice 64 64 1 4074.1 4074.1 4074.1 3651.0 128 false
+pick: none — no in-budget candidate reaches 0.9 x best 5598.3
+up sensitivity: 64/64 over 16/64 = +1.9% (up stays 16 unless > +10%)
+counters up_kib=16 down_kib=16: connections=2 requests=2 blocked=0 refused_destination=0 resolve_failures=0 dropped_events=0
+counters up_kib=16 down_kib=32: connections=2 requests=2 blocked=0 refused_destination=0 resolve_failures=0 dropped_events=0
+counters up_kib=16 down_kib=64: connections=2 requests=2 blocked=0 refused_destination=0 resolve_failures=0 dropped_events=0
+counters up_kib=16 down_kib=128: connections=2 requests=2 blocked=0 refused_destination=0 resolve_failures=0 dropped_events=0
+counters up_kib=64 down_kib=64: connections=2 requests=2 blocked=0 refused_destination=0 resolve_failures=0 dropped_events=0

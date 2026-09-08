@@ -1,0 +1,17 @@
+2026-09-08T11:31:04.724Z [p10-domains] == p10-domains start 2026-09-08T11:31:04.694Z tip=b3576332e99d out=smoke-20260908T0905Z/layer3-l1
+2026-09-08T11:31:04.725Z [p10-domains] args {"probe":"127.0.0.1","api-port":8443,"key":"<set>","out":"smoke-20260908T0905Z/layer3-l1","tip":null,"allow-busy":false,"skip-host-checks":false,"n":1,"arm":["close","mixed","tls-spliced","transfers"],"origin":"172-30-0-20.nip.io","origin-http-port":80,"origin-https-port":443,"port":8080,"https-port":8444,"files":["1k.bin","10k.bin","50k.bin"],"blocked":"ads.smoke.test","ca":"smoke-20260908T0905Z/layer3-l1/ca-after-p6.pem","intercepted-ssh":null,"intercepted-ca":null,"intercepted-oha":"oha","concurrency":8,"duration":20,"worker-threads":4,"ka-requests":20,"connrate-workers":6,"dns-qps":300,"dns-port":5300,"single-path":"/100mb.bin","single-n":5,"par-path":"/10mb.bin","par-n":40,"par-c":8,"sample-interval":2,"tail-min":0,"transfers-tail-min":0,"driver":"auto","skip-issuer-sample":false,"oha":"oha","max-fail-pct":2}
+2026-09-08T11:31:05.192Z [p10-domains] Get-NetConnectionProfile: Ethernet                Public
+2026-09-08T11:31:05.634Z [p10-domains] idle check: PASS (recorded; each stage decides)
+2026-09-08T11:31:05.644Z [p10-domains] GET /health -> 200 {"status":"ok","version":"0.3.3","uptime_seconds":38}
+2026-09-08T11:31:05.649Z [p10-domains] probe config differs from smoke-20260908T0905Z\layer3-l1\config.json; live copy -> smoke-20260908T0905Z\layer3-l1\config.p10-domains.20260908T113105Z.json
+2026-09-08T11:31:05.649Z [p10-domains] degraded: probe config changed since this results directory was opened
+2026-09-08T11:31:05.649Z [p10-domains] engine.mode = dns+http+https
+2026-09-08T11:31:05.649Z [p10-domains] runtime.http_runtimes = 1 (every HTTPS figure records it — plan §The N axis)
+2026-09-08T11:31:05.668Z [p10-domains] oha 1.16.0 on this host; --worker-threads 4
+2026-09-08T11:31:05.668Z [p10-domains] == arm close start
+2026-09-08T11:31:05.694Z [p10-domains] close-http: oha --no-tui --output-format json --worker-threads 4 -z 20s -c 8 --disable-keepalive -H Host: 172-30-0-20.nip.io --rand-regex-url http://127.0.0.1:8080/(1k[.]bin|10k[.]bin|50k[.]bin)
+2026-09-08T11:31:25.744Z [p10-domains] close-http: requests=11250 failed=8 rps=562.7 p50/p95/p99=4.706/24.518/41.788 ms 502=72 MiB/s=11.13 errors={"aborted due to deadline":8}
+2026-09-08T11:31:25.753Z [p10-domains] close: wall=20.1s cores=0.15 ms/req=0.27 ΔRSS end=11.23 max=12.26 MiB (floor 41.33 MiB)
+2026-09-08T11:31:25.932Z [p10-domains] netstat failed: spawnSync netstat ENOBUFS
+2026-09-08T11:31:27.953Z [p10-domains] INVALID: uncaught exception: ENOBUFS bind ENOBUFS 0.0.0.0
+2026-09-08T11:31:27.954Z [p10-domains] wrote smoke-20260908T0905Z\layer3-l1\p10-N1.json
