@@ -1,0 +1,21 @@
+Layer 0 evidence, 2026-09-08. Extracted from the engine logs, which are not committed.
+
+== removed strategy: boot must refuse ==
+fastadhunter: failed to load config: failed to parse config: TOML parse error at line 13, column 12
+   |
+13 | strategy = "fallback"
+   |            ^^^^^^^^^^
+"fallback" was removed after 0.3.3; "adaptive" is the only strategy
+
+
+== N readable: [runtime] http_runtimes = 1, dispatch lines ==
+2026-09-08T09:06:48.422682Z  INFO fastadhunter: HTTP proxy serving on its own single-thread runtimes http_runtimes=1
+2026-09-08T09:06:48.422693Z  INFO fastadhunter: HTTPS proxy serving on the HTTP allocation domains
+
+== N default on this box (no [runtime] key), 32 cores ==
+2026-09-08T09:06:37.240559Z  INFO fastadhunter: HTTP proxy serving on its own single-thread runtimes http_runtimes=16
+2026-09-08T09:06:37.240584Z  INFO fastadhunter: HTTPS proxy serving on the HTTP allocation domains
+  GET /api/v1/config -> runtime: {"http_runtimes": 16}
+
+== oha version ==
+oha 1.16.0

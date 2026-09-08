@@ -1,0 +1,36 @@
+https_sni_splice/direct_to_origin
+                        time:   [471.37 µs 640.72 µs 811.86 µs]
+                        thrpt:  [1.2029 GiB/s 1.5242 GiB/s 2.0718 GiB/s]
+                 change:
+                        time:   [-55.029% -40.875% -22.812%] (p = 0.00 < 0.05)
+                        thrpt:  [+29.553% +69.133% +122.37%]
+                        Performance has improved.
+Found 3 outliers among 20 measurements (15.00%)
+  3 (15.00%) high severe
+https_sni_splice/through_splice
+                        time:   [5.0443 ms 6.0345 ms 7.1455 ms]
+                        thrpt:  [139.95 MiB/s 165.71 MiB/s 198.24 MiB/s]
+                 change:
+                        time:   [-13.869% +25.960% +95.978%] (p = 0.26 > 0.05)
+                        thrpt:  [-48.974% -20.610% +16.102%]
+                        No change in performance detected.
+
+https_sni_splice verdict path: connections=2283 requests=2283 blocked=0 refused_destination=0 resolve_failures=0 dropped_events=0
+https_sni_splice_steady_state/direct_to_origin
+                        time:   [21.913 ms 22.576 ms 23.710 ms]
+                        thrpt:  [2.6360 GiB/s 2.7684 GiB/s 2.8522 GiB/s]
+                 change:
+                        time:   [+8.7207% +13.050% +17.586%] (p = 0.00 < 0.05)
+                        thrpt:  [-14.956% -11.544% -8.0212%]
+                        Performance has regressed.
+https_sni_splice_steady_state/through_splice
+                        time:   [55.654 ms 56.676 ms 59.470 ms]
+                        thrpt:  [1.0509 GiB/s 1.1028 GiB/s 1.1230 GiB/s]
+                 change:
+                        time:   [-27.721% -13.562% +1.3296%] (p = 0.15 > 0.05)
+                        thrpt:  [-1.3121% +15.690% +38.352%]
+                        No change in performance detected.
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high severe
+
+https_sni_splice_steady_state verdict path: connections=173 requests=173 blocked=0 refused_destination=0 resolve_failures=0 dropped_events=0

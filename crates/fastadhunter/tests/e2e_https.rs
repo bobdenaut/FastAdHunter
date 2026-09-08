@@ -13,7 +13,8 @@ use common::{
     await_event, bind_origin, boot_full, client_config_trusting, client_hello_without_sni,
     connect_events, get_json, insecure_client_config, put_user_rules, resolve, resolve_doh_post,
     resolve_dot, run_tls_http_origin, self_signed_origin, skip_origin_message, skips_allowed,
-    tls_connect_from, FullMode, AD_HOST, ALLOW_SKIP_ENV, DOT_HOSTNAME, PAGE_HOST,
+    tls_connect_from, FullMode, AD_HOST, ALLOW_SKIP_ENV, DOMAIN_LANE_LOG, DOT_HOSTNAME,
+    FULL_MODE_HTTP_RUNTIMES, PAGE_HOST,
 };
 
 const ORIGIN_IP: Ipv4Addr = Ipv4Addr::new(127, 0, 0, 30);
@@ -48,6 +49,19 @@ async fn full_mode_blocks_at_every_layer() {
         upstream_root: Some(origin_cert.to_vec()),
     })
     .await;
+    let log = instance.engine_log();
+    assert!(
+        log.contains(DOMAIN_LANE_LOG),
+        "0/7 lane: with runtime.http_runtimes = {FULL_MODE_HTTP_RUNTIMES} the HTTPS \
+         listener must feed the HTTP allocation domains, not the shared runtime\
+         \n--- engine log ---\n{log}"
+    );
+    assert!(
+        log.contains(&format!("http_runtimes={FULL_MODE_HTTP_RUNTIMES}")),
+        "0/7 lane: the pinned domain count must be the one that started\
+         \n--- engine log ---\n{log}"
+    );
+
     let ca_der = instance.generate_ca().await;
     let mut events = connect_events(&instance.base, &instance.key).await;
     put_user_rules(

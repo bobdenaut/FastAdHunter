@@ -1,0 +1,290 @@
+{
+ "D11D12-tip.txt": {
+  "certs_mint": {
+   "time": "53.431 \u00b5s 53.692 \u00b5s 54.039 \u00b5s"
+  },
+  "certs_cache_hit": {
+   "time": "48.373 ns 48.554 ns 48.794 ns"
+  },
+  "certs_prewarm_warm": {
+   "time": "74.732 ns 75.016 ns 75.378 ns"
+  },
+  "certs_replay_zipf": {
+   "time": "17.213 \u00b5s 17.382 \u00b5s 17.582 \u00b5s"
+  }
+ },
+ "D1D2-A-r1.txt": {
+  "http_pass_through/direct_to_origin": {
+   "time": "32.068 \u00b5s 32.754 \u00b5s 33.603 \u00b5s"
+  },
+  "http_pass_through/through_proxy": {
+   "time": "64.045 \u00b5s 65.579 \u00b5s 67.451 \u00b5s"
+  },
+  "http_opaque_body/direct_to_origin/8192": {
+   "time": "33.575 \u00b5s 33.917 \u00b5s 34.349 \u00b5s",
+   "thrpt": "227.44 MiB/s 230.34 MiB/s 232.69 MiB/s"
+  },
+  "http_opaque_body/through_proxy/8192": {
+   "time": "66.182 \u00b5s 66.532 \u00b5s 66.929 \u00b5s",
+   "thrpt": "116.73 MiB/s 117.42 MiB/s 118.05 MiB/s"
+  },
+  "http_opaque_body/direct_to_origin/1048576": {
+   "time": "754.60 \u00b5s 835.56 \u00b5s 911.89 \u00b5s",
+   "thrpt": "1.0709 GiB/s 1.1688 GiB/s 1.2941 GiB/s"
+  },
+  "http_opaque_body/through_proxy/1048576": {
+   "time": "902.74 \u00b5s 945.24 \u00b5s 992.75 \u00b5s",
+   "thrpt": "1007.3 MiB/s 1.0331 GiB/s 1.0818 GiB/s"
+  },
+  "http_opaque_body/direct_to_origin/8388608": {
+   "time": "5.3048 ms 5.5321 ms 5.8278 ms",
+   "thrpt": "1.3406 GiB/s 1.4122 GiB/s 1.4727 GiB/s"
+  },
+  "http_opaque_body/through_proxy/8388608": {
+   "time": "6.0444 ms 6.2410 ms 6.5069 ms",
+   "thrpt": "1.2007 GiB/s 1.2518 GiB/s 1.2925 GiB/s"
+  }
+ },
+ "D1D2-A-r2.txt": {
+  "http_pass_through/direct_to_origin": {
+   "time": "31.847 \u00b5s 32.065 \u00b5s 32.316 \u00b5s"
+  },
+  "http_pass_through/through_proxy": {
+   "time": "61.588 \u00b5s 62.161 \u00b5s 62.836 \u00b5s"
+  },
+  "http_opaque_body/direct_to_origin/8192": {
+   "time": "33.265 \u00b5s 33.656 \u00b5s 34.129 \u00b5s",
+   "thrpt": "228.91 MiB/s 232.13 MiB/s 234.86 MiB/s"
+  },
+  "http_opaque_body/through_proxy/8192": {
+   "time": "67.563 \u00b5s 68.106 \u00b5s 68.571 \u00b5s",
+   "thrpt": "113.93 MiB/s 114.71 MiB/s 115.63 MiB/s"
+  },
+  "http_opaque_body/direct_to_origin/1048576": {
+   "time": "615.02 \u00b5s 663.81 \u00b5s 737.56 \u00b5s",
+   "thrpt": "1.3240 GiB/s 1.4712 GiB/s 1.5878 GiB/s"
+  },
+  "http_opaque_body/through_proxy/1048576": {
+   "time": "738.57 \u00b5s 766.72 \u00b5s 795.60 \u00b5s",
+   "thrpt": "1.2274 GiB/s 1.2737 GiB/s 1.3222 GiB/s"
+  },
+  "http_opaque_body/direct_to_origin/8388608": {
+   "time": "5.6792 ms 5.9372 ms 6.2087 ms",
+   "thrpt": "1.2583 GiB/s 1.3159 GiB/s 1.3756 GiB/s"
+  },
+  "http_opaque_body/through_proxy/8388608": {
+   "time": "6.0179 ms 6.3395 ms 6.6604 ms",
+   "thrpt": "1.1730 GiB/s 1.2324 GiB/s 1.2982 GiB/s"
+  }
+ },
+ "D1D2-B-r1.txt": {
+  "http_pass_through/direct_to_origin": {
+   "time": "34.281 \u00b5s 34.863 \u00b5s 35.520 \u00b5s"
+  },
+  "http_pass_through/through_proxy": {
+   "time": "67.417 \u00b5s 68.347 \u00b5s 69.405 \u00b5s"
+  },
+  "http_opaque_body/direct_to_origin/8192": {
+   "time": "34.657 \u00b5s 35.366 \u00b5s 36.204 \u00b5s",
+   "thrpt": "215.79 MiB/s 220.90 MiB/s 225.42 MiB/s"
+  },
+  "http_opaque_body/through_proxy/8192": {
+   "time": "67.789 \u00b5s 68.683 \u00b5s 69.672 \u00b5s",
+   "thrpt": "112.13 MiB/s 113.75 MiB/s 115.25 MiB/s"
+  },
+  "http_opaque_body/direct_to_origin/1048576": {
+   "time": "972.63 \u00b5s 1.1382 ms 1.3342 ms",
+   "thrpt": "749.54 MiB/s 878.60 MiB/s 1.0040 GiB/s"
+  },
+  "http_opaque_body/through_proxy/1048576": {
+   "time": "813.07 \u00b5s 853.04 \u00b5s 899.71 \u00b5s",
+   "thrpt": "1.0854 GiB/s 1.1448 GiB/s 1.2011 GiB/s"
+  },
+  "http_opaque_body/direct_to_origin/8388608": {
+   "time": "5.5362 ms 5.8448 ms 6.1728 ms",
+   "thrpt": "1.2656 GiB/s 1.3367 GiB/s 1.4112 GiB/s"
+  },
+  "http_opaque_body/through_proxy/8388608": {
+   "time": "6.1530 ms 6.4594 ms 6.7943 ms",
+   "thrpt": "1.1499 GiB/s 1.2095 GiB/s 1.2697 GiB/s"
+  }
+ },
+ "D1D2-B-r2.txt": {
+  "http_pass_through/direct_to_origin": {
+   "time": "31.693 \u00b5s 31.915 \u00b5s 32.185 \u00b5s"
+  },
+  "http_pass_through/through_proxy": {
+   "time": "63.368 \u00b5s 63.858 \u00b5s 64.470 \u00b5s"
+  },
+  "http_opaque_body/direct_to_origin/8192": {
+   "time": "34.175 \u00b5s 34.287 \u00b5s 34.459 \u00b5s",
+   "thrpt": "226.72 MiB/s 227.86 MiB/s 228.60 MiB/s"
+  },
+  "http_opaque_body/through_proxy/8192": {
+   "time": "65.731 \u00b5s 66.436 \u00b5s 67.170 \u00b5s",
+   "thrpt": "116.31 MiB/s 117.59 MiB/s 118.86 MiB/s"
+  },
+  "http_opaque_body/direct_to_origin/1048576": {
+   "time": "595.89 \u00b5s 661.45 \u00b5s 757.64 \u00b5s",
+   "thrpt": "1.2890 GiB/s 1.4764 GiB/s 1.6388 GiB/s"
+  },
+  "http_opaque_body/through_proxy/1048576": {
+   "time": "758.70 \u00b5s 787.02 \u00b5s 814.44 \u00b5s",
+   "thrpt": "1.1991 GiB/s 1.2408 GiB/s 1.2872 GiB/s"
+  },
+  "http_opaque_body/direct_to_origin/8388608": {
+   "time": "5.2967 ms 5.4583 ms 5.6791 ms",
+   "thrpt": "1.3757 GiB/s 1.4313 GiB/s 1.4750 GiB/s"
+  },
+  "http_opaque_body/through_proxy/8388608": {
+   "time": "6.2725 ms 6.3901 ms 6.5655 ms",
+   "thrpt": "1.1899 GiB/s 1.2226 GiB/s 1.2455 GiB/s"
+  }
+ },
+ "D3-A-r1.txt": {
+  "dns_cache/cache_hit_in_engine_latency": {
+   "time": "2.3504 \u00b5s 2.6780 \u00b5s 3.0088 \u00b5s"
+  }
+ },
+ "D3-A-r2.txt": {
+  "dns_cache/cache_hit_in_engine_latency": {
+   "time": "2.4447 \u00b5s 2.7760 \u00b5s 3.1032 \u00b5s"
+  }
+ },
+ "D3-B-r1.txt": {
+  "dns_cache/cache_hit_in_engine_latency": {
+   "time": "2.3678 \u00b5s 2.7064 \u00b5s 3.0378 \u00b5s"
+  }
+ },
+ "D3-B-r2.txt": {
+  "dns_cache/cache_hit_in_engine_latency": {
+   "time": "2.5171 \u00b5s 2.8446 \u00b5s 3.1721 \u00b5s"
+  }
+ },
+ "D4-A-r1.txt": {
+  "full_pipeline/blocked_query": {
+   "time": "3.2858 \u00b5s 3.6309 \u00b5s 3.9748 \u00b5s"
+  },
+  "full_pipeline/forwarded_query_overhead": {
+   "time": "4.0067 \u00b5s 4.5092 \u00b5s 5.0155 \u00b5s"
+  }
+ },
+ "D4-A-r2.txt": {
+  "full_pipeline/blocked_query": {
+   "time": "2.9662 \u00b5s 3.3039 \u00b5s 3.6239 \u00b5s"
+  },
+  "full_pipeline/forwarded_query_overhead": {
+   "time": "3.8517 \u00b5s 4.3409 \u00b5s 4.8219 \u00b5s"
+  }
+ },
+ "D4-B-r1.txt": {
+  "full_pipeline/blocked_query": {
+   "time": "3.1292 \u00b5s 3.4631 \u00b5s 3.7829 \u00b5s"
+  },
+  "full_pipeline/forwarded_query_overhead": {
+   "time": "4.2879 \u00b5s 4.7260 \u00b5s 5.1558 \u00b5s"
+  }
+ },
+ "D4-B-r2.txt": {
+  "full_pipeline/blocked_query": {
+   "time": "3.0967 \u00b5s 3.5197 \u00b5s 3.9258 \u00b5s"
+  },
+  "full_pipeline/forwarded_query_overhead": {
+   "time": "3.8979 \u00b5s 4.3726 \u00b5s 4.8459 \u00b5s"
+  }
+ },
+ "D5-A-r1.txt": {
+  "matcher_lookup/hit_exact": {
+   "time": "63.921 ns 64.221 ns 64.571 ns"
+  },
+  "matcher_lookup/hit_subdomain": {
+   "time": "196.54 ns 197.61 ns 198.78 ns"
+  },
+  "matcher_lookup/miss": {
+   "time": "48.340 ns 48.688 ns 49.076 ns"
+  }
+ },
+ "D5-A-r2.txt": {
+  "matcher_lookup/hit_exact": {
+   "time": "63.344 ns 63.635 ns 63.989 ns"
+  },
+  "matcher_lookup/hit_subdomain": {
+   "time": "193.36 ns 194.18 ns 195.11 ns"
+  },
+  "matcher_lookup/miss": {
+   "time": "47.729 ns 47.961 ns 48.255 ns"
+  }
+ },
+ "D5-B-r1.txt": {
+  "matcher_lookup/hit_exact": {
+   "time": "63.488 ns 63.725 ns 64.052 ns"
+  },
+  "matcher_lookup/hit_subdomain": {
+   "time": "186.56 ns 188.96 ns 190.94 ns"
+  },
+  "matcher_lookup/miss": {
+   "time": "47.268 ns 47.552 ns 47.939 ns"
+  }
+ },
+ "D5-B-r2.txt": {
+  "matcher_lookup/hit_exact": {
+   "time": "64.381 ns 64.728 ns 65.135 ns"
+  },
+  "matcher_lookup/hit_subdomain": {
+   "time": "195.23 ns 196.61 ns 198.08 ns"
+  },
+  "matcher_lookup/miss": {
+   "time": "47.809 ns 48.037 ns 48.309 ns"
+  }
+ },
+ "D6D7-tip.txt": {
+  "https_sni_splice/direct_to_origin": {
+   "time": "471.37 \u00b5s 640.72 \u00b5s 811.86 \u00b5s",
+   "thrpt": "1.2029 GiB/s 1.5242 GiB/s 2.0718 GiB/s"
+  },
+  "https_sni_splice/through_splice": {
+   "time": "5.0443 ms 6.0345 ms 7.1455 ms",
+   "thrpt": "139.95 MiB/s 165.71 MiB/s 198.24 MiB/s"
+  },
+  "https_sni_splice_steady_state/direct_to_origin": {
+   "time": "21.913 ms 22.576 ms 23.710 ms",
+   "thrpt": "2.6360 GiB/s 2.7684 GiB/s 2.8522 GiB/s"
+  },
+  "https_sni_splice_steady_state/through_splice": {
+   "time": "55.654 ms 56.676 ms 59.470 ms",
+   "thrpt": "1.0509 GiB/s 1.1028 GiB/s 1.1230 GiB/s"
+  }
+ },
+ "D8D9D10-tip.txt": {
+  "https_handshake/direct_to_origin": {
+   "time": "910.31 \u00b5s 959.91 \u00b5s 1.0280 ms"
+  },
+  "https_handshake/spliced": {
+   "time": "6.2619 ms 7.9066 ms 9.7157 ms"
+  },
+  "https_handshake/intercepted": {
+   "time": "6.8038 ms 8.1878 ms 9.5462 ms"
+  },
+  "https_h2_download/direct_to_origin": {
+   "time": "5.9802 ms 6.1806 ms 6.3418 ms",
+   "thrpt": "1.2319 GiB/s 1.2640 GiB/s 1.3064 GiB/s"
+  },
+  "https_h2_download/spliced": {
+   "time": "8.3800 ms 8.7907 ms 9.2108 ms",
+   "thrpt": "868.55 MiB/s 910.05 MiB/s 954.66 MiB/s"
+  },
+  "https_h2_download/intercepted": {
+   "time": "15.012 ms 15.755 ms 16.464 ms",
+   "thrpt": "485.92 MiB/s 507.78 MiB/s 532.89 MiB/s"
+  },
+  "prewarm_hop/inline_cached_leaf": {
+   "time": "91.154 ns 91.431 ns 91.759 ns"
+  },
+  "prewarm_hop/inline_prewarm_warm": {
+   "time": "118.15 ns 118.42 ns 118.75 ns"
+  },
+  "prewarm_hop/spawn_blocking_prewarm": {
+   "time": "4.5841 \u00b5s 4.7132 \u00b5s 4.8272 \u00b5s"
+  }
+ }
+}

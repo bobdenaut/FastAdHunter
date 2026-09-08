@@ -1,11 +1,12 @@
 use std::net::{IpAddr, SocketAddr};
+use std::num::NonZeroUsize;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use fah_common::egress::{AllowedNet, DestinationPolicy};
 use fah_common::resolve::{HostResolver, Resolving};
-use fah_config::{HttpsConfig, HttpsListenConfig, NoSni};
+use fah_config::{HttpConfig, HttpListenConfig, HttpsConfig, HttpsListenConfig, NoSni};
 use fah_model::{Event, EventKind, ResourceType, Verdict};
 use fah_rules::{Matcher, MatcherBuilder};
 use rustls::pki_types::{CertificateDer, PrivateKeyDer, ServerName};
@@ -14,7 +15,7 @@ use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::mpsc;
 use tokio_rustls::{TlsAcceptor, TlsConnector};
 
-use fah_http::{ProxyCounters, TlsProxy, TlsServer};
+use fah_http::{ConnectionGauge, Proxy, ProxyCounters, Server, TlsProxy, TlsServer};
 
 const ORIGIN_NAME: &str = "origin.test";
 
@@ -613,4 +614,243 @@ async fn a_hello_without_sni_is_classified_by_config() {
         Verdict::Block(rule) => assert!(rule.rule.contains("no_sni"), "{}", rule.rule),
         other => panic!("expected a block verdict, got {other:?}"),
     }
+}
+
+struct RecordingResolver {
+    addresses: Vec<IpAddr>,
+    thread: Arc<Mutex<Option<String>>>,
+}
+
+impl HostResolver for RecordingResolver {
+    fn resolve(&self, _host: String) -> Resolving {
+        *self.thread.lock().unwrap() = std::thread::current().name().map(str::to_string);
+        let addresses = self.addresses.clone();
+        Box::pin(async move { Ok(addresses) })
+    }
+}
+
+struct DomainHarness {
+    http: Server,
+    tls: TlsServer,
+    http_addr: SocketAddr,
+    https_addr: SocketAddr,
+    counters: Arc<ProxyCounters>,
+    https_open: Arc<ConnectionGauge>,
+    http_open: Arc<ConnectionGauge>,
+    thread: Arc<Mutex<Option<String>>>,
+}
+
+impl DomainHarness {
+    fn shutdown(&mut self) {
+        self.tls.shutdown();
+        self.http.shutdown();
+    }
+}
+
+async fn domain_harness(
+    origin: SocketAddr,
+    events: Option<mpsc::Sender<Event>>,
+    limits: Limits,
+) -> DomainHarness {
+    let host = "127.0.0.1".parse::<IpAddr>().unwrap();
+    let origin_port = origin.port();
+    let thread = Arc::new(Mutex::new(None));
+    let mut proxy = TlsProxy::new(
+        Arc::new(RecordingResolver {
+            addresses: vec![origin.ip()],
+            thread: Arc::clone(&thread),
+        }),
+        DestinationPolicy::new(origin_port, vec![AllowedNet::host(host)]),
+        origin_port,
+        limits.hello,
+        limits.idle,
+        NoSni::Pass,
+    )
+    .with_rules(rules_with("||ads.example.com^\n"));
+    if let Some(events) = events {
+        proxy = proxy.with_events(events);
+    }
+    let proxy = Arc::new(proxy);
+    let counters = proxy.counters();
+
+    let mut http = Server::bind(&HttpConfig {
+        listen: HttpListenConfig {
+            address: "127.0.0.1".to_string(),
+            port: 0,
+        },
+        max_connections: limits.max_connections,
+        ..HttpConfig::default()
+    })
+    .await
+    .unwrap();
+    let http_addr = http.local_addr();
+    let http_open = http.connections();
+    http.serve_domains(NonZeroUsize::MIN, Duration::from_secs(1), move || {
+        Proxy::new(
+            Arc::new(FixedResolver(vec![host])),
+            DestinationPolicy::new(origin_port, vec![AllowedNet::host(host)]),
+            origin_port,
+            limits.hello,
+            limits.idle,
+            1,
+            false,
+        )
+    })
+    .unwrap();
+
+    let mut tls = TlsServer::bind(&HttpsConfig {
+        listen: HttpsListenConfig {
+            address: "127.0.0.1".to_string(),
+            port: 0,
+        },
+        max_connections: limits.max_connections,
+        ..HttpsConfig::default()
+    })
+    .await
+    .unwrap();
+    let https_addr = tls.local_addr();
+    let https_open = tls.connections();
+    tls.serve_domains(Arc::clone(&proxy), &http).unwrap();
+
+    DomainHarness {
+        http,
+        tls,
+        http_addr,
+        https_addr,
+        counters,
+        https_open,
+        http_open,
+        thread,
+    }
+}
+
+#[tokio::test]
+async fn an_allowed_sni_is_spliced_on_an_allocation_domain() {
+    let (origin, accepts) = origin().await;
+    let (tx, mut rx) = mpsc::channel(16);
+    let mut harness = domain_harness(origin, Some(tx), Limits::default()).await;
+
+    let stream = TcpStream::connect(harness.https_addr).await.unwrap();
+    let name = ServerName::try_from(ORIGIN_NAME).unwrap();
+    let mut tls = connector()
+        .connect(name, stream)
+        .await
+        .expect("the handshake must complete through the domain lane");
+
+    let payload: Vec<u8> = (0..16 * 1024).map(|index| (index % 251) as u8).collect();
+    tls.write_all(&payload).await.unwrap();
+    let mut echoed = vec![0u8; payload.len()];
+    tls.read_exact(&mut echoed).await.unwrap();
+    assert_eq!(
+        echoed, payload,
+        "the spliced payload must be byte-identical on the domain lane"
+    );
+    assert_eq!(accepts.load(Ordering::Relaxed), 1);
+    drop(tls);
+
+    let event = next_event(&mut rx).await;
+    let Event::HttpsSni(event) = event else {
+        panic!("expected an https-sni event");
+    };
+    assert_eq!(event.request.host, ORIGIN_NAME);
+    assert_eq!(event.verdict, Verdict::Pass);
+    assert!(event.bytes >= payload.len() as u64);
+
+    let stats = harness.counters.snapshot();
+    assert_eq!(stats.connections, 1);
+    assert_eq!(stats.blocked, 0);
+    assert_eq!(
+        harness.thread.lock().unwrap().as_deref(),
+        Some("fah-http-0"),
+        "the spliced session must run on the allocation domain's own thread"
+    );
+
+    harness.shutdown();
+}
+
+#[tokio::test]
+async fn a_saturated_https_lane_leaves_the_http_lane_bounded_and_leaks_no_permit() {
+    const CEILING: usize = 2;
+    const OVERSHOOT: usize = 40;
+
+    let (origin, _accepts) = origin().await;
+    let mut harness = domain_harness(
+        origin,
+        None,
+        Limits {
+            hello: Duration::from_secs(30),
+            idle: Duration::from_secs(30),
+            max_connections: CEILING,
+        },
+    )
+    .await;
+
+    let mut held = Vec::new();
+    for _ in 0..CEILING {
+        let stream = TcpStream::connect(harness.https_addr).await.unwrap();
+        let name = ServerName::try_from(ORIGIN_NAME).unwrap();
+        held.push(
+            connector()
+                .connect(name, stream)
+                .await
+                .expect("the lane must serve up to its ceiling"),
+        );
+    }
+
+    let mut queued = Vec::new();
+    for _ in 0..OVERSHOOT {
+        queued.push(TcpStream::connect(harness.https_addr).await.unwrap());
+    }
+    tokio::time::sleep(Duration::from_millis(200)).await;
+    assert_eq!(
+        harness.https_open.open() as usize,
+        CEILING,
+        "{OVERSHOOT} sockets past the ceiling must wait for a permit, not be served"
+    );
+
+    let mut http = TcpStream::connect(harness.http_addr).await.unwrap();
+    http.write_all(b"GET / HTTP/1.0\r\n\r\n").await.unwrap();
+    let mut answer = Vec::new();
+    tokio::time::timeout(Duration::from_secs(5), http.read_to_end(&mut answer))
+        .await
+        .expect("the HTTP lane must answer while the HTTPS lane sits at its ceiling")
+        .unwrap();
+    assert!(
+        String::from_utf8_lossy(&answer).contains(" 400 "),
+        "a request with no Host is refused; got: {answer:?}"
+    );
+    drop(http);
+
+    drop(queued);
+    drop(held);
+    let drained = wait_for(Duration::from_secs(10), || {
+        harness.https_open.open() == 0 && harness.http_open.open() == 0
+    })
+    .await;
+    assert!(
+        drained,
+        "every permit must come back: https={} http={}",
+        harness.https_open.open(),
+        harness.http_open.open()
+    );
+
+    let stats = harness.counters.snapshot();
+    assert_eq!(
+        stats.connections,
+        (CEILING + OVERSHOOT) as u64,
+        "every accepted HTTPS socket is judged once the ceiling frees up"
+    );
+
+    harness.shutdown();
+}
+
+async fn wait_for(limit: Duration, mut done: impl FnMut() -> bool) -> bool {
+    let deadline = tokio::time::Instant::now() + limit;
+    while tokio::time::Instant::now() < deadline {
+        if done() {
+            return true;
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    done()
 }

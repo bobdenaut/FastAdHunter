@@ -1,0 +1,18 @@
+   Compiling fastadhunter v0.3.3 (E:\FastAdHunter\crates\fastadhunter)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 6.86s
+     Running tests\encrypted_latency.rs (target\debug\deps\encrypted_latency-1c5445bbfa2a7eb6.exe)
+
+running 1 test
+FAH_E2E_BINARY override active: E:\FastAdHunter\target\release\fastadhunter.exe
+blocked-domain round trips from a loopback client, 3 rounds x 2000 sequential queries per transport, transports interleaved within each round
+round 1: p50 udp=28us dot=36us doh=260us; DoT handshake 1.9166ms
+round 2: p50 udp=29us dot=37us doh=263us; DoT handshake 1.8761ms
+round 3: p50 udp=29us dot=37us doh=282us; DoT handshake 1.8875ms
+pooled over 3 rounds; DoT handshakes (excluded from per-query figures) [1.9166ms, 1.8761ms, 1.8875ms]; DoH over Some(HTTP/2.0)
+udp        n=6000 min=13us p50=29us p90=38us p99=107us max=1040us
+dot        n=6000 min=24us p50=37us p90=42us p99=94us max=199us
+doh-post   n=6000 min=237us p50=268us p90=351us p99=584us max=1424us
+test per_query_latency_udp_vs_dot_vs_doh ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 3.39s
+

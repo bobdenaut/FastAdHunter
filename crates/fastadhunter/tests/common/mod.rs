@@ -626,6 +626,10 @@ pub struct FullMode {
     pub upstream_root: Option<Vec<u8>>,
 }
 
+pub const FULL_MODE_HTTP_RUNTIMES: usize = 2;
+
+pub const DOMAIN_LANE_LOG: &str = "HTTPS proxy serving on the HTTP allocation domains";
+
 pub fn full_mode_config(ports: &Ports, upstream: SocketAddr, mode: &FullMode) -> String {
     let dns_port = ports.dns;
     let dot_port = ports.dot;
@@ -634,6 +638,7 @@ pub fn full_mode_config(ports: &Ports, upstream: SocketAddr, mode: &FullMode) ->
     let https_port = ports.https();
     let origin_ip = mode.origin_ip;
     let api_tls = mode.api_tls;
+    let http_runtimes = FULL_MODE_HTTP_RUNTIMES;
     let clients = mode
         .clients
         .iter()
@@ -644,6 +649,9 @@ pub fn full_mode_config(ports: &Ports, upstream: SocketAddr, mode: &FullMode) ->
         r#"
 [engine]
 mode = "dns+http+https"
+
+[runtime]
+http_runtimes = {http_runtimes}
 
 [dns.listen]
 address = "127.0.0.1"

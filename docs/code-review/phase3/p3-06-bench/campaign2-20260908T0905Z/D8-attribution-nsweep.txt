@@ -1,0 +1,12 @@
+=== http_runtimes = 0 (shared runtime) ===
+direct to origin             n= 20  connect=  0.331  tls=  4.447  firstbyte=  4.848  total=  5.056   [tls-connect= 4.116  fb-tls= 0.402  total-fb= 0.208] ms
+through splice               n= 20  connect=  0.334  tls=  7.367  firstbyte=  7.785  total=  8.159   [tls-connect= 7.033  fb-tls= 0.418  total-fb= 0.374] ms
+=== http_runtimes = 2 (allocation domains) ===
+direct to origin             n= 20  connect=  0.353  tls=  4.581  firstbyte=  5.025  total=  5.221   [tls-connect= 4.228  fb-tls= 0.444  total-fb= 0.196] ms
+through splice               n= 20  connect=  0.343  tls= 12.028  firstbyte= 12.546  total= 12.777   [tls-connect=11.686  fb-tls= 0.518  total-fb= 0.230] ms
+=== http_runtimes = 0 (shared runtime) ===
+direct to origin             n= 20  connect=  0.351  tls=  4.508  firstbyte=  4.964  total=  5.211   [tls-connect= 4.157  fb-tls= 0.457  total-fb= 0.247] ms
+through splice               n= 20  connect=  0.346  tls= 21.660  firstbyte= 22.468  total= 23.944   [tls-connect=21.314  fb-tls= 0.808  total-fb= 1.476] ms
+=== http_runtimes = 2 (allocation domains) ===
+direct to origin             n= 20  connect=  0.353  tls=  4.819  firstbyte=  5.240  total=  5.464   [tls-connect= 4.466  fb-tls= 0.421  total-fb= 0.224] ms
+through splice               n= 20  connect=  0.350  tls= 20.381  firstbyte= 20.839  total= 21.055   [tls-connect=20.031  fb-tls= 0.458  total-fb= 0.216] ms

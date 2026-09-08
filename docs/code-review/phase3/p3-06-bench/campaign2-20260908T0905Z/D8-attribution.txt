@@ -1,0 +1,5 @@
+phase medians, ms, cumulative from request start; N=30
+direct to origin             n= 30  connect=  0.334  tls=  4.450  firstbyte=  4.911  total=  5.189   [tls-connect= 4.116  fb-tls= 0.461  total-fb= 0.278] ms
+through splice               n= 30  connect=  0.341  tls= 20.428  firstbyte= 20.858  total= 21.081   [tls-connect=20.087  fb-tls= 0.431  total-fb= 0.223] ms
+direct keep-alive            n= 30  connect=  0.344  tls=  4.567  firstbyte=  4.953  total=  4.987   [tls-connect= 4.224  fb-tls= 0.386  total-fb= 0.034] ms
+splice keep-alive            n= 30  connect=  0.360  tls= 12.428  firstbyte= 12.813  total= 12.850   [tls-connect=12.067  fb-tls= 0.385  total-fb= 0.037] ms

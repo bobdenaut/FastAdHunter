@@ -1,0 +1,25 @@
+full_pipeline/blocked_query
+                        time:   [3.0967 µs 3.5197 µs 3.9258 µs]
+                        change: [-18.427% -0.8513% +21.522%] (p = 0.94 > 0.05)
+                        No change in performance detected.
+Found 2 outliers among 100 measurements (2.00%)
+  2 (2.00%) high mild
+
+full_pipeline/forwarded_query_overhead
+                        time:   [3.8979 µs 4.3726 µs 4.8459 µs]
+                        change: [-17.993% -2.5006% +17.767%] (p = 0.78 > 0.05)
+                        No change in performance detected.
+Found 2 outliers among 100 measurements (2.00%)
+  2 (2.00%) high mild
+
+
+[phases] input: 24988890 bytes, 1000000 active rules, 0 inactive
+
+
+[p1.5-05] dedup on fully overlapping lists: one list 1000000 rules / 28.3 MiB, the same list twice 1000000 rules / 28.3 MiB, 1000000 duplicates removed
+
+
+[p1-10] steady-state memory, 1000000 rules loaded and 16384 queries served:
+  compiled ruleset: 29703238 bytes (28.3 MiB) (budget: <= 40 MB)
+  process RSS: unavailable on this platform (/proc/self/status is Linux-only; the RB5009 figure is measured in p1-11)
+

@@ -1296,9 +1296,10 @@ own decision, not a soak precondition.
 
 **Deferred, accepted:** F10, F16. **Withdrawn:** F6.
 
-## Hand-off state, 2026-09-08 — current
+## Hand-off state, 2026-09-08 (morning, superseded)
 
-Supersedes both sections above. Tree clean on `phase3-06` at **`61ea35c`**
+Superseded by §Hand-off state, 2026-09-08 (session 2) at the end of this file.
+Tree clean on `phase3-06` at **`61ea35c`**
 ("docs(phase3/p3-06): re-plan the probe campaign for the post-merge tip");
 `origin` and `backup` both at that commit.
 
@@ -1366,3 +1367,166 @@ it (2026-09-05 disposition stands as a disposition; its figure does not).
 | p3-04 h2-stall | campaign 1 found one h2 stream of 64 answering through the terminate leg and reproduced it on the dev box (control 64/64, stall 5/64). **Never filed as a finding.** The plan requires it filed before P3 runs on the device |
 
 **Deferred, accepted:** F10, F16. **Withdrawn:** F6.
+
+## Hand-off state, 2026-09-08 (session 2) — current
+
+Supersedes every hand-off section above. Working tree on `phase3-06` at
+`ce3c6e6`, **dirty**: four test-only files changed, plus three untracked
+directories. `origin` and `backup` are still at `ce3c6e6` — **nothing was
+committed or pushed this session.**
+
+**What this session did.** Steps 2 and 3 closed, smoke Layer 0 run for the
+first time, and the Step 1 dev-box bench session run end to end. Figures live
+in [p3-06-testing-results-2.md](p3-06-testing-results-2.md), created this
+session with owner approval.
+
+### Step state
+
+| Step | State |
+| --- | --- |
+| 1 — dev-box benches | **D1–D14 run; session valid** (control +3.0 %, inside ±5 %). No regression on the >10 % rule. **Owed:** D6's `SPLICE_BUF` 16 vs 64 KiB half (needs a `src` edit — owner approval), and D12 against a real distribution (capture running) |
+| 2 — security suite + coverage gaps | **closed.** Suite green at the tip; F2, F5 and the F3 saturation property all landed |
+| 3 — offline full-mode E2E | **closed.** A4 landed; `e2e_https` 2/2 |
+| 4 — on-device | not started. 4.0 blocks everything below it; 4.1 (P10) must precede 4.2 |
+| 5 — documentation sweep | not started |
+
+### Code landed (uncommitted)
+
+- **F2** — `an_allowed_sni_is_spliced_on_an_allocation_domain` in
+  `crates/fah-http/tests/sni.rs`. Builds a one-domain rig (`Server::bind` +
+  `serve_domains(NonZeroUsize::MIN, …)`, then
+  `TlsServer::serve_domains(proxy, &http)`), asserts a byte-identical splice
+  and that the session ran on `fah-http-0`. The thread name is observed through
+  a `RecordingResolver` that records `std::thread::current().name()` — the
+  resolve runs on the domain thread, so this is falsifiable: on
+  `TlsServer::serve` the name would be libtest's.
+- **F3** — `a_saturated_https_lane_leaves_the_http_lane_bounded_and_leaks_no_permit`,
+  same file. HTTPS lane held at `max_connections = 2` with 40 sockets queued
+  behind it; asserts the gauge never exceeds the ceiling, the HTTP lane still
+  answers on the same domain, both gauges return to 0, and all 42 sockets are
+  judged once the ceiling frees.
+- **F5** — `https.listen.port` and `https.interception.clients` added to the
+  boot list in `crates/fah-api/src/config_store.rs`.
+- **A4** — `[runtime] http_runtimes = 2` pinned in `full_mode_config`
+  (`crates/fastadhunter/tests/common/mod.rs`), which puts **`security_phase3`
+  on the domain lane too**, and `e2e_https` now asserts the binary logged
+  `HTTPS proxy serving on the HTTP allocation domains` and `http_runtimes=2`.
+
+**A4 deviation, recorded.** The plan says "assert the thread name". Thread names
+are not observable across the process boundary — `fah-logging` sets no
+`with_thread_names` — so `e2e_https` asserts the dispatch log line instead, and
+F2 carries the thread-name assertion in-process. Together they discharge A4's
+intent; separately, neither does.
+
+**Gates green** at the end of the session: `cargo fmt --all -- --check`,
+`cargo clippy --workspace --all-targets -- -D warnings`,
+`cargo test --all-features --workspace`. `sni` 11/11, `interception` 33/33,
+`security_phase3` 7/7, `e2e_https` 2/2.
+
+### Smoke Layer 0 — first run, all five checks
+
+Output in
+[p3-06-probe/smoke-20260908T0905Z/layer0/](p3-06-probe/smoke-20260908T0905Z/layer0/).
+
+| Check | Result |
+| --- | --- |
+| removed strategy | **PASS** — boot refused, exit 1, `"fallback" was removed after 0.3.3; "adaptive" is the only strategy`. The message names `strategy` and gives line/column but not the dotted path `dns.upstreams.strategy` the plan quotes — cosmetic |
+| N readable | **PASS** — `http_runtimes = 1` reads back `1` from `GET /api/v1/config` |
+| N default on this box | **PASS** — **16** (32 cores, `max(1, cores/2)`), not 2 |
+| `oha` pinned | **PASS here, NOT RUN on the Mac** — bobdenaut has 1.16.0; the Mac half is owner-owed |
+| **`--connect-to` preserves SNI** | **PASS.** Blocked name goes to `listeners.https.blocked` 0 to 1, `oha` 0 % success, `resolve_failures` and `refused_destination` both 0. Allowed name over the **same socket target** answers 200 with `blocked` unchanged. Splice served the origin's own certificate, identical to direct |
+
+**Every `oha` arm is unblocked by that last row.** Layers 1–3 are not yet run;
+they need an idle box, since a browser makes every script `INVALID` by design.
+
+### Ordering constraints a later session should not rediscover
+
+Unchanged from the previous hand-off except where noted:
+
+- The 24 h full-mode soak (Step 4.8) cannot start before **2026-09-14**. It
+  needs its own deploy approval. **Its stated prerequisites are already met** —
+  see §Telemetry prerequisite, verified below. Watch item (b) is unblocked.
+- P10 (Step 4.1) cannot run while the probe is on envlist `fah-env`.
+- The probe's stored config carries `strategy = "fallback"` and **will not boot
+  on a tip build**. Layer 0 confirmed the exact failure shape. **The fix is to
+  delete the line, not set it to `"adaptive"`** — `UpstreamStrategy` is a
+  single-variant enum, the default is already adaptive, and the key now exists
+  only as a migration shim that turns an old value into a named error.
+- Runbook 4 needs `BASELINE_EXCLUSIONS` settled first.
+- Runbook 7's ninth `ca/generate` is the `409 archive_full` check — do not
+  spend it.
+- P1-LAN, P1-control, P2 and P3 need the Mac. The Mac is on Wi-Fi, which the
+  testing plan's precondition 1 does not allow.
+- `p2-handshake.mjs` has no Darwin branch.
+- **`cargo bench -p fastadhunter` does not compile at either checkout** — the
+  `fah-api/test-harness` dev-dependency reaches the bench (release) profile and
+  trips `compile_error!`. Use `--config 'profile.bench.debug-assertions=true'`
+  on the command line rather than editing `Cargo.toml`. Same for
+  `cargo test --release -p fastadhunter`; `encrypted_latency` instead keeps the
+  harness in the dev profile and drives a release binary via `FAH_E2E_BINARY`.
+
+### Open findings from this session
+
+**D8's spliced handshake is 8 × direct, and unresolved.** Owner-directed
+attribution (bounded, no implementation change): the whole difference sits in
+the TLS handshake window; TCP connect, time-to-first-byte and teardown are all
+identical or faster through the splice. Five hypotheses tested and refuted —
+EOF propagation, Nagle on the upstream leg, the domain hand-off (N = 0 gave
+both the fastest and the slowest reading), Windows TIME_WAIT pressure (1 % of
+the ephemeral range), and the SNI resolve (0.78 ms median). The proxied path
+drifts 3 × within a session while the direct control holds an 8 % band. Full
+evidence in [p3-06-testing-results-2.md](p3-06-testing-results-2.md) §D8
+attribution. **Consequence:** D8's absolute values are not budget rows on this
+box; the `intercepted` minus `spliced` delta of **+3.6 %** survives because
+both legs pay the unexplained cost; **P2 on the device is the authority.**
+
+### Owner decisions outstanding
+
+| # | Decision |
+| --- | --- |
+| Delta 1 | P1-LAN's absolute ≥ 100 MiB/s gate withdrawn in favour of a relative one. Needs sign-off |
+| Audit F1 | `main`'s IP-literal fix covers `Proxy` only; on the HTTPS path an allowed IP-literal SNI goes to the resolver and fails every time, while CONFIGURATION.md says the switch governs both. Port the fix, or narrow the doc and the `tls_server` test to HTTP-only |
+| Wi-Fi vs wired | whether the Mac's Wi-Fi link stands for P1/P2/P3 |
+| p3-04 h2-stall | campaign 1's finding (control 64/64, stall 5/64) is **still never filed**. The plan requires it filed before P3 runs on the device |
+| D6 64 KiB | the `SPLICE_BUF` 16-vs-64 KiB half of D6 needs a `src` edit to build the second variant — a code change, not yet made |
+| D8 unresolved | whether to spend more on the 8 × handshake now, or let P2 on the device settle it |
+
+**Deferred, accepted:** F10, F16. **Withdrawn:** F6.
+
+### Telemetry prerequisite — verified already met, no API.md edit needed
+
+The verification plan's §Step 4.8 watch item (b) names two prerequisites for
+the soak: an API.md edit for the per-listener block, and settling p3-04 L5
+("on the terminate leg `requests` is per connection while `blocked` /
+`refused_claim` are per request, so `blocked > requests` is possible on one
+listener"). **Both were already discharged by §Post-review work A on
+2026-09-02.** Checked this session rather than assumed:
+
+- **API.md already documents the shipped block.** `GET /api/v1/telemetry` in
+  API.md carries a full `listeners` JSON sample with all twelve fields —
+  `connections`, `requests`, `blocked`, `refused_claim`,
+  `refused_destination`, `resolve_failures`, `upstream_failures`,
+  `upstream_cert_failures`, `non_http`, `non_tls`, `hello_timeouts`,
+  `dropped_events` — plus prose on which fields are HTTPS-only, which are
+  `:80`-only, and how `refused_claim + refused_destination` sums to
+  `counters.http.refused`. A live read from the smoke instance returns exactly
+  that field set, same names. **Nothing to add.**
+- **p3-04 L5's claim is refuted, by code and by measurement.** API.md states
+  `blocked ≤ requests` holds per listener. Every site that increments `blocked`
+  is immediately preceded by a `requests` increment on the same path:
+  `https.rs:163`/`:172` (SNI verdict), `https.rs:287`/`:291` (no-SNI),
+  `intercept.rs:263`/`:287` (inner request on the terminate leg),
+  `proxy.rs:352`/`:376` (HTTP). The invariant holds by construction.
+  Independently, the D8 bench counters show the terminate leg counting
+  **per request, not per connection**: `https_handshake/intercepted`
+  `connections=3061 requests=6122` — exactly 2 × (one SNI verdict plus one
+  inner request per connection) — and `https_h2_download/intercepted`
+  `connections=1 requests=676` (one SNI verdict plus 675 h2 GETs). This file
+  already records the corrected invariant at §Post-review work A.
+
+**Stale text to fix, owner approval needed.** The claim survives in
+[p3-06-phase3-verification-plan.md](../../../plan/wip/phase3/p3-06-phase3-verification-plan.md)
+§Step 4.8 watch item (b), which still names the API.md edit as owed and still
+states `blocked > requests` is possible. That is the only place the stale
+wording remains; it is a plan-file edit, not a review-file one, so it is
+proposed rather than made.
