@@ -1,0 +1,72 @@
+{
+  "script": "p10-domains",
+  "started_at": "2026-09-08T18:24:56.675Z",
+  "finished_at": "2026-09-08T18:24:57.688Z",
+  "tip": "30b9bb912988-dirty",
+  "probe": "172.17.0.4",
+  "probe_version": "0.3.3",
+  "http_runtimes": 1,
+  "host": {
+    "platform": "win32",
+    "idle": false,
+    "network": [
+      "Ethernet                Public"
+    ],
+    "busy": [
+      "brave"
+    ]
+  },
+  "args": {
+    "probe": "172.17.0.4",
+    "api-port": 8443,
+    "key": "<set>",
+    "out": "campaign2/c48-N1-20260908T182456Z",
+    "tip": null,
+    "allow-busy": false,
+    "skip-host-checks": false,
+    "n": 1,
+    "arm": [
+      "close",
+      "mixed",
+      "tls-spliced",
+      "transfers"
+    ],
+    "origin": "192-168-10-10.nip.io",
+    "origin-http-port": 80,
+    "origin-https-port": 443,
+    "port": 8080,
+    "https-port": 8444,
+    "files": [
+      "1k.bin",
+      "10k.bin",
+      "50k.bin"
+    ],
+    "blocked": "analytics.google.com",
+    "ca": "campaign2/probe-ca.pem",
+    "intercepted-ssh": null,
+    "intercepted-ca": null,
+    "intercepted-oha": "oha",
+    "concurrency": 48,
+    "duration": 60,
+    "worker-threads": 6,
+    "ka-requests": 20,
+    "connrate-workers": 6,
+    "dns-qps": 300,
+    "dns-port": 53,
+    "single-path": "/100mb.bin",
+    "single-n": 5,
+    "par-path": "/10mb.bin",
+    "par-n": 40,
+    "par-c": 8,
+    "sample-interval": 2,
+    "tail-min": 0,
+    "transfers-tail-min": 0,
+    "driver": "auto",
+    "skip-issuer-sample": false,
+    "oha": "oha",
+    "max-fail-pct": 2
+  },
+  "valid": false,
+  "status": "INVALID",
+  "reason": "host not idle: brave running (plan §Running item 3); --allow-busy to proceed degraded"
+}

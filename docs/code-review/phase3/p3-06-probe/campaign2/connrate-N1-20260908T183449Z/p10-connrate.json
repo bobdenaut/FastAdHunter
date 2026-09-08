@@ -1,0 +1,46 @@
+{
+  "script": "p10-connrate",
+  "started_at": "2026-09-08T18:34:50.176Z",
+  "finished_at": "2026-09-08T18:34:50.935Z",
+  "tip": "30b9bb912988-dirty",
+  "probe": "172.17.0.4",
+  "probe_version": "0.3.3",
+  "http_runtimes": 1,
+  "host": {
+    "platform": "win32",
+    "idle": false,
+    "network": [
+      "Ethernet                Public"
+    ],
+    "busy": [
+      "brave"
+    ]
+  },
+  "args": {
+    "probe": "172.17.0.4",
+    "api-port": 8443,
+    "key": "<set>",
+    "out": "campaign2/connrate-N1-20260908T183449Z",
+    "tip": null,
+    "allow-busy": false,
+    "skip-host-checks": false,
+    "origin": "192-168-10-10.nip.io",
+    "port": 8080,
+    "https-port": 8444,
+    "tls": true,
+    "ca": "campaign2/probe-ca.pem",
+    "files": [
+      "1k.bin",
+      "10k.bin",
+      "50k.bin"
+    ],
+    "concurrency": 48,
+    "workers": 6,
+    "duration": 60,
+    "requests": 20,
+    "max-fail-pct": 2
+  },
+  "valid": false,
+  "status": "INVALID",
+  "reason": "host not idle: brave running (plan §Running item 3); --allow-busy to proceed degraded"
+}

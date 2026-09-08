@@ -371,18 +371,149 @@ needles, never status, which is why that is not a finding.
 The `--ca-key` precondition was satisfied with an owner-taken SFTP copy of
 `/config/ca-key.pem`, held outside the repository and deleted after the run.
 
+
+### P10 — the N sweep, and the ADR-0006 revisit criterion
+
+Two sweeps were run. **Only the second is a valid comparison.**
+
+#### Sweep A — underloaded, superseded
+
+`--concurrency 16 --worker-threads 4`, four N values, four arms each. Raw
+output in `p3-06-probe/campaign2/p10-N{0,1,2,4}-*/`.
+
+It reported N=0 and N=4 at roughly twice the throughput of N=1 and N=2, and
+was briefly read here as evidence against N=2. **That reading was wrong and is
+withdrawn.** The probe drew 0.78–1.00 cores across the whole sweep, against
+2.1–3.6 cores in the phase-2.6 rig that set N=2
+([alloc-domains-n-sweep.md](../phase2.6/alloc-domains-n-sweep.md) §Rig, client
+`connrate.py`, 6 processes × 8 threads = 48 concurrent). At roughly a third of
+the load the domain hand-off has no contention to amortise, so the shared
+runtime wins on raw rps. Sweep A also measured neither DNS-under-load nor
+CPU-per-request — two of the four axes that decided N=2 in the first place.
+
+Kept as raw evidence; **no figure from sweep A belongs in a verdict.**
+
+#### Sweep B — phase-2.6-comparable confirmation
+
+`--concurrency 48 --worker-threads 6`, 60 s per arm, arms
+`close,mixed,tls-spliced,transfers`, N ∈ {0, 1, 2}. Raw output in
+`p3-06-probe/campaign2/c48-N{0,1,2}-*/`. N=4 was not re-run: phase 2.6 already
+tested and rejected it (+33 % keep-alive rate for HTTP p95 of 49–53 ms against
+28 ms, and +45 MiB held after the burst), and nothing here challenges that.
+
+**The rig reproduces phase 2.6 at N=2**, which is what makes the rest of the
+table comparable:
+
+| | phase 2.6 | sweep B |
+| --- | --- | --- |
+| probe CPU at N=2 | 2.1–2.2 cores | **2.14 cores** |
+| DNS p50 under load at N=2 | 0.96 ms | **0.973 ms** |
+| CPU per request, N=2 vs N=0 | 23–26 % less | **28 % less** |
+
+| Axis | N=0 | N=1 | N=2 |
+| --- | --- | --- | --- |
+| close rps | 2077.2 **(degraded — see below)** | 922.8 | **1476.9** |
+| close p50 ms | 26.4 | 50.1 | **31.6** |
+| close p95 ms | 48.2 | 70.3 | **50.8** |
+| close p99 ms | 61.3 | 80.0 | **62.5** |
+| probe cores, close | 3.08 | **1.18** | 2.14 |
+| CPU ms per request | 2.016 | **1.284** | 1.454 |
+| ΔRSS max, close (MiB) | 13.62 | 8.48 | **7.88** |
+| DNS p50 under load (ms) | 0.955 | 1.172 | **0.973** |
+| DNS p95 under load (ms) | 14.775 | **12.756** | 12.982 |
+| DNS p99 under load (ms) | 21.625 | 17.969 | **17.261** |
+| DNS timeouts | 0 | 0 | 0 |
+| 502s, all arms | 0 | 0 | 0 |
+| **client-side failures, close arm** | **33 004** | 48 | 43 |
+
+**N=0's rps is not a throughput result.** Its close arm logged 33 004
+client-side failures against 43–48 for N=1 and N=2 — Windows ephemeral-port
+exhaustion on the driving host, at 10 680 TIME_WAIT and rising. A rate
+measured while a third of the attempts never reached the listener is
+diagnostic, not comparable. Its CPU figure is still usable, and it is the
+figure that matters: **3.08 cores against N=2's 2.14, for work that was
+partly not performed.**
+
+#### The keep-alive arm — `p10-connrate`
+
+`oha` cannot express 20 requests per connection with the last carrying
+`Connection: close`, and phase 2.6's decision rested partly on keep-alive rate.
+Run separately at the same rig settings — concurrency 48, 6 workers, 20
+requests per connection, 60 s, plaintext through `:8080`.
+
+| N | requests/s | connections/s | p50 ms | p95 ms | p99 ms | errors |
+| --- | --- | --- | --- | --- | --- | --- |
+| 1 | 1112.8 | 56.0 | 41.537 | 56.634 | 63.952 | **0** |
+| 2 | **1829.4** | **91.9** | **25.201** | 52.544 | 60.780 | **0** |
+
+Both runs are clean — zero errors, so unlike the `close` arm at N=0 these are
+directly comparable. N=2 carries **64 % more requests/s and 64 % more
+connections/s at 40 % lower p50**. This is an independent confirmation of N=2
+over N=1, on the axis the `close` arm does not cover.
+
+N=0 was not run on this arm: the owner closed the sweep once N=2 was confirmed
+(2026-09-08).
+
+**The TLS half of this arm did not produce a figure.** It was invoked with
+`--ca probe-ca.pem`, which asserts the FastAdHunter CA issued the served
+certificate — the *terminate* leg. With `https.interception.clients` empty the
+probe splices, so the origin's own self-signed certificate is served and every
+attempt failed `DEPTH_ZERO_SELF_SIGNED_CERT` (15 216), with 84 435
+`EADDRINUSE` on top. Operator error in the flag, not a probe fault; the
+correct invocation on the spliced path passes the origin's certificate. Owed,
+and it does not affect the N verdict, which rests on the plaintext rows.
+
+#### Verdict
+
+1. **N=1 is rejected.** It is the cheapest per request (1.284 ms against
+   1.454) but does not carry the workload: 37 % less throughput and
+   **p95 70.3 ms against 50.8 ms**. The owner's criterion is the smallest N
+   that carries the tested workload *and* keeps HTTP p95 in bounds; N=1 fails
+   the second clause. This closes a gap — phase 2.6 swept {0, 2, 3, 4} and
+   never tested N=1.
+2. **N=2 is the smallest N that satisfies the workload and latency criteria.**
+   The keep-alive arm agrees independently: 1829.4 req/s and 91.9 conn/s at
+   N=2 against 1112.8 and 56.0 at N=1, both with zero errors.
+3. **N=0's apparent throughput advantage is not a valid comparison** — see the
+   client-failure qualification above — and it consumed materially more CPU:
+   3.08 cores against 2.14, and 2.016 ms per request against 1.454.
+4. **N=2 is confirmed under phase-2.6-comparable load.**
+5. **ADR-0006 stands unchanged. Production remains N=2.**
+
+DNS never degraded at any N: 300 qps sustained, 0 timeouts, p50 between 0.955
+and 1.172 ms. The `transfers` arm held ΔRSS at 0–0.8 MiB across 900 MiB
+relayed at every N — bounded memory holds on target hardware regardless of N.
+
+#### What this sweep does not establish
+
+- **Absolute throughput.** The origin (`static-web-server` 2.44.0) and the
+  `oha` client share the dev box, and the client hit port exhaustion on every
+  arm. Arm-to-arm at a fixed N is fair; the numbers are not a capacity figure
+  for the RB5009.
+- **N=3.** Untested here; phase 2.6 covers it.
+- **The `mixed` and `tls-spliced` arms at N=0 and N=2**, which logged 43k–120k
+  client failures. Only the `close` arm is clean enough to compare across N,
+  which is why the table is built from it.
+
 ### Not run in this session
 
 | Arm | Blocker |
 | --- | --- |
-| P1-LAN, P1-control | needs an origin under a publicly resolvable name; the Mac is Wi-Fi only this session — see below |
+| P1-LAN, P1-control | needs an origin under a publicly resolvable name on a **second** host; the origin currently shares the dev box with the client, which P1 cannot use |
 | P3 | needs a **publicly trusted** h2 origin; still owed, unchanged since smoke Layer 3 |
-| P10 | needs `static-web-server` as origin, and it sweeps N — so it runs before any other arm at a settled N |
 | P2 | runs on the Mac; preconditions not yet met |
 | D11, `fah-splicebench`, `fah-certs`, `fah-p4` | the three one-shot containers; each needs the probe stopped, since one veth carries one container at a time |
 
-**Wi-Fi delta, owner decision 2026-09-08.** The Mac has no wired path — no
-USB-C, so the adapter cannot be used. P1/P2/P3 will run over Wi-Fi. This is
+**The Mac is out of the rig this session, owner decision 2026-09-08.** It has
+no wired path (no USB-C, so the adapter cannot be used), Homebrew could not
+write to `/usr/local`, and Remote Login could not be enabled without Full Disk
+Access — so no ssh and no scriptable origin. P10 therefore ran with
+`static-web-server` 2.44.0 on the dev box at `192.168.10.10`, reached through
+`192-168-10-10.nip.io` and the `192.168.10.10/32` egress exception, the same
+arrangement phase 2.6 used. The Mac is still required for P2, which must run
+*on* the second endpoint.
+
+**Wi-Fi delta, if the Mac is used later.** P1/P2/P3 would run over Wi-Fi. This is
 tolerable for P1 because its gate is already **relative** (median ≥ 0.9 ×
 control median) and the absolute row was withdrawn as unmeasurable on this
 topology; both arms cross the same air, so the ratio largely survives. It is

@@ -41,3 +41,8 @@ dashboard/frontend/dist/
 # is the store — CA key, API key, session secret — and is never committed; the
 # layer directories beside it are committed evidence and stay tracked.
 docs/code-review/**/smoke-*/work/
+
+# p3-06 campaign 2: the P10 origin. origin-root/ is ~115 MB of random test
+# objects, regenerable in seconds; origin.key is the origin's private key.
+docs/code-review/**/campaign2/origin-root/
+docs/code-review/**/campaign2/origin.key

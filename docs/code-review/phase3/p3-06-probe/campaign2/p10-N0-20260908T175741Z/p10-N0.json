@@ -1,0 +1,2070 @@
+{
+  "script": "p10-domains",
+  "started_at": "2026-09-08T17:57:41.502Z",
+  "finished_at": "2026-09-08T18:02:05.202Z",
+  "tip": "30b9bb912988-dirty",
+  "probe": "172.17.0.4",
+  "probe_version": "0.3.3",
+  "http_runtimes": 0,
+  "host": {
+    "platform": "win32",
+    "idle": true,
+    "network": [
+      "Ethernet                Public"
+    ],
+    "busy": []
+  },
+  "args": {
+    "probe": "172.17.0.4",
+    "api-port": 8443,
+    "key": "<set>",
+    "out": "campaign2/p10-N0-20260908T175741Z",
+    "tip": null,
+    "allow-busy": false,
+    "skip-host-checks": false,
+    "n": 0,
+    "arm": [
+      "close",
+      "mixed",
+      "tls-spliced",
+      "transfers"
+    ],
+    "origin": "192-168-10-10.nip.io",
+    "origin-http-port": 80,
+    "origin-https-port": 443,
+    "port": 8080,
+    "https-port": 8444,
+    "files": [
+      "1k.bin",
+      "10k.bin",
+      "50k.bin"
+    ],
+    "blocked": "analytics.google.com",
+    "ca": "campaign2/probe-ca.pem",
+    "intercepted-ssh": null,
+    "intercepted-ca": null,
+    "intercepted-oha": "oha",
+    "concurrency": 16,
+    "duration": 60,
+    "worker-threads": 4,
+    "ka-requests": 20,
+    "connrate-workers": 6,
+    "dns-qps": 300,
+    "dns-port": 53,
+    "single-path": "/100mb.bin",
+    "single-n": 5,
+    "par-path": "/10mb.bin",
+    "par-n": 40,
+    "par-c": 8,
+    "sample-interval": 2,
+    "tail-min": 0,
+    "transfers-tail-min": 0,
+    "driver": "auto",
+    "skip-issuer-sample": false,
+    "oha": "oha",
+    "max-fail-pct": 2
+  },
+  "valid": true,
+  "status": "degraded",
+  "degraded_reasons": [
+    "10590 TIME_WAIT sockets on this host — the client closed first somewhere; Windows port exhaustion caps the loop near 130 conn/s (§Traps)",
+    "15085 TIME_WAIT sockets on this host — the client closed first somewhere; Windows port exhaustion caps the loop near 130 conn/s (§Traps)",
+    "mixed-http: 67.88 % of 97519 attempts failed or non-2xx (budget 2 %; 0 × 502 — a toy origin refuses upstream connects)",
+    "15301 TIME_WAIT sockets on this host — the client closed first somewhere; Windows port exhaustion caps the loop near 130 conn/s (§Traps)",
+    "tls-spliced: 51.14 % of 81682 attempts failed or non-2xx (budget 2 %; 0 × 502 — a toy origin refuses upstream connects)",
+    "10527 TIME_WAIT sockets on this host — the client closed first somewhere; Windows port exhaustion caps the loop near 130 conn/s (§Traps)"
+  ],
+  "measurement": "P10",
+  "n": 0,
+  "oha_version": "1.16.0",
+  "oha_version_remote": null,
+  "worker_threads": 4,
+  "concurrency": 16,
+  "duration_s": 60,
+  "origin": "192-168-10-10.nip.io",
+  "blocked": "analytics.google.com",
+  "intercepted_host": "local",
+  "arms": {
+    "close": {
+      "arm": "close",
+      "status": "valid",
+      "driver": "oha",
+      "http": {
+        "ok": true,
+        "requests": 54713,
+        "failed": 19,
+        "non_2xx": 0,
+        "count_502": 0,
+        "rps": 912,
+        "attempts_per_s": 912,
+        "success_rate": 0.9999086223911693,
+        "duration_s": 60.01,
+        "bytes": 1141744640,
+        "size_per_sec_mib": 18.14,
+        "latency_ms": {
+          "p50": 15.934,
+          "p95": 33.419,
+          "p99": 44.604,
+          "mean": 17.535,
+          "max": 903.928
+        },
+        "first_byte_ms": {
+          "p50": 15.412,
+          "p95": 32.41,
+          "p99": 42.605
+        },
+        "rps_percentiles": {
+          "p50": 989.5,
+          "p95": 1878.9,
+          "p99": 5962.1
+        },
+        "dns_dialup_ms": {
+          "average": 3.355,
+          "fastest": 0.172,
+          "slowest": 37.108
+        },
+        "status": {
+          "200": 54713
+        },
+        "error_distribution": {
+          "Only one usage of each socket address (protocol/network address/port) is normally permitted. (os error 10048)": 5,
+          "aborted due to deadline": 14
+        },
+        "wall_s": 60.1,
+        "file": "campaign2\\p10-N0-20260908T175741Z\\oha-close-http.json"
+      },
+      "dns": null,
+      "metrics": {
+        "wall_s": 60.1,
+        "cpu_ms": 115202,
+        "cores": 1.92,
+        "cpu_ms_per_request": 2.106,
+        "rss_floor_mib": 21.29,
+        "rss_end_mib": 28.9,
+        "delta_rss_end_mib": 7.62,
+        "delta_rss_max_mib": 14.72,
+        "samples_during": 29
+      },
+      "telemetry_delta": {
+        "http": {
+          "connections": 54726,
+          "requests": 54726,
+          "blocked": 0,
+          "refused_claim": 0,
+          "refused_destination": 0,
+          "resolve_failures": 0,
+          "upstream_failures": 0,
+          "upstream_cert_failures": 0,
+          "non_http": 0,
+          "non_tls": 0,
+          "hello_timeouts": 0,
+          "dropped_events": 0
+        },
+        "https": {
+          "connections": 0,
+          "requests": 0,
+          "blocked": 0,
+          "refused_claim": 0,
+          "refused_destination": 0,
+          "resolve_failures": 0,
+          "upstream_failures": 0,
+          "upstream_cert_failures": 0,
+          "non_http": 0,
+          "non_tls": 0,
+          "hello_timeouts": 0,
+          "dropped_events": 0
+        }
+      },
+      "leaf_cache_delta": null,
+      "time_wait": 10590,
+      "tail": null
+    },
+    "mixed": {
+      "arm": "mixed",
+      "status": "valid",
+      "driver": "oha",
+      "http": {
+        "ok": true,
+        "requests": 31327,
+        "failed": 66192,
+        "non_2xx": 0,
+        "count_502": 0,
+        "rps": 1625.2,
+        "attempts_per_s": 1625.2,
+        "success_rate": 0.3212926781740049,
+        "duration_s": 60,
+        "bytes": 657374208,
+        "size_per_sec_mib": 10.45,
+        "latency_ms": {
+          "p50": 17.039,
+          "p95": 36.304,
+          "p99": 44.112,
+          "mean": 18.974,
+          "max": 1028.744
+        },
+        "first_byte_ms": {
+          "p50": 16.007,
+          "p95": 32.245,
+          "p99": 40.571
+        },
+        "rps_percentiles": {
+          "p50": 422.1,
+          "p95": 1743.9,
+          "p99": 3142.1
+        },
+        "dns_dialup_ms": {
+          "average": 3.599,
+          "fastest": 0.195,
+          "slowest": 1019.461
+        },
+        "status": {
+          "200": 31327
+        },
+        "error_distribution": {
+          "Only one usage of each socket address (protocol/network address/port) is normally permitted. (os error 10048)": 66176,
+          "aborted due to deadline": 16
+        },
+        "wall_s": 60,
+        "file": "campaign2\\p10-N0-20260908T175741Z\\oha-mixed-http.json"
+      },
+      "dns": {
+        "qps_target": 300,
+        "qps": 300,
+        "duration_s": 60,
+        "planned": 18000,
+        "sent": 18000,
+        "answered": 18000,
+        "timeouts": 0,
+        "unmatched": 0,
+        "errors": 0,
+        "still_outstanding": 0,
+        "rcode": {
+          "0": 17278,
+          "3": 722
+        },
+        "lat_ms": {
+          "p50": 1.087,
+          "p95": 13.145,
+          "p99": 17.948
+        },
+        "by_class_ms": {
+          "cached": {
+            "n": 9016,
+            "p50": 0.754,
+            "p99": 4.186
+          },
+          "blocked": {
+            "n": 3627,
+            "p50": 0.761,
+            "p99": 3.98,
+            "answered_0000": 747,
+            "answered_0000_share": 0.206
+          },
+          "uncached": {
+            "n": 5357,
+            "p50": 10.319,
+            "p99": 22.499
+          }
+        },
+        "mix": {
+          "cached": 0.5,
+          "blocked": 0.2,
+          "uncached": 0.3
+        },
+        "warmed": true
+      },
+      "metrics": {
+        "wall_s": 60,
+        "cpu_ms": 75040,
+        "cores": 1.25,
+        "cpu_ms_per_request": 2.395,
+        "rss_floor_mib": 28.94,
+        "rss_end_mib": 32.18,
+        "delta_rss_end_mib": 3.24,
+        "delta_rss_max_mib": 7.07,
+        "samples_during": 29
+      },
+      "telemetry_delta": {
+        "http": {
+          "connections": 31342,
+          "requests": 31337,
+          "blocked": 0,
+          "refused_claim": 0,
+          "refused_destination": 0,
+          "resolve_failures": 0,
+          "upstream_failures": 0,
+          "upstream_cert_failures": 0,
+          "non_http": 0,
+          "non_tls": 0,
+          "hello_timeouts": 0,
+          "dropped_events": 0
+        },
+        "https": {
+          "connections": 0,
+          "requests": 0,
+          "blocked": 0,
+          "refused_claim": 0,
+          "refused_destination": 0,
+          "resolve_failures": 0,
+          "upstream_failures": 0,
+          "upstream_cert_failures": 0,
+          "non_http": 0,
+          "non_tls": 0,
+          "hello_timeouts": 0,
+          "dropped_events": 0
+        }
+      },
+      "leaf_cache_delta": null,
+      "time_wait": 15085,
+      "tail": null
+    },
+    "tls-spliced": {
+      "arm": "tls-spliced",
+      "status": "valid",
+      "reason": null,
+      "driver": "oha",
+      "name": "192-168-10-10.nip.io",
+      "http": {
+        "ok": true,
+        "requests": 39907,
+        "failed": 41775,
+        "non_2xx": 0,
+        "count_502": 0,
+        "rps": 1361,
+        "attempts_per_s": 1361,
+        "success_rate": 0.4886431816233822,
+        "duration_s": 60.02,
+        "bytes": 40864768,
+        "size_per_sec_mib": 0.65,
+        "latency_ms": {
+          "p50": 18.574,
+          "p95": 42.434,
+          "p99": 54.695,
+          "mean": 20.416,
+          "max": 1033.108
+        },
+        "first_byte_ms": {
+          "p50": 18.574,
+          "p95": 42.434,
+          "p99": 54.694
+        },
+        "rps_percentiles": {
+          "p50": 666.8,
+          "p95": 1659.9,
+          "p99": 2378.1
+        },
+        "dns_dialup_ms": {
+          "average": 15.287,
+          "fastest": 4.055,
+          "slowest": 1019.794
+        },
+        "status": {
+          "200": 39907
+        },
+        "error_distribution": {
+          "Only one usage of each socket address (protocol/network address/port) is normally permitted. (os error 10048)": 41762,
+          "aborted due to deadline": 13
+        },
+        "wall_s": 60.1,
+        "file": "campaign2\\p10-N0-20260908T175741Z\\oha-tls-spliced.json"
+      },
+      "issuer": {
+        "before": {
+          "issuerCN": "192-168-10-10.nip.io",
+          "subjectCN": "192-168-10-10.nip.io",
+          "tls": "TLSv1.3",
+          "host": "local",
+          "leg": "spliced",
+          "expected": "spliced",
+          "matches": true
+        },
+        "after": {
+          "issuerCN": "192-168-10-10.nip.io",
+          "subjectCN": "192-168-10-10.nip.io",
+          "tls": "TLSv1.3",
+          "host": "local",
+          "leg": "spliced",
+          "expected": "spliced",
+          "matches": true
+        }
+      },
+      "metrics": {
+        "wall_s": 60.1,
+        "cpu_ms": 93438,
+        "cores": 1.56,
+        "cpu_ms_per_request": 2.341,
+        "rss_floor_mib": 32.22,
+        "rss_end_mib": 30.71,
+        "delta_rss_end_mib": -1.5,
+        "delta_rss_max_mib": -1.27,
+        "samples_during": 29
+      },
+      "telemetry_delta": {
+        "http": {
+          "connections": 0,
+          "requests": 0,
+          "blocked": 0,
+          "refused_claim": 0,
+          "refused_destination": 0,
+          "resolve_failures": 0,
+          "upstream_failures": 0,
+          "upstream_cert_failures": 0,
+          "non_http": 0,
+          "non_tls": 0,
+          "hello_timeouts": 0,
+          "dropped_events": 0
+        },
+        "https": {
+          "connections": 39916,
+          "requests": 39916,
+          "blocked": 0,
+          "refused_claim": 0,
+          "refused_destination": 0,
+          "resolve_failures": 0,
+          "upstream_failures": 0,
+          "upstream_cert_failures": 0,
+          "non_http": 0,
+          "non_tls": 0,
+          "hello_timeouts": 0,
+          "dropped_events": 0
+        }
+      },
+      "leaf_cache_delta": {
+        "size": 0,
+        "capacity": 0,
+        "inflight": 0,
+        "hits": 0,
+        "unwarmed_misses": 0,
+        "prewarm_hits": 0,
+        "coalesced": 0,
+        "minted_total": 0,
+        "evictions": 0,
+        "superseded": 0
+      },
+      "time_wait": 15301,
+      "tail": null
+    },
+    "tls-spliced-blocked": {
+      "arm": "tls-spliced-blocked",
+      "status": "valid",
+      "reason": null,
+      "driver": "oha",
+      "name": "analytics.google.com",
+      "http": {
+        "ok": true,
+        "requests": 0,
+        "failed": 254114,
+        "non_2xx": 0,
+        "count_502": 0,
+        "rps": 4234.6,
+        "attempts_per_s": 4234.6,
+        "success_rate": 0,
+        "duration_s": 60.01,
+        "bytes": 0,
+        "size_per_sec_mib": 0,
+        "latency_ms": {
+          "p50": null,
+          "p95": null,
+          "p99": null,
+          "mean": null,
+          "max": null
+        },
+        "first_byte_ms": {
+          "p50": null,
+          "p95": null,
+          "p99": null
+        },
+        "rps_percentiles": {
+          "p50": null,
+          "p95": null,
+          "p99": null
+        },
+        "dns_dialup_ms": {
+          "average": null,
+          "fastest": null,
+          "slowest": null
+        },
+        "status": {},
+        "error_distribution": {
+          "Only one usage of each socket address (protocol/network address/port) is normally permitted. (os error 10048)": 114,
+          "aborted due to deadline": 14,
+          "tls handshake eof": 253986
+        },
+        "wall_s": 60,
+        "file": "campaign2\\p10-N0-20260908T175741Z\\oha-tls-spliced-blocked.json"
+      },
+      "issuer": {
+        "before": {
+          "issuerCN": null,
+          "error": "ECONNRESET",
+          "host": "local",
+          "leg": null,
+          "expected": "spliced",
+          "matches": false
+        },
+        "after": null
+      },
+      "metrics": {
+        "wall_s": 60,
+        "cpu_ms": 96819,
+        "cores": 1.61,
+        "cpu_ms_per_request": null,
+        "rss_floor_mib": 30.73,
+        "rss_end_mib": 30.21,
+        "delta_rss_end_mib": -0.52,
+        "delta_rss_max_mib": -0.18,
+        "samples_during": 29
+      },
+      "telemetry_delta": {
+        "http": {
+          "connections": 0,
+          "requests": 0,
+          "blocked": 0,
+          "refused_claim": 0,
+          "refused_destination": 0,
+          "resolve_failures": 0,
+          "upstream_failures": 0,
+          "upstream_cert_failures": 0,
+          "non_http": 0,
+          "non_tls": 0,
+          "hello_timeouts": 0,
+          "dropped_events": 0
+        },
+        "https": {
+          "connections": 253998,
+          "requests": 253995,
+          "blocked": 253995,
+          "refused_claim": 0,
+          "refused_destination": 0,
+          "resolve_failures": 0,
+          "upstream_failures": 0,
+          "upstream_cert_failures": 0,
+          "non_http": 0,
+          "non_tls": 0,
+          "hello_timeouts": 3,
+          "dropped_events": 0
+        }
+      },
+      "leaf_cache_delta": null,
+      "time_wait": 10527,
+      "tail": null
+    },
+    "transfers": {
+      "arm": "transfers",
+      "status": "valid",
+      "reason": null,
+      "driver": "oha",
+      "note": "sizePerSec includes connect, handshake and teardown — a cross-check figure, not the P1 row (plan §Load generators)",
+      "spliced": {
+        "single": {
+          "ok": true,
+          "requests": 5,
+          "failed": 0,
+          "non_2xx": 0,
+          "count_502": 0,
+          "rps": 0.7,
+          "attempts_per_s": 0.7,
+          "success_rate": 1,
+          "duration_s": 7.42,
+          "bytes": 524288000,
+          "size_per_sec_mib": 67.41,
+          "latency_ms": {
+            "p50": 1496.742,
+            "p95": 1619.653,
+            "p99": 1619.653,
+            "mean": 1483.393,
+            "max": 1619.653
+          },
+          "first_byte_ms": {
+            "p50": 24.1,
+            "p95": 45.334,
+            "p99": 45.334
+          },
+          "rps_percentiles": {
+            "p50": 0.7,
+            "p95": 0.8,
+            "p99": 0.8
+          },
+          "dns_dialup_ms": {
+            "average": 24.034,
+            "fastest": 16.389,
+            "slowest": 42.762
+          },
+          "status": {
+            "200": 5
+          },
+          "error_distribution": {},
+          "wall_s": 7.4,
+          "file": "campaign2\\p10-N0-20260908T175741Z\\oha-transfers-single-spliced.json"
+        },
+        "parallel": {
+          "ok": true,
+          "requests": 40,
+          "failed": 0,
+          "non_2xx": 0,
+          "count_502": 0,
+          "rps": 8,
+          "attempts_per_s": 8,
+          "success_rate": 1,
+          "duration_s": 5.03,
+          "bytes": 419430400,
+          "size_per_sec_mib": 79.56,
+          "latency_ms": {
+            "p50": 942.751,
+            "p95": 1708.438,
+            "p99": 1909.484,
+            "mean": 962.982,
+            "max": 1909.484
+          },
+          "first_byte_ms": {
+            "p50": 48.074,
+            "p95": 120.907,
+            "p99": 297.328
+          },
+          "rps_percentiles": {
+            "p50": 14.5,
+            "p95": 426.2,
+            "p99": 1416.2
+          },
+          "dns_dialup_ms": {
+            "average": 36.531,
+            "fastest": 9.548,
+            "slowest": 86.612
+          },
+          "status": {
+            "200": 40
+          },
+          "error_distribution": {},
+          "wall_s": 5.1,
+          "file": "campaign2\\p10-N0-20260908T175741Z\\oha-transfers-par-spliced.json"
+        }
+      },
+      "control": {
+        "single": {
+          "ok": true,
+          "requests": 5,
+          "failed": 0,
+          "non_2xx": 0,
+          "count_502": 0,
+          "rps": 12,
+          "attempts_per_s": 12,
+          "success_rate": 1,
+          "duration_s": 0.42,
+          "bytes": 524288000,
+          "size_per_sec_mib": 1199.65,
+          "latency_ms": {
+            "p50": 80.014,
+            "p95": 99.333,
+            "p99": 99.333,
+            "mean": 83.295,
+            "max": 99.333
+          },
+          "first_byte_ms": {
+            "p50": 18.359,
+            "p95": 22.89,
+            "p99": 22.89
+          },
+          "rps_percentiles": {
+            "p50": 12.5,
+            "p95": 15.4,
+            "p99": 15.4
+          },
+          "dns_dialup_ms": {
+            "average": 12.05,
+            "fastest": 0.975,
+            "slowest": 22.281
+          },
+          "status": {
+            "200": 5
+          },
+          "error_distribution": {},
+          "wall_s": 0.4,
+          "file": "campaign2\\p10-N0-20260908T175741Z\\oha-transfers-single-control.json"
+        },
+        "parallel": {
+          "ok": true,
+          "requests": 40,
+          "failed": 0,
+          "non_2xx": 0,
+          "count_502": 0,
+          "rps": 254.8,
+          "attempts_per_s": 254.8,
+          "success_rate": 1,
+          "duration_s": 0.16,
+          "bytes": 419430400,
+          "size_per_sec_mib": 2548.18,
+          "latency_ms": {
+            "p50": 29.189,
+            "p95": 55.937,
+            "p99": 57.745,
+            "mean": 29.468,
+            "max": 57.745
+          },
+          "first_byte_ms": {
+            "p50": 10.651,
+            "p95": 30.411,
+            "p99": 30.91
+          },
+          "rps_percentiles": {
+            "p50": 361.1,
+            "p95": 744.7,
+            "p99": 744.7
+          },
+          "dns_dialup_ms": {
+            "average": 9.955,
+            "fastest": 0.552,
+            "slowest": 29.007
+          },
+          "status": {
+            "200": 40
+          },
+          "error_distribution": {},
+          "wall_s": 0.2,
+          "file": "campaign2\\p10-N0-20260908T175741Z\\oha-transfers-par-control.json"
+        }
+      },
+      "spliced_over_control": {
+        "single": 0.056,
+        "parallel": 0.031
+      },
+      "relayed_mib": 900,
+      "cores_per_900_mib": 12.55,
+      "issuer": {
+        "before": {
+          "issuerCN": "192-168-10-10.nip.io",
+          "subjectCN": "192-168-10-10.nip.io",
+          "tls": "TLSv1.3",
+          "host": "local",
+          "leg": "spliced",
+          "expected": "spliced",
+          "matches": true
+        },
+        "after": {
+          "issuerCN": "192-168-10-10.nip.io",
+          "subjectCN": "192-168-10-10.nip.io",
+          "tls": "TLSv1.3",
+          "host": "local",
+          "leg": "spliced",
+          "expected": "spliced",
+          "matches": true
+        }
+      },
+      "metrics": {
+        "wall_s": 12.5,
+        "cpu_ms": 12548,
+        "cores": 1,
+        "cpu_ms_per_request": 278.844,
+        "rss_floor_mib": 30.21,
+        "rss_end_mib": 30.43,
+        "delta_rss_end_mib": 0.21,
+        "delta_rss_max_mib": 0.18,
+        "samples_during": 6
+      },
+      "telemetry_delta": {
+        "http": {
+          "connections": 0,
+          "requests": 0,
+          "blocked": 0,
+          "refused_claim": 0,
+          "refused_destination": 0,
+          "resolve_failures": 0,
+          "upstream_failures": 0,
+          "upstream_cert_failures": 0,
+          "non_http": 0,
+          "non_tls": 0,
+          "hello_timeouts": 0,
+          "dropped_events": 0
+        },
+        "https": {
+          "connections": 45,
+          "requests": 45,
+          "blocked": 0,
+          "refused_claim": 0,
+          "refused_destination": 0,
+          "resolve_failures": 0,
+          "upstream_failures": 0,
+          "upstream_cert_failures": 0,
+          "non_http": 0,
+          "non_tls": 0,
+          "hello_timeouts": 0,
+          "dropped_events": 0
+        }
+      },
+      "leaf_cache_delta": {
+        "size": 0,
+        "capacity": 0,
+        "inflight": 0,
+        "hits": 0,
+        "unwarmed_misses": 0,
+        "prewarm_hits": 0,
+        "coalesced": 0,
+        "minted_total": 0,
+        "evictions": 0,
+        "superseded": 0
+      },
+      "time_wait": 7431,
+      "tail": null
+    }
+  },
+  "samples": [
+    {
+      "t": "2026-09-08T17:57:42.437Z",
+      "arm": "close",
+      "label": "before",
+      "status": 200,
+      "process_rss": 22319104,
+      "cpu_user_ms": 441,
+      "cpu_system_ms": 31
+    },
+    {
+      "t": "2026-09-08T17:57:44.478Z",
+      "arm": "close",
+      "label": "during",
+      "status": 200,
+      "process_rss": 37752832,
+      "cpu_user_ms": 1272,
+      "cpu_system_ms": 3049
+    },
+    {
+      "t": "2026-09-08T17:57:46.488Z",
+      "arm": "close",
+      "label": "during",
+      "status": 200,
+      "process_rss": 32010240,
+      "cpu_user_ms": 2384,
+      "cpu_system_ms": 5907
+    },
+    {
+      "t": "2026-09-08T17:57:48.487Z",
+      "arm": "close",
+      "label": "during",
+      "status": 200,
+      "process_rss": 33067008,
+      "cpu_user_ms": 3278,
+      "cpu_system_ms": 8826
+    },
+    {
+      "t": "2026-09-08T17:57:50.500Z",
+      "arm": "close",
+      "label": "during",
+      "status": 200,
+      "process_rss": 30314496,
+      "cpu_user_ms": 4228,
+      "cpu_system_ms": 11676
+    },
+    {
+      "t": "2026-09-08T17:57:52.510Z",
+      "arm": "close",
+      "label": "during",
+      "status": 200,
+      "process_rss": 32604160,
+      "cpu_user_ms": 5021,
+      "cpu_system_ms": 14774
+    },
+    {
+      "t": "2026-09-08T17:57:54.501Z",
+      "arm": "close",
+      "label": "during",
+      "status": 200,
+      "process_rss": 30965760,
+      "cpu_user_ms": 5932,
+      "cpu_system_ms": 17827
+    },
+    {
+      "t": "2026-09-08T17:57:56.512Z",
+      "arm": "close",
+      "label": "during",
+      "status": 200,
+      "process_rss": 32583680,
+      "cpu_user_ms": 6855,
+      "cpu_system_ms": 20799
+    },
+    {
+      "t": "2026-09-08T17:57:58.523Z",
+      "arm": "close",
+      "label": "during",
+      "status": 200,
+      "process_rss": 29941760,
+      "cpu_user_ms": 7688,
+      "cpu_system_ms": 23607
+    },
+    {
+      "t": "2026-09-08T17:58:00.525Z",
+      "arm": "close",
+      "label": "during",
+      "status": 200,
+      "process_rss": 37142528,
+      "cpu_user_ms": 8630,
+      "cpu_system_ms": 26685
+    },
+    {
+      "t": "2026-09-08T17:58:02.543Z",
+      "arm": "close",
+      "label": "during",
+      "status": 200,
+      "process_rss": 34750464,
+      "cpu_user_ms": 9522,
+      "cpu_system_ms": 29613
+    },
+    {
+      "t": "2026-09-08T17:58:04.538Z",
+      "arm": "close",
+      "label": "during",
+      "status": 200,
+      "process_rss": 29667328,
+      "cpu_user_ms": 10489,
+      "cpu_system_ms": 32524
+    },
+    {
+      "t": "2026-09-08T17:58:06.572Z",
+      "arm": "close",
+      "label": "during",
+      "status": 200,
+      "process_rss": 30859264,
+      "cpu_user_ms": 11326,
+      "cpu_system_ms": 35652
+    },
+    {
+      "t": "2026-09-08T17:58:08.554Z",
+      "arm": "close",
+      "label": "during",
+      "status": 200,
+      "process_rss": 28336128,
+      "cpu_user_ms": 12402,
+      "cpu_system_ms": 38260
+    },
+    {
+      "t": "2026-09-08T17:58:10.571Z",
+      "arm": "close",
+      "label": "during",
+      "status": 200,
+      "process_rss": 35303424,
+      "cpu_user_ms": 13146,
+      "cpu_system_ms": 41661
+    },
+    {
+      "t": "2026-09-08T17:58:12.581Z",
+      "arm": "close",
+      "label": "during",
+      "status": 200,
+      "process_rss": 32260096,
+      "cpu_user_ms": 14146,
+      "cpu_system_ms": 44590
+    },
+    {
+      "t": "2026-09-08T17:58:14.586Z",
+      "arm": "close",
+      "label": "during",
+      "status": 200,
+      "process_rss": 29896704,
+      "cpu_user_ms": 14946,
+      "cpu_system_ms": 47614
+    },
+    {
+      "t": "2026-09-08T17:58:16.585Z",
+      "arm": "close",
+      "label": "during",
+      "status": 200,
+      "process_rss": 30871552,
+      "cpu_user_ms": 15852,
+      "cpu_system_ms": 50510
+    },
+    {
+      "t": "2026-09-08T17:58:18.595Z",
+      "arm": "close",
+      "label": "during",
+      "status": 200,
+      "process_rss": 32530432,
+      "cpu_user_ms": 16670,
+      "cpu_system_ms": 53447
+    },
+    {
+      "t": "2026-09-08T17:58:20.599Z",
+      "arm": "close",
+      "label": "during",
+      "status": 200,
+      "process_rss": 35356672,
+      "cpu_user_ms": 17552,
+      "cpu_system_ms": 56386
+    },
+    {
+      "t": "2026-09-08T17:58:22.607Z",
+      "arm": "close",
+      "label": "during",
+      "status": 200,
+      "process_rss": 28700672,
+      "cpu_user_ms": 18577,
+      "cpu_system_ms": 59253
+    },
+    {
+      "t": "2026-09-08T17:58:24.610Z",
+      "arm": "close",
+      "label": "during",
+      "status": 200,
+      "process_rss": 28114944,
+      "cpu_user_ms": 19636,
+      "cpu_system_ms": 61964
+    },
+    {
+      "t": "2026-09-08T17:58:26.615Z",
+      "arm": "close",
+      "label": "during",
+      "status": 200,
+      "process_rss": 30932992,
+      "cpu_user_ms": 20651,
+      "cpu_system_ms": 64825
+    },
+    {
+      "t": "2026-09-08T17:58:28.626Z",
+      "arm": "close",
+      "label": "during",
+      "status": 200,
+      "process_rss": 28913664,
+      "cpu_user_ms": 21630,
+      "cpu_system_ms": 67410
+    },
+    {
+      "t": "2026-09-08T17:58:30.630Z",
+      "arm": "close",
+      "label": "during",
+      "status": 200,
+      "process_rss": 33210368,
+      "cpu_user_ms": 22629,
+      "cpu_system_ms": 70264
+    },
+    {
+      "t": "2026-09-08T17:58:32.642Z",
+      "arm": "close",
+      "label": "during",
+      "status": 200,
+      "process_rss": 30199808,
+      "cpu_user_ms": 23476,
+      "cpu_system_ms": 73093
+    },
+    {
+      "t": "2026-09-08T17:58:34.648Z",
+      "arm": "close",
+      "label": "during",
+      "status": 200,
+      "process_rss": 29847552,
+      "cpu_user_ms": 24259,
+      "cpu_system_ms": 75983
+    },
+    {
+      "t": "2026-09-08T17:58:36.662Z",
+      "arm": "close",
+      "label": "during",
+      "status": 200,
+      "process_rss": 31010816,
+      "cpu_user_ms": 25279,
+      "cpu_system_ms": 79052
+    },
+    {
+      "t": "2026-09-08T17:58:38.674Z",
+      "arm": "close",
+      "label": "during",
+      "status": 200,
+      "process_rss": 32284672,
+      "cpu_user_ms": 26103,
+      "cpu_system_ms": 81956
+    },
+    {
+      "t": "2026-09-08T17:58:40.670Z",
+      "arm": "close",
+      "label": "during",
+      "status": 200,
+      "process_rss": 32272384,
+      "cpu_user_ms": 27177,
+      "cpu_system_ms": 84995
+    },
+    {
+      "t": "2026-09-08T17:58:42.541Z",
+      "arm": "close",
+      "label": "end",
+      "status": 200,
+      "process_rss": 30306304,
+      "cpu_user_ms": 27926,
+      "cpu_system_ms": 87748
+    },
+    {
+      "t": "2026-09-08T17:58:44.918Z",
+      "arm": "mixed",
+      "label": "before",
+      "status": 200,
+      "process_rss": 30343168,
+      "cpu_user_ms": 27949,
+      "cpu_system_ms": 87767
+    },
+    {
+      "t": "2026-09-08T17:58:46.956Z",
+      "arm": "mixed",
+      "label": "during",
+      "status": 200,
+      "process_rss": 34545664,
+      "cpu_user_ms": 29083,
+      "cpu_system_ms": 90921
+    },
+    {
+      "t": "2026-09-08T17:58:48.945Z",
+      "arm": "mixed",
+      "label": "during",
+      "status": 200,
+      "process_rss": 33005568,
+      "cpu_user_ms": 30076,
+      "cpu_system_ms": 93808
+    },
+    {
+      "t": "2026-09-08T17:58:50.948Z",
+      "arm": "mixed",
+      "label": "during",
+      "status": 200,
+      "process_rss": 33099776,
+      "cpu_user_ms": 30980,
+      "cpu_system_ms": 96901
+    },
+    {
+      "t": "2026-09-08T17:58:52.961Z",
+      "arm": "mixed",
+      "label": "during",
+      "status": 200,
+      "process_rss": 28372992,
+      "cpu_user_ms": 31898,
+      "cpu_system_ms": 100343
+    },
+    {
+      "t": "2026-09-08T17:58:54.958Z",
+      "arm": "mixed",
+      "label": "during",
+      "status": 200,
+      "process_rss": 31571968,
+      "cpu_user_ms": 33010,
+      "cpu_system_ms": 103083
+    },
+    {
+      "t": "2026-09-08T17:58:56.968Z",
+      "arm": "mixed",
+      "label": "during",
+      "status": 200,
+      "process_rss": 30908416,
+      "cpu_user_ms": 34134,
+      "cpu_system_ms": 106284
+    },
+    {
+      "t": "2026-09-08T17:58:58.956Z",
+      "arm": "mixed",
+      "label": "during",
+      "status": 200,
+      "process_rss": 29048832,
+      "cpu_user_ms": 35123,
+      "cpu_system_ms": 109144
+    },
+    {
+      "t": "2026-09-08T17:59:00.961Z",
+      "arm": "mixed",
+      "label": "during",
+      "status": 200,
+      "process_rss": 31756288,
+      "cpu_user_ms": 36184,
+      "cpu_system_ms": 112072
+    },
+    {
+      "t": "2026-09-08T17:59:02.966Z",
+      "arm": "mixed",
+      "label": "during",
+      "status": 200,
+      "process_rss": 33796096,
+      "cpu_user_ms": 37147,
+      "cpu_system_ms": 114936
+    },
+    {
+      "t": "2026-09-08T17:59:04.971Z",
+      "arm": "mixed",
+      "label": "during",
+      "status": 200,
+      "process_rss": 27197440,
+      "cpu_user_ms": 37982,
+      "cpu_system_ms": 118154
+    },
+    {
+      "t": "2026-09-08T17:59:06.974Z",
+      "arm": "mixed",
+      "label": "during",
+      "status": 200,
+      "process_rss": 36659200,
+      "cpu_user_ms": 39075,
+      "cpu_system_ms": 121502
+    },
+    {
+      "t": "2026-09-08T17:59:08.967Z",
+      "arm": "mixed",
+      "label": "during",
+      "status": 200,
+      "process_rss": 36397056,
+      "cpu_user_ms": 40044,
+      "cpu_system_ms": 124491
+    },
+    {
+      "t": "2026-09-08T17:59:10.980Z",
+      "arm": "mixed",
+      "label": "during",
+      "status": 200,
+      "process_rss": 31711232,
+      "cpu_user_ms": 41159,
+      "cpu_system_ms": 127649
+    },
+    {
+      "t": "2026-09-08T17:59:12.984Z",
+      "arm": "mixed",
+      "label": "during",
+      "status": 200,
+      "process_rss": 34807808,
+      "cpu_user_ms": 41765,
+      "cpu_system_ms": 129027
+    },
+    {
+      "t": "2026-09-08T17:59:14.982Z",
+      "arm": "mixed",
+      "label": "during",
+      "status": 200,
+      "process_rss": 32759808,
+      "cpu_user_ms": 42081,
+      "cpu_system_ms": 129713
+    },
+    {
+      "t": "2026-09-08T17:59:16.989Z",
+      "arm": "mixed",
+      "label": "during",
+      "status": 200,
+      "process_rss": 32800768,
+      "cpu_user_ms": 42421,
+      "cpu_system_ms": 130362
+    },
+    {
+      "t": "2026-09-08T17:59:18.996Z",
+      "arm": "mixed",
+      "label": "during",
+      "status": 200,
+      "process_rss": 30765056,
+      "cpu_user_ms": 42797,
+      "cpu_system_ms": 130966
+    },
+    {
+      "t": "2026-09-08T17:59:20.989Z",
+      "arm": "mixed",
+      "label": "during",
+      "status": 200,
+      "process_rss": 27385856,
+      "cpu_user_ms": 43195,
+      "cpu_system_ms": 131544
+    },
+    {
+      "t": "2026-09-08T17:59:22.991Z",
+      "arm": "mixed",
+      "label": "during",
+      "status": 200,
+      "process_rss": 27017216,
+      "cpu_user_ms": 43419,
+      "cpu_system_ms": 132140
+    },
+    {
+      "t": "2026-09-08T17:59:24.996Z",
+      "arm": "mixed",
+      "label": "during",
+      "status": 200,
+      "process_rss": 27414528,
+      "cpu_user_ms": 43656,
+      "cpu_system_ms": 132677
+    },
+    {
+      "t": "2026-09-08T17:59:26.999Z",
+      "arm": "mixed",
+      "label": "during",
+      "status": 200,
+      "process_rss": 28057600,
+      "cpu_user_ms": 43963,
+      "cpu_system_ms": 133311
+    },
+    {
+      "t": "2026-09-08T17:59:29.011Z",
+      "arm": "mixed",
+      "label": "during",
+      "status": 200,
+      "process_rss": 28278784,
+      "cpu_user_ms": 44232,
+      "cpu_system_ms": 134168
+    },
+    {
+      "t": "2026-09-08T17:59:31.014Z",
+      "arm": "mixed",
+      "label": "during",
+      "status": 200,
+      "process_rss": 30867456,
+      "cpu_user_ms": 44595,
+      "cpu_system_ms": 134806
+    },
+    {
+      "t": "2026-09-08T17:59:33.015Z",
+      "arm": "mixed",
+      "label": "during",
+      "status": 200,
+      "process_rss": 31088640,
+      "cpu_user_ms": 44964,
+      "cpu_system_ms": 135470
+    },
+    {
+      "t": "2026-09-08T17:59:35.022Z",
+      "arm": "mixed",
+      "label": "during",
+      "status": 200,
+      "process_rss": 28786688,
+      "cpu_user_ms": 45272,
+      "cpu_system_ms": 136156
+    },
+    {
+      "t": "2026-09-08T17:59:37.026Z",
+      "arm": "mixed",
+      "label": "during",
+      "status": 200,
+      "process_rss": 28667904,
+      "cpu_user_ms": 45589,
+      "cpu_system_ms": 136828
+    },
+    {
+      "t": "2026-09-08T17:59:39.043Z",
+      "arm": "mixed",
+      "label": "during",
+      "status": 200,
+      "process_rss": 28667904,
+      "cpu_user_ms": 45899,
+      "cpu_system_ms": 137863
+    },
+    {
+      "t": "2026-09-08T17:59:41.041Z",
+      "arm": "mixed",
+      "label": "during",
+      "status": 200,
+      "process_rss": 28958720,
+      "cpu_user_ms": 46296,
+      "cpu_system_ms": 138785
+    },
+    {
+      "t": "2026-09-08T17:59:43.050Z",
+      "arm": "mixed",
+      "label": "during",
+      "status": 200,
+      "process_rss": 37756928,
+      "cpu_user_ms": 46848,
+      "cpu_system_ms": 140185
+    },
+    {
+      "t": "2026-09-08T17:59:44.993Z",
+      "arm": "mixed",
+      "label": "end",
+      "status": 200,
+      "process_rss": 33738752,
+      "cpu_user_ms": 47951,
+      "cpu_system_ms": 142805
+    },
+    {
+      "t": "2026-09-08T17:59:47.218Z",
+      "arm": "tls-spliced",
+      "label": "before",
+      "status": 200,
+      "process_rss": 33783808,
+      "cpu_user_ms": 47980,
+      "cpu_system_ms": 142805
+    },
+    {
+      "t": "2026-09-08T17:59:49.259Z",
+      "arm": "tls-spliced",
+      "label": "during",
+      "status": 200,
+      "process_rss": 30978048,
+      "cpu_user_ms": 48474,
+      "cpu_system_ms": 145823
+    },
+    {
+      "t": "2026-09-08T17:59:51.285Z",
+      "arm": "tls-spliced",
+      "label": "during",
+      "status": 200,
+      "process_rss": 30597120,
+      "cpu_user_ms": 49226,
+      "cpu_system_ms": 149159
+    },
+    {
+      "t": "2026-09-08T17:59:53.279Z",
+      "arm": "tls-spliced",
+      "label": "during",
+      "status": 200,
+      "process_rss": 30670848,
+      "cpu_user_ms": 49816,
+      "cpu_system_ms": 152409
+    },
+    {
+      "t": "2026-09-08T17:59:55.290Z",
+      "arm": "tls-spliced",
+      "label": "during",
+      "status": 200,
+      "process_rss": 30777344,
+      "cpu_user_ms": 50258,
+      "cpu_system_ms": 154929
+    },
+    {
+      "t": "2026-09-08T17:59:57.296Z",
+      "arm": "tls-spliced",
+      "label": "during",
+      "status": 200,
+      "process_rss": 30785536,
+      "cpu_user_ms": 50741,
+      "cpu_system_ms": 157764
+    },
+    {
+      "t": "2026-09-08T17:59:59.290Z",
+      "arm": "tls-spliced",
+      "label": "during",
+      "status": 200,
+      "process_rss": 30658560,
+      "cpu_user_ms": 51222,
+      "cpu_system_ms": 160463
+    },
+    {
+      "t": "2026-09-08T18:00:01.295Z",
+      "arm": "tls-spliced",
+      "label": "during",
+      "status": 200,
+      "process_rss": 31567872,
+      "cpu_user_ms": 51771,
+      "cpu_system_ms": 163350
+    },
+    {
+      "t": "2026-09-08T18:00:03.297Z",
+      "arm": "tls-spliced",
+      "label": "during",
+      "status": 200,
+      "process_rss": 31625216,
+      "cpu_user_ms": 52316,
+      "cpu_system_ms": 165855
+    },
+    {
+      "t": "2026-09-08T18:00:05.313Z",
+      "arm": "tls-spliced",
+      "label": "during",
+      "status": 200,
+      "process_rss": 31674368,
+      "cpu_user_ms": 52808,
+      "cpu_system_ms": 168431
+    },
+    {
+      "t": "2026-09-08T18:00:07.328Z",
+      "arm": "tls-spliced",
+      "label": "during",
+      "status": 200,
+      "process_rss": 31514624,
+      "cpu_user_ms": 53314,
+      "cpu_system_ms": 170923
+    },
+    {
+      "t": "2026-09-08T18:00:09.336Z",
+      "arm": "tls-spliced",
+      "label": "during",
+      "status": 200,
+      "process_rss": 31203328,
+      "cpu_user_ms": 53779,
+      "cpu_system_ms": 173492
+    },
+    {
+      "t": "2026-09-08T18:00:11.334Z",
+      "arm": "tls-spliced",
+      "label": "during",
+      "status": 200,
+      "process_rss": 31371264,
+      "cpu_user_ms": 54222,
+      "cpu_system_ms": 176337
+    },
+    {
+      "t": "2026-09-08T18:00:13.347Z",
+      "arm": "tls-spliced",
+      "label": "during",
+      "status": 200,
+      "process_rss": 31424512,
+      "cpu_user_ms": 54688,
+      "cpu_system_ms": 178927
+    },
+    {
+      "t": "2026-09-08T18:00:15.338Z",
+      "arm": "tls-spliced",
+      "label": "during",
+      "status": 200,
+      "process_rss": 31096832,
+      "cpu_user_ms": 55139,
+      "cpu_system_ms": 181684
+    },
+    {
+      "t": "2026-09-08T18:00:17.354Z",
+      "arm": "tls-spliced",
+      "label": "during",
+      "status": 200,
+      "process_rss": 31322112,
+      "cpu_user_ms": 55707,
+      "cpu_system_ms": 184253
+    },
+    {
+      "t": "2026-09-08T18:00:19.369Z",
+      "arm": "tls-spliced",
+      "label": "during",
+      "status": 200,
+      "process_rss": 31432704,
+      "cpu_user_ms": 56283,
+      "cpu_system_ms": 186667
+    },
+    {
+      "t": "2026-09-08T18:00:21.379Z",
+      "arm": "tls-spliced",
+      "label": "during",
+      "status": 200,
+      "process_rss": 31358976,
+      "cpu_user_ms": 56796,
+      "cpu_system_ms": 189159
+    },
+    {
+      "t": "2026-09-08T18:00:23.383Z",
+      "arm": "tls-spliced",
+      "label": "during",
+      "status": 200,
+      "process_rss": 30658560,
+      "cpu_user_ms": 57333,
+      "cpu_system_ms": 191673
+    },
+    {
+      "t": "2026-09-08T18:00:25.391Z",
+      "arm": "tls-spliced",
+      "label": "during",
+      "status": 200,
+      "process_rss": 31117312,
+      "cpu_user_ms": 57692,
+      "cpu_system_ms": 194491
+    },
+    {
+      "t": "2026-09-08T18:00:27.405Z",
+      "arm": "tls-spliced",
+      "label": "during",
+      "status": 200,
+      "process_rss": 31133696,
+      "cpu_user_ms": 58267,
+      "cpu_system_ms": 197145
+    },
+    {
+      "t": "2026-09-08T18:00:29.415Z",
+      "arm": "tls-spliced",
+      "label": "during",
+      "status": 200,
+      "process_rss": 31186944,
+      "cpu_user_ms": 58822,
+      "cpu_system_ms": 199485
+    },
+    {
+      "t": "2026-09-08T18:00:31.427Z",
+      "arm": "tls-spliced",
+      "label": "during",
+      "status": 200,
+      "process_rss": 31174656,
+      "cpu_user_ms": 59325,
+      "cpu_system_ms": 202412
+    },
+    {
+      "t": "2026-09-08T18:00:33.437Z",
+      "arm": "tls-spliced",
+      "label": "during",
+      "status": 200,
+      "process_rss": 32092160,
+      "cpu_user_ms": 59790,
+      "cpu_system_ms": 204858
+    },
+    {
+      "t": "2026-09-08T18:00:35.435Z",
+      "arm": "tls-spliced",
+      "label": "during",
+      "status": 200,
+      "process_rss": 32391168,
+      "cpu_user_ms": 60193,
+      "cpu_system_ms": 207617
+    },
+    {
+      "t": "2026-09-08T18:00:37.440Z",
+      "arm": "tls-spliced",
+      "label": "during",
+      "status": 200,
+      "process_rss": 32456704,
+      "cpu_user_ms": 60801,
+      "cpu_system_ms": 210302
+    },
+    {
+      "t": "2026-09-08T18:00:39.455Z",
+      "arm": "tls-spliced",
+      "label": "during",
+      "status": 200,
+      "process_rss": 32186368,
+      "cpu_user_ms": 61381,
+      "cpu_system_ms": 212643
+    },
+    {
+      "t": "2026-09-08T18:00:41.452Z",
+      "arm": "tls-spliced",
+      "label": "during",
+      "status": 200,
+      "process_rss": 32129024,
+      "cpu_user_ms": 61854,
+      "cpu_system_ms": 215508
+    },
+    {
+      "t": "2026-09-08T18:00:43.472Z",
+      "arm": "tls-spliced",
+      "label": "during",
+      "status": 200,
+      "process_rss": 32198656,
+      "cpu_user_ms": 62195,
+      "cpu_system_ms": 217204
+    },
+    {
+      "t": "2026-09-08T18:00:45.494Z",
+      "arm": "tls-spliced",
+      "label": "during",
+      "status": 200,
+      "process_rss": 32202752,
+      "cpu_user_ms": 62546,
+      "cpu_system_ms": 218598
+    },
+    {
+      "t": "2026-09-08T18:00:47.358Z",
+      "arm": "tls-spliced",
+      "label": "end",
+      "status": 200,
+      "process_rss": 32206848,
+      "cpu_user_ms": 62978,
+      "cpu_system_ms": 221245
+    },
+    {
+      "t": "2026-09-08T18:00:47.634Z",
+      "arm": "tls-spliced-blocked",
+      "label": "before",
+      "status": 200,
+      "process_rss": 32223232,
+      "cpu_user_ms": 63017,
+      "cpu_system_ms": 221246
+    },
+    {
+      "t": "2026-09-08T18:00:49.670Z",
+      "arm": "tls-spliced-blocked",
+      "label": "during",
+      "status": 200,
+      "process_rss": 32030720,
+      "cpu_user_ms": 63448,
+      "cpu_system_ms": 223277
+    },
+    {
+      "t": "2026-09-08T18:00:51.688Z",
+      "arm": "tls-spliced-blocked",
+      "label": "during",
+      "status": 200,
+      "process_rss": 31924224,
+      "cpu_user_ms": 63978,
+      "cpu_system_ms": 225628
+    },
+    {
+      "t": "2026-09-08T18:00:53.679Z",
+      "arm": "tls-spliced-blocked",
+      "label": "during",
+      "status": 200,
+      "process_rss": 31801344,
+      "cpu_user_ms": 64410,
+      "cpu_system_ms": 228047
+    },
+    {
+      "t": "2026-09-08T18:00:55.685Z",
+      "arm": "tls-spliced-blocked",
+      "label": "during",
+      "status": 200,
+      "process_rss": 31805440,
+      "cpu_user_ms": 64908,
+      "cpu_system_ms": 230218
+    },
+    {
+      "t": "2026-09-08T18:00:57.698Z",
+      "arm": "tls-spliced-blocked",
+      "label": "during",
+      "status": 200,
+      "process_rss": 31739904,
+      "cpu_user_ms": 65496,
+      "cpu_system_ms": 232696
+    },
+    {
+      "t": "2026-09-08T18:00:59.697Z",
+      "arm": "tls-spliced-blocked",
+      "label": "during",
+      "status": 200,
+      "process_rss": 31752192,
+      "cpu_user_ms": 65950,
+      "cpu_system_ms": 235300
+    },
+    {
+      "t": "2026-09-08T18:01:01.704Z",
+      "arm": "tls-spliced-blocked",
+      "label": "during",
+      "status": 200,
+      "process_rss": 31657984,
+      "cpu_user_ms": 66459,
+      "cpu_system_ms": 237912
+    },
+    {
+      "t": "2026-09-08T18:01:03.736Z",
+      "arm": "tls-spliced-blocked",
+      "label": "during",
+      "status": 200,
+      "process_rss": 31657984,
+      "cpu_user_ms": 66955,
+      "cpu_system_ms": 240675
+    },
+    {
+      "t": "2026-09-08T18:01:05.734Z",
+      "arm": "tls-spliced-blocked",
+      "label": "during",
+      "status": 200,
+      "process_rss": 31514624,
+      "cpu_user_ms": 67440,
+      "cpu_system_ms": 243412
+    },
+    {
+      "t": "2026-09-08T18:01:07.740Z",
+      "arm": "tls-spliced-blocked",
+      "label": "during",
+      "status": 200,
+      "process_rss": 31690752,
+      "cpu_user_ms": 67979,
+      "cpu_system_ms": 246377
+    },
+    {
+      "t": "2026-09-08T18:01:09.766Z",
+      "arm": "tls-spliced-blocked",
+      "label": "during",
+      "status": 200,
+      "process_rss": 31551488,
+      "cpu_user_ms": 68541,
+      "cpu_system_ms": 249045
+    },
+    {
+      "t": "2026-09-08T18:01:11.752Z",
+      "arm": "tls-spliced-blocked",
+      "label": "during",
+      "status": 200,
+      "process_rss": 31502336,
+      "cpu_user_ms": 69029,
+      "cpu_system_ms": 251416
+    },
+    {
+      "t": "2026-09-08T18:01:13.747Z",
+      "arm": "tls-spliced-blocked",
+      "label": "during",
+      "status": 200,
+      "process_rss": 31227904,
+      "cpu_user_ms": 69512,
+      "cpu_system_ms": 254221
+    },
+    {
+      "t": "2026-09-08T18:01:15.751Z",
+      "arm": "tls-spliced-blocked",
+      "label": "during",
+      "status": 200,
+      "process_rss": 31469568,
+      "cpu_user_ms": 70113,
+      "cpu_system_ms": 256907
+    },
+    {
+      "t": "2026-09-08T18:01:17.766Z",
+      "arm": "tls-spliced-blocked",
+      "label": "during",
+      "status": 200,
+      "process_rss": 31633408,
+      "cpu_user_ms": 70506,
+      "cpu_system_ms": 260037
+    },
+    {
+      "t": "2026-09-08T18:01:19.784Z",
+      "arm": "tls-spliced-blocked",
+      "label": "during",
+      "status": 200,
+      "process_rss": 31789056,
+      "cpu_user_ms": 70994,
+      "cpu_system_ms": 262896
+    },
+    {
+      "t": "2026-09-08T18:01:21.787Z",
+      "arm": "tls-spliced-blocked",
+      "label": "during",
+      "status": 200,
+      "process_rss": 31657984,
+      "cpu_user_ms": 71685,
+      "cpu_system_ms": 265426
+    },
+    {
+      "t": "2026-09-08T18:01:23.802Z",
+      "arm": "tls-spliced-blocked",
+      "label": "during",
+      "status": 200,
+      "process_rss": 31645696,
+      "cpu_user_ms": 72175,
+      "cpu_system_ms": 268516
+    },
+    {
+      "t": "2026-09-08T18:01:25.803Z",
+      "arm": "tls-spliced-blocked",
+      "label": "during",
+      "status": 200,
+      "process_rss": 31731712,
+      "cpu_user_ms": 72681,
+      "cpu_system_ms": 271399
+    },
+    {
+      "t": "2026-09-08T18:01:27.800Z",
+      "arm": "tls-spliced-blocked",
+      "label": "during",
+      "status": 200,
+      "process_rss": 31334400,
+      "cpu_user_ms": 73220,
+      "cpu_system_ms": 274266
+    },
+    {
+      "t": "2026-09-08T18:01:29.808Z",
+      "arm": "tls-spliced-blocked",
+      "label": "during",
+      "status": 200,
+      "process_rss": 31428608,
+      "cpu_user_ms": 74062,
+      "cpu_system_ms": 276897
+    },
+    {
+      "t": "2026-09-08T18:01:31.816Z",
+      "arm": "tls-spliced-blocked",
+      "label": "during",
+      "status": 200,
+      "process_rss": 31526912,
+      "cpu_user_ms": 74513,
+      "cpu_system_ms": 279792
+    },
+    {
+      "t": "2026-09-08T18:01:33.819Z",
+      "arm": "tls-spliced-blocked",
+      "label": "during",
+      "status": 200,
+      "process_rss": 31621120,
+      "cpu_user_ms": 74969,
+      "cpu_system_ms": 282752
+    },
+    {
+      "t": "2026-09-08T18:01:35.821Z",
+      "arm": "tls-spliced-blocked",
+      "label": "during",
+      "status": 200,
+      "process_rss": 31539200,
+      "cpu_user_ms": 75575,
+      "cpu_system_ms": 285420
+    },
+    {
+      "t": "2026-09-08T18:01:37.829Z",
+      "arm": "tls-spliced-blocked",
+      "label": "during",
+      "status": 200,
+      "process_rss": 31567872,
+      "cpu_user_ms": 76035,
+      "cpu_system_ms": 288375
+    },
+    {
+      "t": "2026-09-08T18:01:39.844Z",
+      "arm": "tls-spliced-blocked",
+      "label": "during",
+      "status": 200,
+      "process_rss": 31514624,
+      "cpu_user_ms": 76655,
+      "cpu_system_ms": 291215
+    },
+    {
+      "t": "2026-09-08T18:01:41.852Z",
+      "arm": "tls-spliced-blocked",
+      "label": "during",
+      "status": 200,
+      "process_rss": 31678464,
+      "cpu_user_ms": 77074,
+      "cpu_system_ms": 294103
+    },
+    {
+      "t": "2026-09-08T18:01:43.859Z",
+      "arm": "tls-spliced-blocked",
+      "label": "during",
+      "status": 200,
+      "process_rss": 31346688,
+      "cpu_user_ms": 77665,
+      "cpu_system_ms": 297224
+    },
+    {
+      "t": "2026-09-08T18:01:45.884Z",
+      "arm": "tls-spliced-blocked",
+      "label": "during",
+      "status": 200,
+      "process_rss": 31657984,
+      "cpu_user_ms": 78183,
+      "cpu_system_ms": 299912
+    },
+    {
+      "t": "2026-09-08T18:01:47.689Z",
+      "arm": "tls-spliced-blocked",
+      "label": "end",
+      "status": 200,
+      "process_rss": 31678464,
+      "cpu_user_ms": 78685,
+      "cpu_system_ms": 302397
+    },
+    {
+      "t": "2026-09-08T18:01:49.866Z",
+      "arm": "transfers",
+      "label": "before",
+      "status": 200,
+      "process_rss": 31678464,
+      "cpu_user_ms": 78712,
+      "cpu_system_ms": 302397
+    },
+    {
+      "t": "2026-09-08T18:01:51.912Z",
+      "arm": "transfers",
+      "label": "during",
+      "status": 200,
+      "process_rss": 31756288,
+      "cpu_user_ms": 78814,
+      "cpu_system_ms": 304398
+    },
+    {
+      "t": "2026-09-08T18:01:53.910Z",
+      "arm": "transfers",
+      "label": "during",
+      "status": 200,
+      "process_rss": 31813632,
+      "cpu_user_ms": 78911,
+      "cpu_system_ms": 306413
+    },
+    {
+      "t": "2026-09-08T18:01:55.927Z",
+      "arm": "transfers",
+      "label": "during",
+      "status": 200,
+      "process_rss": 31834112,
+      "cpu_user_ms": 78995,
+      "cpu_system_ms": 308212
+    },
+    {
+      "t": "2026-09-08T18:01:57.960Z",
+      "arm": "transfers",
+      "label": "during",
+      "status": 200,
+      "process_rss": 31846400,
+      "cpu_user_ms": 79112,
+      "cpu_system_ms": 310183
+    },
+    {
+      "t": "2026-09-08T18:01:59.955Z",
+      "arm": "transfers",
+      "label": "during",
+      "status": 200,
+      "process_rss": 31862784,
+      "cpu_user_ms": 79223,
+      "cpu_system_ms": 311975
+    },
+    {
+      "t": "2026-09-08T18:02:01.933Z",
+      "arm": "transfers",
+      "label": "during",
+      "status": 200,
+      "process_rss": 31862784,
+      "cpu_user_ms": 79383,
+      "cpu_system_ms": 313885
+    },
+    {
+      "t": "2026-09-08T18:02:02.415Z",
+      "arm": "transfers",
+      "label": "end",
+      "status": 200,
+      "process_rss": 31903744,
+      "cpu_user_ms": 79424,
+      "cpu_system_ms": 314233
+    }
+  ],
+  "gate": {
+    "statistic": "none — P10 proposes an N against the phase-2.6 criterion; the owner decides",
+    "n": 0,
+    "per_arm": {
+      "close": {
+        "status": "valid",
+        "rps": 912,
+        "conns_per_s": null,
+        "p50_ms": 15.934,
+        "p95_ms": 33.419,
+        "p99_ms": 44.604,
+        "cores": 1.92,
+        "cpu_ms_per_request": 2.106,
+        "count_502": 0,
+        "delta_rss_end_mib": 7.62,
+        "dns_p99_ms": null
+      },
+      "mixed": {
+        "status": "valid",
+        "rps": 1625.2,
+        "conns_per_s": null,
+        "p50_ms": 17.039,
+        "p95_ms": 36.304,
+        "p99_ms": 44.112,
+        "cores": 1.25,
+        "cpu_ms_per_request": 2.395,
+        "count_502": 0,
+        "delta_rss_end_mib": 3.24,
+        "dns_p99_ms": 17.948
+      },
+      "tls-spliced": {
+        "status": "valid",
+        "rps": 1361,
+        "conns_per_s": null,
+        "p50_ms": 18.574,
+        "p95_ms": 42.434,
+        "p99_ms": 54.695,
+        "cores": 1.56,
+        "cpu_ms_per_request": 2.341,
+        "count_502": 0,
+        "delta_rss_end_mib": -1.5,
+        "dns_p99_ms": null
+      },
+      "tls-spliced-blocked": {
+        "status": "valid",
+        "rps": 4234.6,
+        "conns_per_s": null,
+        "p50_ms": null,
+        "p95_ms": null,
+        "p99_ms": null,
+        "cores": 1.61,
+        "cpu_ms_per_request": null,
+        "count_502": 0,
+        "delta_rss_end_mib": -0.52,
+        "dns_p99_ms": null
+      },
+      "transfers": {
+        "status": "valid",
+        "rps": 0.7,
+        "conns_per_s": null,
+        "p50_ms": 1496.742,
+        "p95_ms": 1619.653,
+        "p99_ms": 1619.653,
+        "cores": 1,
+        "cpu_ms_per_request": 278.844,
+        "count_502": 0,
+        "delta_rss_end_mib": 0.21,
+        "dns_p99_ms": null
+      }
+    }
+  }
+}

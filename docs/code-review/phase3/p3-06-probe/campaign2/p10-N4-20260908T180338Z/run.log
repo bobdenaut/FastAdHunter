@@ -1,0 +1,63 @@
+2026-09-08T18:03:38.331Z [p10-domains] == p10-domains start 2026-09-08T18:03:38.295Z tip=30b9bb912988-dirty out=campaign2/p10-N4-20260908T180338Z
+2026-09-08T18:03:38.332Z [p10-domains] args {"probe":"172.17.0.4","api-port":8443,"key":"<set>","out":"campaign2/p10-N4-20260908T180338Z","tip":null,"allow-busy":false,"skip-host-checks":false,"n":4,"arm":["close","mixed","tls-spliced","transfers"],"origin":"192-168-10-10.nip.io","origin-http-port":80,"origin-https-port":443,"port":8080,"https-port":8444,"files":["1k.bin","10k.bin","50k.bin"],"blocked":"analytics.google.com","ca":"campaign2/probe-ca.pem","intercepted-ssh":null,"intercepted-ca":null,"intercepted-oha":"oha","concurrency":16,"duration":60,"worker-threads":4,"ka-requests":20,"connrate-workers":6,"dns-qps":300,"dns-port":53,"single-path":"/100mb.bin","single-n":5,"par-path":"/10mb.bin","par-n":40,"par-c":8,"sample-interval":2,"tail-min":0,"transfers-tail-min":0,"driver":"auto","skip-issuer-sample":false,"oha":"oha","max-fail-pct":2}
+2026-09-08T18:03:38.687Z [p10-domains] Get-NetConnectionProfile: Ethernet                Public
+2026-09-08T18:03:39.134Z [p10-domains] idle check: PASS (recorded; each stage decides)
+2026-09-08T18:03:39.162Z [p10-domains] GET /health -> 200 {"status":"ok","version":"0.3.3","uptime_seconds":23}
+2026-09-08T18:03:39.172Z [p10-domains] config snapshot -> campaign2\p10-N4-20260908T180338Z\config.json
+2026-09-08T18:03:39.172Z [p10-domains] engine.mode = dns+http+https
+2026-09-08T18:03:39.172Z [p10-domains] runtime.http_runtimes = 4 (every HTTPS figure records it — plan §The N axis)
+2026-09-08T18:03:39.194Z [p10-domains] oha 1.16.0 on this host; --worker-threads 4
+2026-09-08T18:03:39.194Z [p10-domains] == arm close start
+2026-09-08T18:03:39.220Z [p10-domains] close-http: oha --no-tui --output-format json --worker-threads 4 -z 60s -c 16 --disable-keepalive -H Host: 192-168-10-10.nip.io --rand-regex-url http://172.17.0.4:8080/(1k[.]bin|10k[.]bin|50k[.]bin)
+2026-09-08T18:04:39.284Z [p10-domains] close-http: requests=54387 failed=16 rps=906.4 p50/p95/p99=16.002/33.986/45.389 ms 502=0 MiB/s=18.06 errors={"Only one usage of each socket address (protocol/network address/port) is normally permitted. (os error 10048)":3,"aborted due to deadline":13}
+2026-09-08T18:04:39.318Z [p10-domains] close: wall=60.1s cores=1.84 ms/req=2.027 ΔRSS end=6.88 max=10.41 MiB (floor 22.79 MiB)
+2026-09-08T18:04:39.438Z [p10-domains] TIME_WAIT sockets on this host: 10370
+2026-09-08T18:04:39.438Z [p10-domains] degraded: 10370 TIME_WAIT sockets on this host — the client closed first somewhere; Windows port exhaustion caps the loop near 130 conn/s (§Traps)
+2026-09-08T18:04:41.649Z [p10-domains] mixed-dns: warm: 25/25 names answered
+2026-09-08T18:04:41.649Z [p10-domains] == arm mixed start
+2026-09-08T18:04:41.685Z [p10-domains] mixed-http: oha --no-tui --output-format json --worker-threads 4 -z 60s -c 16 --disable-keepalive -H Host: 192-168-10-10.nip.io --rand-regex-url http://172.17.0.4:8080/(1k[.]bin|10k[.]bin|50k[.]bin)
+2026-09-08T18:04:51.691Z [p10-domains] mixed-dns: t=10s sent=3000 qps=300 timeouts=0 unmatched=0
+2026-09-08T18:05:01.694Z [p10-domains] mixed-dns: t=20s sent=6001 qps=300 timeouts=0 unmatched=0
+2026-09-08T18:05:11.698Z [p10-domains] mixed-dns: t=30s sent=9002 qps=300 timeouts=0 unmatched=0
+2026-09-08T18:05:21.702Z [p10-domains] mixed-dns: t=40s sent=12004 qps=300 timeouts=0 unmatched=0
+2026-09-08T18:05:31.709Z [p10-domains] mixed-dns: t=50s sent=15003 qps=300 timeouts=0 unmatched=0
+2026-09-08T18:05:41.755Z [p10-domains] mixed-http: requests=32567 failed=57781 rps=1505 p50/p95/p99=17.019/36.514/45.772 ms 502=0 MiB/s=10.75 errors={"Only one usage of each socket address (protocol/network address/port) is normally permitted. (os error 10048)":57765,"aborted due to deadline":16}
+2026-09-08T18:05:41.786Z [p10-domains] mixed: wall=60.1s cores=1.28 ms/req=2.354 ΔRSS end=2.9 max=3.98 MiB (floor 29.71 MiB)
+2026-09-08T18:05:41.954Z [p10-domains] TIME_WAIT sockets on this host: 14939
+2026-09-08T18:05:41.954Z [p10-domains] degraded: 14939 TIME_WAIT sockets on this host — the client closed first somewhere; Windows port exhaustion caps the loop near 130 conn/s (§Traps)
+2026-09-08T18:05:41.954Z [p10-domains] degraded: mixed-http: 63.95 % of 90348 attempts failed or non-2xx (budget 2 %; 0 × 502 — a toy origin refuses upstream connects)
+2026-09-08T18:05:41.955Z [p10-domains] mixed-dns: sent=17999/18000 qps=299.9 p50/p95/p99=0.935/11.742/15.454 ms timeouts=0 unmatched=0 blocked→0.0.0.0=717/3593
+2026-09-08T18:05:43.977Z [p10-domains] tls-spliced: issuer sample before from local: issuer=192-168-10-10.nip.io subject=192-168-10-10.nip.io TLSv1.3 → leg=spliced expected=spliced
+2026-09-08T18:05:43.977Z [p10-domains] == arm tls-spliced start
+2026-09-08T18:05:44.034Z [p10-domains] tls-spliced: oha --no-tui --output-format json --worker-threads 4 -z 60s -c 16 --disable-keepalive --connect-to 192-168-10-10.nip.io:443:172.17.0.4:8444 --insecure https://192-168-10-10.nip.io:443/1k.bin
+2026-09-08T18:06:44.085Z [p10-domains] tls-spliced: requests=38588 failed=23339 rps=1032 p50/p95/p99=20.381/47.315/59.721 ms 502=0 MiB/s=0.63 errors={"Only one usage of each socket address (protocol/network address/port) is normally permitted. (os error 10048)":23327,"aborted due to deadline":12}
+2026-09-08T18:06:44.131Z [p10-domains] tls-spliced: wall=60.1s cores=1.61 ms/req=2.507 ΔRSS end=1.51 max=1.77 MiB (floor 32.65 MiB)
+2026-09-08T18:06:44.321Z [p10-domains] TIME_WAIT sockets on this host: 15304
+2026-09-08T18:06:44.321Z [p10-domains] degraded: 15304 TIME_WAIT sockets on this host — the client closed first somewhere; Windows port exhaustion caps the loop near 130 conn/s (§Traps)
+2026-09-08T18:06:44.332Z [p10-domains] tls-spliced: issuer sample after from local: issuer=192-168-10-10.nip.io subject=192-168-10-10.nip.io TLSv1.3 → leg=spliced expected=spliced
+2026-09-08T18:06:44.332Z [p10-domains] degraded: tls-spliced: 37.69 % of 61927 attempts failed or non-2xx (budget 2 %; 0 × 502 — a toy origin refuses upstream connects)
+2026-09-08T18:06:44.334Z [p10-domains] tls-spliced-blocked: issuer sample before from local: issuer=none subject=-  → leg=unknown expected=spliced error=ECONNRESET
+2026-09-08T18:06:44.334Z [p10-domains] == arm tls-spliced-blocked start
+2026-09-08T18:06:44.358Z [p10-domains] tls-spliced-blocked: oha --no-tui --output-format json --worker-threads 4 -z 60s -c 16 --disable-keepalive --connect-to analytics.google.com:443:172.17.0.4:8444 --insecure https://analytics.google.com:443/1k.bin
+2026-09-08T18:07:44.391Z [p10-domains] tls-spliced-blocked: requests=0 failed=200707 rps=3344.9 p50/p95/p99=null/null/null ms 502=0 MiB/s=0 errors={"Only one usage of each socket address (protocol/network address/port) is normally permitted. (os error 10048)":373,"aborted due to deadline":16,"tls handshake eof":200318}
+2026-09-08T18:07:44.419Z [p10-domains] tls-spliced-blocked: wall=60s cores=1.7 ms/req=- ΔRSS end=-1.89 max=-1 MiB (floor 34.18 MiB)
+2026-09-08T18:07:44.549Z [p10-domains] TIME_WAIT sockets on this host: 10484
+2026-09-08T18:07:44.549Z [p10-domains] degraded: 10484 TIME_WAIT sockets on this host — the client closed first somewhere; Windows port exhaustion caps the loop near 130 conn/s (§Traps)
+2026-09-08T18:07:46.562Z [p10-domains] transfers: issuer sample before from local: issuer=192-168-10-10.nip.io subject=192-168-10-10.nip.io TLSv1.3 → leg=spliced expected=spliced
+2026-09-08T18:07:46.562Z [p10-domains] == arm transfers start
+2026-09-08T18:07:46.617Z [p10-domains] transfers-single-spliced: oha --no-tui --output-format json --worker-threads 4 -n 5 -c 1 --disable-keepalive --connect-to 192-168-10-10.nip.io:443:172.17.0.4:8444 --insecure https://192-168-10-10.nip.io:443/100mb.bin
+2026-09-08T18:07:54.194Z [p10-domains] transfers-single-spliced: requests=5 failed=0 rps=0.7 p50/p95/p99=1510.008/1655.513/1655.513 ms 502=0 MiB/s=66.32
+2026-09-08T18:07:54.194Z [p10-domains] transfers-par-spliced: oha --no-tui --output-format json --worker-threads 4 -n 40 -c 8 --disable-keepalive --connect-to 192-168-10-10.nip.io:443:172.17.0.4:8444 --insecure https://192-168-10-10.nip.io:443/10mb.bin
+2026-09-08T18:07:59.129Z [p10-domains] transfers-par-spliced: requests=40 failed=0 rps=8.2 p50/p95/p99=962.449/1553.311/1591.666 ms 502=0 MiB/s=81.52
+2026-09-08T18:07:59.156Z [p10-domains] transfers: wall=12.5s cores=0.88 ms/req=245.756 ΔRSS end=0 max=0 MiB (floor 32.28 MiB)
+2026-09-08T18:07:59.243Z [p10-domains] TIME_WAIT sockets on this host: 7224
+2026-09-08T18:07:59.252Z [p10-domains] transfers: issuer sample after from local: issuer=192-168-10-10.nip.io subject=192-168-10-10.nip.io TLSv1.3 → leg=spliced expected=spliced
+2026-09-08T18:07:59.252Z [p10-domains] transfers-single-control: oha --no-tui --output-format json --worker-threads 4 -n 5 -c 1 --disable-keepalive --insecure https://192-168-10-10.nip.io:443/100mb.bin
+2026-09-08T18:07:59.650Z [p10-domains] transfers-single-control: requests=5 failed=0 rps=13.6 p50/p95/p99=78.737/82.905/82.905 ms 502=0 MiB/s=1363.38
+2026-09-08T18:07:59.650Z [p10-domains] transfers-par-control: oha --no-tui --output-format json --worker-threads 4 -n 40 -c 8 --disable-keepalive --insecure https://192-168-10-10.nip.io:443/10mb.bin
+2026-09-08T18:07:59.819Z [p10-domains] transfers-par-control: requests=40 failed=0 rps=296.4 p50/p95/p99=25.501/59.202/62.706 ms 502=0 MiB/s=2964.1
+2026-09-08T18:08:01.830Z [p10-domains] wrote campaign2\p10-N4-20260908T180338Z\p10-N4.json
+2026-09-08T18:08:01.831Z [p10-domains] GATE (degraded, not a gate) {"statistic":"none — P10 proposes an N against the phase-2.6 criterion; the owner decides","n":4,"per_arm":{"close":{"status":"valid","rps":906.4,"conns_per_s":null,"p50_ms":16.002,"p95_ms":33.986,"p99_ms":45.389,"cores":1.84,"cpu_ms_per_request":2.027,"count_502":0,"delta_rss_end_mib":6.88,"dns_p99_ms":null},"mixed":{"status":"valid","rps":1505,"conns_per_s":null,"p50_ms":17.019,"p95_ms":36.514,"p99_ms":45.772,"cores":1.28,"cpu_ms_per_request":2.354,"count_502":0,"delta_rss_end_mib":2.9,"dns_p99_ms":15.454},"tls-spliced":{"status":"valid","rps":1032,"conns_per_s":null,"p50_ms":20.381,"p95_ms":47.315,"p99_ms":59.721,"cores":1.61,"cpu_ms_per_request":2.507,"count_502":0,"delta_rss_end_mib":1.51,"dns_p99_ms":null},"tls-spliced-blocked":{"status":"valid","rps":3344.9,"conns_per_s":null,"p50_ms":null,"p95_ms":null,"p99_ms":null,"cores":1.7,"cpu_ms_per_request":null,"count_502":0,"delta_rss_end_mib":-1.89,"dns_p99_ms":null},"transfers":{"status":"valid","rps":0.7,"conns_per_s":null,"p50_ms":1510.008,"p95_ms":1655.513,"p99_ms":1655.513,"cores":0.88,"cpu_ms_per_request":245.756,"count_502":0,"delta_rss_end_mib":0,"dns_p99_ms":null}}}
+2026-09-08T18:08:01.831Z [p10-domains] == p10-domains done (degraded)
+tatistic":"none — P10 proposes an N against the phase-2.6 criterion; the owner decides","n":4,"per_arm":{"close":{"status":"valid","rps":906.4,"conns_per_s":null,"p50_ms":16.002,"p95_ms":33.986,"p99_ms":45.389,"cores":1.84,"cpu_ms_per_request":2.027,"count_502":0,"delta_rss_end_mib":6.88,"dns_p99_ms":null},"mixed":{"status":"valid","rps":1505,"conns_per_s":null,"p50_ms":17.019,"p95_ms":36.514,"p99_ms":45.772,"cores":1.28,"cpu_ms_per_request":2.354,"count_502":0,"delta_rss_end_mib":2.9,"dns_p99_ms":15.454},"tls-spliced":{"status":"valid","rps":1032,"conns_per_s":null,"p50_ms":20.381,"p95_ms":47.315,"p99_ms":59.721,"cores":1.61,"cpu_ms_per_request":2.507,"count_502":0,"delta_rss_end_mib":1.51,"dns_p99_ms":null},"tls-spliced-blocked":{"status":"valid","rps":3344.9,"conns_per_s":null,"p50_ms":null,"p95_ms":null,"p99_ms":null,"cores":1.7,"cpu_ms_per_request":null,"count_502":0,"delta_rss_end_mib":-1.89,"dns_p99_ms":null},"transfers":{"status":"valid","rps":0.7,"conns_per_s":null,"p50_ms":1510.008,"p95_ms":1655.513,"p99_ms":1655.513,"cores":0.88,"cpu_ms_per_request":245.756,"count_502":0,"delta_rss_end_mib":0,"dns_p99_ms":null}}}
+2026-09-08T18:08:01.831Z [p10-domains] == p10-domains done (degraded)

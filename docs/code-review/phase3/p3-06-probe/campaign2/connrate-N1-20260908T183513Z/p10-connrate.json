@@ -1,0 +1,92 @@
+{
+  "script": "p10-connrate",
+  "started_at": "2026-09-08T18:36:14.713Z",
+  "finished_at": "2026-09-08T18:37:15.479Z",
+  "tip": "30b9bb912988-dirty",
+  "probe": "172.17.0.4",
+  "probe_version": "0.3.3",
+  "http_runtimes": 1,
+  "host": {
+    "platform": "win32",
+    "idle": true,
+    "network": [
+      "Ethernet                Public"
+    ],
+    "busy": []
+  },
+  "args": {
+    "probe": "172.17.0.4",
+    "api-port": 8443,
+    "key": "<set>",
+    "out": "campaign2/connrate-N1-20260908T183513Z",
+    "tip": null,
+    "allow-busy": false,
+    "skip-host-checks": false,
+    "origin": "192-168-10-10.nip.io",
+    "port": 8080,
+    "https-port": 8444,
+    "tls": true,
+    "ca": "campaign2/probe-ca.pem",
+    "files": [
+      "1k.bin",
+      "10k.bin",
+      "50k.bin"
+    ],
+    "concurrency": 48,
+    "workers": 6,
+    "duration": 60,
+    "requests": 20,
+    "max-fail-pct": 2
+  },
+  "valid": true,
+  "status": "degraded",
+  "degraded_reasons": [
+    "99651 errors of 99651 attempts (budget 2 %): {\"DEPTH_ZERO_SELF_SIGNED_CERT\":15216,\"EADDRINUSE\":84435} {}",
+    "--ca given but the served issuer is null — this host is not on the terminate leg"
+  ],
+  "measurement": "P10-keepalive",
+  "figures": {
+    "mode": "keepalive",
+    "transport": "tls",
+    "leg": null,
+    "served_issuer": null,
+    "tls": null,
+    "workers": 6,
+    "concurrency": 48,
+    "duration_s": 60,
+    "requests": 0,
+    "connections": 0,
+    "rps": 0,
+    "conns_per_s": 0,
+    "bytes": 0,
+    "errors": 99651,
+    "errkind": {
+      "DEPTH_ZERO_SELF_SIGNED_CERT": 15216,
+      "EADDRINUSE": 84435
+    },
+    "status": {},
+    "lat_ms": {
+      "p50": null,
+      "p95": null,
+      "p99": null,
+      "mean": null
+    },
+    "connect_ms": {
+      "p50": null,
+      "p95": null,
+      "p99": null
+    },
+    "requests_per_connection": {
+      "target": 20,
+      "histogram": {},
+      "full_connections": 0,
+      "cut_by_deadline": 0,
+      "short_connections": 0
+    }
+  },
+  "gate": {
+    "statistic": "none — P10 proposes an N, the owner decides",
+    "rps": 0,
+    "conns_per_s": 0
+  }
+}

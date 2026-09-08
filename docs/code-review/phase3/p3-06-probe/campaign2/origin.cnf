@@ -1,0 +1,10 @@
+[req]
+distinguished_name = dn
+prompt = no
+[dn]
+CN = 192-168-10-10.nip.io
+[v3]
+basicConstraints = critical,CA:FALSE
+extendedKeyUsage = serverAuth
+keyUsage = critical,digitalSignature,keyEncipherment
+subjectAltName = DNS:192-168-10-10.nip.io,IP:192.168.10.10

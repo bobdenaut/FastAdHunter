@@ -1,0 +1,19 @@
+2026-09-08T18:24:56.706Z [p10-domains] == p10-domains start 2026-09-08T18:24:56.675Z tip=30b9bb912988-dirty out=campaign2/c48-N1-20260908T182456Z
+2026-09-08T18:24:56.707Z [p10-domains] args {"probe":"172.17.0.4","api-port":8443,"key":"<set>","out":"campaign2/c48-N1-20260908T182456Z","tip":null,"allow-busy":false,"skip-host-checks":false,"n":1,"arm":["close","mixed","tls-spliced","transfers"],"origin":"192-168-10-10.nip.io","origin-http-port":80,"origin-https-port":443,"port":8080,"https-port":8444,"files":["1k.bin","10k.bin","50k.bin"],"blocked":"analytics.google.com","ca":"campaign2/probe-ca.pem","intercepted-ssh":null,"intercepted-ca":null,"intercepted-oha":"oha","concurrency":48,"duration":60,"worker-threads":6,"ka-requests":20,"connrate-workers":6,"dns-qps":300,"dns-port":53,"single-path":"/100mb.bin","single-n":5,"par-path":"/10mb.bin","par-n":40,"par-c":8,"sample-interval":2,"tail-min":0,"transfers-tail-min":0,"driver":"auto","skip-issuer-sample":false,"oha":"oha","max-fail-pct":2}
+2026-09-08T18:24:57.125Z [p10-domains] Get-NetConnectionProfile: Ethernet                Public
+2026-09-08T18:24:57.656Z [p10-domains] idle check: FAIL brave (recorded; each stage decides)
+2026-09-08T18:24:57.678Z [p10-domains] GET /health -> 200 {"status":"ok","version":"0.3.3","uptime_seconds":23}
+2026-09-08T18:24:57.688Z [p10-domains] config snapshot -> campaign2\c48-N1-20260908T182456Z\config.json
+2026-09-08T18:24:57.688Z [p10-domains] engine.mode = dns+http+https
+2026-09-08T18:24:57.688Z [p10-domains] runtime.http_runtimes = 1 (every HTTPS figure records it — plan §The N axis)
+2026-09-08T18:24:57.688Z [p10-domains] INVALID: host not idle: brave running (plan §Running item 3); --allow-busy to proceed degraded
+2026-09-08T18:24:57.689Z [p10-domains] wrote campaign2\c48-N1-20260908T182456Z\p10-N1.json
+e":false,"oha":"oha","max-fail-pct":2}
+2026-09-08T18:24:57.125Z [p10-domains] Get-NetConnectionProfile: Ethernet                Public
+2026-09-08T18:24:57.656Z [p10-domains] idle check: FAIL brave (recorded; each stage decides)
+2026-09-08T18:24:57.678Z [p10-domains] GET /health -> 200 {"status":"ok","version":"0.3.3","uptime_seconds":23}
+2026-09-08T18:24:57.688Z [p10-domains] config snapshot -> campaign2\c48-N1-20260908T182456Z\config.json
+2026-09-08T18:24:57.688Z [p10-domains] engine.mode = dns+http+https
+2026-09-08T18:24:57.688Z [p10-domains] runtime.http_runtimes = 1 (every HTTPS figure records it — plan §The N axis)
+2026-09-08T18:24:57.688Z [p10-domains] INVALID: host not idle: brave running (plan §Running item 3); --allow-busy to proceed degraded
+2026-09-08T18:24:57.689Z [p10-domains] wrote campaign2\c48-N1-20260908T182456Z\p10-N1.json

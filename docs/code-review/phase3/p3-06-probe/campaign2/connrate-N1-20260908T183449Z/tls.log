@@ -1,0 +1,9 @@
+2026-09-08T18:34:50.204Z [p10-connrate] == p10-connrate start 2026-09-08T18:34:50.176Z tip=30b9bb912988-dirty out=campaign2/connrate-N1-20260908T183449Z
+2026-09-08T18:34:50.205Z [p10-connrate] args {"probe":"172.17.0.4","api-port":8443,"key":"<set>","out":"campaign2/connrate-N1-20260908T183449Z","tip":null,"allow-busy":false,"skip-host-checks":false,"origin":"192-168-10-10.nip.io","port":8080,"https-port":8444,"tls":true,"ca":"campaign2/probe-ca.pem","files":["1k.bin","10k.bin","50k.bin"],"concurrency":48,"workers":6,"duration":60,"requests":20,"max-fail-pct":2}
+2026-09-08T18:34:50.480Z [p10-connrate] Get-NetConnectionProfile: Ethernet                Public
+2026-09-08T18:34:50.900Z [p10-connrate] idle check: FAIL brave (recorded; each stage decides)
+2026-09-08T18:34:50.924Z [p10-connrate] GET /health -> 200 {"status":"ok","version":"0.3.3","uptime_seconds":617}
+2026-09-08T18:34:50.935Z [p10-connrate] engine.mode = dns+http+https
+2026-09-08T18:34:50.935Z [p10-connrate] runtime.http_runtimes = 1 (every HTTPS figure records it — plan §The N axis)
+2026-09-08T18:34:50.935Z [p10-connrate] INVALID: host not idle: brave running (plan §Running item 3); --allow-busy to proceed degraded
+2026-09-08T18:34:50.936Z [p10-connrate] wrote campaign2\connrate-N1-20260908T183449Z\p10-connrate.json

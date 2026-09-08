@@ -1,0 +1,13 @@
+2026-09-08T18:38:38.151Z [p10-connrate] == p10-connrate start 2026-09-08T18:38:38.118Z tip=30b9bb912988-dirty out=campaign2/connrate-N2-20260908T183838Z/plain
+2026-09-08T18:38:38.152Z [p10-connrate] args {"probe":"172.17.0.4","api-port":8443,"key":"<set>","out":"campaign2/connrate-N2-20260908T183838Z/plain","tip":null,"allow-busy":false,"skip-host-checks":false,"origin":"192-168-10-10.nip.io","port":8080,"https-port":8444,"tls":false,"ca":null,"files":["1k.bin","10k.bin","50k.bin"],"concurrency":48,"workers":6,"duration":60,"requests":20,"max-fail-pct":2}
+2026-09-08T18:38:38.513Z [p10-connrate] Get-NetConnectionProfile: Ethernet                Public
+2026-09-08T18:38:38.918Z [p10-connrate] idle check: PASS (recorded; each stage decides)
+2026-09-08T18:38:38.944Z [p10-connrate] GET /health -> 200 {"status":"ok","version":"0.3.3","uptime_seconds":15}
+2026-09-08T18:38:38.955Z [p10-connrate] config snapshot -> campaign2\connrate-N2-20260908T183838Z\plain\config.json
+2026-09-08T18:38:38.955Z [p10-connrate] engine.mode = dns+http+https
+2026-09-08T18:38:38.955Z [p10-connrate] runtime.http_runtimes = 2 (every HTTPS figure records it — plan §The N axis)
+2026-09-08T18:38:38.955Z [p10-connrate] connrate: plaintext 172.17.0.4:8080 origin=192-168-10-10.nip.io concurrency=48 workers=6 requests/conn=20 duration=60s
+2026-09-08T18:39:39.092Z [p10-connrate] keepalive plaintext: rps=1829.4 conn/s=91.9 p50/p95/p99=25.201/52.544/60.78 ms errors=0 full=5470/5516
+2026-09-08T18:39:39.093Z [p10-connrate] wrote campaign2\connrate-N2-20260908T183838Z\plain\p10-connrate.json
+2026-09-08T18:39:39.093Z [p10-connrate] GATE {"statistic":"none — P10 proposes an N, the owner decides","rps":1829.4,"conns_per_s":91.9}
+2026-09-08T18:39:39.093Z [p10-connrate] == p10-connrate done (valid)
