@@ -22,7 +22,7 @@ validate), verification last.
 | 3 | `p3-03-sni-filtering.md` | Blocked domains die at SNI — no decryption, works for every client | Fable | DONE |
 | 4 | `p3-04-tls-interception.md` | Opt-in per-client MITM feeding the Phase 2 HTTP pipeline (heavy) | Fable | DONE |
 | 5 | `p3-05-dot-doh-listeners.md` | DoT :853 + DoH listeners; Android Private DNS works | Fable | DONE |
-| 6 | `p3-06-phase3-verification.md` | TLS budgets, e2e, RB5009 dst-nat 443 + CA install walkthrough. Probe campaign: `p3-06-testing-plan.md` (frozen), gated by `p3-06-smoke-plan.md` layers 1–3 on the dev box first | Fable | AWAITING SOAK |
+| 6 | `p3-06-phase3-verification.md` | TLS budgets, e2e, RB5009 dst-nat 443 + CA install walkthrough. Probe campaign 2 (post-merge `e0c6071`): `p3-06-testing-plan.md`, gated by `p3-06-smoke-plan.md` layers 0–3 on the dev box first. Campaign 1 superseded — `docs/code-review/phase3/p3-06-testing-results.md` | Fable | AWAITING SOAK |
 
 ## TASK START / PHASE CONTEXT
 

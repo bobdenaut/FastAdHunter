@@ -1,43 +1,65 @@
-# P3-06 — Phase 3 Verification — Implementation Plan
+# P3-06 — Phase 3 Verification — Implementation Plan (campaign 2)
 
 **Phase:** 3 · **Depends on:** p3-02, p3-04, p3-05 · **Task:**
 `p3-06-phase3-verification.md`
 
+Rewritten 2026-09-08 for the post-merge tip. Merge `e0c6071` brought `main`
+`857865d` (0.3.3) into `phase3-06` and re-homed the HTTPS listener onto the
+HTTP allocation domains. Campaign 1's on-device figures were taken at
+`a2d0802`, before that merge, and are superseded in full — see
+`p3-06-testing-plan.md` §What changed under the campaign. The code side of this
+task (security suite, full-mode e2e, runbook text) survived the merge and is
+green at the tip; the measurement side starts over.
+
 ## TASK START / CONTEXT
 
 1. `plan/wip/phase3/p3-06-phase3-verification.md` — the task file, completely.
-2. `plan/wip/phase3/CLAUDE.md` — phase table; p3-01…p3-05 must be `DONE` (or
-   the owner has explicitly waved a gap through — record it if so).
+2. `plan/wip/phase3/CLAUDE.md` — phase table; p3-01…p3-05 are `DONE`, p3-06 is
+   `AWAITING SOAK`.
 3. **Implementation Summaries of every declared dependency:** the
    `docs/code-review/phase3/` review files for p3-02, p3-04, p3-05 — and
    p3-01/p3-03 where a check below names their machinery. Read full findings
    only where a deferred item lands on this task.
-4. PERFORMANCE.md — §Budgets (table format, the ~9× dev→RB5009 factor, the
+4. `docs/code-review/phase3/main-phase3-integration-audit.md` — **read first**
+   among the review files. It establishes what the merge did and did not
+   change, and its F1–F6 are this task's inbox (§Merge inbox).
+5. `docs/code-review/phase2.6/alloc-domains-n-sweep.md` — the N sweep for
+   `dns+http`. Its rig is reused by P10 and its measured LAN ceiling
+   invalidates one of campaign 1's budget rows.
+6. `docs/project-state.md` — deployment before proposing anything: production
+   is 0.3.3 on `veth1` with N=2 pinned on `fah-env`, and the 0.3.3 soak runs
+   to **2026-09-14**. The probe (`fah-probe` on `veth3`, envlist `fah-env`) is
+   recorded in `docs/code-review/phase3/p3-06-testing-results.md` §Session
+   state and `docs/routeros-traps.md`, not there.
+7. PERFORMANCE.md — §Budgets (table format, the ~9× dev→RB5009 factor, the
    MB-vs-MiB note) and §Measuring reliably.
-5. SECURITY.md — every Phase 3 promise being re-verified: CA key never leaves
-   `/config`, public-only export, interception opt-in/never default, the
-   fixed crypto set.
-6. `docs/measurement-traps.md` — binding for every figure this task produces.
-7. `docs/routeros-traps.md` and `docs/deploy-rb5009.md` (§3.2 firewall, §5,
-   §5b) — before proposing any router command.
-8. `docs/code-review/Global Architecture Review-Reconciled.md` §5 items 7–14
-   — the full Phase 3 gate. This task closes the map: **7** cert home /
-   ADR-0006 (p3-01), **8** connector redesign — `connect_verified_upstream`,
-   hostname-verified upstream TLS (p3-04 decision 4), **9** DoH/DoT placement
-   (p3-05 decision 4, incl. the shared-64-permit consequence), **10**
-   event/telemetry taxonomy — `EventKind::{HttpsSni, Https}` +
-   `ClientTransport` (p3-03/04/05), **11** memory caps per new state owner
-   (leaf LRU p3-01, splice buffers p3-03, per-connection bounds p3-04/05),
-   **12** 443 steering v4+v6 and **13** on-device TLS measurements
-   (discharged here), **14** opt-in bound to stable identity — the p3-04
-   owner decision (static-lease precondition), verified per device below.
-   Confirm each against the review files; any gap is recorded as a finding,
-   not waved through.
-9. `docs/project-state.md` — current deployment/container naming before
-   proposing anything (the `fah-next` vs `fastadhunter` comment-selector trap).
+8. SECURITY.md — every Phase 3 promise being re-verified: CA key never leaves
+   `/config`, public-only export, interception opt-in/never default, the fixed
+   crypto set.
+9. `docs/measurement-traps.md` — binding for every figure this task produces.
+10. `docs/routeros-traps.md` and `docs/deploy-rb5009.md` (§3.2 firewall, §5,
+    §5b) — before proposing any router command.
+11. `docs/code-review/Global Architecture Review-Reconciled.md` §5 items 7–14
+    — the full Phase 3 gate. This task closes the map: **7** cert home /
+    **ADR-0007** `0007-certificate-machinery-home.md` (p3-01; renamed from
+    `0006-certificate-machinery-home.md` at `5c61891`, after the merge,
+    because `main` had taken 0006 for the allocation-domain ADR. Root docs
+    now mean the allocation-domain ADR by "ADR-0006"; the p3-01 / p3-02
+    review and plan files, `phase3-audit.md` and older rows of this task's
+    review still write "ADR-0006" for the certificate ADR — read 0007 there),
+    **8** connector redesign — `connect_verified_upstream`, hostname-verified
+    upstream TLS (p3-04 decision 4), **9** DoH/DoT placement (p3-05 decision 4,
+    incl. the shared-64-permit consequence), **10** event/telemetry taxonomy —
+    `EventKind::{HttpsSni, Https}` + `ClientTransport` (p3-03/04/05), **11**
+    memory caps per new state owner (leaf LRU p3-01, splice buffers p3-03,
+    per-connection bounds p3-04/05), **12** 443 steering v4+v6 and **13**
+    on-device TLS measurements (discharged here), **14** opt-in bound to
+    stable identity — the p3-04 owner decision (static-lease precondition),
+    verified per device below. Confirm each against the review files; any gap
+    is recorded as a finding, not waved through.
 
-Root CLAUDE.md working agreement applies with full force here: **the RB5009 is
-off limits** — every router step below is *proposed to the owner, who runs it*;
+Root CLAUDE.md working agreement applies with full force: **the RB5009 is off
+limits** — every router step below is *proposed to the owner, who runs it*;
 read-only queries are fine. No `.md` edit, commit, or phase move without an
 explicit yes.
 
@@ -45,319 +67,317 @@ explicit yes.
 
 Four workstreams, in this order (each produces evidence the next consumes):
 
-1. Dev-box benches → budget numbers.
-2. Security verification suite + offline full-mode E2E (code, gates).
-3. On-device work **with the owner**: dst-nat 443, CA install, Private DNS,
-   measurements, 24 h soak.
+1. Dev-box benches and code gates at the tip → budget candidates.
+2. Security verification suite + offline full-mode E2E — re-run at the tip and
+   close the merge's coverage gaps.
+3. On-device work **with the owner**: probe preconditions, the N sweep, the
+   measurement campaign, dst-nat 443, CA install, Private DNS, 24 h soak.
 4. Documentation sweep (all proposed, then landed on approval).
+
+## Merge inbox
+
+The integration audit left six items on this task. They are closed here, not
+deferred again.
+
+| # | Item | Closed by |
+| --- | --- | --- |
+| F1 | `main`'s IP-literal fix covers `Proxy` only; on the HTTPS path an allowed IP-literal SNI is handed to the resolver and fails 100 % of the time, while CONFIGURATION.md says the switch governs both | **owner decision in step 5**: port the fix (literal → `policy.check` → connect) or state HTTP-only in CONFIGURATION.md and in the `tls_server` test that pins today's outcome. Not left open past this task |
+| F2 | splice on a domain has no crate-level test; only `e2e_https` covers it, through the compiled-in N, on a box with ≥ 2 cores | step 2: one `domains: 1` splice test in `fah-http/tests/sni.rs` |
+| F3 | the per-domain `JoinSet` bound is `http.max_connections + https.max_connections`, and `HANDOFF_QUEUE` (32/domain) is shared by both lanes, so a head-of-line stall blocks both acceptors | step 5 doc line; measured incidentally by P10's mixed arm |
+| F4 | the 5 s drain is held by an idle spliced session (`idle_timeout` 60 s) or an idle intercepted keep-alive | recorded in step 4's shutdown arm; the fix rides alloc 11b, owner decision before the full-mode soak |
+| F5 | `https` is in `BOOT_KEYS` but no `https.*` key is in the classification test's boot list | step 2: one line in that test |
+| F6 | the review file's "Runbook 6 cannot start before the 0.3.1 soak ends 2026-09-08" is stale — 0.3.1 was stopped on day 6, 0.3.3 runs to 2026-09-14 | step 4's soak sequencing, and the review file's next approved edit |
 
 ## Detailed implementation plan
 
 ### Step 1 — bench-backed budget candidates (dev box)
 
-Benches to add or re-run, each A/B against a real pre-phase-3 checkout (never
-criterion's stored baseline — measurement-traps rule):
+**The A/B baseline changed, and improved.** Campaign 1 had to A/B against a
+pre-phase-3 checkout that also predated the allocation domains, so the delta
+mixed two changes. `main` at `857865d` now carries the domains, so
+`phase3-06` tip vs `main` `857865d` isolates Phase 3 on one execution model.
+Never criterion's stored baseline — measurement-traps rule.
 
 | Figure | Where measured | Feeds |
 | ------ | -------------- | ----- |
-| SNI verdict + splice added latency **and splice throughput** | `fah-http` `benches/proxy.rs` `https_sni_splice` (p3-03) — see the p3-03 carry-over below | budget row |
-| Interception handshake overhead (terminate + re-originate vs splice) | new `fah-http` bench | budget row |
+| SNI verdict + splice added latency, and splice throughput | `fah-http` `benches/proxy.rs` `https_sni_splice`, harness rebuilt on `TlsServer::bind/serve` so the measured relay is the shipped one | budget row |
+| Interception handshake overhead (terminate + re-originate vs splice) | `fah-http` bench | budget row |
 | Minted-leaf cache hit rate under a browsing-like host distribution | `fah-certs` bench + a workload replay (host list from a real browsing session, corpus recorded) | budget row (hit-rate target) |
-| Leaf mint cost | p3-01's `certs_mint` bench, re-run | diagnostic beside the cache row |
-| DoT/DoH added latency vs UDP (in-engine) | p3-05's harness measurement, promoted to a repeatable bench | budget row |
-| RAM with all engines loaded (`dns+http+https`, rules compiled, caches warm) | dev-box RSS reading + on-device soak (step 3) | re-affirmed RAM row |
+| Leaf mint cost | p3-01's `certs_mint` bench, re-run; D11-on-device is its device twin | diagnostic beside the cache row |
+| DoT/DoH added latency vs UDP (in-engine) | the `encrypted_latency` harness, promoted to a repeatable bench | budget row |
+| RAM with all engines loaded (`dns+http+https`, rules compiled, caches warm) | dev-box RSS reading + the on-device soak | re-affirmed RAM row |
+| Existing DNS/HTTP benches | unchanged set, A/B tip vs `857865d` | the >10 % hot-path regression rule |
 
-**p3-03 carry-over (review findings M4 + n5, deferred to this task):**
+Dev-box figures convert with the measured ~9× factor only for CPU-bound
+in-engine work; **TLS and HTTP-path figures do not convert** — p2-08 measured a
+4.5–10× spread for HTTP work — so every TLS/splice/handshake budget row rests
+on the step-4 on-device measurements, with the dev-box run as the A/B sanity
+check. No clock readings. Budget values are derived from measurement plus
+headroom and **proposed to the owner in the review file**; this plan invents
+none, and each PERFORMANCE.md row is `TBD — must be measured during
+verification` until then.
 
-- **M4 — splice throughput.** On the dev box the splice arm ran ~6× under
-  direct-to-origin (148 vs 907 MiB/s, loopback, 1 MiB per connection, 16 KiB
-  buffers). If any of that survives on-device the RB5009 ceiling sits near
-  25 MiB/s, under gigabit LAN. Before writing the budget row: A/B
-  `SPLICE_BUF` 16 KiB vs 64 KiB **on the probe container** against a real
-  pre-change checkout, and add a steady-state arm (one connection, N MiB) beside
-  the per-connection one so connect + ClientHello + teardown are not in the
-  throughput figure. Memory cost of the larger buffer is
-  `2 × SPLICE_BUF × https.max_connections` — report both axes.
-- **n5 — bench fidelity.** `splice_in_front_of` in `benches/proxy.rs` runs
-  its own accept loop: no permit and no `set_nodelay` on the accepted client
-  socket, which production's `accept_loop` sets. Rebuild the harness on
-  `TlsServer::bind/serve` first, so the measured relay is the shipped one; a
-  figure taken on the old harness is diagnostic only.
+Every number carries corpus, workload, device **and N**
+(`docs/code-review/phase3/p3-06-testing-results-2.md`; the review file
+§Measurements links to it; root docs get a pointer, never the narrative — root
+CLAUDE.md rule 19).
 
-**p3-04 carry-over (review S1 decision + N8, deferred to this task):**
+### Step 2 — security suite and coverage gaps
 
-- **S1 — h2 limits on the terminate leg were set, not measured.** Shipped:
-  64 concurrent streams × 64 KiB send buffer **per stream**, 256 KiB
-  connection window, 64 KiB stream window, on both the client and the origin
-  side (`intercept.rs` `H2_*` consts); CONFIGURATION.md `[https]
-  max_connections` states the ≈ 5.5 MiB per-session worst case. Measure on the
-  probe container: intercepted h2 throughput with these limits, and per-session
-  RSS under a 64-stream stall (slow client, fast origin). The named alternative
-  is 32 streams × 32 KiB (≈ 1.5 MiB). Report both axes; lowering the constants
-  is an owner decision on the measured trade, never a pre-emptive edit.
-- **N8 — `spawn_blocking(prewarm)` runs on every intercepted connection, cache
-  hit or not.** One cross-thread hop (and a thread spawn on a cold blocking
-  pool) per connection. Profile the terminate-leg handshake on-device; if the
-  hop is material against the two TLS handshakes it sits between, the named
-  fix is a non-counting cache peek in `fah-certs` (`cached_leaf` cannot serve
-  as the peek — it counts `unwarmed_misses`). Measure before touching.
+The suite exists and is green at the tip: `security_phase3` 7/7,
+`fah-http` `interception` 33/33, `sni` 9/9 (audit §Measurements). This step
+re-runs it at the phase tip and closes what the merge exposed.
 
-Every number recorded with corpus, workload and device
-(`docs/code-review/phase3/p3-06-phase3-verification-review.md` §Measurements;
-root docs get a pointer, never the narrative — root CLAUDE.md rule 19).
-Dev-box latency figures convert with the measured ~9× factor only for
-CPU-bound in-engine work; **TLS and HTTP-path figures do not convert** —
-p2-08 measured 4.5–10× spread for HTTP work — so every TLS/splice/handshake
-budget row rests on the step-4 on-device measurements, with the dev-box run
-as the A/B sanity check. No clock readings. Budget values are **derived from these measurements plus headroom,
-proposed to the owner in the review file** — this plan invents none; each
-PERFORMANCE.md row is `TBD — must be measured during verification` until then.
+Re-run, unchanged in intent — each asserts an externally observable property of
+the full binary or full API surface:
 
-### Step 2 — security verification suite (`tests/` or `crates/fastadhunter/tests/security_phase3.rs`)
+1. `ca_key_unreachable_via_every_route` — walk the live route table, request
+   each documented route with authenticated probes, assert no response body
+   contains the CA key's base64 payload (read `/config/ca-key.pem` first;
+   stronger than grepping for `PRIVATE KEY`). Path-traversal probes against the
+   static file server included.
+2. `non_listed_client_is_never_minted_a_leaf` — the non-listed client's TLS
+   connection is spliced, and the client-observed chain is the origin's.
+3. `bad_upstream_cert_is_not_masked` — an invalid upstream cert produces a
+   client-visible failure, never a re-signed success.
+4. `exports_contain_no_private_material` — both formats, over the wire.
+5. `splice_is_byte_identical_when_interception_is_off`.
+6. `dns_query_is_the_only_new_unauthenticated_route`, including the closed
+   posture: an unloadable API pair ⇒ 853 refuses, :53 answers, never plaintext.
 
-Adversarial checks, not unit re-runs — each asserts an externally observable
-property of the full binary or full API surface:
+New in campaign 2:
 
-1. **CA key unreachable via every API route.** Walk the live route table
-   (boot the binary/harness, enumerate every documented route from API.md,
-   including `/dns-query`, static dashboard paths and `/debug/*`), request
-   each with authenticated GET/POST probes, and assert no response body ever
-   contains a private-key block or the raw key bytes (read
-   `/config/ca-key.pem` first, search responses for its base64 payload —
-   stronger than grepping for `PRIVATE KEY`). Path-traversal probes against
-   the static file server (`web.rs`) aimed at `/config` included.
-2. **A non-listed client cannot be intercepted.** Two clients, one opted in
-   (p3-04's mechanism); the non-listed one's TLS connection is spliced
-   byte-identically (sampled comparison of client-observed certificate chain
-   — it must be the origin's, never a minted leaf).
-3. **A bad upstream certificate is never masked.** With interception active,
-   an upstream presenting an invalid cert (self-signed test origin) must
-   produce a client-visible failure, not a re-signed success.
-4. **Exported artifacts contain no private material** — over the wire, both
-   formats (extends p3-02's test to the full-binary harness).
-5. **Interception disabled ⇒ byte-identical splice** — sampled payload
-   comparison through the SNI path vs a direct connection.
-6. **DoT never falls back to plaintext; `/dns-query` is the only
-   unauthenticated addition** (re-asserted at the full-binary level).
+- **F2 — splice on a domain.** `fah-http/tests/sni.rs` gains one test with
+  `domains: 1`, asserting the splice verdict and that the session ran on a
+  `fah-http-<i>` thread. Today the harness defaults to `domains: 0` and the
+  domain splice path is covered only by `e2e_https`, on a box with ≥ 2 cores.
+- **F5 — boot-key classification.** One `https.*` key added to the
+  `fah-api` `config_store` boot list in
+  `boot_key_classification_matches_what_actually_applies_the_key`.
+- **Hand-off saturation (F3), integration level.** With `domains: 1` and a
+  `HANDOFF_QUEUE` full of one lane's connections, the other lane's acceptor is
+  still bounded and no permit leaks. Property, not a figure.
 
-Any failure here is a finding for the review file and blocks `DONE` — these
-are SECURITY.md promises, not targets.
+Any failure here is a finding for the review file and blocks `DONE` — these are
+SECURITY.md promises, not targets.
 
-**p3-04 carry-over — terminate-leg unhappy paths (review M4 rows 5–9 and
-N10, deferred to this task by the accepted p3-04 review; integration tests in
-`crates/fah-http/tests/interception.rs`, in that harness):**
+### Step 3 — offline full-mode E2E
 
-| Path | Proof |
-| --- | --- |
-| concurrent h2 requests from one listed client | 8 parallel `/page` on one h2 session ⇒ all 200, `origin.connections == 1` |
-| streaming request body | POST 4 MiB ⇒ origin sees 4 MiB; proxy RSS delta bounded by the S1 limits — a body is never held |
-| client disconnect mid-response, upstream disconnect mid-response | session ends and the permit is released: `max_connections = 1`, a second connect succeeds. Rename or extend `an_idle_intercepted_session_is_closed_and_its_permit_returned`, which today asserts nothing about the permit (N10) |
-| shutdown with live intercepted sessions | record the semantics: `Engine::shutdown` aborts the accept loop only; live sessions end with the runtime — pre-existing, shared with :80 and the splice leg (p3-04 L4) |
-| IPv6 listed client end-to-end | `[::1]` listed, connect over v6 ⇒ intercepted (today only `intercepts()` is unit-tested for v6) |
+`crates/fastadhunter/tests/e2e_https.rs` exists and passes 2/2. One change:
 
-These are the p3-04 harness's own tests, not new unit coverage; the "Unit:
-none new" line below stands.
+- **A4 — the domain lane is exercised by accident.** The test writes no
+  `[runtime]` key, so N comes from `available_parallelism` on whatever box
+  runs it; on a 1–2 core CI-less dev box it would silently take the shared
+  path. Pin `runtime.http_runtimes` in the fixture and assert the thread name,
+  so "full mode on the domain lane" is what the green line means.
 
-**p3-05 carry-over (review N3, deferred to this task):** a certificate
-failure at boot (no store, an unloadable API pair, a `ServerConfig` build
-error) closes 853 with one `error!` line; `Server::dot_addr()` reads `None`
-after `serve`, but no API surface reports it — `/health` and
-`GET /api/v1/certificates` do not know DoT is closed, so a default-on
-listener can silently disappear. Propose (API.md edit, owner approval) a
-`dot` listener state — `listening` / `closed` plus the reason — on
-`GET /api/v1/certificates` or in `/health` `checks`, and extend suite item 6
-with the closed posture: an unloadable API pair ⇒ 853 refuses, :53 answers,
-never plaintext. Until it lands, the Step 4 Private DNS runbook starts by
-reading the container log for that line.
-
-### Step 3 — offline full-mode E2E (one scripted scenario)
-
-Extend `crates/fastadhunter/tests/e2e.rs` (or a sibling `e2e_https.rs`
-sharing `tests/common/`): boot `engine.mode = "dns+http+https"` with ephemeral
-ports, one rule set, one client; assert in sequence — DNS block (UDP), HTTP
-URL block (8080 path), SNI block, a no-SNI ClientHello handled per
-`[https.sni] no_sni` (closed and classified — p3-03 owns the full matrix, this
-just proves the full-mode path does not hang or crash on it), intercepted HTTPS
-URL block (client trusting the test CA, opted in), DoT query answered, DoH query
-answered. One test, seven assertions, so the mode's definition of done is a
-single green line. Windows WSAEACCES trap noted; the test must skip-with-message, not
-fail, when the ephemeral bind is refused (matching existing e2e handling).
+The scenario stands: boot `engine.mode = "dns+http+https"` with ephemeral
+ports, one rule set, one client; assert in sequence — DNS block (UDP), HTTP URL
+block, SNI block, a no-SNI ClientHello handled per `[https.sni] no_sni`,
+intercepted HTTPS URL block (client trusting the test CA, opted in), DoT query
+answered, DoH query answered. The Windows WSAEACCES trap stands: skip with a
+message, never fail, when the ephemeral bind is refused.
 
 ### Step 4 — on-device work (WITH the owner — propose, never run)
 
 Prepared as a numbered runbook in the review file; each step: the exact
-command, what it does, when it takes effect, and the rollback.
+command, what it does, when it takes effect, and the rollback. The measurement
+arms and their declarations live in `p3-06-testing-plan.md`; this step is the
+sequencing and the owner-executed half.
 
-1. **dst-nat 443 (v4) + the v6 story (GAR §5.12).** Read the owner's live
-   firewall/NAT chains first (read-only `print`), then propose rule text with
-   explicit placement — never a bare `add` (it appends behind any final
-   drop). Target is the container's `[https.listen]` port — default **8444**
-   (8443 is the API's; p3-03 rejects the collision at startup). The rule is
-   **`protocol=tcp` only** — UDP/443 (QUIC) stays unsteered so browsers fall
-   back to TCP instead of black-holing HTTP/3 (the container listens on no
-   UDP 443; QUIC is a documented p3-03 non-goal). Rollback =
-   remove the one rule. The v6 half: propose either the
-   equivalent v6 steering or an explicit, recorded owner decision that v6/443
-   stays unsteered this phase (record which traffic that leaves uncovered).
-   **Separately — a distinct concern from v6 steering — warn the owner that
-   steering all :443 closes no-SNI/ECH connections.** The container cannot
-   recover their destination: measured on-device 2026-08-31,
-   `getsockopt(SO_ORIGINAL_DST)` returns `ENOENT` on a dst-nat'd flow (the NAT
-   conntrack lives in the router's netns, `docs/routeros-traps.md`), so such a
-   connection is closed, not forwarded, and the DNS layer is its only backstop.
-   Confirm the deployed lists cover the domains the owner cares about before
-   enabling full mode.
-2. **CA install walkthrough** on one Android and/or Windows test device:
-   export DER via the API, install, screenshots into `docs/images/`
-   (image files are not `.md` — still list them for the owner since they land
-   in the repo). Then browse; record what the device shows.
-   **`GET /api/v1/certificates/ca/export` is authenticated** (p3-02 decision,
-   SECURITY.md's two-exemption rule stands — the public root is not secret,
-   but a third exemption widens the unauthenticated surface for one download
-   per device). The walkthrough is therefore: open the dashboard on the
-   device, log in, download `fastadhunter-ca.crt` (the session cookie carries
-   the request), install from Downloads. Not a bare URL. If the device's
-   browser drops cookies on download, fall back to `curl -H "Authorization:
-   Bearer …" -o fastadhunter-ca.crt` from another machine and transfer the
-   file; record which path the walkthrough used.
-   **Sequencing (p3-04 L2, owner decision: a listed client with no CA is
-   closed, not spliced):** list the test device in `[https.interception]
-   clients` only **after** the CA is installed on it, then restart
-   (boot-class). Listing it earlier turns every HTTPS connection from that
-   device into a closed socket and a `status 0` `https` event until the
-   install lands. **ECH (p3-04 L7):** from the listed device, browse one
-   ECH-enabled origin; expect the browser to retry without ECH and the retry
-   to be filtered under the real name; record the extra upstream handshake and
-   `status 0` event per ECH origin, and whether the retry was visible to the
-   user. Unlisted devices are unaffected.
-3. **Private DNS**: p3-05 decision 3 walked end-to-end — pick the hostname,
-   propose the local answer for it (a `$dnsrewrite` rule mapping it to the
-   container address — the bootstrap: the phone resolves the Private DNS
-   hostname over plain DNS while validating), set Settings → Network →
-   Private DNS → hostname, confirm the SNI-minted leaf validates. **Record
-   the explicitly-tested assumption either way:** whether this device's
-   Private DNS validation consults the user CA store (vendor behaviour
-   varies; if it refuses, the imported-real-cert route is the remaining path
-   and the walkthrough documents that outcome).
-4. **Pinned-app spot check**: one banking app on the test device with
-   interception active for it excluded/not opted in — must work unchanged.
-   **Before this check** the owner trims or extends
-   `fah_http::BASELINE_EXCLUSIONS` (p3-04 TODO — the shipped list is a first
-   cut: Apple/Google/Microsoft update, push and store hosts, WhatsApp, Signal,
-   PayPal, Revolut, Wise, N26, eight Romanian banks); it is a code change
-   with its own gates, and the final list is recorded in this task's review
-   file together with the CONFIGURATION.md `exclude_domains` text that names
-   it. The banking app used must be covered by the baseline or by
-   `exclude_domains`, else the check proves nothing about exclusions.
-   For every intercepted client, **verify the static-lease precondition**
-   (p3-04's GAR §5.14 owner decision): confirm on the router (read-only) that
-   the listed IP is a static lease/address before calling §5.14 closed.
-5. **Measurements on-device (GAR §5.13):** TLS handshake cost, splice
-   throughput, intercepted-session RSS under a 64-stream stall (P3), DoT/DoH
-   latency vs UDP — via the probe-container procedure (`docs/routeros-traps.md`; the
-   *(2026-09-03: "interception CPU under browsing" withdrawn — per-leg CPU is
-   not separable on the RB5009; the review's P8 full-mode CPU diagnostic
-   replaces it, review §Pre-declaration declaration changes)*
-   `fah-probe` harness facts in `docs/project-state.md`), not the production
-   container. Pre-declare each measurement's workload and sample size before
-   running it — the phase-2.6 lesson: a declaration that can be quietly
-   edited is not a declaration.
-6. **24 h soak in full mode** on the production container — this is a deploy
-   and needs its own owner approval; numbers vs the budget rows; RAM ≤ 128 MB
-   steady (budget in decimal MB, readings in MiB — compare like with like).
-   Watch item from p3-05 decision 4: peak concurrent DoH sessions against the
-   shared 64-permit API ceiling — the recorded number decides whether the
-   named escape hatch (const bump / separate semaphore) is ever built.
-   Second watch item (p3-03 m8, split in p3-04): `non_tls` vs
-   `hello_timeouts` over the window — the ratio says whether silent browser
-   preconnects dominate the port, which decides if the `hello_timeout_ms`
-   default (10 s of permit per silent socket) needs revisiting.
-   **Prerequisite for that watch item (p3-04 L5 + TODO, required before the
-   soak starts):** `non_tls`, `hello_timeouts` and `upstream_cert_failures`
-   are counted in `fah_http::ProxyCounters` but published nowhere —
-   `/telemetry` carries only the refused sum (`main.rs` telemetry poll). Settle
-   the p3-04 decision first: a per-listener block on `GET /api/v1/telemetry`
-   (API.md edit, owner approval — API.md §telemetry already names the three
-   as unpublished) or another agreed read path. The same decision must fix
-   L5 before any consumer exists: on the terminate leg `requests` is per
-   connection while `blocked`/`refused_claim` are per request, so
-   `blocked > requests` is possible on one listener.
-   **Third watch item (p3-04 N4 detector, shared with p3-05):**
-   `GET /api/v1/certificates` `leaf_cache.unwarmed_misses` reads 0 after the
-   browsing workload and at the end of the soak — **with a CA installed**.
-   p3-05 mints at the handshake (there is no re-warm ticker), so DoT moves the
-   counter only when the resolver misses without a preceding mint: no CA
-   (every SNI hello counts — expected, not a finding), an invalid SNI, or a
-   mint failure. A non-zero value with a CA is p3-04's prewarm-then-evict
-   window (more than 512 first-sight hosts inside one handshake) or a DoT
-   mint failure — attribute it before filing.
-   **Mint-rate watch (p3-05 review N8):** with a CA installed, **every** LAN
-   client can drive one mint per DoT handshake for any SNI it names — 853 is
-   default-on, whereas p3-04 confined SNI-driven minting to listed clients.
-   Record `leaf_cache.minted_total` growth per hour over the soak, the peak
-   `inflight`, and `superseded`/`evictions`; a hostile or misbehaving client
-   shows as a mint rate far above the number of DoT hostnames in use and as
-   p3-04's leaves churning (re-mints on the terminate leg). Today's bound is
-   64 connections × one P-256 mint; measure the on-device mint cost here
-   (the ≈ 0.5 ms figure is the dev-box number through the documented factor,
-   not a reading). A per-client mint rate limit is the named escape hatch,
-   built only if the soak shows the need.
-   **Fourth watch item (p3-04 L4):** an intercepted h2 session cut by the
-   idle watchdog leaves its in-flight stream tasks and the upstream
-   connection task alive until the origin answers or `hello_timeout` fires,
-   outside `max_connections`. Over the soak, RSS must not trend with the
-   number of idle-cut sessions; record the reading as the L4 evidence. The
-   shutdown half of L4 is in Step 2's carry-over table.
-7. **Certificate-store checks that only the device can give** (deferred by
-   the p3-01 and p3-02 reviews to this task — **all mandatory**, on the probe
-   container, propose-only for anything on the production one):
-   - **Import-then-restart** over the API: `POST …/import` with a real pair,
-     restart, confirm the acceptor serves the imported certificate and status
-     reports `"imported"`. This is the acceptance path for p3-02 M1's
-     boot-abort half and for the MEDIUM-2 recovery API.md documents (copy
-     back from `api-archive/`, or the staged-key completion).
-   - **`0600` on every private key** after each write path: first-boot
-     `api-key.pem`, imported `api-key.pem`, `ca-key.pem` after generate and
-     after import, every archived key under `ca-archive/` and `api-archive/`,
-     and the staged `*.pem.tmp` while it exists. `write_private`'s
-     `OpenOptionsExt::mode(0o600)` compiles only on unix, so this is its first
-     execution anywhere — zero coverage on the Windows dev box.
-   - **Archive bound**: regenerate past `fah_certs::MAX_ARCHIVES` (8) and
-     confirm the ninth answers the documented `ArchiveFull` error with the
-     live pair intact; record the retention story the operator needs
-     (p3-02 LOW-2 — pruning is an owner decision, verification only records
-     what happens at the cap).
-   - **Generate / import wall time** on the device (p3-02 plan §Performance
-     contract left them `TBD`), for the PERFORMANCE.md rows below.
+**0. Probe preconditions — blocking, before any HTTPS arm.**
+
+- The probe config carries `strategy = "fallback"`, removed at `fa9451a`. The
+  probe **will not boot** on the tip build until it is dropped or set to
+  `adaptive`.
+- The probe is attached to `envlists fah-env`, which pins production's
+  `FAH__RUNTIME__HTTP_RUNTIMES=2`; env beats file and API, so N cannot be moved
+  from the config API. Propose `fahprobe-env` (mimalloc keys + the N var,
+  modelled on phase 2.6's `h1buf-env`) and `/container/set` to attach it.
+- New images at the tip hash for every container: `fah-probe`,
+  `fah-splicebench`, `fah-p4`, `fah-certs`. Campaign 1's `a2d0802` images are
+  retired.
+- The second LAN endpoint is the **Mac** — wired, Node, ssh, AC power, a second
+  IPv4 alias for P2, `sudo` for the `:443` origins. Preconditions and the
+  Darwin costs are in `p3-06-testing-plan.md` §The Mac endpoint.
+- **Still outstanding:** P3 needs a publicly trusted certificate under a public
+  name on the Mac origin (Let's Encrypt DNS-01). The release probe verifies
+  upstreams against `webpki-roots` only. Until that exists, P3 does not run.
+- **Closed, not owed:** campaign 1's P3 BLOCKED state — one h2 stream of 64
+  answered through the terminate leg (smoke F7: control 64/64, stall 5/64) —
+  is **p3-04 S2**: filed, root-caused (256 KiB h2 connection window), fixed
+  (`H2_CONNECTION_WINDOW` = 4 MiB, both legs), pinned by the `interception.rs`
+  stall tests and reviewed in the review file §Post-review work E
+  (2026-09-03). Campaign 2's P3 stall arm confirms the fix on the device; a
+  barrier not met is a regression finding. The fix also moved the P3 memory
+  ceiling from 5.5 MiB to ≈ 8 MiB (`p3-06-testing-plan.md` §The P3 ceiling).
+
+**1. P10 — the N sweep with TLS (ADR-0006 revisit trigger).** Runs before the
+other on-device arms: it fixes the N every later figure is taken at, and its
+result is what the `phase3-06` deploy uses. `http_runtimes ∈ {0, 1, 2, 4}`, one
+owner-run restart per arm, the phase-2.6 rig plus TLS arms
+(`p3-06-testing-plan.md` §P10 rig). Output: a proposed N and the measured trade
+— connection rate, p95, DNS under TLS load, cores, ΔRSS — for the owner to
+decide on.
+
+**2. The measurement campaign** — SNI, P1 (loopback sweep, LAN, control), P2,
+P3, P4, P4-LAN, P5, D11, P6, P8-probe, P9-probe, Runbook 7. All declared in
+`p3-06-testing-plan.md`; all at the N item 1 settles unless the arm sweeps it.
+
+**3. dst-nat 443 (v4) + the v6 story (GAR §5.12).** Read the owner's live
+firewall/NAT chains first (read-only `print`), then propose rule text with
+explicit placement — never a bare `add` (it appends behind any final drop).
+Target is the container's `[https.listen]` port — default **8444** (8443 is the
+API's; p3-03 rejects the collision at startup). The rule is **`protocol=tcp`
+only** — UDP/443 (QUIC) stays unsteered so browsers fall back to TCP instead of
+black-holing HTTP/3. Rollback = remove the one rule. The v6 half: propose
+either equivalent v6 steering or an explicit, recorded owner decision that
+v6/443 stays unsteered this phase, naming the traffic that leaves uncovered.
+**Separately — a distinct concern from v6 steering — warn the owner that
+steering all :443 closes no-SNI/ECH connections.** The container cannot recover
+their destination: measured on-device 2026-08-31, `getsockopt(SO_ORIGINAL_DST)`
+returns `ENOENT` on a dst-nat'd flow (the NAT conntrack lives in the router's
+netns), so such a connection is closed, not forwarded, and the DNS layer is its
+only backstop. Confirm the deployed lists cover the domains the owner cares
+about before enabling full mode.
+
+**4. CA install walkthrough** on one Android and/or Windows test device: export
+DER via the API, install, screenshots into `docs/images/` (image files are not
+`.md` — still list them for the owner since they land in the repo). Then
+browse; record what the device shows.
+`GET /api/v1/certificates/ca/export` is **authenticated** (p3-02 decision), so
+the walkthrough is: open the dashboard on the device, log in, download
+`fastadhunter-ca.crt`, install from Downloads. Not a bare URL. If the device's
+browser drops cookies on download, fall back to `curl -H "Authorization:
+Bearer …" -o fastadhunter-ca.crt` from another machine and transfer the file;
+record which path was used.
+**Sequencing (p3-04 L2, owner decision: a listed client with no CA is closed,
+not spliced):** list the test device in `[https.interception] clients` only
+**after** the CA is installed on it, then restart (boot-class). Listing it
+earlier turns every HTTPS connection from that device into a closed socket and
+a `status 0` `https` event until the install lands.
+**ECH (p3-04 L7):** from the listed device, browse one ECH-enabled origin;
+expect the browser to retry without ECH and the retry to be filtered under the
+real name; record the extra upstream handshake and `status 0` event per ECH
+origin, and whether the retry was visible to the user.
+
+**5. Private DNS** — p3-05 decision 3 walked end-to-end: pick the hostname,
+propose the local answer for it (a `$dnsrewrite` rule mapping it to the
+container address — the bootstrap: the phone resolves the Private DNS hostname
+over plain DNS while validating), set Settings → Network → Private DNS →
+hostname, confirm the SNI-minted leaf validates. **Record the explicitly-tested
+assumption either way:** whether this device's Private DNS validation consults
+the user CA store (vendor behaviour varies; if it refuses, the imported-real-
+cert route is the remaining path and the walkthrough documents that outcome).
+The runbook starts by reading the container log for a certificate failure at
+boot — a `DotListener::Closed` posture is surfaced but easy to miss.
+
+**6. Pinned-app spot check** — one banking app on the test device with
+interception active but that app excluded or not opted in; must work unchanged.
+**Before this check** the owner trims or extends
+`fah_http::BASELINE_EXCLUSIONS` (the shipped list is a first cut); it is a code
+change with its own gates, and the final list is recorded in this task's review
+file together with the CONFIGURATION.md `exclude_domains` text that names it.
+The app used must be covered by the baseline or by `exclude_domains`, else the
+check proves nothing. For every intercepted client, **verify the static-lease
+precondition** (GAR §5.14): confirm on the router (read-only) that the listed
+IP is a static lease before calling §5.14 closed.
+
+**7. Certificate-store checks that only the device can give** — all mandatory,
+on the probe container, propose-only for anything on the production one:
+
+- **Import-then-restart** over the API: `POST …/import` with a real pair,
+  restart, confirm the acceptor serves the imported certificate and status
+  reports `"imported"`.
+- **`0600` on every private key** after each write path: first-boot
+  `api-key.pem`, imported `api-key.pem`, `ca-key.pem` after generate and after
+  import, every archived key under `ca-archive/` and `api-archive/`, and the
+  staged `*.pem.tmp` while it exists. `write_private`'s
+  `OpenOptionsExt::mode(0o600)` compiles only on unix — zero coverage on the
+  Windows dev box.
+- **Archive bound**: regenerate past `fah_certs::MAX_ARCHIVES` (8) and confirm
+  the ninth answers `409` `archive_full` with the live pair intact.
+- **Generate / import wall time** on the device — P6.
+
+**8. 24 h soak in full mode** on the production container — a deploy, with its
+own owner approval. **It cannot start before the 0.3.3 soak ends 2026-09-14**
+(same container; audit F6 corrects the stale 2026-09-08 date). Numbers against
+the budget rows; RAM ≤ 128 MB steady (budget in decimal MB, readings in MiB —
+compare like with like). Watch items:
+
+- a. Peak concurrent DoH sessions against the shared 64-permit API ceiling —
+  the recorded number decides whether the named escape hatch (const bump /
+  separate semaphore) is ever built.
+- b. `non_tls` vs `hello_timeouts` over the window — the ratio says whether
+  silent browser preconnects dominate the port, which decides if the
+  `hello_timeout_ms` default (10 s of permit per silent socket) needs
+  revisiting. **Prerequisite:** these and `upstream_cert_failures` are counted
+  in `fah_http::ProxyCounters`; the per-listener block on
+  `GET /api/v1/telemetry` must be settled first (API.md edit, owner approval),
+  and with it p3-04 L5 — on the terminate leg `requests` is per connection
+  while `blocked`/`refused_claim` are per request, so `blocked > requests` is
+  possible on one listener.
+- c. `GET /api/v1/certificates` `leaf_cache.unwarmed_misses` reads 0 after the
+  browsing workload and at the end of the soak — **with a CA installed**.
+  Attribute before filing: no CA means every SNI hello counts, which is
+  expected; a non-zero value with a CA is the prewarm-then-evict window or a
+  DoT mint failure.
+- d. **Mint rate.** With a CA installed, every LAN client can drive one mint
+  per DoT handshake for any SNI it names — 853 is default-on, whereas p3-04
+  confined SNI-driven minting to listed clients. Record `minted_total` growth
+  per hour, peak `inflight`, `superseded`/`evictions`. A per-client mint rate
+  limit is the named escape hatch, built only if the soak shows the need.
+- e. **Idle-cut sessions (p3-04 L4).** An intercepted h2 session cut by the
+  idle watchdog leaves its in-flight stream tasks and the upstream connection
+  task alive until the origin answers or `hello_timeout` fires, outside
+  `max_connections`. RSS must not trend with the number of idle-cut sessions.
+- f. **Shutdown drain (audit F4).** Record the stop time with live sessions;
+  an idle spliced session holds the 5 s drain. Inside `stop-time=10s`, but the
+  number belongs in the record.
+
+Plus P8 and P9 proper on the soak deploy, against the 0.3.3 container as the
+comparator.
 
 ### Step 5 — documentation sweep (all proposed, landed on approval)
 
-- PERFORMANCE.md §Budgets: the new rows (SNI+splice, interception handshake,
-  leaf-cache hit rate, DoT/DoH added latency, **cold `prewarm` per first-sight
-  host** — p3-01's `certs_mint` bench measures the whole cold path including
-  the eviction scan, not raw keygen, so label the row that way — and
-  **CA generate / pair import wall time** from Step 4 item 7), each with its
-  measured column and a pointer to the review file.
-- SECURITY.md: no new promises — verify wording matches what shipped
+- **PERFORMANCE.md §Budgets** — the new rows (SNI+splice, interception
+  handshake, leaf-cache hit rate, DoT/DoH added latency, cold `prewarm` per
+  first-sight host, CA generate / pair import wall time), each with its
+  measured column, **the N it was measured at**, and a pointer to the review
+  file. The splice-throughput row is **relative to P1-control**; the
+  intercepted-h2-relay row keeps ≥ 50 MiB/s and gains a **P3 ÷ P1-LAN**
+  column so a miss is attributable; campaign 1's absolute "≥ 100 MiB/s" is
+  withdrawn as unmeasurable on this topology
+  (`p3-06-testing-plan.md` §The 100 MiB/s row is withdrawn) — an owner
+  decision to record, not a silent drop.
+- **Audit F1** — owner decision, then the matching edit: either port the
+  IP-literal fix to the HTTPS path, or state HTTP-only in CONFIGURATION.md and
+  in the test that pins the current behaviour.
+- **Audit F3** — one line recording that the per-domain `JoinSet` bound is
+  `http.max_connections + https.max_connections` and that `HANDOFF_QUEUE` is
+  shared by both lanes.
+- **ADR-0006 revisit** — P10's result is the answer to the trigger. Record it:
+  an amendment to the allocation-domain ADR if N changes for TLS, or a
+  recorded confirmation that N=2 still holds. Owner decides which.
+- **SECURITY.md** — no new promises; verify wording matches what shipped
   (present-tense sweep of §Later phases).
-- `docs/deploy-rb5009.md`: new §HTTPS (dst-nat 443, CA install, Private DNS,
-  rollback) mirroring the existing §5b structure — including the operator
-  warning that steering all :443 closes no-SNI/ECH connections (measured
-  `ENOENT`, not forwardable; DNS-layer backstop), so the operator knows what
-  full mode does to that slice of traffic before enabling it.
-- **Dashboard re-review (ROADMAP.md: Phase 3 triggers one).** p3-03 left
+- **`docs/deploy-rb5009.md`** — new §HTTPS (dst-nat 443, CA install, Private
+  DNS, rollback) mirroring §5b, including the operator warning that steering
+  all :443 closes no-SNI/ECH connections (measured `ENOENT`, not forwardable;
+  DNS-layer backstop).
+- **Dashboard re-review** (ROADMAP.md: Phase 3 triggers one). p3-03 left
   `https-sni` out of `dashboard/frontend/src/pages/live-feed/filters.ts`
   (`KINDS = ['dns', 'http']`), and `detail.tsx` gates the HTTP detail block on
   `kind === 'http'`, so an SNI row renders through the DNS-shaped branch with
-  empty method/path; p3-04 adds a third kind (`https`). Add both kinds to
-  `KINDS` and a detail branch for each, or record the owner's decision to
-  defer to a dashboard task — an unfiltered kind is a finding, not a note.
-- README operating-modes wording drift check (the task's doc sweep).
-- CONFIGURATION.md/API.md: only if p3-02…p3-05 left an approved edit pending.
-- ROADMAP.md: Phase 3 deliverables (SNI filtering, per-client interception,
-  DoT/DoH listeners) to delivered wording at phase close — the p3-04 plan's
-  §Doc changes carried this line and the p3-04 approved doc list did not
-  include it, so it lands here.
+  empty method/path; p3-04 adds a third kind (`https`). Add both kinds and a
+  detail branch for each, or record the owner's decision to defer to a
+  dashboard task — an unfiltered kind is a finding, not a note.
+- **README** operating-modes wording drift check.
+- **CONFIGURATION.md / API.md** — the telemetry per-listener block (soak watch
+  item b) and anything p3-02…p3-05 left approved-but-pending.
+- **ROADMAP.md** — Phase 3 deliverables (SNI filtering, per-client
+  interception, DoT/DoH listeners) to delivered wording at phase close.
+- **`docs/project-state.md`** — rewritten, not appended, at phase close.
 
 ## Performance contract
 
@@ -365,66 +385,49 @@ This task *sets* the contract rather than consuming one. Classes:
 
 - **Hard gates:** RAM ≤ 128 MB steady on-device in full mode; security suite
   green; verdict parity and splice-byte-identity properties.
-- **Targets (numbers TBD from step 1, proposed to the owner):** SNI added
-  latency, interception handshake overhead, leaf-cache hit rate, DoT/DoH
-  added latency.
-- **Diagnostic:** mint cost, handshake CPU profile, per-transport soak
-  distribution, startup delta with the cert store present.
+- **Targets (numbers TBD, proposed to the owner):** SNI added latency,
+  interception handshake overhead, leaf-cache hit rate, DoT/DoH added latency,
+  splice throughput **relative to P1-control**.
+- **Diagnostic:** mint cost, per-transport soak distribution, startup delta
+  with the cert store present, CPU per relayed byte, the P10 curve.
 
-Rule: every figure published in PERFORMANCE.md carries measured status; a
-target that could not be measured on-device ships as
+Rule: every figure published in PERFORMANCE.md carries measured status and the
+N it was taken at; a target that could not be measured on-device ships as
 `TBD — must be measured during verification` or is withheld, never invented.
 The >10 % hot-path regression rule applies to the phase's whole diff against
-the pre-phase-3 checkout on the existing DNS/HTTP benches.
+`main` `857865d` on the existing DNS/HTTP benches.
 
 ## Tests
 
-### Unit
+**Unit** — none new; unit coverage belongs to p3-01…p3-05. Two existing tests
+gain a line (F5's boot key, A4's pinned N).
 
-None new — this task verifies; unit coverage belongs to p3-01…p3-05.
+**Integration** — the security suite, six named scenarios, re-run at the tip;
+plus the F2 domain-splice test and the F3 hand-off saturation property.
 
-### Integration
+**E2E** — `full_mode_blocks_at_every_layer`, with N pinned in the fixture.
 
-The security suite (step 2) — six scenarios above, exact test names
-`ca_key_unreachable_via_every_route`, `non_listed_client_is_never_minted_a_leaf`,
-`bad_upstream_cert_is_not_masked`, `exports_contain_no_private_material`,
-`splice_is_byte_identical_when_interception_is_off`,
-`dns_query_is_the_only_new_unauthenticated_route`.
+**Regression** — full workspace suite green at the phase tip; existing DNS/HTTP
+benches vs `main` `857865d` within the 10 % rule or justified; Phase 2 HTTP e2e
+(`http_e2e.rs`) unchanged.
 
-### E2E
+**Security** — the suite is the deliverable; on-device: pinned-app check,
+CA-install verification, WAN-exposure re-check (nothing new listens WAN-side —
+read-only router query).
 
-`full_mode_blocks_at_every_layer` (step 3) — the one scripted scenario.
-
-### Regression
-
-- Full workspace suite green at the phase tip.
-- Existing DNS/HTTP benches vs pre-phase-3 checkout: within the 10 % rule or
-  justified.
-- Phase 2 HTTP e2e (`http_e2e.rs`) unchanged — SNI/interception must not have
-  disturbed the plaintext path.
-
-### Security
-
-The suite *is* the security deliverable (step 2); on-device: pinned-app
-check, CA-install verification, WAN-exposure re-check (nothing new listens
-WAN-side — read-only router query).
-
-### Performance
-
-Step 1 benches + step 4.5 on-device measurements + the soak.
+**Performance** — step 1 benches + the step 4 campaign + the soak.
 
 ## Verification / Gates
 
 - **Mandatory:** fmt / clippy / test workspace; security suite green; E2E
   scenario green; bench A/B recorded; review file complete with §Measurements
-  (corpus/workload/device on every row).
-- **Mandatory but owner-executed:** dst-nat 443 applied, CA installed on the
-  test device, Private DNS working, 24 h soak numbers recorded. If the owner
-  defers the soak, the task goes `AWAITING SOAK` in the phase table with the
-  flip condition named — the phase is not finished while it stands
-  (plan/CLAUDE.md vocabulary).
-- **Recommended:** re-run the p2.6-13 harness sanity checks before trusting
-  probe-container numbers.
+  (corpus / workload / device / N on every row).
+- **Mandatory but owner-executed:** the probe preconditions (config, env list,
+  tip images), P10 run and its N decision, dst-nat 443 applied, CA installed on
+  the test device, Private DNS working, 24 h full-mode soak numbers recorded.
+  If the owner defers the soak, the task stays `AWAITING SOAK` with the flip
+  condition named — the phase is not finished while it stands.
+- **Recommended:** harness sanity checks re-run before trusting probe numbers.
 - **Diagnostic:** per-transport traffic split over the soak window.
 
 ## Non-goals
@@ -432,7 +435,8 @@ Step 1 benches + step 4.5 on-device measurements + the soak.
 - Phase 4 HTML rewriting; performance tuning beyond meeting budgets (file
   follow-ups); ECH workarounds (measured transport limitation — no-SNI/ECH has
   no recoverable destination, the DNS layer catches those domains); iOS
-  walkthrough (Android/Windows only, per the task).
+  walkthrough (Android/Windows only, per the task); a line-rate LAN origin
+  (needs a host on the far side of the router — recorded, not built).
 
 ## Acceptance criteria (from the task file)
 

@@ -11,7 +11,7 @@ import path from 'node:path';
 import https from 'node:https';
 import dgram from 'node:dgram';
 import { execFileSync } from 'node:child_process';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { performance } from 'node:perf_hooks';
 
 export const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
@@ -80,6 +80,16 @@ export function parseArgs(spec, argv = process.argv.slice(2)) {
     if (s.required && (out[k] === null || out[k] === undefined)) fail(`--${k} is required (--help for the list)`);
   }
   return out;
+}
+
+export function isMain(metaUrl) {
+  const entry = process.argv[1];
+  if (!entry) return false;
+  try {
+    return pathToFileURL(entry).href.toLowerCase() === metaUrl.toLowerCase();
+  } catch {
+    return false;
+  }
 }
 
 export function stamp() {
@@ -315,6 +325,10 @@ export class Run {
     const mode = this.config?.engine?.mode ?? null;
     this.log(`engine.mode = ${mode}`);
     if (this.needsHttps && !(typeof mode === 'string' && mode.includes('https'))) this.invalid(`engine.mode ${mode} carries no https listener`);
+    const n = this.config?.runtime?.http_runtimes;
+    this.httpRuntimes = Number.isInteger(n) ? n : null;
+    this.log(`runtime.http_runtimes = ${this.httpRuntimes ?? 'unreadable'} (every HTTPS figure records it — plan §The N axis)`);
+    if (this.needsHttps && this.httpRuntimes === null) this.invalid('could not read runtime.http_runtimes from /api/v1/config (pre-domain build, or the key is missing)');
     return this;
   }
 
@@ -428,6 +442,7 @@ export class Run {
       tip: this.tip,
       probe: this.args.probe,
       probe_version: this.health?.version ?? null,
+      http_runtimes: this.httpRuntimes ?? null,
       host: this.host,
       args: { ...this.args, key: this.args.key ? '<set>' : null },
       ...extra,

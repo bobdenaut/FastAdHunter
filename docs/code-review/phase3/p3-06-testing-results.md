@@ -1,4 +1,37 @@
-# p3-06 — testing results
+# p3-06 — testing results (campaign 1 — SUPERSEDED)
+
+> **Superseded 2026-09-08. No figure in this file is a result for the current
+> tip.**
+>
+> Every run recorded here used images built at `a2d0802`. That commit predates
+> merge `e0c6071`, which brought `main` `857865d` (0.3.3) into `phase3-06` and
+> re-homed the HTTPS listener onto the HTTP allocation domains:
+> `crates/fah-http/src/domain.rs` does not exist at `a2d0802`, and
+> `runtime.http_runtimes` is not a config key there. The hello peek, SNI
+> verdict, splice and the whole intercepted session now run on one of N
+> `current_thread` domain runtimes instead of the base runtime, so every
+> HTTPS-path figure below — SNI, P1, P2, P3, P5 and their diagnostics —
+> measured an execution model that is no longer shipped. The probe config
+> recorded in §Session state also carries `strategy = "fallback"`, which the
+> tip build rejects at load since `fa9451a`.
+>
+> The owner's decision (2026-09-08) is a **full re-run from zero**: no arm is
+> carried, including the ones whose path did not change (P6, D11, the P7-store
+> script side). Campaign 2 is declared in
+> [p3-06-testing-plan.md](../../../plan/wip/phase3/p3-06-testing-plan.md) and
+> writes to `p3-06-testing-results-2.md`.
+>
+> **Nothing below is edited.** This file, its `results-*/` directories and the
+> frozen §Pre-declaration plus deltas 1–15 in
+> [p3-06-phase3-verification-review.md](p3-06-phase3-verification-review.md)
+> are the record of what campaign 1 ran and under what declaration. Cite them
+> as history, never as a measured property of the tip.
+>
+> The P3 BLOCKED state this file records (one h2 stream of 64 answered
+> through the terminate leg; dev-box reproduction control 64/64, stall 5/64)
+> is **p3-04 S2**, filed and fixed on 2026-09-03 — 4 MiB h2 connection
+> window, `interception.rs` stall tests, review §Post-review work E. Nothing
+> from this file is owed as work.
 
 Figures for the arms declared in
 [plan/wip/phase3/p3-06-testing-plan.md](../../../plan/wip/phase3/p3-06-testing-plan.md)
