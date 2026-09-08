@@ -706,12 +706,161 @@ returns A before AAAA deliberately.
 ### Rollback
 
 ```routeros
-/ip/firewall/nat/remove [find comment~"fastadhunter http"]
+/ip/firewall/nat/remove [find comment="fastadhunter http"]
+/ip/firewall/nat/remove [find comment="fastadhunter http: leave local traffic alone"]
 ```
+
+Exact comments, not `comment~"fastadhunter http"`. Once §5c is applied that
+regex also matches the two https rules, so the shorter line would tear down
+HTTPS steering while claiming to roll back HTTP.
 
 Removes both rules; plain HTTP goes straight out again immediately. To disable
 the engine as well, remove `FAH__ENGINE__MODE` from `fah-env` and restart. The
 image and the DNS path are untouched either way.
+
+## 5c. HTTPS (Phase 3, `dns+http+https`)
+
+Optional and independent of §5b: skip it and HTTPS goes straight out, filtered
+only by DNS. Reversible by removing two firewall rules. **Read §The no-SNI
+warning before steering** — this is the one step in this guide that can break
+sites the DNS layer never touched.
+
+### Turn on the HTTPS engine
+
+`engine.mode` is boot-class. Set it through the API and restart:
+
+```sh
+curl -sk -X POST -H "Authorization: Bearer $FAH_KEY" -H 'content-type: application/json' \
+  -d '{"engine":{"mode":"dns+http+https"}}' https://172.17.0.2:8443/api/v1/config
+```
+
+It answers `restart_required: true`. Without the API, add a **new** envlist —
+never the key to `fah-env`, which other containers share:
+
+```routeros
+/container/envs/add name=fah-mode key=FAH__ENGINE__MODE value=dns+http+https
+/container/set [find comment="fastadhunter"] envlists=fah-env,fah-mode
+```
+
+### Prove the listener before steering
+
+```routeros
+/log/print where message~"HTTPS SNI listener bound"
+```
+
+`addr=[::]:8444` — the default `[https.listen] port` is **8444**. Then, from a
+LAN host, prove the splice serves the origin's own certificate:
+
+```sh
+openssl s_client -connect 172.17.0.2:8444 -servername neverssl.com </dev/null \
+  | openssl x509 -noout -subject
+```
+
+It must print neverssl's subject, and `WS /api/v1/events` must show a
+`kind: https-sni` item. If either is missing, do not touch the firewall.
+
+### The redirect
+
+Same shape as §5b and the same ordering rule: the skip precedes the dst-nat,
+and `add` appends to a chain with no terminal drop. Reuses §5b's
+`fah-http-skip` address list, so apply that section's list first.
+
+```routeros
+/ip/firewall/nat/add chain=dstnat action=accept protocol=tcp dst-port=443 \
+  dst-address-list=fah-http-skip \
+  comment="fastadhunter https: leave local traffic alone"
+
+/ip/firewall/nat/add chain=dstnat action=dst-nat protocol=tcp dst-port=443 \
+  in-interface-list=LAN src-address=!172.17.0.0/24 \
+  to-addresses=172.17.0.2 to-ports=8444 \
+  comment="fastadhunter https"
+```
+
+`protocol=tcp` only. UDP/443 stays unsteered so browsers fall back to TCP
+rather than black-holing HTTP/3 — QUIC interception is a p3-03 non-goal. New
+connections steer immediately; established flows finish on their conntrack
+entry.
+
+### The no-SNI / ECH warning
+
+Once :443 is steered, a TCP connection carrying **no plaintext SNI** is
+**closed**, not forwarded: the container cannot recover the destination.
+`getsockopt(SO_ORIGINAL_DST)` returns `ENOENT` through RouterOS dst-nat
+(measured 2026-08-31, [routeros-traps.md](routeros-traps.md)). That covers
+legacy clients, IP-literal HTTPS and ECH hellos the browser does not retry.
+`[https.sni] no_sni` decides only how the closure is **reported**, never
+whether it happens.
+
+Confirm the deployed lists cover what the household relies on before steering,
+and keep the rollback line at hand for the first hour.
+
+### IPv6 — decide, and record which
+
+Mirroring §5b's v6 steering extends SNI filtering to v6 traffic; leaving it
+unsteered means v6 HTTPS is covered by the DNS layer alone. Either is
+defensible, but **write down which you chose** — the two behave differently and
+nothing on the box reports the difference.
+
+```routeros
+/ipv6/firewall/nat/add chain=dstnat action=accept protocol=tcp dst-port=443 \
+  dst-address-list=fah-http-skip6 comment="fastadhunter https v6: leave local traffic alone"
+/ipv6/firewall/nat/add chain=dstnat action=accept protocol=tcp dst-port=443 \
+  dst-address-list=fah-lan6 comment="fastadhunter https v6: leave the delegated LAN prefix alone"
+/ipv6/firewall/nat/add chain=dstnat action=dst-nat to-address=fd6c:7f32:8e91:1::2/128 \
+  to-ports=8444 protocol=tcp dst-address=!fd6c:7f32:8e91:1::2/128 \
+  in-interface-list=LAN dst-port=443 comment="fastadhunter https v6"
+```
+
+Address lists and the delegation caveat are §5b's; see
+[`p2-14-review.md`](code-review/phase2/p2-14-review.md).
+
+**Consequence either way:** interception identity is IP or CIDR, and a phone's
+v6 source address rotates. A v6-steered connection from a listed device is
+therefore **spliced, not intercepted** — interception rides v4 only.
+
+### Interception and the CA
+
+Splicing needs no client setup at all; that is the "any client, zero setup"
+half of Phase 3. Interception is opt-in per client and needs the CA installed
+on each listed device first. **Install the CA before adding a device to
+`[https.interception] clients`** — a listed device without the CA sees its
+connections close.
+
+Export with `GET /api/v1/certificates/ca/export`; the per-device walkthrough
+lives in the p3-06 review file's runbook, not here.
+
+### Verify
+
+```routeros
+/ip/firewall/nat/print stats where comment~"fastadhunter https"
+```
+
+Packet counts above zero on the dst-nat rule are the only proof traffic
+arrives. Then, from an **unlisted** device with nothing installed:
+
+```sh
+curl -sv https://<a domain the deployed lists block>/
+```
+
+The TLS connection must fail before any certificate — no `subject:` or
+`issuer:` line, a reset or unexpected EOF rather than a certificate error. Read
+`GET /api/v1/telemetry`: `listeners.https.blocked` +1, `connections` +1, and
+one `WS /api/v1/events` item with `kind: "https-sni"`, `verdict: "block"`.
+
+Control: the same `curl` to an allowed domain returns the **origin's own**
+certificate, with a public issuer that is never `FastAdHunter CA`, and a
+`https-sni` `pass` item.
+
+### Rollback
+
+```routeros
+/ip/firewall/nat/remove [find comment="fastadhunter https"]
+/ip/firewall/nat/remove [find comment="fastadhunter https: leave local traffic alone"]
+```
+
+For v6, `[find comment~"fastadhunter https v6"]`. HTTPS goes straight out again
+immediately. To disable the engine too, set `engine.mode` back to `dns+http`
+and restart; the image, the DNS path and §5b are untouched either way.
 
 ## 6. On-device verification checklist
 
