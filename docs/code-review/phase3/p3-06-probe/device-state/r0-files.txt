@@ -1,0 +1,19 @@
+=== /file/print — kingston top level and the fastadhunter tree (production, read-only reference) ===
+Columns: NAME, TYPE, SIZE, LAST-MODIFIED
+  # NAME                      TYPE              SIZE       LAST-MODIFIED      
+  2 kingston/fastadhunter-ar  .tar file         14.6MiB    2026-09-07 20:01:25
+    m64-0.3.3.tar                                                             
+  5 kingston/fastadhunter-ar  .tar file         14.6MiB    2026-09-07 14:31:02
+    m64-0.3.2.tar                                                             
+  6 kingston/fastadhunter     directory                    2026-09-07 20:08:06
+  8 kingston/fastadhunter-ar  .tar file         14.3MiB    2026-09-01 10:00:31
+    m64-0.3.1.tar                                                             
+ 10 kingston/fastadhunter/ro  container store              2026-09-07 20:08:57
+    ot                                                                        
+ 11 kingston/fastadhunter/da  directory                    2026-09-04 21:48:47
+    ta                                                                        
+  (listing truncated at the config directory; individual key and certificate
+   filenames under it add nothing and are not recorded)
+
+=== /file/print where name~"fah-" ===
+(no rows — none of the four campaign containers, directories or tars exist yet)

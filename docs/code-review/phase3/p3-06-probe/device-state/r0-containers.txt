@@ -1,0 +1,40 @@
+=== /container/print detail ===
+Flags: 
+S - stopped, N - starting, R - running, T - stopping, E - downloading/extracting, D - deleting, F - download/extract failed
+ 0 R ;;; fastadhunter
+     file=kingston/fastadhunter-arm64-0.3.3.tar remote-image="" 
+     check-certificate=yes name="fastadhunter-0.3.3" 
+     tag="docker.io/library/fastadhunter:0.3.3" os="linux" arch="arm64" 
+     interface=veth1 env="" envlists=fah-env cmd="" entrypoint="" 
+     stop-signal=15-SIGTERM stop-time=10s 
+     root-dir=/kingston/fastadhunter/root layer-dir="" mount="" tmpfs="" 
+     mountlists=fah-config,fah-data shm-size=64.0MiB dns="" hostname="" 
+     domain-name="" workdir="/home/nonroot" logging=yes start-on-boot=yes 
+     auto-restart-interval=none cpu-list=cpu0,cpu1,cpu2,cpu3 
+     memory-high=unlimited memory-current=109.4MiB cpu-usage=0 devices="" 
+     passed-devs="" image-id="b6ff3a9580d1172505bf955cdf77457500c58db3ce9b01cf4
+         eb13bd0cb28530a" 
+     layers=root hosts="" 
+=== /container/envs/print detail ===
+Flags: X - disabled 
+ 0   list=fah-env key="FAH__RUNTIME__HTTP_RUNTIMES" value="2" 
+ 1   list=fah-env key="MIMALLOC_ARENA_EAGER_COMMIT" value="0" 
+ 2   list=fah-env key="MIMALLOC_PURGE_DECOMMITS" value="1" 
+ 3   list=fah-env key="MIMALLOC_PURGE_DELAY" value="0" 
+=== /container/mounts/print detail ===
+Flags: X - disabled 
+ 0   list=fah-config src=/kingston/fastadhunter/config dst="/config" 
+     read-only=no 
+ 1   list=fah-data src=/kingston/fastadhunter/data dst="/data" read-only=no 
+=== /interface/veth/print detail ===
+Flags: X - disabled; R - running 
+ 0  R ;;; fastadhunter
+      name="veth1" mac-address=6E:29:AC:D8:A1:F0 
+      container-mac-address=6E:29:AC:D8:A1:F1 
+      address=172.17.0.2/24,fd6c:7f32:8e91:1::2/64 gateway=172.17.0.1 
+      gateway6=fd6c:7f32:8e91:1::1 dhcp=no dhcp-address="" 
+ 1    ;;; fah-test
+      name="veth3" mac-address=56:70:20:7A:42:81 
+      container-mac-address=56:70:20:7A:42:82 
+      address=172.17.0.4/24,fd6c:7f32:8e91:1::4/64 gateway=172.17.0.1 
+      gateway6=fd6c:7f32:8e91:1::1 dhcp=no dhcp-address="" 

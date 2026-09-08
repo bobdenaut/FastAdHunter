@@ -13,8 +13,9 @@ Step 4. Prepared 2026-09-08 on the dev box; **no command here has been run**.
 | Entries | `R0`–`R11`, each with command, resulting state, effect timing, restart requirement and rollback |
 | Hard boundary | **RouterOS edits only for the four `veth3` containers.** Firewall, NAT, `/system`, production on `veth1` and `/kingston/fastadhunter/` are all out of scope |
 | Owner only | **`R7`** (NAT rule) and **`R11`** (production soak deploy) — outside the boundary above, documented but never agent-run |
-| Read first | `R0` — it settles whether a `fah-probe` container exists at all. Each campaign container gets its own top-level `/kingston/fah-*/` folder; production’s tree is never written to |
-| Order that matters | `R1` before `R5`: the tip build refuses `strategy = "fallback"`, and a probe that will not boot serves no API |
+| Read first | `R0`, **already run 2026-09-08** — output in [p3-06-probe/device-state/](p3-06-probe/device-state/README.md). No probe container, no campaign tars, `veth3` free |
+| First write | **`R4`** — upload the four tars. `R1` has nothing to fix and `R5` is a plain `add`, because no probe exists yet |
+| Order that matters | `R4` → `R4b` → `R3` → `R5`. Directories and lists must exist before the container that names them |
 | Blocked | `R11` until the 0.3.3 soak ends 2026-09-14. P3 has no entry at all — it cannot run until a publicly trusted h2 origin exists |
 | Evidence behind it | [p3-06-phase3-verification-review.md](p3-06-phase3-verification-review.md) §Layer 3 and §Smoke session |
 
@@ -81,6 +82,7 @@ Each container owns one top-level folder named after it. A probe mounted on
 | `mountlists` | `fah-config,fah-data` | `fahprobe-config,fahprobe-data` — **the FAH probe only** |
 | `envlists` | `fah-env` | `fahprobe-env` — the FAH probe only |
 | `workdir` | `/home/nonroot` | `/home/nonroot` |
+| `cpu-list` | `cpu0,cpu1,cpu2,cpu3` | `""` — empty is **no restriction**, not "no CPUs". A pinned probe stops standing in for the thing it measures |
 | `start-on-boot` | `yes` | `no` |
 
 **One veth carries one container at a time** (confirmed on the device
@@ -114,17 +116,24 @@ effective only after a restart
 
 No rollback — nothing is written.
 
-**Two things R0 must settle before R5 can be written out in full.**
+**R0 was run on 2026-09-08. Output and findings:
+[p3-06-probe/device-state/](p3-06-probe/device-state/README.md)** — the
+rollback reference, the state Step 4 must be able to return to.
 
-- **Does a `fah-probe` container exist?** The live `/container/print detail`
-  sampled 2026-09-08 shows only `fastadhunter` (0.3.3, `veth1`,
-  `root-dir=/kingston/fastadhunter/root`). If there is no probe, R5's `stop`
-  and `remove` are skipped and R5 is a plain `add`, and R1's "fix the config
-  while the old image still runs" has nothing to fix — the config is created
-  fresh on first boot.
-- **Which mount lists exist?** The live read shows only `fah-config` and
-  `fah-data`, both pointing at production's directories. The campaign adds two,
-  and **only the FAH probe needs them** — see R4b.
+What it settled, and what changes below because of it:
+
+- **No `fah-probe` container exists.** One container only, `fastadhunter` 0.3.3
+  on `veth1`. So **R5 is a plain `add`** — no `stop`, no `remove` — and
+  **R1 has nothing to fix**: the probe's `/config` is written fresh at first
+  boot, so R1 collapses into "do not write that key".
+- **No campaign tars, no `fah-*` directories.** **R4 is the first write of the
+  campaign**, not R1.
+- **`veth3` is free** — it exists, comment `fah-test`, `172.17.0.4/24`, and
+  carries no container.
+- **Two mount lists, both production's.** The campaign adds two more, and
+  **only the FAH probe needs them** — see R4b.
+- **`h1buf-env` is gone.** Only `fah-env` remains, so `fahprobe-env` is built
+  from scratch in R3.
 
 Create every directory **before** the container that mounts it. A mount list
 can exist while its target does not; the container then writes into the store
@@ -135,21 +144,26 @@ it is. The `kingston/` prefix is not optional either: a path without it is the
 internal NAND, ~15 MiB per extracted image on a 1 GiB partition shared with
 RouterOS.
 
-### R1 — remove `strategy = "fallback"` from the probe config
+### R1 — `strategy = "fallback"` must never reach the probe config
 
-**Sequencing, and the reason this is first.** The tip build refuses to load
-`strategy = "fallback"` (`fa9451a`; boot exits 1 with `"fallback" was removed
-after 0.3.3; "adaptive" is the only strategy`). A probe that will not boot
-serves no API, so **this must be done while the campaign-1 image is still
-running.** Do it before R5. `POST /api/v1/config` is a deep merge and cannot
-delete a key, so the API route sets the value rather than removing it; both
-outcomes are accepted at load.
+**R0 turned this into a non-action.** There is no probe container and no probe
+config, so there is no `strategy = "fallback"` to remove — the file is written
+fresh at first boot and the key is simply never added. What remains is a check,
+not an edit.
+
+The trap it guards against is real and stays recorded: the tip build refuses to
+load `strategy = "fallback"` (`fa9451a`; boot exits 1 with `"fallback" was
+removed after 0.3.3; "adaptive" is the only strategy`). If a config carrying it
+is ever restored from a campaign-1 backup, the probe will not boot, and a probe
+that will not boot serves no API — so it must be fixed on the file, not over
+the API. `POST /api/v1/config` is a deep merge and cannot delete a key; it can
+only set the value to `adaptive`, which is also accepted at load.
 
 | | |
 | --- | --- |
 | **Command (API route)** | `curl -sk -H "Authorization: Bearer $FAHKEY" -H 'content-type: application/json' -d '{"dns":{"upstreams":{"strategy":"adaptive"}}}' https://172.17.0.4:8443/api/v1/config` |
 | **Command (file route)** | edit `/kingston/fah-probe/config/fastadhunter.toml` over SFTP and delete the `strategy` line under `[dns.upstreams]` |
-| **Expected state** | `GET /api/v1/config` reports `dns.upstreams.strategy = "adaptive"`, or the key is absent on the file route |
+| **Expected state** | after R5, `GET /api/v1/config` reports `dns.upstreams.strategy = "adaptive"` — the compiled-in default, with the key absent from the file |
 | **Takes effect** | at the next container start — `dns.upstreams` is a boot key; the response carries `"restart_required": true` |
 | **Restart required** | yes, and R5's image swap supplies it — no separate restart is needed if R1 is done before R5 |
 | **Rollback** | none wanted: the previous value is what stops the probe booting. To return to the campaign-1 state, restore the old image *and* the old config together |
@@ -256,26 +270,26 @@ downtime as well as its own runtime.
 /container/add file=kingston/fah-probe-arm64.tar interface=veth3 \
   root-dir=/kingston/fah-probe/root \
   mountlists=fahprobe-config,fahprobe-data envlists=fahprobe-env \
-  workdir=/home/nonroot logging=yes start-on-boot=no comment="fah-probe"
+  cpu-list="" workdir=/home/nonroot logging=yes start-on-boot=no comment="fah-probe"
 ```
 
 ```routeros
 /container/add file=kingston/fah-splicebench-arm64.tar interface=veth3 \
   root-dir=/kingston/fah-splicebench/root \
   cmd="--reps 1 --size-mib 8" \
-  workdir=/home/nonroot logging=yes start-on-boot=no comment="fah-splicebench"
+  cpu-list="" workdir=/home/nonroot logging=yes start-on-boot=no comment="fah-splicebench"
 ```
 
 ```routeros
 /container/add file=kingston/fah-p4-arm64.tar interface=veth3 \
   root-dir=/kingston/fah-p4/root \
-  workdir=/home/nonroot logging=yes start-on-boot=no comment="fah-p4"
+  cpu-list="" workdir=/home/nonroot logging=yes start-on-boot=no comment="fah-p4"
 ```
 
 ```routeros
 /container/add file=kingston/fah-certs-arm64.tar interface=veth3 \
   root-dir=/kingston/fah-certs/root \
-  workdir=/home/nonroot logging=yes start-on-boot=no comment="fah-certs"
+  cpu-list="" workdir=/home/nonroot logging=yes start-on-boot=no comment="fah-certs"
 ```
 
 | | |
@@ -434,8 +448,10 @@ Watch items a–f are listed in the plan and are readings, not commands.
 
 - **No `memory-high`.** It killed the live resolver once at `200M`; it is not
   proposed here at any value.
-- **No `cpu-list` on the probe.** Production carries `cpu-list=""` and pinning
-  the probe would stop it standing in for the thing it measures.
+- **No CPU pinning.** All four carry `cpu-list=""` — empty is *no
+  restriction*, not "no CPUs". Production's live value is
+  `cpu0,cpu1,cpu2,cpu3`, which is the same thing spelled out. Pinning a probe
+  to fewer cores would stop it standing in for the thing it measures.
 - **No speculative firewall rule.** R0 records that `chain=forward` ends
   without a final drop, so LAN → container already works; if that still holds,
   R7 is the only firewall write in the campaign.

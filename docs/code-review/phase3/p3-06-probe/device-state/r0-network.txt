@@ -1,0 +1,109 @@
+=== /ip/firewall/nat/print ===
+Flags: X - disabled, I - invalid; D - dynamic 
+ 0    ;;; masquerade PPPOE
+      chain=srcnat action=masquerade out-interface-list=WAN log=no 
+      log-prefix="" ipsec-policy=out,none 
+ 1    ;;; masquerade DNS filter(docker) subnet
+      chain=srcnat action=masquerade src-address=172.17.0.0/24 log=no 
+      log-prefix="" 
+ 2    ;;; No NAT WG DNS UDP
+      chain=srcnat action=accept protocol=udp src-address=10.10.10.0/24 
+      dst-address=172.17.0.2 dst-port=53 log=no log-prefix="" 
+ 3    ;;; No NAT WG DNS TCP
+      chain=srcnat action=accept protocol=tcp src-address=10.10.10.0/24 
+      dst-address=172.17.0.2 dst-port=53 log=no log-prefix="" 
+ 4    ;;; NAT pentru VPN WireGuard
+      chain=srcnat action=masquerade src-address=10.10.10.0/24 
+ 5 X  ;;; Forward ports
+      chain=dstnat action=dst-nat to-addresses=192.168.10.10 to-ports=8080 
+      protocol=tcp in-interface-list=WAN dst-port=80 log=no log-prefix="" 
+ 6 X  chain=dstnat action=dst-nat to-addresses=192.168.10.10 to-ports=443 
+      protocol=tcp in-interface-list=WAN dst-port=443 log=no log-prefix="" 
+ 7    ;;; DNS filter redirect udp:53
+      chain=dstnat action=dst-nat to-addresses=172.17.0.2 to-ports=53 
+      protocol=udp dst-address=192.168.10.1 dst-port=53 log=no log-prefix="" 
+ 8    ;;; DNS filter redirect tcp:53
+      chain=dstnat action=dst-nat to-addresses=172.17.0.2 to-ports=53 
+      protocol=tcp dst-address=192.168.10.1 dst-port=53 log=no log-prefix="" 
+ 9    ;;; fastadhunter http: leave local traffic alone
+      chain=dstnat action=accept protocol=tcp dst-address-list=fah-http-skip 
+      dst-port=80 
+10    ;;; fastadhunter http
+      chain=dstnat action=dst-nat to-addresses=172.17.0.2 to-ports=8080 
+      protocol=tcp src-address=!172.17.0.0/24 in-interface-list=LAN 
+      dst-port=80 
+=== /ip/firewall/filter/print chain=forward ===
+Flags: X - disabled, I - invalid; D - dynamic 
+ 0  D ;;; special dummy rule to show fasttrack counters
+      chain=forward action=passthrough 
+ 1    ;;; DNS filter redirect tcp:53
+      chain=forward action=accept protocol=tcp dst-address=172.17.0.2 
+      dst-port=53 log=no log-prefix="" 
+ 2    ;;; DNS filter redirect udp:53
+      chain=forward action=accept protocol=udp dst-address=172.17.0.2 
+      dst-port=53 log=no log-prefix="" 
+ 3    ;;; Allow port forward 80->80
+      chain=forward action=accept connection-nat-state=dstnat protocol=tcp 
+      dst-address=192.168.10.10 in-interface-list=WAN dst-port=80 log=no 
+      log-prefix="FWD-80-80" 
+ 4    ;;; Allow port forward 443-443
+      chain=forward action=accept connection-nat-state=dstnat protocol=tcp 
+      dst-address=192.168.10.10 in-interface-list=WAN dst-port=443 log=no 
+      log-prefix="FWD-443-443" 
+ 5    ;;; Block direct external DNS UDP
+      chain=forward action=drop protocol=udp src-address=192.168.10.0/24 
+      out-interface-list=WAN dst-port=53 
+ 6    ;;; Block direct external DNS TCP
+      chain=forward action=drop protocol=tcp src-address=192.168.10.0/24 
+      out-interface-list=WAN dst-port=53 
+ 7    ;;; FastTrack
+      chain=forward action=fasttrack-connection 
+      connection-state=established,related log=no log-prefix="" 
+ 8    ;;; drop invalid (forward)
+      chain=forward action=drop connection-state=invalid log=no log-prefix="" 
+ 9    ;;; accept established,related,untracked (forward)
+      chain=forward action=accept 
+      connection-state=established,related,untracked log=no log-prefix="" 
+10    ;;; accept in IPsec policy
+      chain=forward action=accept log=no log-prefix="" ipsec-policy=in,ipsec 
+11    ;;; accept out IPsec policy
+      chain=forward action=accept log=no log-prefix="" ipsec-policy=out,ipsec 
+12    ;;; drop WAN new not dstnat
+      chain=forward action=drop connection-state=new 
+      connection-nat-state=!dstnat in-interface-list=WAN 
+=== /ip/dhcp-server/lease/print ===
+Columns: ADDRESS, MAC-ADDRESS, HOST-NAME, SERVER
+ # ADDRESS        MAC-ADDRESS        HOST-NAME                       SERVER  
+;;; Comunicare comanda incalzire
+ 0 192.168.10.15  B8:2C:A0:0F:83:31  Gateway0F8331                   LAN_DHCP
+;;; Alina Note10
+ 1 192.168.10.18  DA:FC:B3:E1:88:05  Note10-al-utilizatorului-Alina  LAN_DHCP
+;;; TV LG WebOS
+ 2 192.168.10.16  F0:86:20:8E:7C:06  LGwebOSTV                       LAN_DHCP
+;;; DECO Mesh - parter
+ 3 192.168.10.12  1C:3B:F3:48:7E:1C  deco-M5                         LAN_DHCP
+;;; DECO Mesh - etaj1
+ 4 192.168.10.13  1C:3B:F3:48:7A:18  deco-M5                         LAN_DHCP
+;;; Liviu laptop birou
+ 5 192.168.10.14  B4:A9:FC:7F:C6:7F  HOL4742                         LAN_DHCP
+;;; Alina laptop HP
+ 6 192.168.10.17  7E:62:F0:A8:3C:94  DESKTOP-F31K6RI                 LAN_DHCP
+;;; Liviu ASUS ROG
+ 7 192.168.10.10  C8:7F:54:65:3F:DF  bobdenaut                       LAN_DHCP
+;;; Alina laptop birou
+ 8 192.168.10.20  70:A6:CC:2E:E3:9D  DESKTOP-VRA5UNC                 LAN_DHCP
+;;; Liviu OnePlus 15
+ 9 192.168.10.11  78:ED:BC:44:AE:1D  OnePlus-15                      LAN_DHCP
+;;; Alina Samsung
+10 192.168.10.19  86:34:EC:1F:0E:53  Ab                              LAN_DHCP
+;;; Adina Mobil
+11 192.168.10.21  2E:8B:61:70:61:AA  Adina-s-Galaxy-A51              LAN_DHCP
+=== /file/print where name~"kingston" (top level only) ===
+syntax error (line 1 column 42)
+=== /interface/list/member/print ===
+Columns: LIST, INTERFACE
+# LIST  INTERFACE 
+0 LAN   BRIDGE    
+1 WAN   ether1    
+2 WAN   DIGI      
+3 LAN   CONTAINERS
