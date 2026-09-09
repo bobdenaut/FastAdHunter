@@ -2096,3 +2096,77 @@ on the device where `--probe` is `172.17.0.4`. Fixed. **Not yet exercised: a
 frame whose `kind` is `https-sni`**; producing one means firing TLS connections
 at a live rig mid-campaign, so it is left to P2's first run, which degrades
 rather than fails if the filter misses.
+
+## Post-review work G — P3's certificate requirement satisfied, 2026-09-09
+
+`p3-06-testing-plan.md` §The Mac endpoint held P3 closed on a hard
+precondition: *"P3's origin needs a publicly trusted certificate under a public
+name (Let's Encrypt DNS-01), because the release probe verifies upstreams
+against `webpki-roots` only. […] Until that name exists, P3 does not run."*
+
+That name now exists. The certificate is obtained and verified.
+
+| Item | Value |
+| ---- | ----- |
+| Domain | `localbox.ro`, registered 2026-09-09 at NameBox, auto-renew on, expires 2027-09-09 |
+| DNS | delegated to Cloudflare (`gracie` / `fattouche.ns.cloudflare.com`); ROTLD published the change in under 60 s |
+| Zone signing | **unsigned** — no DS at the parent, confirmed by DoH query |
+| Certificate | `*.localbox.ro` + `localbox.ro`, EC256, 2026-09-09 → 2026-12-08 |
+| Issued by | `lego 5.4.1`, ACME DNS-01 via the Cloudflare provider |
+| Stored | `.vscode/lego/` — gitignored and untracked, private key included |
+
+The zone being unsigned matters: it removes the failure class that ended the
+earlier deSEC attempt, where five independent validators agreed the zone was
+DNSSEC-bogus. There is no DS record to go stale here.
+
+### The chain had to be chosen, not accepted
+
+The first issued certificate would have **failed the probe it was obtained
+for**. Let's Encrypt's default chain now terminates at `ISRG Root YE`
+(Generation Y hierarchy, live since 2026-01-07), and `webpki-roots` carries only
+`ISRG Root X1` and `ISRG Root X2` — checked in 0.26.11, 1.0.8 (the version
+`fah-http` resolves) and 1.0.9. `crates/fah-http/src/tls.rs:38` would have
+answered `UnknownIssuer` on a genuine, publicly trusted certificate.
+
+`openssl verify` said `OK` throughout, because the OS trust store already has
+the Y roots. Only the root set the code actually uses refuses it.
+
+Resolved by taking the cross-signed alternate chain, which terminates at
+`ISRG Root X2`. Verified the way that matters — X2 pinned as the sole trusted
+root, not the OS store:
+
+```sh
+openssl verify -CAfile isrg-root-x2.pem -untrusted chain.pem leaf.pem
+# leaf.pem: OK
+```
+
+Renewals must carry `--preferred-chain "ISRG Root X2"` or they silently revert
+to the Y chain; `--preferred-chain "ISRG Root X1"` matches nothing for an ECDSA
+leaf and is dropped without a warning. Full write-up, including how to read the
+ACME alternates without spending the 5-per-week duplicate-certificate limit:
+[`docs/solutions/environment/lets-encrypt-gen-y-chain-vs-webpki-roots.md`](../../solutions/environment/lets-encrypt-gen-y-chain-vs-webpki-roots.md).
+
+### What this does and does not unblock
+
+**Does not unblock P3.** The plan names two preconditions and this clears one.
+P3 still needs the second wired LAN endpoint to host the h2 origin, and P1, P2
+and P3-throughput need it too. No arm moves on this alone.
+
+**Does unblock the p3-05 listeners for real use.** DoT and DoH have shipped
+since p3-05 but had no publicly trusted name, so Android Private DNS — which
+fails closed against a local CA — could not accept them. A client-facing name
+under this certificate now can be served. That is a shipped feature becoming
+usable, not a test artifact.
+
+**Scope of this record.** The certificate is verified as a file on the dev box
+against a pinned root. It has not been served by any listener, and nothing has
+been deployed. `dot.localbox.ro` currently resolves to `192.168.10.1` as a
+placeholder; the address a listener actually answers on is undetermined and
+depends on Runbook 1, which has not run.
+
+### Declaration change 6 — P3's origin name
+
+P3's origin was declared as a name on the Mac endpoint. It is now a name under
+`localbox.ro`, resolving to whichever host serves the h2 origin, with the
+wildcard certificate above. No threshold, arm, sample size or ceiling moves;
+only the name and its certificate source. Recorded before P3 runs.
