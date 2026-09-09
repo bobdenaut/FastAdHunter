@@ -111,7 +111,7 @@ No root doc makes a Phase 3 claim stronger than its evidence.
 | p3-04 L2 no CA → close; N4 prewarm→evict fail-closed; S1 h2 stall RSS → P3; N8 hop measured, leave | deferred, still true |
 | p3-05 N8 mint-rate watch; N1/N11 | deferred |
 | p3-06 F10, F16 deferred; F6 withdrawn | as recorded |
-| I1 dashboard kinds — [filters.ts:30](../../../dashboard/frontend/src/pages/live-feed/filters.ts#L30) `KINDS = ['dns','http']`; `kind: string` so nothing throws; `https` / `https-sni` rows render through the DNS branch | open, needs a named task |
+| I1 dashboard kinds — [filters.ts:36](../../../dashboard/frontend/src/pages/live-feed/filters.ts#L36) now `KINDS = ['dns','http','https-sni','https']`; the three request-shaped kinds share one branch in `detail.tsx`, each tested for DNS rather than for `http`; `FeedCache` no longer draws `MISS` on a pipeline that never asked the cache | fixed 2026-09-09, `bac7454` |
 | X2 bench profile `debug-assertions` (p5-04) | open, follow-up task |
 | X3 [project-state.md:7](../project-state.md#L7) dated 2026-09-01, phase 3 absent | open, phase close |
 | deploy-rb5009.md has no HTTPS / 853 / `dns-query` section | open, after walkthrough |
@@ -131,7 +131,7 @@ No code blocker. Owner-side, per p3-06 plan Step 4:
 
 ## 7. Safe to leave until after the soak
 
-M2 doc sentence, L1, L3, L4, N1, N2, N3; coverage gaps except DoH-h2 (on-device); I1 named task; X2; project-state rewrite and deploy-rb5009.md HTTPS section at phase close; `FastAdHunter-pre3` worktree removal.
+M2 doc sentence, L1, L3, L4, N1, N2, N3; coverage gaps except DoH-h2 (on-device); X2; project-state rewrite and deploy-rb5009.md HTTPS section at phase close; `FastAdHunter-pre3` worktree removal.
 
 ## Fixes applied — M1, 2026-09-02 (owner-approved)
 

@@ -362,9 +362,9 @@ landed in p3-06 post-review work A). Still open:
 | id(s) | Issue | Status | Where |
 | --- | --- | --- | --- |
 | M4 | splice throughput per connection 6–9× under direct on loopback; `SPLICE_BUF` 16 vs 64 KiB (memory axis `2 × SPLICE_BUF × max_connections`, 32 vs 128 MiB) decided only on the device | deferred | p3-06 review §Pre-declaration P1 (LAN-vs-loopback definition still an owner decision) |
-| dashboard | live-feed `KINDS = ['dns','http']` — `https-sni` (and `https`) items cannot be filtered and render through the DNS branch | deferred | p3-06 review §Findings I1 — needs a named task (phase3-audit §5) |
+| dashboard | live-feed `KINDS` lacked `https-sni` and `https`, so those items could not be filtered and rendered through the DNS branch | fixed 2026-09-09, `bac7454` | p3-06 review §Proposed documentation edits item 4 |
 | n6 | `HelloScan::Incomplete` arm in `serve_connection` is unreachable (`read_client_hello` returns `NoSni` at the cap) | won't-fix | harmless, leave |
 | n7 | `to_upstream` counter is written and never read | won't-fix | `Activity` API symmetry |
 | n8 | the 16 384-byte hello bound includes record headers, so the largest legal single-record hello classifies `NoSni` | won't-fix | no client comes near it |
 
-**PASS WITH DEFERRED FINDINGS** — 5 open rows (2 deferred, 3 won't-fix). Task marked DONE 2026-09-02 (owner decision); the on-device throughput row is owed by p3-06.
+**PASS WITH DEFERRED FINDINGS** — 4 open rows (1 deferred, 3 won't-fix). Task marked DONE 2026-09-02 (owner decision); the on-device throughput row is owed by p3-06.

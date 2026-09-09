@@ -985,7 +985,7 @@ had changed the deploy guide or the dashboard at all.
 | --- | --- |
 | X1–X5 above | owner decision |
 | Every on-device row (P1–P7, Runbook 1–7): dst-nat, CA install, Private DNS, pinned app, probe measurements, soak, cert-store checks, DoH-h2-on-the-wire, DoT/DoH device latency, N1/N11 `prewarm` profile — **nothing changed in `dot.rs`/`intercept.rs`** per the plan's "measure before touching" | owner + agent after approval |
-| N3 `dot` listener state, L5/TODO `listeners` block, dashboard kinds — proposed, not built | owner yes |
+| N3 `dot` listener state, L5/TODO `listeners` block — proposed, not built. Dashboard kinds built 2026-09-09, `bac7454` | owner yes |
 | p3-05 N2/N4/N9 won't-fix, N12/N16 closed — untouched | — |
 | Real browsing-session host replay for the leaf-cache row (D12 is synthetic) | soak feed |
 
@@ -995,20 +995,21 @@ One review (F1–F18, X1–X5) and one fix round; F1 closed by option (b), F2–
 F11, F18 fixed, F6 withdrawn, F8's pinning-rule conflict settled by
 §Post-review work C. Fixed and withdrawn items are omitted — git has them.
 The measurement-validity findings MA-1–MA-11 and their resolutions live in
-[p3-06-measurement-audit.md](p3-06-measurement-audit.md). Still open:
+[p3-06-measurement-audit.md](p3-06-measurement-audit.md). I1 was closed
+2026-09-09 by `bac7454` — §Proposed documentation edits item 4 carries the
+record. Still open:
 
 | id(s) | Issue | Status | Where |
 | --- | --- | --- | --- |
 | F10 | the key-material detector searches PEM base64, its first 48 chars, raw DER and four headers; hex, base64url and JSON `\u` encodings are not searched | deferred | no owner — note for the day a route emits those |
 | F16 | splice byte-identity is proven origin→client only; the client→origin direction is sunk by the raw origin | deferred | no owner — low value, low cost |
-| I1 | dashboard live-feed kinds `https-sni` / `https` are unfiltered and render through the DNS branch | deferred | needs a named task (phase3-audit §5) |
 | I3 | `E:/FastAdHunter-pre3` worktree (`64be513`) still registered | deferred | drop at phase close |
 | X2 | `cargo bench -p fastadhunter` compiles only with `CARGO_PROFILE_BENCH_DEBUG_ASSERTIONS=true` (the `test-harness` dev-dependency unifies into the bench profile; p5-04 leftover) | deferred | follow-up task; workaround in PERFORMANCE.md §Measuring reliably |
 | X3 | `docs/project-state.md` is dated 2026-09-01 and does not mention Phase 3 | deferred | phase-close rewrite |
 | Step 4 | Runbook 1–7 on the device, P1–P9, the 24 h soak; `BASELINE_EXCLUSIONS` final names; P1/P3 LAN-vs-loopback definition | deferred | owner — §Runbook, §Hand-off state |
 | Step 5 | doc sweep remainder: deploy-rb5009.md §5c after the walkthrough, README modes row, SECURITY.md row 3, ROADMAP wording, project-state | deferred | owner — §Proposed documentation edits |
 
-**PASS WITH DEFERRED FINDINGS** — 8 open rows (8 deferred, 0 won't-fix). `AWAITING SOAK`; flip condition in §Hand-off state.
+**PASS WITH DEFERRED FINDINGS** — 7 open rows (7 deferred, 0 won't-fix). `AWAITING SOAK`; flip condition in §Hand-off state.
 
 ### GAR §5 items 7–14 — the Phase 3 gate map (plan §TASK START 8, F11)
 
