@@ -1006,7 +1006,7 @@ record. Still open:
 | I3 | `E:/FastAdHunter-pre3` worktree (`64be513`) still registered | deferred | drop at phase close |
 | X2 | `cargo bench -p fastadhunter` compiles only with `CARGO_PROFILE_BENCH_DEBUG_ASSERTIONS=true` (the `test-harness` dev-dependency unifies into the bench profile; p5-04 leftover) | deferred | follow-up task; workaround in PERFORMANCE.md §Measuring reliably |
 | X3 | `docs/project-state.md` is dated 2026-09-01 and does not mention Phase 3 | deferred | phase-close rewrite |
-| Step 4 | Runbook 1–7 on the device, P1–P9, the 24 h soak; `BASELINE_EXCLUSIONS` final names; P1/P3 LAN-vs-loopback definition | deferred | owner — §Runbook, §Hand-off state |
+| Step 4 | Runbook 1–7 on the device, P1–P8, the 24 h soak; `BASELINE_EXCLUSIONS` final names; P1/P3 LAN-vs-loopback definition. P9 recorded 2026-09-09 (§Post-review work H); P8 baseline open, 1 read of 10 | deferred | owner — §Runbook, §Hand-off state |
 | Step 5 | doc sweep remainder: deploy-rb5009.md §5c after the walkthrough, README modes row, SECURITY.md row 3, ROADMAP wording, project-state | deferred | owner — §Proposed documentation edits |
 
 **PASS WITH DEFERRED FINDINGS** — 7 open rows (7 deferred, 0 won't-fix). `AWAITING SOAK`; flip condition in §Hand-off state.
@@ -2180,3 +2180,76 @@ P3's origin was declared as a name on the Mac endpoint. It is now a name under
 `localbox.ro`, resolving to whichever host serves the h2 origin, with the
 wildcard certificate above. No threshold, arm, sample size or ceiling moves;
 only the name and its certificate source. Recorded before P3 runs.
+
+## Post-review work H — P9 baseline, and P8's first read, 2026-09-09
+
+Both halves of MA-6/MA-11 need a `dns+http` reading taken **before** the
+full-mode deploy replaces the container. This records P9's, which is final,
+and opens P8's, which is not.
+
+### P9 — boot-to-serving, `fastadhunter` 0.3.3 `mode=DnsHttp`
+
+Source: `soak-0.3.3/soak-0.3.3-t0-container-log.txt`, captured at the soak's
+T0 and already on disk — the reading below is derived from it, not from a new
+read. Device RB5009, `veth1`, `FAH__RUNTIME__HTTP_RUNTIMES=2`, warm caches.
+
+| Mark | Time |
+| --- | --- |
+| `/container/start` — router log, one-second granularity | `11:15:15Z` |
+| `fastadhunter starting … mode=DnsHttp` | `11:15:16.071381Z` |
+| `ruleset compiled from cache rules=756493` | `11:15:19.007301Z` |
+| DNS listeners bound | `11:15:19.036495Z` |
+| HTTP listener bound | `11:15:19.036576Z` |
+| privileges dropped | `11:15:19.039659Z` |
+| `API listening url=https://0.0.0.0:8443` | `11:15:19.046690Z` |
+
+**Boot-to-serving, process-internal: 2.975309 s.** Both ends are the binary's
+own log, sub-millisecond, so this is the statistic to carry forward. The
+container-observed figure — `/container/start` to `API listening` — is
+~3.05 s, bounded 3.047–4.047 s because the router log stamps to the second;
+it cannot be sharpened without a finer clock on the start mark.
+
+Composition: 2.935920 s from the first log line to a compiled ruleset, of
+which `compile_duration_seconds` reports **2.889515 s** for 756 492 rules
+after 451 062 duplicates were removed. The three binds and the privilege drop
+cost 29 ms together, and `API listening` follows 7 ms later.
+
+**Finding P9-a: the margin against the `< 3 s hard` startup row is 25 ms,
+and the composition says Phase 3 is not what decides it.** Ruleset compile is
+97.1 % of boot; every listener the phase adds — `CertStore::open`, the DoT
+and HTTPS binds, `dot_tls` — lands in the 39 ms that is left. A full-mode
+boot that misses the row misses it because of compile time, and tuning the
+Phase 3 startup path cannot buy back a budget that compile has already spent.
+The row should be read against compile-time work, not against this phase.
+
+**Scope.** Warm boot only: `refresh schedule restored from cached copies
+lists=12` and a ruleset compiled from cache. A cold boot fetches twelve lists
+over the network first and is not comparable to this figure. Superseded by
+any reading whose start mark carries sub-second resolution, or by a cold-boot
+series, neither of which exists today.
+
+### P8 — CPU share under household browsing, read 1 of 10
+
+`/tool/profile cpu=all duration=10s`, read-only over SSH, with
+`/api/v1/telemetry` and `/api/v1/stats` from the same moment. Artifacts in
+`soak-0.3.3/p8/`, one bucket per local hour per phase; the capture script is
+`requests/p8-read.ps1`.
+
+| Bucket | `fastadhunter` peak | Load at the time |
+| --- | --- | --- |
+| `before-h22`, `2026-09-09T19:58:52Z` | 0 % on all four cores, every sample | 43 350 queries / 31 395 s ≈ 1.38 q/s |
+
+**Finding P8-a: the baseline sits at the instrument's floor, so the declared
+statistic may not be reachable.** `/tool/profile` resolves 0.5 % per core. At
+household load the `dns+http` container reports 0 %, and a validation read one
+hour later peaked at exactly one quantum, 0.5 % — so the baseline is not
+uniformly zero, but it occupies the bottom quantum of the scale. A median
+delta between two readings that both live there is not a measurement. If the
+remaining reads confirm it, P8's honest result is a **bound** — "below 0.5 %
+of one core at household load, before and after" — not the delta the plan
+declares, and the plan should be redeclared rather than the bound dressed up
+as a delta.
+
+Nine reads owed, at 09, 13, 19 and 21 local, repeated after the deploy. The
+hours are the comparison: a before-read at 19:00 and an after-read at 03:00
+compare household habits, not the build.
