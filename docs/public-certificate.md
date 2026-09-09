@@ -168,14 +168,14 @@ continuing:
 | Field | Value |
 | ----- | ----- |
 | Type | `A` |
-| Name | `dot` |
+| Name | `router` |
 | IPv4 | `192.168.10.1` |
 | Proxy status | **DNS only** (grey cloud) |
 
 Proxying must be off. It replaces the answer with Cloudflare's addresses and
-covers HTTP ports only, which would break DoT on 853 and point clients at
-Cloudflare instead of the box. For a private address Cloudflare forces DNS only
-by itself and labels the record `DNS only - reserved`.
+covers HTTP ports only, so a name pointing at a box on the LAN would resolve to
+Cloudflare instead. For a private address Cloudflare forces DNS only by itself
+and labels the record `DNS only - reserved`.
 
 Then take the assigned nameserver pair and set it at NameBox under
 **Nameservere → Nameservere proprii**, replacing `ns1`/`ns2.namebox.ro`. Leave
@@ -515,10 +515,23 @@ Stop-Process -Name lego -Force
 
 ## Open items
 
-- `dot.localbox.ro` resolves to `192.168.10.1`. The deployment is **LAN-only** —
-  see the decision below. The address a listener actually answers on still
-  depends on Runbook 1, which has not run.
-- Nothing serves this certificate yet. It is verified as a file on the dev box.
+- Two records exist: `router.localbox.ro` → `192.168.10.1` (RouterOS WebFig on
+  8443) and `fah-api.localbox.ro` → `172.17.0.2` (the FastAdHunter API). No name
+  points at a DoT listener; port 853 answers nowhere yet, and the address one
+  will use depends on Runbook 1, which has not run. The deployment is
+  **LAN-only** — see the decision below.
+- **Deployed on the API since 2026-09-09.** The pair was copied onto the
+  container's `/config` volume as `api-cert.pem` / `api-key.pem` and picked up
+  at the restart of `14:15:15` local. `https://fah-api.localbox.ro:8443` now
+  verifies strictly — `curl` without `-k` answers `200`. The replaced
+  self-signed pair, and the rest of `/config`, is backed up outside the repo.
+  The `POST /api/v1/certificates/import` route was **not** used: it does not
+  exist in 0.3.3, which predates Phase 3. Replacing the files on disk is the
+  only route until a Phase 3 build is deployed.
+- Two names lost their clean padlock in the swap: `172.17.0.2` and
+  `fastadhunter` were SANs of the old self-signed certificate and are not on
+  this one, which covers `*.localbox.ro` and `localbox.ro` only. Reach the API
+  by name.
 - Renewal is manual. There is no timer, no hook and no CI; 2026-11-08 exists
   only in this document and in the Let's Encrypt expiry email.
 - The private key lives in `.vscode/lego/` on the dev box, gitignored and

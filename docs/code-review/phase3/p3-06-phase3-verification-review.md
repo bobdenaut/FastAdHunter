@@ -2158,11 +2158,20 @@ fails closed against a local CA — could not accept them. A client-facing name
 under this certificate now can be served. That is a shipped feature becoming
 usable, not a test artifact.
 
-**Scope of this record.** The certificate is verified as a file on the dev box
-against a pinned root. It has not been served by any listener, and nothing has
-been deployed. `dot.localbox.ro` currently resolves to `192.168.10.1` as a
-placeholder; the address a listener actually answers on is undetermined and
-depends on Runbook 1, which has not run.
+**Scope of this record.** The certificate is verified against a pinned root and
+is **serving the production API since 2026-09-09**: the pair was copied onto the
+container's `/config` volume and loaded at the `14:15:15` restart, and
+`https://fah-api.localbox.ro:8443` now passes strict verification. The Phase 3
+import endpoint was not used — `POST /api/v1/certificates/import` does not exist
+in the deployed 0.3.3, which predates Phase 3, so the files were replaced on
+disk.
+
+Two names exist under the zone — `router.localbox.ro` → `192.168.10.1`
+(RouterOS WebFig, its own certificate) and `fah-api.localbox.ro` → `172.17.0.2`
+(the API) — and neither serves a DoT listener; port 853 is closed. The address a
+listener will answer on is undetermined and depends on Runbook 1, which has not
+run. **P3's origin is still not served**: that needs the second LAN endpoint,
+which this certificate does not provide.
 
 ### Declaration change 6 — P3's origin name
 
