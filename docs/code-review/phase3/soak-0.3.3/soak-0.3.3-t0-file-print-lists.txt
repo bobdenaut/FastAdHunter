@@ -1,0 +1,87 @@
+Columns: NAME, TYPE, SIZE, LAST-MODIFIED
+ # NAME                       TYPE              SIZE       LAST-MODIFIED      
+ 0 kingston/fastadhunter/dat  directory                    2026-09-09 14:15:20
+   a/lists                                                                    
+ 1 kingston/fastadhunter/dat  .raw file         4142.2KiB  2026-09-08 01:39:29
+   a/lists/filter_1.raw                                                       
+ 2 kingston/fastadhunter/dat  .validators file  46         2026-09-09 14:15:19
+   a/lists/filter_63.validat                                                  
+   ors                                                                        
+ 3 kingston/fastadhunter/dat  .validators file  48         2026-09-08 01:39:31
+   a/lists/filter_48.validat                                                  
+   ors                                                                        
+ 4 kingston/fastadhunter/dat  .raw file         1175.9KiB  2026-09-08 01:39:30
+   a/lists/filter_30.raw                                                      
+ 5 kingston/fastadhunter/dat  .raw file         4829.5KiB  2026-09-08 01:39:31
+   a/lists/filter_48.raw                                                      
+ 6 kingston/fastadhunter/dat  .validators file  48         2026-09-08 01:37:30
+   a/lists/big.oisd.nl.valid                                                  
+   ators                                                                      
+ 7 kingston/fastadhunter/dat  .raw file         61.7KiB    2026-09-08 01:39:31
+   a/lists/filter_50.raw                                                      
+ 8 kingston/fastadhunter/dat  .validators file  48         2026-09-08 01:39:30
+   a/lists/filter_18.validat                                                  
+   ors                                                                        
+ 9 kingston/fastadhunter/dat  .validators file  47         2026-09-09 14:15:19
+   a/lists/filter_2.validato                                                  
+   rs                                                                         
+10 kingston/fastadhunter/dat  .raw file         56.9KiB    2026-09-07 14:35:22
+   a/lists/filter_59.raw                                                      
+11 kingston/fastadhunter/dat  .validators file  47         2026-09-08 01:39:30
+   a/lists/filter_11.validat                                                  
+   ors                                                                        
+12 kingston/fastadhunter/dat  .raw file         3708.4KiB  2026-09-09 01:40:29
+   a/lists/tif-mini.raw                                                       
+13 kingston/fastadhunter/dat  .raw file         67.7KiB    2026-09-08 01:39:29
+   a/lists/filter_3.raw                                                       
+14 kingston/fastadhunter/dat  .raw file         12         2026-08-10 11:41:15
+   a/lists/user-rules.raw                                                     
+15 kingston/fastadhunter/dat  .validators file  40         2026-09-09 13:53:34
+   a/lists/phishdestroy.vali                                                  
+   dators                                                                     
+16 kingston/fastadhunter/dat  .validators file  45         2026-09-09 14:15:19
+   a/lists/filter_43.validat                                                  
+   ors                                                                        
+17 kingston/fastadhunter/dat  .raw file         5.9MiB     2026-09-08 01:37:30
+   a/lists/big.oisd.nl.raw                                                    
+18 kingston/fastadhunter/dat  .validators file  46         2026-09-08 01:39:31
+   a/lists/filter_50.validat                                                  
+   ors                                                                        
+19 kingston/fastadhunter/dat  .validators file  36         2026-09-09 14:15:20
+   a/lists/dyndns.validators                                                  
+20 kingston/fastadhunter/dat  .raw file         237.4KiB   2026-08-29 01:34:41
+   a/lists/filter_2.raw                                                       
+21 kingston/fastadhunter/dat  .raw file         24.3KiB    2026-09-09 14:15:20
+   a/lists/dyndns.raw                                                         
+22 kingston/fastadhunter/dat  .validators file  46         2026-09-07 14:35:22
+   a/lists/filter_59.validat                                                  
+   ors                                                                        
+23 kingston/fastadhunter/dat  .raw file         3414       2026-09-06 01:38:31
+   a/lists/filter_43.raw                                                      
+24 kingston/fastadhunter/dat  .raw file         344.3KiB   2026-09-08 01:39:32
+   a/lists/doh-vpn-proxy-byp                                                  
+   ass.raw                                                                    
+25 kingston/fastadhunter/dat  .validators file  48         2026-09-08 01:39:30
+   a/lists/filter_30.validat                                                  
+   ors                                                                        
+26 kingston/fastadhunter/dat  .raw file         13.3KiB    2026-09-05 10:29:29
+   a/lists/filter_63.raw                                                      
+27 kingston/fastadhunter/dat  .raw file         3705.9KiB  2026-09-09 13:53:34
+   a/lists/phishdestroy.raw                                                   
+28 kingston/fastadhunter/dat  .raw file         120.0KiB   2026-09-08 01:39:30
+   a/lists/filter_11.raw                                                      
+29 kingston/fastadhunter/dat  .raw file         3161.8KiB  2026-09-08 01:39:30
+   a/lists/filter_18.raw                                                      
+30 kingston/fastadhunter/dat  .validators file  36         2026-09-08 01:39:32
+   a/lists/doh-vpn-proxy-byp                                                  
+   ass.validators                                                             
+31 kingston/fastadhunter/dat  .validators file  47         2026-09-08 01:39:29
+   a/lists/filter_3.validato                                                  
+   rs                                                                         
+32 kingston/fastadhunter/dat  .validators file  48         2026-09-08 01:39:29
+   a/lists/filter_1.validato                                                  
+   rs                                                                         
+33 kingston/fastadhunter/dat  .validators file  36         2026-09-09 01:40:29
+   a/lists/tif-mini.validato                                                  
+   rs                                                                         
+

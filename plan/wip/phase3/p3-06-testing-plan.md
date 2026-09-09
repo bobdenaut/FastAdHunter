@@ -124,7 +124,7 @@ is a router write) with `openssl s_client` and `source == "imported"` after;
 production container (RAM ≤ 128 MB steady; the minted-leaf hit-rate row ≥ 90 %
 from the `leaf_cache` counters; watch items a–f), and P8 / P9 proper on the
 soak deploy. **The full-mode soak cannot start before the 0.3.3 soak ends
-2026-09-14** (project-state §Now) — it is the same container.
+2026-09-16** (project-state §Now) — it is the same container.
 
 ## The Mac endpoint
 

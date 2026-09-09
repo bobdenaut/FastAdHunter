@@ -1,0 +1,18 @@
+ 2026-09-09 14:15:15 container,info,debug [CONTAINER]: fastadhunter-0.3.3: *** start
+ 2026-09-09 14:15:15 container,info,debug [CONTAINER]: fastadhunter-0.3.3: *** started PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt MIMALLOC_PURGE_DELAY=0 MIMALLOC_PURGE_DECOMMITS=1 MIMALLOC_ARENA_EAGER_COMMIT=0 FAH__RUNTIME__HTTP_RUNTIMES=2 TZ=Europe/Bucharest /fastadhunter
+ 2026-09-09 14:15:16 container,info,debug [CONTAINER]: fastadhunter-0.3.3: 2026-09-09T11:15:16.071381Z  INFO fastadhunter: fastadhunter starting config_path=/config/fastadhunter.toml data_dir=/data mode=DnsHttp
+ 2026-09-09 14:15:19 container,info,debug [CONTAINER]: fastadhunter-0.3.3: 2026-09-09T11:15:19.006671Z  INFO fah_rules::lifecycle: refresh schedule restored from cached copies lists=12
+ 2026-09-09 14:15:19 container,info,debug [CONTAINER]: fastadhunter-0.3.3: 2026-09-09T11:15:19.007301Z  INFO fastadhunter: ruleset compiled from cache rules=756493 policies=1
+ 2026-09-09 14:15:19 container,info,debug [CONTAINER]: fastadhunter-0.3.3: 2026-09-09T11:15:19.036495Z  INFO fastadhunter: DNS listeners bound udp=[::]:53 tcp=[::]:53
+ 2026-09-09 14:15:19 container,info,debug [CONTAINER]: fastadhunter-0.3.3: 2026-09-09T11:15:19.036576Z  INFO fastadhunter: HTTP listener bound addr=[::]:8080
+ 2026-09-09 14:15:19 container,info,debug [CONTAINER]: fastadhunter-0.3.3: 2026-09-09T11:15:19.039659Z  INFO fastadhunter::privilege::imp: dropped privileges after binding uid=65532 gid=65532
+ 2026-09-09 14:15:19 container,info,debug [CONTAINER]: fastadhunter-0.3.3: 2026-09-09T11:15:19.046690Z  INFO fastadhunter: API listening url=https://0.0.0.0:8443
+ 2026-09-09 14:15:19 container,info,debug [CONTAINER]: fastadhunter-0.3.3: 2026-09-09T11:15:19.047482Z  INFO fastadhunter: HTTP proxy serving on its own single-thread runtimes http_runtimes=2
+ 2026-09-09 14:15:19 container,info,debug [CONTAINER]: fastadhunter-0.3.3: 2026-09-09T11:15:19.047686Z  INFO fastadhunter: stale-while-refresh pool started workers=3
+ 2026-09-09 14:15:19 container,info,debug [CONTAINER]: fastadhunter-0.3.3: 2026-09-09T11:15:19.047703Z  INFO fastadhunter: cache cleanup scheduler started
+ 2026-09-09 14:15:19 container,info,debug [CONTAINER]: fastadhunter-0.3.3: 2026-09-09T11:15:19.658287Z  INFO fah_rules::lifecycle: list unchanged at source list=filter_2
+ 2026-09-09 14:15:19 container,info,debug [CONTAINER]: fastadhunter-0.3.3: 2026-09-09T11:15:19.700659Z  INFO fah_rules::lifecycle: list unchanged at source list=filter_43
+ 2026-09-09 14:15:19 container,info,debug [CONTAINER]: fastadhunter-0.3.3: 2026-09-09T11:15:19.744324Z  INFO fah_rules::lifecycle: list unchanged at source list=filter_63
+ 2026-09-09 14:15:22 container,info,debug [CONTAINER]: fastadhunter-0.3.3: 2026-09-09T11:15:22.911375Z  INFO fah_rules::lifecycle: list refreshed list=dyndns active=1533 inactive=0 parse_errors=0
+ 2026-09-09 14:15:22 container,info,debug [CONTAINER]: fastadhunter-0.3.3: 2026-09-09T11:15:22.911424Z  INFO fah_rules::lifecycle: scheduled refresh complete lists=4 refreshed=1 unchanged=3 failed=0 rules=756492
+

@@ -28,7 +28,7 @@ green at the tip; the measurement side starts over.
    invalidates one of campaign 1's budget rows.
 6. `docs/project-state.md` — deployment before proposing anything: production
    is 0.3.3 on `veth1` with N=2 pinned on `fah-env`, and the 0.3.3 soak runs
-   to **2026-09-14**. The probe (`fah-probe` on `veth3`, envlist `fah-env`) is
+   to **2026-09-16**. The probe (`fah-probe` on `veth3`, envlist `fah-env`) is
    recorded in `docs/code-review/phase3/p3-06-testing-results.md` §Session
    state and `docs/routeros-traps.md`, not there.
 7. PERFORMANCE.md — §Budgets (table format, the ~9× dev→RB5009 factor, the
@@ -86,7 +86,7 @@ deferred again.
 | F3 | the per-domain `JoinSet` bound is `http.max_connections + https.max_connections`, and `HANDOFF_QUEUE` (32/domain) is shared by both lanes, so a head-of-line stall blocks both acceptors | step 5 doc line; measured incidentally by P10's mixed arm |
 | F4 | the 5 s drain is held by an idle spliced session (`idle_timeout` 60 s) or an idle intercepted keep-alive | recorded in step 4's shutdown arm; the fix rides alloc 11b, owner decision before the full-mode soak |
 | F5 | `https` is in `BOOT_KEYS` but no `https.*` key is in the classification test's boot list | step 2: one line in that test |
-| F6 | the review file's "Runbook 6 cannot start before the 0.3.1 soak ends 2026-09-08" is stale — 0.3.1 was stopped on day 6, 0.3.3 runs to 2026-09-14 | step 4's soak sequencing, and the review file's next approved edit |
+| F6 | the review file's "Runbook 6 cannot start before the 0.3.1 soak ends 2026-09-08" is stale — 0.3.1 was stopped on day 6, 0.3.3 runs to 2026-09-16 | step 4's soak sequencing, and the review file's next approved edit |
 
 ## Detailed implementation plan
 
@@ -300,7 +300,7 @@ on the probe container, propose-only for anything on the production one:
 - **Generate / import wall time** on the device — P6.
 
 **8. 24 h soak in full mode** on the production container — a deploy, with its
-own owner approval. **It cannot start before the 0.3.3 soak ends 2026-09-14**
+own owner approval. **It cannot start before the 0.3.3 soak ends 2026-09-16**
 (same container; audit F6 corrects the stale 2026-09-08 date). Numbers against
 the budget rows; RAM ≤ 128 MB steady (budget in decimal MB, readings in MiB —
 compare like with like). Watch items:
