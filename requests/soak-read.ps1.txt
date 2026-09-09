@@ -1,0 +1,17 @@
+./requests/soak-read.ps1
+Tomorrow that writes t1, the day after t2, and so on. You only pass -Marker for the 
+two named captures at the end.
+
+Schedule, in local time (T0 was 14:15 local):
+
+When	Command
+Any time after 14:15 daily	./requests/soak-read.ps1
+Evening of 2026-09-15	./requests/soak-read.ps1 -Marker tend12h
+After 14:15 on 2026-09-16	./requests/soak-read.ps1 -Marker tend
+Run it any time after 14:15 each day — the marker depends on the day count, not the hour, 
+so a read at 18:00 and one at 09:00 next morning both land in the right bucket.
+
+Two behaviours worth knowing: run it twice in one day and the second refuses, 
+since that marker already has files — pass a distinct -Marker if you genuinely 
+want two. Miss a day and you simply get a gap, t3 absent; nothing breaks, 
+and the filenames say which day each reading belongs to.
