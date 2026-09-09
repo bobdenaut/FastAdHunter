@@ -20,13 +20,13 @@
   earlier runs recorded. Startup compile time comes from the boot log.
 
 .PARAMETER Host
-  Base URL of the API, e.g. https://172.17.0.2:8443
+  Base URL of the API, e.g. https://fah-api.localbox.ro:8443
 
 .PARAMETER ApiKey
   Bearer token. Printed once on first boot.
 
 .EXAMPLE
-  ./benchmark.ps1 -Host https://172.17.0.2:8443 -ApiKey 74ceb...
+  ./benchmark.ps1 -Host https://fah-api.localbox.ro:8443 -ApiKey 74ceb...
 
 .NOTES
   DESTRUCTIVE: deletes every configured list, including their /data cache

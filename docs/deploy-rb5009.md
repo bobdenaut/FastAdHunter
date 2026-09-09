@@ -12,7 +12,7 @@ that validates the [PERFORMANCE.md](../PERFORMANCE.md) budgets on-device.
 | Container bridge | `containers` · `172.17.0.0/24`, router at `172.17.0.1` |
 | Container address | `172.17.0.2` |
 | DNS service | `172.17.0.2:53` (UDP + TCP) |
-| API | `https://172.17.0.2:8443` |
+| API | `https://fah-api.localbox.ro:8443` — resolves through FastAdHunter itself, so fall back to `https://172.17.0.2:8443` whenever DNS is the thing that is broken |
 | Persistent storage | external USB SSD, mounted by RouterOS as `kingston` |
 
 Substitute your own addresses consistently; nothing below depends on these
@@ -676,7 +676,7 @@ intercepted; everything else can look healthy while nothing arrives. Then:
 ```sh
 curl -s -o /dev/null -w "%{remote_ip}\n" http://neverssl.com/
 curl -sk -H "Authorization: Bearer $FAH_KEY" \
-  "https://172.17.0.2:8443/api/v1/telemetry" | grep -o '"http":{[^}]*}'
+  "https://fah-api.localbox.ro:8443/api/v1/telemetry" | grep -o '"http":{[^}]*}'
 ```
 
 `counters.http` must have moved. For the individual requests — each carrying
@@ -731,7 +731,7 @@ sites the DNS layer never touched.
 
 ```sh
 curl -sk -X POST -H "Authorization: Bearer $FAH_KEY" -H 'content-type: application/json' \
-  -d '{"engine":{"mode":"dns+http+https"}}' https://172.17.0.2:8443/api/v1/config
+  -d '{"engine":{"mode":"dns+http+https"}}' https://fah-api.localbox.ro:8443/api/v1/config
 ```
 
 It answers `restart_required: true`. Without the API, add a **new** envlist —
@@ -885,15 +885,15 @@ export the public cert via the API if you want to pin it):
 
 ```sh
 # 8 — health (the one route that needs no key)
-curl --insecure https://172.17.0.2:8443/health
+curl --insecure https://fah-api.localbox.ro:8443/health
 
 # 9 — stats
 curl --insecure -H "Authorization: Bearer $FAH_KEY" \
-  https://172.17.0.2:8443/api/v1/stats
+  https://fah-api.localbox.ro:8443/api/v1/stats
 
 # 10 — engine state, to confirm the block in check 7 was counted
 curl --insecure -H "Authorization: Bearer $FAH_KEY" \
-  "https://172.17.0.2:8443/api/v1/telemetry"
+  "https://fah-api.localbox.ro:8443/api/v1/telemetry"
 ```
 
 Endpoint shapes are in [API.md](../API.md).
@@ -912,7 +912,7 @@ twice in a row:
   :global fahFails
   :if ([:typeof $fahFails] = "nothing") do={ :set fahFails 0 }
   :do {
-    /tool/fetch url="https://172.17.0.2:8443/health" check-certificate=no \
+    /tool/fetch url="https://fah-api.localbox.ro:8443/health" check-certificate=no \
       output=none as-value
     :set fahFails 0
   } on-error={
@@ -980,9 +980,9 @@ mkdir -p soak
 while true; do
   ts=$(date -u +%Y%m%dT%H%M%SZ)
   curl -s --insecure -H "Authorization: Bearer $FAH_KEY" \
-    https://172.17.0.2:8443/api/v1/telemetry > "soak/telemetry-$ts.json"
+    https://fah-api.localbox.ro:8443/api/v1/telemetry > "soak/telemetry-$ts.json"
   curl -s --insecure -H "Authorization: Bearer $FAH_KEY" \
-    https://172.17.0.2:8443/api/v1/stats > "soak/stats-$ts.json"
+    https://fah-api.localbox.ro:8443/api/v1/stats > "soak/stats-$ts.json"
   sleep 300
 done
 ```

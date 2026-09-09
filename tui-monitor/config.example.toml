@@ -6,7 +6,7 @@
 # be deleted. The token may instead come from $FAH_TOKEN, which overrides this
 # file.
 
-host = "172.17.0.2"
+host = "fah-api.localbox.ro"
 port = 8443
 token = "PASTE-API-KEY-HERE"
 

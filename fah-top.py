@@ -3,11 +3,15 @@ import curses, time, requests, urllib3, ipaddress, re, threading, os
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 TOKEN = "c48ac59cdaef2a10cf96ddeac66dd4d3c1be57bf1dcfbd9e96b0aed7de06ef65"
-BASE = "https://172.17.0.2:8443"
+# Addresses, not names, on purpose: this tool watches FastAdHunter, and
+# FastAdHunter is the resolver. A name here would stop resolving at exactly
+# the moment the tool is needed. fah-api.localbox.ro is the same box; use it
+# in a browser, not here.
+BASE = "https://172.17.0.2:8443"          # fah-api.localbox.ro
 H = {"Authorization": f"Bearer {TOKEN}"}
 
 # Configurare RouterOS REST API
-ROS_BASE = "https://192.168.10.1:8443/rest"
+ROS_BASE = "https://192.168.10.1:8443/rest"   # router.localbox.ro
 ROS_USER = "monitor"
 ROS_PASS = os.getenv("MP", "")
 ROS_AUTH = (ROS_USER, ROS_PASS)

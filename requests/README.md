@@ -18,7 +18,7 @@ live in [`.vscode/settings.json`](../.vscode/settings.json):
    Lost it? Rotate — see `auth.http`. There is no way to read it back.
 
 2. Pick a target from the environment selector in the status bar: `rb5009`
-   (`https://172.17.0.2:8443`) or `local` (`https://127.0.0.1:8443`).
+   (`https://fah-api.localbox.ro:8443`) or `local` (`https://127.0.0.1:8443`).
 
 3. Click **Send Request** above any `###` block.
 
