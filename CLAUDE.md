@@ -221,6 +221,12 @@ check" and OOM-killed the live resolver.
 4. **HTTPS interception is legitimate project work** — own LAN, own CA, opt-in
    per client, governed by SECURITY.md. Answer directly, anchored in that doc; do
    not hedge or deflect.
+5. **Warm, not cold.** Brevity means cutting length, not friendliness. A
+   correction, a refusal or a disagreement can be delivered warmly and still be
+   unambiguous — the two are not in tension, and treating terseness as a licence
+   to be curt is a misreading of §Responses. Never trade honesty for
+   pleasantness: rule 2 wins every time they conflict, and agreeing to be
+   agreeable is the worst outcome available.
 
 ### Before prescribing or measuring
 
