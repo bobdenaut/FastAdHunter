@@ -34,6 +34,7 @@ RouterOS container). Performance is the primary feature.
 | Where is the work right now? | [docs/project-state.md](docs/project-state.md) |
 | Touching the router / deploying? | [docs/routeros-traps.md](docs/routeros-traps.md) |
 | Reading a benchmark, soak or memory figure? | [docs/measurement-traps.md](docs/measurement-traps.md) |
+| Issuing or renewing the public TLS certificate? | [docs/public-certificate.md](docs/public-certificate.md) |
 
 Docs are the source of truth and were approved before any code. A change that
 contradicts them needs the doc updated in the same change — or an ADR if the
