@@ -3,7 +3,8 @@
 **Task:** [p3-08-client-cert-rejection.md](p3-08-client-cert-rejection.md) ·
 **ADR:** [ADR-0008](../../../docs/decisions/0008-live-interception-and-client-certificate-rejection.md)
 frozen at `fcc7244` · **Depends on:** p3-07 (§11 states the contract) ·
-**Status:** plan revised 2026-09-10 after owner review; decisions frozen (§12);
+**Status:** plan revised 2026-09-10 after owner review and the final
+pre-implementation gate (F6, F7, F8 folded in, §14); decisions frozen (§12);
 awaiting implementation approval. Nothing implemented.
 
 ## 1. Objective and scope
@@ -29,6 +30,8 @@ write to the Interception Document, no change to the success path.
 | `Event::Https`, `EventKind`, `RequestEvent.status: u16` | `crates/fah-model/src/request_event.rs` | no new kind needed |
 | measured contract | `crates/fah-http/tests/client_rejection.rs` | `InvalidData` + `AlertReceived(desc)` on TLS 1.3 and 1.2; `Rejecting` verifier, `rejecting_connector(verdict, versions)`, `untrusting_connector()`, `alert(&io::Error)` helper; wire values 0x2a/0x2e/0x30/0x31; close-without-alert has nothing to classify |
 | harness (after p3-07) | `crates/fah-http/tests/interception.rs`: `Setup`, `harness()`, `tls_to_name`, `next_event`, `https_event`, `Harness.counters`, `Harness.state`, `store.minted_total()` | the wire path a rejecting client is driven through |
+| raw ClientHello builders | `crates/fah-http/src/sni.rs:299` `tests::hello` is `#[cfg(test)] pub(crate)` — **unreachable from `tests/`**; `crates/fah-http/benches/proxy.rs:279 client_hello(host)` and `crates/fastadhunter/tests/common` `client_hello` are the reachable shapes | the close-after-hello test needs one in `tests/common/mod.rs` (F6) |
+| `ListenerCounters` literal | `crates/fah-api/tests/api.rs:373` | struct literal; gains the new field or `..Default::default()` (F7) |
 | `Interception { server_config, client_config, store, state }` (after p3-07) | `intercept.rs` | the accept arm must not read `state` |
 | dashboard `Detail` cell | `dashboard/frontend/src/pages/live-feed/detail.tsx` | already renders an `https` session row with empty parts; a 525 renders as its status |
 
@@ -115,17 +118,26 @@ has left the bounded channel. Invariant: counters are `Relaxed` atomics, no
 lock.
 
 **4 · `crates/fah-model/src/engine.rs`** — `ListenerCounters.client_cert_rejections: u64`
-with `#[serde(default)]`. Additive; the dashboard's `ListenerCounters` type
-gains an optional field in p3-09.
+with `#[serde(default)]`. Additive. The one struct-literal construction in
+the tree, `crates/fah-api/tests/api.rs:373`, gains the field (F7). The
+dashboard has no `ListenerCounters` type — `Telemetry` in
+`dashboard/frontend/src/api/types.ts:166` carries only `counters: Counters`
+— so the counter is API telemetry only and is not consumed by the dashboard
+in this phase (F8).
 
 **5 · `crates/fah-http/tests/common/mod.rs` (new)** — `provider()`, the
 `Rejecting` verifier, `rejecting_connector(verdict, versions)` and
-`untrusting_connector()` moved out of `client_rejection.rs`; both integration
-files declare `mod common;`. Why: the harness tests need the same rejecting
-client; principle 4. `client_rejection.rs` keeps its four tests unchanged.
+`untrusting_connector()` moved out of `client_rejection.rs`, plus a
+`client_hello(host: &str) -> Vec<u8>` builder (F6) — a minimal TLS 1.2-style
+ClientHello record carrying one `server_name` extension, the shape
+`benches/proxy.rs:279` already builds; the library's `sni::tests::hello` is
+`#[cfg(test)] pub(crate)` and cannot be named from an integration test. Both
+integration files declare `mod common;`. Why: the harness tests need the same
+rejecting client and one raw hello; principle 4. `client_rejection.rs` keeps
+its four tests unchanged.
 
 **6 · `crates/fah-http/tests/interception.rs`** — the wire tests of §7.2,
-built on p3-07's `Setup`/`compile` harness.
+built on p3-07's `Setup`/`Active::compile` harness.
 
 **7 · docs (not edited here, §8).**
 
@@ -173,7 +185,7 @@ counter ticks on 525 only. The event travels the existing bounded channel to
   so the fallback is asserted by name, not by omission.
 - `the_private_codes_are_distinct` — 525 ≠ 526.
 
-### 7.2 Wire (`tests/interception.rs`, listed client via `compile`, origin verified)
+### 7.2 Wire (`tests/interception.rs`, listed client via `Active::compile`, origin verified)
 
 - `a_client_refusing_our_leaf_emits_one_https_event_with_status_525`:
   `rejecting_connector(ApplicationVerificationFailure, ALL_VERSIONS)` against
@@ -191,9 +203,11 @@ counter ticks on 525 only. The event travels the existing bounded channel to
   `CertificateExpired` → `status 0`. If rustls maps the verdict differently,
   the test asserts whatever alert arrives is unclassified — the point is a
   real alert outside the set.
-- `a_client_that_closes_after_the_hello_stays_on_status_0`: send a raw
-  ClientHello (the `sni.rs` test builders) then close → accept fails without
-  an alert → `status 0`.
+- `a_client_that_closes_after_the_hello_stays_on_status_0`: send
+  `common::client_hello("origin.test")` (F6) over a plain `TcpStream`, then
+  `shutdown()` → the proxy connects and verifies the origin, mints the leaf,
+  and `accept()` fails reading the client's next record without an alert
+  (`UnexpectedEof`) → `status 0`, counter unchanged, `minted_total == 1`.
 - `a_rejection_never_touches_the_interception_state`: `Arc::ptr_eq` on
   `harness.state.current()` before and after; the document is a harness
   concern only when one exists — assert the state, which is what the arm could
@@ -255,10 +269,10 @@ p3-08 is not merely "after" p3-07. It builds on three things p3-07 defines:
    that invariant and that type; written against p3-04's shape they would be
    rewritten by p3-07 anyway.
 2. **The harness contract.** After p3-07, a listed client in the wire tests is
-   expressed as `compile(&InterceptionDocument { clients: ["127.0.0.1"], .. })`
+   expressed as `Active::compile(InterceptionDocument { clients: ["127.0.0.1"], .. })`
    published into `Harness.state`. Every p3-08 wire test needs a listed client
    to reach the terminate leg; p3-08 therefore consumes p3-07's `Setup`,
-   `compile` and `Harness.state`.
+   `Active::compile` and `Harness.state`.
 3. **The API-side contract p3-09 needs from both.** p3-09's rejection view
    consumes p3-08's 525 events and p3-07's `GET`/`PUT` with `details`. If
    p3-08 landed first, 525 rows would exist with no live exclusion to act on —
@@ -281,8 +295,17 @@ Order: p3-07 → p3-08 → p3-09.
 | 6b | Log level | `debug` for both branches |
 | 6c | `UnknownCA` | status 0, not counted, never a 525 |
 | — | `CertificateExpired` mapping | asserted by test; expectation `CertificateError::Expired → CertificateExpired`; unclassified either way |
-| — | Shared test module | `tests/common/mod.rs` (new) rather than duplicating the verifier |
-| — | `ListenerCounters` wire addition | `#[serde(default)]`; the dashboard reads it optionally (p3-09) |
+| — | Shared test module | `tests/common/mod.rs` (new) rather than duplicating the verifier; carries `client_hello` too (F6) |
+| — | `ListenerCounters` wire addition | `#[serde(default)]`; API telemetry only — the dashboard has no such type and does not read it in this phase (F8) |
+
+## 14. Final gate corrections (2026-09-10)
+
+| # | Finding | Where fixed |
+| --- | --- | --- |
+| F6 | close-after-hello test cited `sni.rs` builders that are `#[cfg(test)] pub(crate)` | §2 row, §4 step 5, §7.2 |
+| F7 | `crates/fah-api/tests/api.rs:373` `ListenerCounters` literal not listed | §2 row, §4 step 4 |
+| F8 | plan named a dashboard `ListenerCounters` type that does not exist | §4 step 4, §12 |
+| F9 (p3-07) | `compile` → `Active::compile` | §11 |
 
 ## 13. Final verification pass (owner's checklist, p3-08 half)
 

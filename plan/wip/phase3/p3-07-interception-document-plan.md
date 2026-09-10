@@ -3,7 +3,8 @@
 **Task:** [p3-07-interception-document.md](p3-07-interception-document.md) ·
 **ADR:** [ADR-0008](../../../docs/decisions/0008-live-interception-and-client-certificate-rejection.md)
 frozen at `fcc7244` · **Base for inspection:** `phase3-06` at `fcc7244` ·
-**Status:** plan revised 2026-09-10 after two owner reviews; decisions frozen
+**Status:** plan revised 2026-09-10 after two owner reviews and the final
+pre-implementation gate (findings F1–F9 folded in, §21); decisions frozen
 (§18), panic/poisoning semantics frozen (§3.7); awaiting implementation
 approval. Nothing implemented.
 
@@ -28,7 +29,8 @@ this task's author without a yes).
 | --- | --- | --- |
 | `InterceptionConfig { clients, exclude_domains }` | `crates/fah-config/src/schema/https.rs:31-35` | TOML shape, `deny_unknown_fields`, `default`; two tests at the file's tail |
 | `HttpsConfig.interception` | same file, line 14 | field of the `[https]` section |
-| `Config::load` → `load_inner` | `crates/fah-config/src/lib.rs:27-60` | defaults < file < `FAH__`, validates; first boot writes `Config::default().to_toml_string()` |
+| `Config::load` → `load_inner` | `crates/fah-config/src/lib.rs:27-60` | defaults < file < `FAH__`, validates; first boot writes `Config::default().to_toml_string()`. Returns the **effective** config — env overrides included — so it must never be the struct migration saves (§3.5, F1) |
+| `Config::from_toml_str` | `lib.rs:64-66` | the file layer alone: no env, no `validate`; what migration re-reads and saves |
 | `write_atomic` (private) | `lib.rs:94-112` | tmp-then-rename; no `fsync`; error-context closure `at(path)` evaluated after `fs::rename` returns |
 | `Config::save` | `lib.rs:85` | whole-struct `toml::to_string_pretty` through `write_atomic` |
 | `apply_one` | `crates/fah-config/src/env.rs:34-128` | hand-written env arms; `_ => Err(UnknownEnvKey)`; no array coercion |
@@ -78,7 +80,7 @@ one `Arc` with both siblings by the binary. This plan mirrors it:
 | `InterceptionScope { clients: Box<[AllowedNet]>, exclusions: ExclusionSet }` | same module | L2 | the compiled document the hot path reads |
 | `Active { document: InterceptionDocument, scope: InterceptionScope }` | same module | L2 | the one value that is published: what the operator sent and what the hot path reads, in one allocation |
 | `InterceptionState { active: ArcSwap<Active> }` | same module | L2 | the holder, mirror of `PolicyState { active: ArcSwap<ActivePolicies> }` |
-| `compile(&InterceptionDocument) -> Result<InterceptionScope, DocumentError>`, `MAX_CLIENTS = 256`, `MAX_EXCLUDE_DOMAINS = 512`, `DocumentError` (`Serialize`) | same module | L2 | validation is logic, not data; the error is the API's structured contract |
+| `Active::compile(InterceptionDocument) -> Result<Active, DocumentError>` (the one entry point), `MAX_CLIENTS = 256`, `MAX_EXCLUDE_DOMAINS = 512`, `DocumentError` (`Serialize`) | same module | L2 | validation is logic, not data; the error is the API's structured contract |
 | `InterceptionStore`, `load_or_migrate`, `InterceptionRuntime`, `InterceptionStoreError` | `crates/fah-api/src/interception_store.rs` (new) | L3 | mirror of `ConfigStore` without a second copy of the value: the file, the handle, the commit lock |
 | `Interception { server_config, client_config, store, state: Arc<InterceptionState> }` | `crates/fah-http/src/intercept.rs` | L3 | machinery stays; the lists leave |
 
@@ -111,10 +113,10 @@ construction — not by holding a reference.
 PUT /api/v1/interception
   handler (async, API worker thread) — preparation, everything fallible or allocating:
     1. serde_json::from_value::<InterceptionDocument>(body)   → shape error → 422 { details: { reason: "shape" } }
-    2. compile(&document)                                      → DocumentError → 422 { details }; nothing touched
-    3. runtime check: StoreClosed && !clients.is_empty()       → 503; nothing touched
-    4. text = serde_json::to_string_pretty(&document) + "\n"   // serialisation and its allocation, before the lock
-    5. next = Arc::new(Active { document, scope })             // the only allocation of the published value, before the lock
+    2. active = Active::compile(document)                      → DocumentError → 422 { details }; nothing touched
+    3. runtime check: StoreClosed && active.scope.client_count() > 0 → 503; nothing touched
+    4. text = serde_json::to_string_pretty(&active.document) + "\n"   // serialisation and its allocation, before the lock
+    5. next = Arc::new(active)                                 // the only allocation of the published value, before the lock
     6. spawn_blocking(move || store.commit(next, text)).await
          commit (blocking pool thread; the critical section):
            a. guard = commit_lock.lock() — recovered per §3.7 if poisoned
@@ -145,7 +147,7 @@ interleave (A persists, B persists, B publishes, A publishes → file B, runtime
 A). Contention parks a blocking-pool thread, never an executor worker; `PUT`s
 are operator actions, rare by nature.
 
-Why preparation is async-side: `compile` is CPU-only — at most 768 entries,
+Why preparation is async-side: `Active::compile` is CPU-only — at most 768 entries,
 one `Box<str>` per host, two `HashSet` builds — well under a millisecond, and a
 validation error then costs no pool hop. The serialisation (4) and the
 `Arc::new` (5) are moved out of the critical section so that the section
@@ -153,7 +155,7 @@ contains no allocation of its own except the ones inside `write_atomic`, all
 of which precede the rename (§3.7).
 
 Validate, build, persist, publish — ADR §Atomic swap. Build cannot fail once
-validation passed because `compile` is both. There is no separate `current`:
+validation passed because `Active::compile` is both. There is no separate `current`:
 `GET` reads `state.current().document`, so the document the API shows and the
 scope the hot path reads are one `Arc`, published by one instruction.
 
@@ -182,30 +184,55 @@ Runtime status handed to the store:
 present, and the whole `interception` field of `HttpsConfig` is skipped when
 both are `None`, so a saved TOML carries neither the keys nor an empty
 `[https.interception]` table. `load_or_migrate` runs once per boot, after the
-privilege drop and before the proxy and the `ConfigStore` are built:
+privilege drop and before the proxy and the `ConfigStore` are built.
+
+**Two configs, one rule (F1).** The `Config` the binary holds is the
+*effective* one — `defaults < file < FAH__` (`load_inner`). Saving it would
+bake every environment override of that boot into `fastadhunter.toml`, and
+removing the variable later would no longer restore the default. Migration
+therefore never saves the effective config. It re-reads the **file layer** —
+`Config::from_toml_str(fs::read_to_string(config_path))`, no env, no
+`validate` — takes the legacy keys from *that*, clears them there, and saves
+*that* struct. The effective config gets the same two fields cleared in
+memory, and nothing else, so `ConfigStore` and `GET /api/v1/config` agree
+with the file on the two keys while the env layer keeps winning for
+everything it sets. No env arm exists for either key (§13), so the file layer
+and the effective config always agree on their values.
 
 ```text
-lists   = config.https.interception.take()       // both fields → None in memory
+file    = Config::from_toml_str(read_to_string(config_path)?)?   // file layer only; unreadable/unparseable → boot fails naming the TOML
+lists   = file.https.interception.take()                          // legacy keys, from the file
 carried = lists.clients.is_some() || lists.exclude_domains.is_some()
+config.https.interception = InterceptionConfig::default()         // effective config: both None in memory, nothing else touched
 match read(/config/interception.json)
   Ok(text)        → document = parse(text)?                      // malformed → boot fails naming the file
                     if carried { warn!(document, config, "[https.interception] ignored; interception.json is the source of truth") }
   NotFound        → document = { clients: lists.clients.unwrap_or_default(),
                                  exclude_domains: lists.exclude_domains.unwrap_or_default() }
-                    scope = compile(&document)?                   // invalid TOML values → boot fails naming the list, file untouched
-                    write_atomic(interception.json, pretty(document))?   // unwritable /config → boot fails, as first-boot generation does
+                    active = Active::compile(document)?           // invalid TOML values → boot fails naming the list, file untouched
+                    write_atomic(interception.json, pretty(active.document))?   // unwritable /config → boot fails, as first-boot generation does
                     info!("migrated [https.interception] into interception.json")
   Err(other)      → boot fails naming the file                    // permission denied etc. — never falls through to a write
-scope = compile(&document)?                                       // existing document over cap or invalid → boot fails naming the file
-if carried { config.save(config_path)? }                          // TOML now carries neither key
+active = Active::compile(document)?                               // existing document over cap or invalid → boot fails naming the file
+if carried { file.save(config_path)? }                            // the FILE-LAYER struct: TOML now carries neither key, env values not written
 ```
 
 Properties: the document is written on exactly one branch, `NotFound`, so an
 existing file — readable or not — is never overwritten; it is never rewritten
-at boot; the TOML is rewritten only on a boot that found a key in it; a crash
-between the two writes is healed by the next boot (document present, keys
-still carried → warn, save). A fresh install (first-boot generation writes no
-keys) takes the `NotFound` branch with empty lists and never touches the TOML.
+at boot; the TOML is rewritten only on a boot that found a key in it, and
+then from the file layer, so a value that came from `FAH__` is never written
+to disk by migration; a crash between the two writes is healed by the next
+boot (document present, keys still carried → warn, save). A fresh install
+(first-boot generation writes no keys) takes the `NotFound` branch with empty
+lists and never touches the TOML. `Config::load` has already parsed the same
+file moments earlier, so the re-read cannot fail for a reason boot would not
+already have failed on; it costs one read of a file under 16 KiB, once per
+boot.
+
+`ConfigStore::apply_patch` still saves the effective config (`config_store.rs`
+`candidate.save`), so an operator's `POST /api/v1/config` bakes env values
+today. Pre-existing, operator-triggered, and out of scope (§16); migration is
+held to the stricter rule because it runs without anyone asking.
 
 ### 3.6 Structured error contract — frozen
 
@@ -361,10 +388,10 @@ keys rejected" contract. Invariant: hard rule 2 — no logic here. Tests:
 
 **A2 · `crates/fah-common/src/egress.rs` `AllowedNet`** — add `Hash` to the
 derive list (frozen). Consistent with the derived `Eq` over `{ addr, prefix_len }`.
-Why: duplicate detection in `compile` is a `HashSet<AllowedNet>` insert —
+Why: duplicate detection in `Active::compile` is a `HashSet<AllowedNet>` insert —
 O(n), never O(n²). "Duplicate" means equal after parse, exactly as `Eq`
 defines it; a host inside a listed CIDR is not a duplicate. Test: existing
-`AllowedNet` tests green; `compile` tests §14.1.
+`AllowedNet` tests green; `Active::compile` tests §14.1.
 
 **A3 · `crates/fah-rules/src/interception.rs` (new) + `lib.rs` exports**
 - `pub const MAX_NAME_LEN: usize = 253; pub const MAX_LABEL_LEN: usize = 63;`
@@ -380,16 +407,24 @@ defines it; a host inside a listed CIDR is not a duplicate. Test: existing
   `Interception::intercepts`), `excludes(&self, host) -> bool`,
   `client_count()`, `exclusion_count()`, `Default`.
 - `pub struct Active { pub document: InterceptionDocument, pub scope: InterceptionScope }`
-  with `Default` (empty document, empty scope) and `Active::compile(document) -> Result<Active, DocumentError>`.
+  with `Default` (empty document, empty scope) and
+  `Active::compile(document: InterceptionDocument) -> Result<Active, DocumentError>`
+  — **the only compile entry point** (F9). It validates and builds the scope,
+  then moves the document in beside it; every caller (`prepare`,
+  `load_or_migrate`, the harnesses) wants the published pair, so no free
+  `compile(&doc) -> InterceptionScope` exists. `InterceptionScope` has no
+  public constructor other than `Default`.
 - `#[derive(Debug, Clone, PartialEq, Eq, Serialize)] #[serde(tag = "reason", rename_all = "snake_case")]
   pub enum DocumentError { OverCap { list: &'static str, len: usize, cap: usize },
   InvalidEntry { list: &'static str, index: usize, entry: String },
   Duplicate { list: &'static str, index: usize, entry: String, duplicate_of: usize } }`
-  with `Display` producing the messages of §3.6. `serde` with `derive` is
-  already a `fah-rules` dependency through its config/model types; confirm at
-  implementation, add the workspace dep if not.
-- `pub fn compile(document: &InterceptionDocument) -> Result<InterceptionScope, DocumentError>`:
-  caps first (both lists), then `clients` parsed with `AllowedNet::from_str`
+  with `Display` producing the messages of §3.6. **`fah-rules` has no `serde`
+  dependency today** (`crates/fah-rules/Cargo.toml`: arc-swap, fah-common,
+  fah-config, fah-model, memchr, reqwest, thiserror, tokio, tracing), so
+  `Cargo.toml` gains `serde = { workspace = true }` — the workspace entry
+  already carries `features = ["derive"]`. External crate, already in the
+  build graph through `fah-model`; no layering change (F2).
+- `Active::compile` body: caps first (both lists), then `clients` parsed with `AllowedNet::from_str`
   (the parser `interception()` in `main.rs` uses today) and deduplicated by
   `HashSet<AllowedNet>` insert, then `exclude_domains` normalised with
   `normalize_host` after `trim().trim_end_matches('.')` (as `ExclusionSet::new`
@@ -457,6 +492,15 @@ pub fn state(&self) -> &Arc<InterceptionState>
 `InterceptionScope`). Why: the machinery is immutable for the process life; the
 lists are not. Invariant: `intercept()` never touches `state` — the accept arm
 p3-08 edits must keep it that way.
+Call sites of the old shape that this change breaks, all in this crate and
+all covered by `clippy --all-targets` (F7):
+- `intercept.rs:538` unit test `an_empty_client_list_intercepts_nobody` —
+  uses `ExclusionSet::empty()`; deleted (its two assertions are
+  `the_empty_set_matches_nothing` and the wire test of §14.5).
+- `benches/intercept.rs:140-146` `interception(store, root)` — the 5-arg
+  `Interception::new` with `ExclusionSet::empty()`; becomes
+  `Interception::new(server, client, store, Arc::new(InterceptionState::new(Active::compile(listed_document()).unwrap())))`.
+- `tests/interception.rs` harness — §14.5.
 
 **B4 · `crates/fah-http/src/https.rs`**
 - `with_interception(mut self, interception)` → `self.interception = Some(interception)`.
@@ -483,19 +527,35 @@ serialises byte-identically (field absent). Tests: envelope with and without
 - `pub const DOCUMENT_FILE: &str = "interception.json";`
 - `#[derive(Clone, Copy, PartialEq, Eq, Debug)] pub enum InterceptionRuntime { Live, NoListener, StoreClosed }`
 - `pub struct Loaded { pub active: Active, pub migrated: bool }`
-- `pub fn load_or_migrate(config_dir: &Path, config: &mut Config, config_path: &Path) -> Result<Loaded, InterceptionStoreError>` per §3.5 (synchronous; called once at boot before any listener exists).
+- `pub fn load_or_migrate(config_dir: &Path, config: &mut Config, config_path: &Path) -> Result<Loaded, InterceptionStoreError>`
+  per §3.5 (synchronous; called once at boot before any listener exists).
+  `config` is the effective config and is only ever *cleared* here — the
+  struct that is saved is the file layer re-read from `config_path` inside
+  the function (F1). `InterceptionStoreError` gains
+  `Toml { path, source: ConfigError }` for the re-read/save of
+  `fastadhunter.toml`, distinct from `Read`/`Parse`/`Write` on the document.
 - `pub struct InterceptionStore { path: PathBuf, state: Arc<InterceptionState>, runtime: InterceptionRuntime, commit_lock: std::sync::Mutex<()> }`
   — no `current`: the document the API shows is `state.current().document`.
   Methods: `new(state, path, runtime)`, `current() -> Arc<Active>` (lock-free),
   `state() -> &Arc<InterceptionState>`, `runtime()`,
   `prepare(&self, document: InterceptionDocument) -> Result<Prepared, InterceptionStoreError>`
-  (compile, runtime check, `text`, `Arc::new(Active)` — §3.3 steps 2–5; pure
-  apart from allocation), and
+  (`Active::compile`, runtime check, `text`, `Arc::new(active)` — §3.3 steps
+  2–5; pure apart from allocation), and
   `commit(&self, prepared: Prepared) -> Result<Arc<Active>, InterceptionStoreError>`
   (blocking; §3.7 a–d then `info!`; documented as "call from `spawn_blocking` only").
   `commit` acquires the lock with `unwrap_or_else(PoisonError::into_inner)`;
   when `commit_lock.is_poisoned()` was true it calls `clear_poison()` and logs
   `error!("a previous interception commit panicked; lock recovered — file and active state are consistent by construction")`.
+- **Test-only panic hook (F3).** `#[cfg(test)] panic_after_lock: AtomicBool`
+  on `InterceptionStore` (absent from every non-test build, so the shipped
+  struct is unchanged). When set, `commit` panics immediately after step a
+  (lock acquired) and before step b (`write_atomic`) — the one place a
+  hypothetical bug could unwind while holding the lock with the file still
+  old. It is the only way to drive the panic → `JoinError` → 500 path,
+  because the recovery policy makes a *poisoned* lock succeed, not fail
+  (§14.3, §14.4). The route test reaches it through the in-crate test module
+  (`routes.rs` tests build `AppState` themselves); no `test-harness` feature
+  surface is added.
 - `pub enum InterceptionStoreError { Invalid(DocumentError), Unavailable(&'static str), Read { path, source: io::Error }, Parse { path, source: serde_json::Error }, Write { path, source: ConfigError } }`.
 - File text: `serde_json::to_string_pretty` plus a trailing newline.
 Why: mirror of `ConfigStore` with a single published value, validation before
@@ -511,15 +571,25 @@ lives inside `commit`).
 **C4 · `crates/fah-api/src/routes.rs`**
 - `.route("/interception", get(get_interception).put(put_interception))`.
 - `get_interception` → `Json(state.interception.current().document.clone())`.
-- `put_interception(State, Json(body): Json<serde_json::Value>)`:
+- `put_interception(State, body: Result<Json<serde_json::Value>, JsonRejection>)`
+  (F4): the body goes through the crate's existing rejection mapping —
+  `certs.rs:229 body_error` (moved to `error.rs` or re-exported, one copy) —
+  so a syntax error, a wrong `Content-Type` or an unreadable body answers
+  **400 `bad_request`** *inside the envelope*, as `/certificates`, `login`
+  and `password` do (`routes.rs:1510,1552`), not axum's plain-text default
+  that `post_config` still emits. Then
   `serde_json::from_value::<InterceptionDocument>(body)` → on error
   `ValidationFailedWithDetails { message: serde's, details: {"reason":"shape"} }`;
   `prepare` → `Invalid(e)` → `ValidationFailedWithDetails { message: e.to_string(), details: to_value(&e) }`,
   `Unavailable` → `Unavailable { retry_after: None }` (503);
   `spawn_blocking(move || store.commit(prepared)).await` →
-  `Err(JoinError)` → if `is_panic()`: `error!(payload = ?join_error.into_panic(), "interception commit panicked")`,
+  `Err(join_error)` (F5): **both branches**, never an unguarded `into_panic()`:
+  `if join_error.is_panic()` → `error!(payload = ?join_error.into_panic(), "interception commit panicked")`
   then `Internal("the commit panicked; the change was either fully applied or not at all — see the log")`;
-  `Write` → `Internal` (500, message names the path and the I/O error).
+  `else` (the task was cancelled — only runtime shutdown does that) →
+  `error!(error = %join_error, "interception commit did not run")` then
+  `Internal("the commit did not run; nothing was applied — see the log")`.
+  `Ok(Err(Write))` → `Internal` (500, message names the path and the I/O error).
   Returns `Json(active.document.clone())` — the stored document, never a
   `restart_required` field.
 - `post_config`: a fourth early rejection, mirroring the `rules.lists` one:
@@ -541,14 +611,17 @@ boot).
 ### D — binary
 
 **D1 · `crates/fastadhunter/src/main.rs`**
-- `run(config: Config, …)` → `let mut config = config;` at the top of the
-  `/config`-writing block (after `privilege::drop_to_service_user`, line 445,
-  beside `ApiKeyStore::load_or_create`):
+- `Engine::start(config: Config, …)` → `let mut config = config;` at the top
+  of the `/config`-writing block (after `privilege::drop_to_service_user`,
+  line 445, beside `ApiKeyStore::load_or_create`):
   `let loaded = fah_api::load_or_migrate(config_dir, &mut config, config_path)?;`
   (error → the same `Box<dyn Error>` return every other boot failure takes;
-  the message names the file or the list). Runs inside the existing
-  `spawn_blocking` region that already wraps the other `/config` work at
-  boot, or its own — it is one-shot, before any listener.
+  the message names the file or the list). `config` here is the effective
+  config `main.rs:140` loaded; the function clears its two fields and saves
+  the file layer it re-reads itself (§3.5, F1) — the binary passes nothing
+  else and saves nothing. Runs inside the existing `spawn_blocking` region
+  that already wraps the other `/config` work at boot, or its own — it is
+  one-shot, before any listener.
   `let interception_state = Arc::new(InterceptionState::new(loaded.active));`
 - `interception(config, certs, state: Arc<InterceptionState>)`: no client
   parsing, no `clients.is_empty()` early return. `certs == None` → warn as
@@ -564,11 +637,14 @@ boot).
   cleared the fields, so `GET /api/v1/config` and the file agree.
 - `healthcheck` untouched (it only loads the TOML).
 
-**D2 · `crates/fastadhunter/tests`** — every test that seeds
-`[https.interception]` in a TOML (grep `exclude_domains|interception` under
-`crates/fastadhunter/tests`, including the `--all-features` `e2e_https.rs`)
-seeds `interception.json` in its config dir instead, or drives
-`PUT /api/v1/interception` to prove the live path end to end.
+**D2 · `crates/fastadhunter/tests`** — the one seeder is
+`common/mod.rs:633 full_mode_config` (`[https.interception] clients = […]`
+at line 685, driven by `FullMode.clients`), used by `e2e_https.rs` and
+`security_phase3.rs`. `boot_full_in` writes `interception.json` beside the
+TOML from `FullMode.clients` instead, and the TOML template loses the table;
+one `e2e_https.rs` scenario drives `PUT /api/v1/interception` to prove the
+live path end to end (§14.6). `history_e2e.rs:439` constructs
+`AppStateBuilder` by struct literal and gains the `interception` field (F7).
 
 ### E — deletions and docs
 
@@ -605,9 +681,10 @@ GET /api/v1/interception
 
 PUT /api/v1/interception            body: the whole document; a missing key is an empty list (serde default)
 200 the stored document (as sent, spelling preserved)
+400 bad_request                     body is not JSON, wrong Content-Type, or unreadable — the envelope, via body_error (F4); no details
 422 validation_failed + details     reason: shape | over_cap | invalid_entry | duplicate — §3.6
 503 unavailable                     certificate store did not open and the document lists a client
-500 internal                        the file could not be written, or the commit task panicked (§3.7); nothing half-applied
+500 internal                        the file could not be written, the commit task panicked (§3.7), or it was cancelled before running (shutdown); nothing half-applied
 401                                 as every route
 ```
 
@@ -620,7 +697,8 @@ object is new to the envelope and appears only on this route's 422s.
 
 | Boot state | Document | TOML | Result |
 | --- | --- | --- | --- |
-| upgrade from 0.3.x, keys present (empty or not) | absent | `Some` | document written from TOML values; TOML re-saved without keys; one `info!` |
+| upgrade from 0.3.x, keys present (empty or not) | absent | `Some` | document written from TOML values; TOML re-saved from the file layer without keys — a `FAH__` value in force at that boot is **not** written into the file (F1); one `info!` |
+| same, with `FAH__API__PORT=9443` set | absent | `Some` | as above; the saved TOML still carries `port = 8443` (or whatever the file said), the running config still uses 9443 |
 | fresh install | absent | absent | empty document written; TOML untouched |
 | second boot of N | present | absent | document read; nothing written |
 | hand re-added keys after migration | present | `Some` | document wins; `warn!` naming both files; TOML re-saved without keys |
@@ -631,8 +709,9 @@ object is new to the envelope and appears only on this route's 422s.
 | TOML values invalid or over cap | absent | `Some` | boot fails naming the list; document not written; TOML untouched |
 | `/config` unwritable during migration | absent | any | boot fails with the I/O error, as first-boot generation does |
 
-The TOML is rewritten from the struct (`Config::save`), as every API write does
-today; hand-written comments do not survive it, which is already the case.
+The TOML is rewritten from the file-layer struct (`Config::save`); hand-written
+comments do not survive it, as with every API write today. Unlike an API
+write, migration does not serialise the effective config (§3.5, F1).
 
 ## 8. Runtime lifecycle
 
@@ -687,11 +766,13 @@ today; hand-written comments do not survive it, which is already the case.
 
 | Failure | Where | Effect |
 | --- | --- | --- |
+| not JSON / wrong content type / unreadable body | `JsonRejection` → `body_error` | 400 `bad_request` in the envelope; nothing touched |
 | unknown key / wrong type | `from_value` in handler | 422 `shape`; nothing touched |
-| cap / syntax / duplicate | `compile` in `prepare` | 422 with `details`; nothing touched |
+| cap / syntax / duplicate | `Active::compile` in `prepare` | 422 with `details`; nothing touched |
 | store closed + client listed | `prepare` | 503; nothing touched |
 | tmp write or rename fails | `write_atomic` inside `commit` | 500; file is the old one (rename is atomic); active unchanged; `next` dropped; tmp may remain |
-| panic inside `commit` (a bug, §3.7) | `JoinError` | 500 with the payload in the log; state is A/A or B/B — never mixed; lock recovered and cleared by the next commit |
+| panic inside `commit` (a bug, §3.7) | `JoinError::is_panic()` | 500 with the payload in the log; state is A/A or B/B — never mixed; lock recovered and cleared by the next commit |
+| blocking task cancelled before it ran (runtime shutdown) | `JoinError`, not a panic | 500, `into_panic()` never called; nothing touched |
 | `store` | `ArcSwap::store` | cannot fail |
 
 ## 11. Hot-path performance and allocations
@@ -761,6 +842,9 @@ reference if it is.
 - `a_present_interception_section_round_trips` (skip only when both `None`).
 - `env_interception_paths_are_rejected`: `FAH__HTTPS__INTERCEPTION__CLIENTS`
   and `…__EXCLUDE_DOMAINS` → `ConfigError::UnknownEnvKey` (ADR §Acceptance).
+- `from_toml_str_is_the_file_layer_alone`: a TOML with `[https.interception]`
+  keys parses to `Some` with no env pair applied and no `validate` run — the
+  contract §3.5 relies on (F1).
 - `write_atomic_error_paths_are_unchanged` (unwritable tmp, rename over a
   directory → the same `ConfigError::Io` paths as before the hoist).
 - `parses_full_reference_toml_verbatim` and
@@ -771,6 +855,15 @@ reference if it is.
 - `first_boot_migrates_toml_lists_and_clears_them`: TOML with both lists →
   document file equals them; `config.https.interception.is_absent()`; the
   re-read TOML text contains neither key nor `[https.interception]`.
+- `migration_saves_the_file_layer_not_the_effective_config` (F1): TOML with
+  the keys and `port = 8443`; the effective `Config` passed in has
+  `api.port = 9443` (as `FAH__API__PORT` would leave it) and a different
+  `log.level`; after `load_or_migrate` the saved TOML has no interception
+  keys, still says `port = 8443` and the file's log level, and the effective
+  config still says 9443 with only `https.interception` changed
+  (field-by-field equality against a clone taken before the call).
+- `migration_fails_boot_when_the_toml_cannot_be_reread` (F1): a directory at
+  `config_path` → `InterceptionStoreError::Toml`; document not written.
 - `an_upgrade_with_literal_empty_lists_migrates_to_an_empty_document`.
 - `a_fresh_install_writes_an_empty_document_and_leaves_the_toml_alone`
   (TOML bytes identical before/after).
@@ -802,6 +895,12 @@ reference if it is.
 - `a_recovered_commit_publishes_only_what_it_prepared` (the recovered commit's
   `Active` is the one passed in — pointer equality — never something read
   back from disk).
+- `a_commit_that_panics_after_the_lock_leaves_file_and_active_unchanged`
+  (F3): set `panic_after_lock`, run `commit` on a thread, `join()` is `Err`;
+  file bytes and `Arc::ptr_eq(state.current())` unchanged;
+  `commit_lock.is_poisoned()` is true; clear the flag; the next `commit`
+  succeeds and `is_poisoned()` is false — the hook and the recovery test
+  are two tests, not one.
 
 ### 14.4 `fah-api` routes (the crate's existing route-test style)
 
@@ -810,13 +909,18 @@ reference if it is.
 - `the_put_response_carries_no_restart_required` (response object keys are
   exactly `clients`, `exclude_domains`).
 - `put_with_an_unknown_key_is_422_with_shape_details`.
+- `put_with_a_non_json_body_is_400_in_the_envelope` (F4): `{` and a
+  `text/plain` body → 400, `error.code == "bad_request"`, no `details`,
+  `GET` unchanged.
 - `put_over_cap_is_422_with_over_cap_details_and_get_is_unchanged`.
 - `put_with_a_duplicate_is_422_with_duplicate_details`.
 - `put_with_an_invalid_entry_is_422_with_invalid_entry_details`.
 - `a_write_failure_is_500_and_get_is_unchanged`.
-- `a_commit_panic_is_500_and_the_next_put_succeeds` (test-only hook or a
-  poisoned lock injected as in §14.3; asserts the 500 body, then a following
-  `PUT` returns 200 and `GET` matches it).
+- `a_commit_panic_is_500_and_the_next_put_succeeds` (F3): the
+  `#[cfg(test)]` `panic_after_lock` hook (C2) — **not** a poisoned lock,
+  which the recovery policy turns into a successful commit; asserts the 500
+  body (`error.code == "internal"`), `GET` unchanged, then clears the hook
+  and a following `PUT` returns 200 and `GET` matches it.
 - `post_config_rejects_https_interception_naming_the_endpoint` (and persists
   nothing: TOML bytes unchanged).
 - `get_config_omits_https_interception`.
@@ -850,8 +954,14 @@ reference if it is.
 ### 14.6 binary and layering
 
 - `crates/fastadhunter/tests/layering.rs` unchanged and green: `fah-rules`
-  gains no dependency, `fah-http` keeps L1/L2 only, `fah-api` never names
-  `fah-http` (both directions).
+  gains no *internal* dependency (`serde` is external, F2), `fah-http` keeps
+  L1/L2 only, `fah-api` never names `fah-http` (both directions).
+- Struct-literal constructions that gain the new `AppState` field (F7):
+  `crates/fah-api/tests/api.rs:569` and
+  `crates/fastadhunter/tests/history_e2e.rs:439` (`AppStateBuilder { … }`),
+  plus `main.rs:588`. `crates/fah-api/tests/api.rs:373` builds
+  `fah_model::ListenerCounters` by literal — untouched by this task, listed
+  because p3-08 adds a field there.
 - `e2e_https.rs` (`--all-features`) seeds `interception.json` and, in one
   scenario, lists the client through `PUT` and proves the next connection is
   intercepted with no restart (ADR §Acceptance line 1 on the real binary).
@@ -892,6 +1002,11 @@ reference if it is.
 - `ConfigStore::apply_patch` saving the TOML synchronously on an executor
   worker, and `password.rs` keeping its own tmp-then-rename — two cleanups
   onto `spawn_blocking` + `fah_config::write_atomic`, separate task.
+- `ConfigStore::apply_patch` and `post_config` serialising the *effective*
+  config (env values baked into the file on an operator write) and
+  `post_config` answering axum's plain-text rejection on a non-JSON body —
+  pre-existing; migration and `PUT /api/v1/interception` are held to the
+  stricter rule (§3.5 F1, C4 F4), the older route is not changed here.
 - `fsync` in `write_atomic` and stale `.tmp.<pid>` cleanup — documented
   existing limitations (§3.7), not changed here by owner decision.
 - A `WS /api/v1/events` message for document changes — not needed by p3-09's
@@ -920,7 +1035,11 @@ runtime contract and the accept-arm invariant; p3-09 the endpoint and the
 | 8 | Poisoning | `PoisonError::into_inner()`, `clear_poison()`, explicit `error!` of the recovered panic and of the payload; no persistent "500 until restart"; not process-fatal (§3.7) |
 | 9 | Failed normal persistence | active state unchanged, `next` dropped (§3.7 proof) |
 | — | Stored spelling | the document keeps what the operator sent; only the compiled set is normalised (ADR) |
-| — | Migration rewrites the TOML from the struct | accepted; same as any API write today |
+| — | Migration rewrites the TOML from the struct | accepted for comment loss; the struct is the **file layer**, never the effective config, so `FAH__` values are not written (F1, gate 2026-09-10) |
+| 10 | Compile entry point | `Active::compile(document) -> Active` only; no free `compile` (F9) |
+| 11 | Panic → 500 test | `#[cfg(test)]` `panic_after_lock` hook on `InterceptionStore`; poisoned-lock recovery is a separate test (F3) |
+| 12 | Non-JSON `PUT` body | `Result<Json<Value>, JsonRejection>` + `body_error` → 400 `bad_request` in the envelope (F4) |
+| 13 | `JoinError` | both branches handled; `into_panic()` only behind `is_panic()` (F5) |
 | — | Boot fails on an over-cap or invalid existing document | accepted; the TOML's own contract |
 | — | `fsync` / stale tmp files | existing limitations, documented in §3.7, no scope change |
 
@@ -977,3 +1096,21 @@ their plans (§12 of each).
 | No auto-exclusion | no code path from an event to `commit`; §13 |
 | Bootstrap with `clients=[]` mandatory | §3.4, §8 "First activation", §14.5 |
 | Migration cannot overwrite an existing `interception.json` | §3.5: write only on `NotFound`; any other read outcome fails boot; §7 rows; §14.3 unreadable-document test |
+| Migration writes no `FAH__` value into the TOML | §3.5 file-layer re-read; §14.3 `migration_saves_the_file_layer_not_the_effective_config` |
+
+## 21. Final gate corrections (2026-09-10)
+
+Independent last-pass review before implementation; each finding folded in
+where it belongs, listed here so the diff is auditable.
+
+| # | Finding | Where fixed |
+| --- | --- | --- |
+| F1 | migration saved the effective config, baking `FAH__` values into the TOML | §2 rows, §3.5, C2 `load_or_migrate`, D1, §7 rows, §14.2, §14.3, §16, §18, §20 |
+| F2 | `fah-rules` has no `serde` dependency | A3 |
+| F3 | panic → 500 test cited a poisoned lock, which the policy recovers | C2 hook, §14.3, §14.4, §18 |
+| F4 | non-JSON `PUT` body bypassed the envelope | C4, §6, §10, §14.4, §16, §18 |
+| F5 | non-panic `JoinError` branch unspecified | C4, §6, §10, §18 |
+| F7 | missed call sites: `intercept.rs:538`, `benches/intercept.rs:140`, `api.rs:569`, `history_e2e.rs:439` (+ `api.rs:373` for p3-08) | B3, D2, §14.6 |
+| F9 | two compile entry points | §3.1 table, §3.3, A3, C2 |
+
+F6 and F8 are p3-08 / p3-09 findings; see their §Final gate sections.

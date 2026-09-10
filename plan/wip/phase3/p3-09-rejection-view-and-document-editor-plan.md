@@ -3,8 +3,9 @@
 **Task:** [p3-09-rejection-view-and-document-editor.md](p3-09-rejection-view-and-document-editor.md) ·
 **ADR:** [ADR-0008](../../../docs/decisions/0008-live-interception-and-client-certificate-rejection.md)
 frozen at `fcc7244` · **Depends on:** p3-07 (`GET`/`PUT /api/v1/interception`
-and the `details` contract), p3-08 (`status 525` events, `client_cert_rejections`) ·
-**Status:** plan revised 2026-09-10 after owner review; decisions frozen (§12);
+and the `details` contract), p3-08 (`status 525` events) ·
+**Status:** plan revised 2026-09-10 after owner review and the final
+pre-implementation gate (F4, F8 folded in, §14); decisions frozen (§12);
 awaiting implementation approval. Nothing implemented.
 
 ## 1. Objective and scope
@@ -29,7 +30,7 @@ and no parsing of `message` strings.
 | --- | --- | --- |
 | Stack | `dashboard/frontend` — Preact 10 + hooks, Vite, TypeScript, vitest (jsdom for pages); runtime deps `preact`, `uplot` only | no UI library; hand-written components |
 | API client | `src/api/core.ts` `request<T>(path, opts)`, `ErrorEnvelope { error: { code, message } }`, `ApiError { code, status, retryAfter }`, `NetworkError`; modules per resource, re-exported from `api/index.ts` | `details` is added to the envelope type and the class (§3.1) |
-| Types | `src/api/types.ts` — `QueryEvent { kind, ts, client, client_name, domain, …, status: number \| null, … }`, `Config`, `ListenerCounters` | a 525 arrives as a `query` item with `kind: 'https'`, `status: 525`, `domain` = SNI host |
+| Types | `src/api/types.ts` — `QueryEvent { kind, ts, client, client_name, domain, …, status: number \| null, … }` (line 233), `Config`; `Telemetry` (line 166) carries `counters: Counters` only — **no `ListenerCounters` type exists in the dashboard** (F8) | a 525 arrives as a `query` item with `kind: 'https'`, `status: 525`, `domain` = SNI host; p3-08's `client_cert_rejections` counter is not consumed here |
 | Events | `src/events/socket.ts`, `src/events/types.ts` `EVENT_TYPES = ['query','stats','config_changed','list_refreshed']`, `src/services.ts` | no new socket event type |
 | Routes | `src/router/routes.ts` — each `Route` declares `events` and `endpoints`; `/live-feed` is the only `query` subscriber, `endpoints: []`, `ownsHeader: true`; `/settings` route | a sub-view of `/live-feed` inherits the subscription; a Settings card needs no route change |
 | Live Feed | `src/pages/live-feed.tsx` (468 lines): `FeedBuffer` ring (500 desktop / 200 narrow), filters `verdict`/`kind`/`client`/`domain` (`filters.ts`, `KINDS = ['dns','http','https-sni','https']`), pause, paging, desktop table + narrow cards, `Detail`/`FeedVerdict`/`FeedCache` cells | the rejection view reads the same `rows` snapshot; pause semantics apply |
@@ -65,8 +66,15 @@ type DocumentErrorDetails =
 documentErrorDetails(err: unknown): DocumentErrorDetails | null   // ApiError with status 422 and a details object of one of the shapes above; a runtime shape check, no string parsing
 ```
 
-`src/api/types.ts`: `InterceptionDocument { clients: string[]; exclude_domains: string[] }`;
-`ListenerCounters.client_cert_rejections?: number`.
+`src/api/types.ts`: `InterceptionDocument { clients: string[]; exclude_domains: string[] }`.
+Nothing for the telemetry counter: the dashboard has no listener-counter type
+and no surface that would show it (F8).
+
+Error statuses this module's callers handle, from p3-07 §6: 400
+`bad_request` (a body the server could not read as JSON — cannot be produced
+by this client, handled by rendering `message` whole), 422 with `details`
+(§3.3, §3.4), 503 and 500 (`message` whole). Only `details.reason` is ever
+branched on.
 
 ### 3.2 Pure helpers — `src/pages/live-feed/rejections.ts`
 
@@ -145,7 +153,7 @@ breakpoint. Verified at 390 px in both themes per the p5 convention.
 | File | Change | Tests |
 | --- | --- | --- |
 | `src/api/core.ts` | `details` on the envelope type and `ApiError`; `request()` passes it | `core.test.ts`: with and without `details` |
-| `src/api/types.ts` | `InterceptionDocument`; optional `client_cert_rejections` | type-checked |
+| `src/api/types.ts` | `InterceptionDocument` only (F8) | type-checked |
 | `src/api/interception.ts` (new), `src/api/index.ts` | §3.1 | `api/interception.test.ts`: paths, methods, body, `documentErrorDetails` accepts the four shapes and rejects others |
 | `src/pages/live-feed/rejections.ts` (new) | pure helpers §3.2 | `rejections.test.ts` |
 | `src/pages/live-feed/rejections-view.tsx` (new) | table/cards, confirm, action, error rendering | `live-feed.test.tsx` additions §6.2 |
@@ -293,6 +301,14 @@ both.
 | 5 | Error consumption | `details` only (§3.1); `message` displayed, never parsed |
 | — | Rejection view placement | Live Feed sub-view over the existing ring; no second buffer |
 | — | Ring-bound visibility | rows older than the ring are gone; the empty state says "since this page opened" |
+| — | Telemetry counter | not consumed; no dashboard type for it exists (F8) |
+
+## 14. Final gate corrections (2026-09-10)
+
+| # | Finding | Where fixed |
+| --- | --- | --- |
+| F4 (p3-07) | `PUT` gains a 400 `bad_request` envelope case | §3.1 error-status list |
+| F8 | plan named `ListenerCounters` in `types.ts`; no such type exists | header, §2 Types row, §3.1, §4 row, §12 |
 
 ## 13. Final verification pass (owner's checklist, p3-09 half)
 
