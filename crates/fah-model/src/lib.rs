@@ -5,6 +5,7 @@ mod client_transport;
 mod engine;
 mod history;
 mod http;
+mod interception;
 mod memory;
 mod operating_mode;
 mod perf;
@@ -27,6 +28,7 @@ pub use history::{
     HistorySeries, HourRollup, TopItems, TopKind,
 };
 pub use http::{HttpRequest, ResourceType};
+pub use interception::InterceptionDocument;
 pub use memory::{AllocatorStats, MemoryBreakdown, MemoryComponents, ProcessStats, StatsHeap};
 pub use operating_mode::{OperatingMode, ParseOperatingModeError};
 pub use perf::{

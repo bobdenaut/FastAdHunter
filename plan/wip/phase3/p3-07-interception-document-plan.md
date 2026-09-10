@@ -546,16 +546,29 @@ serialises byte-identically (field absent). Tests: envelope with and without
   `commit` acquires the lock with `unwrap_or_else(PoisonError::into_inner)`;
   when `commit_lock.is_poisoned()` was true it calls `clear_poison()` and logs
   `error!("a previous interception commit panicked; lock recovered — file and active state are consistent by construction")`.
-- **Test-only panic hook (F3).** `#[cfg(test)] panic_after_lock: AtomicBool`
-  on `InterceptionStore` (absent from every non-test build, so the shipped
-  struct is unchanged). When set, `commit` panics immediately after step a
+- **Test-only panic hook (F3, gate corrected 2026-09-10).**
+  `#[cfg(any(test, feature = "test-harness"))] panic_after_lock: AtomicBool`
+  on `InterceptionStore`. When set, `commit` panics immediately after step a
   (lock acquired) and before step b (`write_atomic`) — the one place a
   hypothetical bug could unwind while holding the lock with the file still
   old. It is the only way to drive the panic → `JoinError` → 500 path,
   because the recovery policy makes a *poisoned* lock succeed, not fail
-  (§14.3, §14.4). The route test reaches it through the in-crate test module
-  (`routes.rs` tests build `AppState` themselves); no `test-harness` feature
-  surface is added.
+  (§14.3, §14.4). The `cfg(test)`-only gate this plan first specified does not
+  work: `#[cfg(test)]` applies to the crate compiled as its own test binary,
+  and `crates/fah-api/tests/api.rs` is a separate integration crate that links
+  the library built **without** `cfg(test)`, so the field would not exist
+  there. `crates/fah-api/src/routes.rs`'s `#[cfg(test)] mod tests` holds pure
+  functions only and builds no `AppState`, so there is no in-crate route-test
+  surface to fall back on. `test-harness` is therefore the gate: `fah-api`
+  already enables it for its own integration tests through the self
+  dev-dependency `fah-api = { path = ".", features = ["test-harness"] }`, and
+  `crates/fah-api/src/lib.rs` already fails the build with `compile_error!`
+  when it is on in a release profile, so the feature cannot reach a shipped
+  binary. The hook is one `AtomicBool`, default `false`, read at exactly one
+  point inside `commit`: no production behaviour, no production code path, no
+  new feature surface beyond the gate that already exists. Keeping it is what
+  proves the real handler → `JoinError` → 500 route (§14.4) rather than only
+  the store-level unwind (§14.3).
 - `pub enum InterceptionStoreError { Invalid(DocumentError), Unavailable(&'static str), Read { path, source: io::Error }, Parse { path, source: serde_json::Error }, Write { path, source: ConfigError } }`.
 - File text: `serde_json::to_string_pretty` plus a trailing newline.
 Why: mirror of `ConfigStore` with a single published value, validation before
@@ -917,7 +930,7 @@ reference if it is.
 - `put_with_an_invalid_entry_is_422_with_invalid_entry_details`.
 - `a_write_failure_is_500_and_get_is_unchanged`.
 - `a_commit_panic_is_500_and_the_next_put_succeeds` (F3): the
-  `#[cfg(test)]` `panic_after_lock` hook (C2) — **not** a poisoned lock,
+  `test-harness` `panic_after_lock` hook (C2) — **not** a poisoned lock,
   which the recovery policy turns into a successful commit; asserts the 500
   body (`error.code == "internal"`), `GET` unchanged, then clears the hook
   and a following `PUT` returns 200 and `GET` matches it.
@@ -1037,7 +1050,7 @@ runtime contract and the accept-arm invariant; p3-09 the endpoint and the
 | — | Stored spelling | the document keeps what the operator sent; only the compiled set is normalised (ADR) |
 | — | Migration rewrites the TOML from the struct | accepted for comment loss; the struct is the **file layer**, never the effective config, so `FAH__` values are not written (F1, gate 2026-09-10) |
 | 10 | Compile entry point | `Active::compile(document) -> Active` only; no free `compile` (F9) |
-| 11 | Panic → 500 test | `#[cfg(test)]` `panic_after_lock` hook on `InterceptionStore`; poisoned-lock recovery is a separate test (F3) |
+| 11 | Panic → 500 test | `#[cfg(any(test, feature = "test-harness"))] panic_after_lock` hook on `InterceptionStore`; poisoned-lock recovery is a separate test (F3). Gate corrected 2026-09-10: `#[cfg(test)]` is invisible to `crates/fah-api/tests/api.rs`, which links the library compiled without it, and `routes.rs` builds no `AppState` in-crate; `fah-api` already enables `test-harness` for its integration tests and `lib.rs` already refuses to build it into a release profile. Test-only `AtomicBool`, no production behaviour; required to exercise the real handler → `JoinError` → 500 path (C2) |
 | 12 | Non-JSON `PUT` body | `Result<Json<Value>, JsonRejection>` + `body_error` → 400 `bad_request` in the envelope (F4) |
 | 13 | `JoinError` | both branches handled; `into_panic()` only behind `is_panic()` (F5) |
 | — | Boot fails on an over-cap or invalid existing document | accepted; the TOML's own contract |
@@ -1107,7 +1120,7 @@ where it belongs, listed here so the diff is auditable.
 | --- | --- | --- |
 | F1 | migration saved the effective config, baking `FAH__` values into the TOML | §2 rows, §3.5, C2 `load_or_migrate`, D1, §7 rows, §14.2, §14.3, §16, §18, §20 |
 | F2 | `fah-rules` has no `serde` dependency | A3 |
-| F3 | panic → 500 test cited a poisoned lock, which the policy recovers | C2 hook, §14.3, §14.4, §18 |
+| F3 | panic → 500 test cited a poisoned lock, which the policy recovers | C2 hook, §14.3, §14.4, §18. Gate corrected at implementation time from `cfg(test)` to `cfg(any(test, feature = "test-harness"))` — see C2 and decision 11 |
 | F4 | non-JSON `PUT` body bypassed the envelope | C4, §6, §10, §14.4, §16, §18 |
 | F5 | non-panic `JoinError` branch unspecified | C4, §6, §10, §18 |
 | F7 | missed call sites: `intercept.rs:538`, `benches/intercept.rs:140`, `api.rs:569`, `history_e2e.rs:439` (+ `api.rs:373` for p3-08) | B3, D2, §14.6 |

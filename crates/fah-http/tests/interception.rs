@@ -33,7 +33,9 @@ use tokio::sync::{mpsc, Notify};
 use tokio_rustls::client::TlsStream;
 use tokio_rustls::{TlsAcceptor, TlsConnector};
 
-use fah_http::{ExclusionSet, Interception, Proxy, ProxyCounters, Server, TlsProxy, TlsServer};
+use fah_http::{Interception, Proxy, ProxyCounters, Server, TlsProxy, TlsServer};
+use fah_model::InterceptionDocument;
+use fah_rules::interception::{Active, InterceptionState};
 
 const ORIGIN_NAME: &str = "origin.test";
 const PAGE_BYTES: usize = 200 * 1024;
@@ -435,6 +437,7 @@ struct Harness {
     addr: SocketAddr,
     counters: Arc<ProxyCounters>,
     store: Arc<CertStore>,
+    state: Arc<InterceptionState>,
     fah_root: Option<CertificateDer<'static>>,
     _dir: tempfile::TempDir,
 }
@@ -453,8 +456,7 @@ impl Harness {
 }
 
 struct Setup {
-    clients: Vec<AllowedNet>,
-    exclusions: ExclusionSet,
+    document: InterceptionDocument,
     upstream_roots: Vec<CertificateDer<'static>>,
     rules: Option<Arc<dyn fah_http::Ruleset>>,
     events: Option<mpsc::Sender<Event>>,
@@ -469,8 +471,7 @@ struct Setup {
 impl Setup {
     fn intercepting(root: CertificateDer<'static>) -> Self {
         Self {
-            clients: listed(),
-            exclusions: ExclusionSet::empty(),
+            document: listed(),
             upstream_roots: vec![root],
             rules: None,
             events: None,
@@ -484,12 +485,26 @@ impl Setup {
     }
 }
 
-fn listed() -> Vec<AllowedNet> {
-    vec![AllowedNet::host(IpAddr::V4(Ipv4Addr::LOCALHOST))]
+fn document(clients: &[&str], exclude_domains: &[&str]) -> InterceptionDocument {
+    InterceptionDocument {
+        clients: clients.iter().map(|entry| entry.to_string()).collect(),
+        exclude_domains: exclude_domains
+            .iter()
+            .map(|entry| entry.to_string())
+            .collect(),
+    }
 }
 
-fn someone_else() -> Vec<AllowedNet> {
-    vec![AllowedNet::host("192.0.2.1".parse().unwrap())]
+fn state(document: InterceptionDocument) -> Arc<InterceptionState> {
+    Arc::new(InterceptionState::new(Active::compile(document).unwrap()))
+}
+
+fn listed() -> InterceptionDocument {
+    document(&["127.0.0.1"], &[])
+}
+
+fn someone_else() -> InterceptionDocument {
+    document(&["192.0.2.1"], &[])
 }
 
 fn store_with_ca() -> (tempfile::TempDir, Arc<CertStore>) {
@@ -514,12 +529,12 @@ async fn harness(origin: SocketAddr, setup: Setup) -> Harness {
     for root in setup.upstream_roots {
         roots.add(root).unwrap();
     }
+    let state = self::state(setup.document);
     let interception = Interception::new(
         fah_http::server_config(Arc::clone(&store)).unwrap(),
         fah_http::client_config_with_roots(roots).unwrap(),
         Arc::clone(&store),
-        setup.clients,
-        setup.exclusions,
+        Arc::clone(&state),
     );
 
     let policy = DestinationPolicy::new(
@@ -575,6 +590,7 @@ async fn harness(origin: SocketAddr, setup: Setup) -> Harness {
         addr,
         counters,
         store,
+        state,
         fah_root,
         _dir: dir,
     }
@@ -711,7 +727,7 @@ async fn an_http1_client_is_bridged_to_an_h2_origin() {
     filtered_end_to_end(Proto::H1, Proto::H2).await;
 }
 
-async fn spliced_not_intercepted(clients: Vec<AllowedNet>, exclusions: ExclusionSet, name: &str) {
+async fn spliced_not_intercepted(document: InterceptionDocument, name: &str) {
     let ca = origin_ca();
     let (cert, key) = leaf_signed_by_for(&ca, name);
     let origin = origin(Proto::H1, cert, key).await;
@@ -719,8 +735,7 @@ async fn spliced_not_intercepted(clients: Vec<AllowedNet>, exclusions: Exclusion
     let harness = harness(
         origin.addr,
         Setup {
-            clients,
-            exclusions,
+            document,
             events: Some(tx),
             ..Setup::intercepting(ca.root.clone())
         },
@@ -766,28 +781,147 @@ async fn spliced_not_intercepted(clients: Vec<AllowedNet>, exclusions: Exclusion
 
 #[tokio::test]
 async fn a_client_not_on_the_list_is_never_intercepted() {
-    spliced_not_intercepted(someone_else(), ExclusionSet::empty(), ORIGIN_NAME).await;
+    spliced_not_intercepted(someone_else(), ORIGIN_NAME).await;
 }
 
 #[tokio::test]
 async fn an_excluded_sni_splices_even_for_a_listed_client() {
-    spliced_not_intercepted(
-        listed(),
-        ExclusionSet::new(&[ORIGIN_NAME]).unwrap(),
-        ORIGIN_NAME,
-    )
-    .await;
+    spliced_not_intercepted(document(&["127.0.0.1"], &[ORIGIN_NAME]), ORIGIN_NAME).await;
 }
 
 #[tokio::test]
-async fn a_baseline_bank_is_never_intercepted_even_for_a_listed_client() {
+async fn a_parent_entry_in_the_document_splices_its_subdomain_for_a_listed_client() {
     const BANK: &str = "homebanking.unicredit.ro";
-    let shipped = ExclusionSet::new::<&str>(&[]).unwrap();
+    spliced_not_intercepted(document(&["127.0.0.1"], &["unicredit.ro"]), BANK).await;
+}
+
+async fn splices(harness: &Harness, ca: &OriginCa, proto: Proto) {
+    let tls = tls_to(
+        harness.addr,
+        &connector(std::slice::from_ref(&ca.root), proto),
+    )
+    .await
+    .expect("a spliced client sees the origin's own certificate");
+    let mut client = Client::over(tls, proto).await;
+    let response = client.get("/page", "text/html").await;
+    assert_eq!(response.status(), StatusCode::OK);
     assert!(
-        shipped.contains(BANK),
-        "{BANK} must reach the baseline through its parent unicredit.ro"
+        !response.headers().contains_key("via"),
+        "a spliced session is relayed untouched"
     );
-    spliced_not_intercepted(listed(), shipped, BANK).await;
+    let _ = body_of(response).await;
+}
+
+async fn intercepts(harness: &Harness) {
+    let tls = tls_to(harness.addr, &harness.ours(Proto::H1))
+        .await
+        .expect("a listed client trusting the CA must complete our handshake");
+    let mut client = Client::over(tls, Proto::H1).await;
+    let response = client.get("/page", "text/html").await;
+    assert_eq!(response.status(), StatusCode::OK);
+    assert!(
+        response.headers().contains_key("via"),
+        "an intercepted session carries our Via"
+    );
+    let _ = body_of(response).await;
+}
+
+#[tokio::test]
+async fn the_machinery_exists_with_an_empty_document_and_the_first_client_is_a_store() {
+    let ca = origin_ca();
+    let (cert, key) = leaf_signed_by(&ca);
+    let origin = origin(Proto::H1, cert, key).await;
+    let harness = harness(
+        origin.addr,
+        Setup {
+            document: InterceptionDocument::default(),
+            ..Setup::intercepting(ca.root.clone())
+        },
+    )
+    .await;
+
+    for ip in [
+        IpAddr::V4(Ipv4Addr::LOCALHOST),
+        IpAddr::V4(Ipv4Addr::new(192, 168, 88, 10)),
+        IpAddr::V6(Ipv6Addr::LOCALHOST),
+    ] {
+        assert!(!harness.state.load().scope.intercepts(ip), "{ip}");
+    }
+
+    splices(&harness, &ca, Proto::H1).await;
+    assert_eq!(
+        harness.store.leaf_cache_stats().minted_total,
+        0,
+        "an empty document mints nothing"
+    );
+
+    harness
+        .state
+        .store(Arc::new(Active::compile(listed()).unwrap()));
+
+    assert!(harness
+        .state
+        .load()
+        .scope
+        .intercepts(IpAddr::V4(Ipv4Addr::LOCALHOST)));
+    intercepts(&harness).await;
+    assert_eq!(
+        harness.store.leaf_cache_stats().minted_total,
+        1,
+        "the first listed client is a store, not a rebuild"
+    );
+    harness.shutdown();
+}
+
+#[tokio::test]
+async fn a_removed_client_keeps_its_session_and_loses_the_next() {
+    let ca = origin_ca();
+    let (cert, key) = leaf_signed_by(&ca);
+    let origin = origin(Proto::H2, cert, key).await;
+    let harness = harness(origin.addr, Setup::intercepting(ca.root.clone())).await;
+
+    let tls = tls_to(harness.addr, &harness.ours(Proto::H2))
+        .await
+        .expect("a listed client must complete our handshake");
+    let mut open = Client::over(tls, Proto::H2).await;
+    assert_eq!(
+        open.get("/page", "text/html").await.status(),
+        StatusCode::OK
+    );
+
+    harness.state.store(Arc::new(
+        Active::compile(InterceptionDocument::default()).unwrap(),
+    ));
+
+    let served = open.get("/page", "text/html").await;
+    assert_eq!(
+        served.status(),
+        StatusCode::OK,
+        "an in-flight session finishes as it was admitted"
+    );
+    assert!(served.headers().contains_key("via"));
+    let _ = body_of(served).await;
+    drop(open);
+
+    splices(&harness, &ca, Proto::H2).await;
+    harness.shutdown();
+}
+
+#[tokio::test]
+async fn a_stored_exclusion_splices_the_next_connection() {
+    let ca = origin_ca();
+    let (cert, key) = leaf_signed_by(&ca);
+    let origin = origin(Proto::H1, cert, key).await;
+    let harness = harness(origin.addr, Setup::intercepting(ca.root.clone())).await;
+
+    intercepts(&harness).await;
+
+    harness.state.store(Arc::new(
+        Active::compile(document(&["127.0.0.1"], &[ORIGIN_NAME])).unwrap(),
+    ));
+
+    splices(&harness, &ca, Proto::H1).await;
+    harness.shutdown();
 }
 
 #[tokio::test]
@@ -1345,15 +1479,21 @@ impl Rng {
 }
 
 fn empty_interception(store: &Arc<CertStore>, rng: &mut Rng) -> Interception {
-    let exclusions = (0..(rng.next() % 8))
-        .map(|_| rng.domain())
-        .collect::<Vec<_>>();
+    let mut exclude_domains: Vec<String> = Vec::new();
+    for _ in 0..(rng.next() % 8) {
+        let domain = rng.domain();
+        if !exclude_domains.contains(&domain) {
+            exclude_domains.push(domain);
+        }
+    }
     Interception::new(
         fah_http::server_config(Arc::clone(store)).unwrap(),
         fah_http::client_config().unwrap(),
         Arc::clone(store),
-        Vec::new(),
-        ExclusionSet::new(&exclusions).unwrap(),
+        state(InterceptionDocument {
+            clients: Vec::new(),
+            exclude_domains,
+        }),
     )
 }
 
@@ -1363,10 +1503,9 @@ fn an_empty_client_list_intercepts_nobody_whatever_else_the_config_says() {
     let mut rng = Rng(0x9E37_79B9_7F4A_7C15);
     for _ in 0..64 {
         let interception = empty_interception(&store, &mut rng);
-        assert!(interception.is_empty());
         for _ in 0..256 {
             let ip = rng.ip();
-            assert!(!interception.intercepts(ip), "{ip}");
+            assert!(!interception.state().load().scope.intercepts(ip), "{ip}");
         }
         let proxy = TlsProxy::new(
             Arc::new(FixedResolver(Vec::new())),
@@ -1407,11 +1546,7 @@ fn a_listed_network_intercepts_exactly_its_members() {
         fah_http::server_config(Arc::clone(&store)).unwrap(),
         fah_http::client_config().unwrap(),
         store,
-        vec![
-            "192.168.88.0/24".parse().unwrap(),
-            AllowedNet::host("fd00::10".parse().unwrap()),
-        ],
-        ExclusionSet::empty(),
+        state(document(&["192.168.88.0/24", "fd00::10"], &[])),
     ));
     assert!(proxy.intercepts("192.168.88.1".parse().unwrap()));
     assert!(proxy.intercepts("192.168.88.254".parse().unwrap()));
@@ -1753,7 +1888,7 @@ async fn an_ipv6_listed_client_is_intercepted_end_to_end() {
     let harness = harness(
         origin.addr,
         Setup {
-            clients: vec![AllowedNet::host(IpAddr::V6(Ipv6Addr::LOCALHOST))],
+            document: document(&["::1"], &[]),
             listen: IpAddr::V6(Ipv6Addr::LOCALHOST),
             rules: Some(rules_with(&format!("||{ORIGIN_NAME}/ads/\n"))),
             events: Some(tx),
@@ -1819,20 +1954,6 @@ async fn the_terminate_leg_counts_connections_and_judged_requests_separately() {
     assert_eq!(counters.blocked, 1);
     assert!(counters.blocked <= counters.requests);
     harness.shutdown();
-}
-
-#[tokio::test]
-async fn the_baseline_exclusions_ship_without_any_configuration() {
-    let set = ExclusionSet::new::<&str>(&[]).unwrap();
-    assert!(set.contains("push.apple.com"));
-    assert!(set.contains("play.googleapis.com"));
-    assert!(set.contains("login.microsoftonline.com"));
-    assert!(!set.contains(ORIGIN_NAME));
-    let started = Instant::now();
-    for _ in 0..10_000 {
-        assert!(!set.contains("ads.example.com"));
-    }
-    assert!(started.elapsed() < Duration::from_secs(1));
 }
 
 const STALL_STREAMS: usize = 64;

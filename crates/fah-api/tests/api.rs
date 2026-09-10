@@ -496,6 +496,8 @@ struct Harness {
     auth: Arc<AuthState>,
     certs: Option<Arc<fah_api::CertStore>>,
     dns: Option<Arc<FakeDns>>,
+    interception: Arc<fah_api::InterceptionStore>,
+    document_path: std::path::PathBuf,
     _config_dir: tempfile::TempDir,
     data_dir: tempfile::TempDir,
 }
@@ -512,6 +514,7 @@ struct HarnessOptions {
     limits: RateLimits,
     certs: bool,
     doh: bool,
+    interception_runtime: fah_api::InterceptionRuntime,
 }
 
 impl Default for HarnessOptions {
@@ -522,6 +525,7 @@ impl Default for HarnessOptions {
             limits: AuthState::relaxed_limits(),
             certs: true,
             doh: true,
+            interception_runtime: fah_api::InterceptionRuntime::Live,
         }
     }
 }
@@ -566,6 +570,12 @@ async fn start_with(options: HarnessOptions) -> Harness {
         .certs
         .then(|| Arc::new(fah_api::CertStore::open(config_dir.path()).unwrap()));
     let dns = options.doh.then(|| Arc::new(FakeDns::default()));
+    let document_path = config_dir.path().join(fah_api::DOCUMENT_FILE);
+    let interception = Arc::new(fah_api::InterceptionStore::new(
+        Arc::new(fah_rules::interception::InterceptionState::default()),
+        document_path.clone(),
+        options.interception_runtime,
+    ));
     let state = AppStateBuilder {
         rules: Arc::clone(&rules),
         policies: Arc::new(fah_rules::PolicyState::default()),
@@ -576,6 +586,7 @@ async fn start_with(options: HarnessOptions) -> Harness {
         }),
         cache: Arc::new(FakeCache),
         config: Arc::new(ConfigStore::new(config, config_path.clone())),
+        interception: Arc::clone(&interception),
         keys: Arc::new(keys),
         auth: Arc::clone(&auth),
         certs: certs.clone(),
@@ -611,6 +622,8 @@ async fn start_with(options: HarnessOptions) -> Harness {
         auth,
         certs,
         dns,
+        interception,
+        document_path,
         _config_dir: config_dir,
         data_dir,
     }
@@ -4765,4 +4778,272 @@ async fn a_store_that_did_not_open_answers_503_without_a_retry_after() {
             "unavailable"
         );
     }
+}
+
+impl Harness {
+    async fn put_interception(&self, body: Value) -> reqwest::Response {
+        self.client
+            .put(self.url("/api/v1/interception"))
+            .bearer_auth(&self.key)
+            .json(&body)
+            .send()
+            .await
+            .unwrap()
+    }
+}
+
+#[tokio::test]
+async fn get_interception_returns_the_document() {
+    let harness = start().await;
+    let body = harness.get_json("/api/v1/interception").await;
+    assert_eq!(body, json!({"clients": [], "exclude_domains": []}));
+}
+
+#[tokio::test]
+async fn put_replaces_the_whole_document_and_returns_it() {
+    let harness = start().await;
+    let sent = json!({
+        "clients": ["192.168.88.10", "192.168.88.0/24"],
+        "exclude_domains": [" Bank.Example. "]
+    });
+
+    let response = harness.put_interception(sent.clone()).await;
+    assert_eq!(response.status(), 200);
+    let body: Value = response.json().await.unwrap();
+    assert_eq!(
+        body, sent,
+        "the stored document keeps the spelling that was sent"
+    );
+
+    assert_eq!(harness.get_json("/api/v1/interception").await, sent);
+
+    let on_disk = tokio::fs::read_to_string(&harness.document_path)
+        .await
+        .unwrap();
+    assert_eq!(serde_json::from_str::<Value>(&on_disk).unwrap(), sent);
+    assert!(on_disk.ends_with('\n'));
+
+    let active = harness.interception.current();
+    assert_eq!(active.scope.client_count(), 2);
+    assert!(active.scope.excludes("api.bank.example"));
+}
+
+#[tokio::test]
+async fn the_put_response_carries_no_restart_required() {
+    let harness = start().await;
+    let body: Value = harness
+        .put_interception(json!({"clients": ["10.0.0.1"]}))
+        .await
+        .json()
+        .await
+        .unwrap();
+    let keys: Vec<&String> = body.as_object().unwrap().keys().collect();
+    assert_eq!(keys, ["clients", "exclude_domains"]);
+}
+
+#[tokio::test]
+async fn put_with_an_unknown_key_is_422_with_shape_details() {
+    let harness = start().await;
+    let response = harness
+        .put_interception(json!({"clients": [], "client": []}))
+        .await;
+    assert_eq!(response.status(), 422);
+    let body: Value = response.json().await.unwrap();
+    assert_eq!(body["error"]["code"], "validation_failed");
+    assert_eq!(body["error"]["details"], json!({"reason": "shape"}));
+    assert!(!harness.document_path.exists());
+}
+
+#[tokio::test]
+async fn put_with_a_non_json_body_is_400_in_the_envelope() {
+    let harness = start().await;
+    let before = harness.get_json("/api/v1/interception").await;
+
+    for (content_type, body) in [
+        ("application/json", "{"),
+        ("text/plain", r#"{"clients":[]}"#),
+    ] {
+        let response = harness
+            .client
+            .put(harness.url("/api/v1/interception"))
+            .bearer_auth(&harness.key)
+            .header(reqwest::header::CONTENT_TYPE, content_type)
+            .body(body)
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), 400, "{content_type}");
+        let envelope: Value = response.json().await.unwrap();
+        assert_eq!(envelope["error"]["code"], "bad_request", "{content_type}");
+        assert!(envelope["error"]["details"].is_null(), "{envelope}");
+    }
+
+    assert_eq!(harness.get_json("/api/v1/interception").await, before);
+}
+
+#[tokio::test]
+async fn put_over_cap_is_422_with_over_cap_details_and_get_is_unchanged() {
+    let harness = start().await;
+    let before = harness.get_json("/api/v1/interception").await;
+    let clients: Vec<String> = (0..257)
+        .map(|index| format!("10.0.{}.{}", index / 256, index % 256))
+        .collect();
+
+    let response = harness.put_interception(json!({"clients": clients})).await;
+    assert_eq!(response.status(), 422);
+    let body: Value = response.json().await.unwrap();
+    assert_eq!(
+        body["error"]["details"],
+        json!({"reason": "over_cap", "list": "clients", "len": 257, "cap": 256})
+    );
+    assert_eq!(harness.get_json("/api/v1/interception").await, before);
+}
+
+#[tokio::test]
+async fn put_with_a_duplicate_is_422_with_duplicate_details() {
+    let harness = start().await;
+    let response = harness
+        .put_interception(json!({"exclude_domains": ["a.example", "Bank.ro", "bank.ro."]}))
+        .await;
+    assert_eq!(response.status(), 422);
+    let body: Value = response.json().await.unwrap();
+    assert_eq!(
+        body["error"]["details"],
+        json!({
+            "reason": "duplicate",
+            "list": "exclude_domains",
+            "index": 2,
+            "entry": "bank.ro.",
+            "duplicate_of": 1
+        })
+    );
+}
+
+#[tokio::test]
+async fn put_with_an_invalid_entry_is_422_with_invalid_entry_details() {
+    let harness = start().await;
+    let response = harness
+        .put_interception(json!({"clients": ["10.0.0.1", "10.0.0.300"]}))
+        .await;
+    assert_eq!(response.status(), 422);
+    let body: Value = response.json().await.unwrap();
+    assert_eq!(
+        body["error"]["details"],
+        json!({
+            "reason": "invalid_entry",
+            "list": "clients",
+            "index": 1,
+            "entry": "10.0.0.300"
+        })
+    );
+    assert!(body["error"]["message"]
+        .as_str()
+        .unwrap()
+        .contains("is not an IP address or CIDR block"));
+}
+
+#[tokio::test]
+async fn put_is_503_when_the_certificate_store_did_not_open() {
+    let harness = start_with(HarnessOptions {
+        interception_runtime: fah_api::InterceptionRuntime::StoreClosed,
+        ..HarnessOptions::default()
+    })
+    .await;
+
+    let response = harness
+        .put_interception(json!({"clients": ["10.0.0.1"]}))
+        .await;
+    assert_eq!(response.status(), 503);
+    assert_eq!(
+        response.json::<Value>().await.unwrap()["error"]["code"],
+        "unavailable"
+    );
+    assert!(!harness.document_path.exists());
+
+    let response = harness
+        .put_interception(json!({"exclude_domains": ["bank.example"]}))
+        .await;
+    assert_eq!(response.status(), 200, "an empty client list is accepted");
+}
+
+#[tokio::test]
+async fn a_write_failure_is_500_and_get_is_unchanged() {
+    let harness = start().await;
+    let before = harness.get_json("/api/v1/interception").await;
+    tokio::fs::create_dir(&harness.document_path).await.unwrap();
+
+    let response = harness
+        .put_interception(json!({"clients": ["10.0.0.1"]}))
+        .await;
+    assert_eq!(response.status(), 500);
+    assert_eq!(
+        response.json::<Value>().await.unwrap()["error"]["code"],
+        "internal"
+    );
+    assert_eq!(harness.get_json("/api/v1/interception").await, before);
+}
+
+#[tokio::test]
+async fn a_commit_panic_is_500_and_the_next_put_succeeds() {
+    let harness = start().await;
+    let before = harness.get_json("/api/v1/interception").await;
+
+    harness.interception.set_panic_after_lock(true);
+    let response = harness
+        .put_interception(json!({"clients": ["10.0.0.1"]}))
+        .await;
+    assert_eq!(response.status(), 500);
+    assert_eq!(
+        response.json::<Value>().await.unwrap()["error"]["code"],
+        "internal"
+    );
+    assert_eq!(harness.get_json("/api/v1/interception").await, before);
+
+    harness.interception.set_panic_after_lock(false);
+    let sent = json!({"clients": ["10.0.0.2"], "exclude_domains": []});
+    let response = harness.put_interception(sent.clone()).await;
+    assert_eq!(response.status(), 200);
+    assert_eq!(harness.get_json("/api/v1/interception").await, sent);
+}
+
+#[tokio::test]
+async fn post_config_rejects_https_interception_naming_the_endpoint() {
+    let harness = start().await;
+    let before = tokio::fs::read_to_string(&harness.config_path)
+        .await
+        .unwrap();
+
+    let response = harness
+        .client
+        .post(harness.url("/api/v1/config"))
+        .bearer_auth(&harness.key)
+        .json(&json!({"https": {"interception": {"clients": ["10.0.0.1"]}}}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), 422);
+
+    let body: Value = response.json().await.unwrap();
+    assert_eq!(body["error"]["code"], "validation_failed");
+    assert!(body["error"]["details"].is_null(), "{body}");
+    assert!(
+        body["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("/api/v1/interception"),
+        "{body}"
+    );
+    assert_eq!(
+        tokio::fs::read_to_string(&harness.config_path)
+            .await
+            .unwrap(),
+        before
+    );
+}
+
+#[tokio::test]
+async fn get_config_omits_https_interception() {
+    let harness = start().await;
+    let body = harness.get_json("/api/v1/config").await;
+    assert!(body["https"].get("interception").is_none(), "{body}");
 }

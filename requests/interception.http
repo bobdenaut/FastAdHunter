@@ -1,0 +1,88 @@
+# Interception Document — API.md §Interception, ADR-0008
+#
+# `clients` and `exclude_domains` do NOT live in fastadhunter.toml. They live
+# in /config/interception.json and are read and replaced through this pair.
+# A PUT applies on the next accepted connection: no restart, and the response
+# carries no `restart_required` field.
+#
+# PUT replaces the WHOLE document. A missing key is an empty list, so
+# `{"clients": ["..."]}` clears every exclusion.
+#
+# Caps: 256 clients, 512 exclude_domains. A rejected PUT changes nothing —
+# neither the file nor the running scope.
+#
+# Errors carry a structured `details` object whose `reason` is one of
+# `shape`, `over_cap`, `invalid_entry`, `duplicate`:
+#
+#   {"error": {"code": "validation_failed",
+#              "message": "clients[3]: \"10.0.0.300\" is not an IP address or CIDR block",
+#              "details": {"reason": "invalid_entry", "list": "clients",
+#                          "index": 3, "entry": "10.0.0.300"}}}
+
+@base = {{host}}/api/v1
+@auth = Authorization: Bearer {{apiKey}}
+
+### What is in force right now. The document the API shows and the scope the
+### HTTPS listener reads are the same value — they cannot disagree.
+GET {{base}}/interception
+{{auth}}
+
+### List two managed clients and splice one bank. The stored spelling is what
+### you sent; only the compiled matcher is normalised.
+PUT {{base}}/interception
+{{auth}}
+Content-Type: application/json
+
+{
+  "clients": ["192.168.88.10", "192.168.88.0/24"],
+  "exclude_domains": ["unicredit.ro", "revolut.com"]
+}
+
+### Intercept nobody, keep the exclusions. Machinery stays built, so adding
+### the first client back is one PUT away — still no restart.
+PUT {{base}}/interception
+{{auth}}
+Content-Type: application/json
+
+{
+  "clients": [],
+  "exclude_domains": ["unicredit.ro", "revolut.com"]
+}
+
+### 422 invalid_entry: the index and the entry are the operator's own.
+PUT {{base}}/interception
+{{auth}}
+Content-Type: application/json
+
+{
+  "clients": ["192.168.88.10", "10.0.0.300"]
+}
+
+### 422 duplicate: "Bank.ro" and "bank.ro." are the same host after
+### normalization; `duplicate_of` points at the first spelling.
+PUT {{base}}/interception
+{{auth}}
+Content-Type: application/json
+
+{
+  "exclude_domains": ["Bank.ro", "bank.ro."]
+}
+
+### 422 shape: unknown keys are refused rather than silently dropped.
+PUT {{base}}/interception
+{{auth}}
+Content-Type: application/json
+
+{
+  "client": ["192.168.88.10"]
+}
+
+### 422 from POST /config: the two keys have exactly one owner, and it is the
+### endpoint above.
+POST {{base}}/config
+{{auth}}
+Content-Type: application/json
+
+{
+  "https": { "interception": { "clients": ["192.168.88.10"] } }
+}

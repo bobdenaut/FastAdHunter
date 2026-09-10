@@ -444,6 +444,11 @@ impl Harness {
             telemetry: Arc::new(NoTelemetry),
             cache: Arc::new(NoCache),
             config: Arc::new(ConfigStore::new(config, config_path)),
+            interception: Arc::new(fah_api::InterceptionStore::new(
+                Arc::new(fah_rules::interception::InterceptionState::default()),
+                config_dir.path().join(fah_api::DOCUMENT_FILE),
+                fah_api::InterceptionRuntime::NoListener,
+            )),
             keys: Arc::new(keys),
             auth: Arc::new(
                 fah_api::AuthState::for_tests(

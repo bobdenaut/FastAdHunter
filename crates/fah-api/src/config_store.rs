@@ -365,7 +365,6 @@ mod tests {
             "engine.mode",
             "runtime.http_runtimes",
             "https.listen.port",
-            "https.interception.clients",
             "dns.listen.port",
             "dns.blocking.ttl_seconds",        // Pipeline::new, at boot
             "dns.cache.max_entries",           // DnsCache::new, at boot

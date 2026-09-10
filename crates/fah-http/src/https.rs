@@ -87,20 +87,20 @@ impl TlsProxy {
     }
 
     pub fn with_interception(mut self, interception: Interception) -> Self {
-        self.interception = (!interception.is_empty()).then_some(interception);
+        self.interception = Some(interception);
         self
     }
 
     pub fn intercepts(&self, ip: IpAddr) -> bool {
         self.interception
             .as_ref()
-            .is_some_and(|interception| interception.intercepts(ip))
+            .is_some_and(|interception| interception.state().load().scope.intercepts(ip))
     }
 
     fn interception_for(&self, ip: IpAddr, host: &str) -> Option<&Interception> {
-        self.interception
-            .as_ref()
-            .filter(|interception| interception.intercepts(ip) && !interception.excludes(host))
+        let interception = self.interception.as_ref()?;
+        let active = interception.state().load();
+        (active.scope.intercepts(ip) && !active.scope.excludes(host)).then_some(interception)
     }
 
     pub fn with_rules(mut self, rules: Arc<dyn Ruleset>) -> Self {

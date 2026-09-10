@@ -23,6 +23,7 @@ use std::time::Duration;
 
 use fah_config::{Config, LogFormat as ConfigLogFormat, LogLevel};
 use fah_logging::LogFormat;
+use fah_rules::interception::InterceptionState;
 use tracing_subscriber::filter::LevelFilter;
 
 const DEFAULT_CONFIG_PATH: &str = "/config/fastadhunter.toml";
@@ -445,6 +446,18 @@ impl Engine {
         privilege::drop_to_service_user(&[config_dir, data_dir, &history_dir])?;
 
         // ── API (L3) ──
+        let (config, loaded) = {
+            let dir = config_dir.to_path_buf();
+            let path = config_path.to_path_buf();
+            tokio::task::spawn_blocking(move || {
+                let mut config = config;
+                let loaded = fah_api::load_or_migrate(&dir, &mut config, &path);
+                (config, loaded)
+            })
+            .await?
+        };
+        let interception_state = Arc::new(InterceptionState::new(loaded?.active));
+
         let (keys, generated) = fah_api::ApiKeyStore::load_or_create(config_dir)?;
         if let Some(key) = generated {
             // Printed exactly once, on first boot (SECURITY.md §API access).
@@ -528,12 +541,20 @@ impl Engine {
             }
         };
 
+        let interception_runtime = match (https.is_some(), certs.is_some()) {
+            (false, _) => fah_api::InterceptionRuntime::NoListener,
+            (true, true) => fah_api::InterceptionRuntime::Live,
+            (true, false) => fah_api::InterceptionRuntime::StoreClosed,
+        };
+
         let tls_proxy = if https.is_some() {
             let mut proxy = build_tls_proxy(&config, upstreams.clone())?
                 .with_rules(Arc::clone(&rules) as Arc<dyn fah_http::Ruleset>)
                 .with_policies(Arc::clone(&policy_state))
                 .with_events(events_tx.clone());
-            if let Some(interception) = interception(&config, certs.as_ref())? {
+            if let Some(interception) =
+                interception(certs.as_ref(), Arc::clone(&interception_state))?
+            {
                 proxy = proxy.with_interception(interception);
             }
             Some(Arc::new(proxy))
@@ -600,6 +621,11 @@ impl Engine {
                 )),
                 cache: Arc::new(adapters::CacheAdapter::new(Arc::clone(&pipeline))),
                 config: Arc::new(fah_api::ConfigStore::new(config, config_path.to_path_buf())),
+                interception: Arc::new(fah_api::InterceptionStore::new(
+                    Arc::clone(&interception_state),
+                    config_dir.join(fah_api::DOCUMENT_FILE),
+                    interception_runtime,
+                )),
                 keys: Arc::new(keys),
                 auth: Arc::new(auth),
                 certs,
@@ -840,39 +866,24 @@ fn dot_tls(
 }
 
 fn interception(
-    config: &fah_config::Config,
     certs: Option<&Arc<fah_api::CertStore>>,
+    state: Arc<InterceptionState>,
 ) -> Result<Option<fah_http::Interception>, Box<dyn std::error::Error>> {
-    let clients = config
-        .https
-        .interception
-        .clients
-        .iter()
-        .map(|entry| {
-            entry
-                .parse::<fah_common::egress::AllowedNet>()
-                .map_err(|err| format!("[https.interception] clients: {err}"))
-        })
-        .collect::<Result<Vec<_>, _>>()?;
-    let exclusions = fah_http::ExclusionSet::new(&config.https.interception.exclude_domains)
-        .map_err(|err| format!("[https.interception] exclude_domains: {err}"))?;
-    if clients.is_empty() {
-        return Ok(None);
-    }
+    let active = state.current();
+    let clients = active.scope.client_count();
     let Some(store) = certs else {
         tracing::warn!(
-            count = clients.len(),
-            "[https.interception] clients listed, but the certificate store did not open — \
-             they are spliced, not intercepted, until /config is repaired and the container \
-             restarted"
+            count = clients,
+            "the certificate store did not open — listed clients are spliced, not \
+             intercepted, until /config is repaired and the container restarted"
         );
         return Ok(None);
     };
-    if !store.has_ca() {
+    if !store.has_ca() && clients > 0 {
         tracing::warn!(
-            count = clients.len(),
-            "[https.interception] clients listed, but no CA is installed — their connections \
-             close until one is generated or imported via /api/v1/certificates"
+            count = clients,
+            "clients are listed, but no CA is installed — their connections close until one \
+             is generated or imported via /api/v1/certificates"
         );
     }
     let server = fah_http::server_config(Arc::clone(store))?;
@@ -881,16 +892,16 @@ fn interception(
     #[cfg(feature = "test-harness")]
     let client = test_harness_upstream_client_config()?;
     tracing::info!(
-        count = clients.len(),
-        exclusions = exclusions.len(),
-        "HTTPS interception active for the listed clients — each must hold a static lease"
+        clients,
+        exclusions = active.scope.exclusion_count(),
+        "HTTPS interception machinery ready — each listed client must hold a static lease"
     );
+    drop(active);
     Ok(Some(fah_http::Interception::new(
         server,
         client,
         Arc::clone(store),
-        clients,
-        exclusions,
+        state,
     )))
 }
 

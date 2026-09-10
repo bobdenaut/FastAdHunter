@@ -639,12 +639,6 @@ pub fn full_mode_config(ports: &Ports, upstream: SocketAddr, mode: &FullMode) ->
     let origin_ip = mode.origin_ip;
     let api_tls = mode.api_tls;
     let http_runtimes = FULL_MODE_HTTP_RUNTIMES;
-    let clients = mode
-        .clients
-        .iter()
-        .map(|client| format!("{client:?}"))
-        .collect::<Vec<_>>()
-        .join(", ");
     format!(
         r#"
 [engine]
@@ -681,9 +675,6 @@ idle_timeout_ms = 10000
 [https.listen]
 address = "127.0.0.1"
 port = {https_port}
-
-[https.interception]
-clients = [{clients}]
 
 [egress]
 allow_destinations = ["{origin_ip}"]
@@ -745,6 +736,15 @@ pub async fn boot_full_in(
         std::fs::write(&path, der).expect("write the test upstream root");
         path
     });
+    let document = serde_json::json!({
+        "clients": mode.clients,
+        "exclude_domains": [],
+    });
+    std::fs::write(
+        config_dir.path().join("interception.json"),
+        format!("{}\n", serde_json::to_string_pretty(&document).unwrap()),
+    )
+    .expect("seed the interception document");
     let envs: Vec<(&str, &std::ffi::OsStr)> = root_path
         .iter()
         .map(|path| (UPSTREAM_ROOT_ENV, path.as_os_str()))

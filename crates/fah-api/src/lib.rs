@@ -28,6 +28,7 @@ mod config_store;
 mod doh;
 mod error;
 mod events;
+mod interception_store;
 mod keys;
 mod password;
 mod ports;
@@ -46,6 +47,10 @@ pub use error::ApiError;
 pub use events::{Event, EventHub};
 pub use fah_certs::{
     install_crypto_provider, load_or_generate as load_or_generate_tls, CertError, CertStore,
+};
+pub use interception_store::{
+    load_or_migrate, InterceptionRuntime, InterceptionStore, InterceptionStoreError, Loaded,
+    DOCUMENT_FILE,
 };
 pub use keys::ApiKeyStore;
 pub use password::AuthState;

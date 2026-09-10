@@ -10,8 +10,10 @@ use fah_certs::{CaParams, CertStore};
 use fah_common::egress::{AllowedNet, DestinationPolicy};
 use fah_common::resolve::{HostResolver, Resolving};
 use fah_config::{HttpsConfig, HttpsListenConfig, NoSni};
-use fah_http::{ExclusionSet, Interception, ProxyCounters, TlsProxy, TlsServer};
+use fah_http::{Interception, ProxyCounters, TlsProxy, TlsServer};
 use fah_model::Event;
+use fah_model::InterceptionDocument;
+use fah_rules::interception::{Active, InterceptionState};
 use fah_rules::{Matcher, MatcherBuilder};
 use http_body_util::{BodyExt, Full};
 use hyper::body::Incoming;
@@ -141,8 +143,13 @@ fn interception(store: &Arc<CertStore>, upstream_root: &CertificateDer<'static>)
         fah_http::server_config(Arc::clone(store)).unwrap(),
         fah_http::client_config_with_roots(roots).unwrap(),
         Arc::clone(store),
-        vec![AllowedNet::host(IpAddr::V4(Ipv4Addr::LOCALHOST))],
-        ExclusionSet::empty(),
+        Arc::new(InterceptionState::new(
+            Active::compile(InterceptionDocument {
+                clients: vec!["127.0.0.1".to_string()],
+                exclude_domains: Vec::new(),
+            })
+            .unwrap(),
+        )),
     )
 }
 

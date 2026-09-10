@@ -18,6 +18,10 @@ pub enum ApiError {
     /// A well-formed request whose contents fail validation — the `422` cases
     /// (bad rule lines, a config patch the schema rejects).
     ValidationFailed(String),
+    ValidationFailedWithDetails {
+        message: String,
+        details: serde_json::Value,
+    },
     /// A syntactically bad request: unparseable query string, malformed JSON
     /// body, an unknown enum value. `400`, distinct from a `422` whose shape
     /// was fine but whose values were not.
@@ -43,11 +47,13 @@ impl ApiError {
                 "missing or invalid credentials".to_string(),
             ),
             Self::NotFound(what) => (StatusCode::NOT_FOUND, "not_found", what.clone()),
-            Self::ValidationFailed(message) => (
-                StatusCode::UNPROCESSABLE_ENTITY,
-                "validation_failed",
-                message.clone(),
-            ),
+            Self::ValidationFailed(message) | Self::ValidationFailedWithDetails { message, .. } => {
+                (
+                    StatusCode::UNPROCESSABLE_ENTITY,
+                    "validation_failed",
+                    message.clone(),
+                )
+            }
             Self::BadRequest(message) => (StatusCode::BAD_REQUEST, "bad_request", message.clone()),
             Self::Conflict(message) => (StatusCode::CONFLICT, "conflict", message.clone()),
             Self::RateLimited { message, .. } => (
@@ -93,17 +99,33 @@ struct ErrorBody {
 struct ErrorDetail {
     code: &'static str,
     message: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    details: Option<serde_json::Value>,
+}
+
+impl ApiError {
+    fn details(&self) -> Option<serde_json::Value> {
+        match self {
+            Self::ValidationFailedWithDetails { details, .. } => Some(details.clone()),
+            _ => None,
+        }
+    }
 }
 
 impl IntoResponse for ApiError {
     fn into_response(self) -> Response {
         let no_store = self.no_store();
         let retry_after = self.retry_after();
+        let details = self.details();
         let (status, code, message) = self.parts();
         let mut response = (
             status,
             Json(ErrorBody {
-                error: ErrorDetail { code, message },
+                error: ErrorDetail {
+                    code,
+                    message,
+                    details,
+                },
             }),
         )
             .into_response();
@@ -174,12 +196,57 @@ mod tests {
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "internal",
             ),
+            (
+                ApiError::ValidationFailedWithDetails {
+                    message: "clients: bad".into(),
+                    details: serde_json::json!({"reason": "shape"}),
+                },
+                StatusCode::UNPROCESSABLE_ENTITY,
+                "validation_failed",
+            ),
         ];
         for (error, status, code) in cases {
             let (got_status, got_code, _) = error.parts();
             assert_eq!(got_status, status);
             assert_eq!(got_code, code);
         }
+    }
+
+    #[test]
+    fn details_is_absent_unless_set() {
+        let plain = serde_json::to_value(ErrorBody {
+            error: ErrorDetail {
+                code: "validation_failed",
+                message: "line 1: bad".to_string(),
+                details: ApiError::ValidationFailed("line 1: bad".into()).details(),
+            },
+        })
+        .unwrap();
+        assert_eq!(
+            plain,
+            serde_json::json!({"error":{"code":"validation_failed","message":"line 1: bad"}})
+        );
+
+        let structured = ApiError::ValidationFailedWithDetails {
+            message: "clients: 300 entries exceed the cap of 256 by 44".to_string(),
+            details: serde_json::json!({"reason":"over_cap","list":"clients","len":300,"cap":256}),
+        };
+        let body = serde_json::to_value(ErrorBody {
+            error: ErrorDetail {
+                code: "validation_failed",
+                message: "clients: 300 entries exceed the cap of 256 by 44".to_string(),
+                details: structured.details(),
+            },
+        })
+        .unwrap();
+        assert_eq!(
+            body,
+            serde_json::json!({"error":{
+                "code":"validation_failed",
+                "message":"clients: 300 entries exceed the cap of 256 by 44",
+                "details":{"reason":"over_cap","list":"clients","len":300,"cap":256}
+            }})
+        );
     }
 
     #[test]
@@ -211,6 +278,14 @@ mod tests {
                 None,
             ),
             (ApiError::NotFound("x".into()), false, None),
+            (
+                ApiError::ValidationFailedWithDetails {
+                    message: "clients: bad".into(),
+                    details: serde_json::json!({"reason": "shape"}),
+                },
+                false,
+                None,
+            ),
         ];
         for (error, no_store, retry_after) in cases {
             let response = error.into_response();

@@ -226,7 +226,7 @@ fn join_error(error: tokio::task::JoinError) -> ApiError {
     )
 }
 
-fn body_error(rejection: JsonRejection) -> ApiError {
+pub(crate) fn body_error(rejection: JsonRejection) -> ApiError {
     match rejection {
         JsonRejection::JsonDataError(_)
         | JsonRejection::JsonSyntaxError(_)

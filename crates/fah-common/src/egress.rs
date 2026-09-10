@@ -68,7 +68,7 @@ impl fmt::Display for Refusal {
 }
 
 /// One entry of the operator's allow-list: an address or a CIDR block.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct AllowedNet {
     addr: IpAddr,
     prefix_len: u8,

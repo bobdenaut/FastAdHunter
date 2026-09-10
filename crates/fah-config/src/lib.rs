@@ -91,7 +91,7 @@ impl Config {
 /// writes to a sibling temp file, then renames it into place. A crash or a
 /// second instance booting concurrently can never observe a half-written
 /// config — readers see either the old file or the complete new one.
-fn write_atomic(path: &Path, text: &str) -> Result<(), ConfigError> {
+pub fn write_atomic(path: &Path, text: &str) -> Result<(), ConfigError> {
     let at = |p: &Path| {
         let p = p.to_path_buf();
         move |source| ConfigError::Io { path: p, source }
@@ -107,8 +107,11 @@ fn write_atomic(path: &Path, text: &str) -> Result<(), ConfigError> {
     tmp_name.push(format!(".tmp.{}", std::process::id()));
     let tmp = path.with_file_name(tmp_name);
 
-    fs::write(&tmp, text).map_err(at(&tmp))?;
-    fs::rename(&tmp, path).map_err(at(path))
+    let tmp_err = at(&tmp);
+    let path_err = at(path);
+
+    fs::write(&tmp, text).map_err(tmp_err)?;
+    fs::rename(&tmp, path).map_err(path_err)
 }
 
 /// Floor for `[dns.cache] max_bytes` — see the check in [`validate`].
@@ -859,6 +862,68 @@ format = "text"
         let pairs = vec![("FAH__RULES__LISTS".to_string(), "x".to_string())];
         let err = apply_env_overrides(Config::default(), &pairs).unwrap_err();
         assert!(err.to_string().contains("array-of-tables"));
+    }
+
+    #[test]
+    fn env_interception_paths_are_rejected() {
+        for var in [
+            "FAH__HTTPS__INTERCEPTION__CLIENTS",
+            "FAH__HTTPS__INTERCEPTION__EXCLUDE_DOMAINS",
+        ] {
+            let pairs = vec![(var.to_string(), "192.168.88.10".to_string())];
+            let err = apply_env_overrides(Config::default(), &pairs).unwrap_err();
+            assert!(
+                matches!(err, ConfigError::UnknownEnvKey { .. }),
+                "{var}: {err}"
+            );
+        }
+    }
+
+    #[test]
+    fn interception_keys_are_absent_from_a_default_toml() {
+        let text = Config::default().to_toml_string().unwrap();
+        assert!(!text.contains("interception"), "{text}");
+    }
+
+    #[test]
+    fn from_toml_str_is_the_file_layer_alone() {
+        let text = "[https.interception]\nclients = [\"10.0.0.1\"]\n\n[api]\nport = 8443\n";
+        let config = Config::from_toml_str(text).unwrap();
+        assert_eq!(
+            config.https.interception.clients,
+            Some(vec!["10.0.0.1".to_string()])
+        );
+        assert_eq!(config.api.port, 8443);
+
+        let pairs = vec![("FAH__API__PORT".to_string(), "9443".to_string())];
+        let effective = apply_env_overrides(Config::from_toml_str(text).unwrap(), &pairs).unwrap();
+        assert_eq!(effective.api.port, 9443);
+        assert_eq!(Config::from_toml_str(text).unwrap().api.port, 8443);
+    }
+
+    #[test]
+    fn write_atomic_error_paths_are_unchanged() {
+        let dir = tempfile::tempdir().unwrap();
+
+        let blocker = dir.path().join("blocker");
+        fs::write(&blocker, "not a directory").unwrap();
+        let err = write_atomic(&blocker.join("nested.toml"), "x").unwrap_err();
+        assert!(
+            matches!(&err, ConfigError::Io { path, .. } if path == &blocker),
+            "{err:?}"
+        );
+
+        let occupied = dir.path().join("occupied.toml");
+        fs::create_dir(&occupied).unwrap();
+        let err = write_atomic(&occupied, "x").unwrap_err();
+        assert!(
+            matches!(&err, ConfigError::Io { path, .. } if path == &occupied),
+            "{err:?}"
+        );
+
+        let good = dir.path().join("nested").join("fastadhunter.toml");
+        write_atomic(&good, "value = 1\n").unwrap();
+        assert_eq!(fs::read_to_string(&good).unwrap(), "value = 1\n");
     }
 
     #[test]

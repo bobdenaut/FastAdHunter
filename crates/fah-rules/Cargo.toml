@@ -19,6 +19,7 @@ fah-config = { path = "../fah-config" }
 fah-model = { path = "../fah-model" }
 memchr = { workspace = true }
 reqwest = { workspace = true }
+serde = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true, features = ["fs", "sync", "time"] }
 tracing = { workspace = true }
@@ -31,6 +32,7 @@ criterion = { workspace = true }
 # allocator selection (that is the binary's, per `crates/fastadhunter/src/allocator.rs`), and a library has no
 # business carrying a C-toolchain build requirement.
 mimalloc = { workspace = true }
+serde_json = { workspace = true }
 tempfile = "3"
 tokio = { workspace = true, features = ["io-util", "macros", "net", "rt-multi-thread", "test-util"] }
 

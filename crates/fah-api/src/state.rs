@@ -10,6 +10,7 @@ use fah_rules::{ListManager, PolicyState};
 
 use crate::config_store::ConfigStore;
 use crate::events::EventHub;
+use crate::interception_store::InterceptionStore;
 use crate::keys::ApiKeyStore;
 use crate::password::AuthState;
 use crate::ports::{CacheSource, DnsWireSource, HistorySource, StatsSource, TelemetrySource};
@@ -30,6 +31,7 @@ pub struct AppState {
     pub telemetry: Arc<dyn TelemetrySource>,
     pub cache: Arc<dyn CacheSource>,
     pub config: Arc<ConfigStore>,
+    pub interception: Arc<InterceptionStore>,
     pub keys: Arc<ApiKeyStore>,
     pub auth: Arc<AuthState>,
     pub certs: Option<Arc<CertStore>>,
@@ -65,6 +67,7 @@ pub struct AppStateBuilder {
     pub telemetry: Arc<dyn TelemetrySource>,
     pub cache: Arc<dyn CacheSource>,
     pub config: Arc<ConfigStore>,
+    pub interception: Arc<InterceptionStore>,
     pub keys: Arc<ApiKeyStore>,
     pub auth: Arc<AuthState>,
     pub certs: Option<Arc<CertStore>>,
@@ -82,6 +85,7 @@ impl AppStateBuilder {
             telemetry: self.telemetry,
             cache: self.cache,
             config: self.config,
+            interception: self.interception,
             keys: self.keys,
             auth: self.auth,
             certs: self.certs,

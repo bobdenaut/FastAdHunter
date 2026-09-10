@@ -87,6 +87,10 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/cache", get(cache_stats))
         .route("/cache/clean", post(cache_clean))
         .route("/config", get(get_config).post(post_config))
+        .route(
+            "/interception",
+            bounded_body(get(get_interception).put(put_interception)),
+        )
         .route("/config/apikey/rotate", post(rotate_api_key))
         .route("/certificates", no_store(get(certs::status)))
         .route(
@@ -1422,6 +1426,19 @@ async fn post_config(
         ));
     }
 
+    if patch
+        .get("https")
+        .and_then(|https| https.get("interception"))
+        .is_some()
+    {
+        return Err(ApiError::ValidationFailed(
+            "https.interception is not settable here: clients and exclude_domains live in \
+             /config/interception.json and are managed by GET/PUT /api/v1/interception, \
+             which applies live with no restart"
+                .to_string(),
+        ));
+    }
+
     if patch.get("auth").is_some() {
         return Err(ApiError::ValidationFailed(
             "auth is not settable here: the dashboard password is changed through \
@@ -1470,6 +1487,74 @@ async fn post_config(
         applied: outcome.applied,
         restart_required: outcome.restart_required,
     }))
+}
+
+async fn get_interception(
+    State(state): State<Arc<AppState>>,
+) -> Json<fah_model::InterceptionDocument> {
+    Json(state.interception.current().document.clone())
+}
+
+async fn put_interception(
+    State(state): State<Arc<AppState>>,
+    body: Result<Json<serde_json::Value>, JsonRejection>,
+) -> ApiResult<Json<fah_model::InterceptionDocument>> {
+    let Json(body) = body.map_err(certs::body_error)?;
+    let document =
+        serde_json::from_value::<fah_model::InterceptionDocument>(body).map_err(|err| {
+            ApiError::ValidationFailedWithDetails {
+                message: err.to_string(),
+                details: serde_json::json!({"reason": "shape"}),
+            }
+        })?;
+
+    let store = Arc::clone(&state.interception);
+    let prepared = store.prepare(document).map_err(interception_error)?;
+
+    let active = tokio::task::spawn_blocking(move || store.commit(prepared))
+        .await
+        .map_err(commit_join_error)?
+        .map_err(interception_error)?;
+
+    Ok(Json(active.document.clone()))
+}
+
+fn interception_error(error: crate::InterceptionStoreError) -> ApiError {
+    use crate::InterceptionStoreError as Error;
+    match error {
+        Error::Invalid(document) => ApiError::ValidationFailedWithDetails {
+            message: document.to_string(),
+            details: serde_json::to_value(&document)
+                .unwrap_or_else(|_| serde_json::json!({"reason": "shape"})),
+        },
+        Error::Unavailable(message) => ApiError::Unavailable {
+            message: message.to_string(),
+            retry_after: None,
+        },
+        other => {
+            tracing::error!(error = %other, "the interception document was not written");
+            ApiError::Internal(other.to_string())
+        }
+    }
+}
+
+fn commit_join_error(error: tokio::task::JoinError) -> ApiError {
+    match error.is_panic() {
+        true => {
+            tracing::error!(payload = ?error.into_panic(), "interception commit panicked");
+            ApiError::Internal(
+                "the commit panicked; the change was either fully applied or not at all — \
+                 see the log"
+                    .to_string(),
+            )
+        }
+        false => {
+            tracing::error!(%error, "interception commit did not run");
+            ApiError::Internal(
+                "the commit did not run; nothing was applied — see the log".to_string(),
+            )
+        }
+    }
 }
 
 async fn rotate_api_key(State(state): State<Arc<AppState>>) -> ApiResult<Json<ApiKeyResponse>> {

@@ -1,3 +1,4 @@
+use fah_rules::interception::{normalize_host, MAX_NAME_LEN};
 use tracing::debug;
 
 pub const MAX_HELLO_BYTES: usize = 16 * 1024;
@@ -7,8 +8,6 @@ const RECORD_HEADER: usize = 5;
 const HANDSHAKE_CLIENT_HELLO: u8 = 0x01;
 const EXT_SERVER_NAME: u16 = 0x0000;
 const NAME_TYPE_HOST: u8 = 0x00;
-const MAX_NAME_LEN: usize = 253;
-const MAX_LABEL_LEN: usize = 63;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum HelloScan {
@@ -140,7 +139,7 @@ pub fn scan_client_hello(buf: &[u8]) -> HelloScan {
     let mut name = [0u8; MAX_NAME_LEN];
     let mut reader = Records::new(buf);
     match walk(&mut reader, &mut name) {
-        Walk::Found(len) => match normalize(&name[..len]) {
+        Walk::Found(len) => match normalize_host(&name[..len]) {
             Some(host) => HelloScan::Sni(host),
             None => {
                 debug!(
@@ -261,41 +260,6 @@ fn server_name(reader: &mut Records<'_>, ext_len: usize, name: &mut [u8; MAX_NAM
         Some(len) => Walk::Found(len),
         None => Walk::Absent,
     }
-}
-
-pub(crate) fn normalize(raw: &[u8]) -> Option<Box<str>> {
-    if raw.is_empty() || raw.len() > MAX_NAME_LEN {
-        return None;
-    }
-    let mut host = String::with_capacity(raw.len());
-    let mut label = 0usize;
-    let last = raw.len() - 1;
-    for (index, &byte) in raw.iter().enumerate() {
-        let ch = byte.to_ascii_lowercase();
-        match ch {
-            b'.' => {
-                if label == 0 || index == last {
-                    return None;
-                }
-                label = 0;
-            }
-            b'-' => {
-                if label == 0 || index == last {
-                    return None;
-                }
-                label += 1;
-            }
-            b'a'..=b'z' | b'0'..=b'9' | b'_' => {
-                label += 1;
-                if label > MAX_LABEL_LEN {
-                    return None;
-                }
-            }
-            _ => return None,
-        }
-        host.push(char::from(ch));
-    }
-    Some(host.into_boxed_str())
 }
 
 #[cfg(test)]

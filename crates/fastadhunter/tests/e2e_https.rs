@@ -6,6 +6,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use hickory_proto::op::ResponseCode;
+use serde_json::Value;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::net::TcpStream;
 
@@ -18,6 +19,7 @@ use common::{
 };
 
 const ORIGIN_IP: Ipv4Addr = Ipv4Addr::new(127, 0, 0, 30);
+const LIVE_APPLY_ORIGIN_IP: Ipv4Addr = Ipv4Addr::new(127, 0, 0, 31);
 const ORIGIN_PAGE: &[u8] = b"<html>origin page</html>\n";
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
@@ -386,6 +388,128 @@ async fn fetch_over<S: AsyncRead + AsyncWrite + Unpin>(
         .and_then(|code| code.parse::<u16>().ok())
         .expect("a status code");
     (status, body.to_string())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn listing_a_client_through_the_api_applies_on_the_next_connection() {
+    let (origin_cert, origin_key) = self_signed_origin(&[PAGE_HOST]);
+    let Some(listener) = bind_origin(LIVE_APPLY_ORIGIN_IP).await else {
+        assert!(
+            skips_allowed(),
+            "{}. Set {ALLOW_SKIP_ENV}=1 to accept the skip",
+            skip_origin_message(LIVE_APPLY_ORIGIN_IP)
+        );
+        eprintln!("{}", skip_origin_message(LIVE_APPLY_ORIGIN_IP));
+        return;
+    };
+    let page = ORIGIN_PAGE.repeat(4);
+    let origin = run_tls_http_origin(
+        listener,
+        origin_cert.clone(),
+        origin_key,
+        Arc::new(page.clone()),
+    );
+    let _ = &origin;
+
+    let instance = boot_full(FullMode {
+        origin_ip: LIVE_APPLY_ORIGIN_IP,
+        clients: Vec::new(),
+        api_tls: true,
+        upstream_root: Some(origin_cert.to_vec()),
+    })
+    .await;
+    let https = instance.ports.https();
+    let ca_der = instance.generate_ca().await;
+
+    assert_eq!(
+        get_json(
+            &instance.http,
+            &instance.base,
+            &instance.key,
+            "/api/v1/interception"
+        )
+        .await,
+        serde_json::json!({"clients": [], "exclude_domains": []}),
+        "the empty document booted as the source of truth"
+    );
+
+    let spliced = tls_connect_from(
+        None,
+        https,
+        PAGE_HOST,
+        client_config_trusting(ca_der.clone()),
+    )
+    .await;
+    assert!(
+        spliced.is_err(),
+        "an unlisted client is spliced, so a client trusting only our CA must reject the \
+         origin's own certificate"
+    );
+    assert_eq!(
+        instance.certificates().await["leaf_cache"]["minted_total"],
+        0,
+        "nothing is minted while the document lists no client"
+    );
+
+    let response = instance
+        .http
+        .put(format!("{}/api/v1/interception", instance.base))
+        .bearer_auth(&instance.key)
+        .json(&serde_json::json!({"clients": ["127.0.0.1"], "exclude_domains": []}))
+        .send()
+        .await
+        .expect("PUT /api/v1/interception");
+    assert_eq!(response.status(), 200);
+    let body: Value = response.json().await.expect("json body");
+    assert_eq!(
+        body,
+        serde_json::json!({"clients": ["127.0.0.1"], "exclude_domains": []})
+    );
+    assert!(
+        body.get("restart_required").is_none(),
+        "a document replacement never asks for a restart: {body}"
+    );
+
+    if cfg!(feature = "test-harness") {
+        let mut inside = tls_connect_from(
+            None,
+            https,
+            PAGE_HOST,
+            client_config_trusting(ca_der.clone()),
+        )
+        .await
+        .expect(
+            "the next connection after the PUT is intercepted — no restart, no rebuild of \
+             the machinery",
+        );
+        let (status, served) = fetch_over(&mut inside, PAGE_HOST, "/page").await;
+        assert_eq!(status, 200);
+        assert_eq!(served.as_bytes(), &page[..]);
+        assert_eq!(
+            instance.certificates().await["leaf_cache"]["minted_total"],
+            1,
+            "the newly listed client got a minted leaf on its next connection"
+        );
+    } else {
+        assert!(
+            skips_allowed(),
+            "the binary was built without the `test-harness` feature, so no upstream root \
+             could be injected — run `cargo test --all-features`, or set {ALLOW_SKIP_ENV}=1"
+        );
+    }
+
+    let on_disk = std::fs::read_to_string(instance.config_dir.path().join("interception.json"))
+        .expect("the document is persisted beside the TOML");
+    assert_eq!(
+        serde_json::from_str::<Value>(&on_disk).unwrap(),
+        serde_json::json!({"clients": ["127.0.0.1"], "exclude_domains": []})
+    );
+    let toml = std::fs::read_to_string(instance.config_dir.path().join("fastadhunter.toml"))
+        .expect("the TOML is readable");
+    assert!(
+        !toml.contains("interception"),
+        "the TOML never gains the keys back: {toml}"
+    );
 }
 
 async fn raw_probe(port: u16, bytes: &[u8]) -> Vec<u8> {

@@ -2,6 +2,7 @@
 
 mod domain;
 mod format;
+pub mod interception;
 mod lifecycle;
 mod matcher;
 mod parser;

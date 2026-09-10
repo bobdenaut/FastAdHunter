@@ -1,12 +1,12 @@
 use std::io;
-use std::net::{IpAddr, SocketAddr};
+use std::net::SocketAddr;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use fah_certs::CertStore;
-use fah_common::egress::AllowedNet;
 use fah_model::Event;
+use fah_rules::interception::InterceptionState;
 use http_body_util::{Either, Full};
 use hyper::body::{Body as _, Incoming};
 use hyper::client::conn::{http1, http2};
@@ -24,7 +24,6 @@ use tokio_rustls::TlsAcceptor;
 use tracing::debug;
 
 use crate::claim::{destination_of, ClaimError};
-use crate::exclusions::ExclusionSet;
 use crate::https::{as_millis, idle_watchdog, session_event, Activity, Session, TlsProxy};
 use crate::proxy::{
     append_via, emit, judge, publish, refuse, strip_hop_by_hop, to_client_response, Judged,
@@ -48,8 +47,7 @@ pub struct Interception {
     server_config: Arc<ServerConfig>,
     client_config: Arc<ClientConfig>,
     store: Arc<CertStore>,
-    clients: Vec<AllowedNet>,
-    exclusions: ExclusionSet,
+    state: Arc<InterceptionState>,
 }
 
 impl Interception {
@@ -57,28 +55,18 @@ impl Interception {
         server_config: Arc<ServerConfig>,
         client_config: Arc<ClientConfig>,
         store: Arc<CertStore>,
-        clients: Vec<AllowedNet>,
-        exclusions: ExclusionSet,
+        state: Arc<InterceptionState>,
     ) -> Self {
         Self {
             server_config,
             client_config,
             store,
-            clients,
-            exclusions,
+            state,
         }
     }
 
-    pub fn is_empty(&self) -> bool {
-        self.clients.is_empty()
-    }
-
-    pub fn intercepts(&self, ip: IpAddr) -> bool {
-        self.clients.iter().any(|net| net.contains(ip))
-    }
-
-    pub fn excludes(&self, host: &str) -> bool {
-        self.exclusions.contains(host)
+    pub fn state(&self) -> &Arc<InterceptionState> {
+        &self.state
     }
 }
 
@@ -532,15 +520,5 @@ mod tests {
     fn host_comparison_ignores_case_and_a_trailing_dot() {
         assert!(same_host("Example.COM.", "example.com"));
         assert!(!same_host("cdn.example.com", "example.com"));
-    }
-
-    #[test]
-    fn an_empty_client_list_intercepts_nobody() {
-        let exclusions = ExclusionSet::empty();
-        assert!(!exclusions.contains("example.com"));
-        let nets: Vec<AllowedNet> = Vec::new();
-        assert!(!nets
-            .iter()
-            .any(|net| net.contains(IpAddr::from([10, 0, 0, 1]))));
     }
 }
