@@ -222,10 +222,15 @@ Two pinning rules, by what the bench measures. **CPU-bound microbenches**
 (matcher, cache, pipeline, certs) run on **one core** (`ProcessorAffinity = 4`,
 `taskset -c 2`) — that is where the sub-1 % intervals come from.
 **Throughput and socket-bound benches** (`fah-http/benches/*`: pass-through,
-opaque body, splice, handshake, h2) run on **four distinct physical cores with
+opaque body, splice, h2) run on **four distinct physical cores with
 the runtime sized to them**: `TOKIO_WORKER_THREADS=4` plus an affinity mask
 that names one logical CPU per physical core — on the dev box's i9-13980HX
 that is `ProcessorAffinity = 0x55` (CPUs 0, 2, 4, 6; `taskset -c 0,2,4,6`).
+**Not the handshake group** of `intercept.rs`: one fresh connection and up to
+three TLS handshakes per iteration contend inside the mask, and pinned it read
+10–20 ms against 1.6–9 ms unpinned (p3-07 review A/B, 2026-09-10). Run it
+unpinned, interleaved, and expect the per-run bimodality recorded in
+[docs/measurement-traps.md](docs/measurement-traps.md) §Calibration.
 Two measured traps (p3-06 F8, 2026-09-02): a mask alone leaves tokio spawning
 one worker per *machine* CPU inside the mask, and `ProcessorAffinity = 15` on a
 hyper-threaded part is two physical cores, not four — together they turned
