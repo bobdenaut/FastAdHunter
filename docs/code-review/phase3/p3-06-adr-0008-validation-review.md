@@ -1,6 +1,6 @@
 # ADR-0008 validation — live policy and client certificate rejection
 
-Validation of [0008-live-policy-and-client-certificate-rejection.md](../../decisions/0008-live-policy-and-client-certificate-rejection.md)
+Validation of [0008-live-interception-and-client-certificate-rejection.md](../../decisions/0008-live-interception-and-client-certificate-rejection.md)
 against the tree at `f57f6a4` (branch `phase3-06`), 2026-09-10.
 Scope: are the document's factual claims true, and does its internal logic
 hold. The architecture itself is approved and was not re-litigated.
