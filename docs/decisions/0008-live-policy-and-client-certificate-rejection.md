@@ -96,15 +96,19 @@ A policy change applies on the **next connection**. No restart, and the response
 carries no `restart_required` — the field is meaningless here, which is the
 point of the split.
 
-`ExclusionSet` and the client list are read on the hot path, once per accepted
-connection, so the swap follows the pattern hard rule 3 already sanctions for
-ruleset and config changes: build the new value off the hot path, publish it
-with a single atomic store, let in-flight connections finish under the old one.
-No locks, no allocation in the read path.
+The hot path reads the current interception state once per accepted connection
+and never rebuilds it there, so the swap follows the pattern hard rule 3 already
+sanctions for ruleset and config changes: build the new value off the hot path,
+publish it with a single atomic store, let in-flight connections finish under
+the old one. Obtaining that state takes no lock and no allocation. Which owned
+or atomic handle carries it is the implementation task's to define.
 
 The swap point does not exist yet: with `clients = []` the binary builds no
-`Interception` at all, so today there is nothing to publish into. Creating one
-is the task's first move, and its shape belongs in the task file, not here.
+`Interception` at all, so today there is nothing to publish into. The
+implementation task owns two problems this decision deliberately does not
+solve — the `None → Some(..)` bootstrap, and what live replacement means for a
+value the hot path reads by reference. Which abstraction carries them belongs
+in that task and its approved plan, not here.
 
 Connections already established are not reconsidered. A device removed from
 `clients` stops being intercepted on its next connection, not mid-session.
@@ -249,8 +253,17 @@ alert reaches `acceptor.accept()` as an `io::Error` of kind `InvalidData`
 carrying `rustls::Error::AlertReceived(AlertDescription)`, on TLS 1.3 and TLS
 1.2 alike (`fah-http/tests/client_rejection.rs`). `tls.rs:85`
 `certificate_error` is the precedent for that downcast, not the machinery for
-it: it matches `InvalidCertificate(_)`, a variant the accept side never
-produces, so the detector needs its own predicate and must not reuse that one.
+it. The two sides match different shapes:
+
+```text
+connect side (upstream)  InvalidData + rustls::Error::InvalidCertificate(_)
+accept side (detection)  InvalidData + rustls::Error::AlertReceived(..)
+```
+
+The accept side never produces `InvalidCertificate` — that variant is a local
+verification verdict, and here the verdict is the client's, arriving as an
+alert. The detector therefore carries its own predicate and does not reuse
+`certificate_error`.
 
 **The exact mapping is established by test, not by this document, and the set
 of alerts is open rather than closed.** Which alert a real client sends is a
@@ -419,6 +432,45 @@ back under the cap is to remove entries and submit again.
 - Runbook 4's excluded arm relies on `unicredit.ro` sitting in the constant.
   Its precondition moves from source to policy; the check itself does not
   change.
+
+## Acceptance
+
+Each line is a property of the shipped system and names what falsifies it.
+Green tests are not the criterion; these are.
+
+- **A policy change takes effect on the next connection, with no restart.**
+  Two connections either side of a `PUT`, against a live origin, taking
+  different legs. An endpoint test that reads the document back proves the
+  endpoint, not the swap.
+- **The interception machinery exists with an empty client list.** Boot with
+  `clients: []`, add one through `PUT`, and that device's next connection is
+  intercepted — no restart.
+- **The policy response carries no `restart_required`.** The field is absent
+  from the response shape, not present and false.
+- **An empty policy excludes nothing.** No compiled-in baseline exists, and a
+  fresh install intercepts every host for a listed client unless that host is
+  explicitly present in `exclude_domains`.
+- **Migration runs once and never overwrites an edited policy.** A second boot
+  with `policy.json` present leaves it byte-identical regardless of the TOML,
+  and warns naming both files.
+- **`FAH__` cannot set either list.** Setting the corresponding environment
+  variable changes nothing and the process still starts.
+- **`fah-http` has no path to `fah-api`.** The layering test rejects even a
+  test-only dependency edge.
+- **An accept failure carrying no classified alert stays on `status 0`.** A
+  test pins this as an intentional fallback rather than a missing match arm.
+- **Nothing writes policy as a consequence of traffic observation.** The
+  detector, the event path and the view do not mutate policy. After migration,
+  the only normal runtime policy writer is the explicit `PUT`; first-boot
+  migration remains the defined lifecycle exception.
+- **A `PUT` over the cap changes nothing.** The stored policy is unchanged, the
+  active runtime policy is unchanged, and the error identifies the list and the
+  overage.
+- **A policy update that cannot produce a valid runtime state does not
+  partially apply.** The previous runtime state stays active, no partially
+  constructed interception state is published, and the operator gets the
+  failure. The persist/build/publish ordering that achieves this belongs to the
+  implementation task and its approved plan.
 
 ## Phasing
 
