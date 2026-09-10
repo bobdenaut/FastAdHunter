@@ -519,7 +519,7 @@ bench build and restored (`git diff` clean). `layering.rs` green.
 | --- | --- | --- |
 | `fastadhunter` `security_phase3.rs` | 6 | `ca_key_unreachable_via_every_route` — 70 documented routes × 3 credentials (none / bearer / session cookie from the first-boot password) + `logout-all` + `apikey/rotate` = 212 requests, 0 leaks (CA key, API key); `non_listed_client_is_never_minted_a_leaf` — non-listed client sees the origin's own certificate through the splice, byte-identical payload, `https-sni pass` event; trusting only our CA fails; the listed client from another loopback IP gets `kind: https` and fails; `minted_total == 0`; `bad_upstream_cert_is_not_masked` — listed client + self-signed origin ⇒ handshake error, event `status 526`, `bytes 0`, no ServerHello even for an accept-anything client, `minted_total == 0`; `exports_contain_no_private_material` — PEM export is one CERTIFICATE block whose DER equals the DER export, no key material in either, in the status document, in the import response, in `api-cert.pem` after a real import, or in `GET /api/v1/config`; `splice_is_byte_identical_when_interception_is_off` — 3 samples × 256 KiB pseudo-random payload, direct vs spliced byte-equal, events `pass` with `bytes` = payload; `dns_query_is_the_only_new_unauthenticated_route` — every `/api/**` route answers 401 without credentials (login exists), `/health` + `/dns-query` are the only non-static public paths, `/api/v1/dns-query` and `/api/dns-query` are 401, plaintext DNS on the DoT port is never answered; **closed posture** (`api.tls = false` + unloadable API pair, booted over `http://`): :53 answers, the DoT port is bindable (nothing listens), plaintext gets nothing, the log names `dot_enabled = true`, `/dns-query` is absent (N13), `/health` carries no DoT field (N3, see §Proposed doc edits) |
 | `fastadhunter` `e2e_https.rs` | 1 | `full_mode_blocks_at_every_layer` — 1 DNS null-IP over UDP; 2 HTTP `/track.js` ⇒ empty 200; 3 SNI block closed before ServerHello, `https-sni block` event; 4 no-SNI hello closed, classified `pass`, listener still judging; 5 (under `--all-features`, F1) listed client trusting only our CA completes our handshake, `GET /track.js` inside TLS ⇒ empty 200 + `https` event `verdict block`, `path /track.js`; second session `GET /page` ⇒ origin body byte-identical + `https` event `pass`, `status 200`; one leaf for `shop.example.com` reused by the second session; origin `accepts` grew per session (verify-before-mint) — without the feature the leg degrades to the fail-closed 526 and says so; 6 DoT answers the block for a client trusting only the exported CA; 7 DoH forwards and blocks. `minted_total == 2` (page host + DoT hostname), `unwarmed_misses == 0`. 0.9 s |
-| `fah-http` `interception.rs` | 6 (+1 extended) | `eight_parallel_h2_requests_share_one_verified_upstream_session` (8 × 200, `connections == 1`); `a_streamed_request_body_reaches_the_origin_before_the_client_finishes_sending` (4 MiB POST, 1 MiB window); `a_client_that_disconnects_mid_response_returns_its_permit` and `an_upstream_that_disconnects_mid_response_ends_the_session_and_returns_its_permit` (`max_connections = 1`; the origin holds `/page` open after a first 64 KiB frame, the client reads that frame, then one side cuts — deterministic mid-body, F2; second session served); `shutdown_stops_accepting_while_a_live_intercepted_session_keeps_serving` (p3-04 L4 semantics pinned: accept loop aborted, live session answers, no new session); `an_ipv6_listed_client_is_intercepted_end_to_end` (`[::1]` listed and listening, block inside TLS, event client `::1`, one mint); `an_idle_intercepted_session_is_closed_and_its_permit_returned` now asserts the permit (N10) |
+| `fah-http` `interception.rs` | 7 (+1 extended) | `a_baseline_bank_is_never_intercepted_even_for_a_listed_client` (2026-09-10: `homebanking.unicredit.ro` reaches the baseline through `unicredit.ro`, empty user list, listed client — origin's own certificate served, `minted_total == 0`, both events `HttpsSni`); `eight_parallel_h2_requests_share_one_verified_upstream_session` (8 × 200, `connections == 1`); `a_streamed_request_body_reaches_the_origin_before_the_client_finishes_sending` (4 MiB POST, 1 MiB window); `a_client_that_disconnects_mid_response_returns_its_permit` and `an_upstream_that_disconnects_mid_response_ends_the_session_and_returns_its_permit` (`max_connections = 1`; the origin holds `/page` open after a first 64 KiB frame, the client reads that frame, then one side cuts — deterministic mid-body, F2; second session served); `shutdown_stops_accepting_while_a_live_intercepted_session_keeps_serving` (p3-04 L4 semantics pinned: accept loop aborted, live session answers, no new session); `an_ipv6_listed_client_is_intercepted_end_to_end` (`[::1]` listed and listening, block inside TLS, event client `::1`, one mint); `an_idle_intercepted_session_is_closed_and_its_permit_returned` now asserts the permit (N10) |
 | `fah-certs` bench | 1 arm | `certs_replay_zipf` |
 | `fah-http` bench | 1 file, 3 groups | `https_handshake`, `https_h2_download`, `prewarm_hop` |
 
@@ -729,14 +729,16 @@ or, for items 5 and 7, to the probe container.
 
 ### 4. Pinned-app spot check
 
-1. **Owner settles `fah_http::BASELINE_EXCLUSIONS` first** (code change, own
-   gates). Shipped list: Apple (4), Google/Android (8), Microsoft (6),
-   WhatsApp (2), Signal, PayPal, Revolut, Wise, N26, eight Romanian banks
-   (`bancatransilvania.ro`, `btrl.ro`, `ing.ro`, `bcr.ro`, `george.ro`,
-   `brd.ro`, `raiffeisen.ro`, `unicredit.ro`). The app used below must be
-   covered by the baseline or by `[https.interception] exclude_domains`, else
-   the check proves nothing about exclusions. Record the final list here and
-   the CONFIGURATION.md `exclude_domains` sentence that names it.
+1. **`BASELINE_EXCLUSIONS` — settled for this check, 2026-09-10. No code change
+   needed to run it.** Shipped list: Apple (4), Google/Android (8),
+   Microsoft (6), WhatsApp (2), Signal, PayPal, Revolut, Wise, N26, eight
+   Romanian banks (`bancatransilvania.ro`, `btrl.ro`, `ing.ro`, `bcr.ro`,
+   `george.ro`, `brd.ro`, `raiffeisen.ro`, `unicredit.ro`). The app is
+   **UniCredit home banking**, covered by `unicredit.ro` — a name covers
+   itself and every subdomain — so the excluded arm exists as shipped.
+   Orange was dropped: not the owner's phone, not available. Extending the
+   constant is a separate decision (§Post-review work B); it does not gate
+   this step.
 2. **Static-lease precondition per listed IP** — read-only, already verified
    2026-09-02: `192.168.10.11` and `192.168.10.10` hold static leases. Re-run
    `/ip/dhcp-server/lease print where !dynamic` before adding any other client.
@@ -1105,12 +1107,35 @@ reads 24 more atomics per call.
   `paypal.com revolut.com wise.com n26.com`; Romanian banks
   `bancatransilvania.ro btrl.ro ing.ro bcr.ro george.ro brd.ro raiffeisen.ro
   unicredit.ro`. A name covers itself and every subdomain.
-- **Owner input still needed:** the banking app used in Runbook item 4 and its
-  hosts. If they are outside this list, either extend the constant (one line +
-  `the_baseline_exclusions_ship_without_any_configuration` + the
-  CONFIGURATION.md sentence) or put them in `exclude_domains` on the device —
-  both are recorded here when done. Until then the pinned-app check proves
-  nothing about exclusions (plan §Step 4.4).
+- **Owner input, answered 2026-09-10.** The banking app for Runbook item 4 is
+  **UniCredit home banking**, already covered by the baseline's `unicredit.ro`
+  — a name covers itself and every subdomain, so no change to the constant is
+  needed for the check to have an excluded arm. **Orange drops out of Runbook
+  4**: the phone is not the owner's and was not available, so its
+  not-excluded arm waits for a device that is.
+- **Contract now pinned on the wire** (2026-09-10):
+  `a_baseline_bank_is_never_intercepted_even_for_a_listed_client`
+  (`fah-http/tests/interception.rs`) drives `homebanking.unicredit.ro` through
+  the splice path with an **empty user list**, so only the baseline can carry
+  it, and with a **listed** client, so eligibility for interception is not
+  what saves it. Asserts the origin's own certificate is served, a client
+  trusting only our CA is rejected, `minted_total == 0`, and both events are
+  `HttpsSni`. Before this, baseline membership was unit-tested and the splice
+  was proven only through a *user* entry; the two never met in one test.
+- **Still open, and not closed by any of the above:** the shipped list is a
+  first cut. Twelve further Romanian bank domains were verified to resolve on
+  2026-09-10 (`cec.ro cecbank.ro garantibbva.ro patriabank.ro librabank.ro
+  firstbank.ro eximbank.ro intesasanpaolo.ro procreditbank.ro tbibank.ro
+  salt.bank vistabank.ro`) and are **proposed, not applied**. Two candidates
+  were rejected as dead: `otpbank.ro` (SERVFAIL; absorbed by Banca
+  Transilvania, covered) and `alphabank.ro` (no A record, `www` NXDOMAIN;
+  merged into UniCredit, covered). That two names went stale inside one year
+  is the standing argument that a hand-maintained list cannot deliver "every
+  banking app works" on its own.
+- **A harness cannot prove the app is unaffected.** It proves the SNI contract.
+  Whether UniCredit's *app* calls hosts under `unicredit.ro`, rather than an
+  API or third-party platform domain, is a device fact that only Runbook 4
+  establishes.
 
 ## Post-review work C — F8: the pinning rule, settled by measurement, 2026-09-02
 

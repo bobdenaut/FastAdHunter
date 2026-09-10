@@ -2,6 +2,13 @@ use std::borrow::Cow;
 use std::collections::HashSet;
 use std::fmt;
 
+/// Hosts that are never HTTPS-intercepted by default.
+///
+/// These are product safety exclusions for platform infrastructure,
+/// update/notification services, messaging/payment services, and
+/// banking/financial applications known to be incompatible with TLS MITM.
+///
+/// Exclusion means SPLICE, not BLOCK: DNS/SNI policy still applies.
 pub const BASELINE_EXCLUSIONS: &[&str] = &[
     "apple.com",
     "icloud.com",

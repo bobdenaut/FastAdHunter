@@ -110,8 +110,15 @@ fn origin_ca() -> OriginCa {
 }
 
 fn leaf_signed_by(ca: &OriginCa) -> (CertificateDer<'static>, PrivateKeyDer<'static>) {
+    leaf_signed_by_for(ca, ORIGIN_NAME)
+}
+
+fn leaf_signed_by_for(
+    ca: &OriginCa,
+    name: &str,
+) -> (CertificateDer<'static>, PrivateKeyDer<'static>) {
     let key = rcgen::KeyPair::generate().unwrap();
-    let params = rcgen::CertificateParams::new(vec![ORIGIN_NAME.to_string()]).unwrap();
+    let params = rcgen::CertificateParams::new(vec![name.to_string()]).unwrap();
     let cert = params.signed_by(&key, &ca.issuer).unwrap();
     (
         cert.der().clone(),
@@ -353,8 +360,16 @@ fn connector(roots: &[CertificateDer<'static>], proto: Proto) -> TlsConnector {
 }
 
 async fn tls_to(addr: SocketAddr, connector: &TlsConnector) -> io::Result<TlsStream<TcpStream>> {
+    tls_to_name(addr, connector, ORIGIN_NAME).await
+}
+
+async fn tls_to_name(
+    addr: SocketAddr,
+    connector: &TlsConnector,
+    name: &str,
+) -> io::Result<TlsStream<TcpStream>> {
     let tcp = TcpStream::connect(addr).await.unwrap();
-    let name = ServerName::try_from(ORIGIN_NAME).unwrap();
+    let name = ServerName::try_from(name.to_string()).unwrap();
     tokio::time::timeout(Duration::from_secs(5), connector.connect(name, tcp))
         .await
         .expect("a handshake outcome must arrive")
@@ -696,9 +711,9 @@ async fn an_http1_client_is_bridged_to_an_h2_origin() {
     filtered_end_to_end(Proto::H1, Proto::H2).await;
 }
 
-async fn spliced_not_intercepted(clients: Vec<AllowedNet>, exclusions: ExclusionSet) {
+async fn spliced_not_intercepted(clients: Vec<AllowedNet>, exclusions: ExclusionSet, name: &str) {
     let ca = origin_ca();
-    let (cert, key) = leaf_signed_by(&ca);
+    let (cert, key) = leaf_signed_by_for(&ca, name);
     let origin = origin(Proto::H1, cert, key).await;
     let (tx, mut rx) = mpsc::channel(16);
     let harness = harness(
@@ -712,15 +727,16 @@ async fn spliced_not_intercepted(clients: Vec<AllowedNet>, exclusions: Exclusion
     )
     .await;
 
-    let ours = tls_to(harness.addr, &harness.ours(Proto::H1)).await;
+    let ours = tls_to_name(harness.addr, &harness.ours(Proto::H1), name).await;
     assert!(
         ours.is_err(),
         "a spliced client trusting only our CA must reject the origin's certificate"
     );
 
-    let tls = tls_to(
+    let tls = tls_to_name(
         harness.addr,
         &connector(std::slice::from_ref(&ca.root), Proto::H1),
+        name,
     )
     .await
     .expect("a spliced client sees the origin's own certificate");
@@ -750,12 +766,28 @@ async fn spliced_not_intercepted(clients: Vec<AllowedNet>, exclusions: Exclusion
 
 #[tokio::test]
 async fn a_client_not_on_the_list_is_never_intercepted() {
-    spliced_not_intercepted(someone_else(), ExclusionSet::empty()).await;
+    spliced_not_intercepted(someone_else(), ExclusionSet::empty(), ORIGIN_NAME).await;
 }
 
 #[tokio::test]
 async fn an_excluded_sni_splices_even_for_a_listed_client() {
-    spliced_not_intercepted(listed(), ExclusionSet::new(&[ORIGIN_NAME]).unwrap()).await;
+    spliced_not_intercepted(
+        listed(),
+        ExclusionSet::new(&[ORIGIN_NAME]).unwrap(),
+        ORIGIN_NAME,
+    )
+    .await;
+}
+
+#[tokio::test]
+async fn a_baseline_bank_is_never_intercepted_even_for_a_listed_client() {
+    const BANK: &str = "homebanking.unicredit.ro";
+    let shipped = ExclusionSet::new::<&str>(&[]).unwrap();
+    assert!(
+        shipped.contains(BANK),
+        "{BANK} must reach the baseline through its parent unicredit.ro"
+    );
+    spliced_not_intercepted(listed(), shipped, BANK).await;
 }
 
 #[tokio::test]
