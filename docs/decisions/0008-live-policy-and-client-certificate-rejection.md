@@ -102,6 +102,10 @@ ruleset and config changes: build the new value off the hot path, publish it
 with a single atomic store, let in-flight connections finish under the old one.
 No locks, no allocation in the read path.
 
+The swap point does not exist yet: with `clients = []` the binary builds no
+`Interception` at all, so today there is nothing to publish into. Creating one
+is the task's first move, and its shape belongs in the task file, not here.
+
 Connections already established are not reconsidered. A device removed from
 `clients` stops being intercepted on its next connection, not mid-session.
 
@@ -151,8 +155,12 @@ naming `policy.json`. That is the intended outcome, not a regression: it is a
 config skipping its migration, and failing loudly beats starting with an empty
 policy the operator did not choose.
 
-`R2` in the p3-06 runbook sets both keys through `POST /api/v1/config`. That
-step moves to `PUT /api/v1/policy` in the same change.
+Two steps in the p3-06 runbook set `https.interception.clients` through
+`POST /api/v1/config` and move to `PUT /api/v1/policy` in the same change. `R2`
+sets it to `[]` alongside `engine.mode` and `egress.allow_destinations`, which
+stay on `/config`. `R8` lists a real client, and its "takes effect at the next
+container start", its restart row and its rollback row all go with it — listing
+a client stops needing a restart, which is the point.
 
 ## Detect instead of predict, but never auto-exclude
 
@@ -226,8 +234,8 @@ observation; pinning is one possible cause among several.
 
 ## What counts as a rejection
 
-`intercept.rs:148` treats every `rustls` accept failure alike and emits
-`status 0`, which seven other paths in the same function also emit — unusable
+`intercept.rs:150` treats every `rustls` accept failure alike and emits
+`status 0`, which six other paths in the same function also emit — unusable
 SNI, upstream connect failure, no leaf, incomplete minting, our own handshake
 deadline, upstream HTTP handshake failure. A list mixing those together is not
 actionable.
@@ -236,16 +244,30 @@ Only a client TLS alert corresponding to certificate rejection counts. A version
 mismatch, a transport reset or a truncated hello is not evidence about
 certificates and stays on the generic `0`.
 
-The mechanism is available and already used in-tree: `tls.rs:85`
-`certificate_error` downcasts an `io::Error` to `rustls::Error` for the upstream
-case, and rustls 0.23.42 carries `Error::AlertReceived(AlertDescription)`
-(`error.rs:69`) with `BadCertificate` (0x2a), `CertificateUnknown` (0x2e) and
-`UnknownCA` (0x30) among the descriptions (`enums.rs:20-26`).
+The mechanism is measured, not assumed. On the accept side a client's fatal
+alert reaches `acceptor.accept()` as an `io::Error` of kind `InvalidData`
+carrying `rustls::Error::AlertReceived(AlertDescription)`, on TLS 1.3 and TLS
+1.2 alike (`fah-http/tests/client_rejection.rs`). `tls.rs:85`
+`certificate_error` is the precedent for that downcast, not the machinery for
+it: it matches `InvalidCertificate(_)`, a variant the accept side never
+produces, so the detector needs its own predicate and must not reuse that one.
 
-**The exact mapping is established by test, not by this document.** Which alert
-a real client sends is a property of that client's TLS stack, and the tests own
-it: each classified alert gets a case, and anything unclassified stays on `0`
-by default rather than by omission.
+**The exact mapping is established by test, not by this document, and the set
+of alerts is open rather than closed.** Which alert a real client sends is a
+property of that client's TLS stack, and the tests own it: each classified
+alert gets a case, and anything unclassified stays on `0` by default rather
+than by omission. What is measured so far is one stack — rustls 0.23.42
+clients, driven by a verifier returning a chosen verdict: an empty root store
+and `UnknownIssuer` both produce `UnknownCA` (0x30), `NotValidForName` produces
+`BadCertificate` (0x2a), and `ApplicationVerificationFailure` — the verdict a
+pinning-style verifier returns — produces **`AccessDenied` (0x31)**. That is
+rustls's own verdict-to-alert mapping, not a claim about what every pinning
+client sends: the alert is a property of the client's stack, and `AccessDenied`
+belongs in the classified set because it was observed, not because pinning
+implies it. `CertificateUnknown` (0x2e) has the same shape and is expected from
+other stacks. `BadCertificate` is likewise not exclusive to pinning, which is
+one more reason the event states what was observed and leaves the diagnosis to
+the reader.
 
 Two facts from reading rustls that shape the design:
 
@@ -255,8 +277,8 @@ Two facts from reading rustls that shape the design:
   untrusted one, a policy that ignores user-installed roots, or a store the
   application does not consult would all produce. That is a different question
   from a pinning client, which builds the chain successfully and then rejects
-  the identity with `BadCertificate` or `CertificateUnknown`. The two stay
-  separate all the way through: `UnknownCA` feeds the client-level diagnosis in
+  the identity with `AccessDenied`, `BadCertificate` or `CertificateUnknown`.
+  The two stay separate all the way through: `UnknownCA` feeds the diagnosis in
   §missing-CA, never a row in the exclusion view, because excluding a host on
   the strength of it would paper over a trust problem with a permanent policy
   entry.
@@ -298,20 +320,27 @@ Live Feed
 
 The view is entered only when something probably does not tolerate
 interception, so every row on it is worth a decision. Each row names the host,
-the client and the time, and offers two actions: exclude the exact host
-observed, or exclude its registrable domain. The exact host is the default;
-widening is an explicit choice, because suffix matching means the wider entry
-covers everything beneath it.
+the client and the time, and offers one action: exclude the exact host
+observed. A wider entry covers everything beneath it, so widening is a
+deliberate act — and here it is one the operator performs by editing policy,
+not one the view offers.
 
-**"Registrable domain" means public-suffix semantics, not a parent-label
-walk.** `api.foo.co.uk` widens to `foo.co.uk`, never to `co.uk`; `bank.ro`
-widens to itself, not to `ro`. A label walk would offer the operator a button
-that excludes an entire TLD, which is a catastrophic click to leave one pixel
-away from the safe one. This requires a public-suffix list — an embedded table
-or a crate — and that dependency is a real cost to weigh in the task, not
-something to assume. Until it exists, the widening action is withheld rather
-than approximated: offering only the exact host is a smaller feature, while
-offering a wrong parent is a hazard.
+**The widening button is not built, and that is a decision, not a
+placeholder.** Widening correctly means public-suffix semantics, not a
+parent-label walk: `api.foo.co.uk` widens to `foo.co.uk`, never to `co.uk`;
+`bank.ro` widens to itself, not to `ro`. A label walk would offer a button that
+excludes an entire TLD, a catastrophic click one pixel from the safe one. The
+tree's `fah_rules::url_matcher::registrable()` is exactly that walk, kept
+deliberately as an approximation because a wrong answer there only ever
+*narrows* a rule. Here the error direction inverts, so it must not be reused.
+
+Correct widening therefore needs a public-suffix list, and p2-03 already
+declined one — a dependency, ~200 KB of tables and a refresh story. That
+judgement holds harder in this decision than in the one that made it: a
+compiled-in public-suffix table is the same compiled-in data with a shelf life
+that `BASELINE_EXCLUSIONS` is being deleted for, and the Mozilla list is
+MPL-2.0 data in a workspace that ships no third-party notice today. A
+dependency introduced to make a button work is the wrong reason to take one.
 
 The action reads the current policy, adds the entry, and `PUT`s the whole
 document back.
@@ -371,8 +400,14 @@ back under the cap is to remove entries and submit again.
   `every_baseline_entry_is_a_valid_hostname` are **deleted, not adapted**. Each
   asserts that a shipped list exists with no configuration, which is the
   behaviour this ADR removes; keeping them under new names would preserve the
-  claim they were written to defend. What replaces them is a test that an empty
-  policy excludes nothing.
+  claim they were written to defend. Nothing replaces them: the test that an
+  empty policy excludes nothing already exists as `the_empty_set_matches_nothing`
+  (`fah-http/src/exclusions.rs`). One assertion inside the deleted middle test
+  does need a new home — it bounds 10 000 lookup misses at under a second, the
+  only lookup-cost check in that file, and it is re-pinned on a policy-built
+  set.
+- `ExclusionSet::empty()` and `ExclusionSet::new(&[])` are the same function
+  once the baseline is gone. One of the two goes with it.
 - CONFIGURATION.md must say plainly that **`config.toml` no longer owns
   `clients` or `exclude_domains`**, and that **`policy.json` is their persistent
   source of truth** — not merely that the keys moved. Wording that says the keys
@@ -416,6 +451,10 @@ written at first install, editable and removable like anything else in it.
 **What is not reopened is restoring policy to compiled-in source code**: policy
 having a default is a product question and stays open; policy living in the
 binary is settled.
+
+Reopen exact-host-only if operators are shown to be widening by hand, host by
+host, often enough to matter — and then with the public-suffix list's lifecycle
+answered first, never with a crate chosen to make the button work.
 
 Reopen the `/policy` and `/config` split if a third lifetime appears — something
 neither boot-fixed nor operator-edited — rather than widening either endpoint to
