@@ -15,7 +15,11 @@ export type ApiErrorCode =
   | 'internal';
 
 export interface ErrorEnvelope {
-  error: { code: string; message: string };
+  /** `details` is optional and endpoint-specific: only `PUT /interception`
+   *  sends one today (API.md §Interception). It is carried as `unknown` here
+   *  because this module has no business knowing any endpoint's shape — the
+   *  resource module that expects one narrows it. */
+  error: { code: string; message: string; details?: unknown };
 }
 
 export class ApiError extends Error {
@@ -26,18 +30,24 @@ export class ApiError extends Error {
   readonly status: number;
   /** Seconds, or `null` when the header was absent or unparseable. */
   readonly retryAfter: number | null;
+  /** The envelope's `details`, verbatim and unnarrowed, or `null` when the
+   *  answer carried none. A caller that expects one runtime-checks it; nothing
+   *  here parses `message` to recover what `details` already says. */
+  readonly details: unknown;
 
   constructor(
     status: number,
     code: string,
     message: string,
     retryAfter: number | null,
+    details: unknown = null,
   ) {
     super(message);
     this.name = 'ApiError';
     this.status = status;
     this.code = code;
     this.retryAfter = retryAfter;
+    this.details = details;
   }
 
   /**
@@ -123,7 +133,10 @@ export function parseRetryAfter(raw: string | null): number | null {
   return Number.isFinite(seconds) && seconds >= 0 ? seconds : null;
 }
 
-function envelopeOf(payload: unknown, status: number): [string, string] {
+function envelopeOf(
+  payload: unknown,
+  status: number,
+): [string, string, unknown] {
   if (typeof payload === 'object' && payload !== null && 'error' in payload) {
     const error = (payload as { error: unknown }).error;
     if (typeof error === 'object' && error !== null) {
@@ -131,12 +144,14 @@ function envelopeOf(payload: unknown, status: number): [string, string] {
       const code = typeof record['code'] === 'string' ? record['code'] : '';
       const message =
         typeof record['message'] === 'string' ? record['message'] : '';
-      if (code !== '') return [code, message === '' ? code : message];
+      if (code !== '') {
+        return [code, message === '' ? code : message, record['details'] ?? null];
+      }
     }
   }
   // A non-2xx without the documented envelope is still an error; inventing a
   // code for it would be worse than naming the status.
-  return ['internal', `HTTP ${status}`];
+  return ['internal', `HTTP ${status}`, null];
 }
 
 export async function request<T>(
@@ -176,12 +191,13 @@ export async function request<T>(
     } catch {
       // A body that is not JSON changes nothing: the status is the fact.
     }
-    const [code, message] = envelopeOf(payload, response.status);
+    const [code, message, details] = envelopeOf(payload, response.status);
     const error = new ApiError(
       response.status,
       code,
       message,
       parseRetryAfter(response.headers.get('retry-after')),
+      details,
     );
     if (response.status === 401 && notifyUnauthorized) unauthorized?.();
     throw error;

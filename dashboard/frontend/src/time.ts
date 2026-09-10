@@ -115,3 +115,12 @@ export function lastSeenLabel(ts: string, now: number): string {
 export function clockLabel(at: number): string {
   return CLOCK.format(new Date(at));
 }
+
+/** Browser-local clock time for an event's `ts`, as the feed prints one. The
+ *  field is RFC 3339 with milliseconds; the seconds are what a feed is read at,
+ *  and an unparseable value is shown as it arrived rather than as `Invalid
+ *  Date`. */
+export function eventClock(ts: string): string {
+  const at = Date.parse(ts);
+  return Number.isNaN(at) ? ts : clockLabel(at);
+}

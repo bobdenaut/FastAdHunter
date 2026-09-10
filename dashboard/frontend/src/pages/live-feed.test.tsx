@@ -386,7 +386,16 @@ function names(count: number): string[] {
  * the animation frame is run inline. Both are seams the production path keeps:
  * nothing about the page changes to be testable.
  */
-function live({ narrow = false }: { narrow?: boolean } = {}) {
+function live({
+  narrow = false,
+  answer,
+}: {
+  narrow?: boolean;
+  /** How `/api/v1/interception` answers, for the rejection view. Absent means
+   *  the rows view, which reads no endpoint at all — so any call is one too
+   *  many and the stub says so. */
+  answer?: (url: string, init?: RequestInit) => Promise<Response>;
+} = {}) {
   let deliver: ((data: Record<string, unknown>) => void) | null = null;
   // Sampled once at mount for the ring's bound, and **subscribed to** for the
   // layout: the page builds one tree, so which one has to follow the
@@ -408,8 +417,13 @@ function live({ narrow = false }: { narrow?: boolean } = {}) {
     if (type === 'query') deliver = listener as typeof deliver;
     return () => undefined;
   });
-  // The page reads no endpoint at all, so any call at all is one too many.
-  const fetched = vi.fn(() => Promise.reject(new Error('the feed fetches')));
+  // The rows view reads no endpoint at all, so any call at all is one too many.
+  const requests: string[] = [];
+  const fetched = vi.fn((url: string, init?: RequestInit) => {
+    requests.push(`${init?.method ?? 'GET'} ${url}`);
+    if (answer === undefined) return Promise.reject(new Error('the feed fetches'));
+    return answer(url, init);
+  });
   vi.stubGlobal('fetch', fetched);
   vi.stubGlobal('requestAnimationFrame', (run: () => void) => {
     run();
@@ -469,6 +483,13 @@ function live({ narrow = false }: { narrow?: boolean } = {}) {
      *  requests it made. Both must be flat across a resize. */
     subscriptions: () => on.mock.calls.length,
     requests: () => fetched.mock.calls.length,
+    /** Every request the page made, in order — what the exclude action's
+     *  "read, append, write the whole document back" is read off. */
+    log: () => [...requests],
+    bodies: () =>
+      fetched.mock.calls
+        .filter((call) => (call[1] as RequestInit | undefined)?.body !== undefined)
+        .map((call) => JSON.parse(String((call[1] as RequestInit).body)) as unknown),
     /** The window dragged across 768 px, without leaving the page. */
     resize(next: boolean) {
       act(() => {
@@ -502,6 +523,11 @@ describe('the page', () => {
       (node) => node.textContent,
     );
     expect(chips).toEqual([
+      // The view row comes first — the rejection view is a reading of the same
+      // ring, so it sits above the filters that narrow it rather than among
+      // them (ADR-0008 §The operator's path).
+      'all traffic',
+      'Certificate rejected by client',
       'all',
       'pass',
       'allow',
@@ -761,6 +787,311 @@ describe('paging the held rows', () => {
     feed.deliver('ads.example.com');
     feed.type('#feed-domain', 'ads');
     expect(feed.pager()).toContain('rows 1–1 of 1 matching, 61 held');
+    feed.release();
+  });
+});
+
+/**
+ * The rejection view — the same ring, read as one decision per client and host,
+ * with the one write ADR-0008 allows: exclude the exact host observed, after a
+ * confirmation that names it.
+ */
+describe('the rejection view', () => {
+  function reply(status: number, body: unknown): Response {
+    return {
+      ok: status >= 200 && status < 300,
+      status,
+      headers: { get: () => null },
+      json: async () => body,
+    } as unknown as Response;
+  }
+
+  function answered(
+    document: { clients: string[]; exclude_domains: string[] },
+    put?: { status: number; body: unknown },
+  ) {
+    return (url: string, init?: RequestInit): Promise<Response> => {
+      if (url !== '/api/v1/interception') {
+        return Promise.reject(new Error(`unexpected ${url}`));
+      }
+      if (init?.method === 'PUT') {
+        const sent = JSON.parse(String(init.body)) as typeof document;
+        return Promise.resolve(
+          put === undefined ? reply(200, sent) : reply(put.status, put.body),
+        );
+      }
+      return Promise.resolve(reply(200, document));
+    };
+  }
+
+  async function settle(): Promise<void> {
+    await act(async () => {
+      for (let turn = 0; turn < 12; turn += 1) await Promise.resolve();
+    });
+  }
+
+  function rejection(over: Partial<QueryEvent> = {}): Partial<QueryEvent> {
+    return { kind: 'https', status: 525, verdict: 'pass', ...over };
+  }
+
+  async function open(
+    options: Parameters<typeof live>[0] = {},
+  ): Promise<ReturnType<typeof live>> {
+    const feed = live(options);
+    feed.chip('Certificate rejected by client');
+    await settle();
+    return feed;
+  }
+
+  function groupRows(feed: ReturnType<typeof live>): string[] {
+    return [...feed.dom.querySelectorAll('.feed-card tbody tr')].map(
+      (row) => row.textContent ?? '',
+    );
+  }
+
+  it('shows one row per client and host, and nothing that is not a 525', async () => {
+    const feed = await open({
+      answer: answered({ clients: [], exclude_domains: [] }),
+    });
+    feed.deliver(
+      rejection({ domain: 'x.example', ts: '2026-09-10T10:00:00.000Z' }),
+      rejection({ domain: 'x.example', ts: '2026-09-10T10:00:01.000Z' }),
+      rejection({ domain: 'x.example', ts: '2026-09-10T10:00:02.000Z' }),
+      rejection({
+        domain: 'x.example',
+        client: '192.168.10.99',
+        client_name: null,
+        ts: '2026-09-10T10:00:03.000Z',
+      }),
+      { kind: 'https', status: 200, domain: 'fine.example' },
+      { kind: 'https-sni', verdict: 'block', domain: 'blocked.example' },
+    );
+
+    const rows = groupRows(feed);
+    expect(rows).toHaveLength(2);
+    expect(rows[0]).toContain('192.168.10.99');
+    expect(rows[1]).toContain('desktop');
+    expect(feed.dom.textContent).not.toContain('fine.example');
+    expect(feed.dom.textContent).not.toContain('blocked.example');
+    feed.release();
+  });
+
+  it('never says pinned', async () => {
+    // ADR-0008 fixes the wording: the label states what was observed, and no
+    // screen claims to know why the client refused.
+    const feed = await open({
+      answer: answered({ clients: [], exclude_domains: [] }),
+    });
+    feed.deliver(rejection({ domain: 'x.example' }));
+    expect((feed.dom.textContent ?? '').toLowerCase()).not.toContain('pinned');
+    feed.release();
+  });
+
+  it('excludes exactly the observed host, as one whole-document PUT', async () => {
+    const feed = await open({
+      answer: answered({
+        clients: ['192.168.88.0/24'],
+        exclude_domains: ['bank.ro'],
+      }),
+    });
+    feed.deliver(rejection({ domain: 'api.bank.example' }));
+
+    feed.click('Exclude');
+    expect(feed.dom.textContent).toContain(
+      'Exclude api.bank.example from interception?',
+    );
+    feed.click('Exclude this host');
+    await settle();
+
+    // Read, append, write the whole document back — and the read is fresh, so
+    // another tab's entries are not clobbered by this browser's stale copy.
+    expect(feed.log()).toEqual([
+      'GET /api/v1/interception',
+      'GET /api/v1/interception',
+      'PUT /api/v1/interception',
+    ]);
+    expect(feed.bodies()).toEqual([
+      {
+        clients: ['192.168.88.0/24'],
+        exclude_domains: ['bank.ro', 'api.bank.example'],
+      },
+    ]);
+    // The stored document comes back, so the row stops offering the button.
+    expect(groupRows(feed)[0]).toContain('excluded');
+    feed.release();
+  });
+
+  it('sends nothing when the confirmation is cancelled', async () => {
+    const feed = await open({
+      answer: answered({ clients: [], exclude_domains: [] }),
+    });
+    feed.deliver(rejection({ domain: 'api.bank.example' }));
+    feed.click('Exclude');
+    feed.click('Cancel');
+    await settle();
+
+    expect(feed.log()).toEqual(['GET /api/v1/interception']);
+    expect(feed.dom.textContent).not.toContain('Exclude this host');
+    feed.release();
+  });
+
+  it('shows a host already covered as excluded, with no button', async () => {
+    const feed = await open({
+      answer: answered({ clients: [], exclude_domains: ['bank.example'] }),
+    });
+    // Under a parent entry, which covers itself and every subdomain — the
+    // `ExclusionSet` walk, so the view and the matcher agree.
+    feed.deliver(rejection({ domain: 'api.bank.example' }));
+
+    expect(groupRows(feed)[0]).toContain('excluded');
+    expect(
+      [...feed.dom.querySelectorAll('.feed-card button')].map((node) =>
+        (node.textContent ?? '').trim(),
+      ),
+    ).not.toContain('Exclude');
+    feed.release();
+  });
+
+  it('renders a duplicate rejection and leaves the document alone', async () => {
+    const feed = await open({
+      answer: answered(
+        { clients: [], exclude_domains: ['bank.ro'] },
+        {
+          status: 422,
+          body: {
+            error: {
+              code: 'validation_failed',
+              message: 'exclude_domains[1] duplicates entry 0',
+              details: {
+                reason: 'duplicate',
+                list: 'exclude_domains',
+                index: 1,
+                entry: 'api.bank.example',
+                duplicate_of: 0,
+              },
+            },
+          },
+        },
+      ),
+    });
+    feed.deliver(rejection({ domain: 'api.bank.example' }));
+    feed.click('Exclude');
+    feed.click('Exclude this host');
+    await settle();
+
+    expect(groupRows(feed)[0]).toContain('Already excluded');
+    // One attempt, and the row still offers the button — nothing was stored,
+    // so the page's copy of the document is still the right one.
+    expect(feed.log().filter((entry) => entry.startsWith('PUT'))).toHaveLength(1);
+    expect(groupRows(feed)[0]).toContain('Exclude');
+    feed.release();
+  });
+
+  it('states the cap when the list is full', async () => {
+    const feed = await open({
+      answer: answered(
+        { clients: [], exclude_domains: [] },
+        {
+          status: 422,
+          body: {
+            error: {
+              code: 'validation_failed',
+              message: 'exclude_domains: 513 entries exceed the cap of 512 by 1',
+              details: {
+                reason: 'over_cap',
+                list: 'exclude_domains',
+                len: 513,
+                cap: 512,
+              },
+            },
+          },
+        },
+      ),
+    });
+    feed.deliver(rejection({ domain: 'api.bank.example' }));
+    feed.click('Exclude');
+    feed.click('Exclude this host');
+    await settle();
+
+    const row = groupRows(feed)[0] ?? '';
+    expect(row).toContain('513');
+    expect(row).toContain('512');
+    feed.release();
+  });
+
+  it('shows the API message when the store is unavailable', async () => {
+    const feed = await open({
+      answer: answered(
+        { clients: [], exclude_domains: [] },
+        {
+          status: 503,
+          body: {
+            error: {
+              code: 'unavailable',
+              message: 'the certificate store did not open',
+            },
+          },
+        },
+      ),
+    });
+    feed.deliver(rejection({ domain: 'api.bank.example' }));
+    feed.click('Exclude');
+    feed.click('Exclude this host');
+    await settle();
+
+    expect(groupRows(feed)[0]).toContain('the certificate store did not open');
+    feed.release();
+  });
+
+  it('freezes on pause and catches up on resume, as the rows view does', async () => {
+    const feed = await open({
+      answer: answered({ clients: [], exclude_domains: [] }),
+    });
+    feed.deliver(rejection({ domain: 'api.bank.example' }));
+    feed.click('Pause');
+    feed.deliver(
+      rejection({ domain: 'api.bank.example' }),
+      rejection({ domain: 'other.example' }),
+    );
+
+    expect(groupRows(feed)).toHaveLength(1);
+    feed.click('Resume');
+    expect(groupRows(feed)).toHaveLength(2);
+    feed.release();
+  });
+
+  it('reads the document once and never polls', async () => {
+    vi.useFakeTimers();
+    try {
+      const feed = await open({
+        answer: answered({ clients: [], exclude_domains: [] }),
+      });
+      feed.deliver(rejection({ domain: 'api.bank.example' }));
+      const before = feed.subscriptions();
+      expect(feed.requests()).toBe(1);
+
+      await act(async () => {
+        vi.advanceTimersByTime(60_000);
+        await Promise.resolve();
+      });
+
+      expect(feed.requests()).toBe(1);
+      expect(feed.subscriptions()).toBe(before);
+      feed.release();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('hides the filters, which have nothing to narrow here', async () => {
+    const feed = await open({
+      answer: answered({ clients: [], exclude_domains: [] }),
+    });
+    const chips = [...feed.dom.querySelectorAll('.feed-chipset .chip')].map(
+      (node) => node.textContent,
+    );
+    expect(chips).toEqual(['all traffic', 'Certificate rejected by client']);
+    expect(feed.dom.querySelector('#feed-domain')).toBeNull();
     feed.release();
   });
 });

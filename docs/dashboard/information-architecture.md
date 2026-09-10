@@ -321,6 +321,37 @@ two that writer is another page; for `auth.*` it is the password-change route,
 which verifies the current password and invalidates every session. A deep-merge
 patch that could set a password hash would bypass both.
 
+### The Interception card — a card, not a section
+
+**Decided: the Interception Document is edited on this page but is not part of
+the form.** `clients` and `exclude_domains` are not config keys: they live in
+`/config/interception.json` and are `422` on `POST /config`, with exactly one
+writer — `PUT /api/v1/interception` (API.md §Interception, ADR-0008). So the
+card fetches for itself, holds its own state, and takes no part in the patch,
+the baseline, the `config_changed` re-read or the restart banner. `AccessCard`
+already established that shape for a Settings card with its own endpoint; no
+route is added for either.
+
+Two one-entry-per-line editors, each stating its count against its cap — 256
+clients, 512 excluded hosts, hand-carried like every other bound on this page.
+`GET` on mount, one `PUT` of the whole document on save; a missing key is an
+empty list, so both lists always travel. Blank lines are not entries.
+
+**No restart banner, and the page says why.** The response carries no
+`restart_required` because there is nothing to restart: a saved change applies
+on the next accepted connection, and an already-open session finishes under the
+lists it was admitted with. A mode with no HTTPS listener states that the
+document is stored and validated all the same, and takes effect at the first
+boot of a mode that has one — listing the first client before turning
+interception on is a legitimate order to work in.
+
+**Errors are placed from `details`, never parsed out of `message`.**
+`invalid_entry` and `duplicate` anchor on the editor line the entry was typed
+on — the server's index counts entries and the editor counts lines, so the two
+are mapped through what was sent. `over_cap` is a card-level line naming the
+list, the length and the cap. A rejected `PUT` changed nothing, so the buffers
+are left byte-identical and the card says so.
+
 ### All settings — a read-only panel at the bottom
 
 The curated sections cover what the UI models. Everything else in the effective
@@ -390,6 +421,28 @@ Everything that answers "is it healthy and where is the memory".
   subscription on mount and drops it on unmount. Left open, the household's whole
   per-query feed would keep arriving at a phone showing Settings, and the engine
   would keep doing per-query publish work for a page nobody is looking at.
+
+  **Decided: the rejection view is a sub-view of this page, not a route.** A
+  `view` chip row above the filters switches between the raw rows and
+  **Certificate rejected by client** — `https` items with `status 525`, grouped
+  by client and host with a count and the last time seen (ADR-0008 §The
+  operator's path). It reads the same ring: no second buffer, no history, and
+  the empty state says "since this page opened". A route would need its own
+  `query` subscription for rows this page already holds. The filters are not
+  drawn there — they narrow the raw stream and have nothing to narrow under a
+  fixed predicate.
+
+  **One action per row, and it can only ever add the host it shows.** Exclude →
+  a confirmation naming that exact host → read the document, append, `PUT` the
+  whole document back. A host the document already covers, itself or under a
+  parent entry, is shown as excluded rather than offered again. No widening
+  button: widening correctly needs public-suffix semantics, and a label walk
+  would put "exclude an entire TLD" one pixel from the safe click (ADR-0008).
+  No bulk action, no countdown, and nothing writes from observation alone.
+
+  **The wording is fixed and the word "pinned" is never used.** The label states
+  what was observed — the client refused the certificate we presented — not why.
+  `UnknownCA` stays `status 0` and has no surface here at all.
 - **Answer outcomes** — `counters.dns.answers`: `servfail_synthesized`,
   `servfail_relayed`, `refused_relayed`.
 - **Shed** — `counters.events_dropped`, one number covering both pipelines

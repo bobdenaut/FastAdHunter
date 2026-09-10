@@ -62,6 +62,13 @@ export {
   APIKEY_ROTATE_PATH,
 } from './config';
 export {
+  getInterception,
+  putInterception,
+  documentErrorDetails,
+  INTERCEPTION_PATH,
+} from './interception';
+export type { DocumentList, DocumentErrorDetails } from './interception';
+export {
   getLists,
   addList,
   patchList,

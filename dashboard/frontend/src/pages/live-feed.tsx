@@ -6,7 +6,7 @@ import { EmptyState } from '../components/empty-state';
 import type { PageProps } from '../router/routes';
 import { socket } from '../services';
 import { ContentHeader } from '../shell/content-header';
-import { clockLabel } from '../time';
+import { eventClock } from '../time';
 import { Detail, FeedCache, FeedVerdict } from './live-feed/detail';
 import {
   EMPTY_FILTERS,
@@ -16,6 +16,7 @@ import {
   isFiltered,
   type FeedFilters,
 } from './live-feed/filters';
+import { RejectionsView } from './live-feed/rejections-view';
 import {
   FeedBuffer,
   matchesNarrow,
@@ -63,6 +64,15 @@ export function LiveFeed(_props: PageProps) {
   /** The oldest held row's sequence number, from the ring — a row's identity. */
   const [firstSeq, setFirstSeq] = useState(0);
   const [filters, setFilters] = useState<FeedFilters>(EMPTY_FILTERS);
+  /**
+   * Which reading of the same ring is on screen (ADR-0008 §The operator's
+   * path). The rejection view is entered only when something probably does not
+   * tolerate interception, so every row on it is worth a decision — it is a
+   * sub-view rather than a route because it holds no state of its own beyond
+   * the document it edits, and a route would need its own `query`
+   * subscription for rows this page already has.
+   */
+  const [view, setView] = useState<'rows' | 'rejections'>('rows');
   const [paused, setPaused] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
   const [held, setHeld] = useState(0);
@@ -156,10 +166,36 @@ export function LiveFeed(_props: PageProps) {
       <main class="wrap">
         <Card
           title="Filters"
-          secondary="applied in the browser, over the rows held here"
+          secondary={
+            view === 'rejections'
+              ? 'grouped in the browser, over the rows held here'
+              : 'applied in the browser, over the rows held here'
+          }
           className="feed-filters"
         >
           <div class="feed-controls">
+            <div class="feed-chipset">
+              <span class="note">view</span>
+              <span class="chips">
+                <Chip
+                  label="all traffic"
+                  on={view === 'rows'}
+                  onPick={() => setView('rows')}
+                />
+                <Chip
+                  label="Certificate rejected by client"
+                  on={view === 'rejections'}
+                  onPick={() => setView('rejections')}
+                />
+              </span>
+            </div>
+            {/* The filters narrow the raw stream and have nothing to narrow in
+                the rejection view, which groups a fixed predicate over the same
+                ring. Leaving them on screen there would offer controls that
+                change nothing — so they leave with the rows they filter, and
+                come back unchanged when the rows do. */}
+            {view === 'rejections' ? null : (
+            <>
             <div class="feed-chipset">
               <span class="note">verdict</span>
               <span class="chips">
@@ -226,6 +262,8 @@ export function LiveFeed(_props: PageProps) {
                 }
               />
             </div>
+            </>
+            )}
             <div class="feed-actions">
               <button
                 type="button"
@@ -257,25 +295,31 @@ export function LiveFeed(_props: PageProps) {
               >
                 Clear
               </button>
-              <button
-                type="button"
-                class="btn g feed-filter-toggle"
-                aria-expanded={showFilters}
-                onClick={() => setShowFilters((open) => !open)}
-              >
-                Filter…
-              </button>
+              {view === 'rejections' ? null : (
+                <button
+                  type="button"
+                  class="btn g feed-filter-toggle"
+                  aria-expanded={showFilters}
+                  onClick={() => setShowFilters((open) => !open)}
+                >
+                  Filter…
+                </button>
+              )}
             </div>
           </div>
         </Card>
 
         <Card
-          title="Feed"
+          title={view === 'rejections' ? 'Certificate rejected by client' : 'Feed'}
           secondary={`${held} / ${capacity} rows held`}
           className="feed-card"
           bodyClass="feed-body"
         >
-          {rows.length === 0 ? (
+          {view === 'rejections' ? (
+            // The same snapshot, read differently — so Pause freezes both, and
+            // a row that has fallen out of the ring is gone from both.
+            <RejectionsView rows={rows} narrow={narrow} />
+          ) : rows.length === 0 ? (
             <EmptyState title="Starts empty">
               Rows appear as the household resolves. Nothing is retained between
               visits — this tab is the whole of it.
@@ -359,7 +403,7 @@ export function LiveFeed(_props: PageProps) {
                   <tbody>
                     {shown.map(({ row, seq }) => (
                       <tr key={seq}>
-                        <td class="mono">{time(row.ts)}</td>
+                        <td class="mono">{eventClock(row.ts)}</td>
                         <td class="feed-kind">{row.kind}</td>
                         <td>{row.client_name ?? row.client}</td>
                         <td class="mono feed-domain">
@@ -399,7 +443,7 @@ export function LiveFeed(_props: PageProps) {
                     <div class="ev-top">
                       <FeedVerdict verdict={row.verdict} />
                       <span class="feed-kind">{row.kind}</span>
-                      <span class="note mono">{time(row.ts)}</span>
+                      <span class="note mono">{eventClock(row.ts)}</span>
                     </div>
                     <div class="mono ev-domain">
                       {row.domain}
@@ -425,6 +469,7 @@ export function LiveFeed(_props: PageProps) {
               )}
             </>
           )}
+          {view === 'rejections' ? null : (
           <p class="note">
             <span class="mono">Cache</span> says where the answer came from, not
             what was decided — a <span class="mono">HIT</span> is still a
@@ -452,17 +497,11 @@ export function LiveFeed(_props: PageProps) {
               </span>
             )}
           </p>
+          )}
         </Card>
       </main>
     </>
   );
-}
-
-/** Browser-local clock time, as every other page prints one. The event's `ts`
- *  is RFC 3339 with milliseconds; the seconds are what a feed is read at. */
-function time(ts: string): string {
-  const at = Date.parse(ts);
-  return Number.isNaN(at) ? ts : clockLabel(at);
 }
 
 export default LiveFeed;

@@ -733,6 +733,24 @@ export interface UserRules {
   rules: string[];
 }
 
+/* ------------------------------------------------------------- interception */
+
+/**
+ * The Interception Document, both directions — `GET`/`PUT /api/v1/interception`.
+ *
+ * **Not a slice of `Config`.** It lives in `/config/interception.json` and is
+ * absent from `GET /config` by design, so nothing on this page may be reached
+ * through the settings patch path (API.md §Interception).
+ *
+ * A `PUT` replaces the **whole** document: a missing key is an empty list, so
+ * the editor always sends both. The response is the stored document with the
+ * operator's spelling preserved — only the matcher normalises.
+ */
+export interface InterceptionDocument {
+  clients: string[];
+  exclude_domains: string[];
+}
+
 /* --------------------------------------------------------------- rule tester */
 
 /**

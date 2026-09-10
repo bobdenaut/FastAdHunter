@@ -79,6 +79,45 @@ describe('request', () => {
       code: 'validation_failed',
       message: 'line 14',
     });
+    // An envelope without the optional key reads `null`, never `undefined`:
+    // every existing throw site predates `details` and none of them may start
+    // handing out a third state.
+    expect((error as ApiError).details).toBeNull();
+  });
+
+  it('carries the optional details through verbatim and unnarrowed', async () => {
+    // `PUT /interception` is the one endpoint that sends one today. `request`
+    // does not know its shape and must not: the resource module narrows it.
+    fetchMock.mockResolvedValue(
+      respond({
+        status: 422,
+        body: {
+          error: {
+            code: 'validation_failed',
+            message: 'clients[3] is not an address',
+            details: {
+              reason: 'invalid_entry',
+              list: 'clients',
+              index: 3,
+              entry: '10.0.0.300',
+            },
+          },
+        },
+      }),
+    );
+    const error = (await request('/x').catch((e: unknown) => e)) as ApiError;
+    expect(error.details).toEqual({
+      reason: 'invalid_entry',
+      list: 'clients',
+      index: 3,
+      entry: '10.0.0.300',
+    });
+  });
+
+  it('leaves details null on a body that is not the documented envelope', async () => {
+    fetchMock.mockResolvedValue(respond({ status: 500 }));
+    const error = (await request('/x').catch((e: unknown) => e)) as ApiError;
+    expect(error.details).toBeNull();
   });
 
   it('keeps an unknown code rather than rejecting it', async () => {

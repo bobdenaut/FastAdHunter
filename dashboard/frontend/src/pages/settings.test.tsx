@@ -90,6 +90,7 @@ interface Harness {
   postBodies: () => unknown[];
   configReads: () => number;
   healthReads: () => number;
+  interceptionReads: () => number;
   /** Every request the page made, in order — what "and nothing else happened"
    *  is read off. */
   requests: () => string[];
@@ -109,6 +110,7 @@ function install(options: {
   const requests: string[] = [];
   let configReads = 0;
   let healthReads = 0;
+  let interceptionReads = 0;
   const document = options.document ?? config();
   const fetchMock = vi.fn((url: string, init?: RequestInit) => {
     requests.push(`${init?.method ?? 'GET'} ${url}`);
@@ -140,6 +142,15 @@ function install(options: {
       return Promise.resolve(respond(200, { api_key: 'fah_rotated_secret' }));
     }
     if (url === '/api/v1/auth/password') return Promise.resolve(respond(204));
+    // The Interception card is mounted here but is not part of the form: its
+    // own endpoint, its own state, no patch and no restart banner. The page
+    // tests only assert that it is present and that it reads once.
+    if (url === '/api/v1/interception') {
+      interceptionReads += 1;
+      return Promise.resolve(
+        respond(200, { clients: [], exclude_domains: [] }),
+      );
+    }
     throw new Error(`unexpected ${url}`);
   });
   vi.stubGlobal('fetch', fetchMock);
@@ -152,6 +163,7 @@ function install(options: {
     postBodies: () => posts,
     configReads: () => configReads,
     healthReads: () => healthReads,
+    interceptionReads: () => interceptionReads,
     requests: () => [...requests],
   };
   return harness;
@@ -581,6 +593,16 @@ describe('the page’s own lifecycle', () => {
   it('reads the configuration once on entry', async () => {
     await mountPage();
     expect(harness?.configReads()).toBe(1);
+  });
+
+  it('mounts the Interception card, which reads its own document once', async () => {
+    // It is not a `[section]` of the config tree and takes no part in the
+    // patch: `https.interception` is `422` on `POST /config`, and the document
+    // has exactly one writer, which is `PUT /api/v1/interception`.
+    const dom = await mountPage();
+    expect(dom.querySelector('.set-section-interception')).not.toBeNull();
+    expect(harness?.interceptionReads()).toBe(1);
+    expect(harness?.postBodies()).toEqual([]);
   });
 
   it('re-reads it once after a save, and adopts the result as the baseline', async () => {

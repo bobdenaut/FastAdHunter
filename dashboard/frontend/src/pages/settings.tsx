@@ -15,6 +15,7 @@ import {
   restartArming,
 } from '../system/restart-banner';
 import { AccessCard } from './settings/access-card';
+import { InterceptionCard } from './settings/interception-card';
 import { RawPanel } from './settings/raw-panel';
 import { SECTIONS, fieldMeta, gatedFields } from './settings/metadata';
 import { SectionCard } from './settings/section-card';
@@ -37,6 +38,12 @@ interface Read {
 }
 
 const ANCHOR_PREFIX = '#set-section-';
+
+/** The Interception card's anchor. It is not a `[section]` of the config tree
+ *  and carries no `SectionMeta`, so it is named here rather than in
+ *  `metadata.ts` — putting it there would claim `https.interception` is a
+ *  settable config key, which is exactly what `POST /config` answers `422` to. */
+const INTERCEPTION_ANCHOR = 'interception';
 
 /** The section id the URL points at, or `null` for a plain `/settings`. */
 function readAnchor(): string | null {
@@ -291,15 +298,17 @@ export function Settings(_props: PageProps) {
             aria-label="Configuration sections"
             ref={navRef}
           >
-            {SECTIONS.map((section) => (
-              <a
-                key={section.id}
-                href={`${ANCHOR_PREFIX}${section.id}`}
-                aria-current={anchored === section.id ? 'location' : undefined}
-              >
-                <span class="mono">{section.id}</span>
-              </a>
-            ))}
+            {[...SECTIONS.map((section) => section.id), INTERCEPTION_ANCHOR].map(
+              (id) => (
+                <a
+                  key={id}
+                  href={`${ANCHOR_PREFIX}${id}`}
+                  aria-current={anchored === id ? 'location' : undefined}
+                >
+                  <span class="mono">{id}</span>
+                </a>
+              ),
+            )}
           </nav>
 
           <div class="set-sections">
@@ -314,6 +323,15 @@ export function Settings(_props: PageProps) {
                 />
               </div>
             ))}
+
+            {/* Two cards that are not sections of the config tree, mounted
+                after the form and outside it. Neither reads `GET /config`,
+                neither takes a patch, and neither can arm the restart banner —
+                the Interception Document applies on the next connection, and
+                the access writes are their own endpoints. */}
+            <div id={`set-section-${INTERCEPTION_ANCHOR}`}>
+              <InterceptionCard mode={baseline?.engine.mode ?? null} />
+            </div>
 
             <AccessCard />
 
