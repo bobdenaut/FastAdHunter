@@ -1539,22 +1539,24 @@ fn interception_error(error: crate::InterceptionStoreError) -> ApiError {
 }
 
 fn commit_join_error(error: tokio::task::JoinError) -> ApiError {
-    match error.is_panic() {
-        true => {
-            tracing::error!(payload = ?error.into_panic(), "interception commit panicked");
-            ApiError::Internal(
-                "the commit panicked; the change was either fully applied or not at all — \
-                 see the log"
-                    .to_string(),
-            )
-        }
-        false => {
-            tracing::error!(%error, "interception commit did not run");
-            ApiError::Internal(
-                "the commit did not run; nothing was applied — see the log".to_string(),
-            )
-        }
+    if !error.is_panic() {
+        tracing::error!(%error, "interception commit did not run");
+        return ApiError::Internal(
+            "the commit did not run; nothing was applied — see the log".to_string(),
+        );
     }
+    let panic = error.into_panic();
+    let payload = panic
+        .downcast_ref::<&str>()
+        .copied()
+        .or_else(|| panic.downcast_ref::<String>().map(String::as_str))
+        .unwrap_or("non-string panic payload");
+    tracing::error!(payload, "interception commit panicked");
+    ApiError::Internal(
+        "the commit panicked; the change was either fully applied or not at all — \
+         see the log"
+            .to_string(),
+    )
 }
 
 async fn rotate_api_key(State(state): State<Arc<AppState>>) -> ApiResult<Json<ApiKeyResponse>> {

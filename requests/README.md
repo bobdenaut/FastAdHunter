@@ -43,6 +43,7 @@ to a public root.
 | `cache.http` | Cache usage and `POST /api/v1/cache/clean` |
 | `settings.http` | `GET`/`POST /api/v1/config` |
 | `certificates.http` | CA status, generate, export (PEM/DER), API-pair import |
+| `interception.http` | `GET`/`PUT /api/v1/interception` — the Interception Document; the four 422 `details` shapes; the `POST /api/v1/config` refusal |
 | `dns-query.http` | `GET`/`POST /dns-query` — RFC 8484 DoH, unauthenticated; `dns-query.bin` is the POST body |
 
 **One endpoint, one file.** No request appears in two files, so a response

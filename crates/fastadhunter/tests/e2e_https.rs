@@ -403,13 +403,12 @@ async fn listing_a_client_through_the_api_applies_on_the_next_connection() {
         return;
     };
     let page = ORIGIN_PAGE.repeat(4);
-    let origin = run_tls_http_origin(
+    let _origin = run_tls_http_origin(
         listener,
         origin_cert.clone(),
         origin_key,
         Arc::new(page.clone()),
     );
-    let _ = &origin;
 
     let instance = boot_full(FullMode {
         origin_ip: LIVE_APPLY_ORIGIN_IP,

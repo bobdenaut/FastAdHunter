@@ -822,9 +822,10 @@ therefore **spliced, not intercepted** — interception rides v4 only.
 
 Splicing needs no client setup at all; that is the "any client, zero setup"
 half of Phase 3. Interception is opt-in per client and needs the CA installed
-on each listed device first. **Install the CA before adding a device to
-`[https.interception] clients`** — a listed device without the CA sees its
-connections close.
+on each listed device first. **Install the CA before listing a device in the
+Interception Document** (`PUT /api/v1/interception`, CONFIGURATION.md
+§Interception Document — the lists left `fastadhunter.toml` in release N) — a
+listed device without the CA sees its connections close.
 
 Export with `GET /api/v1/certificates/ca/export`; the per-device walkthrough
 lives in the p3-06 review file's runbook, not here.

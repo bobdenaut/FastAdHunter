@@ -425,11 +425,16 @@ defines it; a host inside a listed CIDR is not a duplicate. Test: existing
   already carries `features = ["derive"]`. External crate, already in the
   build graph through `fah-model`; no layering change (F2).
 - `Active::compile` body: caps first (both lists), then `clients` parsed with `AllowedNet::from_str`
-  (the parser `interception()` in `main.rs` uses today) and deduplicated by
-  `HashSet<AllowedNet>` insert, then `exclude_domains` normalised with
-  `normalize_host` after `trim().trim_end_matches('.')` (as `ExclusionSet::new`
-  does today) and deduplicated by `HashSet<Box<str>>` insert. The stored
-  document keeps the operator's spelling; only the compiled set is normalised.
+  (the parser `interception()` in `main.rs` uses today) after `trim()` — a
+  leniency the boot parser did not have (review F-03, 2026-09-10): `" 10.0.0.1"`
+  is accepted, stored as sent, and deduplicated against `"10.0.0.1"` — and
+  deduplicated by `HashSet<AllowedNet>` insert, then `exclude_domains`
+  normalised with `normalize_host` after `trim().trim_end_matches('.')` (as
+  `ExclusionSet::new` does today) and deduplicated by `HashSet<Box<str>>`
+  insert. The stored document keeps the operator's spelling; only the compiled
+  set is normalised. `ExclusionSet::new` and `InvalidExclusion` were deleted
+  after the review (F-04): `Active::compile` is the one validator and builds
+  the set directly.
 - `pub struct InterceptionState { active: ArcSwap<Active> }` with
   `new(active: Active)`, `load(&self) -> arc_swap::Guard<Arc<Active>>` (hot
   path), `current(&self) -> Arc<Active>`, `store(&self, next: Arc<Active>)`.

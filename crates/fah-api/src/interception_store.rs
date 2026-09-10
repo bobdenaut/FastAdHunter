@@ -119,6 +119,11 @@ pub fn load_or_migrate(
                     document = %path.display(),
                     "migrated [https.interception] into interception.json"
                 );
+            } else {
+                tracing::info!(
+                    document = %path.display(),
+                    "wrote an empty interception document"
+                );
             }
             active
         }

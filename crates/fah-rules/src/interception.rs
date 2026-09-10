@@ -1,5 +1,5 @@
 use std::borrow::Cow;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::fmt;
 use std::net::IpAddr;
 use std::sync::Arc;
@@ -53,34 +53,12 @@ pub fn normalize_host(raw: &[u8]) -> Option<Box<str>> {
     Some(host.into_boxed_str())
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct InvalidExclusion(pub String);
-
-impl fmt::Display for InvalidExclusion {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "not a hostname: {:?}", self.0)
-    }
-}
-
-impl std::error::Error for InvalidExclusion {}
-
 #[derive(Debug, Clone, Default)]
 pub struct ExclusionSet {
     hosts: HashSet<Box<str>>,
 }
 
 impl ExclusionSet {
-    pub fn new<S: AsRef<str>>(user: &[S]) -> Result<Self, InvalidExclusion> {
-        let mut hosts: HashSet<Box<str>> = HashSet::with_capacity(user.len());
-        for entry in user {
-            let raw = entry.as_ref().trim().trim_end_matches('.');
-            let host = normalize_host(raw.as_bytes())
-                .ok_or_else(|| InvalidExclusion(entry.as_ref().to_string()))?;
-            hosts.insert(host);
-        }
-        Ok(Self { hosts })
-    }
-
     pub fn len(&self) -> usize {
         self.hosts.len()
     }
@@ -203,9 +181,9 @@ impl Active {
             MAX_EXCLUDE_DOMAINS,
         )?;
 
-        let mut seen_clients: Vec<AllowedNet> = Vec::with_capacity(document.clients.len());
-        let mut index_of_client: HashSet<AllowedNet> =
-            HashSet::with_capacity(document.clients.len());
+        let mut clients: Vec<AllowedNet> = Vec::with_capacity(document.clients.len());
+        let mut index_of_client: HashMap<AllowedNet, usize> =
+            HashMap::with_capacity(document.clients.len());
         for (index, entry) in document.clients.iter().enumerate() {
             let net =
                 entry
@@ -216,11 +194,7 @@ impl Active {
                         index,
                         entry: entry.clone(),
                     })?;
-            if !index_of_client.insert(net) {
-                let duplicate_of = seen_clients
-                    .iter()
-                    .position(|earlier| *earlier == net)
-                    .unwrap_or(0);
+            if let Some(duplicate_of) = index_of_client.insert(net, index) {
                 return Err(DocumentError::Duplicate {
                     list: CLIENTS,
                     index,
@@ -228,23 +202,20 @@ impl Active {
                     duplicate_of,
                 });
             }
-            seen_clients.push(net);
+            clients.push(net);
         }
 
         let mut hosts: HashSet<Box<str>> = HashSet::with_capacity(document.exclude_domains.len());
-        let mut order: Vec<Box<str>> = Vec::with_capacity(document.exclude_domains.len());
         for (index, entry) in document.exclude_domains.iter().enumerate() {
-            let raw = entry.trim().trim_end_matches('.');
-            let host =
-                normalize_host(raw.as_bytes()).ok_or_else(|| DocumentError::InvalidEntry {
-                    list: EXCLUDE_DOMAINS,
-                    index,
-                    entry: entry.clone(),
-                })?;
-            if !hosts.insert(host.clone()) {
-                let duplicate_of = order
+            let host = normalized_exclusion(entry).ok_or_else(|| DocumentError::InvalidEntry {
+                list: EXCLUDE_DOMAINS,
+                index,
+                entry: entry.clone(),
+            })?;
+            if hosts.contains(&host) {
+                let duplicate_of = document.exclude_domains[..index]
                     .iter()
-                    .position(|earlier| *earlier == host)
+                    .position(|earlier| normalized_exclusion(earlier).as_deref() == Some(&*host))
                     .unwrap_or(0);
                 return Err(DocumentError::Duplicate {
                     list: EXCLUDE_DOMAINS,
@@ -253,13 +224,13 @@ impl Active {
                     duplicate_of,
                 });
             }
-            order.push(host);
+            hosts.insert(host);
         }
 
         Ok(Active {
             document,
             scope: InterceptionScope {
-                clients: seen_clients.into_boxed_slice(),
+                clients: clients.into_boxed_slice(),
                 exclusions: ExclusionSet { hosts },
             },
         })
@@ -271,6 +242,10 @@ fn cap(list: &'static str, len: usize, cap: usize) -> Result<(), DocumentError> 
         true => Err(DocumentError::OverCap { list, len, cap }),
         false => Ok(()),
     }
+}
+
+fn normalized_exclusion(entry: &str) -> Option<Box<str>> {
+    normalize_host(entry.trim().trim_end_matches('.').as_bytes())
 }
 
 #[derive(Default)]
@@ -323,7 +298,10 @@ mod tests {
     }
 
     fn set(user: &[&str]) -> ExclusionSet {
-        ExclusionSet::new(user).unwrap()
+        Active::compile(document(&[], user))
+            .unwrap()
+            .scope
+            .exclusions
     }
 
     #[test]
@@ -368,8 +346,12 @@ mod tests {
             "bad..example",
         ] {
             assert_eq!(
-                ExclusionSet::new(&[entry]).err(),
-                Some(InvalidExclusion(entry.to_string())),
+                Active::compile(document(&[], &[entry])).err(),
+                Some(DocumentError::InvalidEntry {
+                    list: EXCLUDE_DOMAINS,
+                    index: 0,
+                    entry: entry.to_string(),
+                }),
                 "{entry:?}"
             );
         }

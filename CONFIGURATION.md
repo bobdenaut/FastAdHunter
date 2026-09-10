@@ -513,6 +513,7 @@ Release N migrates once, at the first boot that finds the old keys:
 | Document present | document wins; nothing rewritten |
 | Keys re-added by hand after migrating | document still wins; `warn!` naming both files; the keys are removed from the TOML again |
 | Document unreadable, malformed, over cap, or carrying an invalid entry | **boot fails naming the file**; it is never overwritten |
+| `[https.interception]` carrying an invalid entry or over a cap, no document | **boot fails naming the list**, in every `engine.mode` — 0.3.x checked the keys only when the HTTPS listener ran, so a DNS-only install could carry a bad entry unnoticed; document not written; TOML untouched |
 
 The document is written on exactly one branch — when it does not exist — so an
 existing file is never clobbered. The TOML is rewritten from the file layer, so

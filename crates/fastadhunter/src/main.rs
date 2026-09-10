@@ -872,11 +872,13 @@ fn interception(
     let active = state.current();
     let clients = active.scope.client_count();
     let Some(store) = certs else {
-        tracing::warn!(
-            count = clients,
-            "the certificate store did not open — listed clients are spliced, not \
-             intercepted, until /config is repaired and the container restarted"
-        );
+        if clients > 0 {
+            tracing::warn!(
+                count = clients,
+                "the certificate store did not open — listed clients are spliced, not \
+                 intercepted, until /config is repaired and the container restarted"
+            );
+        }
         return Ok(None);
     };
     if !store.has_ca() && clients > 0 {
