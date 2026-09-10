@@ -267,11 +267,18 @@ exactly the failure worth finding.
   Major CDNs reject mismatched SNI/Host today, but that is their policy, not
   ours.
 - **Phase 3 — HTTPS interception (MITM, p3-04)** is opt-in, per-client,
-  never default: only a client whose address is listed in
-  `[https.interception] clients` (IP/CIDR — the only identity the container
-  sees, so every listed client must hold a static lease, CONFIGURATION.md)
-  takes the terminate leg; everyone else, and every excluded SNI, splices as
-  in p3-03. The generated CA's private key never leaves `/config`; the
+  never default: only a client whose address is listed in the **Interception
+  Document** — `clients` in `/config/interception.json`, IP/CIDR, the only
+  identity the container sees, so every listed client must hold a static lease
+  (CONFIGURATION.md §Interception Document) — takes the terminate leg;
+  everyone else, and every excluded SNI, splices as in p3-03. The document is
+  changed only through an authenticated `PUT /api/v1/interception`, and a
+  change applies on the next connection with no restart. It sits on the
+  `/config` volume beside the CA key and the password hash, written by the
+  service user after the privilege drop. Nothing on a traffic path can write
+  it: `fah-http` has no route to `fah-api` (ARCHITECTURE.md layering), so no
+  observed connection can ever add or remove a client.
+  The generated CA's private key never leaves `/config`; the
   interception path only reads minted leaves from the p3-01 cache. CA export
   endpoints export the **public** certificate only, re-encoded from the parsed
   certificate DER so no export path can reach a key. Interception uses rustls;
@@ -295,11 +302,21 @@ exactly the failure worth finding.
   - **HSTS is transparent.** The minted leaf chains to the CA the client
     installed, so HSTS pins hold and no browser warning is bypassed —
     interception works only where the CA was deliberately trusted.
-  - **Exclusions always splice.** A compiled-in baseline of certificate-pinned
-    families (OS update and push hosts, app stores, messengers, payment and
-    banking apps — `fah_http::BASELINE_EXCLUSIONS`) plus
-    `[https.interception] exclude_domains` is matched on the SNI, before any
-    decryption; a hit takes the p3-03 splice leg.
+  - **Exclusions always splice.** `exclude_domains` in the Interception
+    Document is matched on the SNI, before any decryption; a hit takes the
+    p3-03 splice leg, for a listed client as much as anyone. A name covers
+    itself and every subdomain.
+
+    **There is no compiled-in baseline, and an empty list excludes nothing.**
+    Releases before N shipped a hard-coded set of certificate-pinned families
+    (OS update and push hosts, app stores, messengers, payment and banking
+    apps) that applied whether or not the operator asked for it and could not
+    be removed. It is gone: the document is the whole truth, so what splices
+    is auditable and reversible instead of hidden in the binary. The cost is
+    that an operator who intercepts a device now owns that decision — a
+    pinned app that must keep working has to be listed, or it breaks visibly
+    rather than being silently protected. Decide per household; migration
+    from 0.3.x carries the old TOML values across but adds nothing to them.
   - **Listed clients lose ECH.** An Encrypted ClientHello enters the terminate
     leg under its outer (public) SNI, is verified and served under that name,
     and the browser retries without ECH; the retry is filtered under the real

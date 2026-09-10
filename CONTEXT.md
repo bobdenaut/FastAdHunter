@@ -332,11 +332,25 @@ mechanism already carries DNS; extending it to HTTP is one more rule, and
 rollback is removing it.
 
 Since p3-04 the word also names the per-client **TLS termination** on the
-HTTPS port (SECURITY.md §Later phases): a client listed in
-`[https.interception] clients` has its TLS terminated with a minted leaf and
-its requests judged by the URL Tier. Which meaning is intended is clear from
-the section: dst-nat is how traffic *arrives*, termination is what happens to
-a listed client's traffic once it has.
+HTTPS port (SECURITY.md §Later phases): a client listed in the Interception
+Document has its TLS terminated with a minted leaf and its requests judged by
+the URL Tier. Which meaning is intended is clear from the section: dst-nat is
+how traffic *arrives*, termination is what happens to a listed client's
+traffic once it has. The word has exactly these two meanings; the Interception
+Document below is a file, not a third sense of the term.
+
+### Interception Document
+
+The persistent statement of **who is intercepted and what always splices**:
+`clients` and `exclude_domains`, living in `/config/interception.json`. Read
+and replaced whole through `GET`/`PUT /api/v1/interception` (API.md); a
+replacement applies on the next accepted connection, with no restart.
+
+It is deliberately *not* configuration: it left `fastadhunter.toml` in release
+N because it changes on a different rhythm than boot settings and must apply
+live. Same one-owner rule as the rule-list set — `POST /api/v1/config` refuses
+it, and no `FAH__` variable can set it (CONFIGURATION.md §Interception
+Document).
 
 ### Splice Leg / Terminate Leg
 
@@ -351,11 +365,15 @@ unless the client is listed **and** the SNI is not an Exclusion.
 ### Exclusion
 
 An SNI hostname that always takes the splice leg, even for a listed client:
-the compiled-in baseline of certificate-pinned families plus
-`[https.interception] exclude_domains`. Matched by exact host or parent suffix
-(`api.bank.example` is excluded by `bank.example`) on the ClientHello, before
-any decryption. An Exclusion is not a verdict: the connection is still judged
-at the SNI and still egress-guarded; it only decides which leg carries it.
+an entry of `exclude_domains` in the Interception Document. Matched by exact
+host or parent suffix (`api.bank.example` is excluded by `bank.example`) on
+the ClientHello, before any decryption. An Exclusion is not a verdict: the
+connection is still judged at the SNI and still egress-guarded; it only
+decides which leg carries it.
+
+Exclusions are **only** what the document lists. There is no compiled-in
+baseline of certificate-pinned families — that shipped before release N and
+was deleted; an empty `exclude_domains` excludes nothing (SECURITY.md).
 
 ### Destination Claim
 

@@ -738,7 +738,7 @@ if the decision is being reversed.
 ├── CONTRIBUTING.md       conventions and local quality gates
 │
 └── docs/
-    ├── decisions/            ADRs 0001–0007
+    ├── decisions/            ADRs 0001–0008
     ├── design/               accepted designs not yet built, with their
     │                         benchmark protocols
     ├── dashboard/            capability matrix, information architecture,

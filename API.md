@@ -44,6 +44,22 @@ The full code set: `bad_request` (400), `unauthorized` (401), `not_found`
 (404), `conflict` (409), `validation_failed` (422), `rate_limited` (429),
 `unavailable` (503), `internal` (500).
 
+`error` may carry an optional **`details`** object — a second, structured level
+for clients that need to act on the failure rather than print it. It is absent
+everywhere except where an endpoint documents it (today:
+[`PUT /api/v1/interception`](#put-apiv1interception)). `details.reason` is the
+machine code; `message` is never parsed by a client.
+
+```json
+{
+  "error": {
+    "code": "validation_failed",
+    "message": "clients: 300 entries exceed the cap of 256 by 44",
+    "details": { "reason": "over_cap", "list": "clients", "len": 300, "cap": 256 }
+  }
+}
+```
+
 `Retry-After` rides the same envelope and is the discriminator between a
 transient and a persistent condition:
 
@@ -947,6 +963,10 @@ Auth material is **omitted**, not redacted: the Argon2id password hash and the
 session secret are not part of the config tree at all (`/config/auth-hash` and
 `/data/session-secret`), so no `auth` key appears in the response.
 
+`https.interception` is **not** in the response either: the two lists left the
+config tree in release N and are served by
+[`GET /api/v1/interception`](#get-apiv1interception).
+
 ### `POST /api/v1/config`
 
 Partial update (deep-merge of provided keys). Changes are validated, written
@@ -981,6 +1001,12 @@ also works.
 more: only the [`/policies`](#policies) endpoints know when an edit needs the
 ruleset recompiled. `schedule.timezone` *is* accepted here and applies live.
 
+**`https.interception` is not accepted here — 422**, and the message names
+`PUT /api/v1/interception`. `clients` and `exclude_domains` are not config keys
+at all any more; they live in `/config/interception.json` and apply live, with
+no restart. `FAH__HTTPS__INTERCEPTION__CLIENTS` fails boot as an unknown key
+for the same reason.
+
 **A top-level `auth` key is not accepted here — 422**, and the message names
 `POST /api/v1/auth/password`. Same one-writer reason: the password endpoint
 requires the current password and invalidates every session, and a deep-merge
@@ -989,6 +1015,67 @@ patch would set a hash while bypassing both.
 ### `POST /api/v1/config/apikey/rotate`
 
 Generates a new API key, returns it **once**, invalidates the old one.
+
+---
+
+## Interception
+
+Who is HTTPS-intercepted, and what always splices. **Not** part of the config
+tree: the Interception Document lives in `/config/interception.json`
+(CONFIGURATION.md §Interception Document, CONTEXT.md).
+
+### `GET /api/v1/interception`
+
+```json
+{
+  "clients": ["192.168.88.10", "192.168.88.0/24"],
+  "exclude_domains": ["unicredit.ro"]
+}
+```
+
+The document the API returns and the scope the HTTPS listener reads are the
+same value, so they cannot disagree.
+
+### `PUT /api/v1/interception`
+
+Replaces the **whole** document; a missing key is an empty list, so
+`{"clients": ["..."]}` clears every exclusion. Returns the stored document,
+spelling preserved — only the matcher is normalised.
+
+**A change applies on the next accepted connection.** No restart, and the
+response carries no `restart_required` field. An already-open session finishes
+under the lists it was admitted with.
+
+| Key | Meaning | Cap |
+|-----|---------|-----|
+| `clients` | IP addresses or CIDR blocks whose TLS is terminated with a minted leaf and filtered at URL level. Empty = nobody is intercepted | 256 |
+| `exclude_domains` | SNI hostnames that always splice, even for a listed client; a name covers itself and every subdomain | 512 |
+
+There is no compiled-in baseline — an empty `exclude_domains` excludes nothing
+(SECURITY.md).
+
+| Status | Condition |
+| ------ | --------- |
+| `200` | stored and live |
+| `400 bad_request` | body is not JSON, wrong `Content-Type`, or too large |
+| `422 validation_failed` | with `details` — see below |
+| `503 unavailable` | the certificate store did not open and the document lists a client. No `Retry-After`: a boot condition |
+| `500 internal` | the document could not be written. Nothing half-applied |
+
+A rejected `PUT` changes nothing — neither the file nor the running scope.
+
+`details.reason` is closed: `shape`, `over_cap`, `invalid_entry`, `duplicate`.
+`index` and `duplicate_of` are 0-based positions in the list **as sent**, and
+`list` is `"clients"` or `"exclude_domains"`.
+
+```json
+{ "reason": "shape" }
+{ "reason": "over_cap",      "list": "clients",         "len": 300, "cap": 256 }
+{ "reason": "invalid_entry", "list": "clients",         "index": 3, "entry": "10.0.0.300" }
+{ "reason": "duplicate",     "list": "exclude_domains", "index": 7, "entry": "Bank.ro.", "duplicate_of": 2 }
+```
+
+`details` never echoes anything but the operator's own entry.
 
 ---
 
@@ -1085,7 +1172,7 @@ analogue), not the session length. There is no per-kind filter on this
 socket; a client selects `https-sni` items by the `kind` field.
 
 An `https` item (p3-04) is one HTTP request judged **inside** an intercepted
-TLS session of a client listed in `[https.interception]`. It is shaped exactly
+TLS session of a client listed in the Interception Document. It is shaped exactly
 like an `http` item — `domain`, `method`, `path`, `resource_type`, `status`
 and `bytes` all filled, the URL judged as `https://…` — and `bytes` means the
 same thing as for `http`: the upstream's declared `Content-Length`, `0` when

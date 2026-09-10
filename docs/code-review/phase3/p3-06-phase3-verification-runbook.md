@@ -168,22 +168,25 @@ only set the value to `adaptive`, which is also accepted at load.
 | **Restart required** | yes, and R5's image swap supplies it — no separate restart is needed if R1 is done before R5 |
 | **Rollback** | none wanted: the previous value is what stops the probe booting. To return to the campaign-1 state, restore the old image *and* the old config together |
 
-### R2 — the other three probe config keys
+### R2 — the other two probe config keys
 
 Values per [p3-06-testing-plan.md](../../../plan/wip/phase3/p3-06-testing-plan.md)
-§The probe config. All three are boot keys.
+§The probe config. Both are boot keys.
 
 | | |
 | --- | --- |
-| **Command** | `curl -sk -H "Authorization: Bearer $FAHKEY" -H 'content-type: application/json' -d '{"engine":{"mode":"dns+http+https"},"egress":{"allow_destinations":["'"$MAC"'/32"]},"https":{"interception":{"clients":[]}}}' https://172.17.0.4:8443/api/v1/config` |
-| **Expected state** | `GET /api/v1/config` reports all three; the boot log then shows `HTTPS SNI listener bound` and a DoT line |
+| **Command** | `curl -sk -H "Authorization: Bearer $FAHKEY" -H 'content-type: application/json' -d '{"engine":{"mode":"dns+http+https"},"egress":{"allow_destinations":["'"$MAC"'/32"]}}' https://172.17.0.4:8443/api/v1/config` |
+| **Expected state** | `GET /api/v1/config` reports both; the boot log then shows `HTTPS SNI listener bound` and a DoT line |
 | **Takes effect** | next container start; response `"restart_required": true` |
 | **Restart required** | yes — same restart as R1 |
 | **Rollback** | re-`POST` the previous values read in R0, then restart |
 
-`https.interception.clients` stays **empty here on purpose**. A listed client
-with no CA installed is closed, not spliced (p3-04 L2), so clients are added
-only in R8, after the CA is on the device.
+The `https` part of this body is **gone since p3-07**: `clients` and
+`exclude_domains` are no longer config keys, and a patch carrying
+`https.interception` is refused with 422. Nothing needs setting here — a fresh
+probe boots with an empty Interception Document, which is the intended state
+for R2 anyway. A listed client with no CA installed is closed, not spliced
+(p3-04 L2), so clients are added only in R8, after the CA is on the device.
 
 ### R3 — `fahprobe-env`
 
@@ -388,11 +391,22 @@ until the install lands.
 | | |
 | --- | --- |
 | **Precondition** | the CA is installed on the device (dashboard login, download `fastadhunter-ca.crt`, install from Downloads — `GET …/ca/export` is authenticated, so not a bare URL), **and** `/ip/dhcp-server/lease/print where address=$CLIENT` shows a static lease |
-| **Command** | `curl -sk -H "Authorization: Bearer $FAHKEY" -H 'content-type: application/json' -d '{"https":{"interception":{"clients":["'"$CLIENT"'"]}}}' https://172.17.0.4:8443/api/v1/config` |
-| **Expected state** | `GET /api/v1/config` lists the client; after restart the boot log reads `HTTPS interception active for the listed clients`; the device sees `FastAdHunter CA` as issuer |
-| **Takes effect** | next container start — `https` is a boot key |
-| **Restart required** | yes: `/container/stop` + `/container/start` on `fah-probe` |
-| **Rollback** | re-`POST` with `"clients": []` and restart; the device then splices and its own CA install is harmless |
+| **Command** | `curl -sk -X PUT -H "Authorization: Bearer $FAHKEY" -H 'content-type: application/json' -d '{"clients":["'"$CLIENT"'"],"exclude_domains":[]}' https://172.17.0.4:8443/api/v1/interception` |
+| **Expected state** | the `200` body echoes the document; `GET /api/v1/interception` lists the client; the device sees `FastAdHunter CA` as issuer on its **next** connection |
+| **Takes effect** | **immediately — the next accepted connection.** No restart |
+| **Restart required** | **no** |
+| **Undo** | `PUT` again with `{"clients":[],"exclude_domains":[]}`; the device splices from its next connection and its CA install is harmless |
+
+Since p3-07 this is a document replacement, not a config patch: the response
+carries no `restart_required`, and the two rollback-by-restart rows above are
+gone. The boot log line `HTTPS interception machinery ready` now appears
+whenever the listener runs and the store opened — including with an empty
+client list — so it is no longer evidence that a client is listed. Check
+`GET /api/v1/interception` for that.
+
+A `PUT` naming a client while the certificate store did not open answers
+**503** and stores nothing; a bad entry answers **422** with a `details` object
+and changes nothing.
 
 ### R9 — Private DNS hostname
 

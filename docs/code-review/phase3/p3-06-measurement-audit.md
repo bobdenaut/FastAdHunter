@@ -94,7 +94,7 @@ as declared has no functional gate proving Phase 3 traffic is flowing (MA-3).
 | Intercepted p50 ≤ 2 × spliced | straddles on x86 | P2 (after MA-4 is settled) |
 | Interception CPU under browsing on four cores | none | undeclared (MA-11) |
 | Android Private DNS validates against a user-installed CA | none either way | Runbook 3 (the one DoD item with no evidence) |
-| Pinned / banking app unaffected | `an_excluded_sni_splices_even_for_a_listed_client` and `a_baseline_bank_is_never_intercepted_even_for_a_listed_client` (fah-http harness) — the second drives a **baseline** name, `homebanking.unicredit.ro`, through the wire path with an empty user list | Runbook 4. The app is UniCredit, covered through `unicredit.ro`, so the check has an excluded arm. A harness proves the contract, not that the app's own API hosts sit under that parent — only the device does |
+| Pinned / banking app unaffected | `an_excluded_sni_splices_even_for_a_listed_client` and `a_parent_entry_in_the_document_splices_its_subdomain_for_a_listed_client` (fah-http harness) — the second drives `homebanking.unicredit.ro` through the wire path against a document listing `unicredit.ro` | Runbook 4 **precondition changed by p3-07**: the entry now comes from the Interception Document, not a compiled-in constant. `unicredit.ro` must be `PUT` into `exclude_domains` before the arm runs, or the app is intercepted. A harness proves the contract, not that the app's own API hosts sit under that parent — only the device does |
 | HSTS transparent on a real browser | none | Runbook 2 (implicit) |
 | SNI block reaches an **unlisted** LAN device through dst-nat | e2e leg 3 (loopback) | no on-device step (MA-5) |
 | DoH over h2 on the wire | none | P4 with `kdig +https` would close it if recorded |

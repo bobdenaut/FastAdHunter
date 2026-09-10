@@ -42,9 +42,12 @@ The whole `[https]` section is **boot** on the same terms: the listener and its
 semaphore are built once at bind, and the two timeouts become per-connection
 deadlines held by the proxy handle. `[https.sni] no_sni` is read per connection
 but from the boot-time handle, so changing it needs a restart like the rest.
-`[https.interception]` is parsed into the proxy handle at the same moment; the
-CA it mints from is the one live thing on that path (`/api/v1/certificates`
-can generate or replace it without a restart).
+
+Two things on the interception path are **not** boot, and neither is in this
+file: who is intercepted and what always splices (the Interception Document,
+§Interception Document, applied on the next connection through
+`PUT /api/v1/interception`), and the CA the leaves are minted from
+(`/api/v1/certificates` can generate or replace it without a restart).
 
 `[runtime]` is **boot** too: `http_runtimes` is read once when the HTTP
 listener starts its allocation domains (CONTEXT.md), so `POST /api/v1/config`
@@ -231,8 +234,9 @@ max_connections = 1024        # boot    — ceiling on concurrent HTTPS sessions
                               #           uses, permit before accept. Splice
                               #           memory is 2 x 16 KiB per session
                               #           (~32 MB at the default). An
-                              #           INTERCEPTED session (listed client,
-                              #           [https.interception]) is bounded by
+                              #           INTERCEPTED session (a client listed
+                              #           in the Interception Document) is
+                              #           bounded by
                               #           fixed hyper limits set in code, not
                               #           by hyper's defaults: 64 concurrent
                               #           streams, h2 receive window 64 KiB per
@@ -291,64 +295,8 @@ no_sni = "pass"               # boot    — "pass" | "block". A ClientHello with
                               #           only how that closed connection is
                               #           classified in events and metrics
 
-[https.interception]
-clients = []                  # boot    — IP addresses or CIDR blocks whose
-                              #           HTTPS is TERMINATED with a leaf minted
-                              #           by the installed CA and filtered at
-                              #           URL level (SECURITY.md §Later phases,
-                              #           CONTEXT.md §Terminate Leg). DEFAULT
-                              #           EMPTY = nobody is intercepted; every
-                              #           other client splices. PRECONDITION:
-                              #           every listed client holds a static
-                              #           DHCP lease or a static address on the
-                              #           router — the source IP is the only
-                              #           identity the container sees, and a
-                              #           reassigned lease silently moves
-                              #           interception to whichever device
-                              #           inherits the address. The client must
-                              #           also trust the CA (/api/v1/certificates
-                              #           export); one that does not is closed
-                              #           after a wasted upstream handshake.
-                              #           A bad entry is rejected at load, by
-                              #           name. Listed clients with no CA
-                              #           installed, or with a certificate store
-                              #           that did not open, are spliced
-                              #           (store) or closed (no CA) — never
-                              #           fatal, DNS keeps resolving; one warn!
-                              #           at boot names which
-exclude_domains = []          # boot    — SNI hostnames that always splice,
-                              #           even for a listed client; a name
-                              #           excludes itself and every subdomain
-                              #           ("bank.example" covers
-                              #           "api.bank.example", not
-                              #           "notbank.example"). MERGED with the
-                              #           compiled-in baseline of
-                              #           certificate-pinned families, which
-                              #           applies with this key empty: Apple
-                              #           (apple.com, icloud.com, mzstatic.com,
-                              #           apple-cloudkit.com), Google/Android
-                              #           (android.com, googleapis.com,
-                              #           play.google.com,
-                              #           android.clients.google.com,
-                              #           clients.google.com, mtalk.google.com,
-                              #           gvt1/gvt2/gvt3.com), Microsoft
-                              #           (windowsupdate.com,
-                              #           update.microsoft.com,
-                              #           delivery.mp.microsoft.com,
-                              #           login.microsoftonline.com,
-                              #           notify.windows.com, wns.windows.com),
-                              #           WhatsApp (whatsapp.net/.com),
-                              #           signal.org, PayPal, Revolut, Wise,
-                              #           N26 and eight Romanian bank domains
-                              #           (bancatransilvania.ro, btrl.ro,
-                              #           ing.ro, bcr.ro, george.ro, brd.ro,
-                              #           raiffeisen.ro, unicredit.ro). The
-                              #           baseline cannot be removed from
-                              #           config; it is the shipped default
-                              #           (fah_http::BASELINE_EXCLUSIONS). An
-                              #           entry that is not a hostname (a
-                              #           wildcard, a scheme, a path, a port)
-                              #           is rejected at load, by name
+# [https.interception] NO LONGER EXISTS. `clients` and `exclude_domains` moved
+# out of this file in release N — see §Interception Document below.
 
 # ─── Egress (where the proxies may connect) ────────────────────────────
 # NOT under [http] on purpose: Phase 3's HTTPS path derives its destination
@@ -495,13 +443,82 @@ is also what keeps a rollback to an older binary clean.
 
 | Mount | Class | Contents |
 |-------|-------|----------|
-| `/config` | small, back this up | TOML, API key, TLS certs, `auth-hash` |
+| `/config` | small, back this up | TOML, `interception.json`, API key, TLS certs, `auth-hash` |
 | `/data`   | bulky, regenerable  | `session-secret`, cached rule lists, query-log segments, stats snapshots, history rollups + perf series |
 
 `/data/session-secret` is regenerable in the sense that a fresh one is written
 when it is missing — but regenerating it **ends every signed-in session**, and
 the password is unchanged. An ephemeral `/data` therefore signs everyone out on
 each restart, logged at `warn!`.
+
+## Interception Document
+
+`clients` and `exclude_domains` are **not** config keys. They live in
+`/config/interception.json` — the Interception Document (CONTEXT.md) — and are
+read and replaced whole through `GET`/`PUT /api/v1/interception` (API.md).
+
+A `PUT` applies on the **next accepted connection**: no restart, and the
+response carries no `restart_required`. This is the third mutability class
+again, like `[[rules.lists]]` above, and for the same reason — one owner. The
+machinery exists whenever the HTTPS listener runs and the certificate store
+opened, so listing the first client is a swap, not a rebuild.
+
+```json
+{
+  "clients": ["192.168.88.10", "192.168.88.0/24"],
+  "exclude_domains": ["unicredit.ro"]
+}
+```
+
+| Key | Meaning |
+|-----|---------|
+| `clients` | IP addresses or CIDR blocks whose HTTPS is TERMINATED with a leaf minted by the installed CA and filtered at URL level (SECURITY.md §Later phases, CONTEXT.md §Terminate Leg). Empty = nobody is intercepted; every other client splices. Cap 256 |
+| `exclude_domains` | SNI hostnames that always splice, even for a listed client. A name excludes itself and every subdomain (`bank.example` covers `api.bank.example`, not `notbank.example`). Cap 512 |
+
+**There is no compiled-in baseline.** An empty `exclude_domains` excludes
+nothing. Earlier releases shipped a hard-coded list of certificate-pinned
+families (Apple, Google/Android, Microsoft, WhatsApp, Signal, PayPal and
+several banks) that could not be removed from config; it is gone. Anything that
+must splice has to be listed here — decide per household, and see SECURITY.md.
+
+**Precondition, unchanged:** every listed client holds a static DHCP lease or a
+static address on the router. The source IP is the only identity the container
+sees, and a reassigned lease silently moves interception to whichever device
+inherits the address. A listed client must also trust the CA
+(`/api/v1/certificates` export); one that does not is closed after a wasted
+upstream handshake.
+
+Listed clients with no CA installed, or with a certificate store that did not
+open, are spliced (store) or closed (no CA) — never fatal, DNS keeps resolving;
+one `warn!` at boot names which. A `PUT` listing a client while the store is
+closed answers **503**, and nothing is written.
+
+Rejections are **422 with a structured `details` object** (API.md) and change
+nothing — neither the file nor the running scope. The stored document keeps the
+spelling you sent; only the matcher is normalised.
+
+`POST /api/v1/config` **rejects** a patch carrying `https.interception` (422,
+naming this endpoint), and `GET /api/v1/config` does not contain it. `FAH__`
+cannot set either list — `FAH__HTTPS__INTERCEPTION__CLIENTS` fails boot as an
+unknown key.
+
+### Migration from 0.3.x
+
+Release N migrates once, at the first boot that finds the old keys:
+
+| Boot state | Result |
+|------------|--------|
+| `[https.interception]` present, no document | document written from the TOML values; TOML re-saved without the keys; one `info!` |
+| Fresh install | empty document written; TOML untouched |
+| Document present | document wins; nothing rewritten |
+| Keys re-added by hand after migrating | document still wins; `warn!` naming both files; the keys are removed from the TOML again |
+| Document unreadable, malformed, over cap, or carrying an invalid entry | **boot fails naming the file**; it is never overwritten |
+
+The document is written on exactly one branch — when it does not exist — so an
+existing file is never clobbered. The TOML is rewritten from the file layer, so
+a value that came from a `FAH__` variable at that boot is not baked into the
+file. Hand-written comments in the TOML do not survive that rewrite, as with
+any API write.
 
 ## Who owns the list set
 
