@@ -833,13 +833,16 @@ Also on the probe: re-run the security suite's traversal list with
 
 ### 6. 24 h soak (production container — a deploy with its own approval)
 
-**Prerequisite decision (p3-04 L5 + TODO):** `non_tls`, `hello_timeouts`,
-`upstream_cert_failures` are counted but published nowhere. Proposal (API.md
-edit + code, owner yes): `GET /api/v1/telemetry` gains
-`"listeners": {"http": <ProxyStats>, "https": <ProxyStats>}`, and on the
-terminate leg `requests` counts HTTP requests (as :80 does) while a new
-`connections` field carries accepted connections, so `blocked ≤ requests`
-holds per listener (L5). Until it lands, watch item (b) has no read path.
+**Prerequisite decision (p3-04 L5 + TODO) — SHIPPED 2026-09-02, `44f3c83`.**
+`non_tls`, `hello_timeouts` and `upstream_cert_failures` were counted and
+published nowhere. `GET /api/v1/telemetry` now carries
+`"listeners": {"http": <ListenerCounters>, "https": <ListenerCounters>}`, and
+on the terminate leg `requests` counts judged units while `connections`
+carries accepted connections, so `blocked ≤ requests` holds per listener.
+Watch item (b) has its read path. Do not re-propose this as work; the change
+is described in §Post-review work A and the code is in
+`fah-model/src/engine.rs`, `fah-http/src/{proxy,https}.rs` and
+`fah-api/src/telemetry.rs`.
 
 | Watch item | Class | Read | Decides |
 | --- | --- | --- | --- |
@@ -945,10 +948,13 @@ figures that do not exist yet, and the rest await the owner or phase close.
 6. **ROADMAP.md §Phase 3** — bullets to delivered `[x]` wording at phase close;
    "import PEM/PFX" → "import PEM (PFX descoped, ADR-0006)"; add "p3-06
    verification: dev-box suite + soak `<date>`".
-7. **API.md** — (a) p3-05 N3: `GET /api/v1/certificates` gains
-   `"dot": {"state": "listening" | "closed", "reason": "<the boot error>"}`
-   (or `/health` `checks.dot`); code change in `main.rs`/`fah-api`. (b) L5/TODO
-   `listeners` block on `/telemetry` as in Runbook item 6. Both owner yes.
+7. **API.md — DONE 2026-09-02, `44f3c83`.** (a) p3-05 N3: `GET
+   /api/v1/certificates` carries
+   `"dot": {"state": "listening" | "closed", "reason": "<the boot error>"}`,
+   `address` only when listening and `reason` only when closed; `/health` is
+   unchanged, per SECURITY.md. (b) L5/TODO: the `listeners` block is on
+   `/telemetry`. Both are documented in API.md and covered by tests — see
+   §Post-review work A. Nothing owed here.
 8. **docs/project-state.md** — rewrite at phase close (X3).
 9. **CONFIGURATION.md** — only if the owner changes `BASELINE_EXCLUSIONS`
    (Runbook item 4).
@@ -985,7 +991,7 @@ had changed the deploy guide or the dashboard at all.
 | --- | --- |
 | X1–X5 above | owner decision |
 | Every on-device row (P1–P7, Runbook 1–7): dst-nat, CA install, Private DNS, pinned app, probe measurements, soak, cert-store checks, DoH-h2-on-the-wire, DoT/DoH device latency, N1/N11 `prewarm` profile — **nothing changed in `dot.rs`/`intercept.rs`** per the plan's "measure before touching" | owner + agent after approval |
-| N3 `dot` listener state, L5/TODO `listeners` block — proposed, not built. Dashboard kinds built 2026-09-09, `bac7454` | owner yes |
+| ~~N3 `dot` listener state, L5/TODO `listeners` block, dashboard kinds~~ — all three built: N3 and L5 on 2026-09-02 (`44f3c83`, §Post-review work A), dashboard kinds on 2026-09-09 (`bac7454`). Row kept struck rather than deleted: it was re-proposed as open work twice after shipping | closed |
 | p3-05 N2/N4/N9 won't-fix, N12/N16 closed — untouched | — |
 | Real browsing-session host replay for the leaf-cache row (D12 is synthetic) | soak feed |
 
@@ -1009,7 +1015,7 @@ record. Still open:
 | Step 4 | Runbook 1–7 on the device, P1–P8, the 24 h soak; `BASELINE_EXCLUSIONS` final names; P1/P3 LAN-vs-loopback definition. P9 recorded 2026-09-09 (§Post-review work H); P8 baseline open, 1 read of 10 | deferred | owner — §Runbook, §Hand-off state |
 | Step 5 | doc sweep remainder: deploy-rb5009.md §5c after the walkthrough, README modes row, SECURITY.md row 3, ROADMAP wording, project-state | deferred | owner — §Proposed documentation edits |
 
-**PASS WITH DEFERRED FINDINGS** — 7 open rows (7 deferred, 0 won't-fix). `AWAITING SOAK`; flip condition in §Hand-off state.
+**PASS WITH DEFERRED FINDINGS** — 7 open rows (7 deferred, 0 won't-fix). `AWAITING SOAK`; flip condition restated in §Hand-off state, 2026-09-08 (session 3, RB5009) — current. Its wording originates in the 2026-09-08 morning hand-off, which is marked superseded for everything else.
 
 ### GAR §5 items 7–14 — the Phase 3 gate map (plan §TASK START 8, F11)
 
@@ -1021,7 +1027,7 @@ record. Still open:
 | 10 | event/telemetry taxonomy | `fah-model/src/request_event.rs:126-127` `EventKind::{HttpsSni, Https}`; `fah-model/src/client_transport.rs:5` `ClientTransport`; suite and e2e assert `kind: https-sni` / `https` on the WS feed | closed (p3-03/04/05) |
 | 11 | memory caps per new state owner | leaf LRU `fah-certs/src/leaf.rs:16` `LEAF_CACHE_CAPACITY = 512`; splice `https.rs:29` `SPLICE_BUF` × 2 × `max_connections` (D6/D7); terminate leg `intercept.rs:37-40` `H2_*` (D9); DoT 64 permits (p3-05) | closed on paper; stall RSS → P3 |
 | 12 | 443 steering v4 + v6 | Runbook item 1 (proposed, not run) | open — owner |
-| 13 | on-device TLS measurements | P1–P6 (declared, not run) | open — owner |
+| 13 | on-device TLS measurements | SNI, P4-LAN, P5, P6, P7 and P10 ran on the RB5009 2026-09-08 (`p3-06-testing-results-2.md` §Session 2); P9 recorded 2026-09-09 (§Post-review work H); P8 baseline 1 read of 10. **Only P1, P2 and P3 are outstanding**, all three on the second wired endpoint | partly open — owner; not a flip-condition gate |
 | 14 | opt-in bound to stable identity | static leases for `192.168.10.11` / `.10` read-only verified 2026-09-02 (§Runbook read-only facts) | closed for the two test devices; re-verify per added client |
 
 
@@ -1893,6 +1899,23 @@ takes effect, whether a restart is required, and the rollback. Prepared
 2026-09-08; nothing in it has been run.
 
 ## Hand-off state, 2026-09-08 (session 3, RB5009) — current
+
+### Flip condition — restated here because the older copies are superseded
+
+`AWAITING SOAK` flips when the 24 h full-mode soak on the RB5009 records
+**RSS ≤ 128 MB steady** and the §Runbook 6 watch items, with **Runbook 1–4
+and 7** done and recorded here. P5 does not gate it — the 2026-09-05
+disposition stands as a disposition, its figure does not.
+
+**P1, P2 and P3 are not in the flip condition.** They are measurements in the
+Step 4 deferred row, and they need a second wired LAN endpoint that does not
+exist. A reader who treats them as gating will conclude the phase is blocked
+on hardware. It is not: it is blocked on Runbook 1–4 and 7, the deploy
+approval, and the clock.
+
+The soak's two code prerequisites — N3 (`dot` state) and the L5 `listeners`
+telemetry block — **shipped 2026-09-02 in `44f3c83`** (§Post-review work A).
+Watch item (b) has its read path. Do not re-propose them.
 
 **The campaign is on the device.** Step 4 R0–R6 and R10 are executed; nine arms
 are measured and recorded in
