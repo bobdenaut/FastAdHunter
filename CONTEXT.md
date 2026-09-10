@@ -375,6 +375,23 @@ Exclusions are **only** what the document lists. There is no compiled-in
 baseline of certificate-pinned families — that shipped before release N and
 was deleted; an empty `exclude_domains` excludes nothing (SECURITY.md).
 
+### Client Certificate Rejection
+
+A client on the terminate leg refusing the leaf we minted for it, announced as
+a fatal TLS alert during our handshake: `bad_certificate`, `certificate_unknown`
+or `access_denied`. It becomes an `https` Request Event with status **525**
+(`ClientCertRejected`) and one tick of `client_cert_rejections`.
+
+The term states **what was observed, never why** — pinning, a name the leaf
+does not cover and an application's own verifier all produce those alerts, so
+nothing calls a 525 "pinned". `unknown_ca` is not a rejection: it says the
+client could not build a trusted chain, which is a trust diagnostic, and stays
+on `status 0` with every other alert, transport error and silent close. The
+surface is best-effort, not a census.
+
+Detection never writes the Interception Document — an Exclusion is always the
+operator's act (ADR-0008).
+
 ### Destination Claim
 
 Where a client *says* it was going. After Interception there is no

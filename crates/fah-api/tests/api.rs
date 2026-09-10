@@ -371,6 +371,7 @@ impl TelemetrySource for FakeTelemetry {
                 resolve_failures: 4,
                 upstream_failures: 6,
                 upstream_cert_failures: 0,
+                client_cert_rejections: 0,
                 non_http: 3,
                 non_tls: 0,
                 hello_timeouts: 0,

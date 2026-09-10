@@ -84,6 +84,7 @@ pub struct ProxyCounters {
     pub non_tls: AtomicU64,
     pub hello_timeouts: AtomicU64,
     pub upstream_cert_failures: AtomicU64,
+    pub client_cert_rejections: AtomicU64,
     /// Requests refused by a filtering rule (p2-04).
     pub blocked: AtomicU64,
     /// Events the bounded channel could not take. Mirrors the DNS pipeline's
@@ -105,6 +106,7 @@ pub struct ProxyStats {
     pub non_tls: u64,
     pub hello_timeouts: u64,
     pub upstream_cert_failures: u64,
+    pub client_cert_rejections: u64,
     pub blocked: u64,
     pub dropped_events: u64,
 }
@@ -122,6 +124,7 @@ impl ProxyCounters {
             non_tls: self.non_tls.load(Ordering::Relaxed),
             hello_timeouts: self.hello_timeouts.load(Ordering::Relaxed),
             upstream_cert_failures: self.upstream_cert_failures.load(Ordering::Relaxed),
+            client_cert_rejections: self.client_cert_rejections.load(Ordering::Relaxed),
             blocked: self.blocked.load(Ordering::Relaxed),
             dropped_events: self.dropped_events.load(Ordering::Relaxed),
         }
@@ -139,6 +142,7 @@ impl From<ProxyStats> for fah_model::ListenerCounters {
             resolve_failures: stats.resolve_failures,
             upstream_failures: stats.upstream_failures,
             upstream_cert_failures: stats.upstream_cert_failures,
+            client_cert_rejections: stats.client_cert_rejections,
             non_http: stats.non_http,
             non_tls: stats.non_tls,
             hello_timeouts: stats.hello_timeouts,

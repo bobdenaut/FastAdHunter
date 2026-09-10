@@ -147,6 +147,8 @@ pub struct ListenerCounters {
     pub resolve_failures: u64,
     pub upstream_failures: u64,
     pub upstream_cert_failures: u64,
+    #[serde(default)]
+    pub client_cert_rejections: u64,
     pub non_http: u64,
     pub non_tls: u64,
     pub hello_timeouts: u64,

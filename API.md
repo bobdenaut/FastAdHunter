@@ -157,8 +157,12 @@ request judged inside TLS. So `blocked ≤ requests` holds per listener, and
 reset or the `hello_timeout_ms` deadline before a complete ClientHello —
 browser preconnects land here) are HTTPS-only; `non_http` is `:80`-only;
 `upstream_cert_failures` is an intercepted client's origin failing certificate
-verification (the `status 526` events). `refused_claim + refused_destination`
-across both listeners is what `counters.http.refused` sums.
+verification (the `status 526` events); `client_cert_rejections` is its mirror
+on the accept side — a listed client refusing the leaf we presented (the
+`status 525` events), HTTPS-only and best-effort, since a client that rejects
+us by closing rather than alerting cannot be counted.
+`refused_claim + refused_destination` across both listeners is what
+`counters.http.refused` sums.
 
 **Compatibility contract.** New fields may be added; existing fields must not
 change meaning or units. Figures that may change with the implementation live
@@ -199,11 +203,13 @@ Top-level blocks: `process`, `ruleset`, `counters`, `latency`, `upstreams`,
   "listeners": {
     "http":  { "connections": 5120, "requests": 5333, "blocked": 918,
                "refused_claim": 2, "refused_destination": 1, "resolve_failures": 4,
-               "upstream_failures": 6, "upstream_cert_failures": 0, "non_http": 3,
+               "upstream_failures": 6, "upstream_cert_failures": 0,
+               "client_cert_rejections": 0, "non_http": 3,
                "non_tls": 0, "hello_timeouts": 0, "dropped_events": 0 },
     "https": { "connections": 2210, "requests": 2402, "blocked": 131,
                "refused_claim": 0, "refused_destination": 0, "resolve_failures": 2,
-               "upstream_failures": 1, "upstream_cert_failures": 1, "non_http": 0,
+               "upstream_failures": 1, "upstream_cert_failures": 1,
+               "client_cert_rejections": 3, "non_http": 0,
                "non_tls": 4, "hello_timeouts": 87, "dropped_events": 0 }
   },
   "latency": {
@@ -1176,17 +1182,29 @@ TLS session of a client listed in the Interception Document. It is shaped exactl
 like an `http` item — `domain`, `method`, `path`, `resource_type`, `status`
 and `bytes` all filled, the URL judged as `https://…` — and `bytes` means the
 same thing as for `http`: the upstream's declared `Content-Length`, `0` when
-the body length is unknown (chunked) or the request was blocked. Two statuses
-are synthesized by FastAdHunter rather than relayed: **`526`** — the origin's
+the body length is unknown (chunked) or the request was blocked. Three statuses
+are synthesized by FastAdHunter rather than relayed: **`525`** — the client
+rejected the certificate we presented, saying so with a TLS alert of
+`bad_certificate` (0x2a), `certificate_unknown` (0x2e) or `access_denied`
+(0x31); **`526`** — the origin's
 certificate failed verification, so nothing was fetched and the client was
 closed (or, on a reconnect inside a session, answered 526); **`421`** — the
 request's `Host`/`:authority` is not the SNI the session was verified for, or
 names a port other than the origin port; `domain` is the name the client
-claimed. An intercepted session that ends
-before any request (upstream unreachable, no CA to mint from, the client
-rejected our certificate) emits one `https` item with empty `method`/`path`,
+claimed.
+
+`unknown_ca` (0x30) is **not** a 525: it says the client could not build a
+trusted chain, not that it refused our identity. Neither is any other alert,
+transport error or deadline — all stay `0`. The status is also best-effort: a
+client that rejects us by closing the connection instead of alerting carries
+nothing to classify, so it is `0` and appears nowhere as a rejection.
+
+An intercepted session that ends
+before any request (upstream unreachable, no CA to mint from, an unclassified
+handshake failure) emits one `https` item with empty `method`/`path`,
 `status 0` and `bytes 0` — the connection-level shape `https-sni` uses —
-so a listed device whose failures never reach HTTP still shows up. An
+so a listed device whose failures never reach HTTP still shows up; a `525`
+carries that same connection-level shape. An
 intercepted session emits no `https-sni` item.
 
 One exception (p2.5-10): `endpoint` is **present only** on a DNS item that an

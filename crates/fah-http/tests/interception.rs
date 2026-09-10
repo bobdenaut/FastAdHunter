@@ -33,9 +33,13 @@ use tokio::sync::{mpsc, Notify};
 use tokio_rustls::client::TlsStream;
 use tokio_rustls::{TlsAcceptor, TlsConnector};
 
-use fah_http::{Interception, Proxy, ProxyCounters, Server, TlsProxy, TlsServer};
+use fah_http::{Interception, Proxy, ProxyCounters, ProxyStats, Server, TlsProxy, TlsServer};
 use fah_model::InterceptionDocument;
 use fah_rules::interception::{Active, InterceptionState};
+
+mod common;
+
+use common::{client_hello, provider, rejecting_connector, untrusting_connector};
 
 const ORIGIN_NAME: &str = "origin.test";
 const PAGE_BYTES: usize = 200 * 1024;
@@ -66,10 +70,6 @@ fn rules_with(lines: &str) -> Arc<dyn fah_http::Ruleset> {
     let mut builder = MatcherBuilder::new();
     builder.add_parsed_list("test-list", &parsed);
     Arc::new(FixedRules(Arc::new(builder.build())))
-}
-
-fn provider() -> Arc<rustls::crypto::CryptoProvider> {
-    Arc::new(rustls::crypto::aws_lc_rs::default_provider())
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -2303,5 +2303,203 @@ async fn a_failed_handshake_on_a_domain_returns_the_permit_and_the_gauge() {
         1,
         "the failed handshake and the served session never overlapped"
     );
+    harness.shutdown();
+}
+
+struct Refusal {
+    harness: Harness,
+    before: Arc<Active>,
+    event: fah_model::RequestEvent,
+    counters: ProxyStats,
+}
+
+async fn refused_leaf(connector: TlsConnector) -> Refusal {
+    let ca = origin_ca();
+    let (cert, key) = leaf_signed_by(&ca);
+    let origin = origin(Proto::H1, cert, key).await;
+    let (tx, mut rx) = mpsc::channel(16);
+    let harness = harness(
+        origin.addr,
+        Setup {
+            events: Some(tx),
+            ..Setup::intercepting(ca.root.clone())
+        },
+    )
+    .await;
+    let before = harness.state.current();
+
+    let outcome = tls_to_name(harness.addr, &connector, ORIGIN_NAME).await;
+    assert!(
+        outcome.is_err(),
+        "a client that refuses our leaf cannot complete the handshake"
+    );
+
+    let event = https_event(next_event(&mut rx).await);
+    assert!(
+        matches!(rx.try_recv(), Err(mpsc::error::TryRecvError::Empty)),
+        "an intercepted session emits the https event alone, never an https-sni one"
+    );
+    assert_eq!(event.request.host, ORIGIN_NAME);
+    assert_eq!(event.request.client_ip, IpAddr::V4(Ipv4Addr::LOCALHOST));
+    assert_eq!(event.request.method, "");
+    assert_eq!(event.request.path, "");
+    assert_eq!(event.bytes, 0);
+    assert_eq!(
+        harness.store.leaf_cache_stats().minted_total,
+        1,
+        "the leaf is minted before the accept the client refuses"
+    );
+    assert_eq!(origin.connections.load(Ordering::Relaxed), 1);
+    assert_eq!(origin.requests.load(Ordering::Relaxed), 0);
+    let counters = harness.counters.snapshot();
+
+    Refusal {
+        harness,
+        before,
+        event,
+        counters,
+    }
+}
+
+fn pinning_client(versions: &[&'static rustls::SupportedProtocolVersion]) -> TlsConnector {
+    rejecting_connector(
+        rustls::CertificateError::ApplicationVerificationFailure,
+        versions,
+    )
+}
+
+#[tokio::test]
+async fn a_client_refusing_our_leaf_emits_one_https_event_with_status_525() {
+    let refusal = refused_leaf(pinning_client(rustls::ALL_VERSIONS)).await;
+    assert_eq!(refusal.event.status, 525);
+    assert_eq!(refusal.counters.client_cert_rejections, 1);
+    assert_eq!(refusal.counters.upstream_cert_failures, 0);
+    refusal.harness.shutdown();
+}
+
+#[tokio::test]
+async fn a_name_rejection_is_also_525() {
+    let refusal = refused_leaf(rejecting_connector(
+        rustls::CertificateError::NotValidForName,
+        rustls::ALL_VERSIONS,
+    ))
+    .await;
+    assert_eq!(refusal.event.status, 525);
+    assert_eq!(refusal.counters.client_cert_rejections, 1);
+    refusal.harness.shutdown();
+}
+
+#[tokio::test]
+async fn a_tls12_rejection_is_525() {
+    let refusal = refused_leaf(pinning_client(&[&rustls::version::TLS12])).await;
+    assert_eq!(refusal.event.status, 525);
+    assert_eq!(refusal.counters.client_cert_rejections, 1);
+    refusal.harness.shutdown();
+}
+
+#[tokio::test]
+async fn an_untrusting_client_stays_on_status_0_and_is_not_counted() {
+    let refusal = refused_leaf(untrusting_connector()).await;
+    assert_eq!(
+        refusal.event.status, 0,
+        "UnknownCA is a trust diagnostic, never a rejection"
+    );
+    assert_eq!(refusal.counters.client_cert_rejections, 0);
+    refusal.harness.shutdown();
+}
+
+#[tokio::test]
+async fn an_expired_verdict_is_an_intentional_fallback_to_0() {
+    let refusal = refused_leaf(rejecting_connector(
+        rustls::CertificateError::Expired,
+        rustls::ALL_VERSIONS,
+    ))
+    .await;
+    assert_eq!(
+        refusal.event.status, 0,
+        "a real alert outside the classified set falls back rather than being classified"
+    );
+    assert_eq!(refusal.counters.client_cert_rejections, 0);
+    refusal.harness.shutdown();
+}
+
+#[tokio::test]
+async fn a_rejection_never_touches_the_interception_state() {
+    let refusal = refused_leaf(pinning_client(rustls::ALL_VERSIONS)).await;
+    assert_eq!(refusal.event.status, 525);
+    assert!(
+        Arc::ptr_eq(&refusal.before, &refusal.harness.state.current()),
+        "detection observes; nothing on the accept arm may publish a document"
+    );
+    refusal.harness.shutdown();
+}
+
+#[tokio::test]
+async fn a_client_that_closes_after_the_hello_stays_on_status_0() {
+    use tokio::io::AsyncWriteExt;
+
+    let ca = origin_ca();
+    let (cert, key) = leaf_signed_by(&ca);
+    let origin = origin(Proto::H1, cert, key).await;
+    let (tx, mut rx) = mpsc::channel(16);
+    let harness = harness(
+        origin.addr,
+        Setup {
+            events: Some(tx),
+            ..Setup::intercepting(ca.root.clone())
+        },
+    )
+    .await;
+
+    let mut tcp = TcpStream::connect(harness.addr).await.unwrap();
+    tcp.write_all(&client_hello(ORIGIN_NAME)).await.unwrap();
+    tcp.shutdown().await.unwrap();
+
+    let event = https_event(next_event(&mut rx).await);
+    assert_eq!(event.request.host, ORIGIN_NAME);
+    assert_eq!(
+        event.status, 0,
+        "a close carries no alert, so there is nothing to classify"
+    );
+    let counters = harness.counters.snapshot();
+    assert_eq!(counters.client_cert_rejections, 0);
+    assert_eq!(
+        harness.store.leaf_cache_stats().minted_total,
+        1,
+        "the upstream was verified and the leaf minted before the client went away"
+    );
+    drop(tcp);
+    harness.shutdown();
+}
+
+#[tokio::test]
+async fn a_rejection_returns_its_permit_as_a_normal_close_does() {
+    let ca = origin_ca();
+    let (cert, key) = leaf_signed_by(&ca);
+    let origin = origin(Proto::H1, cert, key).await;
+    let harness = harness(
+        origin.addr,
+        Setup {
+            max_connections: 1,
+            ..Setup::intercepting(ca.root.clone())
+        },
+    )
+    .await;
+    let gauge = harness.server.connections();
+
+    let refused = tls_to_name(
+        harness.addr,
+        &pinning_client(rustls::ALL_VERSIONS),
+        ORIGIN_NAME,
+    )
+    .await;
+    assert!(
+        refused.is_err(),
+        "a client that refuses our leaf cannot complete the handshake"
+    );
+    gauge_settles_at_zero(&gauge).await;
+
+    second_session_gets_the_only_permit(&harness).await;
+    assert_eq!(harness.counters.snapshot().client_cert_rejections, 1);
     harness.shutdown();
 }

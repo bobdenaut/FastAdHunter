@@ -90,6 +90,19 @@ pub(crate) fn certificate_error(err: &io::Error) -> bool {
             .is_some_and(|inner| matches!(inner, rustls::Error::InvalidCertificate(_)))
 }
 
+pub(crate) fn client_alert(err: &io::Error) -> Option<rustls::AlertDescription> {
+    if err.kind() != io::ErrorKind::InvalidData {
+        return None;
+    }
+    match err
+        .get_ref()
+        .and_then(|inner| inner.downcast_ref::<rustls::Error>())
+    {
+        Some(rustls::Error::AlertReceived(description)) => Some(*description),
+        _ => None,
+    }
+}
+
 pub(crate) struct RewindStream<S> {
     buffered: Vec<u8>,
     at: usize,
@@ -223,6 +236,51 @@ mod tests {
             io::ErrorKind::InvalidData,
             "not a rustls error"
         )));
+    }
+
+    #[test]
+    fn client_alert_matches_only_an_alert_received() {
+        let wrap = |inner: rustls::Error| io::Error::new(io::ErrorKind::InvalidData, inner);
+        assert_eq!(
+            client_alert(&wrap(rustls::Error::AlertReceived(
+                rustls::AlertDescription::AccessDenied
+            ))),
+            Some(rustls::AlertDescription::AccessDenied)
+        );
+        assert_eq!(
+            client_alert(&wrap(rustls::Error::AlertReceived(
+                rustls::AlertDescription::UnknownCA
+            ))),
+            Some(rustls::AlertDescription::UnknownCA)
+        );
+        assert_eq!(
+            client_alert(&wrap(rustls::Error::InvalidCertificate(
+                rustls::CertificateError::UnknownIssuer
+            ))),
+            None
+        );
+        assert_eq!(
+            client_alert(&wrap(rustls::Error::NoApplicationProtocol)),
+            None
+        );
+        assert_eq!(
+            client_alert(&io::Error::from(io::ErrorKind::UnexpectedEof)),
+            None
+        );
+        assert_eq!(
+            client_alert(&io::Error::new(
+                io::ErrorKind::InvalidData,
+                "not a rustls error"
+            )),
+            None
+        );
+        assert_eq!(
+            client_alert(&io::Error::new(
+                io::ErrorKind::ConnectionReset,
+                rustls::Error::AlertReceived(rustls::AlertDescription::BadCertificate)
+            )),
+            None
+        );
     }
 
     #[tokio::test]

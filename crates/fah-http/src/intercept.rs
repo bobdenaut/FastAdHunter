@@ -16,7 +16,7 @@ use hyper::service::service_fn;
 use hyper::{Request, Response, StatusCode, Uri, Version};
 use hyper_util::rt::{TokioExecutor, TokioIo, TokioTimer};
 use hyper_util::server::conn::auto;
-use rustls::{ClientConfig, ServerConfig};
+use rustls::{AlertDescription, ClientConfig, ServerConfig};
 use tokio::net::TcpStream;
 use tokio::sync::Mutex;
 use tokio_rustls::client::TlsStream;
@@ -29,9 +29,12 @@ use crate::proxy::{
     append_via, emit, judge, publish, refuse, strip_hop_by_hop, to_client_response, Judged,
     ProxyBody,
 };
-use crate::tls::{certificate_error, connect_verified_upstream, negotiated, Alpn, RewindStream};
+use crate::tls::{
+    certificate_error, client_alert, connect_verified_upstream, negotiated, Alpn, RewindStream,
+};
 
 const SCHEME: &str = "https";
+const CLIENT_CERT_REJECTED: u16 = 525;
 const UPSTREAM_CERT_FAILURE: u16 = 526;
 const H2_STREAM_WINDOW: u32 = 64 * 1024;
 const H2_MAX_STREAMS: u32 = 64;
@@ -41,6 +44,15 @@ const H1_MAX_BUF: usize = 128 * 1024;
 
 fn upstream_cert_failure_status() -> StatusCode {
     StatusCode::from_u16(UPSTREAM_CERT_FAILURE).unwrap_or(StatusCode::BAD_GATEWAY)
+}
+
+fn rejection_status(alert: AlertDescription) -> Option<u16> {
+    match alert {
+        AlertDescription::BadCertificate
+        | AlertDescription::CertificateUnknown
+        | AlertDescription::AccessDenied => Some(CLIENT_CERT_REJECTED),
+        _ => None,
+    }
 }
 
 pub struct Interception {
@@ -136,8 +148,19 @@ impl TlsProxy {
         let tls = match tokio::time::timeout(self.hello_timeout, accept).await {
             Ok(Ok(tls)) => tls,
             Ok(Err(err)) => {
-                debug!(%peer, %host, error = %err, "the client did not complete our handshake");
-                self.emit_session(&host, &session, 0);
+                match client_alert(&err).and_then(|alert| Some((alert, rejection_status(alert)?))) {
+                    Some((alert, status)) => {
+                        self.counters
+                            .client_cert_rejections
+                            .fetch_add(1, Ordering::Relaxed);
+                        debug!(%peer, %host, ?alert, "the client rejected our certificate");
+                        self.emit_session(&host, &session, status);
+                    }
+                    None => {
+                        debug!(%peer, %host, error = %err, "the client did not complete our handshake");
+                        self.emit_session(&host, &session, 0);
+                    }
+                }
                 return;
             }
             Err(_) => {
@@ -520,5 +543,57 @@ mod tests {
     fn host_comparison_ignores_case_and_a_trailing_dot() {
         assert!(same_host("Example.COM.", "example.com"));
         assert!(!same_host("cdn.example.com", "example.com"));
+    }
+
+    #[test]
+    fn rejection_status_classifies_exactly_three_alerts() {
+        const REJECTED: Option<u16> = Some(CLIENT_CERT_REJECTED);
+        let table = [
+            (AlertDescription::CloseNotify, None),
+            (AlertDescription::UnexpectedMessage, None),
+            (AlertDescription::BadRecordMac, None),
+            (AlertDescription::DecryptionFailed, None),
+            (AlertDescription::RecordOverflow, None),
+            (AlertDescription::DecompressionFailure, None),
+            (AlertDescription::HandshakeFailure, None),
+            (AlertDescription::NoCertificate, None),
+            (AlertDescription::BadCertificate, REJECTED),
+            (AlertDescription::UnsupportedCertificate, None),
+            (AlertDescription::CertificateRevoked, None),
+            (AlertDescription::CertificateExpired, None),
+            (AlertDescription::CertificateUnknown, REJECTED),
+            (AlertDescription::IllegalParameter, None),
+            (AlertDescription::UnknownCA, None),
+            (AlertDescription::AccessDenied, REJECTED),
+            (AlertDescription::DecodeError, None),
+            (AlertDescription::DecryptError, None),
+            (AlertDescription::ExportRestriction, None),
+            (AlertDescription::ProtocolVersion, None),
+            (AlertDescription::InsufficientSecurity, None),
+            (AlertDescription::InternalError, None),
+            (AlertDescription::InappropriateFallback, None),
+            (AlertDescription::UserCanceled, None),
+            (AlertDescription::NoRenegotiation, None),
+            (AlertDescription::MissingExtension, None),
+            (AlertDescription::UnsupportedExtension, None),
+            (AlertDescription::CertificateUnobtainable, None),
+            (AlertDescription::UnrecognisedName, None),
+            (AlertDescription::BadCertificateStatusResponse, None),
+            (AlertDescription::BadCertificateHashValue, None),
+            (AlertDescription::UnknownPSKIdentity, None),
+            (AlertDescription::CertificateRequired, None),
+            (AlertDescription::NoApplicationProtocol, None),
+            (AlertDescription::EncryptedClientHelloRequired, None),
+            (AlertDescription::Unknown(0xff), None),
+        ];
+        for (alert, expected) in table {
+            assert_eq!(rejection_status(alert), expected, "{alert:?}");
+        }
+    }
+
+    #[test]
+    fn the_private_codes_are_distinct() {
+        assert_ne!(CLIENT_CERT_REJECTED, UPSTREAM_CERT_FAILURE);
+        assert_eq!((CLIENT_CERT_REJECTED, UPSTREAM_CERT_FAILURE), (525, 526));
     }
 }

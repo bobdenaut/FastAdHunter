@@ -296,6 +296,14 @@ exactly the failure worth finding.
     reconnect inside a session repeats the same verification, or resumes the
     TLS session the origin issued a ticket for, which is bound to that
     verification.
+  - **A refused leaf is closed, not worked around.** A client that answers our
+    ServerHello with a certificate alert ends the handshake there: nothing is
+    decrypted, nothing is forwarded, the connection closes. The refusal is
+    surfaced as an `https` event with `status 525` and counted in
+    `client_cert_rejections` (CONTEXT.md §Client Certificate Rejection) — and
+    that is all it does. Detection never adds an Exclusion; only an
+    authenticated `PUT /api/v1/interception` can
+    ([ADR-0008](docs/decisions/0008-live-interception-and-client-certificate-rejection.md)).
   - **One name per session.** A request whose `Host`/`:authority` is not the
     verified SNI is refused with `421`; nothing rides a session verified for
     another name.
