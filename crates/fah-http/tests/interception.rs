@@ -2398,6 +2398,20 @@ async fn a_tls12_rejection_is_525() {
 }
 
 #[tokio::test]
+async fn an_unspecified_rejection_is_also_525() {
+    let refusal = refused_leaf(rejecting_connector(
+        rustls::CertificateError::Other(rustls::OtherError(Arc::new(io::Error::other(
+            "unacceptable",
+        )))),
+        rustls::ALL_VERSIONS,
+    ))
+    .await;
+    assert_eq!(refusal.event.status, 525);
+    assert_eq!(refusal.counters.client_cert_rejections, 1);
+    refusal.harness.shutdown();
+}
+
+#[tokio::test]
 async fn an_untrusting_client_stays_on_status_0_and_is_not_counted() {
     let refusal = refused_leaf(untrusting_connector()).await;
     assert_eq!(
@@ -2468,6 +2482,7 @@ async fn a_client_that_closes_after_the_hello_stays_on_status_0() {
         1,
         "the upstream was verified and the leaf minted before the client went away"
     );
+    assert_eq!(origin.connections.load(Ordering::Relaxed), 1);
     drop(tcp);
     harness.shutdown();
 }

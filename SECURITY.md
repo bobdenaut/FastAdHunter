@@ -297,7 +297,7 @@ exactly the failure worth finding.
     TLS session the origin issued a ticket for, which is bound to that
     verification.
   - **A refused leaf is closed, not worked around.** A client that answers our
-    ServerHello with a certificate alert ends the handshake there: nothing is
+    certificate with a TLS alert ends the handshake there: nothing is
     decrypted, nothing is forwarded, the connection closes. The refusal is
     surfaced as an `https` event with `status 525` and counted in
     `client_cert_rejections` (CONTEXT.md §Client Certificate Rejection) — and

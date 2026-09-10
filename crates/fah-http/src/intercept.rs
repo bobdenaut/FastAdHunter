@@ -148,7 +148,9 @@ impl TlsProxy {
         let tls = match tokio::time::timeout(self.hello_timeout, accept).await {
             Ok(Ok(tls)) => tls,
             Ok(Err(err)) => {
-                match client_alert(&err).and_then(|alert| Some((alert, rejection_status(alert)?))) {
+                match client_alert(&err)
+                    .and_then(|alert| rejection_status(alert).map(|status| (alert, status)))
+                {
                     Some((alert, status)) => {
                         self.counters
                             .client_cert_rejections

@@ -77,46 +77,23 @@ pub fn rejecting_connector(
     TlsConnector::from(Arc::new(config))
 }
 
-pub fn untrusting_connector() -> TlsConnector {
+fn untrusting_config() -> Arc<rustls::ClientConfig> {
     let config = rustls::ClientConfig::builder_with_provider(provider())
         .with_safe_default_protocol_versions()
         .unwrap()
         .with_root_certificates(rustls::RootCertStore::empty())
         .with_no_client_auth();
-    TlsConnector::from(Arc::new(config))
+    Arc::new(config)
+}
+
+pub fn untrusting_connector() -> TlsConnector {
+    TlsConnector::from(untrusting_config())
 }
 
 pub fn client_hello(host: &str) -> Vec<u8> {
-    let mut entry = vec![0u8];
-    entry.extend_from_slice(&(host.len() as u16).to_be_bytes());
-    entry.extend_from_slice(host.as_bytes());
-
-    let mut sni = Vec::new();
-    sni.extend_from_slice(&(entry.len() as u16).to_be_bytes());
-    sni.extend_from_slice(&entry);
-
-    let mut extensions = Vec::new();
-    extensions.extend_from_slice(&0u16.to_be_bytes());
-    extensions.extend_from_slice(&(sni.len() as u16).to_be_bytes());
-    extensions.extend_from_slice(&sni);
-
-    let mut body = Vec::new();
-    body.extend_from_slice(&[0x03, 0x03]);
-    body.extend_from_slice(&[0x42; 32]);
-    body.push(0);
-    body.extend_from_slice(&2u16.to_be_bytes());
-    body.extend_from_slice(&[0x13, 0x01]);
-    body.push(1);
-    body.push(0);
-    body.extend_from_slice(&(extensions.len() as u16).to_be_bytes());
-    body.extend_from_slice(&extensions);
-
-    let mut handshake = vec![0x01u8];
-    handshake.extend_from_slice(&(body.len() as u32).to_be_bytes()[1..]);
-    handshake.extend_from_slice(&body);
-
-    let mut record = vec![0x16u8, 0x03, 0x01];
-    record.extend_from_slice(&(handshake.len() as u16).to_be_bytes());
-    record.extend_from_slice(&handshake);
-    record
+    let name = ServerName::try_from(host.to_string()).unwrap();
+    let mut client = rustls::ClientConnection::new(untrusting_config(), name).unwrap();
+    let mut hello = Vec::new();
+    client.write_tls(&mut hello).unwrap();
+    hello
 }
