@@ -365,10 +365,48 @@ describe('the card', () => {
     const dom = await mountCard({ mode: 'dns+http' });
     expect(dom.textContent).toContain('runs no HTTPS listener');
     expect(dom.textContent).toContain('dns+http');
+    // Beside the status line, not in its place: the operator listing the
+    // first client before switching modes still sees what is unsaved.
+    expect(dom.textContent).toContain('No unsaved changes.');
+    await type(editors(dom)[0] as HTMLTextAreaElement, '10.0.0.1');
+    expect(dom.textContent).toContain('Unsaved changes');
+    expect(dom.textContent).toContain('runs no HTTPS listener');
   });
 
   it('says nothing of the sort once the mode has one', async () => {
     const dom = await mountCard({ mode: 'dns+http+https' });
     expect(dom.textContent).not.toContain('runs no HTTPS listener');
+  });
+
+  it('states a rejection it cannot place rather than showing nothing', async () => {
+    // An index no sent line answers to is a contract drift the server does
+    // not produce today; it must still read as a failed save, in the API's
+    // own words, not as a save that looks like nothing happened.
+    const dom = await mountCard({
+      document: { clients: [], exclude_domains: [] },
+      put: {
+        status: 422,
+        body: {
+          error: {
+            code: 'validation_failed',
+            message: 'clients[7]: "10.0.0.300" is not an IP address or CIDR block',
+            details: {
+              reason: 'invalid_entry',
+              list: 'clients',
+              index: 7,
+              entry: '10.0.0.300',
+            },
+          },
+        },
+      },
+    });
+    await type(editors(dom)[0] as HTMLTextAreaElement, '10.0.0.1');
+    await press(dom, 'Save document');
+
+    expect(callouts(dom)).toEqual([]);
+    expect(dom.textContent).toContain(
+      'clients[7]: "10.0.0.300" is not an IP address or CIDR block',
+    );
+    expect(dom.textContent).toContain('The stored document is unchanged');
   });
 });

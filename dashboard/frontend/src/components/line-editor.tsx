@@ -66,7 +66,8 @@ export function LineEditor({
   /** One per reported bad line. Empty while nothing has been rejected. */
   anchors: readonly EditorAnchor[];
   disabled: boolean;
-  textareaRef: RefObject<HTMLTextAreaElement>;
+  /** Optional: a caller that never reaches into the box passes nothing. */
+  textareaRef?: RefObject<HTMLTextAreaElement>;
   label: string;
 }) {
   const [scrollTop, setScrollTop] = useState(0);
@@ -108,7 +109,7 @@ export function LineEditor({
       </div>
 
       <textarea
-        ref={textareaRef}
+        {...(textareaRef === undefined ? {} : { ref: textareaRef })}
         class="editor-area mono"
         aria-label={label}
         spellcheck={false}

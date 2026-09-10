@@ -46,3 +46,7 @@ docs/code-review/**/smoke-*/work/
 # objects, regenerable in seconds; origin.key is the origin's private key.
 docs/code-review/**/campaign2/origin-root/
 docs/code-review/**/campaign2/origin.key
+
+# A vitest run started from the repo root instead of dashboard/frontend drops
+# its cache at ./node_modules/.vite/vitest/. Never tracked, at any depth.
+node_modules/

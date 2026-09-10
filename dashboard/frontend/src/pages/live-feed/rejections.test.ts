@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { InterceptionDocument, QueryEvent } from '../../api/types';
 import {
+  exclusionsOf,
   groupRejections,
   isExcluded,
   isRejection,
@@ -87,6 +88,21 @@ describe('grouping', () => {
     ]);
   });
 
+  it('orders by instant, not by string, inside one second', () => {
+    // The API trims the fraction: `…:00Z`, `…:00.25Z` and `…:00.5Z` are one
+    // second's worth of `ts` values, and lexically `Z` sorts above `.`.
+    const groups = groupRejections([
+      event({ ts: '2026-09-10T10:00:00Z', domain: 'a.example' }),
+      event({ ts: '2026-09-10T10:00:00.25Z', domain: 'b.example' }),
+      event({ ts: '2026-09-10T10:00:00.5Z', domain: 'c.example' }),
+    ]);
+    expect(groups.map((group) => group.host)).toEqual([
+      'c.example',
+      'b.example',
+      'a.example',
+    ]);
+  });
+
   it('keeps a client name once any row carries one', () => {
     const groups = groupRejections([
       event({ ts: '2026-09-10T10:00:00.000Z', client_name: 'phone' }),
@@ -108,14 +124,14 @@ describe('the exclusion check', () => {
   });
 
   it('matches exactly and under a parent, never a sibling', () => {
-    const list = ['bank.ro', 'Api.Example.'];
+    const list = exclusionsOf(['bank.ro', 'Api.Example.']);
     expect(isExcluded('bank.ro', list)).toBe(true);
     expect(isExcluded('m.bank.ro', list)).toBe(true);
     expect(isExcluded('a.b.bank.ro', list)).toBe(true);
     expect(isExcluded('api.example', list)).toBe(true);
     expect(isExcluded('notbank.ro', list)).toBe(false);
     expect(isExcluded('ro', list)).toBe(false);
-    expect(isExcluded('bank.ro', [])).toBe(false);
+    expect(isExcluded('bank.ro', exclusionsOf([]))).toBe(false);
   });
 });
 

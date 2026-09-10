@@ -952,38 +952,133 @@ describe('the rejection view', () => {
     feed.release();
   });
 
-  it('renders a duplicate rejection and leaves the document alone', async () => {
+  it('judges a duplicate rejection against the fresh document it is about', async () => {
+    // Another tab excluded the host after this view opened. The read before
+    // the write returns a document that already covers it, the `PUT` earns a
+    // `duplicate`, and the fresh copy — not the mounted one — is what the row
+    // is judged against: it reads "excluded", since a button could only fail
+    // the same way again.
+    let reads = 0;
     const feed = await open({
-      answer: answered(
-        { clients: [], exclude_domains: ['bank.ro'] },
-        {
-          status: 422,
-          body: {
-            error: {
-              code: 'validation_failed',
-              message: 'exclude_domains[1] duplicates entry 0',
-              details: {
-                reason: 'duplicate',
-                list: 'exclude_domains',
-                index: 1,
-                entry: 'api.bank.example',
-                duplicate_of: 0,
+      answer: (url, init) => {
+        if (url !== '/api/v1/interception') {
+          return Promise.reject(new Error(`unexpected ${url}`));
+        }
+        if (init?.method === 'PUT') {
+          return Promise.resolve(
+            reply(422, {
+              error: {
+                code: 'validation_failed',
+                message: 'exclude_domains[1] duplicates entry 0',
+                details: {
+                  reason: 'duplicate',
+                  list: 'exclude_domains',
+                  index: 1,
+                  entry: 'api.bank.example',
+                  duplicate_of: 0,
+                },
               },
-            },
-          },
-        },
-      ),
+            }),
+          );
+        }
+        reads += 1;
+        return Promise.resolve(
+          reply(200, {
+            clients: [],
+            exclude_domains: reads === 1 ? [] : ['api.bank.example'],
+          }),
+        );
+      },
     });
     feed.deliver(rejection({ domain: 'api.bank.example' }));
     feed.click('Exclude');
     feed.click('Exclude this host');
     await settle();
 
-    expect(groupRows(feed)[0]).toContain('Already excluded');
-    // One attempt, and the row still offers the button — nothing was stored,
-    // so the page's copy of the document is still the right one.
     expect(feed.log().filter((entry) => entry.startsWith('PUT'))).toHaveLength(1);
-    expect(groupRows(feed)[0]).toContain('Exclude');
+    expect(groupRows(feed)[0]).toContain('excluded');
+    expect(groupRows(feed)[0]).not.toContain('Already excluded');
+    expect(feed.dom.querySelectorAll('.feed-card tbody button')).toHaveLength(0);
+    feed.release();
+  });
+
+  it('offers one exclusion at a time, every other row waiting on the write', async () => {
+    // Two read-append-PUT sequences in flight would carry the same base, and
+    // the later `PUT` would drop the earlier host. So while one is in flight
+    // no other row is offered — and once it lands, the rest are again.
+    let land = (): void => {};
+    const feed = await open({
+      answer: (_url, init) => {
+        if (init?.method === 'PUT') {
+          const sent = JSON.parse(String(init.body)) as {
+            clients: string[];
+            exclude_domains: string[];
+          };
+          return new Promise<Response>((resolve) => {
+            land = () => resolve(reply(200, sent));
+          });
+        }
+        return Promise.resolve(
+          reply(200, { clients: [], exclude_domains: [] }),
+        );
+      },
+    });
+    feed.deliver(
+      rejection({ domain: 'a.example', ts: '2026-09-10T10:00:01.000Z' }),
+      rejection({ domain: 'b.example', ts: '2026-09-10T10:00:00.000Z' }),
+    );
+    const buttons = () => [
+      ...feed.dom.querySelectorAll<HTMLButtonElement>('.feed-card tbody button'),
+    ];
+    expect(buttons().map((button) => button.disabled)).toEqual([false, false]);
+
+    feed.click('Exclude');
+    feed.click('Exclude this host');
+    await settle();
+    expect(buttons().map((button) => button.disabled)).toEqual([true, true]);
+
+    await act(async () => {
+      land();
+      await Promise.resolve();
+    });
+    await settle();
+    expect(groupRows(feed)[0]).toContain('excluded');
+    expect(buttons().map((button) => button.disabled)).toEqual([false]);
+    feed.release();
+  });
+
+  it('keeps the groups when the document cannot be read, and retries on request', async () => {
+    // The groups are the ring's and need no document; only the action does. A
+    // store hiccup must not blank the surface the operator came for.
+    let reads = 0;
+    const feed = await open({
+      answer: (_url, init) => {
+        if (init?.method === 'PUT') {
+          return Promise.reject(new Error('no PUT expected'));
+        }
+        reads += 1;
+        return Promise.resolve(
+          reads === 1
+            ? reply(503, {
+                error: {
+                  code: 'unavailable',
+                  message: 'the certificate store did not open',
+                },
+              })
+            : reply(200, { clients: [], exclude_domains: [] }),
+        );
+      },
+    });
+    feed.deliver(rejection({ domain: 'api.bank.example' }));
+    expect(groupRows(feed)).toHaveLength(1);
+    expect(feed.dom.textContent).toContain('the certificate store did not open');
+    expect(feed.button('Exclude').disabled).toBe(true);
+
+    feed.click('Retry');
+    await settle();
+    expect(feed.dom.textContent).not.toContain('the certificate store did not open');
+    expect(feed.button('Exclude').disabled).toBe(false);
+    expect(feed.requests()).toBe(2);
     feed.release();
   });
 

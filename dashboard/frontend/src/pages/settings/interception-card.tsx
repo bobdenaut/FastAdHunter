@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'preact/hooks';
+import { useCallback, useEffect, useState } from 'preact/hooks';
 import { ApiError } from '../../api/core';
 import {
   documentErrorDetails,
@@ -57,7 +57,7 @@ const NO_ANCHORS: Anchors = { clients: [], exclude_domains: [] };
  * was admitted with.
  */
 export function InterceptionCard({ mode }: { mode: string | null }) {
-  const [document, setDocument] = useState<InterceptionDocument | null>(null);
+  const [stored, setStored] = useState<InterceptionDocument | null>(null);
   const [buffers, setBuffers] = useState<Buffers>({
     clients: '',
     exclude_domains: '',
@@ -70,11 +70,9 @@ export function InterceptionCard({ mode }: { mode: string | null }) {
    *  server would not read, a `503` or a `500`. */
   const [rejection, setRejection] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
-  const clientsRef = useRef<HTMLTextAreaElement>(null);
-  const excludeRef = useRef<HTMLTextAreaElement>(null);
 
   const adopt = useCallback((fresh: InterceptionDocument) => {
-    setDocument(fresh);
+    setStored(fresh);
     setBuffers(buffersOf(fresh));
   }, []);
 
@@ -123,8 +121,8 @@ export function InterceptionCard({ mode }: { mode: string | null }) {
       clients: sent.clients.map((entry) => entry.text),
       exclude_domains: sent.exclude_domains.map((entry) => entry.text),
     })
-      .then((stored) => {
-        adopt(stored);
+      .then((response) => {
+        adopt(response);
         setSaved(true);
       })
       .catch((cause: unknown) => {
@@ -142,15 +140,15 @@ export function InterceptionCard({ mode }: { mode: string | null }) {
   };
 
   const reset = () => {
-    if (document === null) return;
-    setBuffers(buffersOf(document));
+    if (stored === null) return;
+    setBuffers(buffersOf(stored));
     clearRejection();
   };
 
   const pristine =
-    document !== null &&
-    buffers.clients === document.clients.join('\n') &&
-    buffers.exclude_domains === document.exclude_domains.join('\n');
+    stored !== null &&
+    buffers.clients === stored.clients.join('\n') &&
+    buffers.exclude_domains === stored.exclude_domains.join('\n');
   const anchored =
     anchors.clients.length > 0 || anchors.exclude_domains.length > 0;
 
@@ -191,8 +189,7 @@ export function InterceptionCard({ mode }: { mode: string | null }) {
                   value={buffers[list]}
                   onInput={(next) => edit(list, next)}
                   anchors={anchors[list]}
-                  disabled={saving || document === null}
-                  textareaRef={list === 'clients' ? clientsRef : excludeRef}
+                  disabled={saving || stored === null}
                   label={LABELS[list]}
                 />
               </div>
@@ -214,16 +211,18 @@ export function InterceptionCard({ mode }: { mode: string | null }) {
 
           {saveError !== null && <ErrorState error={saveError} />}
 
+          {inert && (
+            <p class="note">
+              <span class="mono">engine.mode</span> is{' '}
+              <span class="mono">{mode}</span>, which runs no HTTPS listener.
+              The document is stored and validated all the same, and takes
+              effect at the first boot of a mode that has one.
+            </p>
+          )}
+
           <div class="set-bar">
             <div class="note">
-              {inert ? (
-                <>
-                  <span class="mono">engine.mode</span> is{' '}
-                  <span class="mono">{mode}</span>, which runs no HTTPS
-                  listener. The document is stored and validated all the same,
-                  and takes effect at the first boot of a mode that has one.
-                </>
-              ) : saved ? (
+              {saved ? (
                 <span role="status">Applied on the next connection.</span>
               ) : pristine ? (
                 'No unsaved changes.'
@@ -235,7 +234,7 @@ export function InterceptionCard({ mode }: { mode: string | null }) {
               <button
                 type="button"
                 class="btn g"
-                disabled={saving || pristine || document === null}
+                disabled={saving || pristine || stored === null}
                 onClick={reset}
               >
                 Reset
@@ -243,7 +242,7 @@ export function InterceptionCard({ mode }: { mode: string | null }) {
               <button
                 type="button"
                 class="btn"
-                disabled={saving || pristine || document === null}
+                disabled={saving || pristine || stored === null}
                 onClick={save}
               >
                 {saving ? 'Saving…' : 'Save document'}
@@ -256,10 +255,10 @@ export function InterceptionCard({ mode }: { mode: string | null }) {
   );
 }
 
-function buffersOf(document: InterceptionDocument): Buffers {
+function buffersOf(stored: InterceptionDocument): Buffers {
   return {
-    clients: document.clients.join('\n'),
-    exclude_domains: document.exclude_domains.join('\n'),
+    clients: stored.clients.join('\n'),
+    exclude_domains: stored.exclude_domains.join('\n'),
   };
 }
 
@@ -304,6 +303,40 @@ function anchor(
   return line === undefined ? [] : [{ line, message }];
 }
 
+interface Outcome {
+  anchors: Anchors | null;
+  message: string | null;
+  error: Error | null;
+}
+
+function stated(message: string): Outcome {
+  return { anchors: null, message, error: null };
+}
+
+/** The API's own sentence — or one of ours when what failed was never an
+ *  `ApiError`, which `documentErrorDetails` already rules out. */
+function verbatim(cause: unknown): string {
+  return cause instanceof ApiError
+    ? cause.message
+    : 'Not saved — the document was not accepted as sent.';
+}
+
+/**
+ * A rejection the server placed on entries, as bands on their lines — or, when
+ * no sent line answers to its index, as the card-level line in the server's
+ * words. The third option, an empty band list and no sentence, would leave a
+ * failed save looking like nothing happened at all.
+ */
+function placed(
+  list: DocumentList,
+  found: readonly EditorAnchor[],
+  cause: unknown,
+): Outcome {
+  return found.length > 0
+    ? { anchors: anchorsFor(list, found), message: null, error: null }
+    : stated(verbatim(cause));
+}
+
 /**
  * How a failed save is shown: anchored on the offending lines, stated as one
  * card-level line, or handed to `ErrorState` when it never reached the server.
@@ -315,21 +348,18 @@ function anchor(
 function rejectionOf(
   cause: unknown,
   sent: Record<DocumentList, readonly Entry[]>,
-): { anchors: Anchors | null; message: string | null; error: Error | null } {
+): Outcome {
   const details = documentErrorDetails(cause);
   if (details === null) {
     if (cause instanceof ApiError) {
       // A `500` is the one answer that says nothing about the document: the
       // write failed, and the contract's own words are that nothing was left
       // half-applied.
-      return {
-        anchors: null,
-        message:
-          cause.status >= 500
-            ? `${cause.message} Nothing was applied.`
-            : cause.message,
-        error: null,
-      };
+      return stated(
+        cause.status >= 500
+          ? `${cause.message} Nothing was applied.`
+          : cause.message,
+      );
     }
     return {
       anchors: null,
@@ -340,37 +370,26 @@ function rejectionOf(
 
   switch (details.reason) {
     case 'over_cap':
-      return {
-        anchors: null,
-        message: `Not saved — ${details.list} holds ${String(details.len)} entries and the cap is ${String(details.cap)}.`,
-        error: null,
-      };
+      return stated(
+        `Not saved — ${details.list} holds ${String(details.len)} entries and the cap is ${String(details.cap)}.`,
+      );
     case 'shape':
-      return {
-        anchors: null,
-        message:
-          cause instanceof ApiError
-            ? cause.message
-            : 'Not saved — the document was not accepted as sent.',
-        error: null,
-      };
+      return stated(verbatim(cause));
     case 'invalid_entry':
-      return {
-        anchors: anchorsFor(
+      return placed(
+        details.list,
+        anchor(
+          sent,
           details.list,
-          anchor(
-            sent,
-            details.list,
-            details.index,
-            `${details.entry} is not ${EXPECTED[details.list]}`,
-          ),
+          details.index,
+          `${details.entry} is not ${EXPECTED[details.list]}`,
         ),
-        message: null,
-        error: null,
-      };
+        cause,
+      );
     case 'duplicate':
-      return {
-        anchors: anchorsFor(details.list, [
+      return placed(
+        details.list,
+        [
           ...anchor(
             sent,
             details.list,
@@ -383,9 +402,8 @@ function rejectionOf(
             details.duplicate_of,
             'the earlier entry it duplicates',
           ),
-        ]),
-        message: null,
-        error: null,
-      };
+        ],
+        cause,
+      );
   }
 }

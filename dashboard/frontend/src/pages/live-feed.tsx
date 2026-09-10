@@ -165,7 +165,7 @@ export function LiveFeed(_props: PageProps) {
       />
       <main class="wrap">
         <Card
-          title="Filters"
+          title={view === 'rejections' ? 'View' : 'Filters'}
           secondary={
             view === 'rejections'
               ? 'grouped in the browser, over the rows held here'

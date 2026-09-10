@@ -12,8 +12,10 @@ import { ErrorState } from '../../components/error-state';
 import { blockNavigation } from '../../router/router';
 import { eventClock } from '../../time';
 import {
+  exclusionsOf,
   groupRejections,
   isExcluded,
+  keyOf,
   withExclusion,
   type RejectionGroup,
 } from './rejections';
@@ -42,7 +44,7 @@ export function RejectionsView({
   rows: readonly QueryEvent[];
   narrow: boolean;
 }) {
-  const [document, setDocument] = useState<InterceptionDocument | null>(null);
+  const [stored, setStored] = useState<InterceptionDocument | null>(null);
   const [loadError, setLoadError] = useState<Error | null>(null);
   /** The group awaiting confirmation, by key — never the row index, which the
    *  next flush can renumber under the open dialog. */
@@ -54,12 +56,14 @@ export function RejectionsView({
     null,
   );
   const [saveError, setSaveError] = useState<Error | null>(null);
+  /** Bumped by Retry: the mount read failed and the operator asked again. */
+  const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
     const controller = new AbortController();
     getInterception(controller.signal)
       .then((fresh) => {
-        setDocument(fresh);
+        setStored(fresh);
         setLoadError(null);
       })
       .catch((cause: unknown) => {
@@ -67,22 +71,30 @@ export function RejectionsView({
         setLoadError(cause instanceof Error ? cause : new Error(String(cause)));
       });
     return () => controller.abort();
-  }, []);
+  }, [attempt]);
 
   // Memoised on the snapshot, as `visible` is: the walk is O(rows) over at most
   // 500 held rows and runs on every flush the feed makes while this view is up.
   const groups = useMemo(() => groupRejections(rows), [rows]);
 
-  const pending = groups.find((group) => keyOf(group) === confirming) ?? null;
+  const pending =
+    groups.find((group) => keyOf(group.client, group.host) === confirming) ??
+    null;
+  // One write at a time. A second read-append-`PUT` racing the first would
+  // read the same base, and the later write would drop the earlier host — so
+  // while one is in flight no row is offered, not only the one being saved.
+  const ready = stored !== null && saving === null;
 
   /**
    * Read, append, write the whole document back — the sequence ADR-0008 fixes.
    *
    * The read is fresh rather than the mounted copy: another tab may have edited
    * the document since this view opened, and last-write-wins over a stale copy
-   * would silently drop its entries. The response is authoritative and replaces
-   * the local copy; a rejection leaves it exactly as it was, because a rejected
-   * `PUT` changed nothing on the server either.
+   * would silently drop its entries. The fresh copy is adopted before the write
+   * because it is also what a rejection describes — a `duplicate` says *this*
+   * document already covers the host, and the row must read as excluded
+   * against it. The response then replaces it; a rejected `PUT` changed nothing
+   * on the server, so the fresh copy stands.
    */
   const exclude = (host: string, key: string) => {
     setConfirming(null);
@@ -91,9 +103,12 @@ export function RejectionsView({
     setSaveError(null);
     const unblock = blockNavigation();
     getInterception()
-      .then((current) => putInterception(withExclusion(current, host)))
-      .then((stored) => {
-        setDocument(stored);
+      .then((current) => {
+        setStored(current);
+        return putInterception(withExclusion(current, host));
+      })
+      .then((response) => {
+        setStored(response);
       })
       .catch((cause: unknown) => {
         const text = excludeMessage(cause);
@@ -109,23 +124,51 @@ export function RejectionsView({
       });
   };
 
-  if (loadError !== null) return <ErrorState error={loadError} />;
+  // Normalized once per document, not per group per flush.
+  const exclusions = useMemo(
+    () => (stored === null ? null : exclusionsOf(stored.exclude_domains)),
+    [stored],
+  );
+
+  /**
+   * The groups are the ring's and need no document; only the action does. So a
+   * failed read is shown above them, with the buttons held back and a way to
+   * ask again — not in place of them.
+   */
+  const failed =
+    loadError === null ? null : (
+      <>
+        <ErrorState error={loadError} />
+        <p class="note">
+          The rows below are what the ring holds; excluding needs the document.{' '}
+          <button
+            type="button"
+            class="btn g"
+            onClick={() => setAttempt((count) => count + 1)}
+          >
+            Retry
+          </button>
+        </p>
+      </>
+    );
 
   if (groups.length === 0) {
     return (
-      <EmptyState title="No client has rejected our certificate since this page opened">
-        A row appears here when an intercepted client answers our minted leaf
-        with a rejecting alert. Nothing is retained between visits — this tab
-        holds the whole of it, and the count is what a retrying application
-        leaves behind.
-      </EmptyState>
+      <>
+        {failed}
+        <EmptyState title="No client has rejected our certificate since this page opened">
+          A row appears here when an intercepted client answers our minted leaf
+          with a rejecting alert. Nothing is retained between visits — this tab
+          holds the whole of it, and the count is what a retrying application
+          leaves behind.
+        </EmptyState>
+      </>
     );
   }
 
   const cells = (group: RejectionGroup) => {
-    const key = keyOf(group);
-    const excluded =
-      document !== null && isExcluded(group.host, document.exclude_domains);
+    const key = keyOf(group.client, group.host);
+    const excluded = exclusions !== null && isExcluded(group.host, exclusions);
     return {
       key,
       excluded,
@@ -137,6 +180,7 @@ export function RejectionsView({
 
   return (
     <>
+      {failed}
       {narrow ? null : (
         <div class="feed-scroll">
           <table class="t">
@@ -163,7 +207,7 @@ export function RejectionsView({
                         host={group.host}
                         excluded={cell.excluded}
                         busy={cell.busy}
-                        ready={document !== null}
+                        ready={ready}
                         message={cell.message}
                         onExclude={cell.action}
                       />
@@ -198,7 +242,7 @@ export function RejectionsView({
                     host={group.host}
                     excluded={cell.excluded}
                     busy={cell.busy}
-                    ready={document !== null}
+                    ready={ready}
                     message={cell.message}
                     onExclude={cell.action}
                   />
@@ -229,7 +273,7 @@ export function RejectionsView({
           title={`Exclude ${pending.host} from interception?`}
           confirmLabel="Exclude this host"
           onCancel={() => setConfirming(null)}
-          onConfirm={() => exclude(pending.host, keyOf(pending))}
+          onConfirm={() => exclude(pending.host, keyOf(pending.client, pending.host))}
         >
           <>
             <p class="note">
@@ -247,12 +291,6 @@ export function RejectionsView({
       )}
     </>
   );
-}
-
-/** Client and host, which is what a group *is*. Stable across flushes, unlike
- *  the position of a row whose neighbours keep arriving. */
-function keyOf(group: { client: string; host: string }): string {
-  return `${group.client} ${group.host}`;
 }
 
 /**
