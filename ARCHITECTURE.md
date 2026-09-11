@@ -318,7 +318,8 @@ No database. RAM plus files on the persistent volumes:
   raw copies cached in `/data` so boot never waits on the network.
 - Query log: in-RAM ring buffer + batched append-only segments on `/data`,
   pruned by age and size caps.
-- Statistics: fixed-size in-RAM aggregates, snapshotted to `/data` periodically.
+- Statistics: fixed-size in-RAM aggregates, snapshotted to `/data` periodically
+  and once more on clean shutdown (5 s bound).
 
 See [ADR-0002](docs/decisions/0002-no-embedded-database.md).
 

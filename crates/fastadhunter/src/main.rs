@@ -257,7 +257,7 @@ fn run(config: Config, config_path: &Path, data_dir: &Path) -> ExitCode {
             () = await_shutdown() => None,
             died = engine.dns.fatal() => Some(died),
         };
-        engine.shutdown();
+        engine.shutdown().await;
         Ok::<_, Box<dyn std::error::Error>>(died)
     });
 
@@ -291,6 +291,7 @@ struct Engine {
     http: Option<fah_http::Server>,
     api: fah_api::ApiServer,
     tasks: Vec<tokio::task::JoinHandle<()>>,
+    stats: Arc<fah_stats::Stats>,
 }
 
 impl Engine {
@@ -583,10 +584,11 @@ impl Engine {
             http,
             api,
             tasks,
+            stats,
         })
     }
 
-    fn shutdown(&mut self) {
+    async fn shutdown(&mut self) {
         if let Some(http) = &mut self.http {
             http.shutdown();
         }
@@ -594,6 +596,19 @@ impl Engine {
         self.api.shutdown();
         for task in &self.tasks {
             task.abort();
+        }
+        let flush = async {
+            self.stats.save_snapshot().await;
+            self.stats.flush_history(std::time::SystemTime::now()).await;
+        };
+        if tokio::time::timeout(STATS_FLUSH_TIMEOUT, flush)
+            .await
+            .is_err()
+        {
+            tracing::warn!(
+                timeout_seconds = STATS_FLUSH_TIMEOUT.as_secs(),
+                "stats flush at shutdown timed out; up to one snapshot interval of aggregates lost"
+            );
         }
     }
 }
@@ -627,6 +642,8 @@ const HTTP_ORIGIN_PORT: u16 = 80;
 const MAX_IDLE_UPSTREAMS_PER_HOST: usize = 8;
 
 const HTTP_DRAIN_TIMEOUT: Duration = Duration::from_secs(5);
+
+const STATS_FLUSH_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// Assembles the HTTP proxy from config: the injected resolver port, and the
 /// egress policy that decides where it may connect.
