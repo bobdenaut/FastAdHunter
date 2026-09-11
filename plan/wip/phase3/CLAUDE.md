@@ -23,6 +23,7 @@ validate), verification last.
 | 4 | `p3-04-tls-interception.md` | Opt-in per-client MITM feeding the Phase 2 HTTP pipeline (heavy) | Fable | DONE |
 | 5 | `p3-05-dot-doh-listeners.md` | DoT :853 + DoH listeners; Android Private DNS works | Fable | DONE |
 | 6 | `p3-06-phase3-verification.md` | TLS budgets, e2e, RB5009 dst-nat 443 + CA install walkthrough. Probe campaign 2 (post-merge `e0c6071`): `p3-06-testing-plan.md`, gated by `p3-06-smoke-plan.md` layers 0–3 on the dev box first. Campaign 1 superseded — `docs/code-review/phase3/p3-06-testing-results.md` | Fable | AWAITING SOAK |
+| 6b | `p3-06-after-interception-impl.md` | p3-06 follow-up after p3-07…p3-09: probe scripts and smoke/testing plans off the dead `https.interception` key, runbook rows for the migration on the probe and the ADR-0008 device path (525 → exclude → splice), soak watch additions. No campaign re-run, no p3-10 | Fable | WAITING |
 | 7 | `p3-07-interception-document.md` | `interception.json` + `GET`/`PUT /api/v1/interception`, atomic swap, one-boot migration (release N), `BASELINE_EXCLUSIONS` deleted — ADR-0008 §Phasing step 1 | Fable | DONE |
 | 8 | `p3-08-client-cert-rejection.md` | Accept-side alert classification: `https` event `status 525` (`ClientCertRejected`); `UnknownCA` and every unclassified failure stay `0` — ADR-0008 step 2 | Fable | DONE |
 | 9 | `p3-09-rejection-view-and-document-editor.md` | Dashboard: rejection view grouped by client and host with an exclude-exact-host action; Interception Document editor — ADR-0008 step 3 | Fable | DONE |
