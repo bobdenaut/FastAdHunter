@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useState } from 'preact/hooks';
+import { getClients } from '../../api/clients';
 import { ApiError } from '../../api/core';
 import {
   documentErrorDetails,
   getInterception,
   putInterception,
 } from '../../api/interception';
-import type { InterceptionDocument, QueryEvent } from '../../api/types';
+import type { Client, InterceptionDocument, QueryEvent } from '../../api/types';
 import { ConfirmDialog } from '../../components/confirm-dialog';
 import { EmptyState } from '../../components/empty-state';
 import { ErrorState } from '../../components/error-state';
@@ -16,9 +17,12 @@ import {
   groupRejections,
   isExcluded,
   keyOf,
+  summarizeClients,
   withExclusion,
+  type ClientSummary,
   type RejectionGroup,
 } from './rejections';
+
 
 /**
  * The hosts whose clients refused the leaf we minted for them, grouped by
@@ -58,6 +62,18 @@ export function RejectionsView({
   const [saveError, setSaveError] = useState<Error | null>(null);
   /** Bumped by Retry: the mount read failed and the operator asked again. */
   const [attempt, setAttempt] = useState(0);
+  /** The engine's per-client account (`GET /api/v1/clients`), read on mount
+   *  and again on Retry, never polled — the dashboard does not poll, and the
+   *  rows never depend on it: a failed read leaves the summary at "none". */
+  const [clients, setClients] = useState<readonly Client[]>([]);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    getClients(controller.signal)
+      .then((response) => setClients(response.items))
+      .catch(() => undefined);
+    return () => controller.abort();
+  }, [attempt]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -76,6 +92,10 @@ export function RejectionsView({
   // Memoised on the snapshot, as `visible` is: the walk is O(rows) over at most
   // 500 held rows and runs on every flush the feed makes while this view is up.
   const groups = useMemo(() => groupRejections(rows), [rows]);
+  const summaries = useMemo(
+    () => summarizeClients(groups, clients),
+    [groups, clients],
+  );
 
   const pending =
     groups.find((group) => keyOf(group.client, group.host) === confirming) ??
@@ -181,6 +201,8 @@ export function RejectionsView({
   return (
     <>
       {failed}
+      <ClientsSummary clients={summaries} />
+
       {narrow ? null : (
         <div class="feed-scroll">
           <table class="t">
@@ -260,7 +282,10 @@ export function RejectionsView({
         host, not that anything was blocked — the connection was closed and
         nothing was excluded. Excluding a host splices it for every intercepted
         client from the next connection on; an already-open session finishes
-        under the lists it was admitted with.
+        under the lists it was admitted with. The lines above are the engine's
+        per-client account, completed intercepted handshakes on record beside
+        the rejections — a client that rejects and never completes is a reason
+        to check the client, not to exclude the host.
         <span class="footnote-line">
           Only the exact host observed can be excluded from here. Covering
           everything beneath a parent name is a deliberate act, performed in the
@@ -366,4 +391,45 @@ function excludeMessage(cause: unknown): string | null {
     case 'shape':
       return 'Not saved — the API did not accept the document as sent.';
   }
+}
+
+/**
+ * One line per client in the view: rejections, hosts, and the engine's count
+ * of completed intercepted handshakes on record. Stated as what was observed,
+ * never as "the CA is installed": a completed handshake proves the client
+ * accepted our leaf at that moment, and none on record is a reason to check
+ * the client before excluding a host for everyone (p3-06-n3-alert-ab.md).
+ */
+function ClientsSummary({ clients }: { clients: readonly ClientSummary[] }) {
+  if (clients.length === 0) return null;
+  return (
+    <div class="rejection-clients">
+      {clients.map((client) => (
+        <p class="note" key={client.client}>
+          <b>{client.clientName ?? client.client}</b>{' '}
+          <span class="mono">{client.rejections}</span>{' '}
+          {client.rejections === 1 ? 'rejection' : 'rejections'} across{' '}
+          <span class="mono">{client.hosts}</span>{' '}
+          {client.hosts === 1 ? 'host' : 'hosts'}. Completed intercepted handshakes
+          on record:{' '}
+          {client.completed === null ? (
+            <>
+              <span class="mono">none</span>
+              <span class="footnote-line">
+                Nothing from this client has completed our handshake on record. Before excluding a host for every client, check this
+                client's CA: one without it refuses every host, and an exclusion
+                would not fix that. The CA is exported from{' '}
+                <span class="mono">/api/v1/certificates</span>.
+              </span>
+            </>
+          ) : (
+            <>
+              <span class="mono">{client.completed.count}</span>, last{' '}
+              <span class="mono">{eventClock(client.completed.last)}</span>
+            </>
+          )}
+        </p>
+      ))}
+    </div>
+  );
 }

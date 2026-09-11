@@ -1,4 +1,4 @@
-import type { InterceptionDocument, QueryEvent } from '../../api/types';
+import type { Client, InterceptionDocument, QueryEvent } from '../../api/types';
 
 /**
  * The rejection view's whole logic, as pure functions over the rows the feed's
@@ -11,9 +11,11 @@ import type { InterceptionDocument, QueryEvent } from '../../api/types';
  * client answered our minted leaf with a rejecting TLS alert (API.md §Events,
  * ADR-0008 step 2).
  *
- * `UnknownCA` is deliberately **not** this: it stays `status 0`, because it
- * means the CA was never installed rather than that this host refuses
- * interception, and excluding the host would be the wrong fix for it.
+ * `UnknownCA` is deliberately **not** this: it stays `status 0`. Which alert a
+ * client sends is a property of its TLS stack, not of the cause (measured
+ * 2026-09-11, p3-06-n3-alert-ab.md), so a 525 row alone does not say whether
+ * the host pins or the client never trusted the CA — `summarizeClients` below
+ * carries the evidence that can.
  */
 export const REJECTED_STATUS = 525;
 
@@ -147,4 +149,61 @@ export function withExclusion(
     clients: [...current.clients],
     exclude_domains: [...current.exclude_domains, host],
   };
+}
+
+
+/**
+ * The engine's per-client account of the terminate leg, from
+ * `GET /api/v1/clients` (`intercepted`, API.md §Clients): sessions in which the
+ * client sent a request — so it accepted the minted leaf at that moment — and
+ * its `525` events, each with the time of the last one. Kept by fah-stats
+ * since the stats started, so it outlives this page and the ring.
+ *
+ * Measured 2026-09-11 (p3-06-n3-alert-ab.md): the alert a client sends names
+ * its TLS stack, not the cause — Chromium without the CA and Spotify with it
+ * both say `certificate_unknown`. So a 525 row cannot tell a pinning
+ * application from a client that never trusted the CA; this cross-connection
+ * account is the evidence that can. It states what was observed, never
+ * whether the CA is installed: a permissive verifier completes too.
+ */
+export interface ClientSummary {
+  client: string;
+  clientName: string | null;
+  rejections: number;
+  hosts: number;
+  /** `null` when the engine has no record of this client, or none completed. */
+  completed: { count: number; last: string } | null;
+}
+
+export function summarizeClients(
+  groups: readonly RejectionGroup[],
+  clients: readonly Client[],
+): ClientSummary[] {
+  const byIp = new Map(clients.map((client) => [client.ip, client] as const));
+  const summaries = new Map<string, ClientSummary>();
+  for (const group of groups) {
+    const found = summaries.get(group.client);
+    if (found === undefined) {
+      const known = byIp.get(group.client);
+      const record = known?.intercepted;
+      const completed =
+        record !== undefined && record.completed > 0 && record.last_completed !== null
+          ? { count: record.completed, last: record.last_completed }
+          : null;
+      summaries.set(group.client, {
+        client: group.client,
+        clientName: group.clientName ?? known?.name ?? null,
+        rejections: group.count,
+        hosts: 1,
+        completed,
+      });
+      continue;
+    }
+    found.rejections += group.count;
+    found.hosts += 1;
+    if (group.clientName !== null) found.clientName = group.clientName;
+  }
+  return [...summaries.values()].sort(
+    (left, right) => right.rejections - left.rejections,
+  );
 }

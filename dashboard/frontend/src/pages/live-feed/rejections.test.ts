@@ -1,11 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import type { InterceptionDocument, QueryEvent } from '../../api/types';
+import type { Client, InterceptionDocument, QueryEvent } from '../../api/types';
 import {
   exclusionsOf,
   groupRejections,
   isExcluded,
   isRejection,
   normalizeHost,
+  summarizeClients,
   withExclusion,
 } from './rejections';
 
@@ -166,5 +167,75 @@ describe('what the exclude action sends', () => {
       'bank.ro',
       'bank.ro',
     ]);
+  });
+});
+
+describe("the engine's per-client account", () => {
+  const client = (over: Partial<Client> = {}): Client => ({
+    ip: '192.168.88.10',
+    name: null,
+    first_seen: '2026-09-10T09:00:00Z',
+    last_seen: '2026-09-10T10:00:00Z',
+    queries_24h: 0,
+    blocked_24h: 0,
+    policy: 'default',
+    intercepted: { completed: 0, rejected: 0, last_completed: null, last_rejected: null },
+    ...over,
+  });
+
+  it('summarizes per client, most rejections first, with the record or null', () => {
+    const groups = groupRejections([
+      event({ domain: 'a.example', ts: '2026-09-10T10:00:00Z' }),
+      event({ domain: 'a.example', ts: '2026-09-10T10:00:01Z' }),
+      event({ domain: 'b.example', ts: '2026-09-10T10:00:02Z' }),
+      event({
+        domain: 'a.example',
+        client: '192.168.88.11',
+        client_name: 'phone',
+        ts: '2026-09-10T10:00:03Z',
+      }),
+    ]);
+    const clients = [
+      client({
+        intercepted: {
+          completed: 14,
+          rejected: 3,
+          last_completed: '2026-09-10T09:59:00Z',
+          last_rejected: '2026-09-10T10:00:01Z',
+        },
+      }),
+    ];
+    expect(summarizeClients(groups, clients)).toEqual([
+      {
+        client: '192.168.88.10',
+        clientName: null,
+        rejections: 3,
+        hosts: 2,
+        completed: { count: 14, last: '2026-09-10T09:59:00Z' },
+      },
+      {
+        client: '192.168.88.11',
+        clientName: 'phone',
+        rejections: 1,
+        hosts: 1,
+        completed: null,
+      },
+    ]);
+  });
+
+  it('treats an unknown client, a zero count and a missing record alike: none', () => {
+    const groups = groupRejections([event({ domain: 'a.example' })]);
+    expect(summarizeClients(groups, [])[0]?.completed).toBeNull();
+    expect(summarizeClients(groups, [client()])[0]?.completed).toBeNull();
+    const legacy = { ...client() } as Partial<Client>;
+    delete legacy.intercepted;
+    expect(summarizeClients(groups, [legacy as Client])[0]?.completed).toBeNull();
+  });
+
+  it("takes the client's name from the engine when the rows carry none", () => {
+    const groups = groupRejections([event({ domain: 'a.example' })]);
+    expect(summarizeClients(groups, [client({ name: 'desktop' })])[0]?.clientName).toBe(
+      'desktop',
+    );
   });
 });

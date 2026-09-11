@@ -443,6 +443,16 @@ Everything that answers "is it healthy and where is the memory".
   **The wording is fixed and the word "pinned" is never used.** The label states
   what was observed — the client refused the certificate we presented — not why.
   `UnknownCA` stays `status 0` and has no surface here at all.
+
+  **Above the rows, the engine's per-client account.** One line per client in
+  the view, from `GET /api/v1/clients` `intercepted`: rejections and hosts on
+  this page, then "completed intercepted handshakes on record: N, last …" or
+  "none" with a hint to check that client before excluding a host for
+  everyone. Read once on mount and again on Retry, never polled. It states
+  what was observed and never asserts CA state — the alert a client sends
+  names its TLS stack, not the cause, so a 525 row alone cannot say whether
+  the host pins or the client never trusted the CA
+  ([p3-06-n3-alert-ab.md](../code-review/phase3/p3-06-n3-alert-ab.md)).
 - **Answer outcomes** — `counters.dns.answers`: `servfail_synthesized`,
   `servfail_relayed`, `refused_relayed`.
 - **Shed** — `counters.events_dropped`, one number covering both pipelines

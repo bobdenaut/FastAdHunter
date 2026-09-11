@@ -422,6 +422,15 @@ export interface Client {
   last_seen: string;
   queries_24h: number;
   blocked_24h: number;
+  /** The engine's account of this client on the terminate leg (API.md
+   *  §Clients): sessions in which it sent a request, and its 525 events, with
+   *  the time of the last of each. States what was observed, never CA state. */
+  intercepted?: {
+    completed: number;
+    rejected: number;
+    last_completed: string | null;
+    last_rejected: string | null;
+  };
   policy: string;
   /** Present only when an assignment names that exact address. */
   assignment_source?: string;

@@ -2,7 +2,7 @@
 import { render } from 'preact';
 import { act } from 'preact/test-utils';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { QueryEvent } from '../api/types';
+import type { Client, QueryEvent } from '../api/types';
 import type { Route } from '../router/routes';
 import { socket } from '../services';
 import LiveFeed from './live-feed';
@@ -809,8 +809,12 @@ describe('the rejection view', () => {
   function answered(
     document: { clients: string[]; exclude_domains: string[] },
     put?: { status: number; body: unknown },
+    known: Client[] = [],
   ) {
     return (url: string, init?: RequestInit): Promise<Response> => {
+      if (url === '/api/v1/clients') {
+        return Promise.resolve(reply(200, { items: known }));
+      }
       if (url !== '/api/v1/interception') {
         return Promise.reject(new Error(`unexpected ${url}`));
       }
@@ -876,6 +880,54 @@ describe('the rejection view', () => {
     feed.release();
   });
 
+  it("states the engine's completed-handshake count per client, never CA state", async () => {
+    const feed = await open({
+      answer: answered({ clients: [], exclude_domains: [] }, undefined, [
+        {
+          ip: '192.168.10.22',
+          name: null,
+          first_seen: '2026-09-10T09:00:00Z',
+          last_seen: '2026-09-10T10:00:00Z',
+          queries_24h: 0,
+          blocked_24h: 0,
+          policy: 'default',
+          intercepted: {
+            completed: 14,
+            rejected: 2,
+            last_completed: '2026-09-10T09:59:00Z',
+            last_rejected: null,
+          },
+        },
+      ]),
+    });
+    await settle();
+    feed.deliver(
+      rejection({ domain: 'x.example', ts: '2026-09-10T10:00:01Z' }),
+      rejection({
+        domain: 'x.example',
+        client: '192.168.10.99',
+        client_name: null,
+        ts: '2026-09-10T10:00:02Z',
+      }),
+      rejection({ domain: 'y.example', ts: '2026-09-10T10:00:03Z' }),
+    );
+    const text = feed.dom.textContent ?? '';
+    expect(text).toContain('Completed intercepted handshakes on record');
+    const lines = [...feed.dom.querySelectorAll('.rejection-clients p')].map(
+      (line) => line.textContent ?? '',
+    );
+    expect(lines).toHaveLength(2);
+    expect(lines[0]).toContain('desktop');
+    expect(lines[0]).toContain('14, last');
+    expect(lines[0]).not.toContain('none');
+    expect(lines[1]).toContain('192.168.10.99');
+    expect(lines[1]).toContain('none');
+    expect(lines[1]).toContain('/api/v1/certificates');
+    expect(text.toLowerCase()).not.toContain('ca is installed');
+    expect(text.toLowerCase()).not.toContain('trusts');
+    feed.release();
+  });
+
   it('never says pinned', async () => {
     // ADR-0008 fixes the wording: the label states what was observed, and no
     // screen claims to know why the client refused.
@@ -906,6 +958,7 @@ describe('the rejection view', () => {
     // Read, append, write the whole document back — and the read is fresh, so
     // another tab's entries are not clobbered by this browser's stale copy.
     expect(feed.log()).toEqual([
+      'GET /api/v1/clients',
       'GET /api/v1/interception',
       'GET /api/v1/interception',
       'PUT /api/v1/interception',
@@ -930,7 +983,7 @@ describe('the rejection view', () => {
     feed.click('Cancel');
     await settle();
 
-    expect(feed.log()).toEqual(['GET /api/v1/interception']);
+    expect(feed.log()).toEqual(['GET /api/v1/clients', 'GET /api/v1/interception']);
     expect(feed.dom.textContent).not.toContain('Exclude this host');
     feed.release();
   });
@@ -1008,7 +1061,10 @@ describe('the rejection view', () => {
     // no other row is offered — and once it lands, the rest are again.
     let land = (): void => {};
     const feed = await open({
-      answer: (_url, init) => {
+      answer: (url, init) => {
+        if (url === '/api/v1/clients') {
+          return Promise.resolve(reply(200, { items: [] }));
+        }
         if (init?.method === 'PUT') {
           const sent = JSON.parse(String(init.body)) as {
             clients: string[];
@@ -1052,7 +1108,10 @@ describe('the rejection view', () => {
     // store hiccup must not blank the surface the operator came for.
     let reads = 0;
     const feed = await open({
-      answer: (_url, init) => {
+      answer: (url, init) => {
+        if (url === '/api/v1/clients') {
+          return Promise.resolve(reply(200, { items: [] }));
+        }
         if (init?.method === 'PUT') {
           return Promise.reject(new Error('no PUT expected'));
         }
@@ -1078,7 +1137,7 @@ describe('the rejection view', () => {
     await settle();
     expect(feed.dom.textContent).not.toContain('the certificate store did not open');
     expect(feed.button('Exclude').disabled).toBe(false);
-    expect(feed.requests()).toBe(2);
+    expect(feed.requests()).toBe(4);
     feed.release();
   });
 
@@ -1163,14 +1222,14 @@ describe('the rejection view', () => {
       });
       feed.deliver(rejection({ domain: 'api.bank.example' }));
       const before = feed.subscriptions();
-      expect(feed.requests()).toBe(1);
+      expect(feed.requests()).toBe(2);
 
       await act(async () => {
         vi.advanceTimersByTime(60_000);
         await Promise.resolve();
       });
 
-      expect(feed.requests()).toBe(1);
+      expect(feed.requests()).toBe(2);
       expect(feed.subscriptions()).toBe(before);
       feed.release();
     } finally {
