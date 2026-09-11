@@ -27,10 +27,10 @@ session, `<ts>` = `YYYYMMDDTHHMMZ`), untracked until the owner decides. Every
 script gets `--out <root>/<layer>` so `run.log`, `raw.jsonl` and `config.json`
 land beside each `<name>.json`. Numbers inside are not results.
 
-## Layer 0 — the two new boot paths
+## Layer 0 — the boot paths
 
-Both are one-command checks against the release binary; both must fail the way
-the plan says they fail, before anything else runs.
+All are one-command checks against the release binary; each must fail the way
+the plan says it fails, before anything else runs.
 
 | Check | How | Expected |
 | --- | --- | --- |
@@ -39,6 +39,14 @@ the plan says they fail, before anything else runs.
 | N default on this box | boot with no `[runtime]` key | reads `max(1, cores / 2)` — **16** on bobdenaut's 32 cores, not 2. Recorded so nobody reads a dev-box HTTPS figure as an RB5009 one |
 | `oha` pinned | `oha --version` on bobdenaut **and** on the Mac | both read **1.16.0**. A mismatch between the two hosts would put the spliced and intercepted TLS rate arms on two different clients — the campaign-1 trap in a new costume |
 | **`--connect-to` preserves SNI** | with the local probe up and posture A, `oha -n 1 -c 1 --connect-to 127-0-0-1.nip.io:443:127.0.0.1:8444 --insecure https://127-0-0-1.nip.io/` while a rule blocks that name | the probe must close it **as an SNI verdict** — `listeners.https.blocked` moves — proving the ClientHello carried `127-0-0-1.nip.io` and not the socket's target. Then repeat with an allowed name and confirm ServerHello. **A prerequisite, not a smoke nicety:** every `oha` TLS arm depends on it, and if SNI followed the connect target instead, all of them would silently measure the wrong name |
+| migration, first boot (B10 a) | a **dedicated migration fixture** — fresh config dir, TOML carrying `[https.interception]` with `clients` / `exclude_domains`, no `interception.json`; any `engine.mode` | the lists land in `interception.json`, the TOML is re-saved without the keys, one `info!` `migrated [https.interception] into interception.json`; `GET /api/v1/interception` returns them, `GET /api/v1/config` carries no `https.interception`. An invalid legacy entry **fails this boot** naming list, index and entry (`clients[1]: "10.0.0.300" is not an IP address or CIDR block`); an over-cap list fails naming list, len and cap (`clients: 257 entries exceed the cap of 256 by 1`) — `DocumentError::InvalidEntry` / `OverCap`; no document written, TOML untouched |
+| migration, document already exists (B10 b) | same fixture with an `interception.json` seeded beside the TOML block | the document stays authoritative and byte-identical; boot continues with one `warn!` naming both files (`[https.interception] ignored; interception.json is the source of truth`) and the keys are stripped from the TOML again (CONFIGURATION.md §Migration, "keys re-added by hand"). Legacy entries are **not** validated here — an invalid one is not a boot failure |
+| document unreadable (B10 c) | `interception.json` malformed | boot fails naming the file (`InterceptionStoreError::Parse`; `Read` when unreadable); the file is left exactly as found. A document that parses but carries an invalid entry or an over-cap list fails naming list, index and entry instead |
+
+B10 a–c and the posture rows below are driven unattended by
+`smoke/after-interception.mjs` (`p3-06-after-interception-impl.md` §3b);
+`crates/fastadhunter/tests/interception_migration.rs` pins the same five paths
+through the real binary.
 
 The `--connect-to` result is written into the report verbatim. Until it reads
 as above, no `oha` arm carries a figure (testing plan §Load generators).
@@ -80,9 +88,6 @@ port = 8080
 address = "127.0.0.1"
 port = 8444
 
-[https.interception]
-clients = []                  # posture A; posture B = ["127.0.0.1"], see below
-
 [egress]
 allow_destinations = ["127.0.0.0/8"]
 
@@ -114,14 +119,19 @@ every script `INVALID` by design (plan §Running item 3); close it or pass
 `--allow-busy` and accept `degraded`.
 
 **Two client postures.** Loopback has one client address, `127.0.0.1`. The
-spliced arms need it *unlisted*, the terminate-leg arms need it *listed*, so
-the box boots twice: **posture A** (`clients = []`) for `p0`, `p1`, `p4-lan`,
-`p6`, `p7`; **posture B** (`clients = ["127.0.0.1"]`) for `p3` and `p5`. Every
-restart is a config change: give each posture its own `--out` directory
-(`layer1-a`, `layer1-b`). `lib.mjs` reads the live config on every run and,
-when it differs from the directory's `config.json`, writes a dated copy and
+spliced arms need it *unlisted*, the terminate-leg arms need it *listed*.
+Since p3-07 the posture is the Interception Document, not a config key:
+**posture A** = `PUT /api/v1/interception {"clients":[],"exclude_domains":[]}`
+for `p0`, `p1`, `p4-lan`, `p6`, `p7`; **posture B** =
+`PUT {"clients":["127.0.0.1"],"exclude_domains":[]}` for `p3` and `p5`. A
+`PUT` applies on the next accepted connection — **no restart**. Each posture
+still gets its own `--out` directory (`layer1-a`, `layer1-b`): `lib.mjs`
+snapshots the document as `interception.json` beside `config.json` on every
+run and, when it differs from the directory's copy, writes a dated copy and
 labels the run `degraded` — a row with that label ran in the wrong directory,
-not against the wrong probe.
+not against the wrong probe. A `[https.interception]` block in the TOML is
+migration input on the first boot only and ignored for policy after that; it
+lives in the Layer 0 migration fixture, never in the smoke TOML.
 
 **Three N postures, on top of the client ones.** `http_runtimes ∈ {0, 1, 2}`,
 each its own `--out` suffix (`-n0`, `-n1`, `-n2`). Only `p0`, `p1` and `p3`
@@ -168,8 +178,8 @@ the `degraded` label, never a number. Restore the state afterwards.
 | origin byte count wrong (`p1`) | client `--bytes 16` against an 8 MiB origin, `--direct` | `INVALID: no p1_control sample completed` |
 | control missing (`p1`) | run `p1-lan.mjs` with no prior `--direct` result in the run directory | `INVALID: no P1-control median in this session` — the relative gate has nothing to read against (delta 1) |
 | identity precondition (`p2`) | run on the Windows dev box | `INVALID: identity precondition: both --listed and --unlisted must be on this host's interfaces` |
-| both addresses unlisted (`p2`, Mac) | `clients = []` | `INVALID: … exactly one of the two addresses must be in https.interception.clients` |
-| this host not listed (`p3`) | `clients = []`, restart | `INVALID: this host (127.0.0.1) is not in https.interception.clients` |
+| both addresses unlisted (`p2`, Mac) | `PUT /api/v1/interception {"clients":[],"exclude_domains":[]}` | `INVALID: … exactly one of the two addresses must be listed in the Interception Document (GET /api/v1/interception, clients)` |
+| this host not listed (`p3`) | same `PUT`, no restart | `INVALID: this host (127.0.0.1) is not listed in the Interception Document (GET /api/v1/interception, clients)` |
 | barrier not met (`p3`) | `--arm rss --path /stall` against `smoke/h2-origin.mjs` (`/stall` answers `:status 200` and never sends DATA, so no stream reaches its first chunk; a tiny body would *meet* the barrier) | RSS arm `INVALID: … barrier not met: 0/64 streams answered` after `--barrier-timeout`. **Not runnable on this dev box**: on Windows `process_rss is null` fires first, and the release `fah-probe` image cannot trust a local origin. Record as not run |
 | no CA in the store (`p5`) | fresh `smoke-config` without `ca/generate` | `INVALID: no CA in the probe store` |
 | cache headroom (`p5`) | `--hosts 600` | `INVALID: leaf_cache.size … exceeds capacity 512` |
@@ -233,8 +243,9 @@ the campaign starts:
 
 1. a clean commit (owner);
 2. the probe's config fixed — `strategy` removed, `engine.mode`,
-   `egress.allow_destinations`, `https.interception.clients` — plus a restart
-   (owner, router write);
+   `egress.allow_destinations` — plus a restart (owner, router write); the
+   probe boots with an empty Interception Document and R8 lists the client by
+   `PUT`, no restart;
 3. `fahprobe-env` created and attached, or `h1buf-env` re-attached (owner,
    router write) — without it the N axis does not exist;
 4. the four tip images uploaded (owner);

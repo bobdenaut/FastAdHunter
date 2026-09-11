@@ -6,8 +6,8 @@ device checks required by the new interception contract. **No p3-10.**
 Everything here is a declaration or tooling update to p3-06's runbook, smoke
 plan, testing plan or probe scripts, or a new runbook row. Written 2026-09-11
 against `phase3-06` at `b3237ef`. §3b (scripts, e2e suite, smoke driver) is
-implemented and run green in the working tree, uncommitted; B5–B10 and N1–N6
-are still planning.
+implemented, run green and committed (`223bf79`); B5–B10 applied 2026-09-11
+(four files, owner yes per file); N1–N6 are still planning.
 
 **Decision — no campaign re-run.** p3-07 adds one `ArcSwap::load` per accepted
 connection (`fah-http/src/https.rs` `interception_for`); p3-08 touches only the
@@ -110,12 +110,15 @@ node docs/code-review/phase3/p3-06-probe/smoke/after-interception.mjs --out docs
 ```
 
 D2 is therefore no longer a follow-up: §3 row D2 is delivered by this file.
-Still pending the owner's per-file yes: B5–B10.
+B5–B10 applied 2026-09-11, owner yes per file: smoke plan (B5, B6, B7, B10),
+testing plan (B8 + the P2 precondition sentence), verification review (B9, the
+§5 P2 sentence, §Runbook 1 item 6, N2/N3/N5/N6 in its Runbook 4/6/7), runbook
+(N1 under R2, N4 under R8).
 
 ## 4. Order
 
 1. B1–B4 (scripts) → smoke re-run named in §1 → owner yes → commit. **Written and run green (§3b); commit pending.**
-2. B5–B10 document edits, owner yes per file.
+2. B5–B10 document edits, owner yes per file. **Applied 2026-09-11.**
 3. N1 on the first tip-image boot of the probe (R0/R2 window).
 4. N2–N4 with the device, after R7/R8.
 5. N5–N6 inside the soak.
@@ -206,8 +209,7 @@ a fresh session.
 > matching `run.log` lines; the `<out>` directory path. **Do not diagnose,
 > modify, or propose fixes; only report the observed results** — this session
 > is an executor, not a reviewer. Then stop. Do not commit the results
-> directory, do not touch B5–B10 (`.md` edits pending the owner's per-file
-> yes), do not start N1–N6.
+> directory, do not touch the B5–B10 files, do not start N1–N6.
 
 ## 8. Prompt for the next agent — the device path (§2, owner-run)
 

@@ -183,10 +183,33 @@ Values per [p3-06-testing-plan.md](../../../plan/wip/phase3/p3-06-testing-plan.m
 
 The `https` part of this body is **gone since p3-07**: `clients` and
 `exclude_domains` are no longer config keys, and a patch carrying
-`https.interception` is refused with 422. Nothing needs setting here — a fresh
-probe boots with an empty Interception Document, which is the intended state
-for R2 anyway. A listed client with no CA installed is closed, not spliced
-(p3-04 L2), so clients are added only in R8, after the CA is on the device.
+`https.interception` is refused with 422. Nothing needs setting here. A fresh
+probe boots with an empty Interception Document; the campaign-1 probe is not
+fresh — its stored TOML carries `[https.interception]`, so its first tip boot
+migrates (addendum below). A listed client with no CA installed is closed, not
+spliced (p3-04 L2), so clients are added only in R8, after the CA is on the
+device.
+
+**R2 addendum — N1, the migration on the probe**
+(p3-06-after-interception-impl.md §2). The campaign-1 probe config carries
+`[https.interception]` and no `interception.json` exists, so the first boot of
+the tip image (R5's first start) is release N's one-boot migration. Leave the
+block in place — it is the fixture. Proof after that boot, all read-only:
+(1) `/file print where name~"interception.json"` shows the file under the
+probe's config mount; (2) `GET /api/v1/interception` returns the migrated
+`clients` / `exclude_domains`; (3) `GET /api/v1/config` carries no
+`https.interception`; (4) the container log has
+`migrated [https.interception] into interception.json`. Any later restart: no
+migration line, and the stored TOML carries no `[https.interception]`.
+Privilege-drop path: the write runs after `drop_to_service_user` on the
+re-owned config mount; ownership is not observable from RouterOS, so the proof
+is behavioural — the first boot succeeds past the drop, a later `PUT` rewrites
+the file (200, `GET` reflects it), the next boot reads it. A boot refusal here
+is `InterceptionStoreError::Write`, a path new since p3-07; an invalid legacy
+entry refuses the boot naming list, index and entry; an over-cap list refuses
+it naming the list, length and cap — the owner fixes the TOML (router write)
+and restarts. **Pass:** all four first-boot reads; second boot clean; `PUT`
+after migration succeeds.
 
 ### R3 — `fahprobe-env`
 
@@ -407,6 +430,19 @@ client list — so it is no longer evidence that a client is listed. Check
 A `PUT` naming a client while the certificate store did not open answers
 **503** and stores nothing; a bad entry answers **422** with a `details` object
 and changes nothing.
+
+**R8 addendum — N4, negative `PUT`, atomicity.** After the valid `PUT` (200):
+`curl -sk -X PUT -H "Authorization: Bearer $FAHKEY" -H 'content-type: application/json' -d '{"clients":["'"$CLIENT"'","10.0.0.300"],"exclude_domains":[]}' https://172.17.0.4:8443/api/v1/interception`
+→ **422** with `details`
+`{"reason":"invalid_entry","list":"clients","index":1,"entry":"10.0.0.300"}`
+(index is 0-based). Then `GET /api/v1/interception` returns the previous
+document unchanged — **the primary proof: no mutation**; `/file print` showing
+no timestamp change is corroborating only (filesystem timestamp granularity).
+A new connection from the listed device is still intercepted under the
+previous document (issuer `FastAdHunter CA`). Rehearsed on the dev box by
+`smoke/after-interception.mjs` (N4 rehearsal and control rows). **Pass:** 200,
+then 422 with `details`, then `GET` equals the previous document and a new
+connection reflects it.
 
 ### R9 — Private DNS hostname
 

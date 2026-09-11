@@ -627,8 +627,8 @@ or, for items 5 and 7, to the probe container.
    step 3's rollback line at hand for the first hour.
 6. **Prove the steering on an unlisted device** (MA-5 — the "any client,
    zero setup" half of the definition of done, production build). From a LAN
-   device that is **not** in `[https.interception] clients`, with nothing
-   installed: `curl -sv https://<a domain the deployed lists block>/` ⇒ the
+   device that is **not** listed in the Interception Document
+   (`GET /api/v1/interception`, `clients`), with nothing installed: `curl -sv https://<a domain the deployed lists block>/` ⇒ the
    TLS connection fails before any certificate (curl prints no `subject:` /
    `issuer:` line; the error is a reset or unexpected EOF, not a certificate
    error). Then read: `GET /api/v1/telemetry` `listeners.https.blocked` +1,
@@ -729,16 +729,14 @@ or, for items 5 and 7, to the probe container.
 
 ### 4. Pinned-app spot check
 
-1. **`BASELINE_EXCLUSIONS` — settled for this check, 2026-09-10. No code change
-   needed to run it.** Shipped list: Apple (4), Google/Android (8),
-   Microsoft (6), WhatsApp (2), Signal, PayPal, Revolut, Wise, N26, eight
-   Romanian banks (`bancatransilvania.ro`, `btrl.ro`, `ing.ro`, `bcr.ro`,
-   `george.ro`, `brd.ro`, `raiffeisen.ro`, `unicredit.ro`). The app is
-   **UniCredit home banking**, covered by `unicredit.ro` — a name covers
-   itself and every subdomain — so the excluded arm exists as shipped.
-   Orange was dropped: not the owner's phone, not available. Extending the
-   constant is a separate decision (§Post-review work B); it does not gate
-   this step.
+1. **Exclusion is operator policy, not a compiled-in baseline —
+   `BASELINE_EXCLUSIONS` is deleted (p3-07, ADR-0008).** Before the excluded
+   arm: `PUT /api/v1/interception` with the current `clients` and
+   `exclude_domains: ["unicredit.ro"]` — a name covers itself and every
+   subdomain — live on the next connection, no restart. The app is
+   **UniCredit home banking**. Orange was dropped: not the owner's phone, not
+   available. `p3-06-measurement-audit.md` Runbook 4 precondition says the
+   same.
 2. **Static-lease precondition per listed IP** — read-only, already verified
    2026-09-02: `192.168.10.11` and `192.168.10.10` hold static leases. Re-run
    `/ip/dhcp-server/lease print where !dynamic` before adding any other client.
@@ -746,6 +744,24 @@ or, for items 5 and 7, to the probe container.
    app, log in, view a balance. Expected: unchanged behaviour; the feed shows
    the bank's hosts as `https-sni pass` (spliced), never `https`. Record the
    app, the hosts observed and the outcome.
+4. **The ADR-0008 path, end to end** (p3-06-after-interception-impl.md N2):
+   device listed, CA installed, `exclude_domains: []`. Open the pinned banking
+   app: (1) its hosts appear in the Live Feed "Certificate rejected by client"
+   view with **status 525**, count rising on retry; (2) exclude the **exact
+   observed host** through the view's confirmation; (3) the device's next
+   connection to that host takes the SNI/splice path — proof: the certificate
+   the device sees is **no longer issued by `FastAdHunter CA`** (the upstream
+   chain, whatever it is), the feed's `https-sni` row as supporting evidence;
+   (4) `GET /api/v1/interception` contains the exact host; (5) no restart, no
+   `restart_required`; (6) `listeners.https.client_cert_rejections` moved by
+   the observed count. Record app, hosts, counts. Pass: 525 rows appear; the
+   exclusion applies on the next connection; app functional; document
+   contains the host.
+5. **Negative — `UnknownCA` is not a rejection** (N3): same device, listed,
+   **CA uninstalled from the device's trust store, probe store unchanged**:
+   the app's connections fail; the feed shows those sessions as `https`
+   **status 0**; the rejection view stays **empty**; `client_cert_rejections`
+   flat; no 525. Only the rejection view must be empty, not the feed.
 
 ### 5. Probe-container measurements (P1–P6, pre-declared above)
 
@@ -767,8 +783,9 @@ root-dir=/kingston/probe-bench/root comment="fah-bench"`, `/container/start`,
 **P2 — the declared arm, on the probe FAH instance (`172.17.0.4`, the real
 binary), never the criterion binary** (declaration change of 2026-09-02,
 §Pre-declaration). Preconditions, probe config (owner): `[engine] mode =
-"dns+http+https"`; `[https.interception] clients` lists the intercepted LAN
-client (boot key); a CA generated on the probe and its PEM on the client
+"dns+http+https"`; the Interception Document lists the intercepted LAN client
+(`PUT /api/v1/interception`, live, no restart — R8); a CA generated on the
+probe and its PEM on the client
 (`GET /api/v1/certificates/ca/export`). One fixed public origin `ORIGIN`
 (small page; record the name, its TLS version and ALPN) chosen before the
 run. The spliced and intercepted arms come from **two client addresses**
@@ -864,6 +881,8 @@ is described in §Post-review work A and the code is in
 | (d) mint rate: `minted_total`/h, peak `inflight`, `superseded`, `evictions` | diagnostic | same | a rate far above the DoT hostnames in use or churning terminate-leg leaves ⇒ the per-client mint limit escape hatch |
 | (e) idle-cut sessions vs RSS trend (p3-04 L4) | **attribute before filing** | `listeners.https.hello_timeouts` growth against `rss_bytes` | RSS trending with idle cuts is the L4 leak signature; flat RSS closes L4 |
 | (f) per-transport traffic split | diagnostic | WS `transport` counts | descriptive |
+| (g) `listeners.https.client_cert_rejections` (N5) | diagnostic | hourly `/telemetry` | a rising count is a client refusing the leaf — attribute to the app; nothing is excluded from the soak side |
+| (h) `interception.json` unchanged except after a recorded owner `PUT` (N5) | **invariant** | daily: `/file print` date **and** the `GET /api/v1/interception` body against the previous day's (content comparison — RouterOS prints no hash) | flat, or every change matched to a recorded `PUT` with its time; an unmatched change is a finding to investigate, not a gate decision |
 
 Collection as deploy-rb5009.md §9 (5-minute `/telemetry` + `/stats` pulls)
 plus hourly `GET /api/v1/certificates` and `/api/v1/debug/memory`; log every
@@ -879,6 +898,7 @@ and the watch items above`.
 | `0600` on every private key (first execution anywhere of `write_private`'s unix mode) | `sftp rb5009` → `ls -l kingston/probe/config/ kingston/probe/config/ca-archive/*/ kingston/probe/config/api-archive/*/` (read-only) after: first boot, import, `ca/generate` ×2 | `-rw-------` on `api-key.pem`, `ca-key.pem`, every archived `*-key.pem`; `*.pem.tmp` only transiently |
 | Archive cap | `POST /api/v1/certificates/ca/generate {"confirm":true}` nine times | the ninth answers `409 conflict` `archive_full:`, the live pair unchanged (`fingerprint_sha256` stable); record the operator's retention story (move directories out of `ca-archive/`) |
 | Generate / import wall time (P6) | `curl -w '%{time_total}\n'` ×5 each | min / median → PERFORMANCE.md rows |
+| Interception Document beside the store (N6) | after a `PUT /api/v1/interception`: `ca/export` in both formats, `GET /api/v1/config`, the traversal list, the `ls -l` above | `interception.json` is operator configuration, not key material — inherits none of the CA-key permission expectations, not a leak needle; every existing row answers as before with the document present |
 
 ## Proposed documentation edits (Step 5) — items 2, 3 and 4 applied 2026-09-09
 
