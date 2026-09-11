@@ -291,6 +291,7 @@ struct Engine {
     http: Option<fah_http::Server>,
     api: fah_api::ApiServer,
     tasks: Vec<tokio::task::JoinHandle<()>>,
+    stats_schedulers: Vec<tokio::task::JoinHandle<()>>,
     stats: Arc<fah_stats::Stats>,
 }
 
@@ -530,10 +531,12 @@ impl Engine {
         }
 
         // ── The edges between the siblings ──
-        let mut tasks = vec![
-            rules.spawn_scheduler(),
+        let stats_schedulers = vec![
             stats.spawn_snapshot_scheduler(),
             stats.spawn_history_scheduler(),
+        ];
+        let mut tasks = vec![
+            rules.spawn_scheduler(),
             spawn_event_fanout(
                 events_rx,
                 Arc::clone(&stats),
@@ -586,6 +589,7 @@ impl Engine {
             http,
             api,
             tasks,
+            stats_schedulers,
             stats,
         })
     }
@@ -599,7 +603,14 @@ impl Engine {
         for task in &self.tasks {
             task.abort();
         }
+        let schedulers = std::mem::take(&mut self.stats_schedulers);
+        for scheduler in &schedulers {
+            scheduler.abort();
+        }
         let flush = async {
+            for scheduler in schedulers {
+                let _ = scheduler.await;
+            }
             self.stats.save_snapshot().await;
             self.stats.flush_history(std::time::SystemTime::now()).await;
         };

@@ -87,7 +87,9 @@ tcp_max_connections = 1024    # boot    — ceiling on concurrent DNS-over-TCP
                               #           Env: FAH__DNS__TCP_MAX_CONNECTIONS
 udp_max_inflight = 0          # boot    — ceiling on concurrent in-flight UDP DNS
                               #           queries: a count, not a rate. 0 = no cap,
-                              #           today's behaviour. Past the ceiling a
+                              #           today's behaviour: no admission accounting
+                              #           runs, so /telemetry's dns_udp_inflight
+                              #           active and peak stay 0. Past the ceiling a
                               #           datagram is dropped unanswered, counted in
                               #           /telemetry's dns_udp_inflight.shed; the client
                               #           retries as for any lost packet. Sizing:

@@ -14,7 +14,8 @@ A network filtering engine that sits between every device in a house and the
 internet. One container on the router, no client configuration, no browser
 extension, no per-device agent.
 
-It filters **DNS and HTTP today**, HTTPS after that.
+It filters **DNS and HTTP today**. HTTPS interception (Phase 3) and HTML
+filtering (Phase 4) are designed and **parked**.
 
 **Performance is the primary feature.** Every architectural decision is
 evaluated by its effect on throughput, latency and allocations — and the
@@ -31,19 +32,25 @@ numbers below are measured on the target hardware, not estimated.
 | 1.5 | Observability persistence | ✅ done | `v0.3.0-phase1.5` |
 | 2 | HTTP engine + Policies | ✅ done | `v0.2.17-phase2` |
 | 2.5 | Pre-Adaptive hardening | ✅ done | `v0.2.19-phase2.5` |
-| 2.6 | Adaptive DNS Stage 1 | 🚧 built and deployed opt-in; default flip pending | — |
-| 5 | Web dashboard | 🚧 all ten tasks built and merged; on-device verification in the re-soak | `0.3.0` |
-| 3 | HTTPS interception | ⬜ not started | — |
-| 4 | HTML filtering | ⬜ not started | — |
+| 2.6 | Adaptive DNS Stage 1 | ✅ done — closed 2026-09-07; runs opt-in in production (`strategy = "adaptive"`), the compiled-in default on `main` is still `fallback` | — |
+| 5 | Web dashboard | ✅ done — all ten tasks, released as 0.3.0 | `0.3.0` |
+| 3 | HTTPS interception | ⏸ parked | — |
+| 4 | HTML filtering | ⏸ parked | — |
 
 Rows are in **execution** order, which is not numeric order: the dashboard is
 numbered 5 by capability and scheduled ahead of HTTPS and HTML filtering because
 that is what the household needs next.
 
 Running in production on a MikroTik RB5009 as the household's only resolver, in
-`dns+http` mode, on **0.3.0** since 2026-08-29. Phase 2's engine work is deployed
-— the transparent HTTP proxy, URL-path rules, per-client Policies and the single
-JSON telemetry surface — and so is the Phase 5 dashboard.
+`dns+http` mode, on **0.3.3** since 2026-09-09 (0.3.x since 2026-08-29). Phase
+2's engine work is deployed — the transparent HTTP proxy, URL-path rules,
+per-client Policies and the single JSON telemetry surface — and so is the Phase
+5 dashboard. Since 0.3.2 the HTTP engine runs on **allocation domains**
+([ADR-0006](docs/decisions/0006-http-allocation-domains.md)): each HTTP
+connection is served end to end on one of two single-thread runtimes, so its
+allocations are freed by the thread that made them — on the RB5009 a third less
+CPU per request than the shared runtime, and a third of its held memory after a
+900 MiB transfer.
 
 Phase 2.5 was hardening, not features: the live-resolver defects an architecture
 review found (a DNS listener that could die silently, a 200-OK garbage list body
@@ -58,26 +65,21 @@ was written: an upstream that stops answering is penalized after a few
 consecutive transport failures, skipped at the cost of one relaxed atomic load,
 and probed for recovery on the query path — no background task, no timer, no
 RTT ranking, no hedging. It has run in production under `strategy = "adaptive"`
-since 2026-08-25. Its first 7-day soak was **terminated on day 5** once the RSS
-excursions it was watching were traced to their real cause — list refreshes
-downloading unchanged bodies, not the adaptive code — and two more observation
-days would have added nothing. The fix (conditional GET, `If-None-Match` /
-`If-Modified-Since` with a 304 short-circuit) shipped in 0.3.0, and the re-soak
-that judges it started **2026-08-29T19:18 Z** against six gates fixed in writing
-before any evidence was read. The default flip has to be earned: two deployment
-gates closed **unvalidated** — the observed failure window held three runs, all
-of length 1, too few to calibrate `penalty_failures`, which therefore stays at
-its compiled default of 2, provisional and uncalibrated. If the deployment only
-ever produces isolated single losses, not flipping the default is the correct
-outcome.
+since 2026-08-25 and the phase closed on 2026-09-07. Its first 7-day soak was
+**terminated on day 5** once the RSS excursions it was watching were traced to
+their real cause — list refreshes downloading unchanged bodies, not the adaptive
+code; the fix (conditional GET, `If-None-Match` / `If-Modified-Since` with a 304
+short-circuit) shipped in 0.3.0. No soak since has produced enough failure runs
+to calibrate `penalty_failures`, which stays at its compiled default of 2, and
+the compiled-in strategy default on `main` is still `fallback` — a deployment
+opts in by setting the key. If the deployment only ever produces isolated single
+losses, that is the correct outcome.
 
-Phase 5 is the web dashboard, and it is **built** — thirteen screens across all
-ten tasks, merged and released as 0.3.0. The shipped bundle is **128,730 B
-gzip**, 83.8 % of the 150 KB budget, served by `fah-api` itself from the same
-image and the same TLS listener: no second container, no Node in the runtime
-image, no new port. On-device verification (Stage B — Argon2id cost, polled
-endpoint costs, three RSS readings) rides the same re-soak. Design record:
-[docs/dashboard/](docs/dashboard/).
+Phase 5 is the web dashboard, released as 0.3.0 and closed — thirteen screens
+across all ten tasks. The 0.3.0 bundle is **128,730 B gzip**, 83.8 % of the
+150 KB budget, served by `fah-api` itself from the same image and the same TLS
+listener: no second container, no Node in the runtime image, no new port.
+Design record: [docs/dashboard/](docs/dashboard/).
 
 ### Measured, on the RB5009
 
@@ -86,9 +88,7 @@ the deployed container, not a dev box. **Measurements are binary (MiB);**
 PERFORMANCE.md writes its budgets in decimal MB, which runs ~4.9 % higher for the
 same reading. **Each row carries the build it was measured on.** The ruleset and
 boot rows are 0.3.0; the steady-state memory, refresh transient, latency and
-throughput rows still describe 0.2.x, because the equivalent 0.3.0 readings need
-a warm cache and a list refresh that the running deployment has not reached yet
-— the re-soak closing 2026-09-05 produces them.
+throughput rows still describe 0.2.x and have not been re-taken on 0.3.x.
 
 | | Measured | Build | Budget |
 | --- | ---: | :---: | ---: |
@@ -402,7 +402,7 @@ Pass-through: stream origin ⇄ client, byte for byte
 **The body is never parsed and never buffered.** Images, archives, PDFs and video
 stream through untouched — buffering a response to inspect it would make memory
 grow with traffic, which the bounded-everything rule forbids outright. HTML
-rewriting arrives in Phase 4 and is opt-in, for that content type alone.
+rewriting is Phase 4 — parked — and will be opt-in, for that content type alone.
 
 The verdict is taken on the **head**, before the origin is resolved, so a blocked
 request costs no DNS lookup and no upstream connection — measured **48–55 %
@@ -424,7 +424,7 @@ Fixed at container start via `engine.mode`:
 | ---- | ------- |
 | `dns` | Network-wide DNS filtering |
 | `dns+http` | …plus URL-level filtering of unencrypted HTTP — **deployed today** |
-| `dns+http+https` | …plus HTTPS interception, for managed environments |
+| `dns+http+https` | …plus HTTPS interception, for managed environments — Phase 3, parked |
 
 A mode that does not name an engine means that engine's listener is **never
 bound** — not bound and idle.
@@ -448,6 +448,12 @@ bound** — not bound and idle.
 Work is distributed across Tokio workers; the architecture avoids centralised
 processing. One task per datagram, one shared compiled ruleset behind an atomic
 swap, and no lock on the path that answers a query.
+
+Since 0.3.2 HTTP connections are the exception: each is served end to end on
+one of `runtime.http_runtimes` (default 2) single-thread runtimes on their own
+OS threads behind one acceptor — allocation domains,
+[ADR-0006](docs/decisions/0006-http-allocation-domains.md) — so the shared
+runtime carries DNS, rules and the API.
 
 ---
 
@@ -682,13 +688,13 @@ firewall · a replacement for a good browser extension.
 | **1.5** ✅ | Persisted history, perf series, byte-bounded cache |
 | **2** ✅ | HTTP proxy, URL-path rules, Policies, telemetry consolidation, compile-transient attribution |
 | **2.5** ✅ | Listener resilience, list-refresh integrity, encrypted-transport fixes, outcome telemetry, failure run-length telemetry — hardening before adaptive upstream selection |
-| **2.6** 🚧 | Adaptive DNS Stage 1 — per-endpoint health, penalty and skip on repeated transport failure, on-path recovery probing; deployed opt-in since 2026-08-25, default flip still unearned |
-| **5** 🚧 | Web dashboard — thirteen screens, 128,730 B gzip, served by `fah-api` on one origin, session-cookie auth, every figure backed by an endpoint that exists; released as 0.3.0, on-device verification in the re-soak |
-| **3** | HTTPS interception, certificate management, DoT/DoH listeners |
-| **4** | HTML filtering with `lol_html`, cosmetic rules |
+| **2.6** ✅ | Adaptive DNS Stage 1 — per-endpoint health, penalty and skip on repeated transport failure, on-path recovery probing; in production opt-in since 2026-08-25, closed 2026-09-07 |
+| **5** ✅ | Web dashboard — thirteen screens, 128,730 B gzip at 0.3.0, served by `fah-api` on one origin, session-cookie auth, every figure backed by an endpoint that exists; released as 0.3.0 |
+| **3** ⏸ | HTTPS interception, certificate management, DoT/DoH listeners — parked |
+| **4** ⏸ | HTML filtering with `lol_html`, cosmetic rules — parked |
 
-Execution order is 2.5 → 2.6 → **5** → 3 → 4. Phases 3 and 4 each send the
-dashboard back for a capability re-review when they land: Phase 3 adds
+Execution order was 2.5 → 2.6 → **5**; 3 and 4 are parked. When they resume,
+each sends the dashboard back for a capability re-review: Phase 3 adds
 certificate screens and per-client interception controls, Phase 4 changes what
 the rule-partition figures mean.
 
@@ -714,7 +720,7 @@ if the decision is being reversed.
 ├── CONTRIBUTING.md       conventions and local quality gates
 │
 └── docs/
-    ├── decisions/            ADRs 0001–0005
+    ├── decisions/            ADRs 0001–0006
     ├── design/               accepted designs not yet built, with their
     │                         benchmark protocols
     ├── dashboard/            capability matrix, information architecture,

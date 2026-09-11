@@ -8,7 +8,7 @@ use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::str::FromStr;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use fah_config::{
     DnsCacheConfig, DnsConfig, DnsListenConfig, DnsUpstreamsConfig, RulesConfig, UpstreamProtocol,
@@ -20,6 +20,7 @@ use hickory_proto::op::{Message, Query as WireQuery, ResponseCode};
 use hickory_proto::rr::rdata::A;
 use hickory_proto::rr::{Name, RData, RecordType};
 use tokio::net::{TcpStream, UdpSocket};
+use tokio::sync::Notify;
 use tokio::time::timeout;
 
 #[derive(Clone)]
@@ -27,12 +28,30 @@ struct SpyForwarder {
     calls: Arc<AtomicU64>,
 }
 
+fn empty_answer(request: &Message) -> ForwardOutcome {
+    let mut response = Message::response(request.metadata.id, request.metadata.op_code);
+    response.metadata.response_code = ResponseCode::NoError;
+    ForwardOutcome::new(response, 0)
+}
+
 impl Forwarder for SpyForwarder {
     async fn forward(&self, request: &Message) -> std::io::Result<ForwardOutcome> {
         self.calls.fetch_add(1, Ordering::Relaxed);
-        let mut response = Message::response(request.metadata.id, request.metadata.op_code);
-        response.metadata.response_code = ResponseCode::NoError;
-        Ok(ForwardOutcome::new(response, 0))
+        Ok(empty_answer(request))
+    }
+}
+
+#[derive(Clone)]
+struct StallForwarder {
+    release: Arc<Notify>,
+    calls: Arc<AtomicU64>,
+}
+
+impl Forwarder for StallForwarder {
+    async fn forward(&self, request: &Message) -> std::io::Result<ForwardOutcome> {
+        self.calls.fetch_add(1, Ordering::Relaxed);
+        self.release.notified().await;
+        Ok(empty_answer(request))
     }
 }
 
@@ -43,10 +62,10 @@ async fn start_server(rules_text: &str) -> (Server, Arc<AtomicU64>, tempfile::Te
     start_server_on("127.0.0.1", rules_text).await
 }
 
-async fn start_server_on(
-    address: &str,
+async fn build_pipeline<F: Forwarder>(
+    forwarder: F,
     rules_text: &str,
-) -> (Server, Arc<AtomicU64>, tempfile::TempDir) {
+) -> (Arc<Pipeline<F>>, tempfile::TempDir) {
     let data_dir = tempfile::tempdir().unwrap();
     let manager = Arc::new(
         ListManager::new(
@@ -60,12 +79,8 @@ async fn start_server_on(
     );
     manager.set_user_rules(rules_text.to_string()).await;
 
-    let calls = Arc::new(AtomicU64::new(0));
-    let forwarder = SpyForwarder {
-        calls: calls.clone(),
-    };
     let (tx, mut rx) = tokio::sync::mpsc::channel(64);
-    tokio::spawn(async move { while rx.recv().await.is_some() {} }); // drain, don't fill the channel
+    tokio::spawn(async move { while rx.recv().await.is_some() {} });
 
     let pipeline = Arc::new(Pipeline::new(
         manager,
@@ -75,6 +90,18 @@ async fn start_server_on(
         fah_dns::DEFAULT_REFRESH_CLAIM_LEASE,
         tx,
     ));
+    (pipeline, data_dir)
+}
+
+async fn start_server_on(
+    address: &str,
+    rules_text: &str,
+) -> (Server, Arc<AtomicU64>, tempfile::TempDir) {
+    let calls = Arc::new(AtomicU64::new(0));
+    let forwarder = SpyForwarder {
+        calls: calls.clone(),
+    };
+    let (pipeline, data_dir) = build_pipeline(forwarder, rules_text).await;
     let config = DnsConfig {
         listen: DnsListenConfig {
             address: address.to_string(),
@@ -393,5 +420,125 @@ async fn udp_and_tcp_listeners_bind_independently() {
     assert_eq!(udp_ip, tcp_ip);
     assert_ne!(server.udp_addr().port(), 0);
     assert_ne!(server.tcp_addr().port(), 0);
+    server.shutdown();
+}
+
+async fn await_inflight(
+    gauge: &fah_dns::UdpInflightGauge,
+    ready: impl Fn(&fah_model::DnsUdpInflight) -> bool,
+) -> fah_model::DnsUdpInflight {
+    let deadline = Instant::now() + Duration::from_secs(5);
+    loop {
+        let snapshot = gauge.snapshot();
+        if ready(&snapshot) {
+            return snapshot;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "the UDP in-flight gauge never reached the expected state: {snapshot:?}"
+        );
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+}
+
+#[tokio::test]
+async fn the_configured_tcp_and_udp_ceilings_reach_the_listeners() {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    let release = Arc::new(Notify::new());
+    let calls = Arc::new(AtomicU64::new(0));
+    let (pipeline, _data_dir) = build_pipeline(
+        StallForwarder {
+            release: Arc::clone(&release),
+            calls: Arc::clone(&calls),
+        },
+        "||blocked.example^\n",
+    )
+    .await;
+    let config = DnsConfig {
+        tcp_max_connections: 1,
+        udp_max_inflight: 1,
+        listen: DnsListenConfig {
+            address: "127.0.0.1".to_string(),
+            port: 0,
+        },
+        ..DnsConfig::default()
+    };
+    let mut server = Server::bind(&config).await.unwrap();
+    server.serve(pipeline);
+
+    let client = UdpSocket::bind("127.0.0.1:0").await.unwrap();
+    client
+        .send_to(&encode_a_query("first.example."), server.udp_addr())
+        .await
+        .unwrap();
+    client
+        .send_to(&encode_a_query("second.example."), server.udp_addr())
+        .await
+        .unwrap();
+    let inflight = server.udp_inflight();
+    let snapshot = await_inflight(&inflight, |snapshot| {
+        snapshot.shed == 1 && calls.load(Ordering::Relaxed) == 1
+    })
+    .await;
+    assert_eq!(
+        (snapshot.active, snapshot.peak),
+        (1, 1),
+        "an explicit udp_max_inflight = 1 admits one datagram and sheds the next"
+    );
+
+    release.notify_one();
+    let mut buf = [0u8; 4096];
+    let len = timeout(Duration::from_secs(5), client.recv(&mut buf))
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        Message::from_vec(&buf[..len])
+            .unwrap()
+            .metadata
+            .response_code,
+        ResponseCode::NoError
+    );
+    await_inflight(&inflight, |snapshot| snapshot.active == 0).await;
+    assert!(
+        timeout(Duration::from_millis(200), client.recv(&mut buf))
+            .await
+            .is_err(),
+        "a shed datagram is never answered"
+    );
+    assert_eq!(inflight.snapshot().shed, 1);
+
+    let holder = TcpStream::connect(server.tcp_addr()).await.unwrap();
+    let mut waiting = TcpStream::connect(server.tcp_addr()).await.unwrap();
+    let request = encode_a_query("blocked.example.");
+    let len = u16::try_from(request.len()).unwrap().to_be_bytes();
+    waiting.write_all(&len).await.unwrap();
+    waiting.write_all(&request).await.unwrap();
+    let mut len_buf = [0u8; 2];
+    assert!(
+        timeout(Duration::from_millis(300), waiting.read_exact(&mut len_buf))
+            .await
+            .is_err(),
+        "an explicit tcp_max_connections = 1 holds the second connection while the first is open"
+    );
+    let connections = server.tcp_connections();
+    let held = connections.snapshot();
+    assert_eq!((held.active, held.peak), (1, 1));
+
+    drop(holder);
+    timeout(Duration::from_secs(5), waiting.read_exact(&mut len_buf))
+        .await
+        .unwrap()
+        .unwrap();
+    let mut reply = vec![0u8; u16::from_be_bytes(len_buf) as usize];
+    waiting.read_exact(&mut reply).await.unwrap();
+    let decoded = Message::from_vec(&reply).unwrap();
+    assert_eq!(decoded.metadata.response_code, ResponseCode::NoError);
+    assert!(matches!(decoded.answers[0].data, RData::A(A(ip)) if ip == Ipv4Addr::UNSPECIFIED));
+    assert_eq!(
+        connections.snapshot().peak,
+        1,
+        "never two connections at once under a ceiling of one"
+    );
     server.shutdown();
 }

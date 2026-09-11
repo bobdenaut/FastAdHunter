@@ -1,4 +1,4 @@
-# Project risk inventory — `main` at `baa2ecd`, 2026-09-11
+# Project risk inventory — surveyed on `main` at `baa2ecd`, 2026-09-11; F1, F2 and F10 closed the same day (§Closed)
 
 **This is an inventory, not a backlog.** Nothing here is scheduled, and nothing
 here is a finding against a task. It records where the code on `main` is
@@ -60,19 +60,21 @@ timeout) — not per query.
 ### 3. `fastadhunter/src/main.rs` — 1572 lines, 35 commits since June
 
 Highest churn in the tree. Owns clocks, timers, wiring and shutdown ordering.
-Teardown is `Engine::shutdown` at `main.rs:589`: http → dns → api → abort every
-long-lived task (`Engine::tasks` collects all of them, including SWR workers
-and the cache sweep); the DNS listener tasks are aborted in
+Teardown is `Engine::shutdown`: http → dns → api → abort every long-lived task
+(`Engine::tasks` holds all of them but the two stats schedulers, which sit in
+`Engine::stats_schedulers` so shutdown can abort *and await* them before the
+final stats flush); the DNS listener tasks are aborted in
 `fah-dns/src/server.rs:107`. The runtime is then dropped at the end of
 `main` — per-connection DNS-TCP and HTTP tasks end with it, HTTP domains drain
-under `HTTP_DRAIN_TIMEOUT` (5 s). Process teardown has no test that can fail
-(the e2e harness only `kill()`s), so regressions land silently and surface as
-a container that will not stop cleanly. 11b (graceful shutdown of keep-alive
-connections) is still open in
+under `HTTP_DRAIN_TIMEOUT` (5 s). Process teardown has one test that can fail:
+`tests/shutdown_e2e.rs` (unix only) sends SIGTERM to the spawned binary and
+asserts a clean exit and the flushed snapshot; drain and task-death behaviour
+are still untested. 11b (graceful shutdown of keep-alive connections) is still
+open in
 [alloc-domains-http-review.md](../phase2.6/alloc-domains-http-review.md).
-Three teardown findings below: no stats flush on a clean stop (F10),
-long-lived task death never observed (F11), runtime drop unbounded by a
-`shutdown_timeout` (F12).
+Two teardown findings below: long-lived task death never observed (F11),
+runtime drop unbounded by a `shutdown_timeout` (F12). The missing stats flush
+on a clean stop (F10) is closed.
 
 ### 4. `fah-dns/src/cache.rs` — 1832 lines, 36 inline tests
 
@@ -98,14 +100,13 @@ error fires schedules an hour off twice a year and nothing crashes.
 ## Findings
 
 Severity: **blocker** = must be fixed before the next merge (none found);
-**material** = worth a task before Phase 3 closes; **minor** = record only.
+**material** = worth a task before Phase 3 closes (none open — F1, F2 and F10
+moved to §Closed); **minor** = record only.
 Class: **defect** = confirmed against source; **recommendation** = a
 judgement, unmeasured.
 
 | # | Severity | Class | Where | Finding |
 | --- | --- | --- | --- | --- |
-| F1 | material | **fixed 2026-09-11, soak pending** | `fah-dns/src/tcp.rs` `run`, `MAX_MESSAGE_LEN`, `TcpConnectionGauge`; `fah-common/src/connections.rs` `ConnectionGauge` (shared with `fah-http`); `fah-config` `[dns] tcp_max_connections` | Was: DNS-over-TCP had no connection ceiling — one task per accept, bounded only by `TCP_IDLE_TIMEOUT` (10 s) and the fd limit — and each message allocated `vec![0u8; len]` from the client's own 2-byte length (≤64 KiB). Now: `[dns] tcp_max_connections` (boot, default 1024, mirrors `[http] max_connections`) sizes a semaphore whose permit is taken before `accept`, so a burst queues in the kernel backlog; a length prefix above the hardcoded 16 KiB `MAX_MESSAGE_LEN` closes the connection without allocating. The gauge (`active`, lifetime `peak`, `closed_oversize`) reaches `/api/v1/telemetry` `counters.dns_tcp_connections` through the existing 10 s poll, stored in the registry as one `ArcSwap` snapshot so a read never shows `active > peak`. The gauge read itself reports `max(peak, active)`: its two `Relaxed` loads can land between a connection's `fetch_add` and its `fetch_max`, and the raw `peak` is never above the true high-water mark, so the reported figure is a lower bound at least as tight as the atomic — never lower, never above the ceiling. Per connection: one semaphore permit (an `Arc` clone + acquire, released after the gauge decrement), one `Arc` clone for the gauge guard, three atomic RMWs (`fetch_add` + `fetch_max` on enter, `fetch_sub` on close); per message: one compare. Worst-case in-flight request buffers: 1024 × 16 KiB = 16 MiB — the request `Vec` only; the per-connection task, `TcpStream`, kernel socket buffers and hickory parse allocations sit on top of that. The key has no upper bound: `Semaphore::new` panics above `MAX_PERMITS`, same as `[http] max_connections`. **1024 and 16 KiB are initial safety bounds, not tuned values.** Next: 7-day device soak, then a final default from observed `peak` + operational headroom + the container fd budget — not a mechanical multiple. |
-| F2 | material | **measured 2026-09-11, guard shipped disabled** | `fah-dns/src/udp.rs` `run`, `UdpInflightGauge`; `fah-config` `[dns] udp_max_inflight` | Was: one `tokio::spawn` per datagram, no in-flight cap. Measured ([phase2.6/f2-udp-inflight.md](phase2.6/f2-udp-inflight.md)): a full black hole walks **3.23 s** at four UDP upstreams and `timeout_ms = 800` (1.62 s at two), adaptive and fallback alike — the peak forms before any penalty lands; in-flight = rate × walk exactly, linear to 5k; **~8.1 KiB heap and ~7.5 KiB RSS per in-flight query**, so 26 KiB per qps of arrival. The household's 30-day peak is 10.5 qps (6-min mean): 0.3 MiB. Filling the 256 MB ceiling needs ~7,300 qps sustained through the walk; a RouterOS OOM ~35k qps, above the device's throughput. Now: `[dns] udp_max_inflight` (boot, **default 0 = no cap, today's behaviour exactly**) bounds an atomic in-flight counter checked before the datagram is copied; past the ceiling the datagram is dropped unanswered and counted. The ceiling is a concurrency count, not a rate. Owner decision 2026-09-11: the household deployment stays at 0 and no non-zero default is derived from this router — the measured workload does not justify a cap; larger deployments set it as a memory/concurrency guardrail. `counters.dns_udp_inflight` (`active`, lifetime `peak`, `shed`) reaches `/api/v1/telemetry` through the 10 s poll as one `ArcSwap` snapshot. At 0 the per-datagram cost is two branches and no atomics; enabled, one CAS loop on `active` (its result is the exact new count, so `peak` is a `fetch_max` of it) plus one `fetch_sub` when the query task ends — no lock, no permit, no per-query `Arc` clone. A tokio `Semaphore` was rejected: releasing a permit takes the waiter mutex (`batch_semaphore.rs` `release`) on every query even though only `try_acquire` is ever used. A deployment-level guardrail for office/high-volume sites, not a fix for this router. |
 | F3 | minor | recommendation | `fah-dns/src/pipeline.rs:312` | `queries.first().cloned()` deep-copies the `Query` (hickory `Name`) once per query; `request` is never mutated in `handle`, so a borrow would do. One avoidable allocation for names past hickory's inline label capacity. `forward_alloc.rs` asserts adaptive = fallback, not an absolute count, so this is not caught. |
 | F4 | minor | recommendation | `fah-dns/src/cache.rs:519,555,566,626,670,680,710,769`; `fah-rules/src/lifecycle/mod.rs` ×20; `fah-stats/src/stats.rs` ×14; `fah-dns/src/swr.rs:155` | ~43 `lock().unwrap()` on `std::sync` locks outside tests. A panic inside any critical section (none identified) poisons that lock and every later taker panics: a poisoned cache shard fails 1/16 of lookups per query task; a poisoned `aggregates` kills the event fan-out task (`main.rs:536`) on its next `record`, after which the events channel fills and `dropped_events` counts — stats freeze, nothing logs (see F11). `unwrap_or_else(PoisonError::into_inner)` needs no new dependency. Not a defect today. |
 | F5 | minor | recommendation | `fah-rules/src/lifecycle/mod.rs:769,1326`; `fastadhunter/src/main.rs:879` | Three `spawn_blocking` join `.expect`s turn a panic in the blocking closure into a panic in the awaiting task: 769 (list validation parse) reaches an API task; 1326 (ruleset compile) reaches the scheduler task and the detached API refresh (`routes.rs:788`); 879 (`collect_memory`) reaches the perf sampler. A panic in the scheduler or sampler is never observed (F11). Parser and compile are property-tested; paths unexercised. |
@@ -113,9 +114,65 @@ judgement, unmeasured.
 | F7 | minor | recommendation | `fah-dns/src/udp.rs:94`, `tcp.rs:80` | Logging is synchronous stderr (`fah-logging/src/lib.rs:62`). Per-query DNS sites are `trace!`/`debug!`; the all-upstreams-down `warn!` is rate-limited by the alarm (`upstream/mod.rs:308`). The only per-event `warn!`s under repeated failure are a failed UDP `send_to` and a non-disconnect TCP error — one blocking write per event on a runtime thread. Unmeasured. |
 | F8 | minor | recommendation | `fah-stats/src/stats.rs:199-207,354` | `save_snapshot` clones and `snapshot()` walks the aggregates under the same `std::sync::Mutex` `record()` takes; the fan-out task stalls for the clone and the pipeline sheds to `dropped_events` rather than blocking. Bounded and counted; no action. |
 | F9 | minor | verified, no action | `fah-dns/src/upstream/encrypted.rs:48-50` | The comment says the provider "owns the JoinSet the exchanges' background I/O tasks spawn into". Checked in `hickory-net` 0.26.1 (`src/runtime.rs:139-148`): `TokioRuntimeProvider(TokioHandle { join_set: Arc<Mutex<JoinSet<()>>> })`; `spawn_bg` spawns into the set and reaps finished tasks (`:221`); clones share the `Arc`, so the last clone dropping aborts the I/O tasks. The comment is accurate. The `std::sync::Mutex` inside `spawn_bg` is taken per connect, not per query. |
-| F10 | material | **fixed 2026-09-11** | `fastadhunter/src/main.rs` `Engine::shutdown`, `STATS_FLUSH_TIMEOUT` | Was: a clean stop never flushed stats — `Engine::shutdown` aborted both stats schedulers and nothing called `save_snapshot` or `flush_history` afterwards, so every SIGTERM/`container stop` lost up to `snapshot_interval_seconds` (300 s default) of aggregates, top-N and client registry. Now: `shutdown` is `async`, holds the `Stats` `Arc`, and after aborting the schedulers awaits `save_snapshot` then `flush_history` under a 5 s timeout (warn on expiry). `flush_history` is idempotent across ticks (unit-tested), so the extra call is safe. Still open: no process-level teardown test (item 3); events left in the fan-out channel at abort are dropped. |
-| F11 | minor | recommendation | `fastadhunter/src/main.rs:256-258,293,530-545,596` | Long-lived task death is unobserved. `Engine::tasks` holds the rules scheduler, both stats schedulers, the event fan-out, the perf sampler, the SWR workers and the cache cleanup; the run loop `select!`s only on the shutdown signal and `dns.fatal()`, and the handles are aborted at shutdown, never polled. Tokio swallows a task panic into a `JoinError` nobody reads. Reachable panic sites: F5's join `expect`s and F4's poison unwraps. Consequence: the resolver keeps answering while refreshes, stats or SWR silently stop. A `JoinSet` in the `select!`, or `is_finished()` on the perf tick, would surface it. |
+| F11 | minor | recommendation | `fastadhunter/src/main.rs` `Engine::tasks`, `Engine::stats_schedulers`, `Engine::shutdown` | Long-lived task death is unobserved. `Engine::tasks` holds the rules scheduler, the event fan-out, the perf sampler, the SWR workers and the cache cleanup, `Engine::stats_schedulers` the two stats schedulers; the run loop `select!`s only on the shutdown signal and `dns.fatal()`, and the handles are aborted at shutdown, never polled. Tokio swallows a task panic into a `JoinError` nobody reads. Reachable panic sites: F5's join `expect`s and F4's poison unwraps. Consequence: the resolver keeps answering while refreshes, stats or SWR silently stop. A `JoinSet` in the `select!`, or `is_finished()` on the perf tick, would surface it. |
 | F12 | minor | note | `fastadhunter/src/main.rs:243,254` | The runtime is dropped at the end of `main` with no `shutdown_timeout`. Tokio 1.53 `Runtime::drop` waits for blocking-pool tasks that are running, so a stop that lands inside a `spawn_blocking` compile (`lifecycle/mod.rs:1268`) or validation parse (`:764`) waits for it to finish. Bounded by compile time; relevant only to "a container that will not stop cleanly" in item 3. |
+
+## Closed
+
+Retired from the findings table by the close-out audit of 2026-09-11 on
+`main` following `b0b091e`. Kept here so the next pass knows what was verified
+and against what.
+
+- **F1 — DNS-over-TCP unbounded** (was material). `[dns] tcp_max_connections`
+  (boot, default 1024) sizes a semaphore taken before `accept`; a 2-byte
+  length prefix above `MAX_MESSAGE_LEN` (16 KiB) closes the connection without
+  allocating. `counters.dns_tcp_connections {active, peak, closed_oversize}`
+  on `/api/v1/telemetry`. Per connection one permit, one gauge guard, three
+  atomic RMWs; per message one compare; worst case 1024 × 16 KiB = 16 MiB of
+  request buffers. Verified: `fah-dns/src/tcp.rs` tests (the ceiling holds the
+  next accept, an oversize prefix closes and counts, an at-bound prefix is
+  read); `fah-dns/tests/server_integration.rs`
+  `the_configured_tcp_and_udp_ceilings_reach_the_listeners` (an explicit
+  `tcp_max_connections = 1` holds a second connection until the first closes,
+  so the config value reaches the listener); `fah-config` rejects 0;
+  `fah-metrics` round-trip; `fah-api` shape. Recorded, not a defect: the
+  semaphore panics above `MAX_PERMITS`, no upper bound, same as
+  `[http] max_connections`. The 7-day soak that picks the final default is a
+  tuning follow-up (§Remaining TODOs), not a risk.
+- **F2 — UDP in-flight unbounded** (was material). Measured in
+  [phase2.6/f2-udp-inflight.md](phase2.6/f2-udp-inflight.md): a full black
+  hole walks 3.23 s at four UDP upstreams and `timeout_ms = 800`, ~8.1 KiB heap
+  per in-flight query, so 26 KiB per qps of arrival; the household's 30-day
+  peak of 10.5 qps is 0.3 MiB. `[dns] udp_max_inflight` (boot, default 0 = no
+  cap and no admission accounting, so `active` and `peak` stay 0) bounds an
+  atomic in-flight counter checked before the datagram is copied; past the
+  ceiling the datagram is dropped unanswered and counted in `shed`. At 0: two
+  branches per datagram, no atomics; enabled: one CAS loop plus one
+  `fetch_sub`, no lock, no permit, no extra `Arc` clone. Owner decision: the
+  household stays at 0; larger deployments set it as a memory guardrail.
+  Verified: `fah-dns/src/udp.rs` tests (sheds past the limit, a ceiling of
+  two, a released slot re-admits, zero never sheds);
+  `fah-dns/tests/server_integration.rs` (an explicit `udp_max_inflight = 1`
+  sheds the second datagram while the first is in flight); `fah-metrics`
+  round-trip; `fah-api` shape.
+- **F10 — no stats flush on a clean stop** (was material). `Engine::shutdown`
+  is async, holds the `Stats` `Arc`, aborts *and awaits* the two stats
+  schedulers (no scheduler tick can start a write after the flush begins),
+  then runs `save_snapshot` and `flush_history` — all under one 5 s
+  `STATS_FLUSH_TIMEOUT`, warn on expiry. Runs on both exit paths (signal and
+  listener death) before the runtime drops. Verified:
+  `fastadhunter/tests/shutdown_e2e.rs` (unix only) boots the binary, resolves
+  a name, waits for the query to reach `/api/v1/stats`, sends SIGTERM, and
+  asserts a clean exit and that `/data/stats/snapshot.json` carries the query
+  and the client — with `snapshot_interval_seconds = 300` the shutdown flush
+  is the only write that can have done so. `flush_history` captures completed
+  hours only, so a post-boot query inside the current hour is proven through
+  the snapshot, not the rollups. Residual, not a risk: a `tokio::fs` write a
+  scheduler had already dispatched when the abort landed can still finish
+  after the await; for history that is a rollup line without its `\n`
+  followed by the flush's duplicate, which the reader skips (one hour lost) —
+  pre-existing, a microsecond window once per 300 s. Events still in the
+  fan-out channel at abort are dropped.
 
 ## Checked and clean
 
@@ -158,23 +215,24 @@ Recorded so the next pass can skip them.
   shims in three alloc-counting tests.
 - Not one `TODO`, `FIXME`, `HACK` or `XXX` in the source; the one `XXX0YYY` is
   a POSIX-TZ literal in a `tz.rs` test.
-- 22 integration test files under `crates/*/tests/`, four of them
+- 23 integration test files under `crates/*/tests/`, four of them
   allocation-counting (`forward_alloc`, `url_lookup_alloc`,
-  `dedup_alloc_bound`, `heap_cost`) and 12 criterion benches under
-  `crates/*/benches/`. Root `tests/` and `benches/` are `.gitkeep`-only.
+  `dedup_alloc_bound`, `heap_cost`), one unix-only (`shutdown_e2e`), and 12
+  criterion benches under `crates/*/benches/`. Root `tests/` and `benches/`
+  are `.gitkeep`-only.
 - Hard rule 7 ("no comments in Rust code") is enforced by the hook on new edits
   only: `main` carries ~5,100 `///` and ~1,900 `//` lines in `crates/`. Not a
   defect — recorded so nobody strips them as a "fix".
 
 ## Remaining TODOs
 
-- F1 and F10 fixed on `main` (see their rows). F1's soak is open: after 7 days
-  on the RB5009 read `counters.dns_tcp_connections.{peak,closed_oversize}`
-  from `/api/v1/telemetry`, check the container fd budget, and set the final
+- F1 tuning follow-up (not a risk — the bound is in place, this picks its
+  value): after 7 days on the RB5009 read
+  `counters.dns_tcp_connections.{peak,closed_oversize}` from
+  `/api/v1/telemetry`, check the container fd budget, and set the final
   `tcp_max_connections` default; record corpus, workload and device in a
-  `docs/code-review/` file. F2 is measured and its guard ships disabled (see
-  its row); the harness is `crates/fah-dns/tests/udp_inflight_cost.rs`
-  (`#[ignore]`). F11 is the next candidate. F3–F9, F12 are record-only.
+  `docs/code-review/` file. F11 is the next candidate. F3–F9, F12 are
+  record-only.
 - Outside this file, needing an owner go: [CLAUDE.md](../../../CLAUDE.md)
   §Layout lists root `tests/` and `benches/` — both are `.gitkeep`-only;
   every test and bench lives under `crates/*/`.

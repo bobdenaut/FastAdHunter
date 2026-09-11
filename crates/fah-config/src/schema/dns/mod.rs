@@ -14,7 +14,6 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields, default)]
 pub struct DnsConfig {
-    #[serde(default = "default_tcp_max_connections")]
     pub tcp_max_connections: usize,
     pub udp_max_inflight: usize,
     pub listen: DnsListenConfig,

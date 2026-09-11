@@ -4,23 +4,53 @@ Where the work is right now. **Rewrite this file — never append.** History
 belongs in `git log`, `docs/code-review/` and the phase tables; this file is only
 what is true today.
 
-**Last updated:** 2026-09-07
+**Last updated:** 2026-09-11
 
 ## Now
 
 | | |
 | --- | --- |
-| Branch | `alloc-domains/http` at `144ef91`, pushed to **both** `origin` and `backup`. `main` at `0a716ec` (= `64be513` + the IP-literal fix), pushed to both. Tag `pre-alloc-domain-2026-09-06` = `64be513`, the rollback point before the HTTP allocation domains, pushed to both |
-| Tree | uncommitted on the branch: `p2.6-11` closed in the phase table, the three `resoak-0.3.*` evidence folders and their predeclarations/audit deleted (47 files), this file |
-| Tests | green at `6d591ad` (fmt, clippy `-D warnings`, `cargo test --all-features --workspace`, 33 suites); `144ef91` is docs only |
-| Version | 0.3.1 (workspace, unchanged on the branch). Newest tags `pre-alloc-domain-2026-09-06`, `soak-p2.6-11`, `v0.2.19-phase2.5` |
-| Deployed | production swapped **2026-09-07** (owner-run) from `fastadhunter-0.3.1` (`db2f9b2`) to image **`fastadhunter:alloc-6d591ad`** (`kingston/fastadhunter-alloc-6d591ad-rosready.tar`) on `veth1` / `172.17.0.2`, mount lists `fah-config,fah-data`, envlist `fah-env` now carrying **`FAH__RUNTIME__HTTP_RUNTIMES=2`** explicitly. **T0 = the container start time in the router log; day 7 = 2026-09-14** |
-| Build ≠ tip | deployed code = `6d591ad` = branch tip minus one docs commit. `main` lacks the branch (by design until the soak verdict); the branch carries everything `main` has |
-| Phase | **5 closed.** **2.6 in `plan/wip/phase2.6-adaptive-stage1`** — 12 of 13 `DONE` (`p2.6-11` closed 2026-09-07 by owner decision, its soak stopped at day 6 for the swap); `p2.6-12` `WAITING` |
+| Branch | `main` at `b0b091e` = `origin/main` = `backup/main`. `alloc-domains/http` merged 2026-09-07 (`e9dac79`, released as 0.3.2 `89aac76`); the branch is 0 commits ahead and can be deleted. Tag `pre-alloc-domain-2026-09-06` = `64be513` stays the rollback point before the allocation domains |
+| Tree | uncommitted on `main`: the 2026-09-11 close-out of risk inventory F1/F2/F10 — `fastadhunter/src/main.rs` (shutdown aborts *and awaits* the two stats schedulers inside the 5 s bound), `fah-config` `dns/mod.rs` (redundant serde default dropped), `fah-dns/tests/server_integration.rs` (explicit `tcp_max_connections`/`udp_max_inflight` reach the listeners), new `fastadhunter/tests/shutdown_e2e.rs` (unix-only SIGTERM → snapshot test), CONFIGURATION.md, `project-risk-inventory.md`, this file. Awaiting the commit go |
+| Tests | green on that tree over `b0b091e`: fmt, clippy `-D warnings`, `cargo test --all-features --workspace`; `shutdown_e2e` is `#[cfg(unix)]` and passed in a `rust:1.96.0` Linux container |
+| Version | 0.3.3 (workspace, since `1c61f9c`), untagged. Newest tags `v0.3.2` (`89aac76`), `pre-alloc-domain-2026-09-06`, `soak-p2.6-11` |
+| Deployed | production on **0.3.3** = `main` at `1c61f9c` (`7d03e95`…`857865d` are plan and docs) — HTTP allocation domains, N=2 (`FAH__RUNTIME__HTTP_RUNTIMES=2` on `fah-env`), `veth1` / `172.17.0.2`, mounts `fah-config,fah-data`. `GET /health` on 2026-09-11 23:13 local answered `0.3.3`, uptime 204 978 s (container start 2026-09-09T11:15Z) |
+| Build ≠ tip | the running container predates the 2026-09-11 `main` commits — F10 stats flush (`32d7776`), F1 TCP bound (`ed28395`), F2 UDP ceiling (`b0b091e`) — and this close-out: it still loses up to 300 s of stats on a stop and has no DNS-over-TCP ceiling. They ship with the next image |
+| Phase | **0–2.6 and 5 closed** (2.6 closed 2026-09-07, all 13 tasks `DONE` in its table — but the `p2.6-12` default flip is not on `main`: `fah-config` `upstreams.rs` still compiles `fallback` as the default and the fallback walk is present; production opts in with `strategy = "adaptive"`). `plan/wip` is empty; phases 3 and 4 are **parked** in `plan/open`, every task `WAITING`. No phase move was made |
 | Gate | [Global Architecture Review-Reconciled.md](code-review/Global%20Architecture%20Review-Reconciled.md): §5.1–6 cleared; §5.7–14 gate Phase 3. S1-G2 tiers 1–3 met; S1-G4 and S1-G5 route 2 not validated and will not be |
-| **Next** | the allocation-domain soak runs to **2026-09-14**; merge `alloc-domains/http` → `main` on its verdict. Meanwhile, off the critical path: `p2.6-12` on `main`, the TLS / lol_html capacity microbench on the probe, dashboard metadata for `runtime.http_runtimes` |
+| **Next** | (1) commit and push the close-out to both remotes. (2) F11 is the next review candidate (§Risk inventory close-out). (3) The F1 tuning soak once the F1 build is deployed. Off the critical path: dashboard settings metadata for `runtime.http_runtimes`, the TLS / lol_html capacity microbench on the probe |
 
-## HTTP allocation domains — soak in progress
+## Risk inventory close-out — 2026-09-11
+
+[project-risk-inventory.md](code-review/project-risk-inventory.md) surveyed
+`main` at `baa2ecd`. Its three material findings — F1 (DNS-over-TCP had no
+connection ceiling and allocated from the client's length prefix), F2 (UDP
+in-flight queries unbounded) and F10 (no stats flush on a clean stop) — are
+**closed**: fixed in `ed28395`, `b0b091e` and `32d7776`, verified by the
+close-out audit, and moved to the inventory's §Closed with their evidence. No
+material finding is open.
+
+Follow-ups, neither a risk:
+
+- **F1 soak — tuning only.** 1024 connections and 16 KiB per message are
+  initial safety bounds. After 7 days on the RB5009 *with the F1 build*, read
+  `counters.dns_tcp_connections.{peak,closed_oversize}` from
+  `/api/v1/telemetry`, check the container fd budget, set the final
+  `tcp_max_connections` default, and record corpus, workload and device under
+  `docs/code-review/`. Cannot start before that build is deployed.
+- **F10 history-write residual.** `fah-stats` `history/mod.rs` `append_line`
+  writes a rollup line and its `\n` as two `write_all`s; a stop landing between
+  them leaves a partial line that the reader skips — one completed hour lost.
+  Pre-existing, a microsecond window once per 300 s; the fix is one combined
+  write. Its own go.
+
+Next review candidate: **F11** — long-lived task death is unobserved (a
+`JoinSet` in the run loop's `select!` would surface it). F3–F9 and F12 are
+record-only. N5 (`Semaphore::new` panics above `MAX_PERMITS`; neither
+`max_connections` key has an upper bound) is recorded and excluded by owner
+decision.
+
+## HTTP allocation domains — merged
 
 What is deployed: each HTTP connection served end to end on one of N
 `current_thread` runtimes on their own OS threads behind one acceptor, N=2, so
@@ -48,16 +78,6 @@ transfer pass is **not** a 1 GbE test (router forwarding path caps it at
 ~67–70 MiB/s). Untested: TLS termination and HTML rewriting — the N decision
 is re-measured when Phase 3/4 exist.
 
-**Predeclared soak verdict (7 days, household traffic):**
-
-- RSS plateau flat, against 0.3.1's +0.4 MiB/h drift and its +8..+37 MiB
-  evening steps. Read `process_rss` from the 6-min history samples; `cpu_*_ms`
-  from `/api/v1/debug/memory` (diagnostic, not in `/telemetry`).
-- HTTP p95 and CPU per MiB relayed not above the A/B figures.
-- DNS p99 not above the 0.3.1 series.
-- Zero restarts; every stop inside RouterOS's 10 s (measured 5.6 s with three
-  transfers in flight; the 5 s drain then aborts them — `WARN` by design).
-
 Rollback without a rebuild: `FAH__RUNTIME__HTTP_RUNTIMES=0` on `fah-env` +
 restart (the 0.3.1 code path, same image). Rollback of the build:
 `kingston/fastadhunter-arm64-0.3.1.tar`, or `main` at the tag.
@@ -66,12 +86,11 @@ Deferred, each its own go: 11b graceful shutdown of keep-alive connections
 (finish the in-flight exchange instead of the whole transfer); dashboard
 settings metadata for `runtime.http_runtimes` (review finding 3); the capacity
 microbench (rustls AES-GCM and lol_html ms/MiB on the RB5009) that decides
-whether N=2 clears 1 Gbit with TLS.
+whether N=2 clears 1 Gbit with TLS; IPv6 privacy-address rotation versus
+address-exact client identity — reviewed 2026-09-07
+([ipv6-privacy-rotation-review.md](code-review/phase2.6/ipv6-privacy-rotation-review.md)),
+nothing built, direction is the owner's call.
 
-**A bug found on the way, fixed on both branches (`0a716ec` / `6d591ad`):**
-with `[egress] allow_ip_literal_hosts = true`, a bare-IP `Host` was accepted
-and then handed to the DNS resolver, so every such request was a 502. Since
-`f7ae186`; production has the flag off and never hit it.
 ## Deferrable (reconciled §6)
 
 Type mirrors (`fah_config`/`fah_model`), `CacheStats` identity-DTO; compile
