@@ -111,13 +111,38 @@ Before figure measured on a clean `phase3-06` @ `f11aa53` working tree
 
 ### Known limitations / deferred
 
-- **The 390 px / both-themes check has not been performed on screen.** It needs
-  the dashboard served against a running API (the dev proxy targets
-  `https://localhost:8443`), which was not stood up. What is established
-  instead: no CSS rule was added, and every class used is already carried by a
-  surface verified at that width — `.feed-scroll`/`.feed-cards` switch in the
-  `max-width: 767px` block, `.set-field` collapses to one column there, and
-  `.editor` is the rules page's. This is a reuse argument, not a measurement.
+- **The 390 px / both-themes check ran on 2026-09-11 and found three defects,
+  all now fixed.** Performed against the p3-06 probe serving the real dashboard
+  and API on the RB5009, driven by Playwright at 390 px and 1280 px in both
+  themes. This supersedes the reuse argument recorded here before — "every class
+  used is already carried by a surface verified at that width" — which was
+  sound for the classes it named and blind to the three below, because each is
+  a property of the *container*, not of the shared class.
+
+  | # | Defect | Fix in `components.css` |
+  | --- | --- | --- |
+  | 1 | The line editor never grew past the textarea's intrinsic `cols=20` (161 px) at any width — `.editor-area` is already `width: 100%`, but the wrapper between it and `.set-field-control` is a flex item and shrinks to content. At 1280 px: 161 px used of 473. An IPv6 CIDR truncated behind a sideways scrollbar | `.set-field-control:has(.editor) > * { flex: 1 1 auto; min-width: 0 }`. `:has()` scopes it to editor rows; toggles and selects in the same container still size to content, verified unchanged at 240/320 px |
+  | 2 | `Exclude` rendered a 34 px touch target while every other phone control took 44 px. The phone block names `.feed-actions .btn` and `.feed-chipset .chip`; this button is a `.btn` inside `.ev-meta`, which neither reaches. It is the only control in the view | `.feed-cards .ev .btn { min-height: 44px }` in the existing `max-width: 767px` block |
+  | 3 | The focused textarea painted over the sticky save bar while a long editor scrolled, covering `Save changes`. `.editor-area` is `position: relative; z-index: 1`, `.set-bar` was `position: sticky; z-index: auto`, same stacking context — `auto` loses to `1`. Found by the owner scrolling, not by the sweep | `z-index: 2` on `.set-bar` |
+
+  Defect 3 is **not** specific to this card: `.set-bar` is the shared settings
+  save bar, so every section with an editor tall enough to scroll had it —
+  `[egress]`'s `allow_destinations` most obviously. Defect 1 is likewise shared;
+  it was measured on the Interception card and reproduced on `[egress]`.
+
+  Verified after the fixes: editor 161 → 429 px at 1280 and 161 → 287 px at 390,
+  no sideways scroll, full `2a02:2f04:5400:cc00::/64` and
+  `mob-ro.unicreditbanking.eu` visible; `Exclude` 44 px, matching Pause; the save
+  bar topmost under `elementFromPoint` at its own centre with the textarea
+  focused. No horizontal page overflow at 390 px in either theme; contrast 13.29:1
+  (domain), 6.63:1 (secondary), 15.04:1 (editor text). Frontend suite 1043 tests,
+  58 files, green. Evidence and per-state figures in
+  [p3-06-testing-results-2.md](p3-06-testing-results-2.md) §Session 3.
+
+  One scope limit: the rejection-view rows were injected into the DOM using the
+  component's own card markup, because the R7 steer was removed after the N-rows
+  and no live rejections arrive. The check therefore covers the CSS and layout,
+  not the data path. The Interception card was measured entirely as served.
 - **Doc consequences written** (owner's explicit go, 2026-09-10):
   `docs/dashboard/information-architecture.md` §Diagnostics → Live Feed gains
   the rejection sub-view, and §Settings gains "The Interception card — a card,
@@ -126,6 +151,20 @@ Before figure measured on a clean `phase3-06` @ `f11aa53` working tree
   the response, so the loser sees it on its next save.
 - The telemetry counter `client_cert_rejections` is not consumed; no dashboard
   listener-counter type exists (plan F8).
+- **The view cannot tell a pinning app from a client that never trusted the CA,
+  and `Exclude` is the wrong remedy for the second.** Measured on device
+  2026-09-11 ([p3-06-testing-results-2.md](p3-06-testing-results-2.md)
+  §Session 3, N3): with the CA removed from an Android phone, the view filled
+  with 56 rows — Spotify, Brave, Facebook, Heytap, Allawn — each offering the
+  same single action. The p3-08 contract assumes such a client sends
+  `UnknownCA` and so never reaches this view; Android sends a 525-class alert
+  instead. The footer text ("the client refused the certificate we present for
+  that host") stays literally true and is still misleading here, because an
+  operator following the only action offered would permanently surrender
+  interception for a host in order to work around a missing CA install. No
+  change is proposed yet — the shape of the fix (a second action, a hint, or a
+  classification change in p3-08) is a design decision. Scope: one device
+  (OnePlus 15, OxygenOS, BoringSSL).
 
 ## Findings
 

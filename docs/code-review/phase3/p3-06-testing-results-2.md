@@ -638,13 +638,376 @@ topology; both arms cross the same air, so the ratio largely survives. It is
 **not** tolerable for any absolute MiB/s figure, and it raises variance enough
 that medians need more runs. Every Wi-Fi row carries this delta.
 
+## Session 3 — RB5009, 2026-09-11 — tip deploy, N1, N4
+
+**Device.** RB5009UG+S+, RouterOS 7.21.5 (long-term, build 2026-07-03), 4×
+ARM64, 1024 MiB total. The production 0.3.3 container ran on `veth1`
+throughout; its soak was **not** interrupted and no load arm ran, so nothing
+here competes with it. The probe is `fah-probe` on `veth3`, 172.17.0.4.
+
+**Tip.** `phase3-06` at `4365932`, tracked tree clean. Nothing in this session
+is a measurement — every row is a functional check.
+
+### Images built from the tip
+
+Built on the dev box (Docker 29.7.2, containerd snapshotter on, QEMU arm64),
+each `buildx -o type=docker` then converted with skopeo to legacy
+docker-archive, because the containerd store emits OCI layout and RouterOS
+hangs at `extracting` on that (deploy-rb5009.md §1). `fah-probe` carries
+`--build-arg SPLICE_BUF_KIB=16`, the shipped const.
+
+| Image | Bytes | sha256 | Build |
+| --- | --- | --- | --- |
+| `fah-probe-4365932-rosready.tar` | 16 886 784 | `da3b947db8bb0c82ec2f990feaefb8180216f56a9c2d4cd18a5a134d3ce2d60c` | 26 min |
+| `fah-splicebench-4365932-rosready.tar` | 7 438 848 | `d8f17fad25ee50369e9cea4166537fb5df177e10342bd5acc5af275b3b79fe67` | 12 min |
+| `fah-p4-4365932-rosready.tar` | 21 892 096 | `a14e0ab7f1fdad7195f470f40c100f8d5074bf5d9acf0d7b2298c4e0d5aaf269` | 55 min |
+| `fah-certs-4365932-rosready.tar` | 7 101 440 | `b6c599556d3d928d8ce701c466557e50b8a3e0e943f218f23088a1856024ca1d` | 10 min |
+
+Per image, verified from the tar before upload: `manifest.json` `Layers` are
+flat `<hash>.tar`; `architecture` arm64, `os` linux; and the shipped layers
+carry **no** `fastadhunter` entry — `/fah-probe`, `/fah-splicebench`,
+`/fah-p4` + `/fah-probe`, `/fah-certs` respectively. `fah-splicebench` is
+exactly 15 characters, at the `comm` limit, not over it.
+
+Only `fah-probe` was started. The three one-shot benches are uploaded and
+unused — they are CPU-saturating and the 0.3.3 soak is still running.
+
+### Router steps as actually run
+
+`R4` uploaded the **tip-stamped** names, not the runbook's
+`fah-<name>-arm64.tar`; `R5`'s `file=` was adjusted to match. `/file/print`
+confirmed all four at the byte counts above. RouterOS prints no hash, so size
+is the only device-side check available.
+
+`R4b`'s directories were created with `/file/add name=… type=directory`
+(parent first — it does not create intermediate levels), not over SFTP.
+Mount lists `fahprobe-config` / `fahprobe-data` added; production's
+`fah-config` / `fah-data` untouched.
+
+`R3` created `fahprobe-env` with the four keys, re-checked against `fah-env`
+first and identical to it. The boot log's `http_runtimes=2` confirms it
+attached.
+
+`R5` added and started `fah-probe` from
+`kingston/fah-probe-4365932-rosready.tar`. The container's `image-id`
+`f7d1a8aa…d62d7c73fa` equals the config blob name inside the locally built
+tar, so the image on the device is the one built from `4365932`.
+
+`R2` set `engine.mode=dns+http+https` only. **`egress.allow_destinations` was
+left empty** — there is no Mac in the rig (owner decision 2026-09-11,
+continuing the 2026-09-08 decision), and no origin host has been chosen. Every
+proxy arm and the N2/N3 device path need it set first.
+
+The CA was generated afterwards: `CN=FastAdHunter CA`, SHA-256
+`AE:6E:9A:…:F9:1C`, `not_after` 2036-09-07, `archived_previous:false`.
+
+### N1 — migration on the probe: **PASS**
+
+**Fixture is constructed, not found.** R0 proved on 2026-09-08 that no probe
+directory, container or tar existed, and `Dockerfile.fahprobe` seeds `/config`
+from an empty directory — so the campaign-1 config the R2 addendum assumes has
+never existed on this device. A 98-byte `fastadhunter.toml` carrying only
+
+```toml
+[https.interception]
+clients = ["10.0.0.5", "192.168.88.0/24"]
+exclude_domains = ["bank.example"]
+```
+
+was placed in the config mount before the first start. The values are
+deliberately off-LAN (this LAN is 192.168.10.0/24) and `bank.example` is a
+reserved TLD, so no real client or host was affected. The migration path
+exercised is genuine; its input was seeded by us, and no row below should be
+read as evidence about a real 0.3.x upgrade.
+
+First boot, all four reads pass:
+
+1. `/file/print` shows `interception.json`, 108 B, in the config mount.
+2. `GET /api/v1/interception` returns the seeded `clients` and
+   `exclude_domains` exactly.
+3. `GET /api/v1/config` carries no `https.interception`.
+4. The log carries `migrated [https.interception] into interception.json
+   document=/config/interception.json`.
+
+The stored TOML went 98 → 1282 bytes — re-saved with defaults expanded and the
+legacy block stripped, confirmed by reading its contents back.
+
+**Privilege-drop path.** The migration line is timestamped *after*
+`dropped privileges after binding uid=65532 gid=65532`, so the write landed on
+the re-owned mount as the service user. A later `PUT` adding `probe.invalid`
+answered 200 and `GET` reflected it, and the second boot read that document
+back — the behavioural proof N1 asks for, ownership not being observable from
+RouterOS.
+
+Second boot: no migration line, no `ignored` line, no regenerated keys.
+
+### N4 — negative `PUT`, atomicity: **PASS**
+
+Run in two parts. **API half, before any device was listed.**
+`PUT {"clients":["10.0.0.5"],"exclude_domains":[]}` → **200**, body echoes.
+`PUT` with `"10.0.0.300"` appended → **422**,
+`{"reason":"invalid_entry","list":"clients","index":1,"entry":"10.0.0.300"}`,
+message `clients[1]: "10.0.0.300" is not an IP address or CIDR block`.
+`GET` afterwards returns the previous document unchanged — the primary proof,
+no mutation.
+
+**Device leg, after N2/N3, with the phone listed and the CA reinstalled.**
+Document before: `clients ["192.168.10.11", "2a02:2f04:5400:cc00::/64"]`,
+`exclude_domains ["mob-ro.unicreditbanking.eu"]`; counter 1167, connections
+1311. A `PUT` appending `"10.0.0.300"` as the third client answered **422**
+with `index: 2` — the index tracks the entry's real position, not a fixed one.
+`GET` returned the document byte-identical to the snapshot, and the phone's
+next Chrome connection to a non-excluded host still read
+`Issued by: FastAdHunter CA`. **That last read is what the API check alone
+cannot give: the rejected `PUT` moved neither the stored file nor the running
+policy.**
+
+### Two observations, neither a defect
+
+**Upstream failure at boot is a startup transient.** Both first boots logged
+`all upstreams failed … upstream timed out` about 2 s in, and the scheduled
+list refresh failed with it. Container networking is not ready that early.
+`veth3` is bridged on `CONTAINERS` exactly like `veth1`, `srcnat` masquerades
+all of `172.17.0.0/24`, and nothing in `forward` matches `172.17.0.4`;
+`nslookup example.com 172.17.0.4` answered normally minutes later, and
+`1.1.1.1` showed 3 attempts / 0 failures. The probe's compiled-in defaults
+`1.1.1.1` and `9.9.9.9` are the same two production uses.
+
+**The failed boot refresh does not retry on its own inside the window we
+watched.** `rules` stayed 0 until `POST /api/v1/lists/refresh` was called by
+hand, which returned `{"refreshed":1,"failed":0,…"rules_active_dns":55490}`.
+Any later boot that loses its upstreams for the first seconds starts with an
+empty ruleset until the next scheduled refresh; worth knowing before reading
+any arm that assumes rules are loaded.
+
+### Device path — steer, CA install, N2, N3
+
+**Device.** OnePlus 15 (OxygenOS, Android), 192.168.10.11 and
+`2a02:2f04:5400:cc00::/64`, static lease. Owner's own phone, owner-operated
+throughout.
+
+**R7, scoped.** Owner decision 2026-09-11: *only 192.168.10.11 is steered to
+the probe; no other LAN client is affected.* The runbook's R7 steers all LAN
+tcp/443; it was narrowed with `src-address=192.168.10.11`. The v6 half was
+added because RA advertises `2a02:2f04:5400:cc00::1/64` on the LAN and the
+phone prefers v6 — unsteered, it bypasses the probe entirely. v6 uses an
+address-list `p3-06-probe-client` holding the phone's two global addresses,
+and mirrors production's guards: accepts for `fah-http-skip6` and `fah-lan6`
+(`2a02:2f04:5400:cc00::/56`, so LAN-internal v6 is never steered) ahead of the
+dst-nat, with `to-address=…/128` and `dst-address=!…/128`.
+
+Both rules showed the `I` invalid flag on the print immediately after `add` and
+cleared on the next print, v4 and v6 alike. **Transient, twice observed** — do
+not act on an `I` seen in the same breath as the `add`.
+
+**Two traps found in sequence, both about scope living in the right place.**
+Interception first failed: `example.com` served Cloudflare's real certificate
+although the NAT counters showed traffic reaching the probe (v4 26 packets, v6
+65). The connection went over v6, so the probe saw a v6 source, and `clients`
+held only `192.168.10.11` — not a match, so it spliced. Correct behaviour, wrong
+document. Fixed by listing `2a02:2f04:5400:cc00::/64` alongside the v4 address.
+**The `/64` cannot over-intercept here because the steer is already scoped to
+one device** — no other client's packets reach the probe, so scope lives in the
+NAT rule and the document need not restate it. Exact addresses were rejected as
+a design: Android rotates temporary addresses and they go stale mid-test. After
+the fix, Chrome on the phone read `Issued by: FastAdHunter CA` — interception
+confirmed end to end.
+
+### N2 — the ADR-0008 path: **PASS**
+
+App: UniCredit mobile banking (`mob-ro.unicreditbanking.eu`). Baseline
+`listeners.https.client_cert_rejections` **303** before the app was opened, on
+393 connections.
+
+1. The host appeared in the Live Feed's "Certificate rejected by client" view,
+   grouped by client and host, count 3, from the **v4** address — while Spotify
+   and the app's Adobe/Microblink SDK hosts arrived over **v6**. One app
+   straddles both families.
+2. Excluded through the view's own confirmation, exact host only.
+3. `GET /api/v1/interception` then held
+   `exclude_domains: ["mob-ro.unicreditbanking.eu"]`, `clients` unchanged.
+4. No restart, no `restart_required` anywhere in the flow.
+5. After a force-close the app logged in and performed actions normally.
+6. Counter 303 → **443** across the window.
+
+**Two scope limits on this row.** Item 3's specified proof is reading the
+issuer for that host and seeing it is no longer `FastAdHunter CA`; what was
+observed is the app working, which is strong indirect evidence — a pinned
+banking app succeeds only against the real upstream chain — but it is inference,
+not the issuer read. And the +140 delta is phone-wide, not the banking app's:
+Spotify, Brave, Adobe, Microblink, Allawn and Heytap were rejecting throughout.
+**Per-host attribution from the view is the evidence; the counter only
+corroborates.**
+
+### N3 — `UnknownCA` is not a rejection: **FAIL — design finding**
+
+Pass criterion: with the CA removed from the device and the probe store
+untouched, the app's connections fail as `https` **status 0**, the rejection
+view stays **empty** and `client_cert_rejections` stays **flat**.
+
+Observed after removing `FastAdHunter CA` from the phone's user trust store:
+
+| State | `client_cert_rejections` | Elapsed |
+| --- | --- | --- |
+| CA installed, before the banking app | 303 | — |
+| after the N2 window | 443 | ~6 min |
+| CA uninstalled | 855 | ~2.5 min |
+| CA uninstalled | 930 | ~1 min later |
+
+The counter did not stay flat; it accelerated roughly six-fold. The rejection
+view held **56 rows** where the criterion requires zero — `login5.spotify.com`
+(12), `go-updater.brave.com` (8), `links.tospotify.com` (4),
+`z-m-gateway.facebook.com`, `variations.brave.com`, `i.scdn.co`,
+`image-cdn-fa.spotifycdn.com`, the Heytap and Allawn hosts. The view is
+cumulative and some rows predate the removal, so **the counter delta is the
+clean evidence**, not the row count.
+
+**The defect is in the premise, not the code.**
+[`intercept.rs:49-56`](../../../crates/fah-http/src/intercept.rs#L49-L56)
+classifies exactly as CONTEXT.md and API.md declare: `BadCertificate`,
+`CertificateUnknown` and `AccessDenied` → 525; `UnknownCA` → status 0,
+uncounted. What does not hold is the assumption that a client which has never
+seen our CA sends `UnknownCA`.
+
+**The finding, stated to the evidence:**
+
+> On OnePlus 15 / OxygenOS / BoringSSL, absence of the FAH client CA produced a
+> 525-class client-certificate rejection. The probe was running at INFO level,
+> while the alert identity is logged only at DEBUG
+> ([`intercept.rs:158`](../../../crates/fah-http/src/intercept.rs#L158)), so the
+> specific alert is **not established**. The rejection is classified as 525
+> `ClientCertRejected`. Because `bad_certificate`, `certificate_unknown` and
+> `access_denied` all map to the same 525 classification, the current rejection
+> view cannot reliably distinguish application certificate pinning from an
+> untrusted or missing interception CA.
+
+The counter moving is what proves a 525-class alert was sent; no read path
+carries the alert name — `GET /telemetry` and the event stream both surface only
+the status. Naming the alert needs a deliberate re-run at `log.level=debug` with
+the steer restored, and the design consequence above does not depend on it.
+
+The tell was already in the N2 baseline and was read too generously at the
+time: `client_cert_rejections` stood at **303 while the CA was installed and
+trusted**, because Android apps targeting API 24+ ignore the user trust store.
+Removing the CA did not change the alert the device sends — it only widened the
+set of apps sending it. N2 and N3 were measuring **one phenomenon**, not two.
+
+**Consequence, and it is design-level.** The rejection view cannot distinguish
+*this app pins and refuses our leaf* from *this client never trusted our CA*.
+Both render as 525 rows offering the same `Exclude` action, and excluding is the
+wrong remedy for the second: it permanently surrenders interception for a host
+in order to paper over a device-side install problem. Recorded against p3-08
+(classification) and p3-09 (the operator action), not against this run.
+
+**Scope.** One device — OnePlus 15, OxygenOS, Android's BoringSSL. Nothing here
+shows how iOS, Windows or other TLS stacks behave; they may send `UnknownCA` and
+work exactly as designed. Superseded by a second device disagreeing.
+
+### D1 — dashboard at 390 px, both themes: **run, three defects found and fixed**
+
+Driven by Playwright against **the probe itself** — the real dashboard and API
+on the RB5009 at `https://172.17.0.4:8443` — not a dev server. p3-09's §Known
+limitations had recorded this check as owed precisely because "it needs the
+dashboard served against a running API, which was not stood up"; the probe
+built in this session is that API.
+
+**Method note.** Screenshots the MCP browser wrote landed outside the
+workspace, so the arms below are **measured** through `getComputedStyle` and
+`getBoundingClientRect` rather than eyeballed, with screenshots read back only
+to confirm the visible result. Measurement is the stronger form here: p3-09's
+standing claim was a *reuse argument* ("every class used is already carried by
+a surface verified at that width"), and only numbers could falsify it.
+
+| Arm | Result |
+| --- | --- |
+| Rejection view, empty, 390, light | PASS — `scrollWidth` 375 ≤ 390, no element past the viewport, all controls 44 px |
+| Rejection view, 8 cards, 390, light | PASS — cards `display: flex`, page scrolls (1747 vs 844), zero overflow, longest domain 300 px unwrapped |
+| Rejection view, 8 cards, 390, dark | PASS — domain 13.29:1, secondary 6.63:1 against the card, both above AA |
+| Interception card, 390, dark | `.set-field` collapses to one 321 px column as claimed; Reset/Save 52 px; no page overflow |
+| Interception card, 1280, light + dark | editor text 15.04:1; defects 1 and 3 below |
+
+**Three defects, all fixed in `dashboard/frontend/src/styles/components.css`
+(+29 lines, no deletions; frontend suite 1043 tests / 58 files green).**
+
+| # | What | Before | After |
+| --- | --- | --- | --- |
+| 1 | The line editor never grew past the textarea's intrinsic `cols=20`. `.editor-area` is already `width: 100%`, but the wrapper between it and `.set-field-control` is a flex item, and a flex item shrinks to content unless told to grow | 161 px of 473 at 1280; 161 px of 321 at 390; `2a02:2f04:5400:cc00::/64` and `mob-ro.unicreditbanking.eu` truncated behind a sideways scrollbar | 429 px at 1280, 287 px at 390, no sideways scroll, both values fully visible |
+| 2 | `Exclude` missed the phone touch-target rules, which name `.feed-actions .btn` and `.feed-chipset .chip`; it is a `.btn` inside `.ev-meta` | 34 px, against 44 px for Pause/Clear/the view chips in the same view | 44 px, matching Pause |
+| 3 | The focused textarea painted over the sticky save bar while a long editor scrolled. `.editor-area` is `position: relative; z-index: 1`; `.set-bar` was `position: sticky; z-index: auto`; same stacking context, `auto` loses to `1` | textarea bottom 852.9 vs bar top 779.8 — 73 px of overlap, drawn over `Save changes` | `.set-bar` topmost under `elementFromPoint` at its own centre with the textarea focused |
+
+**Defect 3 was found by the owner, not by the sweep.** It only appears when the
+card is tall enough to scroll *and* the textarea holds focus, which no
+systematic width/theme pass reaches. Recorded because the lesson generalises:
+this arm's grid is width × theme, and a state axis — focused, scrolled, dirty —
+is not in it.
+
+Defects 1 and 3 are **not** specific to the Interception card. `.set-bar` is the
+shared settings save bar and `.editor` the shared line editor, so every section
+with a tall editor had both; `[egress]`'s `allow_destinations` was measured
+showing defect 1 identically (161 px of 473 at 1280). The fixes are shared in
+the same way.
+
+**Scope limit.** The rejection-view rows were **injected into the DOM** using
+the component's own card markup, because the R7 steer was removed after the
+N-rows and no live rejections arrive at the probe. Those arms therefore verify
+the CSS and layout, **not** the data path or the grouping logic. The
+Interception card was measured entirely as served, with the real document
+(`192.168.10.11`, `2a02:2f04:5400:cc00::/64`, `mob-ro.unicreditbanking.eu`).
+The fixes are in source only — the probe still serves the pre-fix bundle, so
+confirming them on the device needs a rebuild and redeploy.
+
+### Standing state at session end — device restored, steer removed
+
+The phone is **restored**. `FastAdHunter CA` was reinstalled in its user trust
+store after N3, and the R7 steer was removed once the N-rows were done, so the
+device is off the interception path entirely — Spotify, which failed throughout
+N3, works again. That last check is the practical confirmation, not the counter.
+
+Why the steer came off rather than staying for the soak: **it was breaking the
+owner's daily phone, and not only because of N3**. The 303 baseline accumulated
+while the CA was installed and trusted, because apps targeting API 24+ ignore
+the user store — so under interception only Chrome and the excluded UniCredit
+host worked. The soak has not started, so nothing was being measured from that
+device; three days of broken apps would have bought nothing.
+
+| What | State at session end |
+| --- | --- |
+| R7 v4 | **Removed** 2026-09-11 after the N-rows. `/ip/firewall/nat/print where comment~"p3-06"` returns nothing |
+| R7 v6 | **Removed** the same way; `/ipv6/firewall/nat` likewise clean |
+| Address list | `p3-06-probe-client` **retained**, two global v6 addresses, inert without a rule referencing it. Kept because it is the fiddly part to reconstruct |
+| Interception Document | **Retained**: `clients ["192.168.10.11", "2a02:2f04:5400:cc00::/64"]`, `exclude_domains ["mob-ro.unicreditbanking.eu"]`. Inert — no traffic reaches the probe |
+| Probe | `fah-probe` **running** on `veth3`, `dns+http+https`, CA present, 55 490 rules, `start-on-boot=no` |
+| Production | 0.3.3 on `veth1`, untouched throughout, soak running to 2026-09-14 |
+
+**To resume at soak start**, re-add the two `add` pairs recorded in §Router
+steps — v4 with `src-address=192.168.10.11`, v6 with
+`src-address-list=p3-06-probe-client` behind the `fah-http-skip6` and `fah-lan6`
+accepts. Watch-list row (i) then captures the posture fresh, which is why the
+document and address list being retained does not weaken that baseline: the
+snapshot is taken after the steer is back, not inherited from here.
+
+One caveat carried forward: the phone's v6 addresses in `p3-06-probe-client`
+were read on 2026-09-11 and Android rotates temporary addresses. **Re-read them
+before trusting the list at soak start** — the document's `/64` entry covers the
+interception side, but the address list drives the steer and a stale entry means
+the phone is simply never steered.
+### Not run in this session
+
+| Arm | Blocker |
+| --- | --- |
+| P1, P2, P3, Runbook 1–4 | load arms. The 0.3.3 production soak runs to 2026-09-14; running them now risks invalidating it, as the 2026-09-08 flood did |
+| N5, N6 | inside the 24 h full-mode soak (R11), which has not started |
+| The three one-shot benches | uploaded, never started, same soak reason |
+
 ## Owed
 
 | Item | Why it is not here |
 | --- | --- |
 | D6's `SPLICE_BUF` 16 vs 64 KiB comparison | Declared as **two builds of the tip**; the 64 KiB build needs a `src` edit, which is a code change awaiting owner approval |
 | D12 against a real host distribution | The shipped arm is synthetic. A hashed real-traffic capture is running — see §Corpus |
-| Every P-series arm | On-device, owner-executed. Blocked on the probe preconditions (verification plan §Step 4.0) |
+| Every P-series arm | On-device, owner-executed. The probe preconditions are met since Session 3 — the blockers are now the 0.3.3 soak running to 2026-09-14 and an unset `egress.allow_destinations` with no origin host chosen |
+| N2, N3, and N4's device leg | **All run 2026-09-11** (§Session 3): N2 PASS, N4 PASS, **N3 FAIL** — a design finding against p3-08/p3-09, not a defect in this run |
+| N5, N6 | Live inside the 24 h full-mode soak (R11), not yet started |
 
 ## Corpus — D12's real-distribution replay
 

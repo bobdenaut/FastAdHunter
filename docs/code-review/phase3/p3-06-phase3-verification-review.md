@@ -883,6 +883,7 @@ is described in §Post-review work A and the code is in
 | (f) per-transport traffic split | diagnostic | WS `transport` counts | descriptive |
 | (g) `listeners.https.client_cert_rejections` (N5) | diagnostic | hourly `/telemetry` | a rising count is a client refusing the leaf — attribute to the app; nothing is excluded from the soak side |
 | (h) `interception.json` unchanged except after a recorded owner `PUT` (N5) | **invariant** | daily: `/file print` date **and** the `GET /api/v1/interception` body against the previous day's (content comparison — RouterOS prints no hash) | flat, or every change matched to a recorded `PUT` with its time; an unmatched change is a finding to investigate, not a gate decision |
+| (i) **first snapshot must capture the starting posture explicitly** (N5) | **invariant** | at soak start, before any other pull: `GET /api/v1/interception` body verbatim, `/ip/firewall/nat/print stats where comment~"p3-06 https steer"`, `/ipv6/firewall/nat/print stats where comment~"p3-06 https steer"` and `/ipv6/firewall/address-list/print where list=p3-06-probe-client` | row (h)'s daily comparison has nothing to compare against without it, and a steer removed or re-scoped mid-soak silently changes which traffic the figures describe. Owner decision 2026-09-11 |
 
 Collection as deploy-rb5009.md §9 (5-minute `/telemetry` + `/stats` pulls)
 plus hourly `GET /api/v1/certificates` and `/api/v1/debug/memory`; log every

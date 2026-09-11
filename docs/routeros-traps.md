@@ -111,6 +111,20 @@ dropped after binding, which the start-up log states.
 - **QPS is `/interface monitor-traffic veth1` → `tx-packets-per-second`**
   (`tx` = into the container). Firewall counters also work but this is the
   answer.
+- **There is no `mkdir`, but `/file/add` makes directories** —
+  `/file/add name=kingston/fah-probe type=directory` on RouterOS 7.21.5. It does
+  **not** create intermediate levels, so create the parent first, then each
+  child. SFTP is the fallback on versions without `type=directory`. Confirmed
+  2026-09-11 building the p3-06 probe mounts.
+- **A config file can be read from the CLI** —
+  `:put [/file get [find name="kingston/fah-probe/config/fastadhunter.toml"] contents]`
+  prints the whole file, read-only. Useful for confirming a container rewrote
+  its own config without pulling it over SFTP. `/file/print` alone shows only
+  name, type, size and timestamp.
+- **`/file/print` shows size, never a hash.** After uploading an image tar the
+  only device-side check available is the byte count — compare it against the
+  build host's `ls -l`; a sha256 taken on the build host says nothing about what
+  landed.
 
 ## Build and deploy pipeline
 

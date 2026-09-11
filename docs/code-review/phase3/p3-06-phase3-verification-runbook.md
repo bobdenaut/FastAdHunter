@@ -211,6 +211,22 @@ it naming the list, length and cap — the owner fixes the TOML (router write)
 and restarts. **Pass:** all four first-boot reads; second boot clean; `PUT`
 after migration succeeds.
 
+**Correction, 2026-09-11 — the fixture is constructed, not found.** The
+paragraph above assumes a campaign-1 probe config still carrying
+`[https.interception]`. No such config exists on this device: `R0` recorded
+`/file/print where name~"fah-"` returning nothing on 2026-09-08, and
+`Dockerfile.fahprobe` seeds `/config` from an empty directory, so a fresh probe
+writes a fresh TOML with no legacy block and there is nothing to migrate. "Leave
+the block in place — it is the fixture" therefore has no subject; the block must
+be **placed** in `/kingston/fah-probe/config/fastadhunter.toml` before the first
+start, or N1 cannot run at all. A minimal file carrying only
+`[https.interception]` is enough — `Config` is `#[serde(deny_unknown_fields,
+default)]`, so every other section defaults. Use off-LAN values so no real
+client or host is affected. N1 ran this way on 2026-09-11 and passed; the
+migration path it exercises is genuine, but no result from it is evidence about
+a real 0.3.x upgrade. Detail in
+[p3-06-testing-results-2.md](p3-06-testing-results-2.md) §Session 3.
+
 ### R3 — `fahprobe-env`
 
 Without this the N axis does not exist: the probe inherits production's
@@ -248,6 +264,18 @@ mechanism.
 Campaign 1's `a2d0802` images are retired and must not be reused for any
 campaign-2 figure.
 
+**Run 2026-09-11.** The four tars were uploaded under their **tip-stamped**
+names — `fah-probe-4365932-rosready.tar` and the three siblings — not the
+unstamped names above, so `R5`'s `file=` was adjusted to match. The stamp keeps
+the provenance of a tar visible on the device, which the unstamped name loses;
+if the unstamped names are preferred, rename on upload (`scp <src>
+bobdenaut:kingston/<dest>`, one file per call) and `R5` needs no change.
+`/file/print` confirmed all four at 16 886 784 / 7 438 848 / 21 892 096 /
+7 101 440 bytes. **RouterOS prints no hash**, so size is the only device-side
+check; the sha256 of each tar is in
+[p3-06-testing-results-2.md](p3-06-testing-results-2.md) §Session 3 and
+verifies the local file only.
+
 ### R4b — mount lists, the FAH probe only
 
 Only `Dockerfile.fahprobe` declares `VOLUME ["/config", "/data"]`. The three
@@ -259,7 +287,7 @@ container log, so losing `/tmp` on `remove` costs nothing.
 | | |
 | --- | --- |
 | **Command** | `/container/mounts/add list=fahprobe-config src=/kingston/fah-probe/config dst=/config` and `/container/mounts/add list=fahprobe-data src=/kingston/fah-probe/data dst=/data` |
-| **Precondition** | `/kingston/fah-probe/config` and `/kingston/fah-probe/data` exist — create them over SFTP first |
+| **Precondition** | `/kingston/fah-probe/config` and `/kingston/fah-probe/data` exist. On RouterOS 7.21.5 create them on the router, parent first — `/file/add name=kingston/fah-probe type=directory`, then `…/config`, then `…/data`; `/file/add` does not create intermediate levels. SFTP also works and is the only option on versions without `type=directory` |
 | **Expected state** | `/container/mounts/print detail` lists both alongside production's `fah-config` and `fah-data`, with `src` under `/kingston/fah-probe/` and never under `/kingston/fastadhunter/` |
 | **Takes effect** | when a container that names them starts |
 | **Restart required** | no — but a container already running does not pick them up |

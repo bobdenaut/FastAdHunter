@@ -150,6 +150,22 @@ holds and the task's acceptance line is satisfied.
 - Best-effort by construction: a client that closes without alerting is `0` and
   appears nowhere as a rejection. API.md and CONTEXT.md both say so.
 - `UnknownCA` has no surface, counter or client-level diagnosis (ADR §Revisit).
+- **`UnknownCA` was not observed in the field, and the distinction it carries
+  may not be observable at all.** N1–N4's device run on 2026-09-11
+  ([p3-06-testing-results-2.md](p3-06-testing-results-2.md) §Session 3, N3)
+  removed the CA from an Android client's trust store and expected status 0,
+  an unmoved counter and an empty rejection view. Instead
+  `client_cert_rejections` accelerated — 443 → 855 → 930 — so the device sent
+  one of the three 525-class alerts, not `UnknownCA`. **Which of the three is
+  not established**: the probe ran at INFO and the alert identity is logged only
+  at DEBUG ([`intercept.rs:158`](../../../crates/fah-http/src/intercept.rs#L158)),
+  and no read path carries it. The classification code is correct and matches
+  the docs; the premise behind it is what did not hold.
+  The counter also stood at **303 with the CA installed and trusted**, because
+  Android apps targeting API 24+ ignore the user store — so "pinning app" and
+  "CA absent" are one phenomenon on this client, not two. Scope: one device
+  (OnePlus 15, OxygenOS, BoringSSL); another stack may send `UnknownCA` and
+  behave as designed. Superseded by a second device disagreeing.
 - The rejection view and the exclude action are p3-09.
 
 ## Findings

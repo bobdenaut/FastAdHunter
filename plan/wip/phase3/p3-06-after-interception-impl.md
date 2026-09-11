@@ -7,7 +7,11 @@ Everything here is a declaration or tooling update to p3-06's runbook, smoke
 plan, testing plan or probe scripts, or a new runbook row. Written 2026-09-11
 against `phase3-06` at `b3237ef`. §3b (scripts, e2e suite, smoke driver) is
 implemented, run green and committed (`223bf79`); B5–B10 applied 2026-09-11
-(four files, owner yes per file); N1–N6 are still planning.
+(four files, owner yes per file). **N1, N2, N4, D1 and D2 ran 2026-09-11** —
+N1/N2/N4/D1 on the tip image built from `4365932` and deployed to the probe,
+D1 finding three dashboard CSS defects, all fixed. **N3 FAILED**, a design
+finding against p3-08/p3-09. N5 and N6 remain planning; they live inside the
+soak. §4 carries the per-item status.
 
 **Decision — no campaign re-run.** p3-07 adds one `ArcSwap::load` per accepted
 connection (`fah-http/src/https.rs` `interception_for`); p3-08 touches only the
@@ -59,19 +63,19 @@ the agent proposes the exact commands and stops.
 | N2 | **Runbook 4 rewritten — the ADR-0008 path, end to end** | client listed, CA installed on the device, `exclude_domains: []`. Open the pinned banking app: (1) its hosts appear in the Live Feed "Certificate rejected by client" view with **status 525**, count rising on retry; (2) the operator excludes the **exact observed host** through the view's confirmation; (3) the device's next connection to that host is admitted to the SNI/splice path, not intercepted — proof is that the certificate served to the device is **no longer issued by `FastAdHunter CA`** (no MITM — the upstream chain, whatever CDN or proxy it comes from), with the feed's `https-sni` row as supporting evidence; (4) `GET /api/v1/interception` contains the exact host; (5) no restart, no `restart_required`; (6) `listeners.https.client_cert_rejections` moved by the observed count. Record app, hosts, counts | 525 rows appear; the exclusion applies on the next connection; app functional; document contains the host |
 | N3 | **Runbook 4 negative — `UnknownCA` is not a rejection** | same device, listed, **CA uninstalled from the device's trust store, probe store unchanged**: the app's connections fail; the feed shows those sessions as `https` **status 0**; the rejection view stays **empty**; `client_cert_rejections` flat; no 525. The rest of the Live Feed is not required to be empty — only the rejection view | no 525, no row, counter flat |
 | N4 | **R8 — negative `PUT`, atomicity** | after the valid `PUT` (200): a `PUT` carrying one invalid entry answers **422** with the structured `details` object; then `GET /api/v1/interception` returns the previous document unchanged — **the primary proof: no mutation**; `/file print` showing no timestamp change is corroborating only (filesystem timestamp granularity); a new connection from the listed device is still intercepted under the previous document | 200, then 422 with `details`, then `GET` equals the previous document and a new connection reflects it |
-| N5 | **Runbook 6 (soak) watch list** | hourly: `listeners.https.client_cert_rejections` in the `/telemetry` read. Daily: `interception.json` date from `/file print` **and** the `GET /api/v1/interception` body compared to the previous day's (content comparison — RouterOS prints no hash). Invariant: the document does not change during the soak except after an explicit owner `PUT`, recorded with its time | flat, or every change matched to a recorded `PUT` |
+| N5 | **Runbook 6 (soak) watch list** | **First snapshot, before any other pull:** the `GET /api/v1/interception` body verbatim and the R7 steer state — both `nat/print stats` filters on `comment~"p3-06 https steer"` plus `address-list/print where list=p3-06-probe-client`. Without it the daily comparison has no baseline, and a steer removed or re-scoped mid-soak silently changes which traffic the figures describe (owner decision 2026-09-11). Then hourly: `listeners.https.client_cert_rejections` in the `/telemetry` read. Daily: `interception.json` date from `/file print` **and** the `GET /api/v1/interception` body compared to the previous day's (content comparison — RouterOS prints no hash). Invariant: the document does not change during the soak except after an explicit owner `PUT`, recorded with its time | first snapshot present; then flat, or every change matched to a recorded `PUT` |
 | N6 | **Runbook 7 addendum** | `interception.json` is operator configuration, not CA private-key material: it does not inherit the CA-key-only permission expectations, and it is not a leak needle. After a `PUT`: `ca/export` in both formats and `/config` still answer without the CA key's payload; the traversal list still passes; the existing key-permission checks are unchanged | Runbook 7 green with the document present |
 
 ## 3. Additional dev-box validation
 
 | # | Item | How | Status |
 | --- | --- | --- | --- |
-| D1 | 390 px / both themes, rejection view and Interception card | dev binary in `dns+http+https` with a CA, dashboard dev server, Playwright at 390 px in both themes; record in the p3-09 review file §Known limitations | open (p3-09) |
+| D1 | 390 px / both themes, rejection view and Interception card | Ran against **the p3-06 probe** (real dashboard + API on the RB5009), not a dev server, with Playwright at 390 px and 1280 px in both themes | **run 2026-09-11 — three defects found and fixed**: the line editor never grew past `cols=20` (161 px at every width, truncating an IPv6 CIDR); `Exclude` was a 34 px touch target against 44 px elsewhere; the focused textarea painted over the sticky save bar while scrolling. `components.css` +29/−0, 1043 frontend tests green. Recorded in the p3-09 review §Known limitations and [p3-06-testing-results-2.md](../../../docs/code-review/phase3/p3-06-testing-results-2.md) §Session 3 |
 | D2 | migration first-boot path through the real binary | `crates/fastadhunter/tests/interception_migration.rs`: boot with a TOML carrying `[https.interception]` and no document; assert the file, the stripped TOML, `GET /interception` | **run 2026-09-11, §3b** — 5/5 green, 1.1 s; was a non-blocking follow-up (unit-covered in `interception_store.rs`, 11 migration cases) |
 
 ## 3b. Implemented 2026-09-11 — B1–B4, D2, the smoke driver (written and run)
 
-Working tree only, uncommitted. Run 2026-09-11 on the dev box after a review
+Committed at `223bf79`. Run 2026-09-11 on the dev box after a review
 pass fixed four defects: `cargo fmt --check`, `clippy -p fastadhunter
 --all-features --tests -D warnings` and `node --check` on all four `.mjs` files
 clean; the e2e suite 5/5 (1.1 s); the driver 12/12, exit 0, ~8 s wall against
@@ -117,12 +121,23 @@ testing plan (B8 + the P2 precondition sentence), verification review (B9, the
 
 ## 4. Order
 
-1. B1–B4 (scripts) → smoke re-run named in §1 → owner yes → commit. **Written and run green (§3b); commit pending.**
+1. B1–B4 (scripts) → smoke re-run named in §1 → owner yes → commit. **Written, run green (§3b) and committed (`223bf79`).**
 2. B5–B10 document edits, owner yes per file. **Applied 2026-09-11.**
-3. N1 on the first tip-image boot of the probe (R0/R2 window).
-4. N2–N4 with the device, after R7/R8.
+3. N1 on the first tip-image boot of the probe (R0/R2 window). **Run
+   2026-09-11 — PASS**, against a *constructed* legacy fixture; R0 proved no
+   campaign-1 probe config exists, so the block was placed before the first
+   start. See the runbook's R2 addendum correction and
+   [p3-06-testing-results-2.md](../../../docs/code-review/phase3/p3-06-testing-results-2.md)
+   §Session 3.
+4. N2–N4 with the device, after R7/R8. **All run 2026-09-11** on the owner's
+   OnePlus 15 (192.168.10.11 and `2a02:2f04:5400:cc00::/64`, R7 scoped to it
+   alone): **N2 PASS**, **N4 PASS** (API half and device leg), **N3 FAIL** — a
+   design finding filed against p3-08 and p3-09, not a defect in the run. See
+   [p3-06-testing-results-2.md](../../../docs/code-review/phase3/p3-06-testing-results-2.md)
+   §Session 3.
 5. N5–N6 inside the soak.
-6. D1 any time on the dev box; D2 when convenient.
+6. D1 and D2 both **run 2026-09-11** — see §3. D1 found three dashboard CSS
+   defects, all fixed; D2 is delivered by §3b's e2e suite.
 
 ## 5. Decision
 
@@ -213,6 +228,14 @@ a fresh session.
 
 ## 8. Prompt for the next agent — the device path (§2, owner-run)
 
+**Superseded for N1–N4 and D1 — those ran 2026-09-11 (§4).** What remains of
+this prompt is step 2 (the owed p3-06 load arms) and step 4 (N5/N6 inside the
+soak); step 1, step 3 and step 5 are done. The standing device state the next
+session inherits — probe up, R7 steer **removed**, document and address list
+retained and inert — is in
+[p3-06-testing-results-2.md](../../../docs/code-review/phase3/p3-06-testing-results-2.md)
+§Standing state, together with the two `add` pairs needed to put the steer back.
+
 §7 covers the dev box. The rows below need the tip image on the probe and the
 owner's device; the agent proposes and verifies, the owner runs. Gate: B5–B10
 landed. The 0.3.3 soak verdict gates the final phase decision, not N1–N4. The
@@ -239,8 +262,12 @@ explicit acceptance of that risk. Copy verbatim into a fresh session.
 > `p3-06-phase3-verification-runbook.md` carries the N1–N6 rows, the R2
 > addendum, the rewritten Runbook 4 and R8; the tip image built from this
 > `HEAD` and loaded on the probe container by the owner; the probe's stored
-> TOML still carries `[https.interception]` and no `interception.json` exists
-> (N1's precondition — do not pre-clean it); whether the production 0.3.3 soak
+> TOML carries `[https.interception]` and no `interception.json` exists — and
+> if it does not, that this is expected: no campaign-1 probe config has ever
+> existed on this device, so the legacy block is **placed** before the first
+> start rather than found. N1 was run this way on 2026-09-11 and passed; if it
+> has already run, its precondition is spent and re-running it needs a wiped
+> config directory. Whether the production 0.3.3 soak
 > is still running on the RB5009 — if it is, the load arms in step 2 are
 > blocked until the owner explicitly accepts the risk of invalidating it, as
 > the 2026-09-08 flood did. If any of these is missing, say which and stop.
