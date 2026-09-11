@@ -147,8 +147,10 @@ banking/pinned apps keep working (exclusions honored); budgets hold; SECURITY.md
 promises verified (CA key never leaves `/config`, public-only export).
 
 **Key risks:** certificate-pinned apps break under interception (mitigation:
-interception is opt-in per client + exclusion list ships with known pinned
-domains; SNI path is the default and breaks nothing); Android CA install
+interception is opt-in per client + `exclude_domains` in the Interception
+Document, edited live via `PUT /api/v1/interception` or the Settings card, and
+a client refusing our leaf surfaces as `status 525` in the Live Feed rejection
+view — ADR-0008; SNI path is the default and breaks nothing); Android CA install
 friction (mitigation: p3-06 walkthrough with screenshots, and the
 imported-real-cert route needs no CA install; Private DNS **hostname mode
 does validate** — the CA route serves an SNI-minted leaf, p3-05 decision 3;

@@ -33,7 +33,7 @@ numbers below are measured on the target hardware, not estimated.
 | 2.5 | Pre-Adaptive hardening | ✅ done | `v0.2.19-phase2.5` |
 | 2.6 | Adaptive DNS Stage 1 | ✅ closed 2026-09-07 — `adaptive` shipped opt-in; compiled-in default flipped and the `fallback` walk deleted with p2.6-12 (on `phase3-06`) | `soak-p2.6-11` |
 | 5 | Web dashboard | ✅ done — closed 2026-09-01, four verification rows deferred to the next deploy window | `0.3.0` |
-| 3 | HTTPS interception | 🚧 dev box done (p3-01…p3-05); p3-06's on-device campaign ran, four arms parked on hardware, awaiting the 24 h soak | `phase3-06` |
+| 3 | HTTPS interception | 🚧 dev box done (p3-01…p3-05, p3-07…p3-09); p3-06's on-device campaign ran, four arms parked on hardware, awaiting the 24 h soak | `phase3-06` |
 | 4 | HTML filtering | ⬜ not started | — |
 
 Rows are in **execution** order, which is not numeric order: the dashboard is
@@ -708,7 +708,7 @@ firewall · a replacement for a good browser extension.
 | **2.5** ✅ | Listener resilience, list-refresh integrity, encrypted-transport fixes, outcome telemetry, failure run-length telemetry — hardening before adaptive upstream selection |
 | **2.6** ✅ | Adaptive DNS Stage 1 — per-endpoint health, penalty and skip on repeated transport failure, on-path recovery probing; deployed opt-in since 2026-08-25, closed 2026-09-07; `adaptive` became the compiled-in default and `fallback` was deleted in p2.6-12. Shipped alongside as 0.3.2: HTTP allocation domains (ADR-0006) |
 | **5** ✅ | Web dashboard — thirteen screens, 128,730 B gzip, served by `fah-api` on one origin, session-cookie auth, every figure backed by an endpoint that exists; released as 0.3.0, closed 2026-09-01 with four verification rows deferred |
-| **3** 🚧 | HTTPS interception, certificate management, DoT/DoH listeners — dev box done, on-device campaign run, awaiting the 24 h soak |
+| **3** 🚧 | HTTPS interception, certificate management, DoT/DoH listeners, live Interception Document + client-rejection view (ADR-0008) — dev box done, on-device campaign run, awaiting the 24 h soak |
 | **4** | HTML filtering with `lol_html`, cosmetic rules |
 
 Execution order is 2.5 → 2.6 → **5** → 3 → 4. Phases 3 and 4 each send the
