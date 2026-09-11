@@ -42,6 +42,21 @@ dashboard/frontend/dist/
 # layer directories beside it are committed evidence and stay tracked.
 docs/code-review/**/smoke-*/work/
 
+# smoke/after-interception.mjs boots one throwaway store per row under its
+# --out/work/, so the rule above hides the whole store. The names below are
+# the secrets a store holds — config/: ca-key.pem, api-key.pem, apikey,
+# auth-hash; data/: session-secret; engine.log prints the generated API key
+# once — ignored at any depth of any smoke session as a second line, for a
+# driver that ever writes a store outside work/. Reports, public certificates,
+# documents and run logs stay addable.
+docs/code-review/**/smoke-*/**/ca-key.pem
+docs/code-review/**/smoke-*/**/api-key.pem
+docs/code-review/**/smoke-*/**/apikey
+docs/code-review/**/smoke-*/**/auth-hash
+docs/code-review/**/smoke-*/**/session-secret
+docs/code-review/**/smoke-*/**/session-secret.tmp
+docs/code-review/**/smoke-*/**/engine.log
+
 # p3-06 campaign 2: the P10 origin. origin-root/ is ~115 MB of random test
 # objects, regenerable in seconds; origin.key is the origin's private key.
 docs/code-review/**/campaign2/origin-root/

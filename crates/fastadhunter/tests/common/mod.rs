@@ -42,7 +42,7 @@ impl Drop for Guard {
     }
 }
 
-fn binary_under_test() -> PathBuf {
+pub fn binary_under_test() -> PathBuf {
     static ANNOUNCED: Once = Once::new();
     let Some(raw) = std::env::var_os("FAH_E2E_BINARY") else {
         return PathBuf::from(env!("CARGO_BIN_EXE_fastadhunter"));

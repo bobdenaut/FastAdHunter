@@ -4,12 +4,13 @@
 // RUNS ON THE WIRED BRIDGED VM, never on bobdenaut: every socket of all three
 // arms binds a VM address. bobdenaut launches it over ssh and copies the
 // results directory back. Two verified same-family IPv4 addresses on the
-// VM's bridged interface — --listed is in [https.interception] clients,
-// --unlisted is not. Identity precondition, proven before round 1, else
-// INVALID: both addresses on the interface (`os.networkInterfaces()`, so Linux,
-// macOS and Windows alike), each observed by
-// the probe (/api/v1/clients after one UDP/53 query bound to each), exactly
-// one listed (/api/v1/config).
+// VM's bridged interface — --listed is in the Interception Document's
+// `clients` (GET/PUT /api/v1/interception, live, no restart), --unlisted is
+// not. Identity precondition, proven before round 1, else INVALID: both
+// addresses on the interface (`os.networkInterfaces()`, so Linux, macOS and
+// Windows alike), each observed by the probe (/api/v1/clients after one
+// UDP/53 query bound to each), exactly one listed (the document lib.mjs
+// snapshots as interception.json — never /api/v1/config, which omits it).
 //
 // Arms, interleaved per round with a rotating start so no arm always runs
 // first:
@@ -56,8 +57,8 @@ const args = parseArgs({
   'origin-port': { type: 'number', default: 443, help: 'origin port' },
   path: { type: 'string', default: '/', help: 'request path for the first-byte column' },
   ca: { type: 'string', required: true, help: 'FastAdHunter CA PEM (export from the probe)' },
-  listed: { type: 'string', required: true, help: 'VM IPv4 that is in https.interception.clients' },
-  unlisted: { type: 'string', required: true, help: 'VM IPv4 that is not' },
+  listed: { type: 'string', required: true, help: 'VM IPv4 listed in the Interception Document (GET /api/v1/interception, clients)' },
+  unlisted: { type: 'string', required: true, help: 'VM IPv4 that is not listed' },
   port: { type: 'number', default: 8444, help: '[https.listen] port on the probe' },
   'dns-port': { type: 'number', default: 53, help: 'probe DNS port for the identity query' },
   rounds: { type: 'number', default: 200, help: 'rounds; each round runs all three arms' },
@@ -137,10 +138,10 @@ if (!seen.every((s) => s.answered)) run.invalid('identity precondition: the prob
 const clients = (await run.apiJson('/api/v1/clients')).items?.map((c) => c.ip) ?? [];
 const observed = [args.listed, args.unlisted].filter((a) => clients.includes(a));
 if (observed.length !== 2) run.invalid(`identity precondition: /api/v1/clients observed ${observed.join(',') || 'neither'}; a bridged VM on Wi-Fi is the usual cause (plan §Traps)`, { clients });
-const listedSet = run.config?.https?.interception?.clients ?? [];
+const listedSet = run.interception.clients;
 const listedOk = ipInList(args.listed, listedSet) && !ipInList(args.unlisted, listedSet);
-run.log(`https.interception.clients = ${JSON.stringify(listedSet)} listed=${ipInList(args.listed, listedSet)} unlisted=${ipInList(args.unlisted, listedSet)}`);
-if (!listedOk) run.invalid('identity precondition: exactly one of the two addresses must be in https.interception.clients', { listedSet });
+run.log(`/api/v1/interception clients = ${JSON.stringify(listedSet)} listed=${ipInList(args.listed, listedSet)} unlisted=${ipInList(args.unlisted, listedSet)}`);
+if (!listedOk) run.invalid('identity precondition: exactly one of the two addresses must be listed in the Interception Document (GET /api/v1/interception, clients)', { listedSet });
 
 const ARMS = {
   direct: { host: args.origin, port: args['origin-port'], localAddress: args.unlisted, ca: undefined, expectCa: false },

@@ -322,6 +322,7 @@ export class Run {
     if (health.status !== 200) this.invalid(`probe /health answered ${health.status}`);
     this.health = health.json;
     this.config = await this.snapshotConfig();
+    this.interception = await this.snapshotInterception();
     const mode = this.config?.engine?.mode ?? null;
     this.log(`engine.mode = ${mode}`);
     if (this.needsHttps && !(typeof mode === 'string' && mode.includes('https'))) this.invalid(`engine.mode ${mode} carries no https listener`);
@@ -353,19 +354,37 @@ export class Run {
     }
   }
 
+  // `config.json` carries engine.mode and runtime.http_runtimes. Since p3-07
+  // the client posture is not in /api/v1/config at all: it is the Interception
+  // Document, snapshotted as `interception.json` beside it and compared the
+  // same way — a posture change between runs of one results directory is what
+  // the `degraded` label must catch (p3-06-after-interception-impl.md B1).
   async snapshotConfig() {
-    const r = await this.api('/api/v1/config');
-    if (r.status !== 200) this.invalid(`GET /api/v1/config answered ${r.status}: ${r.text.slice(0, 200)}`);
+    return this.snapshot('/api/v1/config', 'config', 'probe config');
+  }
+
+  async snapshotInterception() {
+    const document = await this.snapshot('/api/v1/interception', 'interception', 'interception document');
+    const clients = Array.isArray(document?.clients) ? document.clients : null;
+    const exclude = Array.isArray(document?.exclude_domains) ? document.exclude_domains : null;
+    if (clients === null || exclude === null) this.invalid('GET /api/v1/interception did not answer a document with clients and exclude_domains (pre-p3-07 build?)');
+    this.log(`interception document: clients=${JSON.stringify(clients)} exclude_domains=${exclude.length} entries`);
+    return { clients, exclude_domains: exclude };
+  }
+
+  async snapshot(endpoint, file, label) {
+    const r = await this.api(endpoint);
+    if (r.status !== 200) this.invalid(`GET ${endpoint} answered ${r.status}: ${r.text.slice(0, 200)}`);
     const live = JSON.stringify(r.json, null, 2);
-    const p = path.join(this.out, 'config.json');
+    const p = path.join(this.out, `${file}.json`);
     if (!fs.existsSync(p)) {
       fs.writeFileSync(p, live);
-      this.log(`config snapshot -> ${p}`);
+      this.log(`${label} snapshot -> ${p}`);
     } else if (fs.readFileSync(p, 'utf8') !== live) {
-      const alt = path.join(this.out, `config.${this.script}.${stamp()}.json`);
+      const alt = path.join(this.out, `${file}.${this.script}.${stamp()}.json`);
       fs.writeFileSync(alt, live);
-      this.log(`probe config differs from ${p}; live copy -> ${alt}`);
-      this.degraded('probe config changed since this results directory was opened');
+      this.log(`${label} differs from ${p}; live copy -> ${alt}`);
+      this.degraded(`${label} changed since this results directory was opened`);
     }
     return r.json;
   }

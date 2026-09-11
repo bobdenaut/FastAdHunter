@@ -1,8 +1,9 @@
 // p3-h2stall.mjs — P3 intercepted h2 relay: throughput and per-session RSS
 // under a 64-stream stall (plan §Measurements row P3; declaration delta 8).
 //
-// Runs on the LISTED client (its address toward the probe must be in
-// https.interception.clients — checked, else INVALID). Every session is an
+// Runs on the LISTED client (its address toward the probe must be in the
+// Interception Document's `clients`, GET/PUT /api/v1/interception — checked
+// against lib.mjs's interception.json snapshot, else INVALID). Every session is an
 // h2 session to --origin through the probe's terminate leg: TLS to the probe
 // :8444 with SNI = origin, --ca trusted, the served issuer must be the
 // FastAdHunter CA (else INVALID).
@@ -63,9 +64,9 @@ if (run.host.idle === false) {
 const caPem = fs.readFileSync(args.ca, 'utf8');
 
 const local = await localAddressToward(args.probe, args.port);
-const listed = run.config?.https?.interception?.clients ?? [];
-run.log(`local address toward the probe: ${local}; https.interception.clients = ${JSON.stringify(listed)}`);
-if (!ipInList(local, listed)) run.invalid(`this host (${local}) is not in https.interception.clients: the terminate leg is not reachable from here`);
+const listed = run.interception.clients;
+run.log(`local address toward the probe: ${local}; /api/v1/interception clients = ${JSON.stringify(listed)}`);
+if (!ipInList(local, listed)) run.invalid(`this host (${local}) is not listed in the Interception Document (GET /api/v1/interception, clients): the terminate leg is not reachable from here`);
 
 function connectSession() {
   return new Promise((resolve, reject) => {
