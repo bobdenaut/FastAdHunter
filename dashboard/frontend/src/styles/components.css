@@ -3625,6 +3625,19 @@ table.t.counters td.bad {
   min-width: 0;
 }
 
+/* A line editor claims the row it sits in. `.editor-area` is already
+   `width: 100%`, but the wrapper between it and this flex container is a flex
+   item, and a flex item shrinks to its content unless told to grow — so the
+   textarea kept its intrinsic `cols` width (161px) whatever the window did,
+   truncating an IPv6 CIDR behind a sideways scrollbar with 312px free beside
+   it at 1280px. `:has()` scopes the grow to editor rows: a toggle or a select
+   in the same container still sizes to its own content. Measured 2026-09-11
+   (p3-06 D1). */
+.set-field-control:has(.editor) > * {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
 .set-field-control .field-input {
   max-width: 320px;
 }
@@ -3686,6 +3699,13 @@ table.t.counters td.bad {
   padding: 12px 14px;
   position: sticky;
   bottom: 0;
+  /* Above `.editor-area`, which is `position: relative; z-index: 1` so the
+     textarea sits over the gutter and band layers beneath it. Both are
+     positioned in this same stacking context, and `auto` loses to `1` — so
+     while a long editor scrolled, the focused textarea and its focus ring
+     painted straight over this bar and its Save button. Measured 2026-09-11
+     (p3-06 D1). */
+  z-index: 2;
 }
 
 .access-row {
@@ -5008,6 +5028,15 @@ table.feed-table tbody tr:hover td {
     padding: 0 14px;
     flex: 0 0 auto;
     white-space: nowrap;
+  }
+
+  /* Exclude is the only control in the rejection view, and it sat at the
+     default 34px while every other control on the page took the 44px above:
+     the two rules there name `.feed-actions .btn` and `.feed-chipset .chip`,
+     and this button is a `.btn` inside `.ev-meta`, which neither reaches.
+     Measured 2026-09-11 (p3-06 D1). */
+  .feed-cards .ev .btn {
+    min-height: 44px;
   }
 
   .feed-controls {
