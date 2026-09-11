@@ -76,6 +76,20 @@ Content-Type: application/json
   }
 }
 
+### Boot-only key — the UDP in-flight ceiling. 0 (the default) means no cap.
+### Size it as arrival rate × the full-outage walk (~3.2 s at four UDP
+### upstreams, timeout_ms = 800) with headroom; at ~8 KiB per in-flight query
+### 4000 holds ~32 MiB. Applies on the next start.
+POST {{base}}/config
+{{auth}}
+Content-Type: application/json
+
+{
+  "dns": {
+    "udp_max_inflight": 4000
+  }
+}
+
 ### Mixed patch — expect both flags true. Needs one key from each class, so the
 ### runtime half has to be a genuinely live key: api.port is boot, and
 ### dns.cache would NOT work here because it is boot too.

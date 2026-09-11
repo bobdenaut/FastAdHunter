@@ -61,6 +61,7 @@ pub struct Metrics {
     pub(crate) request_duration_forward: Histogram,
     pub(crate) dropped_events: AtomicU64,
     pub(crate) dns_tcp_connections: ArcSwap<fah_model::DnsTcpConnections>,
+    pub(crate) dns_udp_inflight: ArcSwap<fah_model::DnsUdpInflight>,
     /// Stale-while-refresh counters (ADR-0005). Stored as one value rather than
     /// five atomics because they are read together, replaced together off
     /// `fah_dns::Pipeline::swr_stats()`, and only ever compared with each other
@@ -108,6 +109,7 @@ impl Metrics {
             request_duration_forward: Histogram::new(),
             dropped_events: AtomicU64::new(0),
             dns_tcp_connections: ArcSwap::new(Arc::new(fah_model::DnsTcpConnections::default())),
+            dns_udp_inflight: ArcSwap::new(Arc::new(fah_model::DnsUdpInflight::default())),
             swr: ArcSwap::new(Arc::new(SwrSnapshot::default())),
             cleanup: ArcSwap::new(Arc::new(CleanupSnapshot::default())),
             lists: ArcSwap::new(Arc::new(fah_model::ListFetchCounters::default())),
@@ -231,6 +233,10 @@ impl Metrics {
         self.dns_tcp_connections.store(Arc::new(snapshot));
     }
 
+    pub fn set_dns_udp_inflight(&self, snapshot: fah_model::DnsUdpInflight) {
+        self.dns_udp_inflight.store(Arc::new(snapshot));
+    }
+
     pub fn set_upstreams(&self, snapshot: Vec<UpstreamSample>) {
         self.upstreams.store(Arc::new(snapshot));
     }
@@ -296,6 +302,7 @@ impl Metrics {
                 },
                 lists: **self.lists.load(),
                 dns_tcp_connections: **self.dns_tcp_connections.load(),
+                dns_udp_inflight: **self.dns_udp_inflight.load(),
             },
             latency: fah_model::LatencyTotals {
                 dns: fah_model::DnsLatency {
@@ -676,6 +683,22 @@ mod tests {
             metrics.engine_telemetry().counters.dns_tcp_connections,
             idle
         );
+    }
+
+    #[test]
+    fn dns_udp_inflight_round_trips_as_one_value() {
+        let metrics = Metrics::new();
+        let busy = fah_model::DnsUdpInflight {
+            active: 40,
+            peak: 512,
+            shed: 7,
+        };
+        metrics.set_dns_udp_inflight(busy);
+        assert_eq!(metrics.engine_telemetry().counters.dns_udp_inflight, busy);
+
+        let idle = fah_model::DnsUdpInflight { active: 0, ..busy };
+        metrics.set_dns_udp_inflight(idle);
+        assert_eq!(metrics.engine_telemetry().counters.dns_udp_inflight, idle);
     }
 
     #[test]

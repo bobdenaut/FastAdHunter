@@ -87,6 +87,8 @@ pub struct EngineCounters {
     pub lists: ListFetchCounters,
     #[serde(default)]
     pub dns_tcp_connections: DnsTcpConnections,
+    #[serde(default)]
+    pub dns_udp_inflight: DnsUdpInflight,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -94,6 +96,13 @@ pub struct DnsTcpConnections {
     pub active: u64,
     pub peak: u64,
     pub closed_oversize: u64,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DnsUdpInflight {
+    pub active: u64,
+    pub peak: u64,
+    pub shed: u64,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]

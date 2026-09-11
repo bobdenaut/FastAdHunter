@@ -11,7 +11,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use fah_config::{
-    DnsCacheConfig, DnsListenConfig, DnsUpstreamsConfig, RulesConfig, UpstreamProtocol,
+    DnsCacheConfig, DnsConfig, DnsListenConfig, DnsUpstreamsConfig, RulesConfig, UpstreamProtocol,
     UpstreamServerConfig, UpstreamStrategy,
 };
 use fah_dns::{ForwardOutcome, Forwarder, Pipeline, Server, UpstreamPool};
@@ -75,11 +75,14 @@ async fn start_server_on(
         fah_dns::DEFAULT_REFRESH_CLAIM_LEASE,
         tx,
     ));
-    let listen = DnsListenConfig {
-        address: address.to_string(),
-        port: 0,
+    let config = DnsConfig {
+        listen: DnsListenConfig {
+            address: address.to_string(),
+            port: 0,
+        },
+        ..DnsConfig::default()
     };
-    let mut server = Server::bind(&listen, 1024).await.unwrap();
+    let mut server = Server::bind(&config).await.unwrap();
     server.serve(pipeline);
     (server, calls, data_dir)
 }
@@ -315,11 +318,14 @@ async fn full_pipeline_forwards_via_upstream_pool_and_caches_the_answer() {
         fah_dns::DEFAULT_REFRESH_CLAIM_LEASE,
         tx,
     ));
-    let listen = DnsListenConfig {
-        address: "127.0.0.1".to_string(),
-        port: 0,
+    let config = DnsConfig {
+        listen: DnsListenConfig {
+            address: "127.0.0.1".to_string(),
+            port: 0,
+        },
+        ..DnsConfig::default()
     };
-    let mut server = Server::bind(&listen, 1024).await.unwrap();
+    let mut server = Server::bind(&config).await.unwrap();
     server.serve(pipeline);
 
     for _ in 0..2 {

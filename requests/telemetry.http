@@ -64,6 +64,12 @@ GET {{base}}/telemetry
 #   closed_oversize  connections closed because the client's length prefix
 #                    exceeded the internal 16 KiB message bound; non-zero on a
 #                    household LAN is a misbehaving client, not a limit to raise
+#
+# counters.dns_udp_inflight is the UDP admission guard ([dns] udp_max_inflight):
+#   active           GAUGE — UDP queries in flight right now
+#   peak             process-lifetime high-water mark of `active`
+#   shed             datagrams dropped unanswered because the ceiling was full
+# All zero while the key is 0 (the default): no counter touched, no counting.
 # Pushed on the same 10 s poll as ruleset/upstreams — up to one interval old.
 
 # ─── The producer boundary ─────────────────────────────────────────────

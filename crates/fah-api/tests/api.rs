@@ -395,6 +395,11 @@ impl TelemetrySource for FakeTelemetry {
                     peak: 9,
                     closed_oversize: 0,
                 },
+                dns_udp_inflight: fah_model::DnsUdpInflight {
+                    active: 4,
+                    peak: 37,
+                    shed: 2,
+                },
                 swr: fah_model::SwrCounters {
                     enqueued: 12_044,
                     deduplicated: 3_311,
@@ -850,6 +855,9 @@ async fn telemetry_matches_the_documented_shape() {
         body["counters"]["dns_tcp_connections"]["closed_oversize"],
         0
     );
+    assert_eq!(body["counters"]["dns_udp_inflight"]["active"], 4);
+    assert_eq!(body["counters"]["dns_udp_inflight"]["peak"], 37);
+    assert_eq!(body["counters"]["dns_udp_inflight"]["shed"], 2);
 
     let upstream = &body["upstreams"][0];
     assert_eq!(upstream["address"], "1.1.1.1:853");

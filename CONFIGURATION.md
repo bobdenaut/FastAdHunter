@@ -85,6 +85,22 @@ tcp_max_connections = 1024    # boot    — ceiling on concurrent DNS-over-TCP
                               #           /telemetry's dns_tcp_connections.peak
                               #           after a 7-day soak. Must be ≥ 1.
                               #           Env: FAH__DNS__TCP_MAX_CONNECTIONS
+udp_max_inflight = 0          # boot    — ceiling on concurrent in-flight UDP DNS
+                              #           queries: a count, not a rate. 0 = no cap,
+                              #           today's behaviour. Past the ceiling a
+                              #           datagram is dropped unanswered, counted in
+                              #           /telemetry's dns_udp_inflight.shed; the client
+                              #           retries as for any lost packet. Sizing:
+                              #           in-flight peaks at arrival rate × the
+                              #           full-outage walk (3.2 s at four UDP
+                              #           upstreams and timeout_ms = 800) at ~8 KiB
+                              #           heap each — 1000 qps into a dead upstream
+                              #           set holds ~3200 queries, ~26 MiB. Off for
+                              #           the household deployment by measurement; an
+                              #           operational memory guardrail for office or
+                              #           high-volume deployments. Evidence:
+                              #           docs/code-review/phase2.6/f2-udp-inflight.md
+                              #           Env: FAH__DNS__UDP_MAX_INFLIGHT
 
 [dns.listen]
 address = "::"                # boot    — bind address; "::" = one dual-stack

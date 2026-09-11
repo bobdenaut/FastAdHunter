@@ -371,8 +371,7 @@ impl Engine {
             )
             .with_policies(Arc::clone(&policy_state)),
         );
-        let mut dns =
-            fah_dns::Server::bind(&config.dns.listen, config.dns.tcp_max_connections).await?;
+        let mut dns = fah_dns::Server::bind(&config.dns).await?;
         tracing::info!(udp = %dns.udp_addr(), tcp = %dns.tcp_addr(), "DNS listeners bound");
 
         // ── HTTP engine (L3, p2-01) ──
@@ -557,6 +556,7 @@ impl Engine {
                 upstreams,
                 proxy_counters,
                 dns.tcp_connections(),
+                dns.udp_inflight(),
             ),
             spawn_policy_ticker(policy_state, rules, Arc::clone(&stats)),
         ];
@@ -753,6 +753,7 @@ fn spawn_telemetry_poll(
     upstreams: fah_dns::UpstreamPool,
     proxy_counters: Option<Arc<fah_http::ProxyCounters>>,
     dns_tcp: Arc<fah_dns::TcpConnectionGauge>,
+    dns_udp: Arc<fah_dns::UdpInflightGauge>,
 ) -> tokio::task::JoinHandle<()> {
     tokio::spawn(async move {
         let mut ticker = tokio::time::interval(TELEMETRY_POLL);
@@ -762,6 +763,7 @@ fn spawn_telemetry_poll(
 
             metrics.set_dropped_events(pipeline.dropped_events());
             metrics.set_dns_tcp_connections(dns_tcp.snapshot());
+            metrics.set_dns_udp_inflight(dns_udp.snapshot());
             if let Some(counters) = proxy_counters.as_ref() {
                 let proxy = counters.snapshot();
                 metrics.set_requests_refused(proxy.refused_claim + proxy.refused_destination);

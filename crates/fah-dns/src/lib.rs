@@ -22,6 +22,7 @@ pub use pipeline::{Pipeline, Transport};
 pub use server::{ListenerDied, Server};
 pub use swr::SwrStats;
 pub use tcp::{TcpConnectionGauge, MAX_MESSAGE_LEN};
+pub use udp::UdpInflightGauge;
 pub use upstream::health::{
     classify, next_word, pack, penalty, record, select, unpack, Candidate, Health, HealthMode,
     Outcome, PackedWord, Policy, Selected, State, Transition, TransportKind, Word,

@@ -16,6 +16,7 @@ use serde::{Deserialize, Serialize};
 pub struct DnsConfig {
     #[serde(default = "default_tcp_max_connections")]
     pub tcp_max_connections: usize,
+    pub udp_max_inflight: usize,
     pub listen: DnsListenConfig,
     pub blocking: DnsBlockingConfig,
     pub cache: DnsCacheConfig,
@@ -26,6 +27,7 @@ impl Default for DnsConfig {
     fn default() -> Self {
         Self {
             tcp_max_connections: default_tcp_max_connections(),
+            udp_max_inflight: 0,
             listen: DnsListenConfig::default(),
             blocking: DnsBlockingConfig::default(),
             cache: DnsCacheConfig::default(),
@@ -47,5 +49,14 @@ mod tests {
         assert_eq!(DnsConfig::default().tcp_max_connections, 1024);
         let parsed: DnsConfig = toml::from_str("").unwrap();
         assert_eq!(parsed.tcp_max_connections, 1024);
+    }
+
+    #[test]
+    fn udp_max_inflight_defaults_to_zero_meaning_no_cap() {
+        assert_eq!(DnsConfig::default().udp_max_inflight, 0);
+        let parsed: DnsConfig = toml::from_str("").unwrap();
+        assert_eq!(parsed.udp_max_inflight, 0);
+        let parsed: DnsConfig = toml::from_str("udp_max_inflight = 5000\n").unwrap();
+        assert_eq!(parsed.udp_max_inflight, 5000);
     }
 }

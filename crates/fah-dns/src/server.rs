@@ -6,7 +6,7 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 
 use fah_common::listen::{bind_error, bind_tcp, bind_udp, listen_addr};
-use fah_config::DnsListenConfig;
+use fah_config::DnsConfig;
 use tokio::net::{TcpListener, UdpSocket};
 use tokio::sync::{mpsc, Semaphore};
 use tokio::task::JoinHandle;
@@ -16,6 +16,7 @@ const PORT_SETTING: &str = "[dns.listen] port, or FAH__DNS__LISTEN__PORT";
 
 use crate::pipeline::Pipeline;
 use crate::tcp::TcpConnectionGauge;
+use crate::udp::UdpInflightGauge;
 use crate::upstream::Forwarder;
 use crate::{tcp, udp};
 
@@ -30,6 +31,7 @@ pub struct Server {
     sockets: Option<(UdpSocket, TcpListener)>,
     tcp_permits: Arc<Semaphore>,
     tcp_gauge: Arc<TcpConnectionGauge>,
+    udp_gauge: Arc<UdpInflightGauge>,
     handles: Vec<JoinHandle<()>>,
     fatal_tx: mpsc::Sender<ListenerDied>,
     fatal_rx: mpsc::Receiver<ListenerDied>,
@@ -42,7 +44,8 @@ impl Server {
     /// privilege, answering queries must not have it (ADR-0004). The caller
     /// binds, drops privileges, then calls [`Server::serve`] — so no query is
     /// ever processed by a privileged process.
-    pub async fn bind(listen: &DnsListenConfig, tcp_max_connections: usize) -> io::Result<Self> {
+    pub async fn bind(config: &DnsConfig) -> io::Result<Self> {
+        let listen = &config.listen;
         let addr = listen_addr(&listen.address, listen.port, "dns.listen")?;
 
         let udp_socket = bind_udp(addr)
@@ -64,8 +67,9 @@ impl Server {
             udp_addr,
             tcp_addr,
             sockets: Some((udp_socket, tcp_listener)),
-            tcp_permits: Arc::new(Semaphore::new(tcp_max_connections)),
+            tcp_permits: Arc::new(Semaphore::new(config.tcp_max_connections)),
             tcp_gauge: Arc::new(TcpConnectionGauge::default()),
+            udp_gauge: Arc::new(UdpInflightGauge::new(config.udp_max_inflight)),
             handles: Vec::new(),
             fatal_tx,
             fatal_rx,
@@ -80,8 +84,9 @@ impl Server {
         };
         let udp_fatal = self.fatal_tx.clone();
         let udp_pipeline = Arc::clone(&pipeline);
+        let udp_gauge = Arc::clone(&self.udp_gauge);
         self.handles.push(tokio::spawn(async move {
-            let died = udp::run(udp_socket, udp_pipeline).await;
+            let died = udp::run(udp_socket, udp_pipeline, udp_gauge).await;
             let _ = udp_fatal.try_send(died);
         }));
 
@@ -96,6 +101,10 @@ impl Server {
 
     pub fn tcp_connections(&self) -> Arc<TcpConnectionGauge> {
         Arc::clone(&self.tcp_gauge)
+    }
+
+    pub fn udp_inflight(&self) -> Arc<UdpInflightGauge> {
+        Arc::clone(&self.udp_gauge)
     }
 
     pub async fn fatal(&mut self) -> ListenerDied {

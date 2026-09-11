@@ -128,7 +128,8 @@ Top-level blocks: `process`, `ruleset`, `counters`, `latency`, `upstreams`,
     "cache_cleanup": { "runs": 308, "entries_removed": 44120,
                        "bytes_freed": 9871232, "last_duration_micros": 1842 },
     "lists": { "bodies": 17, "not_modified": 3, "bytes_fetched": 27580000 },
-    "dns_tcp_connections": { "active": 2, "peak": 9, "closed_oversize": 0 }
+    "dns_tcp_connections": { "active": 2, "peak": 9, "closed_oversize": 0 },
+    "dns_udp_inflight": { "active": 0, "peak": 0, "shed": 0 }
   },
   "latency": {
     "dns":  { "block":     { "count": 96318,  "sum_seconds": 2.114 },
@@ -178,6 +179,15 @@ Reading it correctly:
   internal 16 KiB message bound (`fah_dns::MAX_MESSAGE_LEN`). Non-zero
   `closed_oversize` on a household LAN is a misbehaving client, not a limit to
   raise.
+- **`counters.dns_udp_inflight` is the UDP admission guard in numbers.** All
+  three are zero while `[dns] udp_max_inflight` is `0` (the default): the
+  listener then touches no counter and counts nothing. With a ceiling set,
+  `active` is the number of UDP queries in flight right now, `peak` the
+  process-lifetime high-water mark of `active`, and `shed` the datagrams
+  dropped unanswered because the ceiling was full. In-flight ≈ arrival rate ×
+  the full-outage upstream walk, so a rising `shed` during an upstream outage
+  is the guard doing its job; `shed` climbing while upstreams are healthy means
+  the ceiling is below the deployment's normal concurrency.
 - **`counters.dns.answers` counts what the *client* saw, on its own axis.**
   `servfail_synthesized` is a failure FastAdHunter minted itself because every
   upstream failed and no stale entry could cover it; `servfail_relayed` and
@@ -256,9 +266,9 @@ Reading it correctly:
   `attempts` is not comparable across the two strategies.
 - No `ruleset.heap_bytes`: that is `memory.ruleset_bytes`, so the number has one
   home.
-- `ruleset`, `upstreams`, `counters.swr`, `counters.cache_cleanup` and
-  `counters.dns_tcp_connections` are pushed into the registry on a 10 s poll,
-  so they can be up to one interval old.
+- `ruleset`, `upstreams`, `counters.swr`, `counters.cache_cleanup`,
+  `counters.dns_tcp_connections` and `counters.dns_udp_inflight` are pushed
+  into the registry on a 10 s poll, so they can be up to one interval old.
   `cache` and `memory` are read at request time.
 
 ---

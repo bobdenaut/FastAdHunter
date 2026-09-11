@@ -17,8 +17,8 @@ mod verdict;
 pub use client::Client;
 pub use engine::{
     AnswerCounters, CacheCleanupCounters, DnsCounters, DnsLatency, DnsTcpConnections,
-    EngineCounters, EngineTelemetry, HttpCounters, HttpLatency, LatencyTotals, ListFetchCounters,
-    RulesetInfo, StageTotals, SwrCounters,
+    DnsUdpInflight, EngineCounters, EngineTelemetry, HttpCounters, HttpLatency, LatencyTotals,
+    ListFetchCounters, RulesetInfo, StageTotals, SwrCounters,
 };
 pub use history::{
     ClientHits, DailyTopN, DomainHits, HistoryPoint, HistoryRange, HistoryResolution,
