@@ -10,7 +10,11 @@ implemented, run green and committed (`223bf79`); B5–B10 applied 2026-09-11
 (four files, owner yes per file). **N1, N2, N4, D1 and D2 ran 2026-09-11** —
 N1/N2/N4/D1 on the tip image built from `4365932` and deployed to the probe,
 D1 finding three dashboard CSS defects, all fixed. **N3 FAILED**, a design
-finding against p3-08/p3-09. N5 and N6 remain planning; they live inside the
+finding against p3-08/p3-09 — **closed the same day as a technical experiment,
+not promoted** ([p3-06-n3-alert-ab.md](../../../docs/code-review/phase3/p3-06-n3-alert-ab.md)):
+the alert names the TLS stack, not the cause; per-alert counters,
+`handshakes_completed` and a per-client `intercepted` account landed; HTTP/3
+must be refused for intercepted clients. N5 and N6 remain planning; they live inside the
 soak. §4 carries the per-item status.
 
 **Decision — no campaign re-run.** p3-07 adds one `ArcSwap::load` per accepted
@@ -128,7 +132,8 @@ testing plan (B8 + the P2 precondition sentence), verification review (B9, the
    campaign-1 probe config exists, so the block was placed before the first
    start. See the runbook's R2 addendum correction and
    [p3-06-testing-results-2.md](../../../docs/code-review/phase3/p3-06-testing-results-2.md)
-   §Session 3.
+   §Session 3. Resolved the same day:
+   [p3-06-n3-alert-ab.md](../../../docs/code-review/phase3/p3-06-n3-alert-ab.md).
 4. N2–N4 with the device, after R7/R8. **All run 2026-09-11** on the owner's
    OnePlus 15 (192.168.10.11 and `2a02:2f04:5400:cc00::/64`, R7 scoped to it
    alone): **N2 PASS**, **N4 PASS** (API half and device leg), **N3 FAIL** — a

@@ -166,6 +166,13 @@ holds and the task's acceptance line is satisfied.
   "CA absent" are one phenomenon on this client, not two. Scope: one device
   (OnePlus 15, OxygenOS, BoringSSL); another stack may send `UnknownCA` and
   behave as designed. Superseded by a second device disagreeing.
+  **Measured 2026-09-11, A/B on the same phone**
+  ([p3-06-n3-alert-ab.md](p3-06-n3-alert-ab.md)): with per-alert counters the
+  alert was named in both CA states and did not differ by cause — Spotify sends
+  `certificate_unknown` with and without the CA, Chromium without it sends the
+  same, Firefox without it sends `unknown_ca`. The alert names the stack. The
+  classifier stays; the counters stay on `/telemetry`; the distinction lives in
+  the rejection view's per-client completed-handshake count (p3-09).
 - The rejection view and the exclude action are p3-09.
 
 ## Findings

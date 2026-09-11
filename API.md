@@ -161,6 +161,14 @@ verification (the `status 526` events); `client_cert_rejections` is its mirror
 on the accept side — a listed client refusing the leaf we presented (the
 `status 525` events), HTTPS-only and best-effort, since a client that rejects
 us by closing rather than alerting cannot be counted.
+`alert_bad_certificate`, `alert_certificate_unknown` and `alert_access_denied`
+split `client_cert_rejections` by the alert received and sum to it (`0` on the
+`http` listener). The alert names the client's TLS stack, not the cause —
+measured on one Android device, Spotify sends `certificate_unknown` with and
+without the CA, and so does Chromium without it
+(docs/code-review/phase3/p3-06-n3-alert-ab.md). `handshakes_completed` is the
+positive counterpart: intercepted sessions whose TLS handshake the client
+completed, counted at that moment, `0` on the `http` listener.
 `refused_claim + refused_destination` across both listeners is what
 `counters.http.refused` sums.
 
@@ -204,12 +212,16 @@ Top-level blocks: `process`, `ruleset`, `counters`, `latency`, `upstreams`,
     "http":  { "connections": 5120, "requests": 5333, "blocked": 918,
                "refused_claim": 2, "refused_destination": 1, "resolve_failures": 4,
                "upstream_failures": 6, "upstream_cert_failures": 0,
-               "client_cert_rejections": 0, "non_http": 3,
+               "client_cert_rejections": 0, "alert_bad_certificate": 0,
+               "alert_certificate_unknown": 0, "alert_access_denied": 0,
+               "handshakes_completed": 0, "non_http": 3,
                "non_tls": 0, "hello_timeouts": 0, "dropped_events": 0 },
     "https": { "connections": 2210, "requests": 2402, "blocked": 131,
                "refused_claim": 0, "refused_destination": 0, "resolve_failures": 2,
                "upstream_failures": 1, "upstream_cert_failures": 1,
-               "client_cert_rejections": 3, "non_http": 0,
+               "client_cert_rejections": 3, "alert_bad_certificate": 0,
+               "alert_certificate_unknown": 2, "alert_access_denied": 1,
+               "handshakes_completed": 1840, "non_http": 0,
                "non_tls": 4, "hello_timeouts": 87, "dropped_events": 0 }
   },
   "latency": {
@@ -586,6 +598,15 @@ Observed clients (by source IP) with stats and optional names. `family` is
 `v4` or `v6` and keeps one address family; absent keeps both. Any other value
 is `400`.
 
+`intercepted` is what this client did on the terminate leg since the stats
+started: `completed` counts intercepted sessions in which it sent a request
+(so it accepted the minted leaf at that moment), `rejected` counts its
+`status 525` events, each with the time of the last one or `null`. It states
+what was observed, never whether the CA is installed — a permissive verifier
+completes too, and a client that rejects and never completes is a reason to
+look at that client before excluding a host for everyone
+(docs/code-review/phase3/p3-06-n3-alert-ab.md).
+
 ```json
 {
   "items": [
@@ -596,6 +617,8 @@ is `400`.
       "last_seen": "2026-07-17T10:41:03Z",
       "queries_24h": 30122,
       "blocked_24h": 3020,
+      "intercepted": { "completed": 14, "rejected": 3,
+                       "last_completed": "2026-07-17T10:41:03Z", "last_rejected": null },
       "policy": "kids",
       "assignment_source": "direct"
     }

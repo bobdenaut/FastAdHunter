@@ -5,7 +5,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use fah_certs::CertStore;
-use fah_model::Event;
+use fah_model::{Event, CLIENT_CERT_REJECTED, UPSTREAM_CERT_FAILURE};
 use fah_rules::interception::InterceptionState;
 use http_body_util::{Either, Full};
 use hyper::body::{Body as _, Incoming};
@@ -27,15 +27,13 @@ use crate::claim::{destination_of, ClaimError};
 use crate::https::{as_millis, idle_watchdog, session_event, Activity, Session, TlsProxy};
 use crate::proxy::{
     append_via, emit, judge, publish, refuse, strip_hop_by_hop, to_client_response, Judged,
-    ProxyBody,
+    ProxyBody, ProxyCounters,
 };
 use crate::tls::{
     certificate_error, client_alert, connect_verified_upstream, negotiated, Alpn, RewindStream,
 };
 
 const SCHEME: &str = "https";
-const CLIENT_CERT_REJECTED: u16 = 525;
-const UPSTREAM_CERT_FAILURE: u16 = 526;
 const H2_STREAM_WINDOW: u32 = 64 * 1024;
 const H2_MAX_STREAMS: u32 = 64;
 const H2_CONNECTION_WINDOW: u32 = H2_MAX_STREAMS * H2_STREAM_WINDOW;
@@ -51,6 +49,15 @@ fn rejection_status(alert: AlertDescription) -> Option<u16> {
         AlertDescription::BadCertificate
         | AlertDescription::CertificateUnknown
         | AlertDescription::AccessDenied => Some(CLIENT_CERT_REJECTED),
+        _ => None,
+    }
+}
+
+fn alert_counter(counters: &ProxyCounters, alert: AlertDescription) -> Option<&AtomicU64> {
+    match alert {
+        AlertDescription::BadCertificate => Some(&counters.alert_bad_certificate),
+        AlertDescription::CertificateUnknown => Some(&counters.alert_certificate_unknown),
+        AlertDescription::AccessDenied => Some(&counters.alert_access_denied),
         _ => None,
     }
 }
@@ -146,20 +153,35 @@ impl TlsProxy {
         let acceptor = TlsAcceptor::from(Arc::clone(&interception.server_config));
         let accept = acceptor.accept(RewindStream::new(hello, metered));
         let tls = match tokio::time::timeout(self.hello_timeout, accept).await {
-            Ok(Ok(tls)) => tls,
+            Ok(Ok(tls)) => {
+                self.counters
+                    .handshakes_completed
+                    .fetch_add(1, Ordering::Relaxed);
+                tls
+            }
             Ok(Err(err)) => {
-                match client_alert(&err)
-                    .and_then(|alert| rejection_status(alert).map(|status| (alert, status)))
+                let alert = client_alert(&err);
+                match alert.and_then(|alert| rejection_status(alert).map(|status| (alert, status)))
                 {
                     Some((alert, status)) => {
                         self.counters
                             .client_cert_rejections
                             .fetch_add(1, Ordering::Relaxed);
+                        if let Some(counter) = alert_counter(&self.counters, alert) {
+                            counter.fetch_add(1, Ordering::Relaxed);
+                        }
                         debug!(%peer, %host, ?alert, "the client rejected our certificate");
                         self.emit_session(&host, &session, status);
                     }
                     None => {
-                        debug!(%peer, %host, error = %err, "the client did not complete our handshake");
+                        match alert {
+                            Some(alert) => {
+                                debug!(%peer, %host, ?alert, "the client sent a fatal alert outside the rejection set")
+                            }
+                            None => {
+                                debug!(%peer, %host, error = %err, "the client did not complete our handshake")
+                            }
+                        }
                         self.emit_session(&host, &session, 0);
                     }
                 }

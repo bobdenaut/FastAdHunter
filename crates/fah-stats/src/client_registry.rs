@@ -21,6 +21,22 @@ struct ClientRecord {
     first_seen: SystemTime,
     last_seen: SystemTime,
     buckets: HourlyBuckets,
+    #[serde(default)]
+    intercepted: InterceptedHandshakes,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct InterceptedHandshakes {
+    pub completed: u64,
+    pub rejected: u64,
+    pub last_completed: Option<SystemTime>,
+    pub last_rejected: Option<SystemTime>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum InterceptedOutcome {
+    Completed,
+    Rejected,
 }
 
 /// One client's view, for the API's client list/lookup (API.md `GET
@@ -33,6 +49,7 @@ pub struct ClientView {
     pub last_seen: SystemTime,
     pub queries_24h: u64,
     pub blocked_24h: u64,
+    pub intercepted: InterceptedHandshakes,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -77,6 +94,24 @@ impl ClientRegistry {
     }
 
     pub fn record(&mut self, ip: IpAddr, at: SystemTime, blocked: bool, cache_hit: bool) {
+        self.entry(ip, at).buckets.record(at, blocked, cache_hit);
+    }
+
+    pub fn record_intercepted(&mut self, ip: IpAddr, at: SystemTime, outcome: InterceptedOutcome) {
+        let intercepted = &mut self.entry(ip, at).intercepted;
+        match outcome {
+            InterceptedOutcome::Completed => {
+                intercepted.completed += 1;
+                intercepted.last_completed = Some(at);
+            }
+            InterceptedOutcome::Rejected => {
+                intercepted.rejected += 1;
+                intercepted.last_rejected = Some(at);
+            }
+        }
+    }
+
+    fn entry(&mut self, ip: IpAddr, at: SystemTime) -> &mut ClientRecord {
         if !self.clients.contains_key(&ip) {
             // Unnamed clients go first (false < true), least-recently-seen
             // within each group; a named device only falls out when the
@@ -101,9 +136,10 @@ impl ClientRegistry {
             first_seen: at,
             last_seen: at,
             buckets: HourlyBuckets::new(),
+            intercepted: InterceptedHandshakes::default(),
         });
         record.last_seen = at;
-        record.buckets.record(at, blocked, cache_hit);
+        record
     }
 
     pub fn name(&self, ip: IpAddr) -> Option<String> {
@@ -165,6 +201,7 @@ fn view(ip: IpAddr, record: &ClientRecord, now: SystemTime) -> ClientView {
         last_seen: record.last_seen,
         queries_24h: totals.queries,
         blocked_24h: totals.blocked,
+        intercepted: record.intercepted,
     }
 }
 
@@ -174,6 +211,30 @@ mod tests {
     use std::time::Duration;
 
     use super::*;
+
+    #[test]
+    fn intercepted_outcomes_count_per_client_and_keep_their_last_time() {
+        let mut registry = ClientRegistry::new(4);
+        let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000);
+        let t1 = t0 + Duration::from_secs(5);
+        let phone = IpAddr::V4(Ipv4Addr::new(192, 168, 10, 11));
+        registry.record_intercepted(phone, t0, InterceptedOutcome::Rejected);
+        registry.record_intercepted(phone, t1, InterceptedOutcome::Rejected);
+        registry.record_intercepted(phone, t1, InterceptedOutcome::Completed);
+        let views = registry.list(t1);
+        let view = views.iter().find(|view| view.ip == phone).unwrap();
+        assert_eq!(
+            view.intercepted,
+            InterceptedHandshakes {
+                completed: 1,
+                rejected: 2,
+                last_completed: Some(t1),
+                last_rejected: Some(t1),
+            }
+        );
+        assert_eq!(view.last_seen, t1);
+        assert_eq!(view.queries_24h, 0, "an intercepted outcome is not a query");
+    }
 
     fn ip(last_octet: u8) -> IpAddr {
         IpAddr::V4(Ipv4Addr::new(192, 168, 1, last_octet))

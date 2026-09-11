@@ -19,7 +19,7 @@ use fah_model::{
 use tokio::task::JoinHandle;
 
 use crate::aggregates::Aggregates;
-use crate::client_registry::{ClientRegistry, ClientView};
+use crate::client_registry::{ClientRegistry, ClientView, InterceptedOutcome};
 use crate::dto::{ClientCount, DomainCount, StatsSnapshot};
 use crate::history::{HistoryReader, PerfWriter, RollupWriter};
 use crate::snapshot::{self, SnapshotData};
@@ -137,6 +137,25 @@ impl Stats {
     /// fed in, because "this client made N requests, M blocked" reads the same
     /// way whichever pipeline refused them — and p2-06 needs exactly that
     /// number per client.
+    pub fn record_https(&self, event: fah_model::RequestEvent) {
+        let outcome = if event.status == fah_model::CLIENT_CERT_REJECTED {
+            Some(InterceptedOutcome::Rejected)
+        } else if !event.request.method.is_empty() {
+            Some(InterceptedOutcome::Completed)
+        } else {
+            None
+        };
+        let client_ip = event.request.client_ip;
+        let at = event.request.timestamp;
+        self.record_http(event);
+        if let Some(outcome) = outcome {
+            self.clients
+                .lock()
+                .unwrap()
+                .record_intercepted(client_ip, at, outcome);
+        }
+    }
+
     pub fn record_http(&self, event: fah_model::RequestEvent) {
         let at = event.request.timestamp;
         let blocked = matches!(event.verdict, fah_model::Verdict::Block(_));
@@ -525,6 +544,51 @@ mod tests {
 
     /// An HTTP request counts toward its policy but never toward the domain
     /// tables — the p2-04 split, kept.
+    #[tokio::test]
+    async fn https_events_classify_into_completed_and_rejected_per_client() {
+        let dir = tempfile::tempdir().unwrap();
+        let stats = Stats::new(
+            &config(),
+            &HistoryConfig::default(),
+            dir.path().to_path_buf(),
+        );
+        stats.boot().await;
+        let phone = IpAddr::V4(Ipv4Addr::new(192, 168, 10, 11));
+        let https = |method: &str, status: u16| {
+            fah_model::RequestEvent::new(
+                fah_model::Request {
+                    host: "login5.spotify.com".to_string(),
+                    path: String::new(),
+                    method: method.to_string(),
+                    resource_type: fah_model::ResourceType::Other,
+                    client_ip: phone,
+                    timestamp: SystemTime::now(),
+                },
+                Verdict::Pass,
+                std::time::Duration::from_micros(100),
+                status,
+                0,
+            )
+        };
+
+        stats.record_https(https("", fah_model::CLIENT_CERT_REJECTED));
+        stats.record_https(https("", fah_model::CLIENT_CERT_REJECTED));
+        stats.record_https(https("GET", 200));
+        stats.record_https(https("GET", 421));
+        stats.record_https(https("", 0));
+        stats.record_https(https("", fah_model::UPSTREAM_CERT_FAILURE));
+
+        let clients = stats.clients(SystemTime::now());
+        let view = clients.iter().find(|view| view.ip == phone).unwrap();
+        assert_eq!(
+            view.intercepted.completed, 2,
+            "a request inside the session"
+        );
+        assert_eq!(view.intercepted.rejected, 2, "one per 525");
+        assert!(view.intercepted.last_completed.is_some());
+        assert!(view.intercepted.last_rejected.is_some());
+    }
+
     #[tokio::test]
     async fn http_requests_count_toward_a_policy_but_not_the_domain_tables() {
         let dir = tempfile::tempdir().unwrap();

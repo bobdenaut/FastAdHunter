@@ -1,4 +1,4 @@
-# FastAdHunter
+opt-in per-client HTTPS interception (own CA installed on the device — browsers honour it; most mobile apps pin or ignore the user store and must be excluded per host; the router must refuse UDP 443 so HTTP/3 cannot bypass it, SECURITY.md), and DoT/DoH listeners for Private DNS |# FastAdHunter
 
 > Network-wide ad blocking with predictable latency and the smallest memory
 > footprint we can defend with a measurement.
@@ -33,7 +33,7 @@ numbers below are measured on the target hardware, not estimated.
 | 2.5 | Pre-Adaptive hardening | ✅ done | `v0.2.19-phase2.5` |
 | 2.6 | Adaptive DNS Stage 1 | ✅ closed 2026-09-07 — `adaptive` shipped opt-in; compiled-in default flipped and the `fallback` walk deleted with p2.6-12 (on `phase3-06`) | `soak-p2.6-11` |
 | 5 | Web dashboard | ✅ done — closed 2026-09-01, four verification rows deferred to the next deploy window | `0.3.0` |
-| 3 | HTTPS interception | 🚧 dev box done (p3-01…p3-05, p3-07…p3-09); p3-06's on-device campaign ran, four arms parked on hardware, awaiting the 24 h soak | `phase3-06` |
+| 3 | HTTPS interception | 🚧 dev box done (p3-01…p3-05, p3-07…p3-09); p3-06's on-device campaign ran, four arms parked on hardware, awaiting the 24 h soak; the N3 follow-up closed 2026-09-11 as a technical experiment, not promoted | `phase3-06` |
 | 4 | HTML filtering | ⬜ not started | — |
 
 Rows are in **execution** order, which is not numeric order: the dashboard is

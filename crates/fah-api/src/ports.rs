@@ -207,6 +207,15 @@ pub struct ClientEntry {
     pub last_seen: SystemTime,
     pub queries_24h: u64,
     pub blocked_24h: u64,
+    pub intercepted: InterceptedHandshakes,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct InterceptedHandshakes {
+    pub completed: u64,
+    pub rejected: u64,
+    pub last_completed: Option<SystemTime>,
+    pub last_rejected: Option<SystemTime>,
 }
 
 /// One query-log row. Wraps the L1 [`QueryEvent`] rather than restating its

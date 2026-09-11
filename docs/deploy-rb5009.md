@@ -776,10 +776,26 @@ and `add` appends to a chain with no terminal drop. Reuses §5b's
   comment="fastadhunter https"
 ```
 
-`protocol=tcp` only. UDP/443 stays unsteered so browsers fall back to TCP
-rather than black-holing HTTP/3 — QUIC interception is a p3-03 non-goal. New
-connections steer immediately; established flows finish on their conntrack
-entry.
+`protocol=tcp` only — QUIC is not intercepted (p3-03 non-goal), so **UDP/443
+must be refused**, or browsers and Cronet-based apps reach the origin over
+HTTP/3 and the steer never sees them. Browsers fall back to TCP only when QUIC
+fails; left open, it is a bypass (measured 2026-09-11,
+[p3-06-n3-alert-ab.md](code-review/phase3/p3-06-n3-alert-ab.md)). Place the
+reject ahead of the `accept established,related` rule, or an already-open
+QUIC flow keeps passing:
+
+```routeros
+/ip/firewall/filter/add chain=forward action=reject reject-with=icmp-admin-prohibited \
+  protocol=udp dst-port=443 in-interface-list=LAN out-interface-list=WAN \
+  place-before=[find comment~"accept established"] comment="fastadhunter: no QUIC, force TCP"
+/ipv6/firewall/filter/add chain=forward action=drop protocol=udp dst-port=443 \
+  in-interface-list=LAN out-interface-list=WAN \
+  place-before=[find comment~"accept established"] comment="fastadhunter v6: no QUIC, force TCP"
+```
+
+New connections steer immediately; established flows finish on their conntrack
+entry — a connection keeps the NAT decision it was born with, so a client whose
+flows predate the rule must reconnect (routeros-traps.md §Steering one client).
 
 ### The no-SNI / ECH warning
 

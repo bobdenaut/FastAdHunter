@@ -489,6 +489,18 @@ would silently disable interception under auto-exclusion is, here, an
 unlabelled client: its connections close, nothing is excluded, and the label
 can be added later without undoing anything.
 
+**Amended 2026-09-11** — measured on one Android device
+([p3-06-n3-alert-ab.md](../code-review/phase3/p3-06-n3-alert-ab.md)):
+`UnknownCA` is not what a client without the CA sends there. Chromium and
+every app stack sent `certificate_unknown`, the alert Spotify sends with the
+CA installed; only Firefox sent `unknown_ca`. The alert names the stack, not
+the cause, so the client-level diagnosis could not start from it. It shipped
+instead as the per-client account in fah-stats — `intercepted.completed` and
+`rejected` with last times on `GET /api/v1/clients` — which meets both
+constraints above: rejections are positive evidence, and a restart changes
+counts, never creates an accusation. Nothing in this decision is reversed; the
+missing-CA case is now labelled rather than quiet.
+
 ## A long exclusion list is a symptom
 
 `clients` and `exclude_domains` are unbounded today, unlike
@@ -639,7 +651,9 @@ is the failure that makes automation unsafe rather than merely inconvenient.
 
 Reopen the missing-CA diagnosis as its own feature, with its own contract for
 `UnknownCA`, when the unlabelled client proves costly in practice. This ADR
-guarantees only that the case is harmless and quiet until then.
+guarantees only that the case is harmless and quiet until then. *Done
+2026-09-11 without an `UnknownCA` contract — see the amendment in §The
+missing-CA case.*
 
 Reopen the empty default if operating a fresh install proves painful enough
 that a seeded starting list earns its keep. The seed would be an

@@ -385,13 +385,26 @@ the p3-09 filter label) and one tick of `client_cert_rejections`.
 
 The term states **what was observed, never why** — pinning, a name the leaf
 does not cover and an application's own verifier all produce those alerts, so
-nothing calls a 525 "pinned". `unknown_ca` is not a rejection: it says the
+nothing calls a 525 "pinned". Which alert a client sends is a property of its
+TLS stack, not of the cause: measured 2026-09-11 on one Android device,
+Spotify sends `certificate_unknown` with and without the CA, Chromium without
+it sends the same, and Firefox without it sends `unknown_ca`
+(docs/code-review/phase3/p3-06-n3-alert-ab.md). A 525 therefore never says
+whether the CA is present; the rejection view's per-client count of completed
+handshakes since the page opened is the evidence for that. `unknown_ca` is not a rejection: it says the
 client could not build a trusted chain, which is a trust diagnostic, and stays
 on `status 0` with every other alert, transport error and silent close. The
 surface is best-effort, not a census.
 
 Detection never writes the Interception Document — an Exclusion is always the
 operator's act (ADR-0008).
+
+Its positive counterpart is a **completed intercepted handshake**: a
+terminate-leg session the client accepted, observable as an `https` Request
+Event carrying a request and counted as `handshakes_completed` on the HTTPS
+listener. Per client, `GET /api/v1/clients` carries `intercepted.completed`
+and `intercepted.rejected` with their last times (fah-stats). The pair states
+what the client did; neither says whether the CA is installed.
 
 ### Destination Claim
 

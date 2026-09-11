@@ -320,6 +320,18 @@ that the prefix held.
   default route. Measured 2026-08-09: `/ping 2606:4700:4700::1111` from the
   router, 100 % loss, with both present. Test it, do not infer it.
 
+## Steering one client
+
+Measured 2026-09-11 while steering the owner's Android phone to the probe
+([p3-06-n3-alert-ab.md](code-review/phase3/p3-06-n3-alert-ab.md)).
+
+| Trap | What happens | Do instead |
+| --- | --- | --- |
+| v6 address list as the steer key | Android rotates temporary addresses on restart, airplane mode and on a timer — three new ones in one afternoon. Every flow from the new address goes straight to the origin and nothing on the box says so | match the client by `src-mac-address` in the dst-nat rule; read `/ipv6/neighbor/print where mac-address=…` to see what the phone currently uses |
+| Rule added or changed while the client is online | A connection keeps the NAT decision it was born with, and the `accept established,related` rules sit ahead of anything appended, so old flows keep bypassing until they close | cut the client's connections (airplane mode) after the change; verify with `/ipv6/firewall/connection/print where src-address~… and !dstnat` — zero rows, watched for 20 s |
+| tcp-only steer | HTTP/3 over UDP 443 goes around it (deploy-rb5009.md §5c) | refuse UDP 443 for the client, placed ahead of the established accept |
+| "Issued by FastAdHunter CA" in the browser | shows what was presented, on the warning page too | the fatal alert in the probe log is what proves distrust |
+
 ## Logging — what is instrumented, and its traps
 
 **`/log print` is a unified view over every logging action, not the memory

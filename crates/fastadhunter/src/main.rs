@@ -1001,9 +1001,10 @@ fn spawn_event_fanout(
             let for_hub = publish.then(|| event.clone());
             match event {
                 fah_model::Event::Dns(query) => stats.record(*query),
-                fah_model::Event::Http(request)
-                | fah_model::Event::HttpsSni(request)
-                | fah_model::Event::Https(request) => stats.record_http(*request),
+                fah_model::Event::Http(request) | fah_model::Event::HttpsSni(request) => {
+                    stats.record_http(*request)
+                }
+                fah_model::Event::Https(request) => stats.record_https(*request),
             }
             if let Some(event) = for_hub {
                 // Resolved after `record` so a first-ever client already

@@ -406,6 +406,7 @@ fn client_response(
         last_seen: entry.last_seen,
         queries_24h: entry.queries_24h,
         blocked_24h: entry.blocked_24h,
+        intercepted: entry.intercepted.into(),
     }
 }
 

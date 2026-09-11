@@ -58,8 +58,8 @@ pub use password::AuthState;
 pub use password::RateLimits;
 pub use ports::{
     BucketCount, CacheClean, CacheSource, CacheStats, ClientCount, ClientEntry, DnsWireSource,
-    DomainCount, HistorySource, PolicyCount, QueryRecord, StatsOverview, StatsSource,
-    TelemetrySource, WireResolving,
+    DomainCount, HistorySource, InterceptedHandshakes, PolicyCount, QueryRecord, StatsOverview,
+    StatsSource, TelemetrySource, WireResolving,
 };
 pub use server::ApiServer;
 pub use state::{AppStateBuilder, DotListener};

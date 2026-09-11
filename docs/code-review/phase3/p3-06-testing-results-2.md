@@ -903,6 +903,11 @@ in order to paper over a device-side install problem. Recorded against p3-08
 shows how iOS, Windows or other TLS stacks behave; they may send `UnknownCA` and
 work exactly as designed. Superseded by a second device disagreeing.
 
+**Resolved the same day** — [p3-06-n3-alert-ab.md](p3-06-n3-alert-ab.md):
+per-alert counters named the alert in both CA states on this phone and it did
+not differ by cause. 525 stays; the rejection view carries a per-client
+completed-handshake signal instead.
+
 ### D1 — dashboard at 390 px, both themes: **run, three defects found and fixed**
 
 Driven by Playwright against **the probe itself** — the real dashboard and API
@@ -991,6 +996,17 @@ were read on 2026-09-11 and Android rotates temporary addresses. **Re-read them
 before trusting the list at soak start** — the document's `/64` entry covers the
 interception side, but the address list drives the steer and a stale entry means
 the phone is simply never steered.
+
+**Superseded the same evening — N3 follow-up, 2026-09-11.** The A/B in
+[p3-06-n3-alert-ab.md](p3-06-n3-alert-ab.md) re-added the steer (v6 by MAC
+after the address list proved unable to follow Android's rotation), refused
+UDP 443 for the phone, and closed as a technical experiment, not promoted.
+State after it: `fah-probe` container, `kingston/fah-probe` config and data
+and every image tar **removed**; `veth3` remains; no `p3-06` firewall rule or
+address list remains in any table; production untouched. Phone: the probe's
+CA is still in its user store unless removed since, Chrome's "Experimental
+QUIC protocol" flag was set to Disabled during the rerun.
+
 ### Not run in this session
 
 | Arm | Blocker |

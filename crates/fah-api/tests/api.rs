@@ -47,6 +47,12 @@ impl FakeStats {
                 last_seen: SystemTime::UNIX_EPOCH,
                 queries_24h: 30_122,
                 blocked_24h: 3_020,
+                intercepted: fah_api::InterceptedHandshakes {
+                    completed: 14,
+                    rejected: 3,
+                    last_completed: Some(SystemTime::UNIX_EPOCH),
+                    last_rejected: None,
+                },
             }]),
             applied_history: Mutex::new(None),
         }
@@ -372,6 +378,10 @@ impl TelemetrySource for FakeTelemetry {
                 upstream_failures: 6,
                 upstream_cert_failures: 0,
                 client_cert_rejections: 0,
+                alert_bad_certificate: 0,
+                alert_certificate_unknown: 0,
+                alert_access_denied: 0,
+                handshakes_completed: 0,
                 non_http: 3,
                 non_tls: 0,
                 hello_timeouts: 0,
@@ -1642,6 +1652,13 @@ async fn clients_list_and_naming_round_trip() {
     assert_eq!(item["first_seen"], "1970-01-01T00:00:00Z");
     assert_eq!(item["queries_24h"], 30_122);
     assert_eq!(item["blocked_24h"], 3_020);
+    assert_eq!(item["intercepted"]["completed"], 14);
+    assert_eq!(item["intercepted"]["rejected"], 3);
+    assert_eq!(
+        item["intercepted"]["last_completed"],
+        "1970-01-01T00:00:00Z"
+    );
+    assert!(item["intercepted"]["last_rejected"].is_null());
     assert_eq!(item["policy"], "default");
     assert!(
         item.get("assignment_source").is_none(),
@@ -1693,6 +1710,7 @@ async fn clients_narrow_to_one_address_family_on_request() {
         last_seen: SystemTime::UNIX_EPOCH,
         queries_24h: 1,
         blocked_24h: 0,
+        intercepted: fah_api::InterceptedHandshakes::default(),
     });
 
     let listed = |body: Value| -> Vec<String> {
@@ -1738,6 +1756,7 @@ async fn clients_carry_the_in_force_policy_and_agree_with_the_per_client_endpoin
             last_seen: SystemTime::UNIX_EPOCH,
             queries_24h: 1,
             blocked_24h: 0,
+            intercepted: fah_api::InterceptedHandshakes::default(),
         });
     }
 

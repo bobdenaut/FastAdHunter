@@ -638,6 +638,7 @@ pub struct ClientResponse {
     pub last_seen: std::time::SystemTime,
     pub queries_24h: u64,
     pub blocked_24h: u64,
+    pub intercepted: InterceptedResponse,
     pub policy: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub assignment_source: Option<&'static str>,
@@ -1345,5 +1346,26 @@ mod tests {
 
         let set: PatchListRequest = serde_json::from_str(r#"{"refresh_hours": 6}"#).unwrap();
         assert_eq!(set.refresh_hours, Some(Some(6)));
+    }
+}
+
+#[derive(Debug, Serialize)]
+pub struct InterceptedResponse {
+    pub completed: u64,
+    pub rejected: u64,
+    #[serde(serialize_with = "timestamp::serialize_option")]
+    pub last_completed: Option<SystemTime>,
+    #[serde(serialize_with = "timestamp::serialize_option")]
+    pub last_rejected: Option<SystemTime>,
+}
+
+impl From<crate::ports::InterceptedHandshakes> for InterceptedResponse {
+    fn from(intercepted: crate::ports::InterceptedHandshakes) -> Self {
+        Self {
+            completed: intercepted.completed,
+            rejected: intercepted.rejected,
+            last_completed: intercepted.last_completed,
+            last_rejected: intercepted.last_rejected,
+        }
     }
 }

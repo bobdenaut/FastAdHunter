@@ -417,8 +417,10 @@ set, not a guarantee.
 
 Three constraints carried from the plan, none of them new here:
 
-- **`protocol=tcp` only.** UDP/443 stays unsteered so browsers fall back to TCP
-  rather than black-holing HTTP/3.
+- **`protocol=tcp` only, and UDP/443 refused beside it.** The earlier premise
+  "unsteered UDP/443 makes browsers fall back to TCP" was backwards — measured
+  2026-09-11, left open it is a bypass ([p3-06-n3-alert-ab.md](p3-06-n3-alert-ab.md));
+  deploy-rb5009.md §5c carries the reject rule.
 - **Target is 8444**, the `[https.listen]` port. 8443 is the API's and p3-03
   rejects the collision at startup.
 - **Steering all of `:443` closes no-SNI and ECH connections.** The container

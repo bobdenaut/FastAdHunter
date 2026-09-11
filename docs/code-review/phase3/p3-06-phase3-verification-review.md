@@ -590,7 +590,10 @@ or, for items 5 and 7, to the probe container.
    ```
 
    `protocol=tcp` only: UDP/443 (QUIC) stays unsteered so browsers fall back
-   to TCP instead of black-holing HTTP/3 (p3-03 non-goal). Effect: new
+   to TCP instead of black-holing HTTP/3 (p3-03 non-goal). **Corrected
+   2026-09-11:** that premise was backwards — browsers fall back only when QUIC
+   fails; left open, UDP/443 is a bypass and must be refused
+   ([p3-06-n3-alert-ab.md](p3-06-n3-alert-ab.md), deploy-rb5009.md §5c). Effect: new
    connections immediately; established flows finish on their conntrack entry.
    Verify: `/ip/firewall/nat/print stats where comment~"fastadhunter https"`
    (packet counters move), and the WS feed carries `https-sni` items from LAN

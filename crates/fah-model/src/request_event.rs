@@ -5,6 +5,9 @@ use serde::{Deserialize, Serialize};
 
 use crate::http::ResourceType;
 use crate::query_event::QueryEvent;
+
+pub const CLIENT_CERT_REJECTED: u16 = 525;
+pub const UPSTREAM_CERT_FAILURE: u16 = 526;
 use crate::verdict::Verdict;
 
 /// One HTTP request received from a client, as the pipeline reports it

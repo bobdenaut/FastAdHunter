@@ -164,7 +164,12 @@ Before figure measured on a clean `phase3-06` @ `f11aa53` working tree
   interception for a host in order to work around a missing CA install. No
   change is proposed yet — the shape of the fix (a second action, a hint, or a
   classification change in p3-08) is a design decision. Scope: one device
-  (OnePlus 15, OxygenOS, BoringSSL).
+  (OnePlus 15, OxygenOS, BoringSSL). **Resolved 2026-09-11**: the A/B in
+  [p3-06-n3-alert-ab.md](p3-06-n3-alert-ab.md) showed the alert cannot carry
+  the distinction, so the view now states completed handshakes per client since
+  the page opened (`rejections.ts` `summarizeClients`, `ClientsSummary` above
+  the rows), with a check-the-client hint when there are none. Exclude is
+  unchanged, and the wording never asserts CA state.
 
 ## Findings
 

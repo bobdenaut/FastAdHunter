@@ -39,5 +39,7 @@ pub use policy::{Assignment, ClientSelector, Policy, PolicyId, Schedule};
 pub use protocol::Protocol;
 pub use query::{Query, QueryType};
 pub use query_event::{AnswerOutcome, QueryEvent, StaleServe};
-pub use request_event::{Event, EventKind, Request, RequestEvent};
+pub use request_event::{
+    Event, EventKind, Request, RequestEvent, CLIENT_CERT_REJECTED, UPSTREAM_CERT_FAILURE,
+};
 pub use verdict::{DecisiveRule, Verdict};

@@ -149,6 +149,14 @@ pub struct ListenerCounters {
     pub upstream_cert_failures: u64,
     #[serde(default)]
     pub client_cert_rejections: u64,
+    #[serde(default)]
+    pub alert_bad_certificate: u64,
+    #[serde(default)]
+    pub alert_certificate_unknown: u64,
+    #[serde(default)]
+    pub alert_access_denied: u64,
+    #[serde(default)]
+    pub handshakes_completed: u64,
     pub non_http: u64,
     pub non_tls: u64,
     pub hello_timeouts: u64,

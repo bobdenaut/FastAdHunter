@@ -332,6 +332,19 @@ exactly the failure worth finding.
   - **Bounded per session.** An intercepted session holds one client and one
     upstream TLS session plus fixed hyper buffers (CONFIGURATION.md
     `[https] max_connections`); it never buffers a body.
+  - **HTTP/3 must be refused for intercepted clients.** The steer catches
+    tcp/443 only; a client that reaches an origin over UDP 443 gets the real
+    certificate and the terminate leg never sees it. Browsers fall back to TCP
+    only when QUIC fails, so the deployment rejects UDP 443 from the LAN toward
+    the WAN (docs/deploy-rb5009.md §5c). Measured 2026-09-11: left open, Chrome
+    and Cronet-based apps used it around the probe
+    (docs/code-review/phase3/p3-06-n3-alert-ab.md).
+  - **Android apps mostly refuse the user CA.** Apps targeting API 24+ do not
+    consult the user trust store, so on a listed Android device browsers are
+    intercepted and most apps answer the minted leaf with a fatal alert (525)
+    whatever CA is installed; the alert names the app's TLS stack, not the
+    cause (same record, one device). Exclusion per host, or not listing the
+    device, are the only remedies without a system-store CA.
 - DoT (`[dns.listen] dot_port`, 853) and DoH (`/dns-query`) **listeners**
   (client-facing) ship with the Phase 3 certificate machinery. DoT presents a
   CA-minted leaf for the SNI the client sends when a CA exists, else the API

@@ -703,6 +703,7 @@ async fn filtered_end_to_end(downstream: Proto, upstream: Proto) {
     let counters = harness.counters.snapshot();
     assert_eq!(counters.blocked, 1);
     assert_eq!(counters.upstream_cert_failures, 0);
+    assert_eq!(counters.handshakes_completed, 1);
     assert_eq!(counters.upstream_failures, 0);
     harness.shutdown();
 }
@@ -2373,6 +2374,10 @@ async fn a_client_refusing_our_leaf_emits_one_https_event_with_status_525() {
     let refusal = refused_leaf(pinning_client(rustls::ALL_VERSIONS)).await;
     assert_eq!(refusal.event.status, 525);
     assert_eq!(refusal.counters.client_cert_rejections, 1);
+    assert_eq!(refusal.counters.alert_access_denied, 1);
+    assert_eq!(refusal.counters.alert_bad_certificate, 0);
+    assert_eq!(refusal.counters.alert_certificate_unknown, 0);
+    assert_eq!(refusal.counters.handshakes_completed, 0);
     assert_eq!(refusal.counters.upstream_cert_failures, 0);
     refusal.harness.shutdown();
 }
@@ -2386,6 +2391,8 @@ async fn a_name_rejection_is_also_525() {
     .await;
     assert_eq!(refusal.event.status, 525);
     assert_eq!(refusal.counters.client_cert_rejections, 1);
+    assert_eq!(refusal.counters.alert_bad_certificate, 1);
+    assert_eq!(refusal.counters.alert_access_denied, 0);
     refusal.harness.shutdown();
 }
 
@@ -2408,6 +2415,7 @@ async fn an_unspecified_rejection_is_also_525() {
     .await;
     assert_eq!(refusal.event.status, 525);
     assert_eq!(refusal.counters.client_cert_rejections, 1);
+    assert_eq!(refusal.counters.alert_certificate_unknown, 1);
     refusal.harness.shutdown();
 }
 
@@ -2419,6 +2427,9 @@ async fn an_untrusting_client_stays_on_status_0_and_is_not_counted() {
         "UnknownCA is a trust diagnostic, never a rejection"
     );
     assert_eq!(refusal.counters.client_cert_rejections, 0);
+    assert_eq!(refusal.counters.alert_bad_certificate, 0);
+    assert_eq!(refusal.counters.alert_certificate_unknown, 0);
+    assert_eq!(refusal.counters.alert_access_denied, 0);
     refusal.harness.shutdown();
 }
 

@@ -488,6 +488,13 @@ inherits the address. A listed client must also trust the CA
 (`/api/v1/certificates` export); one that does not is closed after a wasted
 upstream handshake.
 
+Two conditions the engine cannot supply (SECURITY.md §Later phases): the
+router must refuse UDP 443 for listed clients, or HTTP/3 bypasses the steer
+(deploy-rb5009.md §5c); and on Android most apps ignore the user trust store,
+so a listed phone is intercepted in its browsers and refused by its apps —
+exclude per host or do not list it. `GET /api/v1/clients` `intercepted` shows
+what each client did.
+
 Listed clients with no CA installed, or with a certificate store that did not
 open, are spliced (store) or closed (no CA) — never fatal, DNS keeps resolving;
 one `warn!` at boot names which. A `PUT` listing a client while the store is

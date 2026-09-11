@@ -176,6 +176,12 @@ fn client(view: fah_stats::ClientView) -> ClientEntry {
         last_seen: view.last_seen,
         queries_24h: view.queries_24h,
         blocked_24h: view.blocked_24h,
+        intercepted: fah_api::InterceptedHandshakes {
+            completed: view.intercepted.completed,
+            rejected: view.intercepted.rejected,
+            last_completed: view.intercepted.last_completed,
+            last_rejected: view.intercepted.last_rejected,
+        },
     }
 }
 

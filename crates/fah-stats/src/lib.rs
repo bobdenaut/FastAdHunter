@@ -24,6 +24,6 @@ mod top_n;
 
 pub use aggregates::PolicyCount;
 pub use bucket::BucketView;
-pub use client_registry::ClientView;
+pub use client_registry::{ClientView, InterceptedHandshakes, InterceptedOutcome};
 pub use dto::{ClientCount, DomainCount, StatsSnapshot};
 pub use stats::Stats;

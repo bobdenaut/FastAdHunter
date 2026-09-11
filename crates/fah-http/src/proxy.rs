@@ -85,6 +85,10 @@ pub struct ProxyCounters {
     pub hello_timeouts: AtomicU64,
     pub upstream_cert_failures: AtomicU64,
     pub client_cert_rejections: AtomicU64,
+    pub handshakes_completed: AtomicU64,
+    pub alert_bad_certificate: AtomicU64,
+    pub alert_certificate_unknown: AtomicU64,
+    pub alert_access_denied: AtomicU64,
     /// Requests refused by a filtering rule (p2-04).
     pub blocked: AtomicU64,
     /// Events the bounded channel could not take. Mirrors the DNS pipeline's
@@ -107,6 +111,10 @@ pub struct ProxyStats {
     pub hello_timeouts: u64,
     pub upstream_cert_failures: u64,
     pub client_cert_rejections: u64,
+    pub handshakes_completed: u64,
+    pub alert_bad_certificate: u64,
+    pub alert_certificate_unknown: u64,
+    pub alert_access_denied: u64,
     pub blocked: u64,
     pub dropped_events: u64,
 }
@@ -125,6 +133,10 @@ impl ProxyCounters {
             hello_timeouts: self.hello_timeouts.load(Ordering::Relaxed),
             upstream_cert_failures: self.upstream_cert_failures.load(Ordering::Relaxed),
             client_cert_rejections: self.client_cert_rejections.load(Ordering::Relaxed),
+            handshakes_completed: self.handshakes_completed.load(Ordering::Relaxed),
+            alert_bad_certificate: self.alert_bad_certificate.load(Ordering::Relaxed),
+            alert_certificate_unknown: self.alert_certificate_unknown.load(Ordering::Relaxed),
+            alert_access_denied: self.alert_access_denied.load(Ordering::Relaxed),
             blocked: self.blocked.load(Ordering::Relaxed),
             dropped_events: self.dropped_events.load(Ordering::Relaxed),
         }
@@ -143,6 +155,10 @@ impl From<ProxyStats> for fah_model::ListenerCounters {
             upstream_failures: stats.upstream_failures,
             upstream_cert_failures: stats.upstream_cert_failures,
             client_cert_rejections: stats.client_cert_rejections,
+            handshakes_completed: stats.handshakes_completed,
+            alert_bad_certificate: stats.alert_bad_certificate,
+            alert_certificate_unknown: stats.alert_certificate_unknown,
+            alert_access_denied: stats.alert_access_denied,
             non_http: stats.non_http,
             non_tls: stats.non_tls,
             hello_timeouts: stats.hello_timeouts,
