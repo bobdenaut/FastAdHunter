@@ -518,7 +518,7 @@ swr_workers = 3
 cleanup_interval_seconds = 360
 
 [dns.upstreams]
-strategy = "fallback"
+strategy = "adaptive"
 timeout_ms = 800
 
 [[dns.upstreams.servers]]
@@ -832,7 +832,7 @@ format = "text"
     fn upstream_penalty_failures_defaults_and_round_trips() {
         let config = Config::from_toml_str("[dns.upstreams]\ntimeout_ms = 800\n").unwrap();
         assert_eq!(config.dns.upstreams.penalty_failures, 2);
-        assert_eq!(config.dns.upstreams.strategy, UpstreamStrategy::Fallback);
+        assert_eq!(config.dns.upstreams.strategy, UpstreamStrategy::Adaptive);
         validate(&config).unwrap();
 
         let config = Config::from_toml_str(
@@ -913,8 +913,30 @@ format = "text"
         let message = apply_env_overrides(Config::default(), &pairs)
             .unwrap_err()
             .to_string();
-        assert!(message.contains("fallback"));
         assert!(message.contains("adaptive"));
+
+        let pairs = vec![(
+            "FAH__DNS__UPSTREAMS__STRATEGY".to_string(),
+            "fallback".to_string(),
+        )];
+        let message = apply_env_overrides(Config::default(), &pairs)
+            .unwrap_err()
+            .to_string();
+        assert!(message.contains("removed after 0.3.3"), "{message}");
+    }
+
+    #[test]
+    fn the_removed_fallback_strategy_is_rejected_at_load() {
+        let err = Config::from_toml_str(
+            r#"
+[dns.upstreams]
+strategy = "fallback"
+"#,
+        )
+        .unwrap_err();
+        let message = err.to_string();
+        assert!(message.contains("removed after 0.3.3"), "{message}");
+        assert!(message.contains("adaptive"), "{message}");
     }
 
     #[test]

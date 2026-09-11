@@ -14,10 +14,10 @@ RB5009, not merely written.
 | 1.5 — observability persistence | ✅ done | `v0.3.0-phase1.5` |
 | 2 — HTTP | ✅ done | `v0.2.17-phase2` |
 | 2.5 — pre-Adaptive hardening | ✅ done | `v0.2.19-phase2.5` |
-| 2.6 — Adaptive DNS Stage 1 | 🚧 built, deployed opt-in; default flip pending | `soak-p2.6-11` |
-| 5 — web dashboard | 🚧 all ten tasks built and merged; on-device leg pending | `0.3.0` |
-| 3 — HTTPS | ⬜ not started | — |
-| 4 — HTML filtering | ⬜ not started | — |
+| 2.6 — Adaptive DNS Stage 1 | ✅ done — closed 2026-09-07; `adaptive` is the only strategy since p2.6-12, cherry-picked to `main` 2026-09-11 after the A/B measurement | `soak-p2.6-11` |
+| 5 — web dashboard | ✅ done — closed 2026-09-01, four verification rows deferred | `0.3.0` |
+| 3 — HTTPS | ⏸ parked | — |
+| 4 — HTML filtering | ⏸ parked | — |
 
 Phases 2.6 and 5 both sit on the same open item: the **7-day re-soak of 0.3.0**
 on the RB5009, started 2026-08-29T19:18 Z. It carries 2.6's `adaptive`
@@ -223,14 +223,18 @@ observation days added no information. That defect is fixed in 0.3.0
 acceptance the terminated run no longer can. Sequencing:
 [plan/resoak-orchestration.md](plan/resoak-orchestration.md).
 
-**p2.6-12 — the default flip — remains open, and its precondition is weaker
-than the plan assumed.** The flip was gated on every deployment-tier gate
-passing; two closed unvalidated instead. The spec's narrow rejection route
-still stands: if this deployment only ever produces isolated single losses,
-Stage 1 at `penalty_failures = 2` never engages and **not flipping the default
-is the correct outcome**. Three length-1 runs are equally consistent with that
-and with too small a sample; nothing measured distinguishes them. That call is
-an explicit owner decision, not an inference from the other gates.
+**p2.6-12 — the default flip — done on `phase3-06` (2026-09-07) and
+cherry-picked to `main` on 2026-09-11.** `adaptive` is the compiled-in default,
+the `fallback` variant and walk are deleted, and a config naming `fallback`
+fails at load with a removal message. The gates it waited on: two
+deployment-tier gates closed unvalidated — three length-1 runs, too few to
+calibrate `penalty_failures`, which stays at 2 — so the flip was an owner
+decision on that record. The `main` cherry-pick rests on a controlled A/B
+instead: `fallback` vs `adaptive` at production timings across 0/4, 1/4, 2/4
+and 4/4 dead upstreams plus recovery
+([strategy-ab-fallback-vs-adaptive.md](docs/code-review/phase2.6/strategy-ab-fallback-vs-adaptive.md)).
+Review of the change itself:
+[p2.6-12-default-flip-review.md](docs/code-review/phase2.6/p2.6-12-default-flip-review.md).
 
 ### Shipped alongside — list refresh, conditional GET (0.3.0)
 

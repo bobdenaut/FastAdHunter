@@ -9,7 +9,7 @@ use fah_config::{
     UpstreamStrategy,
 };
 use fah_dns::{
-    Forwarder, Pipeline, Policy, Transport, UpstreamPool, UpstreamStatus, ATTEMPT_LEGS,
+    Forwarder, Pipeline, Policy, Transport, UpstreamPool, UpstreamStatus,
     DEFAULT_REFRESH_CLAIM_LEASE,
 };
 use fah_model::UpstreamState;
@@ -30,10 +30,6 @@ const ENDPOINTS: usize = 2;
 const CADENCE_MS: u64 = 50;
 const TAIL_UNITS: f64 = 1.5;
 const REFRESH_FAILURE_COOLDOWN_SECONDS: u64 = 30;
-
-fn attempt_bound_ms() -> u64 {
-    u64::from(ATTEMPT_LEGS) * u64::from(TIMEOUT_MS)
-}
 
 fn leg() -> Duration {
     Duration::from_millis(u64::from(TIMEOUT_MS))
@@ -92,7 +88,6 @@ fn build_pool(
 fn strategy_name(strategy: UpstreamStrategy) -> &'static str {
     match strategy {
         UpstreamStrategy::Adaptive => "adaptive",
-        UpstreamStrategy::Fallback => "fallback",
     }
 }
 
@@ -368,14 +363,6 @@ impl Metrics {
         values.iter().map(|value| (value - baseline).max(0.0)).sum()
     }
 
-    fn non_probe_first_tax_against(&self, baseline: f64) -> f64 {
-        Self::tax_against(baseline, &self.non_probe_first_ms)
-    }
-
-    fn probe_tax_against(&self, baseline: f64) -> f64 {
-        Self::tax_against(baseline, &self.probe_paying_ms)
-    }
-
     fn non_probe_tax_ms(&self) -> f64 {
         self.tax_ms(&self.non_probe_paying_ms)
     }
@@ -552,35 +539,6 @@ fn metrics(label: &str, samples: &[Sample]) -> Metrics {
     totals
 }
 
-fn net_avoided(label: &str, fallback_paying: u64, adaptive_paying: u64, failed_probes: u64) {
-    let bound = i64::try_from(attempt_bound_ms()).unwrap();
-    let gross =
-        (i64::try_from(fallback_paying).unwrap() - i64::try_from(adaptive_paying).unwrap()) * bound;
-    let cost = i64::try_from(failed_probes).unwrap() * bound;
-    println!(
-        "G3 net-cost {label} fallback_paying={fallback_paying} adaptive_paying={adaptive_paying} \
-         failed_probes={failed_probes} attempt_bound_ms={bound} gross_ms={gross} \
-         probe_cost_ms={cost} net_avoided_ms={}",
-        gross - cost
-    );
-}
-
-fn net_avoided_measured(label: &str, baseline_ms: f64, fallback: &Metrics, adaptive: &Metrics) {
-    let fallback_tax_ms = fallback.non_probe_first_tax_against(baseline_ms);
-    let adaptive_tax_ms = adaptive.non_probe_first_tax_against(baseline_ms);
-    let probe_tax_ms = adaptive.probe_tax_against(baseline_ms);
-    println!(
-        "G3 net-cost-measured {label} shared_baseline_ms={baseline_ms:.2} \
-         fallback_paying={} adaptive_non_probe_paying={} failed_probes={} \
-         fallback_tax_ms={fallback_tax_ms:.0} adaptive_non_probe_tax_ms={adaptive_tax_ms:.0} \
-         probe_tax_ms={probe_tax_ms:.0} net_avoided_ms={:.0}",
-        fallback.non_probe_paying_first(),
-        adaptive.non_probe_paying_first(),
-        adaptive.probe_paying(),
-        fallback_tax_ms - adaptive_tax_ms - probe_tax_ms
-    );
-}
-
 async fn sequential(runner: &mut Runner<'_>, prefix: &str, count: usize) -> Vec<Sample> {
     let mut samples = Vec::with_capacity(count);
     for index in 0..count {
@@ -733,32 +691,10 @@ async fn b1_black_hole() {
             report.penalties[0], report.probes[0], report.tax_free_share
         );
     }
-    let fallback = run_b1(
-        UpstreamStrategy::Fallback,
-        2,
-        MAX_RATIO_SHIPPED,
-        count,
-        "12.5",
-        Duration::ZERO,
-    )
-    .await;
-
     let adaptive = &shipped[1];
     println!(
         "G3 tax-free B.1 ratio=12.5 penalties={} probes={} tax_free_share={:.5}",
         adaptive.penalties[0], adaptive.probes[0], adaptive.tax_free_share
-    );
-    net_avoided(
-        "client-forwards B.1 ratio=12.5 penalty_failures=2",
-        fallback.non_probe_paying_first() as u64,
-        adaptive.non_probe_paying_first() as u64,
-        adaptive.probe_paying() as u64,
-    );
-    net_avoided_measured(
-        "client-forwards B.1 ratio=12.5 penalty_failures=2",
-        adaptive.healthy_p50_ms,
-        &fallback,
-        adaptive,
     );
 }
 
@@ -864,7 +800,6 @@ async fn b2_refusal_probe() {
 
 async fn b2_refused_endpoint_dot() {
     for penalty_failures in [1, 2, 3] {
-        run_b2_dot(UpstreamStrategy::Fallback, penalty_failures).await;
         run_b2_dot(UpstreamStrategy::Adaptive, penalty_failures).await;
     }
 }
@@ -907,7 +842,6 @@ async fn run_b2_udp(strategy: UpstreamStrategy, penalty_failures: u32) -> Metric
 #[cfg(target_os = "linux")]
 async fn b2_refused_endpoint_udp() {
     for penalty_failures in [1, 2, 3] {
-        run_b2_udp(UpstreamStrategy::Fallback, penalty_failures).await;
         run_b2_udp(UpstreamStrategy::Adaptive, penalty_failures).await;
     }
 }
@@ -947,26 +881,23 @@ async fn run_b3(strategy: UpstreamStrategy, count: usize) -> Metrics {
 
 async fn b3_healthy_control() {
     let count = 400;
-    let fallback = run_b3(UpstreamStrategy::Fallback, count).await;
     let adaptive = run_b3(UpstreamStrategy::Adaptive, count).await;
     let allowed = tolerance(count);
-    let attempt_gap = fallback.attempts[0].abs_diff(adaptive.attempts[0])
-        + fallback.attempts[1].abs_diff(adaptive.attempts[1]);
-    let datagram_gap = fallback.datagrams[0].abs_diff(adaptive.datagrams[0])
-        + fallback.datagrams[1].abs_diff(adaptive.datagrams[1]);
+    let datagram_gap = adaptive.datagrams[0].abs_diff(adaptive.attempts[0])
+        + adaptive.datagrams[1].abs_diff(adaptive.attempts[1]);
     println!(
-        "G3 B.3-control fallback_attempts={:?} adaptive_attempts={:?} attempt_gap={attempt_gap} \
-         fallback_datagrams={:?} adaptive_datagrams={:?} datagram_gap={datagram_gap} \
-         allowed={allowed}",
-        fallback.attempts, adaptive.attempts, fallback.datagrams, adaptive.datagrams
+        "G3 B.3-control adaptive_attempts={:?} adaptive_datagrams={:?} 
+         datagram_gap={datagram_gap} allowed={allowed}",
+        adaptive.attempts, adaptive.datagrams
     );
-    assert!(
-        attempt_gap <= allowed,
-        "B.3: attempts differ by {attempt_gap} between strategies on a healthy link"
+    assert_eq!(
+        adaptive.attempts,
+        [u64::try_from(count).unwrap(), 0],
+        "B.3: on a healthy link the primary takes every query and the secondary none"
     );
     assert!(
         datagram_gap <= allowed,
-        "B.3: packets on the wire differ by {datagram_gap} between strategies"
+        "B.3: packets on the wire differ from attempts by {datagram_gap}"
     );
 }
 
@@ -1055,7 +986,6 @@ async fn run_b4(strategy: UpstreamStrategy, minimum: usize) -> Metrics {
 }
 
 async fn b4_all_dead() {
-    run_b4(UpstreamStrategy::Fallback, 40).await;
     run_b4(UpstreamStrategy::Adaptive, 40).await;
 }
 
@@ -1347,13 +1277,6 @@ async fn run_b5(
 #[ignore]
 async fn b5_recovery_and_flapping() {
     require_serial("B.5");
-    run_b5(
-        UpstreamStrategy::Fallback,
-        MAX_RATIO_SHIPPED,
-        "12.5",
-        TAIL_UNITS,
-    )
-    .await;
     for (ratio, penalty_max_ms) in [
         ("2.5", MAX_RATIO_LOW),
         ("12.5", MAX_RATIO_SHIPPED),
@@ -1429,7 +1352,6 @@ async fn run_b6(strategy: UpstreamStrategy, count: usize) -> Metrics {
 }
 
 async fn b6_rcode_isolation() {
-    run_b6(UpstreamStrategy::Fallback, 1_000).await;
     run_b6(UpstreamStrategy::Adaptive, 1_000).await;
 }
 
@@ -1485,7 +1407,6 @@ async fn run_b7_first_pass(strategy: UpstreamStrategy, calls: usize) -> Metrics 
 #[ignore]
 async fn b7_resolve_host_isolation() {
     require_serial("B.7");
-    run_b7_first_pass(UpstreamStrategy::Fallback, 100).await;
     run_b7_first_pass(UpstreamStrategy::Adaptive, 100).await;
 
     let dead = MockUpstream::spawn(dead_mock()).await;
@@ -1713,20 +1634,12 @@ async fn run_b8_client_only(strategy: UpstreamStrategy, queries: usize, spacing:
 async fn b8_swr_interaction() {
     require_serial("B.8");
     let spacing = Duration::from_millis(40);
-    let fallback = run_b8_swr_only(UpstreamStrategy::Fallback, 100, spacing).await;
     let adaptive = run_b8_swr_only(UpstreamStrategy::Adaptive, 100, spacing).await;
-    run_b8_client_only(UpstreamStrategy::Fallback, 100, spacing).await;
     run_b8_client_only(UpstreamStrategy::Adaptive, 100, spacing).await;
 
     println!(
-        "G3 B.8 refreshes fallback={} adaptive={}",
-        fallback.refreshes, adaptive.refreshes
-    );
-    net_avoided(
-        "swr-refreshes B.8 ratio=12.5 penalty_failures=2",
-        fallback.attempts[0],
-        adaptive.attempts[0] - adaptive.probes[0],
-        adaptive.probes[0],
+        "G3 B.8 refreshes adaptive={} attempts={:?} probes={:?}",
+        adaptive.refreshes, adaptive.attempts, adaptive.probes
     );
 }
 

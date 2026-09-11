@@ -127,7 +127,7 @@ mode = "null_ip"
 ttl_seconds = 10
 
 [dns.upstreams]
-strategy = "fallback"
+strategy = "adaptive"
 timeout_ms = 2000
 
 [[dns.upstreams.servers]]

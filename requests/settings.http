@@ -201,7 +201,7 @@ Content-Type: application/json
 {
   "dns": {
     "upstreams": {
-      "strategy": "fallback",
+      "strategy": "adaptive",
       "timeout_ms": 800,
       "servers": [
         { "address": "1.1.1.1", "protocol": "udp" },

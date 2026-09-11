@@ -138,14 +138,14 @@ cleanup_interval_seconds = 360 # boot   — background sweep of entries past the
 
 # ─── Upstreams ─────────────────────────────────────────────────────────
 [dns.upstreams]
-strategy = "fallback"         # boot    — "fallback" | "adaptive". "fallback" walks the
-                              #   servers in configured order on every query. "adaptive"
-                              #   is opt-in and the default is unchanged: an endpoint
-                              #   that keeps failing is penalized and skipped until its
+strategy = "adaptive"         # boot    — "adaptive" is the only value: an endpoint that
+                              #   keeps failing is penalized and skipped until its
                               #   penalty expires, then one query probes it on the way
                               #   past. Every endpoint penalized still sends a query.
+                              #   "fallback" (the ordered walk, the default until 0.3.3)
+                              #   is rejected at load; drop the key or say "adaptive".
 penalty_failures = 2          # boot    — consecutive transport failures that penalize a
-                              #   healthy endpoint, 1..=255. Read only under "adaptive".
+                              #   healthy endpoint, 1..=255.
                               #   A refused connection, an unreachable network or host
                               #   and a failed TLS/DoH handshake penalize on the first
                               #   failure whatever this is set to; a timeout counts

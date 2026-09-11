@@ -313,7 +313,7 @@ async fn full_pipeline_forwards_via_upstream_pool_and_caches_the_answer() {
     });
 
     let pool = UpstreamPool::from_config(&DnsUpstreamsConfig {
-        strategy: UpstreamStrategy::Fallback,
+        strategy: UpstreamStrategy::Adaptive,
         timeout_ms: 2000,
         servers: vec![UpstreamServerConfig {
             address: upstream_addr.to_string(),

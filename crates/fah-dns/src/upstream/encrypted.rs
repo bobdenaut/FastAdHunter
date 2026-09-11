@@ -407,7 +407,7 @@ mod tests {
     ) -> UpstreamPool {
         UpstreamPool::with_tls_config(
             &DnsUpstreamsConfig {
-                strategy: UpstreamStrategy::Fallback,
+                strategy: UpstreamStrategy::Adaptive,
                 timeout_ms,
                 servers: addresses
                     .into_iter()
@@ -438,12 +438,6 @@ mod tests {
         dot_pool_of(&[server], 2000)
     }
 
-    fn dot_pool_adaptive(server: &DotServer) -> UpstreamPool {
-        let mut pool = dot_pool(server);
-        pool.strategy = UpstreamStrategy::Adaptive;
-        pool
-    }
-
     async fn concurrent_forwards(pool: &UpstreamPool, queries: usize) {
         let mut handles = Vec::new();
         for _ in 0..queries {
@@ -460,7 +454,7 @@ mod tests {
     #[tokio::test]
     async fn an_idle_close_and_reconnect_moves_no_health_under_adaptive() {
         let server = dot_server(Some(1)).await;
-        let pool = dot_pool_adaptive(&server);
+        let pool = dot_pool(&server);
 
         for _ in 0..2 {
             let response = pool.forward(&a_query()).await.unwrap().message;
@@ -484,7 +478,7 @@ mod tests {
     #[tokio::test]
     async fn concurrent_first_queries_share_one_handshake_under_adaptive() {
         let server = dot_server(None).await;
-        let pool = dot_pool_adaptive(&server);
+        let pool = dot_pool(&server);
 
         concurrent_forwards(&pool, 8).await;
 
@@ -776,7 +770,7 @@ mod tests {
     #[ignore = "network: real DoT upstream (1.1.1.1:853)"]
     async fn dot_smoke_against_cloudflare() {
         let pool = UpstreamPool::from_config(&DnsUpstreamsConfig {
-            strategy: UpstreamStrategy::Fallback,
+            strategy: UpstreamStrategy::Adaptive,
             timeout_ms: 5000,
             servers: vec![UpstreamServerConfig {
                 address: "1.1.1.1".to_string(),
@@ -795,7 +789,7 @@ mod tests {
     #[ignore = "network: real DoH upstream (cloudflare-dns.com)"]
     async fn doh_smoke_against_cloudflare() {
         let pool = UpstreamPool::from_config(&DnsUpstreamsConfig {
-            strategy: UpstreamStrategy::Fallback,
+            strategy: UpstreamStrategy::Adaptive,
             timeout_ms: 5000,
             servers: vec![UpstreamServerConfig {
                 address: "https://cloudflare-dns.com/dns-query".to_string(),

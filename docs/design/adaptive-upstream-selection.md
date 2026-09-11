@@ -1,8 +1,10 @@
 # Adaptive DNS Upstream Selection — Stage 1 specification
 
-Status: **accepted as the Stage 1 specification.** Stages 2 and 3 are candidate
-designs only and are not accepted; each carries an explicit benchmark gate that
-must pass before it may be specified in detail.
+Status: **Stage 1 shipped as the default** — `adaptive` is the compiled-in
+default and the `fallback` path is deleted (p2.6-12, first build after 0.3.3, on
+`phase3-06`). Stages 2 and 3 are candidate designs only and are not accepted;
+each carries an explicit benchmark gate that must pass before it may be
+specified in detail.
 
 Sequencing, settled before this document was written: Phase 3 had been opened
 once and was cancelled back to a clean `phase3`, and phases 2.5 and 2.6 were
@@ -772,7 +774,7 @@ key added now is permanent. Stage 1 ships only what Stage 1 uses.
 
 ```toml
 [dns.upstreams]
-strategy = "fallback"      # boot — "fallback" (default, today) | "adaptive" (new)
+strategy = "adaptive"      # boot — the only value since p2.6-12; "fallback" was the default until 0.3.3
 timeout_ms = 800           # boot — unchanged, per leg; an attempt is bounded at ATTEMPT_LEGS × timeout_ms
 penalty_failures = 2       # boot — consecutive transport failures before penalty
 ```
@@ -808,6 +810,8 @@ validation on the new binary. None is known; the default is 800.
   tiers 2–3, S1-G4, S1-G5 — plus a 7-day soak. Until then `adaptive` is
   opt-in.
 - The `fallback` path is deleted (principle 14) only after that flip, not before.
+- **Executed as p2.6-12** (review: `docs/code-review/phase2.6/p2.6-12-default-flip-review.md`):
+  default `adaptive`, `fallback` deleted, a config naming it rejected at load.
 - `penalty_failures` takes `#[serde(default)]`, so a config written for the
   current release boots unchanged on the new binary.
 - **The reverse bricks the resolver.** Deploy order is fixed: **binary first,

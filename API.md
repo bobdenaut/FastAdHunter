@@ -68,11 +68,10 @@ Liveness/readiness. No auth (default). Used by the Docker healthcheck
 { "status": "ok", "version": "0.1.0", "uptime_seconds": 86400 }
 ```
 
-`status`: `ok` | `degraded`. Under `[dns.upstreams] strategy = "adaptive"`,
-`degraded` means **no endpoint is `healthy`** — every one is penalized or being
-probed. Under `fallback` it means every endpoint carries a non-zero
-`consecutive_failures`. Neither is "down": cache hits and serve-stale keep
-answering, and a penalized endpoint is still queried when no other is left.
+`status`: `ok` | `degraded`. `degraded` means **no endpoint is `healthy`** —
+every one is penalized or being probed. It is not "down": cache hits and
+serve-stale keep answering, and a penalized endpoint is still queried when no
+other is left.
 
 ### `GET /api/v1/telemetry`
 
@@ -223,10 +222,8 @@ Reading it correctly:
   proof** (p1-06 acceptance). It tracks time, not queries: single digits per
   encrypted server per day is correct, and a `tls_handshakes / attempts` ratio
   approaching 1 is the bug signature. Always 0 for a `udp` server.
-- **Endpoint health is meaningful under `strategy = "adaptive"` only.** Under
-  `fallback` every row reads `state: "healthy"`, `penalty_round: 0` and zeros for
-  `penalties`, `penalized_seconds_total`, `probes` and `probe_successes` — no
-  health state exists to report, which is not the same as "everything is fine".
+- **Endpoint health, per row** — read from the packed health word each endpoint
+  carries:
   - `state`: `healthy` | `penalized` | `probing`. This is the liveness signal.
   - `penalty_round`: the doubling exponent of the **last penalty applied**, not
     an active state — 0 until the first one, saturating at 15, and never cleared
@@ -256,14 +253,10 @@ Reading it correctly:
   `adaptive` it comes from the packed health word, so it saturates at 255 and
   stops advancing while the endpoint is `penalized` — unless every endpoint is
   penalized, when the forced attempt that still goes out keeps walking it up.
-  Under
-  `fallback` a secondary is attempted only when the primary fails, so a non-zero
-  streak there can be hours old. Read it beside `attempts`.
-- **Under `adaptive`, `attempts` and `failures` exclude `resolve_host` traffic**
-  — the internal hostname lookups the egress guard makes move no health state and
-  bump no counter, so one bad hostname cannot penalize a working endpoint. Under
-  `fallback` those lookups are counted like any other attempt, so an endpoint's
-  `attempts` is not comparable across the two strategies.
+  Read it beside `attempts`.
+- **`attempts` and `failures` exclude `resolve_host` traffic** — the internal
+  hostname lookups the egress guard makes move no health state and bump no
+  counter, so one bad hostname cannot penalize a working endpoint.
 - No `ruleset.heap_bytes`: that is `memory.ruleset_bytes`, so the number has one
   home.
 - `ruleset`, `upstreams`, `counters.swr`, `counters.cache_cleanup`,

@@ -353,23 +353,20 @@ async fn udp_inflight_cost_under_upstream_outage() {
     }
     let dead_servers = |count: usize| holes[..count].iter().map(|(_, addr)| udp_server(*addr));
     let (dead2, _dead2_dir) =
-        start_server(dead_servers(2).collect(), UpstreamStrategy::Fallback).await;
+        start_server(dead_servers(2).collect(), UpstreamStrategy::Adaptive).await;
     let (dead4, _dead4_dir) =
-        start_server(dead_servers(4).collect(), UpstreamStrategy::Fallback).await;
-    let (adaptive4, _adaptive4_dir) =
         start_server(dead_servers(4).collect(), UpstreamStrategy::Adaptive).await;
 
     let answering_addr = answering().await;
     let (alive, _alive_dir) =
-        start_server(vec![udp_server(answering_addr)], UpstreamStrategy::Fallback).await;
+        start_server(vec![udp_server(answering_addr)], UpstreamStrategy::Adaptive).await;
 
     let mut arms = Vec::new();
     arms.push(run_arm("control", 1000, alive.udp_addr()).await);
     for rate in [100, 300, 1000, 3000] {
-        arms.push(run_arm("fallback2", rate, dead2.udp_addr()).await);
+        arms.push(run_arm("adaptive2", rate, dead2.udp_addr()).await);
     }
-    arms.push(run_arm("fallback4", 1000, dead4.udp_addr()).await);
-    arms.push(run_arm("adaptive4", 1000, adaptive4.udp_addr()).await);
+    arms.push(run_arm("adaptive4", 1000, dead4.udp_addr()).await);
     arms.push(run_arm("control", 1000, alive.udp_addr()).await);
 
     println!("F2 summary (dev box, timeout_ms=800, UDP black-hole upstreams)");
@@ -378,6 +375,5 @@ async fn udp_inflight_cost_under_upstream_outage() {
     }
     dead2.shutdown();
     dead4.shutdown();
-    adaptive4.shutdown();
     alive.shutdown();
 }

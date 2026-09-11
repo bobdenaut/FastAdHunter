@@ -34,7 +34,7 @@ address = "127.0.0.1"
 port = {dns_port}
 
 [dns.upstreams]
-strategy = "fallback"
+strategy = "adaptive"
 timeout_ms = 2000
 
 [[dns.upstreams.servers]]

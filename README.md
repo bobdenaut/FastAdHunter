@@ -32,7 +32,7 @@ numbers below are measured on the target hardware, not estimated.
 | 1.5 | Observability persistence | ✅ done | `v0.3.0-phase1.5` |
 | 2 | HTTP engine + Policies | ✅ done | `v0.2.17-phase2` |
 | 2.5 | Pre-Adaptive hardening | ✅ done | `v0.2.19-phase2.5` |
-| 2.6 | Adaptive DNS Stage 1 | ✅ done — closed 2026-09-07; runs opt-in in production (`strategy = "adaptive"`), the compiled-in default on `main` is still `fallback` | — |
+| 2.6 | Adaptive DNS Stage 1 | ✅ done — closed 2026-09-07; `adaptive` is the only strategy since p2.6-12, on `main` from 2026-09-11 | `soak-p2.6-11` |
 | 5 | Web dashboard | ✅ done — all ten tasks, released as 0.3.0 | `0.3.0` |
 | 3 | HTTPS interception | ⏸ parked | — |
 | 4 | HTML filtering | ⏸ parked | — |
@@ -70,10 +70,13 @@ since 2026-08-25 and the phase closed on 2026-09-07. Its first 7-day soak was
 their real cause — list refreshes downloading unchanged bodies, not the adaptive
 code; the fix (conditional GET, `If-None-Match` / `If-Modified-Since` with a 304
 short-circuit) shipped in 0.3.0. No soak since has produced enough failure runs
-to calibrate `penalty_failures`, which stays at its compiled default of 2, and
-the compiled-in strategy default on `main` is still `fallback` — a deployment
-opts in by setting the key. If the deployment only ever produces isolated single
-losses, that is the correct outcome.
+to calibrate `penalty_failures`, which stays at its compiled default of 2.
+Since 2026-09-11 `adaptive` is the **only** strategy on `main`: the `fallback`
+walk is deleted and a config still naming it fails at load. The removal rests
+on a controlled A/B at production timings — one dead upstream ahead of three
+healthy ones costs `fallback` 831 ms per query and `adaptive` 31 ms, with no
+scenario favouring `fallback`
+([strategy-ab-fallback-vs-adaptive.md](docs/code-review/phase2.6/strategy-ab-fallback-vs-adaptive.md)).
 
 Phase 5 is the web dashboard, released as 0.3.0 and closed — thirteen screens
 across all ten tasks. The 0.3.0 bundle is **128,730 B gzip**, 83.8 % of the
@@ -688,7 +691,7 @@ firewall · a replacement for a good browser extension.
 | **1.5** ✅ | Persisted history, perf series, byte-bounded cache |
 | **2** ✅ | HTTP proxy, URL-path rules, Policies, telemetry consolidation, compile-transient attribution |
 | **2.5** ✅ | Listener resilience, list-refresh integrity, encrypted-transport fixes, outcome telemetry, failure run-length telemetry — hardening before adaptive upstream selection |
-| **2.6** ✅ | Adaptive DNS Stage 1 — per-endpoint health, penalty and skip on repeated transport failure, on-path recovery probing; in production opt-in since 2026-08-25, closed 2026-09-07 |
+| **2.6** ✅ | Adaptive DNS Stage 1 — per-endpoint health, penalty and skip on repeated transport failure, on-path recovery probing; in production opt-in since 2026-08-25, closed 2026-09-07; `adaptive` is the only strategy and `fallback` is deleted since p2.6-12 (on `main` from 2026-09-11). Shipped alongside as 0.3.2: HTTP allocation domains (ADR-0006) |
 | **5** ✅ | Web dashboard — thirteen screens, 128,730 B gzip at 0.3.0, served by `fah-api` on one origin, session-cookie auth, every figure backed by an endpoint that exists; released as 0.3.0 |
 | **3** ⏸ | HTTPS interception, certificate management, DoT/DoH listeners — parked |
 | **4** ⏸ | HTML filtering with `lol_html`, cosmetic rules — parked |

@@ -14,7 +14,6 @@ use fah_api::{
     BucketCount, ClientCount, ClientEntry, DomainCount, HistorySource, PolicyCount, StatsOverview,
     StatsSource, TelemetrySource,
 };
-use fah_config::UpstreamStrategy;
 use fah_dns::{UpstreamPool, UpstreamStatus};
 use fah_metrics::Metrics;
 use fah_model::{HistoryRange, HistoryResolution, HistorySeries, PerfSeries, TopItems, TopKind};
@@ -239,7 +238,7 @@ impl TelemetrySource for TelemetryAdapter {
     /// nothing yet (every server at zero attempts) is not degraded — it is
     /// simply idle.
     fn degraded(&self) -> bool {
-        upstreams_degraded(self.upstreams.strategy(), &self.upstreams.status())
+        upstreams_degraded(&self.upstreams.status())
     }
 
     /// Straight through to the binary's allocator module — the one place that
@@ -261,16 +260,11 @@ impl TelemetrySource for TelemetryAdapter {
     }
 }
 
-fn upstreams_degraded(strategy: UpstreamStrategy, status: &[UpstreamStatus]) -> bool {
+fn upstreams_degraded(status: &[UpstreamStatus]) -> bool {
     !status.is_empty()
-        && match strategy {
-            UpstreamStrategy::Adaptive => status
-                .iter()
-                .all(|server| server.state != fah_model::UpstreamState::Healthy),
-            UpstreamStrategy::Fallback => {
-                status.iter().all(|server| server.consecutive_failures > 0)
-            }
-        }
+        && status
+            .iter()
+            .all(|server| server.state != fah_model::UpstreamState::Healthy)
 }
 
 #[cfg(test)]
@@ -304,7 +298,7 @@ mod tests {
             endpoint(UpstreamState::Penalized, 3),
             endpoint(UpstreamState::Penalized, 5),
         ];
-        assert!(upstreams_degraded(UpstreamStrategy::Adaptive, &status));
+        assert!(upstreams_degraded(&status));
     }
 
     #[test]
@@ -314,7 +308,7 @@ mod tests {
             endpoint(UpstreamState::Probing, 5),
         ];
         assert!(
-            upstreams_degraded(UpstreamStrategy::Adaptive, &status),
+            upstreams_degraded(&status),
             "a probe in flight is an attempt, not a recovery"
         );
     }
@@ -325,33 +319,20 @@ mod tests {
             endpoint(UpstreamState::Penalized, 3),
             endpoint(UpstreamState::Healthy, 0),
         ];
-        assert!(!upstreams_degraded(UpstreamStrategy::Adaptive, &status));
+        assert!(!upstreams_degraded(&status));
     }
 
     #[test]
     fn adaptive_ignores_a_frozen_streak_on_a_healthy_endpoint() {
         let status = [endpoint(UpstreamState::Healthy, 7)];
         assert!(
-            !upstreams_degraded(UpstreamStrategy::Adaptive, &status),
+            !upstreams_degraded(&status),
             "consecutive_failures is a diagnostic under adaptive, not the signal"
         );
     }
 
     #[test]
-    fn fallback_keeps_the_streak_rule() {
-        let failing = [endpoint(UpstreamState::Healthy, 1)];
-        assert!(upstreams_degraded(UpstreamStrategy::Fallback, &failing));
-
-        let mixed = [
-            endpoint(UpstreamState::Healthy, 1),
-            endpoint(UpstreamState::Healthy, 0),
-        ];
-        assert!(!upstreams_degraded(UpstreamStrategy::Fallback, &mixed));
-    }
-
-    #[test]
     fn an_empty_pool_is_idle_not_degraded() {
-        assert!(!upstreams_degraded(UpstreamStrategy::Adaptive, &[]));
-        assert!(!upstreams_degraded(UpstreamStrategy::Fallback, &[]));
+        assert!(!upstreams_degraded(&[]));
     }
 }
