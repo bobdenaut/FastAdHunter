@@ -1,0 +1,14 @@
+2026-09-11T07:00:13.363Z [after-interception] binary=E:\FastAdHunter\target\release\fastadhunter.exe out=E:\FastAdHunter\docs\code-review\phase3\p3-06-probe\smoke-20260911T0700Z ports dns=5300 dot=8853 http=8080 https=8444 api=8443
+2026-09-11T07:00:13.370Z [after-interception] mock upstream answering 127.0.0.1 on 127.0.0.1:56602
+2026-09-11T07:00:13.504Z [after-interception] PASS B10a migration: document written, GET reflects it, /config omits it, TOML stripped, info line present
+2026-09-11T07:00:13.624Z [after-interception] PASS B10b existing document: document authoritative, warn line present, TOML stripped again, no migration line
+2026-09-11T07:00:13.743Z [after-interception] PASS B10a invalid legacy entry: refused: clients[1]: "10.0.0.300" is not an IP address or CIDR block; no document, TOML untouched
+2026-09-11T07:00:13.857Z [after-interception] PASS B10a over-cap legacy list: refused: clients: 257 entries exceed the cap of 256 by 1
+2026-09-11T07:00:13.970Z [after-interception] PASS B10c unreadable document: refused naming the file; file left as found
+2026-09-11T07:00:14.081Z [after-interception] PASS B5 posture A by PUT: PUT 200, GET {"clients":[],"exclude_domains":[]}, restart_required absent=true
+2026-09-11T07:00:14.146Z [after-interception] PASS B6 p3 negative: clients=[]: exit=2 message=true snapshot=true
+2026-09-11T07:00:14.147Z [after-interception] PASS B5 posture B by PUT, no restart: PUT 200, GET {"clients":["127.0.0.1"],"exclude_domains":[]}
+2026-09-11T07:00:19.639Z [after-interception] PASS B1 posture change labels the run: degraded label=true; precondition now passes=true (exit=2, later stages may INVALID on the dummy origin — not this row's concern)
+2026-09-11T07:00:19.700Z [after-interception] PASS p2 Windows negative path: exit=2 identity INVALID=true snapshot=true no dead key in output=true
+2026-09-11T07:00:20.335Z [after-interception] PASS N4 rehearsal: invalid PUT is 422 with details; document and active policy unchanged: PUT 422 details={"entry":"10.0.0.300","index":0,"list":"clients","reason":"invalid_entry"} GET after={"clients":["127.0.0.1"],"exclude_domains":[]}; before={"outcome":"closed ECONNRESET","certFailDelta":1,"upstreamFailDelta":0} after={"outcome":"closed ECONNRESET","certFailDelta":1,"upstreamFailDelta":0}
+2026-09-11T07:00:20.652Z [after-interception] PASS N4 control: unlisted client is spliced through, no upstream_cert_failure: {"outcome":"handshake issuer=FastAdHunter","certFailDelta":0,"upstreamFailDelta":0}

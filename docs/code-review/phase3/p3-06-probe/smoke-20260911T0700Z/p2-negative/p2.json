@@ -1,0 +1,50 @@
+{
+  "script": "p2",
+  "started_at": "2026-09-11T07:00:19.675Z",
+  "finished_at": "2026-09-11T07:00:19.694Z",
+  "tip": "smoke",
+  "probe": "127.0.0.1",
+  "probe_version": "0.3.3",
+  "http_runtimes": 2,
+  "host": {
+    "platform": "win32",
+    "idle": null,
+    "network": null
+  },
+  "args": {
+    "probe": "127.0.0.1",
+    "api-port": 8443,
+    "key": "<set>",
+    "out": "E:\\FastAdHunter\\docs\\code-review\\phase3\\p3-06-probe\\smoke-20260911T0700Z\\p2-negative",
+    "tip": "smoke",
+    "allow-busy": true,
+    "skip-host-checks": true,
+    "origin": "example.com",
+    "origin-port": 443,
+    "path": "/",
+    "ca": "E:\\FastAdHunter\\docs\\code-review\\phase3\\p3-06-probe\\smoke-20260911T0700Z\\work\\postures\\smoke-ca.pem",
+    "listed": "127.0.0.1",
+    "unlisted": "127.0.0.2",
+    "port": 8444,
+    "dns-port": 5300,
+    "rounds": 200,
+    "timeout": 10000,
+    "max-fail-pct": 2,
+    "no-events": false
+  },
+  "valid": false,
+  "status": "INVALID",
+  "reason": "identity precondition: both --listed and --unlisted must be on this host's interfaces (found none)",
+  "iface": [
+    {
+      "ip": "192.168.10.10",
+      "prefix": 24,
+      "iface": "Ethernet"
+    },
+    {
+      "ip": "172.19.128.1",
+      "prefix": 20,
+      "iface": "vEthernet (Default Switch)"
+    }
+  ]
+}

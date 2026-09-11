@@ -1,0 +1,12 @@
+2026-09-11T07:00:19.676Z [p2] == p2 start 2026-09-11T07:00:19.675Z tip=smoke out=E:\FastAdHunter\docs\code-review\phase3\p3-06-probe\smoke-20260911T0700Z\p2-negative
+2026-09-11T07:00:19.677Z [p2] args {"probe":"127.0.0.1","api-port":8443,"key":"<set>","out":"E:\\FastAdHunter\\docs\\code-review\\phase3\\p3-06-probe\\smoke-20260911T0700Z\\p2-negative","tip":"smoke","allow-busy":true,"skip-host-checks":true,"origin":"example.com","origin-port":443,"path":"/","ca":"E:\\FastAdHunter\\docs\\code-review\\phase3\\p3-06-probe\\smoke-20260911T0700Z\\work\\postures\\smoke-ca.pem","listed":"127.0.0.1","unlisted":"127.0.0.2","port":8444,"dns-port":5300,"rounds":200,"timeout":10000,"max-fail-pct":2,"no-events":false}
+2026-09-11T07:00:19.677Z [p2] host checks skipped (win32)
+2026-09-11T07:00:19.684Z [p2] GET /health -> 200 {"status":"ok","version":"0.3.3","uptime_seconds":5}
+2026-09-11T07:00:19.687Z [p2] probe config snapshot -> E:\FastAdHunter\docs\code-review\phase3\p3-06-probe\smoke-20260911T0700Z\p2-negative\config.json
+2026-09-11T07:00:19.689Z [p2] interception document snapshot -> E:\FastAdHunter\docs\code-review\phase3\p3-06-probe\smoke-20260911T0700Z\p2-negative\interception.json
+2026-09-11T07:00:19.689Z [p2] interception document: clients=["127.0.0.1"] exclude_domains=0 entries
+2026-09-11T07:00:19.689Z [p2] engine.mode = dns+http+https
+2026-09-11T07:00:19.689Z [p2] runtime.http_runtimes = 2 (every HTTPS figure records it — plan §The N axis)
+2026-09-11T07:00:19.694Z [p2] os.networkInterfaces() IPv4 (win32): [{"ip":"192.168.10.10","prefix":24,"iface":"Ethernet"},{"ip":"172.19.128.1","prefix":20,"iface":"vEthernet (Default Switch)"}]
+2026-09-11T07:00:19.694Z [p2] INVALID: identity precondition: both --listed and --unlisted must be on this host's interfaces (found none)
+2026-09-11T07:00:19.695Z [p2] wrote E:\FastAdHunter\docs\code-review\phase3\p3-06-probe\smoke-20260911T0700Z\p2-negative\p2.json

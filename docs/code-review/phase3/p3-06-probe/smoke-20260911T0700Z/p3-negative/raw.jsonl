@@ -1,0 +1,3 @@
+{"ts":"2026-09-11T07:00:15.005Z","script":"p3","measurement":"P3-throughput","index":1,"status":null,"bytes":0,"content_length":null,"ok":false,"issuer":null,"mib_s":null,"first_byte_ms":null,"error":"connect: ECONNRESET"}
+{"ts":"2026-09-11T07:00:16.813Z","script":"p3","measurement":"P3-throughput","index":2,"status":null,"bytes":0,"content_length":null,"ok":false,"issuer":null,"mib_s":null,"first_byte_ms":null,"error":"connect: ECONNRESET"}
+{"ts":"2026-09-11T07:00:18.626Z","script":"p3","measurement":"P3-throughput","index":3,"status":null,"bytes":0,"content_length":null,"ok":false,"issuer":null,"mib_s":null,"first_byte_ms":null,"error":"connect: ECONNRESET"}

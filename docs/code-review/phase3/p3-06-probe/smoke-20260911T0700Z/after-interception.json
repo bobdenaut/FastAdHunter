@@ -1,0 +1,67 @@
+{
+  "binary": "E:\\FastAdHunter\\target\\release\\fastadhunter.exe",
+  "started": 12,
+  "failed": 0,
+  "rows": [
+    {
+      "id": "B10a migration",
+      "pass": true,
+      "reason": "document written, GET reflects it, /config omits it, TOML stripped, info line present"
+    },
+    {
+      "id": "B10b existing document",
+      "pass": true,
+      "reason": "document authoritative, warn line present, TOML stripped again, no migration line"
+    },
+    {
+      "id": "B10a invalid legacy entry",
+      "pass": true,
+      "reason": "refused: clients[1]: \"10.0.0.300\" is not an IP address or CIDR block; no document, TOML untouched"
+    },
+    {
+      "id": "B10a over-cap legacy list",
+      "pass": true,
+      "reason": "refused: clients: 257 entries exceed the cap of 256 by 1"
+    },
+    {
+      "id": "B10c unreadable document",
+      "pass": true,
+      "reason": "refused naming the file; file left as found"
+    },
+    {
+      "id": "B5 posture A by PUT",
+      "pass": true,
+      "reason": "PUT 200, GET {\"clients\":[],\"exclude_domains\":[]}, restart_required absent=true"
+    },
+    {
+      "id": "B6 p3 negative: clients=[]",
+      "pass": true,
+      "reason": "exit=2 message=true snapshot=true"
+    },
+    {
+      "id": "B5 posture B by PUT, no restart",
+      "pass": true,
+      "reason": "PUT 200, GET {\"clients\":[\"127.0.0.1\"],\"exclude_domains\":[]}"
+    },
+    {
+      "id": "B1 posture change labels the run",
+      "pass": true,
+      "reason": "degraded label=true; precondition now passes=true (exit=2, later stages may INVALID on the dummy origin — not this row's concern)"
+    },
+    {
+      "id": "p2 Windows negative path",
+      "pass": true,
+      "reason": "exit=2 identity INVALID=true snapshot=true no dead key in output=true"
+    },
+    {
+      "id": "N4 rehearsal: invalid PUT is 422 with details; document and active policy unchanged",
+      "pass": true,
+      "reason": "PUT 422 details={\"entry\":\"10.0.0.300\",\"index\":0,\"list\":\"clients\",\"reason\":\"invalid_entry\"} GET after={\"clients\":[\"127.0.0.1\"],\"exclude_domains\":[]}; before={\"outcome\":\"closed ECONNRESET\",\"certFailDelta\":1,\"upstreamFailDelta\":0} after={\"outcome\":\"closed ECONNRESET\",\"certFailDelta\":1,\"upstreamFailDelta\":0}"
+    },
+    {
+      "id": "N4 control: unlisted client is spliced through, no upstream_cert_failure",
+      "pass": true,
+      "reason": "{\"outcome\":\"handshake issuer=FastAdHunter\",\"certFailDelta\":0,\"upstreamFailDelta\":0}"
+    }
+  ]
+}

@@ -1,0 +1,74 @@
+{
+  "script": "p3",
+  "started_at": "2026-09-11T07:00:14.179Z",
+  "finished_at": "2026-09-11T07:00:19.629Z",
+  "tip": "smoke",
+  "probe": "127.0.0.1",
+  "probe_version": "0.3.3",
+  "http_runtimes": 2,
+  "host": {
+    "platform": "win32",
+    "idle": null,
+    "network": null
+  },
+  "args": {
+    "probe": "127.0.0.1",
+    "api-port": 8443,
+    "key": "<set>",
+    "out": "E:\\FastAdHunter\\docs\\code-review\\phase3\\p3-06-probe\\smoke-20260911T0700Z\\p3-negative",
+    "tip": "smoke",
+    "allow-busy": true,
+    "skip-host-checks": true,
+    "origin": "origin.invalid",
+    "path": "/8mib",
+    "warmup-path": "/",
+    "ca": "E:\\FastAdHunter\\docs\\code-review\\phase3\\p3-06-probe\\smoke-20260911T0700Z\\work\\postures\\smoke-ca.pem",
+    "port": 8444,
+    "bytes": 8,
+    "streams": 64,
+    "runs": 3,
+    "settle": 30,
+    "barrier-timeout": 60,
+    "throughput-runs": 3,
+    "arm": "both",
+    "max-fail-pct": 2
+  },
+  "valid": false,
+  "status": "INVALID",
+  "reason": "throughput arm: no stream completed (the P3 BLOCKED state?)",
+  "throughput": [
+    {
+      "index": 1,
+      "status": null,
+      "bytes": 0,
+      "content_length": null,
+      "ok": false,
+      "issuer": null,
+      "mib_s": null,
+      "first_byte_ms": null,
+      "error": "connect: ECONNRESET"
+    },
+    {
+      "index": 2,
+      "status": null,
+      "bytes": 0,
+      "content_length": null,
+      "ok": false,
+      "issuer": null,
+      "mib_s": null,
+      "first_byte_ms": null,
+      "error": "connect: ECONNRESET"
+    },
+    {
+      "index": 3,
+      "status": null,
+      "bytes": 0,
+      "content_length": null,
+      "ok": false,
+      "issuer": null,
+      "mib_s": null,
+      "first_byte_ms": null,
+      "error": "connect: ECONNRESET"
+    }
+  ]
+}

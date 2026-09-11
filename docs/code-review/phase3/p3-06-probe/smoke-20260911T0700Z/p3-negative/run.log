@@ -1,0 +1,27 @@
+2026-09-11T07:00:14.119Z [p3] == p3 start 2026-09-11T07:00:14.118Z tip=smoke out=E:\FastAdHunter\docs\code-review\phase3\p3-06-probe\smoke-20260911T0700Z\p3-negative
+2026-09-11T07:00:14.119Z [p3] args {"probe":"127.0.0.1","api-port":8443,"key":"<set>","out":"E:\\FastAdHunter\\docs\\code-review\\phase3\\p3-06-probe\\smoke-20260911T0700Z\\p3-negative","tip":"smoke","allow-busy":true,"skip-host-checks":true,"origin":"origin.invalid","path":"/8mib","warmup-path":"/","ca":"E:\\FastAdHunter\\docs\\code-review\\phase3\\p3-06-probe\\smoke-20260911T0700Z\\work\\postures\\smoke-ca.pem","port":8444,"bytes":8,"streams":64,"runs":3,"settle":30,"barrier-timeout":60,"throughput-runs":3,"arm":"both","max-fail-pct":2}
+2026-09-11T07:00:14.119Z [p3] host checks skipped (win32)
+2026-09-11T07:00:14.127Z [p3] GET /health -> 200 {"status":"ok","version":"0.3.3","uptime_seconds":0}
+2026-09-11T07:00:14.130Z [p3] probe config snapshot -> E:\FastAdHunter\docs\code-review\phase3\p3-06-probe\smoke-20260911T0700Z\p3-negative\config.json
+2026-09-11T07:00:14.132Z [p3] interception document snapshot -> E:\FastAdHunter\docs\code-review\phase3\p3-06-probe\smoke-20260911T0700Z\p3-negative\interception.json
+2026-09-11T07:00:14.132Z [p3] interception document: clients=[] exclude_domains=0 entries
+2026-09-11T07:00:14.133Z [p3] engine.mode = dns+http+https
+2026-09-11T07:00:14.133Z [p3] runtime.http_runtimes = 2 (every HTTPS figure records it — plan §The N axis)
+2026-09-11T07:00:14.135Z [p3] local address toward the probe: 127.0.0.1; /api/v1/interception clients = []
+2026-09-11T07:00:14.135Z [p3] INVALID: this host (127.0.0.1) is not listed in the Interception Document (GET /api/v1/interception, clients): the terminate leg is not reachable from here
+2026-09-11T07:00:14.135Z [p3] wrote E:\FastAdHunter\docs\code-review\phase3\p3-06-probe\smoke-20260911T0700Z\p3-negative\p3.json
+2026-09-11T07:00:14.180Z [p3] == p3 start 2026-09-11T07:00:14.179Z tip=smoke out=E:\FastAdHunter\docs\code-review\phase3\p3-06-probe\smoke-20260911T0700Z\p3-negative
+2026-09-11T07:00:14.180Z [p3] args {"probe":"127.0.0.1","api-port":8443,"key":"<set>","out":"E:\\FastAdHunter\\docs\\code-review\\phase3\\p3-06-probe\\smoke-20260911T0700Z\\p3-negative","tip":"smoke","allow-busy":true,"skip-host-checks":true,"origin":"origin.invalid","path":"/8mib","warmup-path":"/","ca":"E:\\FastAdHunter\\docs\\code-review\\phase3\\p3-06-probe\\smoke-20260911T0700Z\\work\\postures\\smoke-ca.pem","port":8444,"bytes":8,"streams":64,"runs":3,"settle":30,"barrier-timeout":60,"throughput-runs":3,"arm":"both","max-fail-pct":2}
+2026-09-11T07:00:14.181Z [p3] host checks skipped (win32)
+2026-09-11T07:00:14.187Z [p3] GET /health -> 200 {"status":"ok","version":"0.3.3","uptime_seconds":0}
+2026-09-11T07:00:14.193Z [p3] interception document differs from E:\FastAdHunter\docs\code-review\phase3\p3-06-probe\smoke-20260911T0700Z\p3-negative\interception.json; live copy -> E:\FastAdHunter\docs\code-review\phase3\p3-06-probe\smoke-20260911T0700Z\p3-negative\interception.p3.20260911T070014Z.json
+2026-09-11T07:00:14.193Z [p3] degraded: interception document changed since this results directory was opened
+2026-09-11T07:00:14.194Z [p3] interception document: clients=["127.0.0.1"] exclude_domains=0 entries
+2026-09-11T07:00:14.194Z [p3] engine.mode = dns+http+https
+2026-09-11T07:00:14.194Z [p3] runtime.http_runtimes = 2 (every HTTPS figure records it — plan §The N axis)
+2026-09-11T07:00:14.195Z [p3] local address toward the probe: 127.0.0.1; /api/v1/interception clients = ["127.0.0.1"]
+2026-09-11T07:00:15.006Z [p3] throughput run 1: FAILED connect: ECONNRESET
+2026-09-11T07:00:16.814Z [p3] throughput run 2: FAILED connect: ECONNRESET
+2026-09-11T07:00:18.626Z [p3] throughput run 3: FAILED connect: ECONNRESET
+2026-09-11T07:00:19.629Z [p3] INVALID: throughput arm: no stream completed (the P3 BLOCKED state?)
+2026-09-11T07:00:19.630Z [p3] wrote E:\FastAdHunter\docs\code-review\phase3\p3-06-probe\smoke-20260911T0700Z\p3-negative\p3.json
