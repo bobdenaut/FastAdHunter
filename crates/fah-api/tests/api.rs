@@ -390,6 +390,11 @@ impl TelemetrySource for FakeTelemetry {
                     refused: 3,
                 },
                 events_dropped: 7,
+                dns_tcp_connections: fah_model::DnsTcpConnections {
+                    active: 2,
+                    peak: 9,
+                    closed_oversize: 0,
+                },
                 swr: fah_model::SwrCounters {
                     enqueued: 12_044,
                     deduplicated: 3_311,
@@ -838,6 +843,12 @@ async fn telemetry_matches_the_documented_shape() {
     assert_eq!(
         body["counters"]["cache_cleanup"]["last_duration_micros"],
         1_842
+    );
+    assert_eq!(body["counters"]["dns_tcp_connections"]["active"], 2);
+    assert_eq!(body["counters"]["dns_tcp_connections"]["peak"], 9);
+    assert_eq!(
+        body["counters"]["dns_tcp_connections"]["closed_oversize"],
+        0
     );
 
     let upstream = &body["upstreams"][0];

@@ -19,7 +19,8 @@ use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::{mpsc, watch, Semaphore};
 use tokio::task::JoinHandle;
 
-use crate::connections::ConnectionGauge;
+use fah_common::connections::{ConnectionGauge, OpenConnection};
+
 use crate::domain::{self, Accepted, Handoff, ProxyFactory};
 use crate::proxy::Proxy;
 
@@ -173,7 +174,7 @@ async fn accept_loop(
                 if let Err(err) = stream.set_nodelay(true) {
                     tracing::debug!(%peer, error = %err, "could not set TCP_NODELAY");
                 }
-                let open = connections.enter();
+                let open = OpenConnection::enter(&connections);
                 dispatch
                     .dispatch(Accepted {
                         stream,

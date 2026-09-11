@@ -32,9 +32,10 @@ use serde_json::Value;
 /// Sections are listed whole rather than field-by-field on purpose: a field
 /// added to `[dns.cache]` tomorrow is boot until someone wires it live, which
 /// is the safe default for this contract.
-const BOOT_KEYS: [&str; 15] = [
+const BOOT_KEYS: [&str; 16] = [
     "engine.mode",
     "runtime",
+    "dns.tcp_max_connections",
     "dns.listen",
     "dns.blocking",
     "dns.cache",
@@ -363,6 +364,7 @@ mod tests {
         for boot in [
             "engine.mode",
             "runtime.http_runtimes",
+            "dns.tcp_max_connections",
             "dns.listen.port",
             "dns.blocking.ttl_seconds",        // Pipeline::new, at boot
             "dns.cache.max_entries",           // DnsCache::new, at boot

@@ -79,7 +79,7 @@ async fn start_server_on(
         address: address.to_string(),
         port: 0,
     };
-    let mut server = Server::bind(&listen).await.unwrap();
+    let mut server = Server::bind(&listen, 1024).await.unwrap();
     server.serve(pipeline);
     (server, calls, data_dir)
 }
@@ -319,7 +319,7 @@ async fn full_pipeline_forwards_via_upstream_pool_and_caches_the_answer() {
         address: "127.0.0.1".to_string(),
         port: 0,
     };
-    let mut server = Server::bind(&listen).await.unwrap();
+    let mut server = Server::bind(&listen, 1024).await.unwrap();
     server.serve(pipeline);
 
     for _ in 0..2 {

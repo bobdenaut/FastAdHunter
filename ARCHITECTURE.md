@@ -77,7 +77,9 @@ must not have it (ADR-0004).
 
 ### DNS (Phase 1)
 
-- UDP/53 with EDNS(0); TCP/53 for truncation fallback (mandatory).
+- UDP/53 with EDNS(0); TCP/53 for truncation fallback (mandatory). TCP is
+  bounded by `[dns] tcp_max_connections` (permit before accept) and a 16 KiB
+  per-message length bound; both surface on `/api/v1/telemetry`.
 - DoT/DoH **listeners** arrive in a later phase (client cert distribution
   depends on Phase 3 certificate machinery).
 - DNSSEC: pass-through (DO bit and RRSIGs forwarded untouched). Local

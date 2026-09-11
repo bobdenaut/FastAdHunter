@@ -75,6 +75,17 @@ http_runtimes = 2             # boot    — HTTP allocation domains (CONTEXT.md)
                               #           Env: FAH__RUNTIME__HTTP_RUNTIMES
 
 # ─── DNS listener ──────────────────────────────────────────────────────
+[dns]
+tcp_max_connections = 1024    # boot    — ceiling on concurrent DNS-over-TCP
+                              #           connections; the accept loop takes its
+                              #           permit before accepting, so a burst
+                              #           queues in the kernel backlog rather
+                              #           than in process memory. Initial safety
+                              #           bound, not a tuned value: retune from
+                              #           /telemetry's dns_tcp_connections.peak
+                              #           after a 7-day soak. Must be ≥ 1.
+                              #           Env: FAH__DNS__TCP_MAX_CONNECTIONS
+
 [dns.listen]
 address = "::"                # boot    — bind address; "::" = one dual-stack
                               #           socket serving IPv4 + IPv6 (IPV6_V6ONLY

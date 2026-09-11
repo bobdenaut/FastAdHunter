@@ -60,6 +60,7 @@ pub struct Metrics {
     pub(crate) request_duration_block: Histogram,
     pub(crate) request_duration_forward: Histogram,
     pub(crate) dropped_events: AtomicU64,
+    pub(crate) dns_tcp_connections: ArcSwap<fah_model::DnsTcpConnections>,
     /// Stale-while-refresh counters (ADR-0005). Stored as one value rather than
     /// five atomics because they are read together, replaced together off
     /// `fah_dns::Pipeline::swr_stats()`, and only ever compared with each other
@@ -106,6 +107,7 @@ impl Metrics {
             request_duration_block: Histogram::new(),
             request_duration_forward: Histogram::new(),
             dropped_events: AtomicU64::new(0),
+            dns_tcp_connections: ArcSwap::new(Arc::new(fah_model::DnsTcpConnections::default())),
             swr: ArcSwap::new(Arc::new(SwrSnapshot::default())),
             cleanup: ArcSwap::new(Arc::new(CleanupSnapshot::default())),
             lists: ArcSwap::new(Arc::new(fah_model::ListFetchCounters::default())),
@@ -225,6 +227,10 @@ impl Metrics {
         self.lists.store(Arc::new(snapshot));
     }
 
+    pub fn set_dns_tcp_connections(&self, snapshot: fah_model::DnsTcpConnections) {
+        self.dns_tcp_connections.store(Arc::new(snapshot));
+    }
+
     pub fn set_upstreams(&self, snapshot: Vec<UpstreamSample>) {
         self.upstreams.store(Arc::new(snapshot));
     }
@@ -289,6 +295,7 @@ impl Metrics {
                     last_duration: std::time::Duration::from_micros(cleanup.last_duration_micros),
                 },
                 lists: **self.lists.load(),
+                dns_tcp_connections: **self.dns_tcp_connections.load(),
             },
             latency: fah_model::LatencyTotals {
                 dns: fah_model::DnsLatency {
@@ -647,6 +654,28 @@ mod tests {
             duplicates_removed: 7,
         });
         assert_eq!(metrics.ruleset.load().rules, 100);
+    }
+
+    #[test]
+    fn dns_tcp_connections_round_trip_as_one_value() {
+        let metrics = Metrics::new();
+        let busy = fah_model::DnsTcpConnections {
+            active: 3,
+            peak: 11,
+            closed_oversize: 2,
+        };
+        metrics.set_dns_tcp_connections(busy);
+        assert_eq!(
+            metrics.engine_telemetry().counters.dns_tcp_connections,
+            busy
+        );
+
+        let idle = fah_model::DnsTcpConnections { active: 0, ..busy };
+        metrics.set_dns_tcp_connections(idle);
+        assert_eq!(
+            metrics.engine_telemetry().counters.dns_tcp_connections,
+            idle
+        );
     }
 
     #[test]

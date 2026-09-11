@@ -104,7 +104,7 @@ judgement, unmeasured.
 
 | # | Severity | Class | Where | Finding |
 | --- | --- | --- | --- | --- |
-| F1 | material | recommendation | `fah-dns/src/tcp.rs:46-85` | DNS-over-TCP has no connection ceiling: one task per accept, bounded only by `TCP_IDLE_TIMEOUT` (10 s) and the fd limit; each message allocates `vec![0u8; len]` (line 106) from the client's own 2-byte length (≤64 KiB). HTTP has `max_connections`; DNS TCP has nothing. Hard rule 4 asymmetry; impact unmeasured. |
+| F1 | material | **fixed 2026-09-11, soak pending** | `fah-dns/src/tcp.rs` `run`, `MAX_MESSAGE_LEN`, `TcpConnectionGauge`; `fah-common/src/connections.rs` `ConnectionGauge` (shared with `fah-http`); `fah-config` `[dns] tcp_max_connections` | Was: DNS-over-TCP had no connection ceiling — one task per accept, bounded only by `TCP_IDLE_TIMEOUT` (10 s) and the fd limit — and each message allocated `vec![0u8; len]` from the client's own 2-byte length (≤64 KiB). Now: `[dns] tcp_max_connections` (boot, default 1024, mirrors `[http] max_connections`) sizes a semaphore whose permit is taken before `accept`, so a burst queues in the kernel backlog; a length prefix above the hardcoded 16 KiB `MAX_MESSAGE_LEN` closes the connection without allocating. The gauge (`active`, lifetime `peak`, `closed_oversize`) reaches `/api/v1/telemetry` `counters.dns_tcp_connections` through the existing 10 s poll, stored in the registry as one `ArcSwap` snapshot so a read never shows `active > peak`. The gauge read itself reports `max(peak, active)`: its two `Relaxed` loads can land between a connection's `fetch_add` and its `fetch_max`, and the raw `peak` is never above the true high-water mark, so the reported figure is a lower bound at least as tight as the atomic — never lower, never above the ceiling. Per connection: one semaphore permit (an `Arc` clone + acquire, released after the gauge decrement), one `Arc` clone for the gauge guard, three atomic RMWs (`fetch_add` + `fetch_max` on enter, `fetch_sub` on close); per message: one compare. Worst-case in-flight request buffers: 1024 × 16 KiB = 16 MiB — the request `Vec` only; the per-connection task, `TcpStream`, kernel socket buffers and hickory parse allocations sit on top of that. The key has no upper bound: `Semaphore::new` panics above `MAX_PERMITS`, same as `[http] max_connections`. **1024 and 16 KiB are initial safety bounds, not tuned values.** Next: 7-day device soak, then a final default from observed `peak` + operational headroom + the container fd budget — not a mechanical multiple. |
 | F2 | material | recommendation | `fah-dns/src/udp.rs:75-80` | One `tokio::spawn` per datagram, no in-flight cap anywhere in `fah-dns` (no `Semaphore`). In-flight memory = arrival rate × walk time; under an upstream outage walk time is `worst_case_walk` (`ATTEMPT_LEGS` = 3 × timeout). Arithmetic only — measure before adding admission control. |
 | F3 | minor | recommendation | `fah-dns/src/pipeline.rs:312` | `queries.first().cloned()` deep-copies the `Query` (hickory `Name`) once per query; `request` is never mutated in `handle`, so a borrow would do. One avoidable allocation for names past hickory's inline label capacity. `forward_alloc.rs` asserts adaptive = fallback, not an absolute count, so this is not caught. |
 | F4 | minor | recommendation | `fah-dns/src/cache.rs:519,555,566,626,670,680,710,769`; `fah-rules/src/lifecycle/mod.rs` ×20; `fah-stats/src/stats.rs` ×14; `fah-dns/src/swr.rs:155` | ~43 `lock().unwrap()` on `std::sync` locks outside tests. A panic inside any critical section (none identified) poisons that lock and every later taker panics: a poisoned cache shard fails 1/16 of lookups per query task; a poisoned `aggregates` kills the event fan-out task (`main.rs:536`) on its next `record`, after which the events channel fills and `dropped_events` counts — stats freeze, nothing logs (see F11). `unwrap_or_else(PoisonError::into_inner)` needs no new dependency. Not a defect today. |
@@ -168,9 +168,13 @@ Recorded so the next pass can skip them.
 
 ## Remaining TODOs
 
-- F10 fixed on `main` (see its row). F1 and F2 are the candidates for a task
-  when Phase 3 closes, with measurement before any cap is chosen; F11 is
-  record-only until then. F3–F9, F12 are record-only.
+- F1 and F10 fixed on `main` (see their rows). F1's soak is open: after 7 days
+  on the RB5009 read `counters.dns_tcp_connections.{peak,closed_oversize}`
+  from `/api/v1/telemetry`, check the container fd budget, and set the final
+  `tcp_max_connections` default; record corpus, workload and device in a
+  `docs/code-review/` file. F2 is the remaining candidate, with measurement
+  before any cap is chosen; F11 is record-only until then. F3–F9, F12 are
+  record-only.
 - Outside this file, needing an owner go: [CLAUDE.md](../../../CLAUDE.md)
   §Layout lists root `tests/` and `benches/` — both are `.gitkeep`-only;
   every test and bench lives under `crates/*/`.

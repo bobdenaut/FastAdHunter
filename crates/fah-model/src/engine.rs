@@ -85,6 +85,15 @@ pub struct EngineCounters {
     pub cache_cleanup: CacheCleanupCounters,
     #[serde(default)]
     pub lists: ListFetchCounters,
+    #[serde(default)]
+    pub dns_tcp_connections: DnsTcpConnections,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DnsTcpConnections {
+    pub active: u64,
+    pub peak: u64,
+    pub closed_oversize: u64,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]

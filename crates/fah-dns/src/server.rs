@@ -8,13 +8,14 @@ use std::sync::Arc;
 use fah_common::listen::{bind_error, bind_tcp, bind_udp, listen_addr};
 use fah_config::DnsListenConfig;
 use tokio::net::{TcpListener, UdpSocket};
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, Semaphore};
 use tokio::task::JoinHandle;
 
 /// Named in bind failures so the operator is sent to the right setting.
 const PORT_SETTING: &str = "[dns.listen] port, or FAH__DNS__LISTEN__PORT";
 
 use crate::pipeline::Pipeline;
+use crate::tcp::TcpConnectionGauge;
 use crate::upstream::Forwarder;
 use crate::{tcp, udp};
 
@@ -27,6 +28,8 @@ pub struct Server {
     tcp_addr: SocketAddr,
     /// Bound, not yet accepting — taken by [`Server::serve`].
     sockets: Option<(UdpSocket, TcpListener)>,
+    tcp_permits: Arc<Semaphore>,
+    tcp_gauge: Arc<TcpConnectionGauge>,
     handles: Vec<JoinHandle<()>>,
     fatal_tx: mpsc::Sender<ListenerDied>,
     fatal_rx: mpsc::Receiver<ListenerDied>,
@@ -39,7 +42,7 @@ impl Server {
     /// privilege, answering queries must not have it (ADR-0004). The caller
     /// binds, drops privileges, then calls [`Server::serve`] — so no query is
     /// ever processed by a privileged process.
-    pub async fn bind(listen: &DnsListenConfig) -> io::Result<Self> {
+    pub async fn bind(listen: &DnsListenConfig, tcp_max_connections: usize) -> io::Result<Self> {
         let addr = listen_addr(&listen.address, listen.port, "dns.listen")?;
 
         let udp_socket = bind_udp(addr)
@@ -61,6 +64,8 @@ impl Server {
             udp_addr,
             tcp_addr,
             sockets: Some((udp_socket, tcp_listener)),
+            tcp_permits: Arc::new(Semaphore::new(tcp_max_connections)),
+            tcp_gauge: Arc::new(TcpConnectionGauge::default()),
             handles: Vec::new(),
             fatal_tx,
             fatal_rx,
@@ -81,10 +86,16 @@ impl Server {
         }));
 
         let tcp_fatal = self.fatal_tx.clone();
+        let tcp_permits = Arc::clone(&self.tcp_permits);
+        let tcp_gauge = Arc::clone(&self.tcp_gauge);
         self.handles.push(tokio::spawn(async move {
-            let died = tcp::run(tcp_listener, pipeline).await;
+            let died = tcp::run(tcp_listener, pipeline, tcp_permits, tcp_gauge).await;
             let _ = tcp_fatal.try_send(died);
         }));
+    }
+
+    pub fn tcp_connections(&self) -> Arc<TcpConnectionGauge> {
+        Arc::clone(&self.tcp_gauge)
     }
 
     pub async fn fatal(&mut self) -> ListenerDied {

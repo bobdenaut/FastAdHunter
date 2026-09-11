@@ -56,6 +56,15 @@ GET {{base}}/telemetry
 #
 # Per-interval history of the same three figures is history.http's
 # `fields=answers_delta`; there is no per-query outcome on any endpoint.
+#
+# counters.dns_tcp_connections is the DNS-over-TCP listener's bound in numbers:
+#   active           GAUGE — connections open right now
+#   peak             process-lifetime high-water mark of `active`; the figure
+#                    that sizes [dns] tcp_max_connections after a soak
+#   closed_oversize  connections closed because the client's length prefix
+#                    exceeded the internal 16 KiB message bound; non-zero on a
+#                    household LAN is a misbehaving client, not a limit to raise
+# Pushed on the same 10 s poll as ruleset/upstreams — up to one interval old.
 
 # ─── The producer boundary ─────────────────────────────────────────────
 #

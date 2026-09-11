@@ -137,6 +137,12 @@ fn validate(config: &Config) -> Result<(), ConfigError> {
             message: "must be at least 1".to_string(),
         });
     }
+    if config.dns.tcp_max_connections == 0 {
+        return Err(ConfigError::Validation {
+            key: "dns.tcp_max_connections",
+            message: "must be at least 1".to_string(),
+        });
+    }
 
     if config.runtime.http_runtimes > MAX_HTTP_RUNTIMES {
         return Err(ConfigError::Validation {
@@ -648,6 +654,19 @@ format = "text"
         let mut config = Config::default();
         config.history.sample_interval_seconds = 0;
         assert!(config.validate().is_err());
+    }
+
+    #[test]
+    fn dns_tcp_max_connections_zero_is_rejected() {
+        let mut config = Config::default();
+        config.dns.tcp_max_connections = 0;
+        assert!(matches!(
+            validate(&config).unwrap_err(),
+            ConfigError::Validation {
+                key: "dns.tcp_max_connections",
+                ..
+            }
+        ));
     }
 
     #[test]
