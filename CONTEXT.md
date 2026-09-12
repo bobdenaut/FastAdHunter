@@ -439,3 +439,16 @@ Engine runs behind its one acceptor; `0` serves on the shared runtime instead.
 
 Not a domain *name*. In `fah-http` the word with an index (`fah-http-0`,
 `http_domain = 0`) always means this; the DNS sense is never shortened to it.
+
+### Supervised Task
+
+A long-lived task the binary spawns, names, and checks on the 10 s telemetry
+tick: the rules scheduler, event fan-out, perf sampler, telemetry poll, policy
+ticker, SWR workers, cache cleanup and the two stats schedulers. One that ends
+before shutdown — a panic or a returned loop — is a **task death**: logged once
+at `error` with its name and cause, counted in `counters.tasks_died`, and left
+dead. Nothing restarts it and the process does not exit; the resolver keeps
+answering while that task's work stays stopped until the container restarts.
+
+Not supervised: the DNS listeners (their death exits the process), the API
+accept loop and the HTTP acceptor.

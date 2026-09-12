@@ -302,6 +302,13 @@ against this document.
   a full queue costs a skipped refresh and never a delayed client. The pipeline
   is strictly the producer; nothing flows back. They are spawned by the binary
   alongside every other long-lived task, so shutdown aborts them from one place.
+- **Long-lived task death is observed, not handled.** The binary's run loop
+  checks every supervised task (CONTEXT.md §Supervised Task lists them) on a
+  10 s tick; one that ended before shutdown is logged once and counted in
+  `counters.tasks_died`. No restart, no exit: the resolver keeps answering, and
+  that task's work stays stopped until the container restarts. The API accept
+  loop and the HTTP acceptor are not supervised; only a DNS listener dying
+  exits the process.
 - **The cache cleanup sweep** (`[dns.cache] cleanup_interval_seconds`) is the
   other one: a single task that removes entries past the serve-stale window.
   Nothing connects it to the query path — no channel, no shared state beyond the

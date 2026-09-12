@@ -12,6 +12,7 @@ mod adapters;
 mod allocator;
 mod privilege;
 mod process;
+mod supervisor;
 
 use std::io;
 use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr, UdpSocket};
@@ -23,6 +24,7 @@ use std::time::Duration;
 
 use fah_config::{Config, LogFormat as ConfigLogFormat, LogLevel};
 use fah_logging::LogFormat;
+use supervisor::Supervised;
 use tracing_subscriber::filter::LevelFilter;
 
 const DEFAULT_CONFIG_PATH: &str = "/config/fastadhunter.toml";
@@ -253,10 +255,7 @@ fn run(config: Config, config_path: &Path, data_dir: &Path) -> ExitCode {
 
     let result = runtime.block_on(async {
         let mut engine = Engine::start(config, config_path, data_dir).await?;
-        let died = tokio::select! {
-            () = await_shutdown() => None,
-            died = engine.dns.fatal() => Some(died),
-        };
+        let died = engine.run().await;
         engine.shutdown().await;
         Ok::<_, Box<dyn std::error::Error>>(died)
     });
@@ -290,9 +289,10 @@ struct Engine {
     /// left idle (CONTEXT.md §Operating Mode).
     http: Option<fah_http::Server>,
     api: fah_api::ApiServer,
-    tasks: Vec<tokio::task::JoinHandle<()>>,
-    stats_schedulers: Vec<tokio::task::JoinHandle<()>>,
+    tasks: Vec<Supervised>,
+    stats_schedulers: Vec<Supervised>,
     stats: Arc<fah_stats::Stats>,
+    metrics: Arc<fah_metrics::Metrics>,
 }
 
 impl Engine {
@@ -532,36 +532,48 @@ impl Engine {
 
         // ── The edges between the siblings ──
         let stats_schedulers = vec![
-            stats.spawn_snapshot_scheduler(),
-            stats.spawn_history_scheduler(),
+            Supervised::new("stats snapshot scheduler", stats.spawn_snapshot_scheduler()),
+            Supervised::new("stats history scheduler", stats.spawn_history_scheduler()),
         ];
         let mut tasks = vec![
-            rules.spawn_scheduler(),
-            spawn_event_fanout(
-                events_rx,
-                Arc::clone(&stats),
-                Arc::clone(&metrics),
-                api.events(),
+            Supervised::new("rules scheduler", rules.spawn_scheduler()),
+            Supervised::new(
+                "event fan-out",
+                spawn_event_fanout(
+                    events_rx,
+                    Arc::clone(&stats),
+                    Arc::clone(&metrics),
+                    api.events(),
+                ),
             ),
-            spawn_perf_sampler(
-                Arc::clone(&stats),
-                Arc::clone(&metrics),
-                Arc::clone(&pipeline),
-                Arc::clone(&rules),
-                http.as_ref().map(fah_http::Server::connections),
-                None,
-                perf_sample_interval_seconds,
+            Supervised::new(
+                "perf sampler",
+                spawn_perf_sampler(
+                    Arc::clone(&stats),
+                    Arc::clone(&metrics),
+                    Arc::clone(&pipeline),
+                    Arc::clone(&rules),
+                    http.as_ref().map(fah_http::Server::connections),
+                    None,
+                    perf_sample_interval_seconds,
+                ),
             ),
-            spawn_telemetry_poll(
-                metrics,
-                Arc::clone(&rules),
-                Arc::clone(&pipeline),
-                upstreams,
-                proxy_counters,
-                dns.tcp_connections(),
-                dns.udp_inflight(),
+            Supervised::new(
+                "telemetry poll",
+                spawn_telemetry_poll(
+                    Arc::clone(&metrics),
+                    Arc::clone(&rules),
+                    Arc::clone(&pipeline),
+                    upstreams,
+                    proxy_counters,
+                    dns.tcp_connections(),
+                    dns.udp_inflight(),
+                ),
             ),
-            spawn_policy_ticker(policy_state, rules, Arc::clone(&stats)),
+            Supervised::new(
+                "policy ticker",
+                spawn_policy_ticker(policy_state, rules, Arc::clone(&stats)),
+            ),
         ];
 
         // Stale-while-refresh (ADR-0005). Started here rather than in
@@ -574,14 +586,18 @@ impl Engine {
                 "stale-while-refresh pool started"
             );
         }
-        tasks.extend(swr_workers);
+        tasks.extend(
+            swr_workers
+                .into_iter()
+                .map(|worker| Supervised::new("swr worker", worker)),
+        );
 
         // Scheduled cache sweep, spawned here for the same reason: the binary
         // owns every long-lived task's lifetime. `None` when
         // `[dns.cache] cleanup_interval_seconds = 0`.
         if let Some(cleanup) = pipeline.spawn_cache_cleanup() {
             tracing::info!("cache cleanup scheduler started");
-            tasks.push(cleanup);
+            tasks.push(Supervised::new("cache cleanup", cleanup));
         }
 
         Ok(Self {
@@ -591,7 +607,35 @@ impl Engine {
             tasks,
             stats_schedulers,
             stats,
+            metrics,
         })
+    }
+
+    async fn run(&mut self) -> Option<fah_dns::ListenerDied> {
+        let shutdown = await_shutdown();
+        tokio::pin!(shutdown);
+        let mut supervision = tokio::time::interval(TELEMETRY_POLL);
+        supervision.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+        loop {
+            tokio::select! {
+                () = &mut shutdown => return None,
+                died = self.dns.fatal() => return Some(died),
+                _ = supervision.tick() => self.reap_dead_tasks().await,
+            }
+        }
+    }
+
+    async fn reap_dead_tasks(&mut self) {
+        let mut deaths = supervisor::reap(&mut self.tasks).await;
+        deaths.extend(supervisor::reap(&mut self.stats_schedulers).await);
+        for death in deaths {
+            self.metrics.record_task_death();
+            tracing::error!(
+                task = death.name,
+                cause = %death.cause,
+                "a supervised task died; the resolver keeps answering but that task's work has stopped"
+            );
+        }
     }
 
     async fn shutdown(&mut self) {
@@ -601,15 +645,15 @@ impl Engine {
         self.dns.shutdown();
         self.api.shutdown();
         for task in &self.tasks {
-            task.abort();
+            task.handle.abort();
         }
         let schedulers = std::mem::take(&mut self.stats_schedulers);
         for scheduler in &schedulers {
-            scheduler.abort();
+            scheduler.handle.abort();
         }
         let flush = async {
             for scheduler in schedulers {
-                let _ = scheduler.await;
+                let _ = scheduler.handle.await;
             }
             self.stats.save_snapshot().await;
             self.stats.flush_history(std::time::SystemTime::now()).await;

@@ -18,7 +18,7 @@ what is true today.
 | Build ≠ tip | the running container predates the 2026-09-11 `main` commits — F10 stats flush (`32d7776`), F1 TCP bound (`ed28395`), F2 UDP ceiling (`b0b091e`), their close-out (`ad110d8`) — and the strategy removal: it still loses up to 300 s of stats on a stop and has no DNS-over-TCP ceiling. They ship with the next image. **Before that image boots, the router's TOML must say `strategy = "adaptive"`** (it does — the opt-in of 2026-08-25 set it); a config still saying `fallback` refuses to load |
 | Phase | **0–2.6 and 5 closed** (2.6 closed 2026-09-07, all 13 tasks `DONE`; `p2.6-12` reached `main` on 2026-09-11 as the cherry-pick of `fa9451a` — `adaptive` is the only strategy, the `fallback` walk is deleted, a config naming it fails at load). `plan/wip` is empty; phases 3 and 4 are **parked** in `plan/open`, every task `WAITING`. No phase move was made |
 | Gate | [Global Architecture Review-Reconciled.md](code-review/Global%20Architecture%20Review-Reconciled.md): §5.1–6 cleared; §5.7–14 gate Phase 3. S1-G2 tiers 1–3 met; S1-G4 and S1-G5 route 2 not validated and will not be |
-| **Next** | (1) commit and push the strategy removal with its A/B evidence to both remotes. (2) F11 is the next review candidate (§Risk inventory close-out). (3) The F1 tuning soak once the F1 build is deployed. Off the critical path: the dashboard's `fallback` mode branch (`derive.ts`, `degraded-banner.tsx` and their tests) is now dead code and can go with its own frontend gate; dashboard settings metadata for `runtime.http_runtimes`; the TLS / lol_html capacity microbench on the probe |
+| **Next** | (1) commit and push the strategy removal with its A/B evidence to both remotes. (2) The F1 tuning soak once the F1 build is deployed. Off the critical path: the dashboard's `fallback` mode branch (`derive.ts`, `degraded-banner.tsx` and their tests) is now dead code and can go with its own frontend gate; dashboard settings metadata for `runtime.http_runtimes`; the TLS / lol_html capacity microbench on the probe |
 
 ## Risk inventory close-out — 2026-09-11
 
@@ -44,9 +44,11 @@ Follow-ups, neither a risk:
   Pre-existing, a microsecond window once per 300 s; the fix is one combined
   write. Its own go.
 
-Next review candidate: **F11** — long-lived task death is unobserved (a
-`JoinSet` in the run loop's `select!` would surface it). F3–F9 and F12 are
-record-only. N5 (`Semaphore::new` panics above `MAX_PERMITS`; neither
+**F11 closed 2026-09-12** — report-only supervisor: the run loop checks every
+long-lived task on the 10 s telemetry tick, logs a death once and counts it
+in `counters.tasks_died`; no restart, no exit, `/health` unchanged (see
+[project-risk-inventory.md](code-review/project-risk-inventory.md) §Closed).
+F3–F9 and F12 are record-only. N5 (`Semaphore::new` panics above `MAX_PERMITS`; neither
 `max_connections` key has an upper bound) is recorded and excluded by owner
 decision.
 

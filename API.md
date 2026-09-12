@@ -128,7 +128,8 @@ Top-level blocks: `process`, `ruleset`, `counters`, `latency`, `upstreams`,
                        "bytes_freed": 9871232, "last_duration_micros": 1842 },
     "lists": { "bodies": 17, "not_modified": 3, "bytes_fetched": 27580000 },
     "dns_tcp_connections": { "active": 2, "peak": 9, "closed_oversize": 0 },
-    "dns_udp_inflight": { "active": 0, "peak": 0, "shed": 0 }
+    "dns_udp_inflight": { "active": 0, "peak": 0, "shed": 0 },
+    "tasks_died": 0
   },
   "latency": {
     "dns":  { "block":     { "count": 96318,  "sum_seconds": 2.114 },
@@ -187,6 +188,15 @@ Reading it correctly:
   the full-outage upstream walk, so a rising `shed` during an upstream outage
   is the guard doing its job; `shed` climbing while upstreams are healthy means
   the ceiling is below the deployment's normal concurrency.
+- **`counters.tasks_died` is the supervisor's tally.** The binary checks its
+  long-lived tasks (rules scheduler, event fan-out, perf sampler, telemetry
+  poll, policy ticker, SWR workers, cache cleanup, the two stats schedulers)
+  every 10 s; one that ended before shutdown — a panic, or a loop that
+  returned — is logged once at `error` with its name and cause, and counted
+  here for the process lifetime. Nothing restarts it and the process does not
+  exit: the resolver keeps answering while that task's work stays stopped
+  until the container is restarted. `/health` does not change. A DNS
+  listener dying is a different path and does exit the process.
 - **`counters.dns.answers` counts what the *client* saw, on its own axis.**
   `servfail_synthesized` is a failure FastAdHunter minted itself because every
   upstream failed and no stale entry could cover it; `servfail_relayed` and

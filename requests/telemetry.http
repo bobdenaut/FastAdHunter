@@ -71,6 +71,16 @@ GET {{base}}/telemetry
 #   shed             datagrams dropped unanswered because the ceiling was full
 # All zero while the key is 0 (the default): no counter touched, no counting.
 # Pushed on the same 10 s poll as ruleset/upstreams — up to one interval old.
+#
+# counters.tasks_died is the supervisor's tally: long-lived tasks (rules
+# scheduler, event fan-out, perf sampler, telemetry poll, policy ticker, SWR
+# workers, cache cleanup, the two stats schedulers) that ended before shutdown.
+# Checked every 10 s; each death is logged ONCE at `error` with the task name
+# and cause (panic message, or "returned"), then counted here. Report-only:
+# nothing restarts the task and the process does not exit — the resolver keeps
+# answering while that task's work stays stopped until the container is
+# restarted. Normal value 0. Non-zero: read the engine log, then restart.
+# /health does NOT change. A DNS listener dying is a different path and exits.
 
 # ─── The producer boundary ─────────────────────────────────────────────
 #

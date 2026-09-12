@@ -8,6 +8,9 @@
 ### Liveness. `status` is "ok" or "degraded" (every upstream failing —
 ### serve-stale is carrying the traffic). This is what the container
 ### HEALTHCHECK probes via `fastadhunter --healthcheck`.
+### A supervised task dying does NOT flip `status`: that is
+### counters.tasks_died on /api/v1/telemetry (telemetry.http) plus one
+### `error` log line.
 GET {{base}}/health
 
 ### Same endpoint with a key. Sending one when none is required is harmless —

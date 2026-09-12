@@ -79,6 +79,7 @@ const TELEMETRY = {
       last_duration_micros: 0,
     },
     lists: { bodies: 17, not_modified: 3, bytes_fetched: 27_580_000 },
+    tasks_died: 0,
   },
   upstreams: [
     endpoint(),
@@ -307,6 +308,19 @@ describe('the engine card', () => {
     expect(text).toContain('752,585');
     expect(text).toContain('87,422');
     expect(text).toContain('7.41 s');
+  });
+
+  it('renders the supervised-task death count, red only when non-zero', () => {
+    const quiet = mount(<EngineCard telemetry={TELEMETRY} />);
+    expect(quiet.textContent).toContain('supervised tasks died');
+    expect(quiet.querySelector('.figure.bad')).toBeNull();
+
+    const wounded = {
+      ...TELEMETRY,
+      counters: { ...TELEMETRY.counters, tasks_died: 2 },
+    };
+    const dom = mount(<EngineCard telemetry={wounded} />);
+    expect(dom.querySelector('.figure.bad')?.textContent).toBe('2');
   });
 
   it('renders a null memory reading as unavailable, never as zero', () => {

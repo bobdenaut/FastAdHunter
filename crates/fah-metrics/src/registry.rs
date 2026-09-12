@@ -62,6 +62,7 @@ pub struct Metrics {
     pub(crate) dropped_events: AtomicU64,
     pub(crate) dns_tcp_connections: ArcSwap<fah_model::DnsTcpConnections>,
     pub(crate) dns_udp_inflight: ArcSwap<fah_model::DnsUdpInflight>,
+    pub(crate) tasks_died: AtomicU64,
     /// Stale-while-refresh counters (ADR-0005). Stored as one value rather than
     /// five atomics because they are read together, replaced together off
     /// `fah_dns::Pipeline::swr_stats()`, and only ever compared with each other
@@ -110,6 +111,7 @@ impl Metrics {
             dropped_events: AtomicU64::new(0),
             dns_tcp_connections: ArcSwap::new(Arc::new(fah_model::DnsTcpConnections::default())),
             dns_udp_inflight: ArcSwap::new(Arc::new(fah_model::DnsUdpInflight::default())),
+            tasks_died: AtomicU64::new(0),
             swr: ArcSwap::new(Arc::new(SwrSnapshot::default())),
             cleanup: ArcSwap::new(Arc::new(CleanupSnapshot::default())),
             lists: ArcSwap::new(Arc::new(fah_model::ListFetchCounters::default())),
@@ -237,6 +239,10 @@ impl Metrics {
         self.dns_udp_inflight.store(Arc::new(snapshot));
     }
 
+    pub fn record_task_death(&self) {
+        self.tasks_died.fetch_add(1, Ordering::Relaxed);
+    }
+
     pub fn set_upstreams(&self, snapshot: Vec<UpstreamSample>) {
         self.upstreams.store(Arc::new(snapshot));
     }
@@ -303,6 +309,7 @@ impl Metrics {
                 lists: **self.lists.load(),
                 dns_tcp_connections: **self.dns_tcp_connections.load(),
                 dns_udp_inflight: **self.dns_udp_inflight.load(),
+                tasks_died: self.tasks_died.load(Ordering::Relaxed),
             },
             latency: fah_model::LatencyTotals {
                 dns: fah_model::DnsLatency {
@@ -683,6 +690,15 @@ mod tests {
             metrics.engine_telemetry().counters.dns_tcp_connections,
             idle
         );
+    }
+
+    #[test]
+    fn task_deaths_accumulate_for_the_process_lifetime() {
+        let metrics = Metrics::new();
+        assert_eq!(metrics.engine_telemetry().counters.tasks_died, 0);
+        metrics.record_task_death();
+        metrics.record_task_death();
+        assert_eq!(metrics.engine_telemetry().counters.tasks_died, 2);
     }
 
     #[test]

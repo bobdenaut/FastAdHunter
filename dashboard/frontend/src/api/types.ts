@@ -96,6 +96,9 @@ export interface Counters {
   swr: SwrCounters;
   cache_cleanup: CacheCleanupCounters;
   lists: ListsCounters;
+  /** Supervised long-lived tasks (schedulers, fan-out, sampler, SWR workers)
+   *  that ended before shutdown. Lifetime count; the normal value is 0. */
+  tasks_died: number;
 }
 
 /** `count` and `sum_seconds`, never an average: a lifetime mean flattens

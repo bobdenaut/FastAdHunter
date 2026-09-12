@@ -1,4 +1,4 @@
-# Project risk inventory — surveyed on `main` at `baa2ecd`, 2026-09-11; F1, F2 and F10 closed the same day (§Closed)
+# Project risk inventory — surveyed on `main` at `baa2ecd`, 2026-09-11; F1, F2 and F10 closed the same day, F11 on 2026-09-12 (§Closed)
 
 **This is an inventory, not a backlog.** Nothing here is scheduled, and nothing
 here is a finding against a task. It records where the code on `main` is
@@ -72,9 +72,9 @@ asserts a clean exit and the flushed snapshot; drain and task-death behaviour
 are still untested. 11b (graceful shutdown of keep-alive connections) is still
 open in
 [alloc-domains-http-review.md](../phase2.6/alloc-domains-http-review.md).
-Two teardown findings below: long-lived task death never observed (F11),
-runtime drop unbounded by a `shutdown_timeout` (F12). The missing stats flush
-on a clean stop (F10) is closed.
+One teardown finding below: runtime drop unbounded by a `shutdown_timeout`
+(F12). The missing stats flush on a clean stop (F10) and unobserved
+long-lived task death (F11) are closed.
 
 ### 4. `fah-dns/src/cache.rs` — 1832 lines, 36 inline tests
 
@@ -108,13 +108,12 @@ judgement, unmeasured.
 | # | Severity | Class | Where | Finding |
 | --- | --- | --- | --- | --- |
 | F3 | minor | recommendation | `fah-dns/src/pipeline.rs:312` | `queries.first().cloned()` deep-copies the `Query` (hickory `Name`) once per query; `request` is never mutated in `handle`, so a borrow would do. One avoidable allocation for names past hickory's inline label capacity. `forward_alloc.rs` asserts adaptive = fallback, not an absolute count, so this is not caught. |
-| F4 | minor | recommendation | `fah-dns/src/cache.rs:519,555,566,626,670,680,710,769`; `fah-rules/src/lifecycle/mod.rs` ×20; `fah-stats/src/stats.rs` ×14; `fah-dns/src/swr.rs:155` | ~43 `lock().unwrap()` on `std::sync` locks outside tests. A panic inside any critical section (none identified) poisons that lock and every later taker panics: a poisoned cache shard fails 1/16 of lookups per query task; a poisoned `aggregates` kills the event fan-out task (`main.rs:536`) on its next `record`, after which the events channel fills and `dropped_events` counts — stats freeze, nothing logs (see F11). `unwrap_or_else(PoisonError::into_inner)` needs no new dependency. Not a defect today. |
-| F5 | minor | recommendation | `fah-rules/src/lifecycle/mod.rs:769,1326`; `fastadhunter/src/main.rs:879` | Three `spawn_blocking` join `.expect`s turn a panic in the blocking closure into a panic in the awaiting task: 769 (list validation parse) reaches an API task; 1326 (ruleset compile) reaches the scheduler task and the detached API refresh (`routes.rs:788`); 879 (`collect_memory`) reaches the perf sampler. A panic in the scheduler or sampler is never observed (F11). Parser and compile are property-tested; paths unexercised. |
+| F4 | minor | recommendation | `fah-dns/src/cache.rs:519,555,566,626,670,680,710,769`; `fah-rules/src/lifecycle/mod.rs` ×20; `fah-stats/src/stats.rs` ×14; `fah-dns/src/swr.rs:155` | ~43 `lock().unwrap()` on `std::sync` locks outside tests. A panic inside any critical section (none identified) poisons that lock and every later taker panics: a poisoned cache shard fails 1/16 of lookups per query task; a poisoned `aggregates` kills the event fan-out task (`main.rs:536`) on its next `record`, after which the events channel fills and `dropped_events` counts — stats freeze; the supervisor logs the death and counts it. `unwrap_or_else(PoisonError::into_inner)` needs no new dependency. Not a defect today. |
+| F5 | minor | recommendation | `fah-rules/src/lifecycle/mod.rs:769,1326`; `fastadhunter/src/main.rs:879` | Three `spawn_blocking` join `.expect`s turn a panic in the blocking closure into a panic in the awaiting task: 769 (list validation parse) reaches an API task; 1326 (ruleset compile) reaches the scheduler task and the detached API refresh (`routes.rs:788`); 879 (`collect_memory`) reaches the perf sampler. A panic in the scheduler or sampler is logged and counted by the supervisor but still ends that task. Parser and compile are property-tested; paths unexercised. |
 | F6 | minor | recommendation | `fah-http/src/proxy.rs:395-467` | `judge()` allocates host, path, method; `emit()` then clones `ModelRequest`, `Verdict` and the policy `Arc` again. ~6 allocations per HTTP request for the event; whether `Judged` must outlive `emit` was not checked. |
 | F7 | minor | recommendation | `fah-dns/src/udp.rs:94`, `tcp.rs:80` | Logging is synchronous stderr (`fah-logging/src/lib.rs:62`). Per-query DNS sites are `trace!`/`debug!`; the all-upstreams-down `warn!` is rate-limited by the alarm (`upstream/mod.rs:308`). The only per-event `warn!`s under repeated failure are a failed UDP `send_to` and a non-disconnect TCP error — one blocking write per event on a runtime thread. Unmeasured. |
 | F8 | minor | recommendation | `fah-stats/src/stats.rs:199-207,354` | `save_snapshot` clones and `snapshot()` walks the aggregates under the same `std::sync::Mutex` `record()` takes; the fan-out task stalls for the clone and the pipeline sheds to `dropped_events` rather than blocking. Bounded and counted; no action. |
 | F9 | minor | verified, no action | `fah-dns/src/upstream/encrypted.rs:48-50` | The comment says the provider "owns the JoinSet the exchanges' background I/O tasks spawn into". Checked in `hickory-net` 0.26.1 (`src/runtime.rs:139-148`): `TokioRuntimeProvider(TokioHandle { join_set: Arc<Mutex<JoinSet<()>>> })`; `spawn_bg` spawns into the set and reaps finished tasks (`:221`); clones share the `Arc`, so the last clone dropping aborts the I/O tasks. The comment is accurate. The `std::sync::Mutex` inside `spawn_bg` is taken per connect, not per query. |
-| F11 | minor | recommendation | `fastadhunter/src/main.rs` `Engine::tasks`, `Engine::stats_schedulers`, `Engine::shutdown` | Long-lived task death is unobserved. `Engine::tasks` holds the rules scheduler, the event fan-out, the perf sampler, the SWR workers and the cache cleanup, `Engine::stats_schedulers` the two stats schedulers; the run loop `select!`s only on the shutdown signal and `dns.fatal()`, and the handles are aborted at shutdown, never polled. Tokio swallows a task panic into a `JoinError` nobody reads. Reachable panic sites: F5's join `expect`s and F4's poison unwraps. Consequence: the resolver keeps answering while refreshes, stats or SWR silently stop. A `JoinSet` in the `select!`, or `is_finished()` on the perf tick, would surface it. |
 | F12 | minor | note | `fastadhunter/src/main.rs:243,254` | The runtime is dropped at the end of `main` with no `shutdown_timeout`. Tokio 1.53 `Runtime::drop` waits for blocking-pool tasks that are running, so a stop that lands inside a `spawn_blocking` compile (`lifecycle/mod.rs:1268`) or validation parse (`:764`) waits for it to finish. Bounded by compile time; relevant only to "a container that will not stop cleanly" in item 3. |
 
 ## Closed
@@ -173,6 +172,27 @@ and against what.
   followed by the flush's duplicate, which the reader skips (one hour lost) —
   pre-existing, a microsecond window once per 300 s. Events still in the
   fan-out channel at abort are dropped.
+- **F11 — long-lived task death unobserved** (was minor). `Engine::run`
+  scans every supervised handle — `Engine::tasks` and
+  `Engine::stats_schedulers`, each wrapped in `supervisor::Supervised` with a
+  name — on a 10 s `TELEMETRY_POLL` tick in the run loop's `select!`, the one
+  task that cannot die silently. A handle finished before shutdown is
+  removed, awaited, classified (`panicked` with the payload, `returned`,
+  `cancelled`), logged once at `error` with task name and cause, and counted
+  in `counters.tasks_died` on `/api/v1/telemetry` (dashboard Engine card, red
+  when non-zero). Report-only by owner decision: a restart would re-hit the
+  poisoned lock or deterministic `expect` that killed it; an exit would take
+  household DNS down, since RouterOS restarts nothing
+  ([routeros-traps.md](../routeros-traps.md)). `/health` unchanged. Not
+  covered: the API serve task. `is_finished()` on a tick was chosen over a
+  `JoinSet` because the four library spawn functions return `JoinHandle`s a
+  `JoinSet` cannot adopt; the alternative was an API change in three crates
+  or one wrapper task per supervised task. Verified:
+  `fastadhunter/src/supervisor.rs` tests (panic payload as `&str` and
+  `String`, returned, aborted, a running task stays, reported once, empty
+  set), `fah-metrics` counter test, dashboard Engine card test. The
+  `Engine::run` wiring is not e2e-tested: no supervised task can be made to
+  panic from outside the binary.
 
 ## Checked and clean
 
@@ -231,8 +251,7 @@ Recorded so the next pass can skip them.
   `counters.dns_tcp_connections.{peak,closed_oversize}` from
   `/api/v1/telemetry`, check the container fd budget, and set the final
   `tcp_max_connections` default; record corpus, workload and device in a
-  `docs/code-review/` file. F11 is the next candidate. F3–F9, F12 are
-  record-only.
+  `docs/code-review/` file. F3–F9, F12 are record-only.
 - Outside this file, needing an owner go: [CLAUDE.md](../../../CLAUDE.md)
   §Layout lists root `tests/` and `benches/` — both are `.gitkeep`-only;
   every test and bench lives under `crates/*/`.

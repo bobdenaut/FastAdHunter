@@ -400,6 +400,7 @@ impl TelemetrySource for FakeTelemetry {
                     peak: 37,
                     shed: 2,
                 },
+                tasks_died: 1,
                 swr: fah_model::SwrCounters {
                     enqueued: 12_044,
                     deduplicated: 3_311,
@@ -858,6 +859,7 @@ async fn telemetry_matches_the_documented_shape() {
     assert_eq!(body["counters"]["dns_udp_inflight"]["active"], 4);
     assert_eq!(body["counters"]["dns_udp_inflight"]["peak"], 37);
     assert_eq!(body["counters"]["dns_udp_inflight"]["shed"], 2);
+    assert_eq!(body["counters"]["tasks_died"], 1);
 
     let upstream = &body["upstreams"][0];
     assert_eq!(upstream["address"], "1.1.1.1:853");

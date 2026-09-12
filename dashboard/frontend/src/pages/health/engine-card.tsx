@@ -5,11 +5,18 @@ import { EmptyState } from '../../components/empty-state';
 import { Link } from '../../router/link';
 
 /**
- * The ruleset and the footprint, from `/telemetry`.
+ * The ruleset, the footprint and the supervised-task death count, from
+ * `/telemetry`.
  *
  * `memory.process_rss` and `process_peak_rss` are `null` off Linux — there is
  * no `/proc/self/status` on a non-container dev box — so they render as
  * unavailable rather than as a zero-byte process.
+ *
+ * `counters.tasks_died` is the one figure here that is allowed to go red: a
+ * scheduler, the event fan-out, the perf sampler or an SWR worker ended before
+ * shutdown. The resolver keeps answering, but that task's work (list refresh,
+ * stats, history, SWR) has stopped until the container is restarted; the
+ * engine log carries the task name and the panic message.
  */
 export function EngineCard({ telemetry }: { telemetry: Telemetry | null }) {
   if (telemetry === null) {
@@ -20,7 +27,8 @@ export function EngineCard({ telemetry }: { telemetry: Telemetry | null }) {
     );
   }
 
-  const { ruleset, memory } = telemetry;
+  const { ruleset, memory, counters } = telemetry;
+  const deaths = counters.tasks_died;
 
   return (
     <Card title="Engine">
@@ -48,6 +56,12 @@ export function EngineCard({ telemetry }: { telemetry: Telemetry | null }) {
         <div>
           <div class="figure mono">{bytes(memory.process_peak_rss)}</div>
           <div class="note">peak, this process</div>
+        </div>
+        <div>
+          <div class={deaths > 0 ? 'figure mono bad' : 'figure mono'}>
+            {deaths.toLocaleString()}
+          </div>
+          <div class="note">supervised tasks died</div>
         </div>
       </div>
       <p class="note">
