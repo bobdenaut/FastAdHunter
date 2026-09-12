@@ -344,14 +344,14 @@ impl Proxy {
             self.counters.blocked.fetch_add(1, Ordering::Relaxed);
             let response = crate::block::response(judged.resource_type, blocked);
             let status = response.status().as_u16();
-            self.emit(&judged, started, status, 0);
+            self.emit(judged, started, status, 0);
             return Ok(response.map(|body| Either::Right(Full::new(body))));
         }
 
         let address = match self.approved_address(&claim, peer).await {
             Ok(address) => address,
             Err(status) => {
-                self.emit(&judged, started, status.as_u16(), 0);
+                self.emit(judged, started, status.as_u16(), 0);
                 return Ok(refuse(status));
             }
         };
@@ -360,7 +360,7 @@ impl Proxy {
             Ok(upstream) => upstream,
             Err(err) => {
                 debug!(%peer, error = %err, "could not build the upstream request");
-                self.emit(&judged, started, 400, 0);
+                self.emit(judged, started, 400, 0);
                 return Ok(refuse(StatusCode::BAD_REQUEST));
             }
         };
@@ -373,7 +373,7 @@ impl Proxy {
                 // put per-chunk work on the path p2-02 exists to keep clean.
                 // A chunked response reports no exact size, which is honest.
                 let bytes = response.body().size_hint().exact().unwrap_or(0);
-                self.emit(&judged, started, status, bytes);
+                self.emit(judged, started, status, bytes);
                 Ok(to_client_response(response))
             }
             Err(err) => {
@@ -381,7 +381,7 @@ impl Proxy {
                     .upstream_failures
                     .fetch_add(1, Ordering::Relaxed);
                 debug!(%peer, host = %claim.host, error = %err, "upstream request failed");
-                self.emit(&judged, started, 502, 0);
+                self.emit(judged, started, 502, 0);
                 Ok(refuse(StatusCode::BAD_GATEWAY))
             }
         }
@@ -394,11 +394,8 @@ impl Proxy {
     /// before it is handed upstream.
     fn judge(&self, request: &Request<Incoming>, claim: &Destination, peer: SocketAddr) -> Judged {
         let resource_type = crate::request::resource_type(request.headers(), request.uri());
-        let authority = match claim.port {
-            port if port == self.origin_port => claim.host.clone(),
-            port => format!("{}:{port}", claim.host),
-        };
-        let url = crate::request::absolute_url(request, &authority);
+        let port = (claim.port != self.origin_port).then_some(claim.port);
+        let url = crate::request::absolute_url(request, &claim.host, port);
         let host = crate::request::request_host(&claim.host).to_string();
         let path = request
             .uri()
@@ -449,18 +446,18 @@ impl Proxy {
     /// Publishes the completed request. Never blocks the response: a full
     /// channel sheds and counts, exactly as the DNS pipeline does — an
     /// observability queue must not become a backpressure path onto traffic.
-    fn emit(&self, judged: &Judged, started: Instant, status: u16, bytes: u64) {
+    fn emit(&self, judged: Judged, started: Instant, status: u16, bytes: u64) {
         let Some(events) = &self.events else {
             return;
         };
         let event = RequestEvent::new(
-            judged.request.clone(),
-            judged.verdict.clone(),
+            judged.request,
+            judged.verdict,
             started.elapsed(),
             status,
             bytes,
         )
-        .under_policy(judged.policy.clone());
+        .under_policy(judged.policy);
         if events.try_send(Event::http(event)).is_err() {
             self.counters.dropped_events.fetch_add(1, Ordering::Relaxed);
         }

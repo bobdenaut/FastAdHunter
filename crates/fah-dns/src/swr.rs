@@ -197,7 +197,7 @@ impl SwrPool {
     async fn refresh<F: Forwarder>(&self, cache: &DnsCache, forwarder: &F, key: &CacheKey) {
         let request = refresh_query(key);
         let stored = match forwarder.forward(&request).await {
-            Ok(outcome) => cache.store(key, &outcome.message),
+            Ok(outcome) => cache.store(key.clone(), &outcome.message),
             Err(err) => {
                 tracing::trace!(error = %err, "stale-while-refresh forward failed");
                 false
@@ -319,7 +319,10 @@ mod tests {
             SEED_TTL,
             RData::A(A(Ipv4Addr::new(192, 0, 2, 1))),
         ));
-        assert!(cache.store(&key, &seed), "test seed must be cacheable");
+        assert!(
+            cache.store(key.clone(), &seed),
+            "test seed must be cacheable"
+        );
 
         tokio::time::advance(Duration::from_secs(u64::from(SEED_TTL) + 1)).await;
         assert!(

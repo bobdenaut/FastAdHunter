@@ -455,7 +455,7 @@ impl<F: Forwarder> Pipeline<F> {
                 }
                 // The client is answered either way; whether the answer was
                 // cacheable only matters to the refresh path (ADR-0005).
-                let _ = self.cache.store(&key, &upstream_response);
+                let _ = self.cache.store(key, &upstream_response);
                 // Wire ID is per-hop; always answer with the client's own.
                 upstream_response.metadata.id = request.metadata.id;
                 let outcome = match upstream_response.metadata.response_code {
