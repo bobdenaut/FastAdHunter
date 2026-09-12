@@ -1,4 +1,4 @@
-# Project risk inventory — surveyed on `main` at `baa2ecd`, 2026-09-11; F1, F2 and F10 closed the same day, F11 on 2026-09-12 (§Closed)
+# Project risk inventory — surveyed on `main` at `baa2ecd`, 2026-09-11; F1, F2 and F10 closed the same day, F11 and F3 on 2026-09-12 (§Closed)
 
 **This is an inventory, not a backlog.** Nothing here is scheduled, and nothing
 here is a finding against a task. It records where the code on `main` is
@@ -107,7 +107,6 @@ judgement, unmeasured.
 
 | # | Severity | Class | Where | Finding |
 | --- | --- | --- | --- | --- |
-| F3 | minor | recommendation | `fah-dns/src/pipeline.rs:312` | `queries.first().cloned()` deep-copies the `Query` (hickory `Name`) once per query; `request` is never mutated in `handle`, so a borrow would do. One avoidable allocation for names past hickory's inline label capacity. `forward_alloc.rs` asserts adaptive = fallback, not an absolute count, so this is not caught. |
 | F4 | minor | recommendation | `fah-dns/src/cache.rs:519,555,566,626,670,680,710,769`; `fah-rules/src/lifecycle/mod.rs` ×20; `fah-stats/src/stats.rs` ×14; `fah-dns/src/swr.rs:155` | ~43 `lock().unwrap()` on `std::sync` locks outside tests. A panic inside any critical section (none identified) poisons that lock and every later taker panics: a poisoned cache shard fails 1/16 of lookups per query task; a poisoned `aggregates` kills the event fan-out task (`main.rs:536`) on its next `record`, after which the events channel fills and `dropped_events` counts — stats freeze; the supervisor logs the death and counts it. `unwrap_or_else(PoisonError::into_inner)` needs no new dependency. Not a defect today. |
 | F5 | minor | recommendation | `fah-rules/src/lifecycle/mod.rs:769,1326`; `fastadhunter/src/main.rs:879` | Three `spawn_blocking` join `.expect`s turn a panic in the blocking closure into a panic in the awaiting task: 769 (list validation parse) reaches an API task; 1326 (ruleset compile) reaches the scheduler task and the detached API refresh (`routes.rs:788`); 879 (`collect_memory`) reaches the perf sampler. A panic in the scheduler or sampler is logged and counted by the supervisor but still ends that task. Parser and compile are property-tested; paths unexercised. |
 | F6 | minor | recommendation | `fah-http/src/proxy.rs:395-467` | `judge()` allocates host, path, method; `emit()` then clones `ModelRequest`, `Verdict` and the policy `Arc` again. ~6 allocations per HTTP request for the event; whether `Judged` must outlive `emit` was not checked. |
@@ -194,6 +193,23 @@ and against what.
   `Engine::run` wiring is not e2e-tested: no supervised task can be made to
   panic from outside the binary.
 
+- **F3 — per-query `Query` clone** (was minor). `Pipeline::handle` borrows
+  `request.queries.first()` instead of cloning it. `request` is a local owned
+  for the whole future and both `response::blocked` and `resolve` take
+  `&WireQuery`, so ownership and await-safety are unchanged. hickory `Name`
+  inlines up to 32 bytes of label data, so the clone allocated only for
+  longer names. Measured with `fah-dns/tests/forward_alloc.rs`
+  `warm_pipeline_handles_allocate_a_steady_amount` (counting `GlobalAlloc`
+  over mimalloc, 64 warm `handle` calls, x86 dev box, `main` at `0fb8dd0`).
+  Two paths: blocked, and cache hit — the stub forwarder's empty `NOERROR`
+  answer is negative-cached on the first warm call, so every measured
+  `handle` after it is served from the cache and the forwarder never runs in
+  a measured batch. Blocked heap-name 1472 → 1408, cache-hit heap-name
+  1280 → 1216, one allocation per query; inline names unchanged at 960 and
+  704. The test asserts no accumulation, not an absolute count. Heap names
+  still cost 7–8 more allocations per query than inline names; the exact
+  attribution is not yet broken down — outside F3, record only.
+
 ## Checked and clean
 
 Recorded so the next pass can skip them.
@@ -251,7 +267,7 @@ Recorded so the next pass can skip them.
   `counters.dns_tcp_connections.{peak,closed_oversize}` from
   `/api/v1/telemetry`, check the container fd budget, and set the final
   `tcp_max_connections` default; record corpus, workload and device in a
-  `docs/code-review/` file. F3–F9, F12 are record-only.
+  `docs/code-review/` file. F4–F9, F12 are record-only.
 - Outside this file, needing an owner go: [CLAUDE.md](../../../CLAUDE.md)
   §Layout lists root `tests/` and `benches/` — both are `.gitkeep`-only;
   every test and bench lives under `crates/*/`.

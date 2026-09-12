@@ -309,7 +309,7 @@ impl<F: Forwarder> Pipeline<F> {
                 budget,
             ));
         }
-        let Some(query) = request.queries.first().cloned() else {
+        let Some(query) = request.queries.first() else {
             return Some(response::encode_for_transport(
                 &response::error(&request, ResponseCode::FormErr),
                 budget,
@@ -332,7 +332,7 @@ impl<F: Forwarder> Pipeline<F> {
         let (verdict, local_response) = match decision {
             MatchDecision::Block(rule_ref) => {
                 let rewrite = matcher.rewrite(rule_ref);
-                let response = response::blocked(&request, &query, self.blocking_ttl, rewrite);
+                let response = response::blocked(&request, query, self.blocking_ttl, rewrite);
                 (
                     Verdict::Block(matcher.decisive_rule(rule_ref)),
                     Some(response),
@@ -357,7 +357,7 @@ impl<F: Forwarder> Pipeline<F> {
                 let resolved = self
                     .resolve(
                         &request,
-                        &query,
+                        query,
                         &domain,
                         query.query_type(),
                         query.query_class(),

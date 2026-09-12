@@ -4,14 +4,14 @@ Where the work is right now. **Rewrite this file — never append.** History
 belongs in `git log`, `docs/code-review/` and the phase tables; this file is only
 what is true today.
 
-**Last updated:** 2026-09-11
+**Last updated:** 2026-09-12
 
 ## Now
 
 | | |
 | --- | --- |
 | Branch | `main` at `ad110d8` = `origin/main` = `backup/main`. `alloc-domains/http` merged 2026-09-07 (`e9dac79`, released as 0.3.2 `89aac76`); the branch is 0 commits ahead and can be deleted. Tag `pre-alloc-domain-2026-09-06` = `64be513` stays the rollback point before the allocation domains |
-| Tree | uncommitted on `main`: `fa9451a` cherry-picked from `phase3-06` (`p2.6-12` — `adaptive` the only strategy, `fallback` deleted, conflicts in README/ROADMAP/this file resolved to `main`'s state, Phase-3-only test content dropped), the A/B harness `fah-dns/tests/strategy_ab.rs` (`#[ignore]`, now adaptive-only) and its measurement [strategy-ab-fallback-vs-adaptive.md](code-review/phase2.6/strategy-ab-fallback-vs-adaptive.md), `udp_inflight_cost.rs` and `shutdown_e2e.rs` moved off the removed strategy. Awaiting the commit go |
+| Tree | uncommitted on `main`: the F3 close-out — `fah-dns/src/pipeline.rs` borrows the query instead of cloning it, `fah-dns/tests/forward_alloc.rs` gains `warm_pipeline_handles_allocate_a_steady_amount`, [project-risk-inventory.md](code-review/project-risk-inventory.md) moves F3 to §Closed, this file. Awaiting the commit go. Kept out of that commit by owner decision: `.gitignore` (soak-collector `__pycache__/`, `collector.log`) and the untracked `docs/code-review/phase2.6/soak-0.3.4/` capture |
 | Tests | green on that tree over `ad110d8`: fmt, clippy `-D warnings`, `cargo test --all-features --workspace`; F1/F2/F10 re-verified after the cherry-pick (fah-dns tcp/udp units, the ceiling wiring test, config/metrics/api round-trips, `shutdown_e2e` under `rust:1.96.0` in a Linux container) |
 | Version | 0.3.3 (workspace, since `1c61f9c`), untagged. Newest tags `v0.3.2` (`89aac76`), `pre-alloc-domain-2026-09-06`, `soak-p2.6-11` |
 | Deployed | production on **0.3.3** = `main` at `1c61f9c` (`7d03e95`…`857865d` are plan and docs) — HTTP allocation domains, N=2 (`FAH__RUNTIME__HTTP_RUNTIMES=2` on `fah-env`), `veth1` / `172.17.0.2`, mounts `fah-config,fah-data`. `GET /health` on 2026-09-11 23:13 local answered `0.3.3`, uptime 204 978 s (container start 2026-09-09T11:15Z) |
@@ -48,7 +48,12 @@ Follow-ups, neither a risk:
 long-lived task on the 10 s telemetry tick, logs a death once and counts it
 in `counters.tasks_died`; no restart, no exit, `/health` unchanged (see
 [project-risk-inventory.md](code-review/project-risk-inventory.md) §Closed).
-F3–F9 and F12 are record-only. N5 (`Semaphore::new` panics above `MAX_PERMITS`; neither
+
+**F3 closed 2026-09-12** — `Pipeline::handle` borrows `request.queries.first()`
+instead of cloning it: one allocation per query fewer for names past hickory
+`Name`'s 32 inline label bytes, measured A/B against `0fb8dd0` with the new
+`warm_pipeline_handles_allocate_a_steady_amount` (inventory §Closed).
+F4–F9 and F12 are record-only. N5 (`Semaphore::new` panics above `MAX_PERMITS`; neither
 `max_connections` key has an upper bound) is recorded and excluded by owner
 decision.
 
