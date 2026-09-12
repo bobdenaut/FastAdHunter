@@ -33,6 +33,9 @@ do not implement**; H4, D2, D3 recorded as optional, not implemented.
 - D4 (`QueryType::Other` allocation) measured against 30 days of live
   traffic: 14.86% of queries would save one 8-byte allocation, ≈1.15% of
   per-query allocations. Technically valid but too low-impact.
+- RSS A/B against `c220956`, 8 measured runs plus a control pair on the dev
+  box: **allocation reduction confirmed, RSS reduction not observed.** No
+  evidence that H1/H2/H3/D1 address the retained-memory / RSS drift.
 
 ## Decisions
 
@@ -204,6 +207,82 @@ Miss-path bytes swing ±60 B per handle between batches from amortized
 map/queue growth; the −1 allocation is exact. Gates: fmt, clippy
 `-D warnings`, full workspace tests green.
 
+### RSS A/B — B (`3287418`, fixes) vs A (`c220956`, before)
+
+Question: does the reduced allocation churn move process RSS or retained
+memory? Not a soak — one short controlled experiment, no source or allocator
+change.
+
+| Held identical | Value |
+| --- | --- |
+| build | release profile, same toolchain; A from a worktree at `c220956` |
+| config | one file copied per run; `dns.cache` defaults, `runtime.http_runtimes = 2` |
+| upstream / origin | Python stub upstream (one A record, TTL 300) + stub loopback origin on :80 |
+| per run | fresh process, fresh `/config` + `/data`; 20 s settle → warmup 30k DNS + 3k HTTP → measured window → 120 s quiet |
+| workload | 300,000 DNS @ 2000.0 qps (210,000 unique names = misses, 90,000 over a 64-name hit pool) + 30,000 pass-through keep-alive `GET` @ 200.0 rps, 8 connections |
+| order | interleaved A/B/A/B/A/B/A/B, then one control pair |
+
+Every run: 100% DNS replies, 30,000/30,000 HTTP `200`, zero drops, and
+`cache_entries = 10000` at the end — saturated compared against saturated
+([measurement-traps.md](../measurement-traps.md) §Memory). RSS is
+`WorkingSetSize` at 2 Hz via `GetProcessMemoryInfo`; `/debug/memory`
+`process_rss` is `/proc`-only and reads `null` here.
+
+| Run | Boot | Steady pre-load | Peak | Post | Residual | Slope, final third |
+| --- | --- | --- | --- | --- | --- | --- |
+| A1 | 32.09 | 46.89 | 54.95 | 54.65 | 55.12 | +0.22 |
+| A2 | 19.84 | 34.21 | 45.29 | 44.62 | 45.01 | +0.52 |
+| A3 | 20.24 | 35.57 | 44.25 | 44.00 | 44.77 | +0.54 |
+| A4 | 20.14 | 35.94 | 44.45 | 43.58 | 44.20 | +0.32 |
+| B1 | 20.28 | 34.99 | 44.78 | 44.24 | 44.66 | +0.20 |
+| B2 | 19.86 | 34.49 | 43.41 | 43.02 | 43.43 | +0.27 |
+| B3 | 19.98 | 36.08 | 43.02 | 42.21 | 42.92 | +0.36 |
+| B4 | 20.36 | 35.29 | 43.88 | 43.85 | 44.22 | +0.26 |
+
+MB. A1 is excluded from the means: boot RSS 32.09 against ~20.0 everywhere
+else — a different starting state (first process of the session, right after
+two concurrent cargo builds). Including it fakes a −3.5 MB win.
+
+| Metric | A mean (n=3) | B mean (n=4) | Delta B−A | A range | B range |
+| --- | --- | --- | --- | --- | --- |
+| steady pre-load | 35.24 | 35.21 | −0.03 (−0.1%) | 34.21–35.94 | 34.49–36.08 |
+| peak | 44.66 | 43.77 | −0.89 (−2.0%) | 44.25–45.29 | 43.02–44.78 |
+| post-workload | 44.07 | 43.33 | −0.74 (−1.7%) | 43.58–44.62 | 42.21–44.24 |
+| residual, +120 s | 44.66 | 43.81 | −0.85 (−1.9%) | 44.20–45.01 | 42.92–44.66 |
+
+Control arm — hit-only DNS, 300,000 queries, no HTTP, a path the fixes do not
+touch: A 34.93 / 35.06 / 34.08, B 35.46 / 35.66 / 34.72 → B−A **+0.53 /
++0.60 / +0.64** on steady / peak / residual. Unchanged code reads B *higher*
+by the same order the measured arms read it *lower*, every range overlaps,
+and both sit far inside mimalloc's ±6 MB purge band.
+
+Allocation correlate over one measured window (per-op from each arm's own
+counter tests; A's miss and proxy cases are the pre-fix column above — those
+tests land with the fix, so A's tree has no equivalent):
+
+| Operation | A | B | Per window |
+| --- | --- | --- | --- |
+| DNS miss, inline name | 17.5 / 17.3 | 16.48 / 16.31 | 210,000 misses → −210,000 allocations, ≈−12.6 MB allocated |
+| HTTP pass-through + keep-alive | 61 | 53 | 30,000 requests → −240,000 allocations, ≈−1.35 MB allocated |
+| DNS cache hit, inline | 10 | 10 | unchanged |
+
+≈450,000 fewer allocations and ≈14 MB less allocated per run, and RSS does
+not move. `/debug/memory` `accounted_bytes` is identical arm to arm — 6.14–
+6.16 MB steady, 7.65–7.70 MB post-load — which is the mechanism: the removed
+allocations are transient, freed inside the operation, and never reach
+retained memory. `allocator_committed_bytes` ran 79–109 MB with no arm
+pattern (lifetime high-water, not footprint). Residual slope was +0.20 to
++0.54 MB in every run, both arms — no leak signal, no arm difference, and no
+leak is claimed from RSS either way.
+
+**Finding: allocation reduction confirmed, RSS reduction not observed. No
+evidence that H1/H2/H3/D1 address the retained-memory / RSS drift.**
+
+Scope: x86 Windows dev box, mimalloc v3, ~5.5-minute runs, stub upstream and
+stub origin, 2000 qps / 200 rps. Says nothing about RB5009 / musl / multi-day
+retention; superseded only by an on-device measurement, not another dev-box
+run.
+
 ### D4 — live traffic share of non-A/AAAA types
 
 `GET /api/v1/history/summary`, RB5009 live resolver, 30 day-files
@@ -242,6 +321,7 @@ fah-api, fah-stats, fah-rules, fah-dns. Verdict in Decisions.
 | Id | Status |
 | --- | --- |
 | H1, H3, H2, D1 | implemented, ceilings added |
+| RSS A/B | run; allocation reduction confirmed, no RSS effect observed (dev box) |
 | D4 | investigated; recommend not implementing — technically valid but too low-impact; owner decides |
 | H4, D2, D3 | optional, low value, not implemented |
 
@@ -265,5 +345,7 @@ fah-api, fah-stats, fah-rules, fah-dns. Verdict in Decisions.
 ## Remaining TODOs
 
 - H4, D2, D3 stay optional; none scheduled.
+- Retained-memory / RSS drift stays open: nothing here explains it, and the
+  A/B is dev-box only. Re-measure on the RB5009 before it generalizes.
 - Raise the `store_label_pointer` suffix copy with hickory upstream (store
   offsets, compare against the buffer).
