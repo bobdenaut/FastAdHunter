@@ -692,10 +692,6 @@ fn http_enabled(mode: fah_config::EngineMode) -> bool {
 /// here. Phase 3's HTTPS path uses 443 the same way.
 const HTTP_ORIGIN_PORT: u16 = 80;
 
-/// Idle upstream connections kept per origin. Bounded so the pool is a function
-/// of configuration rather than of how many sites the LAN visits (hard rule 4);
-/// a household reuses a handful of connections per site, and anything beyond
-/// that is memory held against the 128 MB budget for no gain.
 const MAX_IDLE_UPSTREAMS_PER_HOST: usize = 8;
 
 const HTTP_DRAIN_TIMEOUT: Duration = Duration::from_secs(5);
