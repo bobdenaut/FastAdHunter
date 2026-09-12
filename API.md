@@ -87,15 +87,31 @@ already reports as JSON.
 channel, so the shed figure stays one number. `counters.http` is kept separate
 from `counters.dns` because "queries" has meant "DNS questions answered" since
 p1-08 and widening it would silently redefine every figure built on it.
-`counters.http.refused` (p2.5-11) is requests the egress policy refused before
-any upstream contact — an unusable `Host` (`[egress] allow_ip_literal_hosts`)
-or a resolved destination outside `[egress]`. It is counted on the proxy, not
-on the event stream, so it is not part of `pass + allow + block`; it is the
-only signal of a LAN client probing, now that refusals log at `debug`.
+`counters.http.refused_claim` and `counters.http.refused_destination` are
+requests refused before any upstream contact, counted apart because the causes
+differ and so do the fixes. `refused_claim` is the request line itself — a
+`Host` that is missing, duplicated, malformed, or a bare IP (`[egress]
+allow_ip_literal_hosts`); all four causes land on that one figure.
+`refused_destination` is the address the name *resolved* to falling outside
+`[egress] allow_destinations`. `refused_claim` is taken before the verdict, so
+it is outside `pass + allow + block`. `refused_destination` is **not**: the
+egress check runs after the verdict, and the request has already been emitted
+as `pass` with status 403 and zero bytes. Reading `pass` as "requests served"
+overstates it by the number of destination refusals. Neither attributes
+intent: a refusal may be a probing client or a broken one, and the counter does
+not say which — the cause is the `reason` field on the `debug` log line.
 
 **Compatibility contract.** New fields may be added; existing fields must not
 change meaning or units. Figures that may change with the implementation live
 under `/api/v1/debug/*` instead, which promises nothing.
+
+Before 1.0 a field may also be **replaced**, provided the entry naming it says
+what replaced it and what is lost. One replacement so far:
+`counters.http.refused` (p2.5-11) was the sum of the two figures above and
+could not tell them apart; it is gone in favour of the pair. A payload captured
+before the split still deserializes, but the old total reads as `0` on both new
+fields — it cannot be reconstructed, so a series spanning the change shows a
+step to zero, not a carry-over.
 
 The boundary is **who produces a figure**, not how useful it looks:
 
@@ -120,7 +136,7 @@ Top-level blocks: `process`, `ruleset`, `counters`, `latency`, `upstreams`,
               "answers": { "servfail_synthesized": 1204, "servfail_relayed": 88,
                            "refused_relayed": 17 } },
     "http": { "pass": 4412, "allow": 0, "block": 918, "response_bytes": 148223904,
-              "refused": 3 },
+              "refused_claim": 3, "refused_destination": 11 },
     "events_dropped": 0,
     "swr": { "enqueued": 12044, "deduplicated": 3311, "dropped": 0,
              "completed": 8702, "failed": 31 },

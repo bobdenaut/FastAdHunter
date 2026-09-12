@@ -24,8 +24,14 @@ export function BackpressureCard({ telemetry }: { telemetry: Telemetry | null })
         <div class="kv">
           <span>events dropped — shed, both pipelines</span>
           <span class="mono num">{counters.events_dropped.toLocaleString()}</span>
-          <span>HTTP requests refused by egress policy</span>
-          <span class="mono num">{counters.http.refused.toLocaleString()}</span>
+          <span>HTTP requests refused — unusable Host</span>
+          <span class="mono num">
+            {counters.http.refused_claim.toLocaleString()}
+          </span>
+          <span>HTTP requests refused — egress policy</span>
+          <span class="mono num">
+            {counters.http.refused_destination.toLocaleString()}
+          </span>
           <span>SWR refreshes dropped</span>
           <span class="mono num">{counters.swr.dropped.toLocaleString()}</span>
           <span>SWR refreshes failed</span>
@@ -38,11 +44,17 @@ export function BackpressureCard({ telemetry }: { telemetry: Telemetry | null })
         engine does not make. Non-zero means the event stream shed load, not
         that queries were dropped.
         <span class="footnote-line">
-          Refused is the egress policy stopping a request before any upstream
-          contact — an unusable <span class="mono">Host</span>, or a destination
-          outside the allowed set. Refusals log at{' '}
-          <span class="mono">debug</span>, so this counter is the only standing
-          signal that a LAN client is probing.
+          Both stop a request before any upstream contact, for different
+          reasons, so they are counted apart. An unusable{' '}
+          <span class="mono">Host</span> is the request line itself — missing,
+          duplicated, or a bare IP the proxy will not serve. An egress-policy
+          refusal is the destination the name <em>resolved</em> to falling
+          outside the allowed set. Neither says <em>who</em> or <em>why</em>: a
+          missing or duplicated <span class="mono">Host</span> is usually a
+          broken client, a bare IP usually a probe, and both land on the same
+          figure. Refusals log at <span class="mono">debug</span>, so these
+          counters are the only standing record that a request was refused at
+          all — the reason is in the log line.
         </span>
       </p>
     </Card>

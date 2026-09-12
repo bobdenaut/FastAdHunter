@@ -18,7 +18,9 @@ use fah_model::{AnswerOutcome, QueryEvent, RequestEvent, StaleServe, Verdict};
 
 use crate::histogram::Histogram;
 use crate::ruleset::RulesetSnapshot;
-use crate::snapshot::{CleanupSnapshot, MetricsSnapshot, StageHistogram, SwrSnapshot};
+use crate::snapshot::{
+    CleanupSnapshot, MetricsSnapshot, RefusalSnapshot, StageHistogram, SwrSnapshot,
+};
 use fah_model::UpstreamSample;
 
 pub struct Metrics {
@@ -53,7 +55,8 @@ pub struct Metrics {
     /// Response bytes relayed downstream — the figure that makes "a blocked
     /// request ships nothing" visible as a trend rather than as an assertion.
     pub(crate) response_bytes: AtomicU64,
-    pub(crate) requests_refused: AtomicU64,
+    pub(crate) requests_refused_claim: AtomicU64,
+    pub(crate) requests_refused_destination: AtomicU64,
     /// Request latency, bucketed the way the DNS one is: a block never touches
     /// the network, so mixing it with a forward would hide the very budget row
     /// (`< 1 ms` for a synthesized block) it exists to prove.
@@ -105,7 +108,8 @@ impl Metrics {
             requests_allow: AtomicU64::new(0),
             requests_block: AtomicU64::new(0),
             response_bytes: AtomicU64::new(0),
-            requests_refused: AtomicU64::new(0),
+            requests_refused_claim: AtomicU64::new(0),
+            requests_refused_destination: AtomicU64::new(0),
             request_duration_block: Histogram::new(),
             request_duration_forward: Histogram::new(),
             dropped_events: AtomicU64::new(0),
@@ -209,8 +213,11 @@ impl Metrics {
         self.dropped_events.store(count, Ordering::Relaxed);
     }
 
-    pub fn set_requests_refused(&self, count: u64) {
-        self.requests_refused.store(count, Ordering::Relaxed);
+    pub fn set_requests_refused(&self, snapshot: RefusalSnapshot) {
+        self.requests_refused_claim
+            .store(snapshot.claim, Ordering::Relaxed);
+        self.requests_refused_destination
+            .store(snapshot.destination, Ordering::Relaxed);
     }
 
     /// Stale-while-refresh counters off `fah_dns::Pipeline::swr_stats()`
@@ -290,7 +297,8 @@ impl Metrics {
                     allow: self.requests_allow.load(Ordering::Relaxed),
                     block: self.requests_block.load(Ordering::Relaxed),
                     response_bytes: self.response_bytes.load(Ordering::Relaxed),
-                    refused: self.requests_refused.load(Ordering::Relaxed),
+                    refused_claim: self.requests_refused_claim.load(Ordering::Relaxed),
+                    refused_destination: self.requests_refused_destination.load(Ordering::Relaxed),
                 },
                 events_dropped: self.dropped_events.load(Ordering::Relaxed),
                 swr: fah_model::SwrCounters {
@@ -761,13 +769,28 @@ mod tests {
     }
 
     #[test]
-    fn the_polled_refusal_count_replaces_the_last_value_on_the_http_counters() {
+    fn the_polled_refusal_counts_replace_the_last_values_on_the_http_counters() {
         let metrics = Metrics::new();
-        assert_eq!(metrics.engine_telemetry().counters.http.refused, 0);
-        metrics.set_requests_refused(138);
-        assert_eq!(metrics.engine_telemetry().counters.http.refused, 138);
-        metrics.set_requests_refused(140);
-        assert_eq!(metrics.engine_telemetry().counters.http.refused, 140);
+        let http = metrics.engine_telemetry().counters.http;
+        assert_eq!((http.refused_claim, http.refused_destination), (0, 0));
+
+        metrics.set_requests_refused(RefusalSnapshot {
+            claim: 138,
+            destination: 7,
+        });
+        let http = metrics.engine_telemetry().counters.http;
+        assert_eq!(
+            (http.refused_claim, http.refused_destination),
+            (138, 7),
+            "each cause lands on its own field, neither summed nor crossed"
+        );
+
+        metrics.set_requests_refused(RefusalSnapshot {
+            claim: 140,
+            destination: 9,
+        });
+        let http = metrics.engine_telemetry().counters.http;
+        assert_eq!((http.refused_claim, http.refused_destination), (140, 9));
     }
 
     #[test]

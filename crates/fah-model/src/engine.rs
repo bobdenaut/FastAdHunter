@@ -154,7 +154,9 @@ pub struct HttpCounters {
     /// nothing" visible as a trend rather than as an assertion.
     pub response_bytes: u64,
     #[serde(default)]
-    pub refused: u64,
+    pub refused_claim: u64,
+    #[serde(default)]
+    pub refused_destination: u64,
 }
 
 /// Stale-while-refresh queue counters (ADR-0005).
@@ -261,11 +263,34 @@ mod tests {
     use super::*;
 
     #[test]
-    fn http_counters_written_before_the_refused_field_still_deserialize() {
+    fn http_counters_written_before_the_refusal_fields_still_deserialize() {
         let json = r#"{"pass":4412,"allow":0,"block":918,"response_bytes":148223904}"#;
         let counters: HttpCounters = serde_json::from_str(json).unwrap();
-        assert_eq!(counters.refused, 0);
+        assert_eq!(counters.refused_claim, 0);
+        assert_eq!(counters.refused_destination, 0);
         assert_eq!(counters.block, 918);
+    }
+
+    #[test]
+    fn a_legacy_aggregate_refused_field_reads_as_zero_because_it_cannot_be_split() {
+        let json = r#"{"pass":4412,"allow":0,"block":918,"response_bytes":148223904,"refused":22}"#;
+        let counters: HttpCounters = serde_json::from_str(json).unwrap();
+        assert_eq!(
+            counters.refused_claim, 0,
+            "the pre-split `refused` was the sum of the two causes and carries \
+             no way back to either, so it is dropped rather than guessed at: a \
+             payload written before this change reads 0, not 22"
+        );
+        assert_eq!(
+            counters.refused_destination, 0,
+            "same for the destination cause — a timeline plotted across the \
+             split shows a step to zero, it does not carry the old total over"
+        );
+        assert_eq!(
+            counters.block, 918,
+            "only the refusal figures are lost; the rest of a legacy payload \
+             still deserializes"
+        );
     }
 
     #[test]

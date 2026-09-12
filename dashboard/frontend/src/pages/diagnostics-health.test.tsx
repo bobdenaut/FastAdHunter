@@ -69,7 +69,14 @@ const TELEMETRY = {
         refused_relayed: 17,
       },
     },
-    http: { pass: 0, allow: 0, block: 0, response_bytes: 0, refused: 3 },
+    http: {
+      pass: 0,
+      allow: 0,
+      block: 0,
+      response_bytes: 0,
+      refused_claim: 3,
+      refused_destination: 0,
+    },
     events_dropped: 0,
     swr: { enqueued: 0, deduplicated: 0, dropped: 0, completed: 0, failed: 31 },
     cache_cleanup: {
@@ -374,7 +381,8 @@ describe('the page', () => {
     const dom = await mountPage('adaptive');
     const text = (dom.textContent ?? '').replace(/\s+/g, ' ');
     expect(text).toContain('events dropped — shed, both pipelines');
-    expect(text).toContain('HTTP requests refused by egress policy');
+    expect(text).toContain('HTTP requests refused — unusable Host3');
+    expect(text).toContain('HTTP requests refused — egress policy0');
     expect(text).toContain('SWR refreshes failed');
   });
 

@@ -790,6 +790,13 @@ fn spawn_event_fanout(
     })
 }
 
+fn refusals_of(proxy: &fah_http::ProxyStats) -> fah_metrics::RefusalSnapshot {
+    fah_metrics::RefusalSnapshot {
+        claim: proxy.refused_claim,
+        destination: proxy.refused_destination,
+    }
+}
+
 /// Refreshes the metrics that are read rather than pushed: the pipeline's
 /// channel-drop counter, per-upstream health and the compiled ruleset's size.
 ///
@@ -817,7 +824,7 @@ fn spawn_telemetry_poll(
             metrics.set_dns_udp_inflight(dns_udp.snapshot());
             if let Some(counters) = proxy_counters.as_ref() {
                 let proxy = counters.snapshot();
-                metrics.set_requests_refused(proxy.refused_claim + proxy.refused_destination);
+                metrics.set_requests_refused(refusals_of(&proxy));
             }
             // Field-by-field rather than a shared type: `fah-dns` and
             // `fah-metrics` are L3 siblings and must not import each other
@@ -1252,6 +1259,32 @@ mod tests {
         assert!(!http_enabled(fah_config::EngineMode::Dns));
         assert!(http_enabled(fah_config::EngineMode::DnsHttp));
         assert!(http_enabled(fah_config::EngineMode::DnsHttpHttps));
+    }
+
+    #[test]
+    fn the_telemetry_poll_publishes_each_proxy_refusal_cause_on_its_own_field() {
+        let counters = fah_http::ProxyCounters::default();
+        for _ in 0..3 {
+            counters
+                .refused_claim
+                .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        }
+        for _ in 0..11 {
+            counters
+                .refused_destination
+                .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        }
+
+        let metrics = fah_metrics::Metrics::new();
+        metrics.set_requests_refused(refusals_of(&counters.snapshot()));
+
+        let http = metrics.engine_telemetry().counters.http;
+        assert_eq!(
+            (http.refused_claim, http.refused_destination),
+            (3, 11),
+            "the hop from ProxyCounters to /telemetry must neither swap the two \
+             causes nor fold them back into one figure"
+        );
     }
 
     fn upstreams(servers: usize, timeout_ms: u32) -> fah_config::DnsUpstreamsConfig {

@@ -82,6 +82,12 @@ pub struct CleanupSnapshot {
     pub last_duration_micros: u64,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct RefusalSnapshot {
+    pub claim: u64,
+    pub destination: u64,
+}
+
 /// One latency stage captured at an instant: cumulative bucket counts (bucket
 /// `i` = observations `<= BUCKETS_SECONDS[i]`), the total `count` (including
 /// the implicit `+Inf` bucket), and the running sum. Cheap to diff into an

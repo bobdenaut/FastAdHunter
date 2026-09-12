@@ -57,6 +57,29 @@ GET {{base}}/telemetry
 # Per-interval history of the same three figures is history.http's
 # `fields=answers_delta`; there is no per-query outcome on any endpoint.
 #
+# counters.http is the proxy's own tally, separate from counters.dns because
+# "queries" has meant DNS questions since p1-08:
+#   pass / allow / block  the URL verdict; sum = requests the proxy served
+#   response_bytes        relayed downstream — makes "a block ships nothing"
+#                         a trend rather than an assertion
+#   refused_claim         the request line itself: a Host that is missing,
+#                         duplicated, malformed, or a bare IP
+#                         ([egress] allow_ip_literal_hosts). All four causes
+#                         land on this one figure
+#   refused_destination   the RESOLVED address fell outside [egress]
+#                         allow_destinations — a public name pointing at
+#                         192.168.x.x is refused here, not by DNS
+# NOT A PARTITION of pass+allow+block, and not symmetric either. refused_claim
+# is taken before the verdict, so it is outside that sum. refused_destination
+# is NOT: the egress check runs after the verdict, and the request was already
+# emitted as pass (status 403, zero bytes). Reading pass as "requests served"
+# overstates it by the number of destination refusals. Neither counter
+# says who or why. refused_claim mixes a broken client (missing, duplicated or
+# malformed Host) with a probe (bare IP); refused_destination mixes a rebind
+# with one of your own devices the proxy is breaking. Refusals log at `debug`,
+# so these two are the only standing record that a refusal happened at all —
+# the cause is in the log line's `reason` field, not in the counter.
+#
 # counters.dns_tcp_connections is the DNS-over-TCP listener's bound in numbers:
 #   active           GAUGE — connections open right now
 #   peak             process-lifetime high-water mark of `active`; the figure
