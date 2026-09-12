@@ -188,18 +188,20 @@ fn warm_pipeline_handles_allocate_a_steady_amount() {
     let (pipeline, _events) = rt.block_on(pipeline_blocking_one_domain(data_dir.path()));
 
     let cases = [
-        ("blocked, inline name", "blocked.example.com."),
+        ("blocked, inline name", "blocked.example.com.", 13),
         (
             "blocked, heap name",
             "a-very-long-subdomain-label-here.blocked.example.com.",
+            19,
         ),
-        ("cache hit, inline name", "example.org."),
+        ("cache hit, inline name", "example.org.", 10),
         (
             "cache hit, heap name",
             "a-very-long-subdomain-label-here.allowed.example.org.",
+            16,
         ),
     ];
-    for (label, name) in cases {
+    for (label, name, ceiling_per_handle) in cases {
         let raw = raw_query(name);
         for _ in 0..HANDLES {
             rt.block_on(pipeline.handle(black_box(&raw), CLIENT, Transport::Udp))
@@ -225,6 +227,11 @@ fn warm_pipeline_handles_allocate_a_steady_amount() {
             measured[1], measured[0],
             "{HANDLES} warm handles ({label}) allocated {} then {}; the pipeline must not accumulate",
             measured[0], measured[1]
+        );
+        assert!(
+            measured[1] <= HANDLES * ceiling_per_handle,
+            "{HANDLES} warm handles ({label}) allocated {}; the ceiling is {ceiling_per_handle} per handle",
+            measured[1]
         );
     }
 }

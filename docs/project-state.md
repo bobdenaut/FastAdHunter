@@ -10,10 +10,10 @@ what is true today.
 
 | | |
 | --- | --- |
-| Branch | `main` at `ad110d8` = `origin/main` = `backup/main`. `alloc-domains/http` merged 2026-09-07 (`e9dac79`, released as 0.3.2 `89aac76`); the branch is 0 commits ahead and can be deleted. Tag `pre-alloc-domain-2026-09-06` = `64be513` stays the rollback point before the allocation domains |
-| Tree | uncommitted on `main`: the F3 close-out — `fah-dns/src/pipeline.rs` borrows the query instead of cloning it, `fah-dns/tests/forward_alloc.rs` gains `warm_pipeline_handles_allocate_a_steady_amount`, [project-risk-inventory.md](code-review/project-risk-inventory.md) moves F3 to §Closed, this file. Awaiting the commit go. Kept out of that commit by owner decision: `.gitignore` (soak-collector `__pycache__/`, `collector.log`) and the untracked `docs/code-review/phase2.6/soak-0.3.4/` capture |
+| Branch | `main` at `07d4d68` = `origin/main` = `backup/main`. `alloc-domains/http` merged 2026-09-07 (`e9dac79`, released as 0.3.2 `89aac76`); the branch is 0 commits ahead and can be deleted. Tag `pre-alloc-domain-2026-09-06` = `64be513` stays the rollback point before the allocation domains |
+| Tree | uncommitted on `main`: the F3 follow-up — `fah-dns/src/qtype.rs` `domain_of` pre-sizes its `String` (1 allocation instead of 2–4 per query, every path), `fah-dns/tests/forward_alloc.rs` gains a per-handle ceiling per case, [f3-name-alloc-attribution.md](code-review/phase2.6/f3-name-alloc-attribution.md) (new), the inventory's F3 entry, this file. Awaiting the commit go. Kept out of that commit by owner decision: `.gitignore` (soak-collector `__pycache__/`, `collector.log`) and the untracked `docs/code-review/phase2.6/soak-0.3.4/` capture |
 | Tests | green on that tree over `ad110d8`: fmt, clippy `-D warnings`, `cargo test --all-features --workspace`; F1/F2/F10 re-verified after the cherry-pick (fah-dns tcp/udp units, the ceiling wiring test, config/metrics/api round-trips, `shutdown_e2e` under `rust:1.96.0` in a Linux container) |
-| Version | 0.3.3 (workspace, since `1c61f9c`), untagged. Newest tags `v0.3.2` (`89aac76`), `pre-alloc-domain-2026-09-06`, `soak-p2.6-11` |
+| Version | 0.3.4 (workspace, since `4e7a6de`), untagged. Newest tags `v0.3.2` (`89aac76`), `pre-alloc-domain-2026-09-06`, `soak-p2.6-11` |
 | Deployed | production on **0.3.3** = `main` at `1c61f9c` (`7d03e95`…`857865d` are plan and docs) — HTTP allocation domains, N=2 (`FAH__RUNTIME__HTTP_RUNTIMES=2` on `fah-env`), `veth1` / `172.17.0.2`, mounts `fah-config,fah-data`. `GET /health` on 2026-09-11 23:13 local answered `0.3.3`, uptime 204 978 s (container start 2026-09-09T11:15Z) |
 | Build ≠ tip | the running container predates the 2026-09-11 `main` commits — F10 stats flush (`32d7776`), F1 TCP bound (`ed28395`), F2 UDP ceiling (`b0b091e`), their close-out (`ad110d8`) — and the strategy removal: it still loses up to 300 s of stats on a stop and has no DNS-over-TCP ceiling. They ship with the next image. **Before that image boots, the router's TOML must say `strategy = "adaptive"`** (it does — the opt-in of 2026-08-25 set it); a config still saying `fallback` refuses to load |
 | Phase | **0–2.6 and 5 closed** (2.6 closed 2026-09-07, all 13 tasks `DONE`; `p2.6-12` reached `main` on 2026-09-11 as the cherry-pick of `fa9451a` — `adaptive` is the only strategy, the `fallback` walk is deleted, a config naming it fails at load). `plan/wip` is empty; phases 3 and 4 are **parked** in `plan/open`, every task `WAITING`. No phase move was made |
@@ -53,7 +53,11 @@ in `counters.tasks_died`; no restart, no exit, `/health` unchanged (see
 instead of cloning it: one allocation per query fewer for names past hickory
 `Name`'s 32 inline label bytes, measured A/B against `0fb8dd0` with the new
 `warm_pipeline_handles_allocate_a_steady_amount` (inventory §Closed).
-F4–F9 and F12 are record-only. N5 (`Semaphore::new` panics above `MAX_PERMITS`; neither
+Committed as `07d4d68`. Its follow-up attributed every remaining per-query
+allocation and pre-sized `domain_of`
+([f3-name-alloc-attribution.md](code-review/phase2.6/f3-name-alloc-attribution.md)):
+13 / 19 / 10 / 16 allocations per handle across blocked and cache-hit paths,
+inline and heap names. F4–F9 and F12 are record-only. N5 (`Semaphore::new` panics above `MAX_PERMITS`; neither
 `max_connections` key has an upper bound) is recorded and excluded by owner
 decision.
 

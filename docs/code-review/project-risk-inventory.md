@@ -206,9 +206,13 @@ and against what.
   `handle` after it is served from the cache and the forwarder never runs in
   a measured batch. Blocked heap-name 1472 → 1408, cache-hit heap-name
   1280 → 1216, one allocation per query; inline names unchanged at 960 and
-  704. The test asserts no accumulation, not an absolute count. Heap names
-  still cost 7–8 more allocations per query than inline names; the exact
-  attribution is not yet broken down — outside F3, record only.
+  704. The test asserts no accumulation and, since the follow-up, a
+  per-handle ceiling. Heap names still cost 7–8 more allocations per query
+  than inline names; every one is attributed in
+  [phase2.6/f3-name-alloc-attribution.md](phase2.6/f3-name-alloc-attribution.md),
+  which also pre-sized `domain_of` (15 / 22 / 11 / 19 → 13 / 19 / 10 / 16
+  per handle). The rest is hickory-internal or required by the response
+  representation — record only.
 
 ## Checked and clean
 
