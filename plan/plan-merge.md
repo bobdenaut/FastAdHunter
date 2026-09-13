@@ -192,8 +192,13 @@ taken **before** the merge, on this machine.
 ```sh
 git worktree add --detach ../fah-main-bench main
 cd ../fah-main-bench
-cargo bench 2>&1 | tee ../fah-bench-main-r1.txt
+for p in fah-common fah-dns fah-http fah-metrics fah-rules fah-stats; do
+  cargo bench -p $p
+done 2>&1 | tee ../fah-bench-main-r1.txt
 ```
+
+Per package, not a bare `cargo bench` — the workspace-wide form does not build
+here. See §Bench coverage for which crates are in and why one is out.
 
 `--detach` is required, not stylistic: the primary checkout already has `main`,
 and git refuses the same branch in two worktrees —
@@ -209,35 +214,45 @@ gives it its own `target/criterion`, which is what keeps the comparison honest:
 there is no way to accidentally A/B against criterion's stored baseline instead
 of real pre-change code (docs/measurement-traps.md).
 
-### Housekeeping — the older worktrees
+### Housekeeping — the older worktrees, removed 2026-09-13
 
-`git worktree list` shows two left from earlier work:
+Two worktrees survived earlier work and were removed as **explicit housekeeping,
+decided and executed separately from the merge**. The reason was disk and the
+confusion of three near-identical checkouts — *not* benchmark quietness. An idle
+worktree is a directory, not a process; it consumes no CPU and cannot perturb a
+measurement.
 
-- `E:/fah-ab-base` at `c220956` — an old A/B experiment, not today's `main`
-- `E:/FastAdHunter-var-h1cap` at `66df219` — the H1-cap diagnostic
+- **`E:/fah-ab-base`** at `c220956`, the F3 follow-up A/B. Clean, its result
+  already written to `docs/code-review/phase2.6/f3-name-alloc-attribution.md`.
+  Removed with nothing lost.
+- **`E:/FastAdHunter-var-h1cap`** at `66df219`, the H1-cap diagnostic. **Held 334
+  uncommitted lines that existed nowhere else** — 252 of them extending
+  `crates/fastadhunter/src/allocator.rs`, which is 99 lines on `main`. Archived
+  first to `E:/var-h1cap-diagnostic-base-66df219.patch` (15.7 KB, verified with
+  `git apply --check --reverse`, base commit in the filename because `git diff`
+  does not record it), then removed with `--force`, which a dirty worktree
+  requires.
 
-Neither is reused here. `fah-ab-base` is close enough to what this step creates
-to be mistaken for it, and it is at the wrong commit — that is the reason to
-remove it, not disk space. Removing them is **explicit housekeeping, not part of
-the merge**: decide it separately, do it separately, so the three objects stay
-distinguishable.
-
-| Worktree | What it is |
-| --- | --- |
-| `fah-ab-base` | old experiment |
-| `FastAdHunter-var-h1cap` | old diagnostic |
-| `fah-main-bench` | the Phase 3 merge baseline |
+What remains is the primary checkout and `fah-main-bench`, the Phase 3 merge
+baseline. The lesson worth keeping: check a worktree for uncommitted work before
+removing it. `git worktree remove` refuses without `--force`, but that refusal is
+the last guard, not the first.
 
 ### Step 0 progress
 
 | STATUS | What's done |
 | --- | --- |
-| WAITING | `.gitignore` and `CLAUDE.md` stashed, tree clean |
-| WAITING | the five measurements recorded; ahead/behind and conflict count compared against §Starting state |
-| WAITING | `phase3-06-pre-main-merge` and `main-pre-phase3-merge` tagged |
-| WAITING | gates green on `main` in the primary checkout |
-| WAITING | `fah-main-bench` worktree created detached; bench round 1 captured |
-| WAITING | the two older worktrees decided — kept or removed, deliberately |
+| DONE | `.gitignore` and `CLAUDE.md` stashed separately; tree clean apart from the deliberately untracked `docs/code-review/phase2.6/soak-0.3.4/` |
+| DONE | measurements recorded 2026-09-13: `main` `ebc46f1`, `phase3-06` `185139b`, merge-base `857865d` unchanged, ahead/behind **22 / 102** (was 18), conflicts **still 16** |
+| DONE | `phase3-06-pre-main-merge` → `185139b`, `main-pre-phase3-merge` → `ebc46f1` |
+| DONE | gates green on `main`: fmt, clippy `-D warnings`, `cargo test --all-features --workspace` all pass, zero failures. The Windows `WSAEACCES` exception did not fire this run |
+| DONE | `fah-main-bench` created detached at `ebc46f1` |
+| DONE | bench round 1 captured — `E:/fah-bench-main-r1.txt`, 54 measurements across the six crates, no failures. A bare `cargo bench` was tried first and failed; see §Bench coverage |
+| DONE | the two older worktrees removed; `var-h1cap`'s 334 uncommitted lines archived to a patch first |
+
+A third stash predates this work — `stash@{2}: phase3-06 project-state Next row`.
+It is not ours and is not touched. Indices shift as ours are popped, so pop by
+message rather than by number.
 
 ## Step 1 — merge `main` into `phase3-06`
 
@@ -579,19 +594,49 @@ Alternate. Running all of one side first and then all of the other lets machine
 drift masquerade as a code difference, which is the whole reason the protocol
 exists. Compare means and ranges across the two versions, never a single pair.
 
+#### Bench coverage
+
+Seven crates carry benchmarks. Six build in the release-style bench profile and
+are the A/B/A/B comparison — verified with `--no-run` on `main` at `ebc46f1`:
+`fah-common`, `fah-dns`, `fah-http`, `fah-metrics`, `fah-rules`, `fah-stats`.
+
+**`fastadhunter/pipeline` is excluded**, because its bench target does not build
+on the known-good `main` baseline. `fastadhunter` holds a dev-dependency on
+`fah-api` with `test-harness` enabled; benches link dev-dependencies; the bench
+profile inherits `release` and so disables `debug_assertions`; and
+`fah-api/src/lib.rs` guards exactly that combination with a `compile_error!`.
+
+**Do not force `debug_assertions` on to make it build.** That measures a
+different binary than the one that ships, which invalidates the comparison it
+was supposed to serve.
+
+F3 stays covered without it, by the allocation tests `forward_alloc.rs` and
+`warm_pipeline_handles_allocate_a_steady_amount`. Both run normally and carry
+ceilings, and F3 was about allocations rather than time.
+
+The build failure is a pre-existing `main` finding, recorded as such. It is not
+caused by this merge and is not fixed by it.
+
+#### Running the rounds
+
 The merged branch is the **primary checkout** — there is no second integration
-worktree; only `main` got one:
+worktree; only `main` got one. Bench per package, in the same order every round:
 
 ```sh
+BENCHED="fah-common fah-dns fah-http fah-metrics fah-rules fah-stats"
+
 cd /e/FastAdHunter
-cargo bench 2>&1 | tee ../fah-bench-merged-r1.txt
+for p in $BENCHED; do cargo bench -p $p; done 2>&1 | tee ../fah-bench-merged-r1.txt
 
 cd ../fah-main-bench
-cargo bench 2>&1 | tee ../fah-bench-main-r2.txt
+for p in $BENCHED; do cargo bench -p $p; done 2>&1 | tee ../fah-bench-main-r2.txt
 
 cd /e/FastAdHunter
-cargo bench 2>&1 | tee ../fah-bench-merged-r2.txt
+for p in $BENCHED; do cargo bench -p $p; done 2>&1 | tee ../fah-bench-merged-r2.txt
 ```
+
+A bare workspace-wide `cargo bench` fails for the reason above, and would take
+the six good crates down with it.
 
 Criterion's own `change:` line compares against whatever ran previously in that
 benchmark directory, not against the other checkout. It is ignored here.
