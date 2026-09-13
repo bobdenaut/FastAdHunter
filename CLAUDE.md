@@ -4,8 +4,12 @@ Guidance for AI agents working in this repository.
 
 ## Working language
 
-The user may write in Romanian (or English). Agents **always respond in
-English**, regardless of the language the user wrote in.
+Agents **respond in Romanian**. The user may write in Romanian or English;
+the reply is Romanian either way.
+
+Written artifacts stay in **English**: documentation, commit messages, code,
+identifiers, API fields and the `docs/code-review/` files. Only the chat
+changes language.
 
 Ignore IDE/markdown-lint diagnostics (MD060, MD028, etc.) silently — do not
 narrate or explain them in chat.
@@ -208,7 +212,10 @@ check" and OOM-killed the live resolver.
 
 1. **Be brief.** Lead with the one-line answer; detail only if asked or if
    omitting it causes a wrong decision. No tables in chat unless comparing
-   numbers that were asked for.
+   numbers that were asked for. **Brief means fewer sentences, not denser
+   ones** — ordinary words, complete sentences, understood on the first read.
+   A sentence that has to be read twice was not made shorter, only harder, and
+   it costs the reader more than the words it saved.
 2. **Challenge, don't accept.** Form an independent judgment before replying and
    lead with it. The failure mode is subtle — opening with validation and burying
    the objection, softening a real disagreement into "you might also consider",
