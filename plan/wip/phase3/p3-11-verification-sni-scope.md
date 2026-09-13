@@ -42,7 +42,20 @@ Carried over from p3-06, unchanged in substance:
   HTTPS section. The owner runs every router command; this task proposes them.
 - **Seven-day soak** on the deployed build, numbers recorded against the budget
   rows. Same shape as the 0.3.4 soak: hourly scheduled task, artefacts under
-  `docs/code-review/phase3/soak-<version>/`.
+  `docs/code-review/phase3/soak-<version>/`. **Precondition below.**
+- Two soak readings that exist only because p3-10's follow-ups landed. Neither
+  is a re-verification — each task proves its own instrument works on the dev
+  box; these are the first readings under real traffic, which is the one thing a
+  dev box cannot produce:
+  - **The DoT connection gauge** (p3-10b) — peak concurrent DoT connections
+    across seven days, and `closed_oversize`. This is the figure the F1
+    follow-up needs to set the final `dns.tcp_max_connections` default
+    (project-state.md §Risk inventory close-out), and it is also p3-10's B2 row
+    on whether `DOT_MAX_CONNECTIONS = 64` covers this house.
+  - **Acceptor death observation** (p3-10c) — whether any of the three
+    acceptors reported an unplanned end during the week. Silence for seven days
+    is the expected result and is worth recording as such; anything else is a
+    finding that outranks the rest of the soak.
 - README operating-modes wording swept if it drifted.
 
 Tooling is current and is not rewritten here: `p3-06-smoke-plan.md` layers 0–3
@@ -74,3 +87,21 @@ sweep, which are p3-10.
 The device half needs the merged build deployed to the RB5009, and that decision
 has not been taken. The dev-box half — budget benches, security suite, e2e and
 smoke layers 0–3 — runs today and does not wait for it.
+
+## Precondition — the soak does not start early
+
+**`p3-10b` and `p3-10c` must both be `DONE` before the seven-day soak begins.**
+Not before this task starts: everything else here, the device rows included,
+runs without them.
+
+The reason is that a soak cannot be repaired afterwards. The traffic is gone.
+
+- Start without **p3-10b** and the week's DoT connections go uncounted, so the
+  final `dns.tcp_max_connections` default would be set from half the traffic
+  with nothing in the artefacts to show the half was missing.
+- Start without **p3-10c** and an acceptor that dies on day three leaves a soak
+  that looks clean and measured nothing after it.
+
+Both are cheap and neither depends on the device. If either slips, the soak
+waits — restarting a seven-day run costs a week, and starting it blind costs the
+same week plus a wrong default.

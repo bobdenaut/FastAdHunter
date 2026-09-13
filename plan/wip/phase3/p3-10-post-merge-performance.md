@@ -259,6 +259,16 @@ the default would be set from half the traffic.
   production code and needs its own approval (§Rules, 1).
 - **Harness:** none. This closes by reading and deciding.
 
+**CLOSED 2026-09-13 — decided: DoT gets its own gauge.** Not shared with TCP,
+not left uncounted. "Uncounted" lost on a cost the options did not name: it
+would make B2's "peak concurrent DoT connections" unmeasurable, since nothing
+else in the binary sees a DoT connection. The counter itself is production code
+and left this task for
+[`p3-10b-dot-connection-gauge.md`](p3-10b-dot-connection-gauge.md), which p3-11
+holds its soak for. Reasoning in
+[`p3-10-track-a-review.md`](../../../docs/code-review/phase3/p3-10-track-a-review.md)
+§Owner decisions.
+
 ### A6 — DoT's connection ceiling is compiled in
 
 `DOT_MAX_CONNECTIONS: usize = 64` is a `const` (`dot.rs:23`) taken as a
@@ -405,6 +415,18 @@ at.
   above, saying what observes that acceptor's unplanned end, or that nothing
   does and why that is acceptable.
 - **Harness:** none to answer it. Any wiring change is production code.
+
+**CLOSED 2026-09-13 — decided: all three report into supervision, never the DNS
+fatal path.** The fatal path lost on blast radius: a dead dashboard acceptor
+would take the resolver down with it. The wiring is production code and left
+this task for
+[`p3-10c-acceptor-death-observation.md`](p3-10c-acceptor-death-observation.md),
+which p3-11 holds its soak for. **What was decided is the destination, not the
+mechanism** — `Supervised` owns its `JoinHandle` while all three handles are
+private and needed by their own `shutdown()`, so that task's plan picks a route
+and justifies it first. Reasoning in
+[`p3-10-track-a-review.md`](../../../docs/code-review/phase3/p3-10-track-a-review.md)
+§Owner decisions.
 
 ### A10 — what `Rotation` changed about shutdown — a question, not a finding
 
@@ -576,14 +598,14 @@ Its LAN transfer pass was **not** a 1 GbE test — the forwarding path caps at
 | Track | STATUS | Note |
 | --- | --- | --- |
 | A1 intercepted-path ceiling | WAITING | harness needed; own go |
-| A2 pool count | WAITING | code read only; the intercepted path's no-pool cost is B1's row and A2 does not wait on it |
-| A3 F3's ceilings cover one transport of four | WAITING | decision, then possibly a test extension |
-| A4 call-site cover for F11 and the refusal split | WAITING | two tests, or a recorded exclusion; own go |
-| A5 DoT connections uncounted | WAITING | decision; matters before the first Phase 3 soak, not the one running |
-| A6 DoT ceiling compiled in | WAITING | records the missing key only; closes by reading. Whether 64 suffices is B2's row, not this item's |
+| A2 pool count | CLOSED | pools = `http_runtimes`, unchanged by the merge, so `8941770`'s benefit is not divided. The intercepted path's no-pool cost is B1's row |
+| A3 extend the ceiling across all four transports | DECIDED, not written | owner 2026-09-13: extend `forward_alloc.rs` to UDP, TCP, DoT and DoH against the same ceiling; prove the invariant rather than record an exclusion. Test work, stays in p3-10, has its go |
+| A4 call-site cover for F11 and the refusal split | DECIDED, not written | owner 2026-09-13: execution, not an exclusion. Each test shown to fail with its wiring removed, then reverted. Test work, stays in p3-10, has its go |
+| A5 DoT connections uncounted | CLOSED | owner 2026-09-13: DoT gets its own gauge. The counter is production code and left for `p3-10b-dot-connection-gauge.md`; p3-11 holds its soak for it |
+| A6 DoT ceiling compiled in | CLOSED | `DOT_MAX_CONNECTIONS = 64` is compile-time only and `[dns.listen]` has no ceiling key. Whether 64 suffices is B2's row |
 | A7 listener counter sets can be transposed | WAITING | the hazard is `TelemetryAdapter::new`'s two positional arguments, not `ProxyCounterSources`, whose inversion is unobservable. One assertion **to be added** to `e2e_https.rs` and then shown to catch the swap; today nothing catches it |
-| A8 DoH / API budget | WAITING | read done: the budget **is** shared, 64 slots for DoH and the dashboard together. Needs the B1 saturation row |
-| A9 three long-lived acceptors lack a failure-observation path | WAITING | DNS reports a listener's death through `fatal_tx`; the HTTP acceptor, the HTTPS acceptor and the API server report nothing. Each is aborted on shutdown but never polled for dying. Decision, not wiring |
-| A10 what `Rotation` changed about shutdown | WAITING | a question to settle by reading, not an established defect |
+| A8 DoH / API budget | CLOSED for the read | the budget **is** shared — one accept loop, one semaphore of 64, permit before `accept()`, `/dns-query` on the same router. The saturation measurement is B1's row and needs the DoH generator |
+| A9 three long-lived acceptors lack a failure-observation path | CLOSED | owner 2026-09-13: all three report into supervision, never the DNS fatal path. The wiring is production code and left for `p3-10c-acceptor-death-observation.md`; what was decided is the destination, not the mechanism |
+| A10 what `Rotation` changed about shutdown | CLOSED | the audit's inference is confirmed — abort no longer closes the domain inboxes, stop rests on the watch alone — with its cause corrected: `Server`'s own unconditional `rotation` field, not `TlsServer`'s copy, so it holds in `http`-only mode too |
 | B1 x86 characterization | WAITING | runnable, and no row waits on an open A item. Five W1 rows, two W2 rows kept as characterization only, and `certs.rs` reporting both. Gaps: `certs.rs` exists but has never been run, the DoT/DoH generator does not exist, the splice-side RSS runner is unverified. The rest have their harnesses |
 | B2 RB5009 sweep | BLOCKED | deploy decision not made; p3-11 owes the dst-nat 443 rule. Workload settled 2026-09-13: the sweep gates on **W1**, and W2 cannot move the N=2 verdict |
