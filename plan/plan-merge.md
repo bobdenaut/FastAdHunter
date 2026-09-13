@@ -87,7 +87,7 @@ git status --short
 git rev-parse main phase3-06
 git merge-base main phase3-06
 git rev-list --left-right --count main...phase3-06
-git merge-tree --write-tree phase3-06 main 2>&1 | grep -c CONFLICT
+git merge-tree --write-tree phase3-06 main
 ```
 
 The last two re-measure what §Starting state recorded on 2026-09-13. **Where
@@ -95,10 +95,15 @@ they disagree, these numbers win** — the table says where this started, not wh
 is true today. A single commit on `main` moves the ahead/behind count, and one
 touching a file the branch also touched moves the conflict count with it.
 
-The dry run leaves the worktree and the index untouched: `merge-tree` reports
-the conflicts a real merge would raise. Despite its name, `--write-tree` writes
-only unreferenced objects into the object store, which garbage collection
-reclaims.
+`merge-tree` is left unpiped on purpose. Its own exit status already answers the
+question — `0` clean, `1` conflicts — and `| grep -c CONFLICT` throws that away
+while substituting grep's, which is `1` in exactly the clean case that should
+read as success. Run it raw and read the `CONFLICT (...)` lines at the end; the
+tree listing above them is not needed.
+
+The dry run leaves the worktree and the index untouched. Despite its name,
+`--write-tree` writes only unreferenced objects into the object store, which
+garbage collection reclaims.
 
 ### Two rollback points, not one
 
