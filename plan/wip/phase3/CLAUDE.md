@@ -22,11 +22,13 @@ validate), verification last.
 | 3 | `p3-03-sni-filtering.md` | Blocked domains die at SNI — no decryption, works for every client | Fable | DONE |
 | 4 | `p3-04-tls-interception.md` | Opt-in per-client MITM feeding the Phase 2 HTTP pipeline (heavy) | Fable | DONE |
 | 5 | `p3-05-dot-doh-listeners.md` | DoT :853 + DoH listeners; Android Private DNS works | Fable | DONE |
-| 6 | `p3-06-phase3-verification.md` | TLS budgets, e2e, RB5009 dst-nat 443 + CA install walkthrough. Probe campaign 2 (post-merge `e0c6071`): `p3-06-testing-plan.md`, gated by `p3-06-smoke-plan.md` layers 0–3 on the dev box first. Campaign 1 superseded — `docs/code-review/phase3/p3-06-testing-results.md` | Fable | AWAITING SOAK |
-| 6b | `p3-06-after-interception-impl.md` | p3-06 follow-up after p3-07…p3-09: probe scripts and smoke/testing plans off the dead `https.interception` key, runbook rows for the migration on the probe and the ADR-0008 device path (525 → exclude → splice), soak watch additions. No campaign re-run, no p3-10 | Fable | WAITING |
+| 6 | `p3-06-phase3-verification.md` | TLS budgets, e2e, RB5009 dst-nat 443 + CA install walkthrough. Probe campaign 2 (post-merge `e0c6071`): `p3-06-testing-plan.md`, gated by `p3-06-smoke-plan.md` layers 0–3 on the dev box first. Campaign 1 superseded — `docs/code-review/phase3/p3-06-testing-results.md`. **PARKED 2026-09-13 — the owner decided not to use the interception code.** This file is written around a full-mode deployment: CA install on a client device, intercepted HTTPS URL blocking, full-mode RAM, the pinned-app spot-check, the 24 h full-mode soak. **Its non-interception arms were not parked with it** — the dst-nat 443 steering, the DoT/DoH and SNI budget rows, the security suite, Private DNS and the deploy guide moved to row 11. Reviving this takes a new decision | Fable | PARKED |
+| 6b | `p3-06-after-interception-impl.md` | p3-06 follow-up after p3-07…p3-09: probe scripts and smoke/testing plans off the dead `https.interception` key, runbook rows for the migration on the probe and the ADR-0008 device path (525 → exclude → splice), soak watch additions. No campaign re-run. **p3-10 now exists** (row 10) and owns the post-merge gaps and the performance characterization; §6 "Not owed" in that task file still reads "A new p3-10 task or test plan" and needs the same amendment. §4 Order items 1–4 and 6 all ran 2026-09-11 (scripts committed `223bf79`, B5–B10 applied, N1/N2/N4 PASS, N3 FAIL filed as a design finding, D1/D2 done) and stand. **PARKED 2026-09-13 — the owner decided not to use the interception code.** All that was left is item 5, N5–N6 inside a full-mode soak, and full mode is interception-on; it has no meaning under that decision. Nothing is expected to flip this, and reviving it takes a new decision | Fable | PARKED |
 | 7 | `p3-07-interception-document.md` | `interception.json` + `GET`/`PUT /api/v1/interception`, atomic swap, one-boot migration (release N), `BASELINE_EXCLUSIONS` deleted — ADR-0008 §Phasing step 1 | Fable | DONE |
 | 8 | `p3-08-client-cert-rejection.md` | Accept-side alert classification: `https` event `status 525` (`ClientCertRejected`); `UnknownCA` and every unclassified failure stay `0` — ADR-0008 step 2 | Fable | DONE |
 | 9 | `p3-09-rejection-view-and-document-editor.md` | Dashboard: rejection view grouped by client and host with an exclude-exact-host action; Interception Document editor — ADR-0008 step 3 | Fable | DONE |
+| 10 | `p3-10-post-merge-performance.md` | Post-merge coverage gaps (Track A, ten items — seven close by a documented decision, A1/A7/A8 only by execution) and Phase 3 performance characterization (Track B: B1 on the x86 dev box, B2 on the RB5009 — BLOCKED on the deploy decision and the p3-06b re-scope). No production code changes; every new harness is its own deliverable | Fable | WAITING |
+| 11 | `p3-11-verification-sni-scope.md` | Phase 3 verification for what actually runs: DNS, plain HTTP, HTTPS filtered at the SNI with no decryption, DoT/DoH. Carries p3-06's non-interception arms — dst-nat 443 and its rollback, SNI/DoT/DoH budget rows, the security suite including "interception disabled ⇒ byte-identical splice", Private DNS, the deploy guide's HTTPS section — plus a **seven-day soak** on the deployed build. The dev-box half runs today; the device half waits on the deploy decision | Fable | WAITING |
 
 ## TASK START / PHASE CONTEXT
 
@@ -142,10 +144,16 @@ When the user explicitly approves fixes from the code review:
 Do not proactively report individual fixes, changed files, test counts, implementation details, or review findings in chat after an approved-fix cycle. That information belongs in the review file.
 
 **Definition of done:** any client gets SNI-level HTTPS blocking with zero
-setup; a managed client with the CA installed gets full URL-level filtering
-inside HTTPS; a phone with Private DNS set to the container resolves over DoT;
-banking/pinned apps keep working (exclusions honored); budgets hold; SECURITY.md
-promises verified (CA key never leaves `/config`, public-only export).
+setup; a phone with Private DNS set to the container resolves over DoT; budgets
+hold; SECURITY.md promises verified (CA key never leaves `/config`, public-only
+export) — and, because it is now a promise rather than a default, that
+interception is off: an empty client scope splices byte-for-byte.
+
+**Interception is not part of done.** The owner decided on 2026-09-13 not to use
+it. The two clauses that depended on it — a managed client with the CA installed
+getting URL-level filtering inside HTTPS, and pinned apps surviving it — were
+removed rather than left as criteria nobody intends to meet. The code ships
+compiled and a later decision restores both, together with p3-06 and p3-06b.
 
 **Key risks:** certificate-pinned apps break under interception (mitigation:
 interception is opt-in per client + `exclude_domains` in the Interception
