@@ -7,29 +7,31 @@ Code read at `93fb85f` (main). Pre-merge comparison against tag
 
 ## Implementation Summary
 
-This pass closes four Track A items, all by reading code. No production code was
-changed, no measurement was taken, no default was altered.
+Two passes so far. The first closed four items by reading code; the second, on
+2026-09-13, wrote the four tests Track A owed. No production code changed in
+either — the local mutations the second pass needed were reverted, and the tree
+is clean.
 
 | Item | Disposition |
 | ---- | ----------- |
+| A1 — the intercepted path has no allocation ceiling | CLOSED — test written, §Execution |
 | A2 — how many hyper pools exist after the merge | CLOSED |
+| A3 — the ceilings cover one transport out of four | CLOSED — test extended, §Execution |
+| A4 — two fixes held by reading, not by a test | CLOSED — tests written, §Execution |
 | A6 — DoT's connection ceiling is compiled in | CLOSED |
+| A7 — the two listener counter sets can be transposed | CLOSED — assertion written, §Execution |
 | A8 — DoH and the API's resource budget | CLOSED for the read; B1 keeps the measurement |
 | A10 — what `Rotation` changed about shutdown | CLOSED — inference CONFIRMED, cause corrected |
 
-Still open in Track A after this pass: **A1** and **A7**, which need code and
-their own approval and have not been started.
+**Track A has nothing open.** A5 and A9 were decided by the owner on 2026-09-13
+and are production code, so they left this task for files of their own:
+**`p3-10b-dot-connection-gauge.md`** and
+**`p3-10c-acceptor-death-observation.md`**, both `WAITING`, both owed before
+p3-11's seven-day soak starts. What remains inside p3-10 is Track B.
 
-**A3, A4, A5 and A9 were decided by the owner on 2026-09-13** — see §Owner
-decisions at the end of this file. None of the four is written yet. A3 and A4
-are test work, stay inside p3-10, and carry their go. A5 and A9 are production
-code and left for task files of their own: **`p3-10b-dot-connection-gauge.md`**
-and **`p3-10c-acceptor-death-observation.md`**, both `WAITING`, both owed before
-p3-11's seven-day soak starts.
-
-Three of these carry a follow-up that is explicitly not theirs: A6's adequacy
-question is a B2 row, A8's saturation measurement is a B1 row, and A10's "does
-it matter" judgement is not made here.
+Three closed items carry a follow-up that is explicitly not theirs: A6's
+adequacy question is a B2 row, A8's saturation measurement is a B1 row, and
+A10's "does it matter" judgement is not made here.
 
 ## A2 — how many hyper pools exist after the merge
 
@@ -420,3 +422,121 @@ merge — exactly where it was.
   handles are private and needed by their own `shutdown()`, and `JoinHandle` is
   not `Clone`. So "put them in `Supervised`" does not typecheck as stated. The
   decision recorded here is the *destination*, not the mechanism.
+
+## Execution — 2026-09-13: the four tests Track A owed
+
+Written against `453637e`, dev box (x86_64, Windows 11). Gates green afterwards:
+`cargo fmt --all -- --check`, `cargo clippy --workspace --all-targets -- -D
+warnings`, `cargo test --all-features --workspace`.
+
+Each test that claims to catch a failure was made to catch it, by breaking the
+thing locally and watching that test — and only that test — fail. Every mutation
+was reverted; `git diff` on production code is empty.
+
+### A1 — an allocation ceiling over the intercepted path
+
+**New: `crates/fah-http/tests/intercept_alloc.rs`.** Shaped like
+`proxy_alloc.rs` — the same counting `GlobalAlloc` over `MiMalloc` — with the
+TLS stack on both legs: an rcgen CA signing the origin's leaf, a `CertStore` CA
+for the minted leaf, and a client whose root store holds **only** the FAH CA.
+
+That last point is the evidence the test measures interception rather than
+splice: if the connection were spliced, the client would see the origin's own
+leaf, signed by a CA it does not trust, and the handshake would fail. It
+succeeds, so FAH minted the leaf and `intercept.rs` ran.
+
+Four batches of 64 warm requests over one keep-alive session inside one TLS
+connection. The ceiling is asserted on the last batch, and the last two batches
+must be equal.
+
+| Case | Allocations per request | Settles |
+| ---- | ----------------------- | ------- |
+| intercepted pass-through GET | 50 | by the third batch (48 → 49.6 → 50 → 50) |
+| intercepted blocked script | 25 | flat from the first |
+| intercepted blocked document | 38 | flat from the first |
+
+The pass-through case is the reason for four batches rather than
+`proxy_alloc.rs`'s two: with two, the equality assertion would have compared a
+warming number against a settled one and failed on a healthy build.
+
+For scale, the plain proxy's own ceilings are 51 / 20 / 32 for the comparable
+cases. The intercepted path is not dramatically more expensive per request once
+the session is up; its different cost is the per-connection upstream handshake,
+which this test does not measure and which is B1's row.
+
+### A3 — the ceilings extended to all four transports
+
+**Changed: `crates/fah-dns/tests/forward_alloc.rs`.** Both pipeline tests loop
+every case over a new `TRANSPORTS` constant — `Udp`, `Tcp`, `Dot`, `Doh` —
+against the ceilings that were already there. No transport was given a looser
+number. `warm_pipeline_misses_stay_under_the_ceiling` needed four times as many
+unique names so each transport gets fresh misses rather than the previous
+transport's cache.
+
+The four deterministic cases allocate identically on all four transports (832,
+1216, 640 and 1024 over 64 handles). That is the invariant made explicit:
+`handle` runs after framing, so the transport has nothing left to influence.
+The miss cases vary by a few allocations between runs on every transport
+equally, which is the allocator noise the ceilings were sized for.
+
+### A4 — cover for the two call sites held by reading
+
+**New: `crates/fastadhunter/tests/wiring.rs`,** three tests. Each was proven by
+deleting one line in `main.rs`, running, and restoring:
+
+| Mutation | Result |
+| -------- | ------ |
+| drop `_ = supervision.tick() => self.reap_dead_tasks().await` | only `the_run_loop_still_reaps_supervised_tasks` fails |
+| drop `deaths.extend(supervisor::reap(&mut self.stats_schedulers).await)` | only `reaping_covers_both_supervised_collections` fails |
+| drop `metrics.set_requests_refused(refusals)` | only `the_telemetry_poll_still_publishes_the_refusal_split` fails |
+
+**Correction to the item as written.** A4 named `main.rs:1140` **and `:1598`**
+as the two call sites feeding the refusal split. `:1598` is not a call site —
+it is inside `#[cfg(test)] mod tests`, which opens at `:1564`. There is one
+production call site. The unit test that sits at `:1598` exercises
+`refusals_of` and `set_requests_refused` directly and would stay green if the
+poll loop stopped calling either, which is precisely the gap A4 identified.
+
+**What these tests are, and are not.** They read `main.rs` as source and assert
+the wiring is present, the way `crates/fastadhunter/tests/layering.rs` reads the
+manifests. They catch a deletion. They do **not** catch a behavioural
+regression — a `reap()` that silently stops reaping would pass all three.
+
+The behavioural test is not available from here. The integration harness runs
+the real binary as a child process
+(`crates/fastadhunter/tests/common/mod.rs:168`), so no test can reach in, kill a
+supervised task and watch `record_task_death` rise. Closing that properly needs
+a production seam, which this task does not own. Recorded as a known limit of
+the cover, not as a second gap: the failure A4 was about is a future edit
+removing the wiring, and that is the failure these tests catch.
+
+### A7 — an assertion that tells the two listeners apart
+
+**Changed: `crates/fastadhunter/tests/e2e_https.rs`.** The scenario now sends
+one plain-HTTP request to the HTTPS port before reading `/api/v1/telemetry`, and
+asserts `non_tls == 1` under `listeners.https` and `== 0` under
+`listeners.http`.
+
+`non_tls` is the discriminator because the plain listener cannot produce it at
+all: only `https.rs:153` raises it, on the path that reads a ClientHello. The
+counter is incremented before the connection is dropped, so the probe's
+`read_to_end` returning is proof the increment already happened — no sleep, no
+retry.
+
+**Shown to discriminate.** With the two arguments swapped at
+`main.rs:618-622`, the HTTPS half of the telemetry document reads all zeros and
+the first assertion fails:
+
+```
+assertion `left == right` failed: https: the plain-HTTP probe is the one event
+only the HTTPS listener can produce
+  left: 0
+ right: 1
+```
+
+The swap was reverted.
+
+`handshakes_completed` was the other candidate and was rejected: only
+`intercept.rs:158` raises it, so it stays 0 on the shipped splice path. An
+assertion built on it would be blind in exactly the build that ships — the
+mistake A7 exists to avoid.

@@ -18,6 +18,13 @@ use mimalloc::MiMalloc;
 use tokio::net::UdpSocket;
 use tokio::sync::mpsc;
 
+const TRANSPORTS: [Transport; 4] = [
+    Transport::Udp,
+    Transport::Tcp,
+    Transport::Dot,
+    Transport::Doh,
+];
+
 static ALLOCATIONS: AtomicUsize = AtomicUsize::new(0);
 static BYTES: AtomicUsize = AtomicUsize::new(0);
 static SERIAL: Mutex<()> = Mutex::new(());
@@ -228,36 +235,38 @@ fn warm_pipeline_handles_allocate_a_steady_amount() {
     ];
     for (label, name, ceiling_per_handle) in cases {
         let raw = raw_query(name);
-        for _ in 0..HANDLES {
-            rt.block_on(pipeline.handle(black_box(&raw), CLIENT, Transport::Udp))
-                .unwrap();
-        }
-
-        let mut measured = Vec::new();
-        for _ in 0..2 {
-            let before = ALLOCATIONS.load(Ordering::Relaxed);
+        for transport in TRANSPORTS {
             for _ in 0..HANDLES {
-                rt.block_on(pipeline.handle(black_box(&raw), CLIENT, Transport::Udp))
+                rt.block_on(pipeline.handle(black_box(&raw), CLIENT, transport))
                     .unwrap();
             }
-            measured.push(ALLOCATIONS.load(Ordering::Relaxed) - before);
+
+            let mut measured = Vec::new();
+            for _ in 0..2 {
+                let before = ALLOCATIONS.load(Ordering::Relaxed);
+                for _ in 0..HANDLES {
+                    rt.block_on(pipeline.handle(black_box(&raw), CLIENT, transport))
+                        .unwrap();
+                }
+                measured.push(ALLOCATIONS.load(Ordering::Relaxed) - before);
+            }
+
+            println!(
+                "handle/allocations over {HANDLES} warm handles ({label}, {transport:?}): first batch {} second batch {}",
+                measured[0], measured[1]
+            );
+
+            assert_eq!(
+                measured[1], measured[0],
+                "{HANDLES} warm handles ({label}, {transport:?}) allocated {} then {}; the pipeline must not accumulate",
+                measured[0], measured[1]
+            );
+            assert!(
+                measured[1] <= HANDLES * ceiling_per_handle,
+                "{HANDLES} warm handles ({label}, {transport:?}) allocated {}; the ceiling is {ceiling_per_handle} per handle",
+                measured[1]
+            );
         }
-
-        println!(
-            "handle/allocations over {HANDLES} warm handles ({label}): first batch {} second batch {}",
-            measured[0], measured[1]
-        );
-
-        assert_eq!(
-            measured[1], measured[0],
-            "{HANDLES} warm handles ({label}) allocated {} then {}; the pipeline must not accumulate",
-            measured[0], measured[1]
-        );
-        assert!(
-            measured[1] <= HANDLES * ceiling_per_handle,
-            "{HANDLES} warm handles ({label}) allocated {}; the ceiling is {ceiling_per_handle} per handle",
-            measured[1]
-        );
     }
 }
 
@@ -285,44 +294,46 @@ fn warm_pipeline_misses_stay_under_the_ceiling() {
     ];
     let mut results = Vec::new();
     for (label, pattern, ceiling_per_handle) in cases {
-        let raws: Vec<Vec<u8>> = (0..HANDLES * 3)
+        let raws: Vec<Vec<u8>> = (0..HANDLES * 3 * TRANSPORTS.len())
             .map(|i| raw_query(&pattern.replace("{i:04}", &format!("{i:04}"))))
             .collect();
         let mut next = raws.iter();
-        for _ in 0..HANDLES {
-            rt.block_on(pipeline.handle(black_box(next.next().unwrap()), CLIENT, Transport::Udp))
-                .unwrap();
-        }
-
-        let mut measured = Vec::new();
-        let mut bytes = Vec::new();
-        for _ in 0..2 {
-            let before = ALLOCATIONS.load(Ordering::Relaxed);
-            let bytes_before = BYTES.load(Ordering::Relaxed);
+        for transport in TRANSPORTS {
             for _ in 0..HANDLES {
-                rt.block_on(pipeline.handle(
-                    black_box(next.next().unwrap()),
-                    CLIENT,
-                    Transport::Udp,
-                ))
-                .unwrap();
+                rt.block_on(pipeline.handle(black_box(next.next().unwrap()), CLIENT, transport))
+                    .unwrap();
             }
-            measured.push(ALLOCATIONS.load(Ordering::Relaxed) - before);
-            bytes.push(BYTES.load(Ordering::Relaxed) - bytes_before);
-        }
 
-        println!(
-            "handle/allocations over {HANDLES} warm misses ({label}): first batch {} ({} bytes) second batch {} ({} bytes)",
-            measured[0], bytes[0], measured[1], bytes[1]
-        );
-        results.push((label, ceiling_per_handle, measured));
+            let mut measured = Vec::new();
+            let mut bytes = Vec::new();
+            for _ in 0..2 {
+                let before = ALLOCATIONS.load(Ordering::Relaxed);
+                let bytes_before = BYTES.load(Ordering::Relaxed);
+                for _ in 0..HANDLES {
+                    rt.block_on(pipeline.handle(
+                        black_box(next.next().unwrap()),
+                        CLIENT,
+                        transport,
+                    ))
+                    .unwrap();
+                }
+                measured.push(ALLOCATIONS.load(Ordering::Relaxed) - before);
+                bytes.push(BYTES.load(Ordering::Relaxed) - bytes_before);
+            }
+
+            println!(
+                "handle/allocations over {HANDLES} warm misses ({label}, {transport:?}): first batch {} ({} bytes) second batch {} ({} bytes)",
+                measured[0], bytes[0], measured[1], bytes[1]
+            );
+            results.push((label, transport, ceiling_per_handle, measured));
+        }
     }
 
-    for (label, ceiling_per_handle, measured) in results {
+    for (label, transport, ceiling_per_handle, measured) in results {
         for allocations in measured {
             assert!(
                 allocations <= HANDLES * ceiling_per_handle,
-                "{HANDLES} warm misses ({label}) allocated {allocations}; the ceiling is {ceiling_per_handle} per handle"
+                "{HANDLES} warm misses ({label}, {transport:?}) allocated {allocations}; the ceiling is {ceiling_per_handle} per handle"
             );
         }
     }

@@ -272,6 +272,13 @@ async fn full_mode_blocks_at_every_layer() {
         "the DoT listener reports itself on the certificates document: {certificates}"
     );
 
+    let non_tls = raw_probe(https, b"GET / HTTP/1.1\r\nHost: plain.invalid\r\n\r\n").await;
+    assert!(
+        non_tls.is_empty(),
+        "plain HTTP on the HTTPS port is closed, never answered: {} bytes",
+        non_tls.len()
+    );
+
     let telemetry = get_json(
         &instance.http,
         &instance.base,
@@ -279,6 +286,24 @@ async fn full_mode_blocks_at_every_layer() {
         "/api/v1/telemetry",
     )
     .await;
+    assert_eq!(
+        telemetry["listeners"]["https"]["non_tls"]
+            .as_u64()
+            .unwrap_or_default(),
+        1,
+        "https: the plain-HTTP probe is the one event only the HTTPS listener can produce — \
+         the plain listener never reads a ClientHello: {}",
+        telemetry["listeners"]["https"]
+    );
+    assert_eq!(
+        telemetry["listeners"]["http"]["non_tls"]
+            .as_u64()
+            .unwrap_or_default(),
+        0,
+        "http: non_tls belongs to the HTTPS listener alone. A non-zero value here means the \
+         two counter sets reached /api/v1/telemetry transposed: {}",
+        telemetry["listeners"]["http"]
+    );
     for listener in ["http", "https"] {
         let counters = &telemetry["listeners"][listener];
         let (connections, requests, blocked) = (

@@ -154,6 +154,13 @@ intercepted path. The reapplication is unverified by any test.
   shaped like `proxy_alloc.rs`.
 - **Accepted when:** the test exists, carries a ceiling, and passes.
 - **Harness:** new. Its own go.
+- **Closed 2026-09-13.** `crates/fah-http/tests/intercept_alloc.rs`. Four
+  batches of 64 warm requests over one intercepted keep-alive session; the
+  ceiling is asserted on the last batch and the last two must be equal. The
+  pass-through case settles by the third batch (48, 49.6, 50, 50 per request),
+  the two blocked cases are flat from the first (25 and 38). Evidence that the
+  session really is intercepted rather than spliced: the client's root store
+  holds only the FAH CA, so a completed handshake means FAH minted the leaf.
 
 An earlier draft offered a second way to close this — "unless the read shows the
 intercepted path never reaches `judge`/`emit`". That read is done and the
@@ -208,6 +215,13 @@ widened the blind spot rather than creating it.
   written down naming every transport it covers.
 - **Harness:** an extension of an existing test, if the decision goes that way.
   Its own go.
+- **Closed 2026-09-13.** Both `forward_alloc.rs` tests loop every case over
+  `TRANSPORTS`, against the ceilings that were already there — no transport got
+  its own, looser number. `warm_pipeline_misses_stay_under_the_ceiling` needed
+  four times the unique names so each transport gets fresh misses. The four
+  deterministic cases allocate the same on all four transports (832, 1216, 640,
+  1024 over 64 handles), which is the invariant stated rather than assumed:
+  `handle` runs after framing, so the transport cannot reach it.
 
 ### A4 — two fixes are held by reading, not by a test
 
@@ -222,8 +236,11 @@ test green.
   schedulers unsupervised and the suite green.
 - **The refusal-counter split** (`28c751d`). `engine.http.refused_*` and
   `listeners.*.refused_*` are two views of one source, fed by
-  `set_requests_refused` at `main.rs:1140` and `:1598`. No test asserts either
-  call site exists.
+  `set_requests_refused` at `main.rs:1140`. No test asserts that call site
+  exists. (This item first named `:1598` as a second call site. It is not one —
+  it sits inside `#[cfg(test)] mod tests`, which opens at `:1564`. There is one
+  production call site, and the unit test beside it exercises `refusals_of`
+  without covering the poll loop that feeds it.)
 
 Neither has ever run on the RB5009: both are 2026-09-12 commits and the
 deployed build booted 2026-09-12 01:02 local, hours earlier.
@@ -234,6 +251,20 @@ deployed build booted 2026-09-12 01:02 local, hours earlier.
   verify that by removing it locally, not by assuming — or the exclusion is
   written down with its reason.
 - **Harness:** new tests. Their own go.
+- **Closed 2026-09-13.** `crates/fastadhunter/tests/wiring.rs`, three tests:
+  the run loop still calls `reap_dead_tasks`, that function still reaps both
+  collections and still counts through `record_task_death`, and the telemetry
+  poll still calls `set_requests_refused` while reading both listeners. Each
+  was proven by deleting its own line in `main.rs`, watching exactly that test
+  fail, and restoring the file.
+- **What these tests are, and are not.** They read `main.rs` as source and
+  assert the wiring is present, the way `crates/fastadhunter/tests/layering.rs`
+  reads the manifests. They catch a deletion; they do not catch a behavioural
+  regression. The behavioural test is not available here: the integration
+  harness runs the real binary as a child process
+  (`crates/fastadhunter/tests/common/mod.rs:168`), so no test can kill a
+  supervised task and watch the count rise. Closing the gap properly needs a
+  production seam, which is out of scope for this task.
 
 ### A5 — DoT connections are not counted
 
@@ -340,6 +371,16 @@ already in the test; what is missing is one assertion that discriminates.
   it fail. A test assumed to be a net is F7 again.
 - **Harness:** none new. `e2e_https.rs` already fetches the telemetry document
   and drives both listeners.
+- **Closed 2026-09-13.** The discriminating value is `non_tls`. The scenario
+  now sends one plain-HTTP request to the HTTPS port, which `https.rs:153`
+  classifies and closes; the plain listener never reads a ClientHello, so it
+  cannot produce that counter at all. The test asserts `non_tls == 1` under
+  `listeners.https` and `== 0` under `listeners.http`. Shown to discriminate:
+  with the two arguments swapped at `main.rs:618-622` the first assertion fails
+  with the HTTPS document reading all zeros. The swap was reverted.
+- `handshakes_completed` was the other candidate and was rejected: only
+  `intercept.rs:158` raises it, so it stays 0 on the shipped splice path and
+  the assertion would be blind in exactly the build that ships.
 
 Recorded as a hardening option, **not** owed by p3-10: giving the two
 parameters distinct types makes the transposition a compile error instead of a
@@ -560,7 +601,7 @@ Its LAN transfer pass was **not** a 1 GbE test — the forwarding path caps at
 | `crates/fah-certs/benches/certs.rs` | **new on the branch** — added by `3337aab`, the p3-01 commit — and never run, because it sits outside the merge plan's six-crate bench loop. Not an old bench nobody bothered with: a Phase 3 bench that arrived with the merge and has had no round at all |
 | `crates/fastadhunter/benches/pipeline.rs` | exists, **cannot be built**. `fastadhunter` dev-depends on `fah-api` with `test-harness`; benches link dev-dependencies; the bench profile inherits `release` and drops `debug_assertions`; `fah-api/src/lib.rs` guards that pair with a `compile_error!`. So the DNS hot path has no Criterion coverage at all, and has not had any — this predates the merge and is recorded nowhere else. It is a constraint on Track B, not a row in it: an unbuildable bench feeds no decision. **Do not force `debug_assertions` on to make it build** — that measures a binary that does not ship |
 | DoT / DoH load generator | **does not exist.** Writing one is a deliverable with its own go, not a step in a run |
-| Intercepted-path allocation ceiling (A1) | **does not exist** |
+| Intercepted-path allocation ceiling (A1) | **written 2026-09-13** — `crates/fah-http/tests/intercept_alloc.rs`. Shaped like `proxy_alloc.rs`, with the TLS stack on both legs: an rcgen-signed origin the proxy trusts, a `CertStore` CA, and a client that trusts only that CA |
 | RSS burst → idle → collect procedure for the splice path (W1) | no runner; the plain-HTTP procedure exists in the soak tooling and may be reusable — unverified |
 
 ## Rules this task runs under
@@ -597,13 +638,13 @@ Its LAN transfer pass was **not** a 1 GbE test — the forwarding path caps at
 
 | Track | STATUS | Note |
 | --- | --- | --- |
-| A1 intercepted-path ceiling | WAITING | harness needed; own go |
+| A1 intercepted-path ceiling | CLOSED | written 2026-09-13: `crates/fah-http/tests/intercept_alloc.rs`, a counting allocator over a real intercepted session (client trusts the FAH CA only, so a completed handshake proves the leaf was minted). Ceilings per request: pass-through 50, blocked script 25, blocked document 38, and the last two batches must be equal so the path cannot creep |
 | A2 pool count | CLOSED | pools = `http_runtimes`, unchanged by the merge, so `8941770`'s benefit is not divided. The intercepted path's no-pool cost is B1's row |
-| A3 extend the ceiling across all four transports | DECIDED, not written | owner 2026-09-13: extend `forward_alloc.rs` to UDP, TCP, DoT and DoH against the same ceiling; prove the invariant rather than record an exclusion. Test work, stays in p3-10, has its go |
-| A4 call-site cover for F11 and the refusal split | DECIDED, not written | owner 2026-09-13: execution, not an exclusion. Each test shown to fail with its wiring removed, then reverted. Test work, stays in p3-10, has its go |
+| A3 extend the ceiling across all four transports | CLOSED | written 2026-09-13: both `forward_alloc.rs` tests now run every case against `TRANSPORTS`, the same ceilings for all four. The deterministic cases allocate identically on UDP, TCP, DoT and DoH, so the invariant is proven rather than assumed |
+| A4 call-site cover for F11 and the refusal split | CLOSED | written 2026-09-13: `crates/fastadhunter/tests/wiring.rs`, three tests, each shown to fail with its own wiring removed and then reverted. **One correction to the item above:** `main.rs:1598` is not a second call site — it sits inside `#[cfg(test)] mod tests` (opens at `:1564`). The refusal split has one production call site, `:1140` |
 | A5 DoT connections uncounted | CLOSED | owner 2026-09-13: DoT gets its own gauge. The counter is production code and left for `p3-10b-dot-connection-gauge.md`; p3-11 holds its soak for it |
 | A6 DoT ceiling compiled in | CLOSED | `DOT_MAX_CONNECTIONS = 64` is compile-time only and `[dns.listen]` has no ceiling key. Whether 64 suffices is B2's row |
-| A7 listener counter sets can be transposed | WAITING | the hazard is `TelemetryAdapter::new`'s two positional arguments, not `ProxyCounterSources`, whose inversion is unobservable. One assertion **to be added** to `e2e_https.rs` and then shown to catch the swap; today nothing catches it |
+| A7 listener counter sets can be transposed | CLOSED | written 2026-09-13: the hazard is `TelemetryAdapter::new`'s two positional arguments, not `ProxyCounterSources`, whose inversion is unobservable. `e2e_https.rs` now drives plain HTTP at the HTTPS port and asserts `non_tls` is 1 under `listeners.https` and 0 under `listeners.http` — a value the plain listener cannot produce. Swapping the two arguments at `main.rs:618-622` makes it fail; the swap was reverted |
 | A8 DoH / API budget | CLOSED for the read | the budget **is** shared — one accept loop, one semaphore of 64, permit before `accept()`, `/dns-query` on the same router. The saturation measurement is B1's row and needs the DoH generator |
 | A9 three long-lived acceptors lack a failure-observation path | CLOSED | owner 2026-09-13: all three report into supervision, never the DNS fatal path. The wiring is production code and left for `p3-10c-acceptor-death-observation.md`; what was decided is the destination, not the mechanism |
 | A10 what `Rotation` changed about shutdown | CLOSED | the audit's inference is confirmed — abort no longer closes the domain inboxes, stop rests on the watch alone — with its cause corrected: `Server`'s own unconditional `rotation` field, not `TlsServer`'s copy, so it holds in `http`-only mode too |
