@@ -478,7 +478,7 @@ recorded above. The rows exist so the merge cannot quietly contradict them.
 | STATUS | What's done |
 | --- | --- |
 | DONE | the three decisions taken and written down, 2026-09-13 |
-| WAITING | merged tree checked against them: DoT/DoH defaults still `true`, interception scope still empty |
+| DONE | merged tree checked against the three decisions. **DoT/DoH:** `default_enabled()` still returns `true` at `crates/fah-config/src/schema/dns/listen.rs:38`, so a merged build binds `:853` and serves `/dns-query` with no config. **Interception scope:** empty by construction, and the TOML is not the authority — p3-07 made `/config/interception.json` the source of truth. With that file absent, `interception_store.rs:104-127` builds the document from `[https.interception]` via `clients.unwrap_or_default()`, which is an empty `Vec` because `InterceptionConfig::clients` is `Option<Vec<String>>` defaulting to `None` (`schema/https.rs:33-38`); `scope.intercepts()` is `self.clients.iter().any(...)` (`fah-rules/src/interception.rs:152-154`), false for every IP over an empty list, so `interception_for` returns `None` (`fah-http/src/https.rs:100-104`) and every session splices. **`engine.mode`:** not checkable from code — it is a deployment setting in the router's TOML, which no merge can change. Confirm at deploy with `GET /api/v1/config`, out of scope here |
 
 ## Step 4 — verification on `phase3-06`
 
@@ -535,11 +535,11 @@ as a failure.
 cannot be lost — and they are not sufficient. They exercise `reap()` directly,
 so they stay green even if the merge drops the call site in the conflicting
 `main.rs`. Verify the wiring by reading it:
-- `supervision.tick() => self.reap_dead_tasks()` still on the select arm
-  (`main.rs:623`)
+- `_ = supervision.tick() => self.reap_dead_tasks().await` still on the
+  select arm (`main.rs:769`)
 - `reap_dead_tasks` still reaps **both** `self.tasks` and
-  `self.stats_schedulers`. Keeping one and dropping the other leaves the stats
-  schedulers unsupervised and every test passing.
+  `self.stats_schedulers` (`main.rs:775-776`). Keeping one and dropping the
+  other leaves the stats schedulers unsupervised and every test passing.
 
 **H1-H3/D1 — allocation removals**
 - `crates/fah-http/tests/proxy_alloc.rs`
@@ -667,11 +667,14 @@ Phase 3's own benches — `fah-certs/benches/certs.rs`, handshake and TLS costs 
 have no counterpart on `main`. Record them, do not compare them.
 
 Run every round on the same machine in the same sitting; thermal state moves
-results more than most changes do. Then clean up:
+results more than most changes do.
 
-```sh
-git worktree remove ../fah-main-bench
-```
+**The worktree is not removed at the end.** By the owner's decision of
+2026-09-13 it stays detached at `ebc46f1` as the frozen pre-Phase-3 baseline
+for `plan/wip/phase3/p3-10-post-merge-performance.md`. Rebuilding it later
+would produce a different baseline, not the same one. Do not switch its
+checkout, do not move it onto a branch, do not delete its `target/`; any
+change of SHA or checkout gets written down.
 
 **Known-good note:** `cargo test -p fastadhunter --test e2e` fails on the
 Windows dev box with `WSAEACCES` (10013) when WinNAT reserves the ephemeral port
@@ -681,24 +684,24 @@ block. Environmental — not a merge defect.
 
 | STATUS | What's done |
 | --- | --- |
-| WAITING | `cargo fmt --all -- --check` |
-| WAITING | `cargo clippy --workspace --all-targets -- -D warnings` |
-| WAITING | `cargo test --all-features --workspace` |
-| WAITING | F1 — three tests read and passing |
-| WAITING | F2 — ignored harness run explicitly; its printed figures read (it asserts nothing) |
-| WAITING | F3 — ceilings and `warm_pipeline_handles_allocate_a_steady_amount` |
-| WAITING | F10 — `shutdown_e2e.rs` |
-| WAITING | F11 — wiring read in `main.rs`, **both** collections still reaped |
-| WAITING | H1-H3/D1 — `proxy_alloc.rs` |
-| WAITING | `8941770` — both reaper tests |
-| WAITING | adaptive — five ignored scenarios run serially |
-| WAITING | Phase 3 surface — interception, security, sni, e2e_https, migration |
-| WAITING | dashboard — `npm run typecheck` and `npm test` |
-| WAITING | bench round 2 (merged R1) |
-| WAITING | bench round 3 (`main` R2) |
-| WAITING | bench round 4 (merged R2) |
-| WAITING | means and ranges compared against `main`; nothing past the 10% gate |
-| WAITING | `fah-main-bench` removed |
+| DONE | `cargo fmt --all -- --check` — clean, 2026-09-13 on `46c14f7` |
+| DONE | `cargo clippy --workspace --all-targets --message-format=short -- -D warnings` — clean |
+| DONE | `cargo test --all-features --workspace` — 58 suites, 0 failed. `--all-features` matters: it is what lets `e2e_https` run full mode rather than the fail-closed path |
+| DONE | F1 — `a_length_prefix_over_the_bound_closes_the_connection_and_counts` and `the_connection_ceiling_holds_the_next_accept_until_one_closes` in `fah-dns` unit, `the_configured_tcp_and_udp_ceilings_reach_the_listeners` in `server_integration` (12/12) — all three ran and passed |
+| DONE | F2 — `udp_inflight_cost_under_upstream_outage` run explicitly with `--ignored --nocapture`, 118 s. It asserts nothing, so the figures are the result, and all five scenarios ran **uncapped**: the harness never sets `udp_max_inflight` and the default is 0, which `UdpInflightGauge::new` turns into `None` (`fah-dns/src/udp.rs:28-40`). So this is a sizing measurement, not a ceiling proof. Per-in-flight cost is ~8 KiB and flat — `heap_per_inflight_bytes` 7 955 / 7 979 / 8 050 / 8 007 / 8 022 across `adaptive2` at 100/300/1000/3000 and `adaptive4` at 1000 — so the cost per outstanding query does not grow with rate. `peak_inflight` tracks `expected_inflight` (165/161, 490/487, 821/806, 3 248/3 241) except at rate 3000, where it overshoots (3 728 against 2 409). `rss_growth_mib` 1/3/4/27/5, `allocs_per_query` 33-67. The control rows divide by an `expected_inflight` of 1 and 4, so their `heap_per_inflight_bytes` (266 548, 34 837) is an artefact, not a measurement. The default asymmetry this exposes is recorded as F8, not fixed here |
+| DONE | F3 — `forward_alloc.rs` 3/3 (identical to main, per Step 1) and `warm_pipeline_handles_allocate_a_steady_amount` passing |
+| DONE | F10 — `shutdown_e2e.rs` 1/1 |
+| DONE | F11 — wiring read: `_ = supervision.tick() => self.reap_dead_tasks().await` at `main.rs:769` (the plan said 623; the merge moved it), and `reap_dead_tasks` reaps both `self.tasks` and `self.stats_schedulers` at `main.rs:775-776` |
+| DONE | H1-H3/D1 — `proxy_alloc.rs` 1/1 |
+| DONE | `8941770` — `an_idle_upstream_connection_is_reaped_after_the_idle_timeout` and `an_active_upstream_connection_is_reused_across_requests` both passing |
+| DONE | adaptive — the five ignored scenarios were run serially at Step 2, not re-run here: 5 of 6 pass, and `b5_recovery_and_flapping` is not evidence in either direction. A re-run produces no new evidence — F7 in `docs/code-review/phase3/main-phase3-integration-audit.md` explains why by arithmetic |
+| DONE | Phase 3 surface, first run against post-F1 code — `interception.rs` 45/45, `security_phase3.rs` 7/7, `sni.rs` 11/11, `e2e_https.rs` 3/3, `interception_migration.rs` 6/6 |
+| DONE | dashboard — `npm run typecheck` clean, `npm test` 58 files / 1 048 tests passed |
+| DONE | bench round 2 (merged R1) — `E:/fah-bench-merged-r1.txt`, six packages, 67 benches |
+| DONE | bench round 3 (`main` R2) — `E:/fah-bench-main-r2.txt`, 54 benches |
+| DONE | bench round 4 (merged R2) — `E:/fah-bench-merged-r2.txt`, 67 benches. Plus a quiet re-run of the four affected targets, twice a side: `E:/fah-bench-quiet-{main,merged}-{a,b}.txt` |
+| DONE | means and ranges compared against `main`. **No regression demonstrated**, and nothing needs the 10% gate's justification: in the quiet set every bench whose merged-against-`main` delta exceeds +10% sits inside its own measured spread, and the only three slower beyond their own spread are +1.4%, +1.8% and +2.1%. Criterion's `change:` lines were ignored as the plan requires. The 13 Phase 3 benches with no counterpart on `main` (`intercept/*`, `proxy/https_sni_splice*`) are recorded, not compared. What the rounds did establish is the instrument: 7 of 54 benches cannot answer a 10% question on this box, their own-side spread on identical code being 52.6% / 29.8% / 29.1% / 27.4% / 19.6% / 14.0% / 13.8%, and closing the browser does not fix it — written up as F9 in `docs/code-review/phase3/main-phase3-integration-audit.md` |
+| DONE | `fah-main-bench` **kept, not removed** — owner's decision, 2026-09-13. It stays detached at `ebc46f1` as the frozen baseline for p3-10 (`plan/wip/phase3/p3-10-post-merge-performance.md`). Do not switch its checkout, do not move it to a branch, do not delete its `target/`; any change of SHA or checkout gets documented. §Running the rounds no longer ends with `git worktree remove`; the prose says the same thing as this row |
 
 ## Step 5 — `phase3-06` into `main`
 
