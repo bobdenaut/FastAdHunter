@@ -5,6 +5,21 @@ interception, DoT/DoH listeners) on `main`. This file is not itself a phase
 task — it has no `NN` and no status row. It does move a phase: `plan/wip/phase3`
 arrives on `main` with the merge, by the owner's decision recorded in §Step 3.
 
+## How to resume
+
+Each step ends with a progress table. **Update it as the work happens, not
+afterwards** — it is the only thing that survives a session boundary, and this
+merge is expected to cross at least one. Conflict resolution burns context
+faster than anything else here, so the realistic shape is Step 0 in one sitting
+and Step 1 in another.
+
+Status vocabulary matches `plan/CLAUDE.md`: `WAITING`, `DONE`, `BLOCKED`.
+
+Two things carry state between sessions on their own, and both are worth
+trusting over memory: this document, and the git index — a file resolved and
+`git add`ed stays resolved, so `git status` tells the next session exactly what
+is left.
+
 ## Decision already taken
 
 Interception ships **disabled, not deleted**. The code, its tests, the
@@ -71,11 +86,36 @@ because of diff direction.
 
 ### Clean the tree without rewriting it
 
-`main` carries an uncommitted `.gitignore` change. **Stash it** — or park it in
-another worktree. Do not commit it to clean the tree: an unrelated commit puts
-work into `main-pre-phase3-merge` that has nothing to do with this merge, so the
-rollback target stops being "`main` as it was before Phase 3". Do not discard it
-either; it is the owner's change and unrelated to the merge.
+`main` carries two uncommitted changes. Do not commit them to clean the tree: an
+unrelated commit puts work into `main-pre-phase3-merge` that has nothing to do
+with this merge, so the rollback target stops being "`main` as it was before
+Phase 3". Do not discard them either.
+
+**Two separate stashes, not one:**
+
+```sh
+git stash push -m "owner gitignore, unrelated to phase3 merge" -- .gitignore
+git stash push -m "working agreement, reapply after the merge" -- CLAUDE.md
+```
+
+One stash would restore both files in a single `pop`, and they need different
+endings. Worse, `CLAUDE.md` is the one that can conflict on reapply: a failed
+`pop` leaves markers in the tree and does not drop the stash, which would drag
+`.gitignore` into a mess that has nothing to do with it. Separate stashes keep
+the risk on the risky file.
+
+What they are:
+
+- **`.gitignore`** — the owner's, unrelated to the merge.
+- **`CLAUDE.md`** — the working language moving to Romanian, plus a clarification
+  to §How to answer rule 1 that brief means fewer sentences rather than denser
+  ones. **Held back deliberately:** `phase3-06` edits this file and `main` has
+  not since the fork, so it merges cleanly today. Committing these would make it
+  a seventeenth conflict, inside the same numbered list the branch extends with
+  its rule 5.
+
+Both come back after Step 5 — see §Reapply the pre-existing working-tree
+changes.
 
 A merge started on a dirty tree also makes "did the merge do this?"
 unanswerable.
@@ -187,6 +227,17 @@ distinguishable.
 | `fah-ab-base` | old experiment |
 | `FastAdHunter-var-h1cap` | old diagnostic |
 | `fah-main-bench` | the Phase 3 merge baseline |
+
+### Step 0 progress
+
+| STATUS | What's done |
+| --- | --- |
+| WAITING | `.gitignore` and `CLAUDE.md` stashed, tree clean |
+| WAITING | the five measurements recorded; ahead/behind and conflict count compared against §Starting state |
+| WAITING | `phase3-06-pre-main-merge` and `main-pre-phase3-merge` tagged |
+| WAITING | gates green on `main` in the primary checkout |
+| WAITING | `fah-main-bench` worktree created detached; bench round 1 captured |
+| WAITING | the two older worktrees decided — kept or removed, deliberately |
 
 ## Step 1 — merge `main` into `phase3-06`
 
@@ -318,6 +369,28 @@ the resulting worktree for the two unambiguous conflict-marker forms. `=======`
 is omitted deliberately: the repository contains legitimate uses of it in
 Markdown, where it underlines a setext heading.
 
+### Step 1 progress
+
+One row per conflict, because `git add` on a resolved file is what carries this
+across a session boundary. A resolved row means read, resolved, read again and
+its targeted test run — not merely "no markers left".
+
+| STATUS | What's done |
+| --- | --- |
+| WAITING | `git merge main` started |
+| WAITING | `tcp.rs` — DoT reapplied on F1; both F1 tests present and passing |
+| WAITING | `proxy.rs` — all three pool builder calls kept; both reaper tests passing |
+| WAITING | `forward_alloc.rs` — `main`'s ceilings kept |
+| WAITING | `server.rs` — F1/F2 wiring kept, 853 bind added |
+| WAITING | `main.rs` — F10, F11 and adaptive wiring kept; Phase 3 wiring added |
+| WAITING | `request.rs`, `domain.rs`, `fah-http/lib.rs` |
+| WAITING | `fah-model/lib.rs`, `config_store.rs` |
+| WAITING | `server_integration.rs` |
+| WAITING | the five docs — API, ARCHITECTURE, README, ROADMAP, project-state |
+| WAITING | `Cargo.lock` inspected; `cargo check --workspace --locked` passes |
+| WAITING | no conflict markers; `git diff --check` clean |
+| WAITING | merge committed |
+
 ## Step 2 — review what merged quietly
 
 Auto-merging is not correctness. These files produced no conflict and still need
@@ -337,6 +410,15 @@ reading:
   — counters added on both sides; check for duplicate or shadowed entries.
 - **`crates/fastadhunter/src/adapters.rs`** — `DnsWireAdapter` from p3-05 next
   to `main`'s adapter changes.
+
+### Step 2 progress
+
+| STATUS | What's done |
+| --- | --- |
+| WAITING | adaptive-only read across `upstream/mod.rs`, `schema/dns/upstreams.rs`, `adaptive_behaviour.rs` — `fallback` gone exactly once, still refused at load |
+| WAITING | `pipeline.rs` — F3's borrow survived, no clone returned |
+| WAITING | `registry.rs`, `engine.rs` — no duplicate or shadowed counters |
+| WAITING | `adapters.rs` — `DnsWireAdapter` intact beside main's changes |
 
 ## Step 3 — decisions taken
 
@@ -362,6 +444,16 @@ DoT and DoH sit under `[dns.listen]`, not under the HTTPS mode. They work at any
 
 Together these three mean a merged build listens on more ports than today's:
 `53` keeps UDP and TCP, `853` and `443` are new, alongside HTTP and the API.
+
+### Step 3 progress
+
+Nothing to execute here — the decisions are the deliverable, and they are
+recorded above. The rows exist so the merge cannot quietly contradict them.
+
+| STATUS | What's done |
+| --- | --- |
+| DONE | the three decisions taken and written down, 2026-09-13 |
+| WAITING | merged tree checked against them: DoT/DoH defaults still `true`, interception scope still empty |
 
 ## Step 4 — verification on `phase3-06`
 
@@ -523,6 +615,29 @@ git worktree remove ../fah-main-bench
 Windows dev box with `WSAEACCES` (10013) when WinNAT reserves the ephemeral port
 block. Environmental — not a merge defect.
 
+### Step 4 progress
+
+| STATUS | What's done |
+| --- | --- |
+| WAITING | `cargo fmt --all -- --check` |
+| WAITING | `cargo clippy --workspace --all-targets -- -D warnings` |
+| WAITING | `cargo test --all-features --workspace` |
+| WAITING | F1 — three tests read and passing |
+| WAITING | F2 — ignored harness run explicitly |
+| WAITING | F3 — ceilings and `warm_pipeline_handles_allocate_a_steady_amount` |
+| WAITING | F10 — `shutdown_e2e.rs` |
+| WAITING | F11 — wiring read in `main.rs`, **both** collections still reaped |
+| WAITING | H1-H3/D1 — `proxy_alloc.rs` |
+| WAITING | `8941770` — both reaper tests |
+| WAITING | adaptive — five ignored scenarios run serially |
+| WAITING | Phase 3 surface — interception, security, sni, e2e_https, migration |
+| WAITING | dashboard — `npm run typecheck` and `npm test` |
+| WAITING | bench round 2 (merged R1) |
+| WAITING | bench round 3 (`main` R2) |
+| WAITING | bench round 4 (merged R2) |
+| WAITING | means and ranges compared against `main`; nothing past the 10% gate |
+| WAITING | `fah-main-bench` removed |
+
 ## Step 5 — `phase3-06` into `main`
 
 Only after Step 4 is fully green. Approval is required before this step and
@@ -544,6 +659,48 @@ workspace manifest.
 
 Deployment to the RB5009 is a separate decision, not part of this plan. The
 router is not touched by any step here.
+
+### Step 5 progress
+
+| STATUS | What's done |
+| --- | --- |
+| WAITING | owner's approval for this specific changeset |
+| WAITING | `git merge --ff-only phase3-06` accepted |
+| WAITING | pushed to `origin` |
+| WAITING | pushed to `backup` |
+| WAITING | `CLAUDE.md` stash reapplied on merged `main`; checked against Phase 3 rule 5 |
+| WAITING | separate `docs:` commit for the `CLAUDE.md` change created |
+| WAITING | `.gitignore` restored as an uncommitted working-tree change |
+| WAITING | `docs/project-state.md` rewritten to describe the merged `main` |
+
+## Reapply the pre-existing working-tree changes
+
+The `.gitignore` and `CLAUDE.md` changes were deliberately kept out of the
+Phase 3 merge and stay outside its commit history.
+
+**Do not apply either stash during Steps 1 to 4.** Those steps run on
+`phase3-06`; popping there puts unrelated work on the integration branch, where
+it can be swept into the merge through the back door.
+
+After Step 5, with `main` fast-forwarded to the merged result, pop them in
+reverse order — the risky one first, alone:
+
+- **`CLAUDE.md`** — reapply on top of the merged Phase 3 version. `main` never
+  touched this file, so the merge raised no conflict; the stash is a diff
+  against the old base being applied to a new one, which is a three-way merge
+  and can still collide. Check the three pieces independently: the
+  working-language change, the clarification to §How to answer rule 1, and the
+  branch's rule 5 "Warm, not cold". They are complementary — one says brevity is
+  not density, the other that it is not coldness — so all three survive. Resolve
+  any textual overlap by hand.
+
+  Commit it on its own, `docs:` per Conventional Commits. It is a
+  working-agreement change, not Phase 3 integration, and the two do not belong
+  in one commit.
+
+- **`.gitignore`** — restore it and leave it alone, as an uncommitted
+  working-tree change. It is the owner's, unrelated to any of this, and whether
+  it is ever committed is their call.
 
 ## Rollback
 
