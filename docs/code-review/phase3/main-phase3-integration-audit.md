@@ -88,6 +88,7 @@ Severity-ranked. No fix applied.
 | F4 | Info | `Engine::shutdown`; alloc 11b | The 5 s drain waits for connections to end; an idle spliced session (`idle_timeout` 60 s) or an idle intercepted keep-alive holds it to the full 5 s, as keep-alive HTTP already does. DNS answers throughout (11a). | up to 5 s longer stop, inside `stop-time=10s` | open with 11b; owner decision before the full-mode soak |
 | F5 | Info | `crates/fah-api/src/config_store.rs` `boot_key_classification_matches_what_actually_applies_the_key` | `https` is in `BOOT_KEYS`, but no `https.*` key is in the test's boot list. | contract right, coverage gap | one line in the test with the next `fah-api` change |
 | F6 | Info | `p3-06-phase3-verification-review.md` §Hand-off state 2026-09-05 | "Runbook 6 cannot start before the 0.3.1 soak ends 2026-09-08" is stale: [project-state.md](../../project-state.md) (2026-09-07) records the 0.3.1 soak stopped on day 6 and the 0.3.3 soak running to 2026-09-14. | a reader schedules the Phase 3 deploy a week early | rewrite on the next approved edit of that file |
+| F7 | Low | `crates/fah-dns/tests/adaptive_behaviour.rs:1247-1257` (the assert and its silent skip); `:1010-1021` `RecoveryScript::build` with the bucketing at `:1093-1096` (the sample asymmetry); `:1280-1292` (the three-arm loop) | `b5_recovery_and_flapping`'s p99 guard is three construction defects that compound, not one. **(a)** The `2.5` arm can never assert. The flapping window is six phases of `unit(0.1)` against black_hole's single `unit(2.0)`, so flapping collects ~1/3.33 of black_hole's samples by construction; with `CADENCE_MS = 50` its ceiling is 6 × 375 ms / 50 ms = **45 samples against a `>= 100` threshold**. Measured 35-41 across 7 runs. A faster box does not fix it: sampling is wall-clock paced, and `MissedTickBehavior::Delay` only removes ticks (11-20 % of nominal on every arm, both sides), never adds them. **(b)** The `12.5` and `37.5` arms do assert, but `p99_flapping <= 1.1 * p99_black_hole` breaks when the *reference* phase gets faster, not when flapping gets slower — `branch-0` failed on a black_hole of 1.53 ms, the lowest denominator in the whole set, with a numerator (2.27 ms) that passes everywhere else. The ratio is not stable on unchanged code: `branch-0` measured 1.48 and `branch-1` 0.91, same arm, same commit, same box. **(c)** A panic in one arm skips the ones after it — `branch-0` panicked at `12.5` and never ran `37.5`. Composed: in a bad run the first arm skips silently, the second raises a false alarm, and that alarm deletes the third, so the test verifies nothing while reporting a failure. | a gate run with `--include-ignored` fails on a test that cannot discriminate, and the safety net the `2.5` arm is assumed to provide does not exist on any machine. **Open, not closed by this audit:** on the `37.5` arm 2 of 3 `phase3-06` runs exceeded the threshold from the *numerator* side (p99_flapping 2.35 / 2.30 ms against denominators identical to main's) where 0 of 3 `main` runs did. The distributions overlap — the lowest p99_flapping in the set, 1.83 ms, is `phase3-06`'s — and the gap is ~0.3 ms on a ~2 ms p99, at the resolution of the instrument. Not a production signal: mock upstreams on a dev box, and PERFORMANCE.md's budgets are RB5009 figures | no fix proposed here; a merge is not the place to change a test. If the `37.5` question is taken up, the method is more percentiles, not more runs — that arm collects ~575 flapping samples per run, so a genuinely slower flapping phase moves p50 and p90 too, while a tail artefact moves only p99. The test prints p99 per phase and nothing else (`:1169-1177`), so answering it is itself a test change. Owner decides when `adaptive_behaviour.rs` is next touched |
 
 ## Assumptions
 
@@ -100,7 +101,7 @@ Severity-ranked. No fix applied.
 
 ## Measurements
 
-None new. Gates on this tree, 2026-09-08, Windows dev box:
+Gates on this tree, 2026-09-08, Windows dev box:
 
 | Gate | Result |
 | --- | --- |
@@ -112,6 +113,44 @@ None new. Gates on this tree, 2026-09-08, Windows dev box:
 | `fah-dns` unit / `server_integration` | 209 ok + 2 ignored, 11/11 |
 | `fah-api` unit / `api` | 126/126, 117/117 |
 | `fah-config` / `fah-certs` unit | 76/76, 85/85 |
+
+`b5_recovery_and_flapping` (F7), 2026-09-13, Windows dev box. Eight runs,
+alternating sides so no machine drift lands on one of them: four on
+`phase3-06` (`eb693e2`), four on `main` in the `E:/fah-main-bench` worktree
+(`ebc46f1`). Each run is `cargo test -p fah-dns --test adaptive_behaviour
+b5_recovery_and_flapping -- --include-ignored --test-threads=1 --nocapture`,
+serial, never two at once. Logs in `E:/fah-b5-runs/`.
+
+| Run | `2.5` flapping_n / black_hole_n | `12.5` p99 bh / fl / ratio | `37.5` p99 bh / fl / ratio |
+| --- | --- | --- | --- |
+| main-0 | not captured (run without `--nocapture`) | passed, numbers not printed | passed, numbers not printed |
+| main-1 | 37 / 133, undecidable | 2.87 / 1.97 / 0.69 | 2.22 / 2.00 / 0.90 |
+| main-2 | 41 / 132, undecidable | 2.18 / 2.28 / 1.05 | 2.06 / 2.00 / 0.97 |
+| main-3 | 35 / 120, undecidable | 5.22 / 2.06 / 0.39 | 2.05 / 1.85 / 0.90 |
+| branch-0 | 39 / 135, undecidable | 1.53 / 2.27 / **1.48 broke** | not reached — the panic ended the test |
+| branch-1 | 37 / 120, undecidable | 2.53 / 2.30 / 0.91 | 2.13 / 1.83 / 0.86 |
+| branch-2 | 40 / 133, undecidable | 4.33 / 2.10 / 0.48 | 2.10 / 2.35 / **1.119 broke** |
+| branch-3 | 36 / 120, undecidable | 2.88 / 2.08 / 0.72 | 2.08 / 2.30 / **1.106 broke** |
+
+p99 in ms. "undecidable" is the test's own word: below the `>= 100` sample
+threshold it prints the counts and skips the assert, so a passing `2.5` arm
+means the assert never ran. The decided branch prints nothing on success,
+which is why the absence of that line is how a run is classified.
+
+Nominal sample counts, from the windows divided by `CADENCE_MS = 50`:
+
+| Arm | `penalty_max_ms` | flapping window | flapping nominal | black_hole nominal | measured flapping |
+| --- | --- | --- | --- | --- | --- |
+| 2.5 | 3 750 | 6 × 375 ms | 45 | 150 | 35-41 |
+| 12.5 | 18 750 | 11 250 ms | 225 | 750 | ≥ 100 (assert ran) |
+| 37.5 | 56 250 | 33 750 ms | 675 | 2 250 | ≥ 100 (assert ran) |
+
+Totals land at 80-89 % of nominal on every arm and both sides (`2.5`: 312-346
+queries against 390; `12.5`: 1 559-1 703 against 1 950; `37.5`: 4 670-5 123
+against 5 850), so the shortfall is a uniform tick slip, not a phase effect.
+How it splits between the two phases has no stable direction across the four
+runs that print counts, and no per-phase cause is claimed here. The `2.5` arm's
+ceiling does not depend on it: 45 is below 100 before any slip.
 
 ## Files changed
 

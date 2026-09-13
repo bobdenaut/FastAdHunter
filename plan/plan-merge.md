@@ -414,7 +414,7 @@ its targeted test run — not merely "no markers left".
 | DONE | `cargo fmt --all -- --check` clean |
 | DONE | `cargo clippy --workspace --all-targets --message-format=short -- -D warnings` clean — it failed first: the merged `spawn_telemetry_poll` reached 8 arguments (`too_many_arguments`, 8/7), fixed by grouping the two proxy counter sets into `ProxyCounterSources` in the binary, not by an `#[allow]` |
 | DONE | `cargo check --workspace --all-targets --all-features --locked` clean; targeted tests green: both F1 `tcp.rs` tests, both reaper tests, `forward_alloc` (3), `proxy_alloc`, `fastadhunter` bin units (36) |
-| WAITING | merge committed |
+| DONE | merge committed — `eb693e2`, two parents; `main` is 0 ahead of `phase3-06`, so Step 5 will fast-forward |
 
 ## Step 2 — review what merged quietly
 
@@ -440,10 +440,10 @@ reading:
 
 | STATUS | What's done |
 | --- | --- |
-| WAITING | adaptive-only read across `upstream/mod.rs`, `schema/dns/upstreams.rs`, `adaptive_behaviour.rs` — `fallback` gone exactly once, still refused at load |
-| WAITING | `pipeline.rs` — F3's borrow survived, no clone returned |
-| WAITING | `registry.rs`, `engine.rs` — no duplicate or shadowed counters |
-| WAITING | `adapters.rs` — `DnsWireAdapter` intact beside main's changes |
+| DONE | adaptive-only — verified by reading, not by test: `upstream/mod.rs`, `schema/dns/upstreams.rs` and `adaptive_behaviour.rs` are byte-identical to `main` (`git diff main` empty), so the merge took main's cherry-pick wholesale. `fallback` survives exactly once, as the refusal at `schema/dns/upstreams.rs:88`, and is rejected at load — `the_removed_fallback_strategy_is_rejected_at_load` plus the env-override case pass, `fah-config` 87/87. No test asserting the old strategy survived: the enum has only `Adaptive`, so one would not compile. Behaviour: `adaptive_behaviour` 5 of 6 pass serially with `--include-ignored`; `b5_recovery_and_flapping` is not usable as evidence either way — see F7 in `docs/code-review/phase3/main-phase3-integration-audit.md`, which is why this row is read-verified rather than test-verified |
+| DONE | `pipeline.rs` — `git diff main` is the `Transport` threading and nothing else; F3's `request.queries.first()` borrow survives at `pipeline.rs:327`, no clone returned |
+| DONE | `registry.rs`, `engine.rs` — pure additions over main, no duplicate or shadowed field. Every `ListenerCounters` field has a writer: `alert_*` via `alert_counter` at `intercept.rs:171`, `client_cert_rejections` at `intercept.rs:168`, `handshakes_completed` at `intercept.rs:158`, `dropped_events` at `proxy.rs:649`, the rest across `proxy.rs`/`https.rs`/`intercept.rs`. `engine.http.refused_*` and `listeners.*.refused_*` share one source (`ProxyCounters`), fed by `set_requests_refused` at `main.rs:1140`/`1598` — same name, two views, not a double count |
+| DONE | `adapters.rs` — pure additions over main (+51/-2). All five adapters are constructed in the binary: `UpstreamResolver` `main.rs:322`/`1011`/`1032`, `DnsWireAdapter` `main.rs:594`, `StatsAdapter` `main.rs:606`, `TelemetryAdapter` `main.rs:618`, `CacheAdapter` `main.rs:624`. DoH is doubly gated — the adapter is built only when `doh_enabled`, and `routes.rs:123` mounts `/dns-query` only when `tls && doh.is_some()`; the `doh_enabled && !tls` gap warns at `main.rs:596`. Not just read: `security_phase3::dns_query_is_the_only_new_unauthenticated_route` boots the real binary and would fail if the adapter were never wired |
 
 ## Step 3 — decisions taken
 
