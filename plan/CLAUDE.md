@@ -21,12 +21,21 @@ Task files follow `p<phase>-<NN>-<slug>.md` (e.g. `p0-01-workspace-skeleton.md`)
 
 Status lives only in the phase's `CLAUDE.md` table (last column) — task files
 carry no status field. Valid values: `WAITING`, `DONE`, `BLOCKED` (a task that
-failed its test-fix retries — see "Mandatory steps" §3), `AWAITING SOAK`.
+failed its test-fix retries — see "Mandatory steps" §3), `AWAITING SOAK`,
+`PARKED`.
 
 `AWAITING SOAK` — code complete and gates green, but an acceptance criterion
 needs on-device evidence a dev box cannot produce. The selector skips it like
 `DONE`, so the phase keeps moving; the table cell must name what flips it. A
 phase is not finished while one exists.
+
+`PARKED` — the owner decided the work is not wanted. Not the same as
+`AWAITING SOAK`: nothing is expected to flip it, because nothing is being
+waited for. The selector skips it like `DONE`, and **a phase can close with a
+`PARKED` task in it** — otherwise a decision not to do something would keep a
+phase open forever. The table cell must name the decision and its date, so a
+later reader sees a choice rather than an abandoned row. Reviving it takes a
+new decision, not the arrival of evidence.
 
 ## Folders holding phases by status
 
