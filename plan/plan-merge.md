@@ -729,14 +729,14 @@ router is not touched by any step here.
 
 | STATUS | What's done |
 | --- | --- |
-| WAITING | owner's approval for this specific changeset |
-| WAITING | `git merge --ff-only phase3-06` accepted |
-| WAITING | pushed to `origin` |
-| WAITING | pushed to `backup` |
-| WAITING | `CLAUDE.md` stash reapplied on merged `main`; checked against Phase 3 rule 5 |
-| WAITING | separate `docs:` commit for the `CLAUDE.md` change created |
-| WAITING | `.gitignore` restored as an uncommitted working-tree change |
-| WAITING | `docs/project-state.md` rewritten to describe the merged `main` |
+| DONE | owner's approval for this specific changeset — given 2026-09-13 for the fast-forward and the two pushes only; the stashes, `docs/project-state.md` and p3-10 each need their own |
+| DONE | `git merge --ff-only phase3-06` accepted — `main` was 0 ahead / 105 behind, so it fast-forwarded `bc49e4e..78238b4` with no merge commit |
+| DONE | pushed to `origin` — `bc49e4e..78238b4` |
+| DONE | pushed to `backup` — `bc49e4e..78238b4`, pushed **first**, while `git reset --hard main-pre-phase3-merge` was still a way back |
+| DONE | `CLAUDE.md` stash reapplied on merged `main` and checked against Phase 3's own edit: all three survive and none clobbered another — §Working language (Romanian replies, English artifacts) at `CLAUDE.md:5-11`, rule 1's "brief means fewer sentences, not denser ones" at `:213-218`, and Phase 3's rule 5 "Warm, not cold" at `:231-236`. The two read as one idea: brevity is neither density on the page nor coldness in tone |
+| DONE | separate `docs:` commit for the `CLAUDE.md` change created — `a9a964e`, that file alone. The working agreement is not Phase 3 integration and does not belong in the same commit |
+| DONE | `.gitignore` restored as an uncommitted working-tree change, +6 lines, unstaged. The pop did **not** apply clean: the fast-forward brought main's p3-06 smoke-run rules into the same region, so git left a conflict. The two blocks are disjoint additions, so both were kept and nothing was dropped — the owner's `__pycache__/`, `collector.log` and `docs/code-review/phase2.6/soak-0.3.4/*` now sit below main's block. The stash entry was **not** dropped: a hand-resolved conflict is not a clean pop, and dropping it is the owner's call |
+| DONE | `docs/project-state.md` rewritten to describe the merged `main` — the Now table and Next row replaced, everything below them (risk close-out, allocation domains, N sweep, deferrable, known-good note) left as it was, per the file's own rewrite-never-append rule. Adds a short §From the merge for F7/F8/F9, the kept `E:/fah-main-bench` baseline and the untracked p3-10 draft |
 
 ## Reapply the pre-existing working-tree changes
 
@@ -781,7 +781,7 @@ reverse order — the risky one first, alone:
 ## Out of scope
 
 Deleting interception · deploying to the router · the public certificate for
-`dns.localbox.ro` · a listener ACL · moving `plan/wip/phase3` to `closed`.
+`fah-dot.localbox.ro` · a listener ACL · moving `plan/wip/phase3` to `closed`.
 
 ### The device campaign is a separate gate
 

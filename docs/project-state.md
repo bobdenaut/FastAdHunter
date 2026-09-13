@@ -4,21 +4,39 @@ Where the work is right now. **Rewrite this file — never append.** History
 belongs in `git log`, `docs/code-review/` and the phase tables; this file is only
 what is true today.
 
-**Last updated:** 2026-09-12
+**Last updated:** 2026-09-13
 
 ## Now
 
 | | |
 | --- | --- |
-| Branch | `phase3-06` = Phase 3 + `main` (`bc49e4e`, 0.3.4), merged 2026-09-13 per [plan/plan-merge.md](../plan/plan-merge.md) Step 1. `main` itself is untouched and still tagged `main-pre-phase3-merge` (`ebc46f1`); `phase3-06-pre-main-merge` (`185139b`) is the branch's rollback point. Tag `pre-alloc-domain-2026-09-06` = `64be513` stays the rollback point before the allocation domains |
-| Tree | mid-merge on `phase3-06`: all 16 content conflicts resolved and staged, merge not yet committed. Held out of the merge on purpose and stashed: `.gitignore` (owner's, unrelated) and `CLAUDE.md` (working language, §How to answer rule 1) — both return after Step 5. The untracked `docs/code-review/phase2.6/soak-0.3.4/` capture predates the merge |
-| Tests | green on `main` at `ebc46f1` before the merge: fmt, clippy `-D warnings`, `cargo test --all-features --workspace`, zero failures. **The merged tree has not been built yet** — Step 4 owns the gates, the targeted F1/F2/F3/F10/F11 checks, the Phase 3 surface, the dashboard runner and the bench A/B against `main` |
+| Branch | **Phase 3 landed on `main`** on 2026-09-13, by fast-forward — `bc49e4e..78238b4`, 105 commits, no merge commit ([plan/plan-merge.md](../plan/plan-merge.md), all five steps closed). `main` is now `a9a964e` and is **one commit ahead of both remotes; that commit is not pushed** — `origin/main` and `backup/main` are both at `78238b4`. `phase3-06` (`78238b4`) has served its purpose and sits one behind. Rollback tags: `main-pre-phase3-merge` = `ebc46f1`, `phase3-06-pre-main-merge` = `185139b`; `eb693e2` is the merge commit inside the branch, two parents. `pre-alloc-domain-2026-09-06` = `64be513` stays the rollback point before the allocation domains |
+| Tree | no longer mid-merge. Clean apart from `.gitignore`, modified and uncommitted by the owner's decision. Its stash (`stash@{0}`, "owner gitignore") is **kept on purpose** — the pop collided with the p3-06 smoke rules the merge brought in, was resolved by hand keeping both blocks, and while `.gitignore` is uncommitted that stash is its only backup. `stash@{1}` predates this work and is not ours. The `CLAUDE.md` stash is gone: applied and committed as `a9a964e`. `plan/wip/phase3/p3-10-post-merge-performance.md` is an approved draft and still untracked |
+| Tests | Step 4 ran on the merged tree, 2026-09-13, Windows dev box: `cargo fmt --all -- --check` and `cargo clippy --workspace --all-targets -- -D warnings` clean, `cargo test --all-features --workspace` 58 suites and 0 failures. The targeted checks pass — F1's three TCP tests, F3's allocation ceilings, F10's shutdown flush, H1-H3/D1's `proxy_alloc`, the idle-pool reaper — and F11's wiring was read in `main.rs:769` and `:775-776`. Phase 3's surface passes: `interception` 45/45, `security_phase3` 7/7, `sni` 11/11, `e2e_https` 3/3, `interception_migration` 6/6. Dashboard: `npm run typecheck` clean, 1 048 tests. Bench A/B against `main` over four alternating rounds: **no regression demonstrated** |
 | Version | 0.3.4 (workspace, since `4e7a6de`), untagged. Newest tags `v0.3.2` (`89aac76`), `pre-alloc-domain-2026-09-06`, `soak-p2.6-11` |
-| Deployed | production on **0.3.3** = `main` at `1c61f9c` (`7d03e95`…`857865d` are plan and docs) — HTTP allocation domains, N=2 (`FAH__RUNTIME__HTTP_RUNTIMES=2` on `fah-env`), `veth1` / `172.17.0.2`, mounts `fah-config,fah-data`. `GET /health` on 2026-09-11 23:13 local answered `0.3.3`, uptime 204 978 s (container start 2026-09-09T11:15Z). The p3-06 probe (`fah-probe` on `veth3` / 172.17.0.4) was torn down 2026-09-11 evening; `veth3` remains, no test firewall rule or address list remains |
-| Build ≠ tip | the running container predates the 2026-09-11 `main` commits — F10 stats flush (`32d7776`), F1 TCP bound (`ed28395`), F2 UDP ceiling (`b0b091e`), their close-out (`ad110d8`) — and the strategy removal: it still loses up to 300 s of stats on a stop and has no DNS-over-TCP ceiling. They ship with the next image. **Before that image boots, the router's TOML must say `strategy = "adaptive"`** (it does — the opt-in of 2026-08-25 set it); a config still saying `fallback` refuses to load. The merged Phase 3 code is not deployed and deploying it is a separate decision |
-| Phase | **0–2.6 and 5 closed** (2.6 closed 2026-09-07, all 13 tasks `DONE`; `p2.6-12` reached `main` on 2026-09-11 as the cherry-pick of `fa9451a` — `adaptive` is the only strategy, the `fallback` walk is deleted, a config naming it fails at load). **3 in `plan/wip/phase3`** — `p3-01`…`p3-05` `DONE`, `p3-06` `AWAITING SOAK`, `p3-07`…`p3-09` `DONE` (ADR-0008: Interception Document, 525 classification, rejection view + editor); the merge carries that `open` → `wip` move onto `main` by the owner's decision (plan-merge.md §Step 3). **N3 follow-up closed 2026-09-11 as a technical experiment, not promoted** — the client alert names the TLS stack, not the cause; HTTP/3 must be refused for intercepted clients ([p3-06-n3-alert-ab.md](code-review/phase3/p3-06-n3-alert-ab.md)) |
+| Deployed | **0.3.4, and not from today's merge.** Nothing was deployed on 2026-09-13 — landing Phase 3 on `main` is not a deployment, and deploying it is a separate decision that has not been made. Production runs image `kingston/fastadhunter-arm64-0.3.4.tar` as container `fastadhunter-0.3.4`, booted **2026-09-11T22:02:48Z**, HTTP allocation domains, N=2 (`FAH__RUNTIME__HTTP_RUNTIMES=2` on `fah-env`), `veth1` / `172.17.0.2`, mounts `fah-config,fah-data`. `GET /health` on 2026-09-13 18:24 local answered `0.3.4`, uptime 148 853 s. **The build commit is recorded nowhere** — neither `/health` nor the soak capture carries one; by timestamp the image matches `d307c36` with the version already at 0.3.4, the bump itself committed three minutes after the boot as `4e7a6de`. A **seven-day soak is running on this build**: t0 `2026-09-11T22:13:21Z`, ending ~2026-09-18T22:00Z, hourly scheduled task `FAH-soak-0.3.4`, artefacts under `docs/code-review/phase2.6/soak-0.3.4/` — untracked and gitignored, so they live outside the repository. The p3-06 probe (`fah-probe` on `veth3` / 172.17.0.4) was torn down 2026-09-11 evening; `veth3` remains, no test firewall rule or address list remains. Deploying Phase 3 is a separate decision and it has not been made |
+| Build ≠ tip | the running 0.3.4 **has** the F10 stats flush (`32d7776`), the F1 TCP bound (`ed28395`), the F2 UDP ceiling (`b0b091e`), their close-out tests (`ad110d8`) and adaptive-only (`d307c36`) — every one of them committed before its 01:02 local boot. It **lacks** everything from the day after: the F11 supervisor (`0fb8dd0`), F3's query borrow and pre-sized `domain_of` (`07d4d68`, `c220956`), the H1-H3/D1 allocation removals (`3287418`), the idle upstream pool reaper (`8941770`), the HTTP refusal-counter split (`28c751d`) — and the whole of Phase 3: certificates, SNI filtering, HTTPS interception, the DoT and DoH listeners. The `strategy = "adaptive"` precondition is settled rather than pending: that boot already happened and the config loaded |
+| Phase | **0–2.6 and 5 closed** (2.6 closed 2026-09-07, all 13 tasks `DONE`; `p2.6-12` reached `main` on 2026-09-11 as the cherry-pick of `fa9451a` — `adaptive` is the only strategy, the `fallback` walk is deleted, a config naming it fails at load). **3 is now in `plan/wip/phase3` on `main`** — the `open` → `wip` move landed with the merge, by the owner's decision (plan-merge.md §Step 3). `p3-01`…`p3-05` `DONE`, `p3-06` `AWAITING SOAK`, `p3-06b` `WAITING`, `p3-07`…`p3-09` `DONE` (ADR-0008: Interception Document, 525 classification, rejection view + editor). **N3 follow-up closed 2026-09-11 as a technical experiment, not promoted** — the client alert names the TLS stack, not the cause; HTTP/3 must be refused for intercepted clients ([p3-06-n3-alert-ab.md](code-review/phase3/p3-06-n3-alert-ab.md)) |
 | Gate | [Global Architecture Review-Reconciled.md](code-review/Global%20Architecture%20Review-Reconciled.md): §5.1–6 cleared; §5.7–14 gate Phase 3. S1-G2 tiers 1–3 met; S1-G4 and S1-G5 route 2 not validated and will not be |
-| **Next** | plan-merge.md Step 2 (read what auto-merged) and Step 4 (gates, targeted checks, bench rounds 2–4), then Step 5 — `main` fast-forwarded to `phase3-06`, with the owner's approval and a push to both remotes. Interception ships **disabled** through an empty client scope, not through `engine.mode`. Off the critical path: the dashboard's dead `fallback` mode branch (`derive.ts`, `degraded-banner.tsx`), dashboard settings metadata for `runtime.http_runtimes`, the TLS / lol_html capacity microbench. **Before Phase 3 goes live:** the router refuses UDP 443 LAN→WAN (deploy-rb5009.md §5c), HTTP/3 bypasses the steer otherwise |
+| **Next** | the merge is finished; `plan-merge.md` has no open row. Three things follow, none of them started: **p3-10** (`plan/wip/phase3/p3-10-post-merge-performance.md`, approved draft, not yet committed), the **p3-06b re-scope**, and the **deploy decision**, which is separate and unmade. One thing is already in flight and needs nobody: the **0.3.4 soak ends ~2026-09-18**, and its counters settle the F1 `tcp_max_connections` default (§Risk inventory close-out). Interception ships **disabled** through an empty client scope, not through `engine.mode`. Off the critical path: the dashboard's dead `fallback` mode branch (`derive.ts`, `degraded-banner.tsx`), dashboard settings metadata for `runtime.http_runtimes`, the TLS / lol_html capacity microbench. **Before Phase 3 goes live:** the router refuses UDP 443 LAN→WAN (deploy-rb5009.md §5c), HTTP/3 bypasses the steer otherwise |
+
+## From the merge — 2026-09-13
+
+Three findings came out of the measuring rather than the code, and nothing else
+on `main` records them —
+[main-phase3-integration-audit.md](code-review/phase3/main-phase3-integration-audit.md):
+
+- **F7** — `adaptive_behaviour.rs`'s `b5_recovery_and_flapping` p99 guard cannot
+  decide anything: one arm can never reach its sample threshold, one breaks when
+  its *reference* phase gets faster, and a panic in one arm skips the next.
+- **F8** — `tcp_max_connections` ships armed at 1024 while `udp_max_inflight`
+  ships inert at 0. Inherited from `main`; no default was changed.
+- **F9** — seven benches whose own-side spread on identical code is wider than
+  the 10 % gate they are supposed to police.
+
+`E:/fah-main-bench` is **kept**, detached at `ebc46f1`: the frozen pre-Phase-3
+baseline p3-10 measures against. Rebuilt later it would be a different baseline,
+not the same one. Do not switch its checkout or delete its `target/`.
 
 ## Risk inventory close-out — 2026-09-11
 
@@ -37,7 +55,9 @@ Follow-ups, neither a risk:
   `counters.dns_tcp_connections.{peak,closed_oversize}` from
   `/api/v1/telemetry`, check the container fd budget, set the final
   `tcp_max_connections` default, and record corpus, workload and device under
-  `docs/code-review/`. Cannot start before that build is deployed.
+  `docs/code-review/`. **It is running.** The 0.3.4 build carrying F1 booted
+  2026-09-11T22:02:48Z and the seven-day soak reads it hourly to
+  ~2026-09-18T22:00Z (§Now, Deployed). Read the counters at the end.
 - **F10 history-write residual.** `fah-stats` `history/mod.rs` `append_line`
   writes a rollup line and its `\n` as two `write_all`s; a stop landing between
   them leaves a partial line that the reader skips — one completed hour lost.

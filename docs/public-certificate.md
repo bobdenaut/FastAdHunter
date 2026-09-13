@@ -24,6 +24,28 @@ Two consumers, one of which cannot be worked around:
 - **DoT / DoH listeners (p3-05).** Android's Private DNS validates the server
   certificate against the system store and fails closed. A private CA is
   refused, so a household client cannot use the listeners without a public name.
+
+  The name is **`fah-dot.localbox.ro`** (owner's decision, 2026-09-13) — the
+  hostname typed into Android Private DNS. It is the only new name Phase 3
+  needs: plain DNS is reached by address through DHCP, and DoH rides the API
+  server at `https://fah-api.localbox.ro:8443/dns-query`
+  (`fah-api/src/routes.rs:123`). The wildcard already covers it; one label only,
+  so `fah-dot.localbox.ro` works and `a.fah-dot.localbox.ro` does not. The
+  record is `A → 172.17.0.2`, DNS-only — Cloudflare cannot proxy DoT, which is
+  raw TLS rather than HTTPS — and it exists, created 2026-09-13. It resolves
+  today and answers nothing: no deployed build binds `:853` yet, so a probe
+  before the Phase 3 deploy gets a refused connection rather than a certificate
+  error. Reaching it is LAN-only by construction; a phone off the LAN resolves
+  a private address and Private DNS fails closed, which is why WAN access is a
+  separate decision (dst-nat on 853, or WireGuard) and has not been taken.
+
+  **It only works while no CA exists.** `dot_tls` falls back to the API
+  certificate pair, which is this public one, but only when the store holds no
+  CA; with a CA present `MintingResolver` mints a private leaf for the SNI the
+  client sent (`fastadhunter/src/main.rs:892-930`). Android always sends SNI in
+  hostname mode, so generating a CA — to try interception, say — silently
+  breaks Private DNS on every device in the house. Interception ships disabled,
+  so the shipped state is the working one.
 - **The P3 origin.** The release probe verifies upstreams against
   `webpki-roots` only — `crates/fah-http/src/tls.rs:38`. A self-signed or
   local-CA origin answers `UnknownIssuer`. `--all-features` enables the
