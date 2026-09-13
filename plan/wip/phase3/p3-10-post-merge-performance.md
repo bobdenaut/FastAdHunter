@@ -1,6 +1,8 @@
 # p3-10 — post-merge coverage gaps and Phase 3 performance characterization
 
-**STATUS: DRAFT — not approved, nothing executed.** No production code changes.
+**STATUS: APPROVED 2026-09-13, nothing executed.** The phase table
+(`plan/wip/phase3/CLAUDE.md`, row 10) carries it as `WAITING`, and that row is
+the approval. No production code changes.
 New harnesses are deliverables in their own right and are not implemented
 implicitly; each one needs its own go before it is written.
 
