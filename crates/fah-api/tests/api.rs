@@ -419,9 +419,21 @@ impl TelemetrySource for FakeTelemetry {
                     allow: 0,
                     block: 918,
                     response_bytes: 148_223_904,
-                    refused: 3,
+                    refused_claim: 3,
+                    refused_destination: 11,
                 },
                 events_dropped: 7,
+                dns_tcp_connections: fah_model::DnsTcpConnections {
+                    active: 2,
+                    peak: 9,
+                    closed_oversize: 0,
+                },
+                dns_udp_inflight: fah_model::DnsUdpInflight {
+                    active: 4,
+                    peak: 37,
+                    shed: 2,
+                },
+                tasks_died: 1,
                 swr: fah_model::SwrCounters {
                     enqueued: 12_044,
                     deduplicated: 3_311,
@@ -1119,13 +1131,24 @@ async fn telemetry_matches_the_documented_shape() {
     assert_eq!(body["counters"]["dns"]["answers"]["servfail_relayed"], 88);
     assert_eq!(body["counters"]["dns"]["answers"]["refused_relayed"], 17);
     assert_eq!(body["counters"]["http"]["response_bytes"], 148_223_904);
-    assert_eq!(body["counters"]["http"]["refused"], 3);
+    assert_eq!(body["counters"]["http"]["refused_claim"], 3);
+    assert_eq!(body["counters"]["http"]["refused_destination"], 11);
     assert_eq!(body["counters"]["events_dropped"], 7);
     assert_eq!(body["counters"]["swr"]["failed"], 31);
     assert_eq!(
         body["counters"]["cache_cleanup"]["last_duration_micros"],
         1_842
     );
+    assert_eq!(body["counters"]["dns_tcp_connections"]["active"], 2);
+    assert_eq!(body["counters"]["dns_tcp_connections"]["peak"], 9);
+    assert_eq!(
+        body["counters"]["dns_tcp_connections"]["closed_oversize"],
+        0
+    );
+    assert_eq!(body["counters"]["dns_udp_inflight"]["active"], 4);
+    assert_eq!(body["counters"]["dns_udp_inflight"]["peak"], 37);
+    assert_eq!(body["counters"]["dns_udp_inflight"]["shed"], 2);
+    assert_eq!(body["counters"]["tasks_died"], 1);
 
     let upstream = &body["upstreams"][0];
     assert_eq!(upstream["address"], "1.1.1.1:853");

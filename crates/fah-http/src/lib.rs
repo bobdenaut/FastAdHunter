@@ -22,7 +22,6 @@
 
 mod block;
 mod claim;
-mod connections;
 mod domain;
 mod https;
 mod intercept;
@@ -35,7 +34,7 @@ mod tls_server;
 
 pub use block::BlockStyle;
 pub use claim::{ClaimError, Destination};
-pub use connections::ConnectionGauge;
+pub use fah_common::connections::ConnectionGauge;
 pub use https::TlsProxy;
 pub use intercept::Interception;
 pub use proxy::{Proxy, ProxyCounters, ProxyStats, Ruleset};

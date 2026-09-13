@@ -23,4 +23,6 @@ mod snapshot;
 
 pub use registry::Metrics;
 pub use ruleset::RulesetSnapshot;
-pub use snapshot::{CleanupSnapshot, MetricsSnapshot, StageHistogram, SwrSnapshot};
+pub use snapshot::{
+    CleanupSnapshot, MetricsSnapshot, RefusalSnapshot, StageHistogram, SwrSnapshot,
+};

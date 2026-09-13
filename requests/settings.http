@@ -62,6 +62,34 @@ Content-Type: application/json
   }
 }
 
+### Boot-only key — the DNS-over-TCP connection ceiling. The semaphore is sized
+### once at Server::bind, so the new value applies on the next start. This is
+### the post-soak retune path: read counters.dns_tcp_connections.peak from
+### telemetry.http, pick the ceiling, persist it here, restart the container.
+POST {{base}}/config
+{{auth}}
+Content-Type: application/json
+
+{
+  "dns": {
+    "tcp_max_connections": 256
+  }
+}
+
+### Boot-only key — the UDP in-flight ceiling. 0 (the default) means no cap.
+### Size it as arrival rate × the full-outage walk (~3.2 s at four UDP
+### upstreams, timeout_ms = 800) with headroom; at ~8 KiB per in-flight query
+### 4000 holds ~32 MiB. Applies on the next start.
+POST {{base}}/config
+{{auth}}
+Content-Type: application/json
+
+{
+  "dns": {
+    "udp_max_inflight": 4000
+  }
+}
+
 ### Mixed patch — expect both flags true. Needs one key from each class, so the
 ### runtime half has to be a genuinely live key: api.port is boot, and
 ### dns.cache would NOT work here because it is boot too.
@@ -173,7 +201,7 @@ Content-Type: application/json
 {
   "dns": {
     "upstreams": {
-      "strategy": "fallback",
+      "strategy": "adaptive",
       "timeout_ms": 800,
       "servers": [
         { "address": "1.1.1.1", "protocol": "udp" },

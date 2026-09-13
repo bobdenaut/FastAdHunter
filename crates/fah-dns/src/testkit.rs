@@ -21,6 +21,10 @@ impl Forwarder for NullForwarder {
 }
 
 pub(crate) fn pipeline() -> (Arc<Pipeline<NullForwarder>>, tempfile::TempDir) {
+    pipeline_with(NullForwarder)
+}
+
+pub(crate) fn pipeline_with<F: Forwarder>(forwarder: F) -> (Arc<Pipeline<F>>, tempfile::TempDir) {
     let data_dir = tempfile::tempdir().unwrap();
     let rules = Arc::new(
         ListManager::new(
@@ -35,7 +39,7 @@ pub(crate) fn pipeline() -> (Arc<Pipeline<NullForwarder>>, tempfile::TempDir) {
     let (events, _drop_receiver) = tokio::sync::mpsc::channel(8);
     let pipeline = Arc::new(Pipeline::new(
         rules,
-        NullForwarder,
+        forwarder,
         10,
         &DnsCacheConfig::default(),
         DEFAULT_REFRESH_CLAIM_LEASE,

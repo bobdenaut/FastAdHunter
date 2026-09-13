@@ -11,7 +11,8 @@ use tokio::sync::mpsc::Receiver;
 use tokio::sync::{watch, OwnedSemaphorePermit};
 use tokio::task::JoinSet;
 
-use crate::connections::OpenConnection;
+use fah_common::connections::{ConnectionGauge, OpenConnection};
+
 use crate::https::TlsProxy;
 use crate::proxy::Proxy;
 
@@ -21,7 +22,7 @@ pub(crate) struct Accepted<S> {
     pub(crate) stream: S,
     pub(crate) peer: SocketAddr,
     pub(crate) permit: OwnedSemaphorePermit,
-    pub(crate) open: OpenConnection,
+    pub(crate) open: OpenConnection<ConnectionGauge>,
 }
 
 impl<S> Accepted<S> {

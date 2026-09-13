@@ -324,7 +324,7 @@ impl<F: Forwarder> Pipeline<F> {
                 budget,
             ));
         }
-        let Some(query) = request.queries.first().cloned() else {
+        let Some(query) = request.queries.first() else {
             return Some(response::encode_for_transport(
                 &response::error(&request, ResponseCode::FormErr),
                 budget,
@@ -347,7 +347,7 @@ impl<F: Forwarder> Pipeline<F> {
         let (verdict, local_response) = match decision {
             MatchDecision::Block(rule_ref) => {
                 let rewrite = matcher.rewrite(rule_ref);
-                let response = response::blocked(&request, &query, self.blocking_ttl, rewrite);
+                let response = response::blocked(&request, query, self.blocking_ttl, rewrite);
                 (
                     Verdict::Block(matcher.decisive_rule(rule_ref)),
                     Some(response),
@@ -372,7 +372,7 @@ impl<F: Forwarder> Pipeline<F> {
                 let resolved = self
                     .resolve(
                         &request,
-                        &query,
+                        query,
                         &domain,
                         query.query_type(),
                         query.query_class(),
@@ -471,7 +471,7 @@ impl<F: Forwarder> Pipeline<F> {
                 }
                 // The client is answered either way; whether the answer was
                 // cacheable only matters to the refresh path (ADR-0005).
-                let _ = self.cache.store(&key, &upstream_response);
+                let _ = self.cache.store(key, &upstream_response);
                 // Wire ID is per-hop; always answer with the client's own.
                 upstream_response.metadata.id = request.metadata.id;
                 let outcome = match upstream_response.metadata.response_code {

@@ -39,7 +39,7 @@
 //! a shard, and nothing about lookup, TTL clamping or serve-stale changes —
 //! only how much can be resident at once.
 
-use std::collections::hash_map::RandomState;
+use std::collections::hash_map::{self, RandomState};
 use std::collections::{HashMap, VecDeque};
 use std::hash::BuildHasher;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -584,7 +584,7 @@ impl DnsCache {
     /// refresh (ADR-0005) needs it: an uncacheable answer means the entry is
     /// still stale, so that refresh must count as a failure and take the
     /// cooldown rather than silently leaving its claim to expire.
-    pub(crate) fn store(&self, key: &CacheKey, response: &Message) -> bool {
+    pub(crate) fn store(&self, key: CacheKey, response: &Message) -> bool {
         if response.metadata.truncation {
             return false;
         }
@@ -621,8 +621,8 @@ impl DnsCache {
         false
     }
 
-    fn insert(&self, key: &CacheKey, answer: CachedAnswer, ttl_seconds: u32) {
-        let idx = self.shard_index(key);
+    fn insert(&self, key: CacheKey, answer: CachedAnswer, ttl_seconds: u32) {
+        let idx = self.shard_index(&key);
         let mut guard = self.shards[idx].lock().unwrap();
         let now = Instant::now();
 
@@ -635,7 +635,7 @@ impl DnsCache {
             // clears the claim it was made under by replacing the whole entry.
             refresh_suppressed_until: None,
         };
-        let added = entry_heap_bytes(key, &entry);
+        let added = entry_heap_bytes(&key, &entry);
         guard.next_seq += 1;
         guard.queue.push_back((key.clone(), entry.seq));
         // A refresh replaces the previous answer, whose bytes go with it —
@@ -645,10 +645,19 @@ impl DnsCache {
         // `previous`'s bytes are already in the total, but if that ever broke,
         // failing soft (clamp at 0) beats a release-build wrap to ~u64::MAX,
         // which would pin `over_bounds()` true and evict the shard forever.
-        if let Some(previous) = guard.map.insert(key.clone(), entry) {
-            guard.bytes = guard.bytes.saturating_sub(entry_heap_bytes(key, &previous));
+        let shard = &mut *guard;
+        match shard.map.entry(key) {
+            hash_map::Entry::Occupied(mut slot) => {
+                let previous = slot.insert(entry);
+                shard.bytes = shard
+                    .bytes
+                    .saturating_sub(entry_heap_bytes(slot.key(), &previous));
+            }
+            hash_map::Entry::Vacant(slot) => {
+                slot.insert(entry);
+            }
         }
-        guard.bytes += added;
+        shard.bytes += added;
 
         // Evict until both bounds hold. `map.len() > 1` protects the entry
         // just stored: an answer larger than a whole shard's byte budget is
@@ -917,7 +926,7 @@ mod tests {
     #[tokio::test(start_paused = true)]
     async fn fresh_entry_is_returned_with_remaining_ttl() {
         let cache = DnsCache::new(&config(100), DEFAULT_REFRESH_CLAIM_LEASE);
-        cache.store(&a_key(&cache, "example.com."), &positive_response(100));
+        cache.store(a_key(&cache, "example.com."), &positive_response(100));
 
         tokio::time::advance(Duration::from_secs(40)).await;
 
@@ -933,7 +942,7 @@ mod tests {
     #[tokio::test(start_paused = true)]
     async fn entry_past_ttl_but_within_stale_window_is_reported_stale() {
         let cache = DnsCache::new(&config(100), DEFAULT_REFRESH_CLAIM_LEASE);
-        cache.store(&a_key(&cache, "example.com."), &positive_response(10));
+        cache.store(a_key(&cache, "example.com."), &positive_response(10));
 
         tokio::time::advance(Duration::from_secs(11)).await;
 
@@ -948,7 +957,7 @@ mod tests {
     async fn cache_with_stale_entry(lease: Duration) -> (DnsCache, CacheKey) {
         let cache = DnsCache::new(&config(100), lease);
         let key = a_key(&cache, "example.com.");
-        cache.store(&key, &positive_response(10));
+        cache.store(key.clone(), &positive_response(10));
         tokio::time::advance(Duration::from_secs(11)).await;
         (cache, key)
     }
@@ -1070,7 +1079,7 @@ mod tests {
         let (cache, key) = cache_with_stale_entry(DEFAULT_REFRESH_CLAIM_LEASE).await;
         assert!(claimed(cache.lookup_and_claim_refresh(&key)));
 
-        assert!(cache.store(&key, &positive_response(10)));
+        assert!(cache.store(key.clone(), &positive_response(10)));
         assert!(matches!(
             cache.lookup_and_claim_refresh(&key),
             Lookup::Fresh(..)
@@ -1091,24 +1100,24 @@ mod tests {
         let cache = DnsCache::new(&config(100), DEFAULT_REFRESH_CLAIM_LEASE);
         let key = a_key(&cache, "example.com.");
 
-        assert!(cache.store(&key, &positive_response(10)));
+        assert!(cache.store(key.clone(), &positive_response(10)));
 
         let mut servfail = Message::response(0, hickory_proto::op::OpCode::Query);
         servfail.metadata.response_code = ResponseCode::ServFail;
         assert!(
-            !cache.store(&key, &servfail),
+            !cache.store(key.clone(), &servfail),
             "SERVFAIL is a transient upstream state, never a cached answer"
         );
 
         let mut truncated = positive_response(10);
         truncated.metadata.truncation = true;
-        assert!(!cache.store(&key, &truncated));
+        assert!(!cache.store(key.clone(), &truncated));
     }
 
     #[tokio::test(start_paused = true)]
     async fn entry_past_the_stale_window_is_a_miss() {
         let cache = DnsCache::new(&config(100), DEFAULT_REFRESH_CLAIM_LEASE);
-        cache.store(&a_key(&cache, "example.com."), &positive_response(10));
+        cache.store(a_key(&cache, "example.com."), &positive_response(10));
 
         tokio::time::advance(Duration::from_secs(10) + MAX_STALE + Duration::from_secs(1)).await;
 
@@ -1123,7 +1132,7 @@ mod tests {
         let mut cfg = config(100);
         cfg.serve_stale = false;
         let cache = DnsCache::new(&cfg, DEFAULT_REFRESH_CLAIM_LEASE);
-        cache.store(&a_key(&cache, "example.com."), &positive_response(10));
+        cache.store(a_key(&cache, "example.com."), &positive_response(10));
 
         tokio::time::advance(Duration::from_secs(11)).await;
 
@@ -1140,8 +1149,8 @@ mod tests {
         cfg.max_ttl_seconds = 300;
         let cache = DnsCache::new(&cfg, DEFAULT_REFRESH_CLAIM_LEASE);
 
-        cache.store(&a_key(&cache, "short.example."), &positive_response(5));
-        cache.store(&a_key(&cache, "long.example."), &positive_response(10_000));
+        cache.store(a_key(&cache, "short.example."), &positive_response(5));
+        cache.store(a_key(&cache, "long.example."), &positive_response(10_000));
 
         let Lookup::Fresh(_, short_remaining) = cache.lookup(&a_key(&cache, "short.example."))
         else {
@@ -1164,7 +1173,7 @@ mod tests {
         response.metadata.response_code = ResponseCode::NXDomain;
         response.add_authority(soa_authority(45));
 
-        cache.store(&a_key(&cache, "nowhere.example.com."), &response);
+        cache.store(a_key(&cache, "nowhere.example.com."), &response);
 
         match cache.lookup(&a_key(&cache, "nowhere.example.com.")) {
             Lookup::Fresh(answer, remaining) => {
@@ -1189,7 +1198,7 @@ mod tests {
         response.add_authority(soa_authority(999_999));
 
         let key = cache.key("example.com.", RecordType::TXT, DNSClass::IN);
-        cache.store(&key, &response);
+        cache.store(key.clone(), &response);
 
         let Lookup::Fresh(_, remaining) = cache.lookup(&key) else {
             panic!("expected a fresh negative hit");
@@ -1203,7 +1212,7 @@ mod tests {
         let mut response = Message::query();
         response.metadata.response_code = ResponseCode::ServFail;
 
-        cache.store(&a_key(&cache, "example.com."), &response);
+        cache.store(a_key(&cache, "example.com."), &response);
 
         assert!(matches!(
             cache.lookup(&a_key(&cache, "example.com.")),
@@ -1221,7 +1230,7 @@ mod tests {
         response.answers.clear();
         response.metadata.truncation = true;
 
-        cache.store(&a_key(&cache, "example.com."), &response);
+        cache.store(a_key(&cache, "example.com."), &response);
         assert!(matches!(
             cache.lookup(&a_key(&cache, "example.com.")),
             Lookup::Miss
@@ -1230,7 +1239,7 @@ mod tests {
         // Same for a TC reply that kept some answers: partial set, not cacheable.
         let mut partial = positive_response(3600);
         partial.metadata.truncation = true;
-        cache.store(&a_key(&cache, "partial.example.com."), &partial);
+        cache.store(a_key(&cache, "partial.example.com."), &partial);
         assert!(matches!(
             cache.lookup(&a_key(&cache, "partial.example.com.")),
             Lookup::Miss
@@ -1244,7 +1253,7 @@ mod tests {
         let cache = DnsCache::new(&config(32), DEFAULT_REFRESH_CLAIM_LEASE);
         for i in 0..500 {
             cache.store(
-                &a_key(&cache, &format!("host{i}.example.com.")),
+                a_key(&cache, &format!("host{i}.example.com.")),
                 &positive_response(3600),
             );
             assert!(cache.len() <= 32, "cache grew past its bound at i={i}");
@@ -1295,7 +1304,7 @@ mod tests {
 
         for i in 0..2_000 {
             cache.store(
-                &a_key(&cache, &format!("host{i}.example.com.")),
+                a_key(&cache, &format!("host{i}.example.com.")),
                 &large_response(20),
             );
             let stats = cache.stats();
@@ -1326,9 +1335,9 @@ mod tests {
         let cache = DnsCache::new(&config(100), DEFAULT_REFRESH_CLAIM_LEASE);
         let key = a_key(&cache, "example.com.");
 
-        cache.store(&key, &large_response(50));
+        cache.store(key.clone(), &large_response(50));
         let big = cache.stats().bytes;
-        cache.store(&key, &large_response(1));
+        cache.store(key.clone(), &large_response(1));
         let small = cache.stats().bytes;
 
         assert_eq!(cache.len(), 1, "a refresh replaces, never accumulates");
@@ -1350,7 +1359,7 @@ mod tests {
 
         for i in 0..50 {
             cache.store(
-                &a_key(&cache, &format!("huge{i}.example.com.")),
+                a_key(&cache, &format!("huge{i}.example.com.")),
                 &large_response(2_000),
             );
         }
@@ -1376,7 +1385,7 @@ mod tests {
         let cache = DnsCache::new(&cfg, DEFAULT_REFRESH_CLAIM_LEASE);
         let key = a_key(&cache, "example.com.");
 
-        cache.store(&key, &positive_response(10));
+        cache.store(key.clone(), &positive_response(10));
         let Lookup::Fresh(answer, remaining) = cache.lookup(&key) else {
             panic!("expected a fresh hit under an active byte cap");
         };
@@ -1465,7 +1474,7 @@ mod tests {
         let cache = DnsCache::new(&config(32), DEFAULT_REFRESH_CLAIM_LEASE); // 2 per shard
         let key = a_key(&cache, "refreshed.example.com.");
         for _ in 0..100 {
-            cache.store(&key, &positive_response(3600));
+            cache.store(key.clone(), &positive_response(3600));
         }
         assert_eq!(cache.len(), 1);
         assert!(
@@ -1478,9 +1487,9 @@ mod tests {
     #[tokio::test(start_paused = true)]
     async fn stats_classifies_entries_by_lifetime_stage() {
         let cache = DnsCache::new(&config(100), DEFAULT_REFRESH_CLAIM_LEASE);
-        cache.store(&a_key(&cache, "fresh.example."), &positive_response(3600));
-        cache.store(&a_key(&cache, "stale.example."), &positive_response(10));
-        cache.store(&a_key(&cache, "dead.example."), &positive_response(1));
+        cache.store(a_key(&cache, "fresh.example."), &positive_response(3600));
+        cache.store(a_key(&cache, "stale.example."), &positive_response(10));
+        cache.store(a_key(&cache, "dead.example."), &positive_response(1));
 
         // t+11: the 10s entry is expired-but-stale-servable; nothing dead yet.
         tokio::time::advance(Duration::from_secs(11)).await;
@@ -1510,12 +1519,9 @@ mod tests {
         let mut cfg = config(100);
         cfg.max_ttl_seconds = 200_000;
         let cache = DnsCache::new(&cfg, DEFAULT_REFRESH_CLAIM_LEASE);
-        cache.store(
-            &a_key(&cache, "fresh.example."),
-            &positive_response(172_800),
-        );
-        cache.store(&a_key(&cache, "stale.example."), &positive_response(10));
-        cache.store(&a_key(&cache, "dead.example."), &positive_response(1));
+        cache.store(a_key(&cache, "fresh.example."), &positive_response(172_800));
+        cache.store(a_key(&cache, "stale.example."), &positive_response(10));
+        cache.store(a_key(&cache, "dead.example."), &positive_response(1));
 
         // t+2+24h: the 1s entry is past its stale window (dead), the 10s one
         // expired but is still inside its window, the 2-day one is fresh.
@@ -1539,8 +1545,8 @@ mod tests {
     #[tokio::test(start_paused = true)]
     async fn clean_with_purge_stale_drops_the_stale_window_too() {
         let cache = DnsCache::new(&config(100), DEFAULT_REFRESH_CLAIM_LEASE);
-        cache.store(&a_key(&cache, "fresh.example."), &positive_response(3600));
-        cache.store(&a_key(&cache, "stale.example."), &positive_response(10));
+        cache.store(a_key(&cache, "fresh.example."), &positive_response(3600));
+        cache.store(a_key(&cache, "stale.example."), &positive_response(10));
 
         tokio::time::advance(Duration::from_secs(11)).await;
 
@@ -1559,7 +1565,7 @@ mod tests {
         let mut cfg = config(100);
         cfg.serve_stale = false;
         let cache = DnsCache::new(&cfg, DEFAULT_REFRESH_CLAIM_LEASE);
-        cache.store(&a_key(&cache, "gone.example."), &positive_response(10));
+        cache.store(a_key(&cache, "gone.example."), &positive_response(10));
 
         tokio::time::advance(Duration::from_secs(11)).await;
 
@@ -1579,11 +1585,11 @@ mod tests {
         let cache = DnsCache::new(&config(1000), DEFAULT_REFRESH_CLAIM_LEASE);
         for i in 0..50 {
             cache.store(
-                &a_key(&cache, &format!("dead{i}.example.")),
+                a_key(&cache, &format!("dead{i}.example.")),
                 &positive_response(1),
             );
         }
-        cache.store(&a_key(&cache, "alive.example."), &positive_response(86_400));
+        cache.store(a_key(&cache, "alive.example."), &positive_response(86_400));
         assert_eq!(cache.queue_len(), 51);
 
         tokio::time::advance(Duration::from_secs(2) + MAX_STALE).await;
@@ -1608,7 +1614,7 @@ mod tests {
         let cache = DnsCache::new(&config(1000), DEFAULT_REFRESH_CLAIM_LEASE);
         for i in 0..50 {
             cache.store(
-                &a_key(&cache, &format!("dead{i}.example.")),
+                a_key(&cache, &format!("dead{i}.example.")),
                 &positive_response(1),
             );
         }
@@ -1650,7 +1656,7 @@ mod tests {
         assert_eq!(stats.bytes_freed, 0);
         assert_eq!(empty.freed_bytes, 0);
 
-        cache.store(&a_key(&cache, "dead.example."), &positive_response(1));
+        cache.store(a_key(&cache, "dead.example."), &positive_response(1));
         tokio::time::advance(Duration::from_secs(2) + MAX_STALE).await;
         let outcome = cache.clean(false);
 
@@ -1677,7 +1683,7 @@ mod tests {
         let cache = Arc::new(DnsCache::new(&config(1000), DEFAULT_REFRESH_CLAIM_LEASE));
         for i in 0..200 {
             cache.store(
-                &a_key(&cache, &format!("live{i}.example.")),
+                a_key(&cache, &format!("live{i}.example.")),
                 &positive_response(3600),
             );
         }
@@ -1736,7 +1742,7 @@ mod tests {
     #[tokio::test(start_paused = true)]
     async fn cleanup_counters_include_an_admin_stale_purge() {
         let cache = DnsCache::new(&config(100), DEFAULT_REFRESH_CLAIM_LEASE);
-        cache.store(&a_key(&cache, "stale.example."), &positive_response(10));
+        cache.store(a_key(&cache, "stale.example."), &positive_response(10));
         tokio::time::advance(Duration::from_secs(11)).await;
 
         cache.clean(true);
@@ -1753,7 +1759,7 @@ mod tests {
             "no insert → no table, no heap"
         );
 
-        cache.store(&a_key(&cache, "one.example.com."), &positive_response(10));
+        cache.store(a_key(&cache, "one.example.com."), &positive_response(10));
         let one = cache.stats().estimated_bytes;
         let pair = std::mem::size_of::<(CacheKey, Entry)>() as u64;
         assert!(
@@ -1795,7 +1801,7 @@ mod tests {
 
         for i in 0..100 {
             cache.store(
-                &a_key(&cache, &format!("host{i}.example.com.")),
+                a_key(&cache, &format!("host{i}.example.com.")),
                 &positive_response(3600),
             );
         }
@@ -1819,7 +1825,7 @@ mod tests {
             handles.push(tokio::spawn(async move {
                 for i in 0..200 {
                     let key = a_key(&cache, &format!("w{worker}-h{i}.example.com."));
-                    cache.store(&key, &positive_response(3600));
+                    cache.store(key.clone(), &positive_response(3600));
                     let _ = cache.lookup(&key);
                 }
             }));

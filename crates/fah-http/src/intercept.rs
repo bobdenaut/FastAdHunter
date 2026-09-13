@@ -275,7 +275,7 @@ impl TlsProxy {
         publish(events, &self.counters, Event::https(event));
     }
 
-    fn emit_request(&self, judged: &Judged, started: Instant, status: u16, bytes: u64) {
+    fn emit_request(&self, judged: Judged, started: Instant, status: u16, bytes: u64) {
         emit(
             self.events.as_ref(),
             &self.counters,
@@ -322,14 +322,14 @@ impl TlsProxy {
             self.counters.blocked.fetch_add(1, Ordering::Relaxed);
             let response = crate::block::response(judged.resource_type, blocked);
             let status = response.status().as_u16();
-            self.emit_request(&judged, started, status, 0);
+            self.emit_request(judged, started, status, 0);
             return Ok(response.map(|body| Either::Right(Full::new(body))));
         }
 
         if !same_host(&claim.host, host) || claim.port != self.origin_port {
             self.counters.refused_claim.fetch_add(1, Ordering::Relaxed);
             debug!(%peer, %host, claimed = %claim.host, port = claim.port, "refused: Host does not name the verified SNI and origin port");
-            self.emit_request(&judged, started, 421, 0);
+            self.emit_request(judged, started, 421, 0);
             return Ok(refuse(StatusCode::MISDIRECTED_REQUEST));
         }
 
@@ -337,7 +337,7 @@ impl TlsProxy {
             Ok(response) => {
                 let status = response.status().as_u16();
                 let bytes = response.body().size_hint().exact().unwrap_or(0);
-                self.emit_request(&judged, started, status, bytes);
+                self.emit_request(judged, started, status, bytes);
                 Ok(to_client_response(response))
             }
             Err(err) if certificate_error(&err) => {
@@ -345,7 +345,7 @@ impl TlsProxy {
                     .upstream_cert_failures
                     .fetch_add(1, Ordering::Relaxed);
                 debug!(%peer, %host, error = %err, "upstream certificate not verified on reconnect");
-                self.emit_request(&judged, started, UPSTREAM_CERT_FAILURE, 0);
+                self.emit_request(judged, started, UPSTREAM_CERT_FAILURE, 0);
                 Ok(refuse(upstream_cert_failure_status()))
             }
             Err(err) => {
@@ -353,7 +353,7 @@ impl TlsProxy {
                     .upstream_failures
                     .fetch_add(1, Ordering::Relaxed);
                 debug!(%peer, %host, error = %err, "intercepted upstream request failed");
-                self.emit_request(&judged, started, 502, 0);
+                self.emit_request(judged, started, 502, 0);
                 Ok(refuse(StatusCode::BAD_GATEWAY))
             }
         }

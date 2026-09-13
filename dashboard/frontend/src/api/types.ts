@@ -58,7 +58,8 @@ export interface HttpCounters {
   allow: number;
   block: number;
   response_bytes: number;
-  refused: number;
+  refused_claim: number;
+  refused_destination: number;
 }
 
 export interface SwrCounters {
@@ -96,6 +97,9 @@ export interface Counters {
   swr: SwrCounters;
   cache_cleanup: CacheCleanupCounters;
   lists: ListsCounters;
+  /** Supervised long-lived tasks (schedulers, fan-out, sampler, SWR workers)
+   *  that ended before shutdown. Lifetime count; the normal value is 0. */
+  tasks_died: number;
 }
 
 /** `count` and `sum_seconds`, never an average: a lifetime mean flattens
@@ -228,7 +232,8 @@ export interface DebugMemory extends Memory {
  * `"endpoint": 1`. Cache hits, blocks and HTTP items carry no key at all.
  *
  * `verdict` is `pass` | `allow` | `block` and there is no fourth value:
- * `counters.http.refused` is counted on the proxy, not on this stream.
+ * `counters.http.refused_claim` and `counters.http.refused_destination` are
+ * counted on the proxy, not on this stream.
  */
 export interface QueryEvent {
   kind: string;

@@ -16,8 +16,12 @@
 use std::fmt;
 
 use hyper::header::HOST;
-use hyper::http::uri::Authority;
+use std::fmt::Write;
+
+use hyper::http::uri::{Authority, PathAndQuery};
 use hyper::{Request, Uri};
+
+const SOCKET_ADDR_TEXT_MAX: usize = 58;
 
 /// Why a request's stated destination was rejected, before any resolution.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -147,12 +151,13 @@ fn same_destination(a: &Authority, b: &Authority, default_port: u16) -> bool {
 pub fn retarget(uri: &Uri, address: std::net::SocketAddr) -> Result<Uri, hyper::http::Error> {
     let path_and_query = uri
         .path_and_query()
-        .map_or_else(|| "/".to_string(), ToString::to_string);
+        .cloned()
+        .unwrap_or_else(|| PathAndQuery::from_static("/"));
+    let mut authority = String::with_capacity(SOCKET_ADDR_TEXT_MAX);
+    let _ = write!(authority, "{address}");
     Uri::builder()
         .scheme("http")
-        // `SocketAddr`'s Display brackets IPv6 for us, which is the authority
-        // form hyper expects.
-        .authority(address.to_string())
+        .authority(authority)
         .path_and_query(path_and_query)
         .build()
 }

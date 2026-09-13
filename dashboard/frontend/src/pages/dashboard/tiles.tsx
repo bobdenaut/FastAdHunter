@@ -98,7 +98,16 @@ export function HttpTiles({
   const http = telemetry?.counters.http;
   const requests =
     http === undefined ? undefined : http.pass + http.allow + http.block;
-  const refused = http?.refused;
+  const refusedClaim = http?.refused_claim;
+  const refusedDestination = http?.refused_destination;
+  const refusedFooter =
+    refusedClaim === undefined || refusedDestination === undefined
+      ? '—'
+      : `${refusedClaim.toLocaleString()} unusable Host · ${refusedDestination.toLocaleString()} egress policy`;
+  const refusedFooterShort =
+    refusedClaim === undefined || refusedDestination === undefined
+      ? '—'
+      : `${(refusedClaim + refusedDestination).toLocaleString()} refused`;
   const lists =
     enabledLists === null ? '—' : `${String(enabledLists)} lists`;
 
@@ -118,14 +127,8 @@ export function HttpTiles({
           figure={figure(http?.block)}
           accent="blocked"
           glyph="shield"
-          footer={
-            refused === undefined
-              ? '—'
-              : `${refused.toLocaleString()} refused by egress policy`
-          }
-          footerShort={
-            refused === undefined ? '—' : `${refused.toLocaleString()} refused`
-          }
+          footer={refusedFooter}
+          footerShort={refusedFooterShort}
         />
         <Tile
           label="Compiled rules"

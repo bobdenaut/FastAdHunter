@@ -148,7 +148,8 @@ async fn serve_connection<F: Forwarder>(
     };
     #[cfg(feature = "diag-timing")]
     diag.emit(client);
-    let served = tcp::handle_connection(&mut stream, pipeline, client.ip(), Transport::Dot).await;
+    let served =
+        tcp::handle_connection(&mut stream, pipeline, client.ip(), Transport::Dot, None).await;
     let _ = timeout(tcp::TCP_IDLE_TIMEOUT, stream.shutdown()).await;
     served
 }

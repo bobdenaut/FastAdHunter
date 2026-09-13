@@ -12,6 +12,7 @@ mod adapters;
 mod allocator;
 mod privilege;
 mod process;
+mod supervisor;
 
 use std::io;
 use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr, UdpSocket};
@@ -24,6 +25,7 @@ use std::time::Duration;
 use fah_config::{Config, LogFormat as ConfigLogFormat, LogLevel};
 use fah_logging::LogFormat;
 use fah_rules::interception::InterceptionState;
+use supervisor::Supervised;
 use tracing_subscriber::filter::LevelFilter;
 
 const DEFAULT_CONFIG_PATH: &str = "/config/fastadhunter.toml";
@@ -254,11 +256,8 @@ fn run(config: Config, config_path: &Path, data_dir: &Path) -> ExitCode {
 
     let result = runtime.block_on(async {
         let mut engine = Engine::start(config, config_path, data_dir).await?;
-        let died = tokio::select! {
-            () = await_shutdown() => None,
-            died = engine.dns.fatal() => Some(died),
-        };
-        engine.shutdown();
+        let died = engine.run().await;
+        engine.shutdown().await;
         Ok::<_, Box<dyn std::error::Error>>(died)
     });
 
@@ -292,7 +291,10 @@ struct Engine {
     http: Option<fah_http::Server>,
     https: Option<fah_http::TlsServer>,
     api: fah_api::ApiServer,
-    tasks: Vec<tokio::task::JoinHandle<()>>,
+    tasks: Vec<Supervised>,
+    stats_schedulers: Vec<Supervised>,
+    stats: Arc<fah_stats::Stats>,
+    metrics: Arc<fah_metrics::Metrics>,
 }
 
 impl Engine {
@@ -372,7 +374,7 @@ impl Engine {
             )
             .with_policies(Arc::clone(&policy_state)),
         );
-        let mut dns = fah_dns::Server::bind(&config.dns.listen).await?;
+        let mut dns = fah_dns::Server::bind(&config.dns).await?;
         tracing::info!(
             udp = %dns.udp_addr(),
             tcp = %dns.tcp_addr(),
@@ -671,34 +673,52 @@ impl Engine {
         }
 
         // ── The edges between the siblings ──
+        let stats_schedulers = vec![
+            Supervised::new("stats snapshot scheduler", stats.spawn_snapshot_scheduler()),
+            Supervised::new("stats history scheduler", stats.spawn_history_scheduler()),
+        ];
         let mut tasks = vec![
-            rules.spawn_scheduler(),
-            stats.spawn_snapshot_scheduler(),
-            stats.spawn_history_scheduler(),
-            spawn_event_fanout(
-                events_rx,
-                Arc::clone(&stats),
-                Arc::clone(&metrics),
-                api.events(),
+            Supervised::new("rules scheduler", rules.spawn_scheduler()),
+            Supervised::new(
+                "event fan-out",
+                spawn_event_fanout(
+                    events_rx,
+                    Arc::clone(&stats),
+                    Arc::clone(&metrics),
+                    api.events(),
+                ),
             ),
-            spawn_perf_sampler(
-                Arc::clone(&stats),
-                Arc::clone(&metrics),
-                Arc::clone(&pipeline),
-                Arc::clone(&rules),
-                http.as_ref().map(fah_http::Server::connections),
-                https.as_ref().map(fah_http::TlsServer::connections),
-                perf_sample_interval_seconds,
+            Supervised::new(
+                "perf sampler",
+                spawn_perf_sampler(
+                    Arc::clone(&stats),
+                    Arc::clone(&metrics),
+                    Arc::clone(&pipeline),
+                    Arc::clone(&rules),
+                    http.as_ref().map(fah_http::Server::connections),
+                    https.as_ref().map(fah_http::TlsServer::connections),
+                    perf_sample_interval_seconds,
+                ),
             ),
-            spawn_telemetry_poll(
-                metrics,
-                Arc::clone(&rules),
-                Arc::clone(&pipeline),
-                upstreams,
-                proxy_counters,
-                tls_proxy.as_ref().map(|proxy| proxy.counters()),
+            Supervised::new(
+                "telemetry poll",
+                spawn_telemetry_poll(
+                    Arc::clone(&metrics),
+                    Arc::clone(&rules),
+                    Arc::clone(&pipeline),
+                    upstreams,
+                    ProxyCounterSources {
+                        http: proxy_counters,
+                        https: tls_proxy.as_ref().map(|proxy| proxy.counters()),
+                    },
+                    dns.tcp_connections(),
+                    dns.udp_inflight(),
+                ),
             ),
-            spawn_policy_ticker(policy_state, rules, Arc::clone(&stats)),
+            Supervised::new(
+                "policy ticker",
+                spawn_policy_ticker(policy_state, rules, Arc::clone(&stats)),
+            ),
         ];
 
         // Stale-while-refresh (ADR-0005). Started here rather than in
@@ -711,14 +731,18 @@ impl Engine {
                 "stale-while-refresh pool started"
             );
         }
-        tasks.extend(swr_workers);
+        tasks.extend(
+            swr_workers
+                .into_iter()
+                .map(|worker| Supervised::new("swr worker", worker)),
+        );
 
         // Scheduled cache sweep, spawned here for the same reason: the binary
         // owns every long-lived task's lifetime. `None` when
         // `[dns.cache] cleanup_interval_seconds = 0`.
         if let Some(cleanup) = pipeline.spawn_cache_cleanup() {
             tracing::info!("cache cleanup scheduler started");
-            tasks.push(cleanup);
+            tasks.push(Supervised::new("cache cleanup", cleanup));
         }
 
         Ok(Self {
@@ -727,10 +751,40 @@ impl Engine {
             https,
             api,
             tasks,
+            stats_schedulers,
+            stats,
+            metrics,
         })
     }
 
-    fn shutdown(&mut self) {
+    async fn run(&mut self) -> Option<fah_dns::ListenerDied> {
+        let shutdown = await_shutdown();
+        tokio::pin!(shutdown);
+        let mut supervision = tokio::time::interval(TELEMETRY_POLL);
+        supervision.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+        loop {
+            tokio::select! {
+                () = &mut shutdown => return None,
+                died = self.dns.fatal() => return Some(died),
+                _ = supervision.tick() => self.reap_dead_tasks().await,
+            }
+        }
+    }
+
+    async fn reap_dead_tasks(&mut self) {
+        let mut deaths = supervisor::reap(&mut self.tasks).await;
+        deaths.extend(supervisor::reap(&mut self.stats_schedulers).await);
+        for death in deaths {
+            self.metrics.record_task_death();
+            tracing::error!(
+                task = death.name,
+                cause = %death.cause,
+                "a supervised task died; the resolver keeps answering but that task's work has stopped"
+            );
+        }
+    }
+
+    async fn shutdown(&mut self) {
         if let Some(https) = &self.https {
             https.shutdown();
         }
@@ -740,7 +794,27 @@ impl Engine {
         self.dns.shutdown();
         self.api.shutdown();
         for task in &self.tasks {
-            task.abort();
+            task.handle.abort();
+        }
+        let schedulers = std::mem::take(&mut self.stats_schedulers);
+        for scheduler in &schedulers {
+            scheduler.handle.abort();
+        }
+        let flush = async {
+            for scheduler in schedulers {
+                let _ = scheduler.handle.await;
+            }
+            self.stats.save_snapshot().await;
+            self.stats.flush_history(std::time::SystemTime::now()).await;
+        };
+        if tokio::time::timeout(STATS_FLUSH_TIMEOUT, flush)
+            .await
+            .is_err()
+        {
+            tracing::warn!(
+                timeout_seconds = STATS_FLUSH_TIMEOUT.as_secs(),
+                "stats flush at shutdown timed out; up to one snapshot interval of aggregates lost"
+            );
         }
     }
 }
@@ -783,6 +857,8 @@ const HTTPS_ORIGIN_PORT: u16 = 443;
 const MAX_IDLE_UPSTREAMS_PER_HOST: usize = 8;
 
 const HTTP_DRAIN_TIMEOUT: Duration = Duration::from_secs(5);
+
+const STATS_FLUSH_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// Assembles the HTTP proxy from config: the injected resolver port, and the
 /// egress policy that decides where it may connect.
@@ -1015,6 +1091,18 @@ fn spawn_event_fanout(
     })
 }
 
+fn refusals_of(proxy: &fah_http::ProxyStats) -> fah_metrics::RefusalSnapshot {
+    fah_metrics::RefusalSnapshot {
+        claim: proxy.refused_claim,
+        destination: proxy.refused_destination,
+    }
+}
+
+struct ProxyCounterSources {
+    http: Option<Arc<fah_http::ProxyCounters>>,
+    https: Option<Arc<fah_http::ProxyCounters>>,
+}
+
 /// Refreshes the metrics that are read rather than pushed: the pipeline's
 /// channel-drop counter, per-upstream health and the compiled ruleset's size.
 ///
@@ -1027,8 +1115,9 @@ fn spawn_telemetry_poll(
     rules: Arc<fah_rules::ListManager>,
     pipeline: Arc<fah_dns::Pipeline<fah_dns::UpstreamPool>>,
     upstreams: fah_dns::UpstreamPool,
-    proxy_counters: Option<Arc<fah_http::ProxyCounters>>,
-    tls_proxy_counters: Option<Arc<fah_http::ProxyCounters>>,
+    proxies: ProxyCounterSources,
+    dns_tcp: Arc<fah_dns::TcpConnectionGauge>,
+    dns_udp: Arc<fah_dns::UdpInflightGauge>,
 ) -> tokio::task::JoinHandle<()> {
     tokio::spawn(async move {
         let mut ticker = tokio::time::interval(TELEMETRY_POLL);
@@ -1037,13 +1126,18 @@ fn spawn_telemetry_poll(
             ticker.tick().await;
 
             metrics.set_dropped_events(pipeline.dropped_events());
-            let refused = |counters: &Option<Arc<fah_http::ProxyCounters>>| {
-                counters.as_ref().map_or(0, |counters| {
-                    let proxy = counters.snapshot();
-                    proxy.refused_claim + proxy.refused_destination
-                })
-            };
-            metrics.set_requests_refused(refused(&proxy_counters) + refused(&tls_proxy_counters));
+            metrics.set_dns_tcp_connections(dns_tcp.snapshot());
+            metrics.set_dns_udp_inflight(dns_udp.snapshot());
+            let mut refusals = fah_metrics::RefusalSnapshot::default();
+            for counters in [proxies.http.as_ref(), proxies.https.as_ref()]
+                .into_iter()
+                .flatten()
+            {
+                let split = refusals_of(&counters.snapshot());
+                refusals.claim += split.claim;
+                refusals.destination += split.destination;
+            }
+            metrics.set_requests_refused(refusals);
             // Field-by-field rather than a shared type: `fah-dns` and
             // `fah-metrics` are L3 siblings and must not import each other
             // (ARCHITECTURE.md §Dependency Layering), so the binary is the one
@@ -1484,6 +1578,32 @@ mod tests {
         assert!(!https_enabled(fah_config::EngineMode::Dns));
         assert!(!https_enabled(fah_config::EngineMode::DnsHttp));
         assert!(https_enabled(fah_config::EngineMode::DnsHttpHttps));
+    }
+
+    #[test]
+    fn the_telemetry_poll_publishes_each_proxy_refusal_cause_on_its_own_field() {
+        let counters = fah_http::ProxyCounters::default();
+        for _ in 0..3 {
+            counters
+                .refused_claim
+                .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        }
+        for _ in 0..11 {
+            counters
+                .refused_destination
+                .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        }
+
+        let metrics = fah_metrics::Metrics::new();
+        metrics.set_requests_refused(refusals_of(&counters.snapshot()));
+
+        let http = metrics.engine_telemetry().counters.http;
+        assert_eq!(
+            (http.refused_claim, http.refused_destination),
+            (3, 11),
+            "the hop from ProxyCounters to /telemetry must neither swap the two \
+             causes nor fold them back into one figure"
+        );
     }
 
     fn upstreams(servers: usize, timeout_ms: u32) -> fah_config::DnsUpstreamsConfig {

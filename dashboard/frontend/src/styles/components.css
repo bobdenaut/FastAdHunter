@@ -1006,6 +1006,10 @@ table.t tbody tr:hover td {
   font-weight: 600;
 }
 
+.figure.bad {
+  color: var(--pill-bad-fg);
+}
+
 .figure-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));

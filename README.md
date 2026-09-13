@@ -14,7 +14,8 @@ A network filtering engine that sits between every device in a house and the
 internet. One container on the router, no client configuration, no browser
 extension, no per-device agent.
 
-It filters **DNS and HTTP today**, HTTPS after that.
+It filters **DNS and HTTP today**. HTTPS interception (Phase 3) and HTML
+filtering (Phase 4) are designed and **parked**.
 
 **Performance is the primary feature.** Every architectural decision is
 evaluated by its effect on throughput, latency and allocations — and the
@@ -31,7 +32,7 @@ numbers below are measured on the target hardware, not estimated.
 | 1.5 | Observability persistence | ✅ done | `v0.3.0-phase1.5` |
 | 2 | HTTP engine + Policies | ✅ done | `v0.2.17-phase2` |
 | 2.5 | Pre-Adaptive hardening | ✅ done | `v0.2.19-phase2.5` |
-| 2.6 | Adaptive DNS Stage 1 | ✅ closed 2026-09-07 — `adaptive` shipped opt-in; compiled-in default flipped and the `fallback` walk deleted with p2.6-12 (on `phase3-06`) | `soak-p2.6-11` |
+| 2.6 | Adaptive DNS Stage 1 | ✅ done — closed 2026-09-07; `adaptive` is the only strategy since p2.6-12, on `main` from 2026-09-11 | `soak-p2.6-11` |
 | 5 | Web dashboard | ✅ done — closed 2026-09-01, four verification rows deferred to the next deploy window | `0.3.0` |
 | 3 | HTTPS interception | 🚧 dev box done (p3-01…p3-05, p3-07…p3-09); p3-06's on-device campaign ran, four arms parked on hardware, awaiting the 24 h soak; the N3 follow-up closed 2026-09-11 as a technical experiment, not promoted | `phase3-06` |
 | 4 | HTML filtering | ⬜ not started | — |
@@ -41,11 +42,15 @@ numbered 5 by capability and scheduled ahead of HTTPS and HTML filtering because
 that is what the household needs next.
 
 Running in production on a MikroTik RB5009 as the household's only resolver, in
-`dns+http` mode, on **0.3.3** since 2026-09-07 — the first build serving HTTP on
-allocation domains ([ADR-0006](docs/decisions/0006-http-allocation-domains.md)),
-on its 7-day soak to 2026-09-14. Phase 2's engine work is deployed — the
-transparent HTTP proxy, URL-path rules, per-client Policies and the single JSON
-telemetry surface — and so is the Phase 5 dashboard.
+`dns+http` mode, on **0.3.3** since 2026-09-09 (0.3.x since 2026-08-29). Phase
+2's engine work is deployed — the transparent HTTP proxy, URL-path rules,
+per-client Policies and the single JSON telemetry surface — and so is the Phase
+5 dashboard. Since 0.3.2 the HTTP engine runs on **allocation domains**
+([ADR-0006](docs/decisions/0006-http-allocation-domains.md)): each HTTP
+connection is served end to end on one of two single-thread runtimes, so its
+allocations are freed by the thread that made them — on the RB5009 a third less
+CPU per request than the shared runtime, and a third of its held memory after a
+900 MiB transfer.
 
 Phase 2.5 was hardening, not features: the live-resolver defects an architecture
 review found (a DNS listener that could die silently, a 200-OK garbage list body
@@ -72,9 +77,13 @@ allocation-domain production swap, and the phase closed that day by owner
 decision. Two deployment gates closed **unvalidated** — the observed failure
 window held three runs, all of length 1, too few to calibrate
 `penalty_failures`, which therefore stays at its compiled default of 2,
-provisional and uncalibrated. The default flip (p2.6-12) then landed on
-`phase3-06`: `adaptive` is the compiled-in default, the `fallback` walk is
-deleted, and a config still naming it fails at load.
+provisional and uncalibrated. The default flip (p2.6-12) landed on `phase3-06`
+and reached `main` on 2026-09-11: `adaptive` is the **only** strategy, the
+`fallback` walk is deleted, and a config still naming it fails at load. The
+removal rests on a controlled A/B at production timings — one dead upstream
+ahead of three healthy ones costs `fallback` 831 ms per query and `adaptive`
+31 ms, with no scenario favouring `fallback`
+([strategy-ab-fallback-vs-adaptive.md](docs/code-review/phase2.6/strategy-ab-fallback-vs-adaptive.md)).
 
 Phase 5 is the web dashboard, and it is **built** — thirteen screens across all
 ten tasks, merged and released as 0.3.0. The shipped bundle is **128,730 B
@@ -95,9 +104,7 @@ the deployed container, not a dev box. **Measurements are binary (MiB);**
 PERFORMANCE.md writes its budgets in decimal MB, which runs ~4.9 % higher for the
 same reading. **Each row carries the build it was measured on.** The ruleset and
 boot rows are 0.3.0; the steady-state memory, refresh transient, latency and
-throughput rows still describe 0.2.x, because the equivalent 0.3.0 readings need
-a warm cache and a list refresh that the running deployment has not reached yet
-— the 0.3.3 soak closing 2026-09-14 produces them.
+throughput rows still describe 0.2.x and have not been re-taken on 0.3.x.
 
 | | Measured | Build | Budget |
 | --- | ---: | :---: | ---: |
@@ -412,7 +419,7 @@ Pass-through: stream origin ⇄ client, byte for byte
 **The body is never parsed and never buffered.** Images, archives, PDFs and video
 stream through untouched — buffering a response to inspect it would make memory
 grow with traffic, which the bounded-everything rule forbids outright. HTML
-rewriting arrives in Phase 4 and is opt-in, for that content type alone.
+rewriting is Phase 4 — parked — and will be opt-in, for that content type alone.
 
 The verdict is taken on the **head**, before the origin is resolved, so a blocked
 request costs no DNS lookup and no upstream connection — measured **48–55 %
@@ -471,6 +478,12 @@ to one of `[runtime] http_runtimes` **allocation domains** — single-thread
 runtimes on their own OS threads that serve the connection end to end, hello
 peek and TLS handshake included, so what a connection allocates is freed by the
 thread that allocated it. The RB5009 runs two.
+
+Since 0.3.2 HTTP connections are the exception: each is served end to end on
+one of `runtime.http_runtimes` (default 2) single-thread runtimes on their own
+OS threads behind one acceptor — allocation domains,
+[ADR-0006](docs/decisions/0006-http-allocation-domains.md) — so the shared
+runtime carries DNS, rules and the API.
 
 ---
 
@@ -706,8 +719,8 @@ firewall · a replacement for a good browser extension.
 | **1.5** ✅ | Persisted history, perf series, byte-bounded cache |
 | **2** ✅ | HTTP proxy, URL-path rules, Policies, telemetry consolidation, compile-transient attribution |
 | **2.5** ✅ | Listener resilience, list-refresh integrity, encrypted-transport fixes, outcome telemetry, failure run-length telemetry — hardening before adaptive upstream selection |
-| **2.6** ✅ | Adaptive DNS Stage 1 — per-endpoint health, penalty and skip on repeated transport failure, on-path recovery probing; deployed opt-in since 2026-08-25, closed 2026-09-07; `adaptive` became the compiled-in default and `fallback` was deleted in p2.6-12. Shipped alongside as 0.3.2: HTTP allocation domains (ADR-0006) |
-| **5** ✅ | Web dashboard — thirteen screens, 128,730 B gzip, served by `fah-api` on one origin, session-cookie auth, every figure backed by an endpoint that exists; released as 0.3.0, closed 2026-09-01 with four verification rows deferred |
+| **2.6** ✅ | Adaptive DNS Stage 1 — per-endpoint health, penalty and skip on repeated transport failure, on-path recovery probing; in production opt-in since 2026-08-25, closed 2026-09-07; `adaptive` is the only strategy and `fallback` is deleted since p2.6-12 (on `main` from 2026-09-11). Shipped alongside as 0.3.2: HTTP allocation domains (ADR-0006) |
+| **5** ✅ | Web dashboard — thirteen screens, 128,730 B gzip at 0.3.0, served by `fah-api` on one origin, session-cookie auth, every figure backed by an endpoint that exists; released as 0.3.0, closed 2026-09-01 with four verification rows deferred |
 | **3** 🚧 | HTTPS interception, certificate management, DoT/DoH listeners, live Interception Document + client-rejection view (ADR-0008) — dev box done, on-device campaign run, awaiting the 24 h soak |
 | **4** | HTML filtering with `lol_html`, cosmetic rules |
 

@@ -14,7 +14,7 @@ RB5009, not merely written.
 | 1.5 — observability persistence | ✅ done | `v0.3.0-phase1.5` |
 | 2 — HTTP | ✅ done | `v0.2.17-phase2` |
 | 2.5 — pre-Adaptive hardening | ✅ done | `v0.2.19-phase2.5` |
-| 2.6 — Adaptive DNS Stage 1 | ✅ done — closed 2026-09-07; default flipped to `adaptive`, `fallback` deleted (p2.6-12 on `phase3-06`) | `soak-p2.6-11` · `v0.3.2` |
+| 2.6 — Adaptive DNS Stage 1 | ✅ done — closed 2026-09-07; `adaptive` is the only strategy since p2.6-12, cherry-picked to `main` 2026-09-11 after the A/B measurement | `soak-p2.6-11` · `v0.3.2` |
 | 5 — web dashboard | ✅ done — closed 2026-09-01, four verification rows deferred | `0.3.0` |
 | 3 — HTTPS | 🚧 p3-01…p3-05 done, p3-06 `AWAITING SOAK` | — |
 | 4 — HTML filtering | ⬜ not started | — |
@@ -231,12 +231,17 @@ production swap; `p2.6-11` closed on its RSS-drift evidence
 (`docs/code-review/phase2.6/resoak-0.3.1-memory-diagnosis.md`). Sequencing of
 the three: [plan/resoak-orchestration.md](plan/resoak-orchestration.md).
 
-**p2.6-12 — the default flip — done on `phase3-06` (2026-09-07).** `adaptive`
-is the compiled-in default, the `fallback` variant and walk are deleted, and a
-config naming `fallback` fails at load with a removal message. The gates it
-waited on: two deployment-tier gates closed unvalidated — three length-1 runs,
-too few to calibrate `penalty_failures`, which stays at 2 — so the flip is an
-owner decision on that record, not an inference from the gates. Review:
+**p2.6-12 — the default flip — done on `phase3-06` (2026-09-07) and
+cherry-picked to `main` on 2026-09-11.** `adaptive` is the compiled-in default,
+the `fallback` variant and walk are deleted, and a config naming `fallback`
+fails at load with a removal message. The gates it waited on: two
+deployment-tier gates closed unvalidated — three length-1 runs, too few to
+calibrate `penalty_failures`, which stays at 2 — so the flip was an owner
+decision on that record. The `main` cherry-pick rests on a controlled A/B
+instead: `fallback` vs `adaptive` at production timings across 0/4, 1/4, 2/4
+and 4/4 dead upstreams plus recovery
+([strategy-ab-fallback-vs-adaptive.md](docs/code-review/phase2.6/strategy-ab-fallback-vs-adaptive.md)).
+Review of the change itself:
 [p2.6-12-default-flip-review.md](docs/code-review/phase2.6/p2.6-12-default-flip-review.md).
 
 ### Shipped alongside — list refresh, conditional GET (0.3.0)

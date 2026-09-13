@@ -55,7 +55,14 @@ const TELEMETRY = {
   process: { version: '0.2.20', uptime_seconds: 4 * 3600 + 31 * 60 },
   ruleset: { rules: 752585, duplicates_removed: 87422, compile_duration_seconds: 7.41 },
   counters: {
-    http: { pass: 3200, allow: 294, block: 918, response_bytes: 0, refused: 3 },
+    http: {
+      pass: 3200,
+      allow: 294,
+      block: 918,
+      response_bytes: 0,
+      refused_claim: 3,
+      refused_destination: 11,
+    },
   },
 } as unknown as Telemetry;
 
@@ -138,21 +145,22 @@ describe('tile row 2', () => {
     mount(<HttpTiles telemetry={TELEMETRY} status="ok" enabledLists={13} />);
 
   it('sums the HTTP request tile from the three verdicts, refused excluded', () => {
-    // API.md: `refused` is counted on the proxy, not on the event stream, so it
-    // is not part of `pass + allow + block`.
+    // API.md: `refused_claim` is taken before the verdict, so it is outside
+    // `pass + allow + block`. `refused_destination` is not — the request is
+    // already in `pass` — so the tile figure must never add either one.
     const figures = Array.from(mounted().querySelectorAll('.tile .n')).map(
       (node) => node.textContent,
     );
     expect(figures).toEqual(['4,412', '918', '752,585', '4h 31m']);
   });
 
-  it('states the refused count and the health status in the footers', () => {
+  it('states both refusal causes and the health status in the footers', () => {
     const long = Array.from(mounted().querySelectorAll('.tile .ft-long')).map(
       (node) => node.textContent,
     );
     expect(long).toEqual([
       'proxy pipeline',
-      '3 refused by egress policy',
+      '3 unusable Host · 11 egress policy',
       'manage lists',
       'status ok',
     ]);

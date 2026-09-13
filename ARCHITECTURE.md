@@ -77,13 +77,17 @@ and serving are separate calls throughout — bind may need privilege, serving
 must not have it (ADR-0004).
 
 ### DNS (Phase 1)
-
-- UDP/53 with EDNS(0); TCP/53 for truncation fallback (mandatory).
+- UDP/53 with EDNS(0); TCP/53 for truncation fallback (mandatory). TCP is
+  bounded by `[dns] tcp_max_connections` (permit before accept) and a 16 KiB
+  per-message length bound; UDP by the optional `[dns] udp_max_inflight`
+  admission ceiling (admission before the datagram is copied, a full ceiling
+  drops the datagram unanswered; `0` = no cap). All surface on
+  `/api/v1/telemetry`.
 - DoT on `[dns.listen] dot_port` (853, Phase 3): bound beside 53 before the
   privilege drop; 64 connections, permit taken before accept; 10 s handshake
-  deadline; the TCP/53 framing loop over TLS. The leaf is minted per SNI at
-  the handshake through `fah-certs`' `MintingResolver`, the API pair is the
-  fallback.
+  deadline; the TCP/53 framing loop over TLS, length bound included. The leaf
+  is minted per SNI at the handshake through `fah-certs`' `MintingResolver`,
+  the API pair is the fallback.
 - DoH (Phase 3): `/dns-query` on the API listener, reaching the pipeline
   through the `DnsWireSource` port (§Dependency Layering); the HTTPS peer
   address is the client.
@@ -341,6 +345,13 @@ against this document.
   a full queue costs a skipped refresh and never a delayed client. The pipeline
   is strictly the producer; nothing flows back. They are spawned by the binary
   alongside every other long-lived task, so shutdown aborts them from one place.
+- **Long-lived task death is observed, not handled.** The binary's run loop
+  checks every supervised task (CONTEXT.md §Supervised Task lists them) on a
+  10 s tick; one that ended before shutdown is logged once and counted in
+  `counters.tasks_died`. No restart, no exit: the resolver keeps answering, and
+  that task's work stays stopped until the container restarts. The API accept
+  loop and the HTTP acceptor are not supervised; only a DNS listener dying
+  exits the process.
 - **The cache cleanup sweep** (`[dns.cache] cleanup_interval_seconds`) is the
   other one: a single task that removes entries past the serve-stale window.
   Nothing connects it to the query path — no channel, no shared state beyond the
@@ -362,7 +373,8 @@ No database. RAM plus files on the persistent volumes:
   raw copies cached in `/data` so boot never waits on the network.
 - Query log: in-RAM ring buffer + batched append-only segments on `/data`,
   pruned by age and size caps.
-- Statistics: fixed-size in-RAM aggregates, snapshotted to `/data` periodically.
+- Statistics: fixed-size in-RAM aggregates, snapshotted to `/data` periodically
+  and once more on clean shutdown (5 s bound).
 
 See [ADR-0002](docs/decisions/0002-no-embedded-database.md).
 

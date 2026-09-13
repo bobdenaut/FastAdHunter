@@ -18,7 +18,9 @@ use fah_model::{AnswerOutcome, QueryEvent, RequestEvent, StaleServe, Verdict};
 
 use crate::histogram::Histogram;
 use crate::ruleset::RulesetSnapshot;
-use crate::snapshot::{CleanupSnapshot, MetricsSnapshot, StageHistogram, SwrSnapshot};
+use crate::snapshot::{
+    CleanupSnapshot, MetricsSnapshot, RefusalSnapshot, StageHistogram, SwrSnapshot,
+};
 use fah_model::UpstreamSample;
 
 pub struct Metrics {
@@ -53,13 +55,17 @@ pub struct Metrics {
     /// Response bytes relayed downstream — the figure that makes "a blocked
     /// request ships nothing" visible as a trend rather than as an assertion.
     pub(crate) response_bytes: AtomicU64,
-    pub(crate) requests_refused: AtomicU64,
+    pub(crate) requests_refused_claim: AtomicU64,
+    pub(crate) requests_refused_destination: AtomicU64,
     /// Request latency, bucketed the way the DNS one is: a block never touches
     /// the network, so mixing it with a forward would hide the very budget row
     /// (`< 1 ms` for a synthesized block) it exists to prove.
     pub(crate) request_duration_block: Histogram,
     pub(crate) request_duration_forward: Histogram,
     pub(crate) dropped_events: AtomicU64,
+    pub(crate) dns_tcp_connections: ArcSwap<fah_model::DnsTcpConnections>,
+    pub(crate) dns_udp_inflight: ArcSwap<fah_model::DnsUdpInflight>,
+    pub(crate) tasks_died: AtomicU64,
     /// Stale-while-refresh counters (ADR-0005). Stored as one value rather than
     /// five atomics because they are read together, replaced together off
     /// `fah_dns::Pipeline::swr_stats()`, and only ever compared with each other
@@ -102,10 +108,14 @@ impl Metrics {
             requests_allow: AtomicU64::new(0),
             requests_block: AtomicU64::new(0),
             response_bytes: AtomicU64::new(0),
-            requests_refused: AtomicU64::new(0),
+            requests_refused_claim: AtomicU64::new(0),
+            requests_refused_destination: AtomicU64::new(0),
             request_duration_block: Histogram::new(),
             request_duration_forward: Histogram::new(),
             dropped_events: AtomicU64::new(0),
+            dns_tcp_connections: ArcSwap::new(Arc::new(fah_model::DnsTcpConnections::default())),
+            dns_udp_inflight: ArcSwap::new(Arc::new(fah_model::DnsUdpInflight::default())),
+            tasks_died: AtomicU64::new(0),
             swr: ArcSwap::new(Arc::new(SwrSnapshot::default())),
             cleanup: ArcSwap::new(Arc::new(CleanupSnapshot::default())),
             lists: ArcSwap::new(Arc::new(fah_model::ListFetchCounters::default())),
@@ -203,8 +213,11 @@ impl Metrics {
         self.dropped_events.store(count, Ordering::Relaxed);
     }
 
-    pub fn set_requests_refused(&self, count: u64) {
-        self.requests_refused.store(count, Ordering::Relaxed);
+    pub fn set_requests_refused(&self, snapshot: RefusalSnapshot) {
+        self.requests_refused_claim
+            .store(snapshot.claim, Ordering::Relaxed);
+        self.requests_refused_destination
+            .store(snapshot.destination, Ordering::Relaxed);
     }
 
     /// Stale-while-refresh counters off `fah_dns::Pipeline::swr_stats()`
@@ -223,6 +236,18 @@ impl Metrics {
 
     pub fn set_lists(&self, snapshot: fah_model::ListFetchCounters) {
         self.lists.store(Arc::new(snapshot));
+    }
+
+    pub fn set_dns_tcp_connections(&self, snapshot: fah_model::DnsTcpConnections) {
+        self.dns_tcp_connections.store(Arc::new(snapshot));
+    }
+
+    pub fn set_dns_udp_inflight(&self, snapshot: fah_model::DnsUdpInflight) {
+        self.dns_udp_inflight.store(Arc::new(snapshot));
+    }
+
+    pub fn record_task_death(&self) {
+        self.tasks_died.fetch_add(1, Ordering::Relaxed);
     }
 
     pub fn set_upstreams(&self, snapshot: Vec<UpstreamSample>) {
@@ -272,7 +297,8 @@ impl Metrics {
                     allow: self.requests_allow.load(Ordering::Relaxed),
                     block: self.requests_block.load(Ordering::Relaxed),
                     response_bytes: self.response_bytes.load(Ordering::Relaxed),
-                    refused: self.requests_refused.load(Ordering::Relaxed),
+                    refused_claim: self.requests_refused_claim.load(Ordering::Relaxed),
+                    refused_destination: self.requests_refused_destination.load(Ordering::Relaxed),
                 },
                 events_dropped: self.dropped_events.load(Ordering::Relaxed),
                 swr: fah_model::SwrCounters {
@@ -289,6 +315,9 @@ impl Metrics {
                     last_duration: std::time::Duration::from_micros(cleanup.last_duration_micros),
                 },
                 lists: **self.lists.load(),
+                dns_tcp_connections: **self.dns_tcp_connections.load(),
+                dns_udp_inflight: **self.dns_udp_inflight.load(),
+                tasks_died: self.tasks_died.load(Ordering::Relaxed),
             },
             latency: fah_model::LatencyTotals {
                 dns: fah_model::DnsLatency {
@@ -651,6 +680,53 @@ mod tests {
     }
 
     #[test]
+    fn dns_tcp_connections_round_trip_as_one_value() {
+        let metrics = Metrics::new();
+        let busy = fah_model::DnsTcpConnections {
+            active: 3,
+            peak: 11,
+            closed_oversize: 2,
+        };
+        metrics.set_dns_tcp_connections(busy);
+        assert_eq!(
+            metrics.engine_telemetry().counters.dns_tcp_connections,
+            busy
+        );
+
+        let idle = fah_model::DnsTcpConnections { active: 0, ..busy };
+        metrics.set_dns_tcp_connections(idle);
+        assert_eq!(
+            metrics.engine_telemetry().counters.dns_tcp_connections,
+            idle
+        );
+    }
+
+    #[test]
+    fn task_deaths_accumulate_for_the_process_lifetime() {
+        let metrics = Metrics::new();
+        assert_eq!(metrics.engine_telemetry().counters.tasks_died, 0);
+        metrics.record_task_death();
+        metrics.record_task_death();
+        assert_eq!(metrics.engine_telemetry().counters.tasks_died, 2);
+    }
+
+    #[test]
+    fn dns_udp_inflight_round_trips_as_one_value() {
+        let metrics = Metrics::new();
+        let busy = fah_model::DnsUdpInflight {
+            active: 40,
+            peak: 512,
+            shed: 7,
+        };
+        metrics.set_dns_udp_inflight(busy);
+        assert_eq!(metrics.engine_telemetry().counters.dns_udp_inflight, busy);
+
+        let idle = fah_model::DnsUdpInflight { active: 0, ..busy };
+        metrics.set_dns_udp_inflight(idle);
+        assert_eq!(metrics.engine_telemetry().counters.dns_udp_inflight, idle);
+    }
+
+    #[test]
     fn answer_outcomes_are_counted_on_their_own_axis() {
         let metrics = Metrics::new();
         metrics.record(
@@ -694,13 +770,28 @@ mod tests {
     }
 
     #[test]
-    fn the_polled_refusal_count_replaces_the_last_value_on_the_http_counters() {
+    fn the_polled_refusal_counts_replace_the_last_values_on_the_http_counters() {
         let metrics = Metrics::new();
-        assert_eq!(metrics.engine_telemetry().counters.http.refused, 0);
-        metrics.set_requests_refused(138);
-        assert_eq!(metrics.engine_telemetry().counters.http.refused, 138);
-        metrics.set_requests_refused(140);
-        assert_eq!(metrics.engine_telemetry().counters.http.refused, 140);
+        let http = metrics.engine_telemetry().counters.http;
+        assert_eq!((http.refused_claim, http.refused_destination), (0, 0));
+
+        metrics.set_requests_refused(RefusalSnapshot {
+            claim: 138,
+            destination: 7,
+        });
+        let http = metrics.engine_telemetry().counters.http;
+        assert_eq!(
+            (http.refused_claim, http.refused_destination),
+            (138, 7),
+            "each cause lands on its own field, neither summed nor crossed"
+        );
+
+        metrics.set_requests_refused(RefusalSnapshot {
+            claim: 140,
+            destination: 9,
+        });
+        let http = metrics.engine_telemetry().counters.http;
+        assert_eq!((http.refused_claim, http.refused_destination), (140, 9));
     }
 
     #[test]

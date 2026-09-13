@@ -48,6 +48,10 @@ const AD_HOST: &str = "ads.example.com";
 /// The second client. Per-client rules key on the peer address.
 const STRICT_CLIENT: Ipv4Addr = Ipv4Addr::new(127, 0, 0, 2);
 
+const IP_LITERAL_HOST: &str = "192.0.2.1";
+
+const UNINTERCEPTED_PORT: u16 = 8080;
+
 const PAGE_BODY: &str = "<html><head><script src=\"http://ads.example.com/track.js\">\
                          </script></head><body>shop</body></html>";
 const SCRIPT_BODY: &str = "/* tracker */";
@@ -199,6 +203,86 @@ async fn the_binary_proxies_filters_and_reports_http() {
 }
 
 // ─── the binary under test ──────────────────────────────────────────────
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn both_refusal_causes_reach_telemetry_on_their_own_fields() {
+    let started = Instant::now();
+
+    let config_dir = tempfile::tempdir().expect("config volume");
+    let data_dir = tempfile::tempdir().expect("data volume");
+
+    let upstream = UdpSocket::bind("127.0.0.1:0").await.expect("mock upstream");
+    let upstream_addr = upstream.local_addr().expect("upstream addr");
+    tokio::spawn(run_mock_upstream_answering(upstream, Ipv4Addr::LOCALHOST));
+
+    let http = reqwest::Client::builder()
+        .danger_accept_invalid_certs(true)
+        .build()
+        .expect("http client");
+
+    let (_child, ports, base) = boot(config_dir.path(), data_dir.path(), &http, |ports| {
+        config_toml(ports, upstream_addr)
+    })
+    .await;
+    let proxy_port = ports.http();
+
+    let key = std::fs::read_to_string(config_dir.path().join("apikey"))
+        .expect("first boot must persist an API key")
+        .trim()
+        .to_string();
+
+    let ip_literal = fetch(None, proxy_port, IP_LITERAL_HOST, "/index.html").await;
+    assert_eq!(
+        ip_literal.status, 403,
+        "a bare-IP Host is refused on the request line, before any resolution"
+    );
+
+    let wrong_port = fetch(
+        None,
+        proxy_port,
+        &format!("{PAGE_HOST}:{UNINTERCEPTED_PORT}"),
+        "/index.html",
+    )
+    .await;
+    assert_eq!(
+        wrong_port.status, 403,
+        "the name resolves to 127.0.0.1, which `allow_destinations` permits, so \
+         only the egress guard's port rule can have refused this"
+    );
+
+    let counters = await_refusal_counters(&http, &base, &key).await;
+    assert_eq!(
+        (
+            counters.http.refused_claim,
+            counters.http.refused_destination
+        ),
+        (1, 1),
+        "each cause must reach /telemetry on its own field, neither summed nor \
+         swapped: one bare-IP Host, one unintercepted destination: {counters:?}"
+    );
+    assert_eq!(
+        counters.http.block, 0,
+        "no rule list is loaded, so neither refusal may be counted as a \
+         filtering block: {counters:?}"
+    );
+    assert_eq!(
+        counters.http.pass, 1,
+        "characterizing today's behaviour, not endorsing it: the egress refusal \
+         runs after the verdict and emits that Pass event, so the request is in \
+         `pass` as well as in `refused_destination`. The claim refusal returns \
+         before the verdict and stays out of both: {counters:?}"
+    );
+    assert_eq!(
+        counters.http.response_bytes, 0,
+        "a refused request must ship nothing downstream: {counters:?}"
+    );
+
+    assert!(
+        started.elapsed() < TEST_BUDGET,
+        "refusal telemetry test took {:?}, over its {TEST_BUDGET:?} budget",
+        started.elapsed()
+    );
+}
 
 fn config_toml(ports: &Ports, upstream: SocketAddr) -> String {
     let dns_port = ports.dns;
@@ -423,6 +507,28 @@ where
 /// Deserialized into `fah_model::EngineCounters` rather than indexed as a
 /// `Value`: a renamed field then fails to compile instead of silently reading
 /// as absent.
+async fn await_refusal_counters(
+    client: &reqwest::Client,
+    base: &str,
+    key: &str,
+) -> fah_model::EngineCounters {
+    let deadline = Instant::now() + Duration::from_secs(25);
+    loop {
+        let body = get_json(client, base, key, "/api/v1/telemetry").await;
+        let counters: fah_model::EngineCounters =
+            serde_json::from_value(body["counters"].clone()).expect("counters block");
+        let http = &counters.http;
+        if http.refused_claim >= 1 && http.refused_destination >= 1 {
+            return counters;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "telemetry never published both refusal causes: {counters:?}"
+        );
+        tokio::time::sleep(Duration::from_millis(200)).await;
+    }
+}
+
 async fn await_http_counters(
     client: &reqwest::Client,
     base: &str,

@@ -457,9 +457,12 @@ Everything that answers "is it healthy and where is the memory".
   `servfail_relayed`, `refused_relayed`.
 - **Shed** — `counters.events_dropped`, one number covering both pipelines
   because they share one bounded channel.
-- **HTTP refusals** — `counters.http.refused`, the egress policy refusing a
-  request before any upstream contact. Called out because it is the only signal
-  of a LAN client probing.
+- **HTTP refusals** — `counters.http.refused_claim` and
+  `counters.http.refused_destination`, shown apart because the causes differ:
+  the first is the request line itself (a `Host` that is missing, duplicated,
+  malformed or a bare IP), the second is the resolved address falling outside
+  the allowed set. Neither says whether the client was probing or broken; that
+  is in the `debug` log line's `reason` field.
 - **Memory** — `GET /debug/memory`: per-structure heap plus `residual_bytes`,
   with the two `allocator_committed_*` fields marked as carrying no
   compatibility promise.

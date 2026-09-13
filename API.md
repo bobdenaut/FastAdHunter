@@ -137,12 +137,20 @@ already reports as JSON.
 channel, so the shed figure stays one number. `counters.http` is kept separate
 from `counters.dns` because "queries" has meant "DNS questions answered" since
 p1-08 and widening it would silently redefine every figure built on it.
-`counters.http.refused` (p2.5-11) is requests the egress policy refused before
-any upstream contact — an unusable `Host` (`[egress] allow_ip_literal_hosts`)
-or a resolved destination outside `[egress]`. It is counted on the proxy, not
-on the event stream, so it is not part of `pass + allow + block`; it is the
-only signal of a LAN client probing, now that refusals log at `debug`. Since
-p3-03 it also includes the HTTPS SNI listener's refused destinations.
+`counters.http.refused_claim` and `counters.http.refused_destination` are
+requests refused before any upstream contact, counted apart because the causes
+differ and so do the fixes. `refused_claim` is the request line itself — a
+`Host` that is missing, duplicated, malformed, or a bare IP (`[egress]
+allow_ip_literal_hosts`); all four causes land on that one figure.
+`refused_destination` is the address the name *resolved* to falling outside
+`[egress] allow_destinations`. Since p3-03 both also count the HTTPS SNI
+listener's refusals. `refused_claim` is taken before the verdict, so it is
+outside `pass + allow + block`. `refused_destination` is **not**: the egress
+check runs after the verdict, and the request has already been emitted as
+`pass` with status 403 and zero bytes. Reading `pass` as "requests served"
+overstates it by the number of destination refusals. Neither attributes
+intent: a refusal may be a probing client or a broken one, and the counter does
+not say which — the cause is the `reason` field on the `debug` log line.
 
 `listeners` (p3-06) publishes each proxy listener's own counter set — `http`
 for `[http.listen]`, `https` for `[https.listen]`; a listener that is not part
@@ -168,13 +176,22 @@ measured on one Android device, Spotify sends `certificate_unknown` with and
 without the CA, and so does Chromium without it
 (docs/code-review/phase3/p3-06-n3-alert-ab.md). `handshakes_completed` is the
 positive counterpart: intercepted sessions whose TLS handshake the client
-completed, counted at that moment, `0` on the `http` listener.
-`refused_claim + refused_destination` across both listeners is what
-`counters.http.refused` sums.
+completed, counted at that moment, `0` on the `http` listener. Summed across
+both listeners, the per-listener `refused_claim` and `refused_destination` are
+what `counters.http.refused_claim` and `counters.http.refused_destination`
+report.
 
 **Compatibility contract.** New fields may be added; existing fields must not
 change meaning or units. Figures that may change with the implementation live
 under `/api/v1/debug/*` instead, which promises nothing.
+
+Before 1.0 a field may also be **replaced**, provided the entry naming it says
+what replaced it and what is lost. One replacement so far:
+`counters.http.refused` (p2.5-11) was the sum of the two figures above and
+could not tell them apart; it is gone in favour of the pair. A payload captured
+before the split still deserializes, but the old total reads as `0` on both new
+fields — it cannot be reconstructed, so a series spanning the change shows a
+step to zero, not a carry-over.
 
 The boundary is **who produces a figure**, not how useful it looks:
 
@@ -200,13 +217,16 @@ Top-level blocks: `process`, `ruleset`, `counters`, `latency`, `upstreams`,
               "answers": { "servfail_synthesized": 1204, "servfail_relayed": 88,
                            "refused_relayed": 17 } },
     "http": { "pass": 4412, "allow": 0, "block": 918, "response_bytes": 148223904,
-              "refused": 3 },
+              "refused_claim": 3, "refused_destination": 11 },
     "events_dropped": 0,
     "swr": { "enqueued": 12044, "deduplicated": 3311, "dropped": 0,
              "completed": 8702, "failed": 31 },
     "cache_cleanup": { "runs": 308, "entries_removed": 44120,
                        "bytes_freed": 9871232, "last_duration_micros": 1842 },
-    "lists": { "bodies": 17, "not_modified": 3, "bytes_fetched": 27580000 }
+    "lists": { "bodies": 17, "not_modified": 3, "bytes_fetched": 27580000 },
+    "dns_tcp_connections": { "active": 2, "peak": 9, "closed_oversize": 0 },
+    "dns_udp_inflight": { "active": 0, "peak": 0, "shed": 0 },
+    "tasks_died": 0
   },
   "listeners": {
     "http":  { "connections": 5120, "requests": 5333, "blocked": 918,
@@ -264,6 +284,37 @@ Reading it correctly:
   Modified` (or byte-identical to the cached copy), which move no body and
   trigger no recompile. A `bodies` delta beside an RSS excursion attributes
   the excursion to a refresh without any out-of-band graph.
+- **`counters.dns_tcp_connections` is the DNS-over-TCP listener's bound in
+  numbers.** `active` is a gauge (connections open right now); `peak` is the
+  process-lifetime high-water mark of `active`, the figure that sizes
+  `[dns] tcp_max_connections` after a soak; `closed_oversize` counts
+  connections closed because a client's 2-byte length prefix exceeded the
+  internal 16 KiB message bound (`fah_dns::MAX_MESSAGE_LEN`). Non-zero
+  `closed_oversize` on a household LAN is a misbehaving client, not a limit to
+  raise. The DoT listener is **not** in this figure. It shares the framing loop
+  and the same 16 KiB bound but is handed no gauge, so a DoT connection appears
+  in no `active`/`peak` and a DoT frame closed over the bound raises no
+  `closed_oversize`. DoT is bounded separately by a compiled-in 64-connection
+  cap (`fah_dns::DOT_MAX_CONNECTIONS`), which has no counter and no config key:
+  saturation on 853 is visible only in the `debug` log.
+- **`counters.dns_udp_inflight` is the UDP admission guard in numbers.** All
+  three are zero while `[dns] udp_max_inflight` is `0` (the default): the
+  listener then touches no counter and counts nothing. With a ceiling set,
+  `active` is the number of UDP queries in flight right now, `peak` the
+  process-lifetime high-water mark of `active`, and `shed` the datagrams
+  dropped unanswered because the ceiling was full. In-flight ≈ arrival rate ×
+  the full-outage upstream walk, so a rising `shed` during an upstream outage
+  is the guard doing its job; `shed` climbing while upstreams are healthy means
+  the ceiling is below the deployment's normal concurrency.
+- **`counters.tasks_died` is the supervisor's tally.** The binary checks its
+  long-lived tasks (rules scheduler, event fan-out, perf sampler, telemetry
+  poll, policy ticker, SWR workers, cache cleanup, the two stats schedulers)
+  every 10 s; one that ended before shutdown — a panic, or a loop that
+  returned — is logged once at `error` with its name and cause, and counted
+  here for the process lifetime. Nothing restarts it and the process does not
+  exit: the resolver keeps answering while that task's work stays stopped
+  until the container is restarted. `/health` does not change. A DNS
+  listener dying is a different path and does exit the process.
 - **`counters.dns.answers` counts what the *client* saw, on its own axis.**
   `servfail_synthesized` is a failure FastAdHunter minted itself because every
   upstream failed and no stale entry could cover it; `servfail_relayed` and
@@ -336,7 +387,8 @@ Reading it correctly:
   counter, so one bad hostname cannot penalize a working endpoint.
 - No `ruleset.heap_bytes`: that is `memory.ruleset_bytes`, so the number has one
   home.
-- `ruleset`, `upstreams`, `counters.swr` and `counters.cache_cleanup` are pushed
+- `ruleset`, `upstreams`, `counters.swr`, `counters.cache_cleanup`,
+  `counters.dns_tcp_connections` and `counters.dns_udp_inflight` are pushed
   into the registry on a 10 s poll, so they can be up to one interval old.
   `cache` and `memory` are read at request time.
 

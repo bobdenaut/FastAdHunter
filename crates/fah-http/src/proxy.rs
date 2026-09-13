@@ -267,9 +267,7 @@ impl Proxy {
         allow_ip_literal_hosts: bool,
     ) -> Self {
         let client = Client::builder(TokioExecutor::new())
-            // Bounded pool: idle upstream connections are capped per host and
-            // reaped on a timer, so memory is a function of configuration
-            // rather than of how many sites the LAN visits (hard rule 4).
+            .pool_timer(TokioTimer::new())
             .pool_idle_timeout(upstream_idle_timeout)
             .pool_max_idle_per_host(max_idle_per_host)
             .build(LiteralConnector);
@@ -396,14 +394,14 @@ impl Proxy {
             self.counters.blocked.fetch_add(1, Ordering::Relaxed);
             let response = crate::block::response(judged.resource_type, blocked);
             let status = response.status().as_u16();
-            self.emit(&judged, started, status, 0);
+            self.emit(judged, started, status, 0);
             return Ok(response.map(|body| Either::Right(Full::new(body))));
         }
 
         let address = match self.approved_address(&claim, peer).await {
             Ok(address) => address,
             Err(status) => {
-                self.emit(&judged, started, status.as_u16(), 0);
+                self.emit(judged, started, status.as_u16(), 0);
                 return Ok(refuse(status));
             }
         };
@@ -412,7 +410,7 @@ impl Proxy {
             Ok(upstream) => upstream,
             Err(err) => {
                 debug!(%peer, error = %err, "could not build the upstream request");
-                self.emit(&judged, started, 400, 0);
+                self.emit(judged, started, 400, 0);
                 return Ok(refuse(StatusCode::BAD_REQUEST));
             }
         };
@@ -425,7 +423,7 @@ impl Proxy {
                 // put per-chunk work on the path p2-02 exists to keep clean.
                 // A chunked response reports no exact size, which is honest.
                 let bytes = response.body().size_hint().exact().unwrap_or(0);
-                self.emit(&judged, started, status, bytes);
+                self.emit(judged, started, status, bytes);
                 Ok(to_client_response(response))
             }
             Err(err) => {
@@ -433,7 +431,7 @@ impl Proxy {
                     .upstream_failures
                     .fetch_add(1, Ordering::Relaxed);
                 debug!(%peer, host = %claim.host, error = %err, "upstream request failed");
-                self.emit(&judged, started, 502, 0);
+                self.emit(judged, started, 502, 0);
                 Ok(refuse(StatusCode::BAD_GATEWAY))
             }
         }
@@ -459,7 +457,7 @@ impl Proxy {
     /// Publishes the completed request. Never blocks the response: a full
     /// channel sheds and counts, exactly as the DNS pipeline does — an
     /// observability queue must not become a backpressure path onto traffic.
-    fn emit(&self, judged: &Judged, started: Instant, status: u16, bytes: u64) {
+    fn emit(&self, judged: Judged, started: Instant, status: u16, bytes: u64) {
         emit(
             self.events.as_ref(),
             &self.counters,
@@ -576,11 +574,8 @@ pub(crate) fn judge(
     peer: SocketAddr,
 ) -> Judged {
     let resource_type = crate::request::resource_type(request.headers(), request.uri());
-    let authority = match claim.port {
-        port if port == origin_port => claim.host.clone(),
-        port => format!("{}:{port}", claim.host),
-    };
-    let url = crate::request::absolute_url(scheme, request, &authority);
+    let port = (claim.port != origin_port).then_some(claim.port);
+    let url = crate::request::absolute_url(scheme, request, &claim.host, port);
     let host = crate::request::request_host(&claim.host).to_string();
     let path = request
         .uri()
@@ -630,7 +625,7 @@ pub(crate) fn emit(
     events: Option<&mpsc::Sender<Event>>,
     counters: &ProxyCounters,
     wrap: fn(RequestEvent) -> Event,
-    judged: &Judged,
+    judged: Judged,
     started: Instant,
     status: u16,
     bytes: u64,
@@ -639,13 +634,13 @@ pub(crate) fn emit(
         return;
     };
     let event = RequestEvent::new(
-        judged.request.clone(),
-        judged.verdict.clone(),
+        judged.request,
+        judged.verdict,
         started.elapsed(),
         status,
         bytes,
     )
-    .under_policy(judged.policy.clone());
+    .under_policy(judged.policy);
     publish(events, counters, wrap(event));
 }
 
@@ -812,5 +807,156 @@ mod tests {
     fn refusals_carry_a_body_the_client_can_read() {
         let response = refuse(StatusCode::FORBIDDEN);
         assert_eq!(response.status(), StatusCode::FORBIDDEN);
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn an_idle_upstream_connection_is_reaped_after_the_idle_timeout() {
+        use std::time::Instant;
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        use tokio::net::TcpListener;
+
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let origin_port = listener.local_addr().unwrap().port();
+        let (closed_tx, closed_rx) = tokio::sync::oneshot::channel();
+
+        tokio::spawn(async move {
+            let (mut socket, _) = listener.accept().await.unwrap();
+            let mut head = [0u8; 1024];
+            let head_len = socket.read(&mut head).await.unwrap();
+            assert!(head_len > 0, "the origin received no request head");
+            socket
+                .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nhi")
+                .await
+                .unwrap();
+            let idle_since = Instant::now();
+            let mut sink = [0u8; 64];
+            while let Ok(read) = socket.read(&mut sink).await {
+                if read == 0 {
+                    break;
+                }
+            }
+            let _ = closed_tx.send(idle_since.elapsed());
+        });
+
+        let proxy = Arc::new(Proxy::new(
+            Arc::new(RefusingResolver),
+            DestinationPolicy::new(origin_port, vec!["127.0.0.1/32".parse().unwrap()]),
+            origin_port,
+            Duration::from_secs(5),
+            Duration::from_millis(300),
+            8,
+            true,
+        ));
+
+        let (client, server) = tokio::io::duplex(16 * 1024);
+        let peer: SocketAddr = "127.0.0.1:5555".parse().unwrap();
+        tokio::spawn(Arc::clone(&proxy).serve_connection(server, peer));
+
+        let (mut reader, mut writer) = tokio::io::split(client);
+        writer
+            .write_all(b"GET / HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n")
+            .await
+            .unwrap();
+        let mut response = Vec::new();
+        reader.read_to_end(&mut response).await.unwrap();
+        assert!(
+            response.starts_with(b"HTTP/1.1 200"),
+            "proxy did not forward the origin response: {}",
+            String::from_utf8_lossy(&response)
+        );
+
+        let idle_for = tokio::time::timeout(Duration::from_secs(10), closed_rx)
+            .await
+            .expect("the pooled upstream connection was never closed")
+            .unwrap();
+        assert!(
+            idle_for >= Duration::from_millis(200),
+            "upstream closed immediately, so it was never pooled: {idle_for:?}"
+        );
+        assert!(
+            idle_for < Duration::from_secs(5),
+            "the idle reaper never fired near the configured timeout: {idle_for:?}"
+        );
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn an_active_upstream_connection_is_reused_across_requests() {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        use tokio::net::TcpListener;
+
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let origin_port = listener.local_addr().unwrap().port();
+        let accepted = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let counter = Arc::clone(&accepted);
+
+        tokio::spawn(async move {
+            loop {
+                let (mut socket, _) = listener.accept().await.unwrap();
+                counter.fetch_add(1, Ordering::Relaxed);
+                tokio::spawn(async move {
+                    let mut buf = [0u8; 1024];
+                    while let Ok(read) = socket.read(&mut buf).await {
+                        if read == 0 {
+                            break;
+                        }
+                        if socket
+                            .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nhi")
+                            .await
+                            .is_err()
+                        {
+                            break;
+                        }
+                    }
+                });
+            }
+        });
+
+        let proxy = Arc::new(Proxy::new(
+            Arc::new(RefusingResolver),
+            DestinationPolicy::new(origin_port, vec!["127.0.0.1/32".parse().unwrap()]),
+            origin_port,
+            Duration::from_secs(5),
+            Duration::from_secs(30),
+            8,
+            true,
+        ));
+
+        let (client, server) = tokio::io::duplex(16 * 1024);
+        let peer: SocketAddr = "127.0.0.1:5556".parse().unwrap();
+        tokio::spawn(Arc::clone(&proxy).serve_connection(server, peer));
+
+        let (mut reader, mut writer) = tokio::io::split(client);
+        let mut buffer = Vec::new();
+        let mut chunk = [0u8; 1024];
+        let mut seen = 0usize;
+        while seen < 3 {
+            writer
+                .write_all(b"GET / HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n")
+                .await
+                .unwrap();
+            loop {
+                let read = tokio::time::timeout(Duration::from_secs(5), reader.read(&mut chunk))
+                    .await
+                    .expect("timed out waiting for a proxied response")
+                    .unwrap();
+                assert!(read > 0, "the proxy closed the client connection early");
+                buffer.extend_from_slice(&chunk[..read]);
+                let responses = buffer
+                    .windows(12)
+                    .filter(|window| *window == b"HTTP/1.1 200")
+                    .count();
+                if responses > seen {
+                    seen = responses;
+                    break;
+                }
+            }
+        }
+
+        assert_eq!(
+            accepted.load(Ordering::Relaxed),
+            1,
+            "three proxied requests opened more than one upstream connection, so the pool is not \
+             being reused while traffic is active"
+        );
     }
 }

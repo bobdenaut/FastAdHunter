@@ -10,13 +10,42 @@
 use std::future::Future;
 use std::io;
 use std::net::SocketAddr;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
+use fah_common::connections::{ConnectionGauge, OpenConnection};
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
+use tokio::sync::Semaphore;
 use tokio::time::timeout;
 use tracing::{debug, warn};
+
+pub const MAX_MESSAGE_LEN: usize = 16 * 1024;
+
+#[derive(Debug, Default)]
+pub struct TcpConnectionGauge {
+    connections: ConnectionGauge,
+    closed_oversize: AtomicU64,
+}
+
+impl TcpConnectionGauge {
+    pub fn snapshot(&self) -> fah_model::DnsTcpConnections {
+        let active = self.connections.open();
+        let peak = self.connections.peak().max(active);
+        fah_model::DnsTcpConnections {
+            active: u64::from(active),
+            peak: u64::from(peak),
+            closed_oversize: self.closed_oversize.load(Ordering::Relaxed),
+        }
+    }
+}
+
+impl AsRef<ConnectionGauge> for TcpConnectionGauge {
+    fn as_ref(&self) -> &ConnectionGauge {
+        &self.connections
+    }
+}
 
 use crate::backoff::{RetryDecision, RetryPolicy};
 use crate::pipeline::{Pipeline, Transport};
@@ -47,9 +76,19 @@ impl Accept for TcpListener {
     }
 }
 
-pub async fn run<L: Accept, F: Forwarder>(listener: L, pipeline: Arc<Pipeline<F>>) -> ListenerDied {
+pub async fn run<L: Accept, F: Forwarder>(
+    listener: L,
+    pipeline: Arc<Pipeline<F>>,
+    permits: Arc<Semaphore>,
+    gauge: Arc<TcpConnectionGauge>,
+) -> ListenerDied {
     let mut policy = RetryPolicy::new();
     loop {
+        let Ok(permit) = Arc::clone(&permits).acquire_owned().await else {
+            return ListenerDied {
+                last_error: io::Error::other("TCP connection semaphore closed"),
+            };
+        };
         let (stream, client) = match listener.accept().await {
             Ok(pair) => {
                 policy.on_success();
@@ -69,9 +108,14 @@ pub async fn run<L: Accept, F: Forwarder>(listener: L, pipeline: Arc<Pipeline<F>
             },
         };
         let pipeline = Arc::clone(&pipeline);
+        let open = OpenConnection::enter(&gauge);
         tokio::spawn(async move {
-            let served = handle_connection(stream, &pipeline, client.ip(), Transport::Tcp).await;
+            let served =
+                handle_connection(stream, &pipeline, client.ip(), Transport::Tcp, Some(&open))
+                    .await;
             report_connection_end(served, client, "TCP DNS");
+            drop(open);
+            drop(permit);
         });
     }
 }
@@ -96,6 +140,7 @@ pub(crate) async fn handle_connection<S: AsyncRead + AsyncWrite + Unpin, F: Forw
     pipeline: &Pipeline<F>,
     client_ip: std::net::IpAddr,
     transport: Transport,
+    gauge: Option<&TcpConnectionGauge>,
 ) -> std::io::Result<()> {
     loop {
         let mut len_buf = [0u8; 2];
@@ -106,6 +151,18 @@ pub(crate) async fn handle_connection<S: AsyncRead + AsyncWrite + Unpin, F: Forw
             Ok(Ok(_)) => {}
         }
         let len = u16::from_be_bytes(len_buf) as usize;
+        if len > MAX_MESSAGE_LEN {
+            if let Some(gauge) = gauge {
+                gauge.closed_oversize.fetch_add(1, Ordering::Relaxed);
+            }
+            debug!(
+                client = %client_ip,
+                len,
+                max = MAX_MESSAGE_LEN,
+                "TCP DNS message length exceeds the bound; closing"
+            );
+            return Ok(());
+        }
 
         let mut message_buf = vec![0u8; len];
         // A stalled body after a complete length prefix is the same stalled
@@ -143,10 +200,12 @@ fn is_client_disconnect(err: &std::io::Error) -> bool {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::VecDeque;
     use std::net::Ipv4Addr;
     use std::sync::atomic::{AtomicU32, Ordering};
+    use std::sync::Mutex;
 
-    use tokio::io::DuplexStream;
+    use tokio::io::{duplex, DuplexStream};
 
     use super::*;
     use crate::backoff::FATAL_CONSECUTIVE_ERRORS;
@@ -204,7 +263,13 @@ mod tests {
             accepted: Arc::clone(&accepted),
         };
 
-        let died = run(listener, pipeline).await;
+        let died = run(
+            listener,
+            pipeline,
+            Arc::new(Semaphore::new(1024)),
+            Arc::new(TcpConnectionGauge::default()),
+        )
+        .await;
 
         assert!(
             died.last_error
@@ -219,5 +284,130 @@ mod tests {
             2 * FATAL_CONSECUTIVE_ERRORS - 1,
             "the successful accept must reset the consecutive-error count"
         );
+    }
+
+    struct QueuedListener {
+        streams: Mutex<VecDeque<DuplexStream>>,
+        accepted: Arc<AtomicU32>,
+    }
+
+    impl QueuedListener {
+        fn new(count: usize) -> (Self, Vec<DuplexStream>, Arc<AtomicU32>) {
+            let mut servers = VecDeque::new();
+            let mut clients = Vec::new();
+            for _ in 0..count {
+                let (server, client) = duplex(64);
+                servers.push_back(server);
+                clients.push(client);
+            }
+            let accepted = Arc::new(AtomicU32::new(0));
+            let listener = Self {
+                streams: Mutex::new(servers),
+                accepted: Arc::clone(&accepted),
+            };
+            (listener, clients, accepted)
+        }
+    }
+
+    impl Accept for QueuedListener {
+        type Stream = DuplexStream;
+
+        async fn accept(&self) -> io::Result<(DuplexStream, SocketAddr)> {
+            let next = self.streams.lock().unwrap().pop_front();
+            match next {
+                Some(stream) => {
+                    self.accepted.fetch_add(1, Ordering::Relaxed);
+                    Ok((stream, SocketAddr::from((Ipv4Addr::LOCALHOST, 5353))))
+                }
+                None => std::future::pending().await,
+            }
+        }
+    }
+
+    async fn settle() {
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+
+    #[tokio::test]
+    async fn a_length_prefix_over_the_bound_closes_the_connection_and_counts() {
+        let (pipeline, _data_dir) = testkit::pipeline();
+        let (listener, mut clients, _accepted) = QueuedListener::new(1);
+        let gauge = Arc::new(TcpConnectionGauge::default());
+        let server = tokio::spawn(run(
+            listener,
+            pipeline,
+            Arc::new(Semaphore::new(1024)),
+            Arc::clone(&gauge),
+        ));
+
+        let mut client = clients.pop().unwrap();
+        let oversize = ((MAX_MESSAGE_LEN + 1) as u16).to_be_bytes();
+        client.write_all(&oversize).await.unwrap();
+        let mut sink = [0u8; 1];
+        let read = client.read(&mut sink).await.unwrap();
+
+        assert_eq!(read, 0, "the server must close without answering");
+        let snapshot = gauge.snapshot();
+        assert_eq!(snapshot.closed_oversize, 1);
+        assert_eq!(snapshot.active, 0);
+        assert_eq!(snapshot.peak, 1);
+        server.abort();
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_length_prefix_at_the_bound_is_read_not_rejected() {
+        let (pipeline, _data_dir) = testkit::pipeline();
+        let (listener, mut clients, _accepted) = QueuedListener::new(1);
+        let gauge = Arc::new(TcpConnectionGauge::default());
+        let server = tokio::spawn(run(
+            listener,
+            pipeline,
+            Arc::new(Semaphore::new(1024)),
+            Arc::clone(&gauge),
+        ));
+
+        let mut client = clients.pop().unwrap();
+        let at_bound = (MAX_MESSAGE_LEN as u16).to_be_bytes();
+        client.write_all(&at_bound).await.unwrap();
+        settle().await;
+
+        assert_eq!(gauge.snapshot().closed_oversize, 0);
+        assert_eq!(gauge.snapshot().active, 1, "still waiting for the body");
+        server.abort();
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn the_connection_ceiling_holds_the_next_accept_until_one_closes() {
+        let (pipeline, _data_dir) = testkit::pipeline();
+        let (listener, mut clients, accepted) = QueuedListener::new(2);
+        let gauge = Arc::new(TcpConnectionGauge::default());
+        let server = tokio::spawn(run(
+            listener,
+            pipeline,
+            Arc::new(Semaphore::new(1)),
+            Arc::clone(&gauge),
+        ));
+
+        let second = clients.pop().unwrap();
+        let first = clients.pop().unwrap();
+        settle().await;
+        assert_eq!(accepted.load(Ordering::Relaxed), 1);
+        assert_eq!(gauge.snapshot().active, 1);
+
+        drop(first);
+        settle().await;
+        assert_eq!(
+            accepted.load(Ordering::Relaxed),
+            2,
+            "closing the first connection frees the permit"
+        );
+        let snapshot = gauge.snapshot();
+        assert_eq!(snapshot.active, 1);
+        assert_eq!(snapshot.peak, 1, "never two at once under a ceiling of one");
+
+        drop(second);
+        settle().await;
+        assert_eq!(gauge.snapshot().active, 0);
+        server.abort();
     }
 }
