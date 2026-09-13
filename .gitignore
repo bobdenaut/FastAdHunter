@@ -65,3 +65,10 @@ docs/code-review/**/campaign2/origin.key
 # A vitest run started from the repo root instead of dashboard/frontend drops
 # its cache at ./node_modules/.vite/vitest/. Never tracked, at any depth.
 node_modules/
+
+# Soak collector churn: the hourly pulls, the run log and the bytecode.
+# The README, the collector script and the runner stay tracked.
+# Each pull's meta.json already carries its own errors.
+__pycache__/
+docs/code-review/**/soak-*/collector.log
+docs/code-review/**/soak-*/pulls/
