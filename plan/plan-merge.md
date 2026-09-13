@@ -33,7 +33,8 @@ A rebase is the wrong tool here: 102 commits replayed means resolving the same
 
 ## Starting state
 
-Measured 2026-09-13.
+Measured 2026-09-13 — where this started, not what is true today. Step 0
+re-measures the two perishable rows.
 
 | | |
 | --- | --- |
@@ -71,11 +72,10 @@ because of diff direction.
 ### Clean the tree without rewriting it
 
 `main` carries an uncommitted `.gitignore` change. **Stash it** — or park it in
-another worktree. Do not commit it to clean the tree: this plan states `main` is
-at `28c751d`, and an unrelated commit makes `main-pre-phase3-merge` point
-somewhere else, so the rollback target stops matching the document describing
-it. Do not discard it either; it is the owner's change and unrelated to the
-merge.
+another worktree. Do not commit it to clean the tree: an unrelated commit puts
+work into `main-pre-phase3-merge` that has nothing to do with this merge, so the
+rollback target stops being "`main` as it was before Phase 3". Do not discard it
+either; it is the owner's change and unrelated to the merge.
 
 A merge started on a dirty tree also makes "did the merge do this?"
 unanswerable.
@@ -86,10 +86,19 @@ unanswerable.
 git status --short
 git rev-parse main phase3-06
 git merge-base main phase3-06
+git rev-list --left-right --count main...phase3-06
+git merge-tree --write-tree phase3-06 main 2>&1 | grep -c CONFLICT
 ```
 
-Cheap, and it makes every later claim in this document checkable against what
-was actually merged rather than against the state measured on 2026-09-13.
+The last two re-measure what §Starting state recorded on 2026-09-13. **Where
+they disagree, these numbers win** — the table says where this started, not what
+is true today. A single commit on `main` moves the ahead/behind count, and one
+touching a file the branch also touched moves the conflict count with it.
+
+The dry run leaves the worktree and the index untouched: `merge-tree` reports
+the conflicts a real merge would raise. Despite its name, `--write-tree` writes
+only unreferenced objects into the object store, which garbage collection
+reclaims.
 
 ### Two rollback points, not one
 
@@ -103,7 +112,7 @@ Tag targets are explicit on purpose: `git tag <name>` while checked out on
 
 The second tag is the one that matters at Step 5. Until then `main` is
 untouched, but once the fast-forward lands there is otherwise no recorded way
-back to `28c751d`.
+back to where `main` stood before Phase 3.
 
 ### Confirm `main` is green before anything else
 
