@@ -14,8 +14,10 @@ A network filtering engine that sits between every device in a house and the
 internet. One container on the router, no client configuration, no browser
 extension, no per-device agent.
 
-It filters **DNS and HTTP today**. HTTPS interception (Phase 3) and HTML
-filtering (Phase 4) are designed and **parked**.
+It filters **DNS and HTTP today**. HTTPS filtering at the SNI plus the DoT/DoH
+listeners (Phase 3) are built and on `main`, **not deployed**; they ship with
+interception off, so nothing is ever decrypted. HTML filtering (Phase 4) is
+designed and not started.
 
 **Performance is the primary feature.** Every architectural decision is
 evaluated by its effect on throughput, latency and allocations — and the
@@ -90,12 +92,28 @@ ten tasks, merged and released as 0.3.0. The shipped bundle is **128,730 B
 gzip**, 83.8 % of the 150 KB budget, served by `fah-api` itself from the same
 image and the same TLS listener: no second container, no Node in the runtime
 image, no new port. On-device verification is **done** — Stage B ran read-only
-against the deployed 0.3.1, which already is the phase-5 build: `/health`,
+against 0.3.1 as deployed at the time, which was already the phase-5 build: `/health`,
 `/telemetry` and `/cache` answer in 0.89–1.05 ms warm, sequential Argon2id
 verification sits at ~120 ms p50 with peak RSS unmoved. Four rows are
 **deferred, not passed**, and want the next deploy window: concurrent Argon2id
 peak RSS, RSS deltas above the drift floor, `/cache` at a second occupancy, and
 the real-phone leg. Design record: [docs/dashboard/](docs/dashboard/).
+
+Phase 3 landed on `main` on 2026-09-13 and is **not deployed** — that decision
+has not been taken. What it delivers is HTTPS filtered at the SNI, DoT/DoH
+listeners, and the certificate machinery behind both. The interception code is
+compiled into the build but switched off: the Interception Document's `clients`
+list is empty by owner decision, so every HTTPS connection is read at the SNI
+and then relayed byte for byte. A test in the shipped configuration proves that,
+rather than the configuration file asserting it. Two tasks remain open — p3-10
+for the performance characterization and p3-11 for verification and a seven-day
+soak — and both wait in part on the deploy decision. Before it can go live the
+router has to refuse UDP 443 outbound, or HTTP/3 bypasses the listener.
+
+A fourth soak is running meanwhile, on the deployed 0.3.4 since
+2026-09-11T22:13 Z, reading the container hourly to ~2026-09-18. Its counters
+set the final `dns.tcp_max_connections` default, which today ships at a
+provisional 1024.
 
 ### Measured, on the RB5009
 
@@ -419,7 +437,8 @@ Pass-through: stream origin ⇄ client, byte for byte
 **The body is never parsed and never buffered.** Images, archives, PDFs and video
 stream through untouched — buffering a response to inspect it would make memory
 grow with traffic, which the bounded-everything rule forbids outright. HTML
-rewriting is Phase 4 — parked — and will be opt-in, for that content type alone.
+rewriting is Phase 4 — not started — and will be opt-in, for that content type
+alone.
 
 The verdict is taken on the **head**, before the origin is resolved, so a blocked
 request costs no DNS lookup and no upstream connection — measured **48–55 %
@@ -731,13 +750,13 @@ firewall · a replacement for a good browser extension.
 | **2.5** ✅ | Listener resilience, list-refresh integrity, encrypted-transport fixes, outcome telemetry, failure run-length telemetry — hardening before adaptive upstream selection |
 | **2.6** ✅ | Adaptive DNS Stage 1 — per-endpoint health, penalty and skip on repeated transport failure, on-path recovery probing; in production opt-in since 2026-08-25, closed 2026-09-07; `adaptive` is the only strategy and `fallback` is deleted since p2.6-12 (on `main` from 2026-09-11). Shipped alongside as 0.3.2: HTTP allocation domains (ADR-0006) |
 | **5** ✅ | Web dashboard — thirteen screens, 128,730 B gzip at 0.3.0, served by `fah-api` on one origin, session-cookie auth, every figure backed by an endpoint that exists; released as 0.3.0, closed 2026-09-01 with four verification rows deferred |
-| **3** 🚧 | HTTPS interception, certificate management, DoT/DoH listeners, live Interception Document + client-rejection view (ADR-0008) — dev box done, on-device campaign run, awaiting the 24 h soak |
-| **4** | HTML filtering with `lol_html`, cosmetic rules |
+| **3** 🚧 | HTTPS filtered at the SNI with no decryption, certificate management, DoT/DoH listeners, live Interception Document + client-rejection view (ADR-0008) — on `main` since 2026-09-13, **not deployed**. The interception code ships compiled but switched off by owner decision, which is why the delivered capability is SNI + DoT/DoH. p3-10 (performance characterization) and p3-11 (verification and the seven-day soak) are open; both wait in part on the deploy decision |
+| **4** ⬜ | HTML filtering with `lol_html`, cosmetic rules — not started |
 
-Execution order is 2.5 → 2.6 → **5** → 3 → 4. Phases 3 and 4 each send the
-dashboard back for a capability re-review when they land: Phase 3 adds
-certificate screens and per-client interception controls, Phase 4 changes what
-the rule-partition figures mean.
+Execution order is 2.5 → 2.6 → **5** → 3 → 4. Each of Phases 3 and 4 sends the
+dashboard back for a capability re-review: Phase 3's certificate screens and
+client-rejection view landed with p3-09, and Phase 4 will change what the
+rule-partition figures mean.
 
 Detail and per-phase task status: [ROADMAP.md](ROADMAP.md) and `plan/`.
 
@@ -771,6 +790,7 @@ if the decision is being reversed.
     ├── solutions/            documented learnings — patterns and bugs worth
     │                         carrying forward, with YAML frontmatter
     ├── deploy-rb5009.md      end-to-end deployment + soak procedure
+    ├── public-certificate.md issuing and renewing the public TLS certificate
     ├── routeros-traps.md     what bites you on RouterOS, and why
     ├── measurement-traps.md  how to read a bench, soak or memory figure
     └── project-state.md      where the work is right now
