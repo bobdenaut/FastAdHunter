@@ -29,6 +29,14 @@ on the splice path, has no verified runner.
 cost and splice throughput — are exactly the ones this box cannot resolve. The
 gate stays with **B2 on the RB5009**, which is where the budgets live anyway.
 
+**Superseded for splice, 2026-09-14.** A probe container on the router settled
+those rows without waiting for the deploy —
+[p3-10-track-b2-rb5009.md](p3-10-track-b2-rb5009.md). It repeated inside ±5 % on
+every candidate where this box moved 15–19 %, and it answers the upstream-buffer
+question the other way round. Nothing in this file about splice should be used
+to choose the router's configuration, and x86 `splicebench` is not run again.
+The rest of this file stands.
+
 ## Decisions
 
 - **The W1 gate is not moved by B1.** Splice figures here are shape, not
@@ -178,5 +186,5 @@ None. Measurement only; no product code, no default, no doc outside this file.
 | Admin latency under DoH load, at and above 64 concurrent (W1) | **not run** — same generator |
 | RSS burst → idle → collect, splice path (W1) | **not run** — no verified runner; the plain-HTTP procedure in the soak tooling may be reusable, unverified |
 | Held memory with interception on (W2) | not run |
-| Splice cost and throughput | measured, **unresolved**. Carried to B2 |
+| Splice cost and throughput | measured here, **unresolved here**, and **resolved on the device 2026-09-14** — [p3-10-track-b2-rb5009.md](p3-10-track-b2-rb5009.md). The router repeated inside ±5 % where this box moved 15–19 %, and the two platforms answer the buffer question in opposite directions. The router's answer is the one used; x86 `splicebench` is not run again |
 | `certs.rs` second run | single run only; the four figures have no run-to-run check |
