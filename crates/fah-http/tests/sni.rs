@@ -823,22 +823,21 @@ async fn a_saturated_https_lane_leaves_the_http_lane_bounded_and_leaks_no_permit
 
     drop(queued);
     drop(held);
-    let drained = wait_for(Duration::from_secs(10), || {
-        harness.https_open.open() == 0 && harness.http_open.open() == 0
+    let judged = (CEILING + OVERSHOOT) as u64;
+    let settled = wait_for(Duration::from_secs(10), || {
+        harness.counters.snapshot().connections == judged
+            && harness.https_open.open() == 0
+            && harness.http_open.open() == 0
     })
     .await;
     assert!(
-        drained,
-        "every permit must come back: https={} http={}",
+        settled,
+        "every accepted HTTPS socket must be judged and every permit must come back: \
+         connections={} of {judged}, https={} http={}. Waiting on the permits alone cannot say \
+         this, because they read zero before the queued sockets are picked up as well as after",
+        harness.counters.snapshot().connections,
         harness.https_open.open(),
         harness.http_open.open()
-    );
-
-    let stats = harness.counters.snapshot();
-    assert_eq!(
-        stats.connections,
-        (CEILING + OVERSHOOT) as u64,
-        "every accepted HTTPS socket is judged once the ceiling frees up"
     );
 
     harness.shutdown();

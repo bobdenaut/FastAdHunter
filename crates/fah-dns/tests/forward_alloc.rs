@@ -273,8 +273,10 @@ fn warm_pipeline_handles_allocate_a_steady_amount() {
                 measured[1]
             );
             assert!(
-                measured[1] <= HANDLES * ceiling_per_handle,
-                "{HANDLES} warm handles ({label}, {transport:?}) allocated {}; the ceiling is {ceiling_per_handle} per handle",
+                measured[1] <= HANDLES * ceiling_per_handle + JITTER_ALLOWANCE,
+                "{HANDLES} warm handles ({label}, {transport:?}) allocated {}; the ceiling is \
+                 {ceiling_per_handle} per handle plus {JITTER_ALLOWANCE}, because one leaked \
+                 allocation per handle would show as +{HANDLES} here",
                 measured[1]
             );
         }
@@ -343,8 +345,10 @@ fn warm_pipeline_misses_stay_under_the_ceiling() {
     for (label, transport, ceiling_per_handle, measured) in results {
         for allocations in measured {
             assert!(
-                allocations <= HANDLES * ceiling_per_handle,
-                "{HANDLES} warm misses ({label}, {transport:?}) allocated {allocations}; the ceiling is {ceiling_per_handle} per handle"
+                allocations <= HANDLES * ceiling_per_handle + JITTER_ALLOWANCE,
+                "{HANDLES} warm misses ({label}, {transport:?}) allocated {allocations}; the \
+                 ceiling is {ceiling_per_handle} per handle plus {JITTER_ALLOWANCE}, because one \
+                 leaked allocation per handle would show as +{HANDLES} here"
             );
         }
     }

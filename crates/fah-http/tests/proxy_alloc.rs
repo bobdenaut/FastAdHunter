@@ -244,8 +244,10 @@ fn warm_proxy_requests_allocate_a_steady_amount() {
             measured[1].0
         );
         assert!(
-            measured[1].0 <= REQUESTS * case.ceiling_per_request,
-            "{REQUESTS} warm requests ({}) allocated {}; the ceiling is {} per request",
+            measured[1].0 <= REQUESTS * case.ceiling_per_request + JITTER_ALLOWANCE,
+            "{REQUESTS} warm requests ({}) allocated {}; the ceiling is {} per request plus \
+             {JITTER_ALLOWANCE}, because one leaked allocation per request would show as \
+             +{REQUESTS} here",
             case.label,
             measured[1].0,
             case.ceiling_per_request

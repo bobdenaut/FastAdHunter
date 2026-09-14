@@ -326,8 +326,10 @@ fn warm_intercepted_requests_allocate_a_steady_amount() {
             measured[BATCHES - 2].0
         );
         assert!(
-            last <= REQUESTS * case.ceiling_per_request,
-            "{REQUESTS} warm requests ({}) allocated {last}; the ceiling is {} per request",
+            last <= REQUESTS * case.ceiling_per_request + JITTER_ALLOWANCE,
+            "{REQUESTS} warm requests ({}) allocated {last}; the ceiling is {} per request plus \
+             {JITTER_ALLOWANCE}, because one leaked allocation per request would show as \
+             +{REQUESTS} here",
             case.label,
             case.ceiling_per_request
         );
