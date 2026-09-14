@@ -239,15 +239,21 @@ Done right, the pinned means match the unpinned ones with ~5× tighter
 intervals ([docs/measurement-traps.md](docs/measurement-traps.md) §Calibration).
 
 **Building the `fastadhunter` bench target.** `cargo bench -p fastadhunter`
-does not compile as is: the crate's dev-dependency on `fah-api` carries
-`test-harness`, cargo unifies it into the bench profile, and `fah-api`'s
+builds normally since `3a1b5b8`. It did not before: the package's
+dev-dependency on `fah-api` asked for `test-harness`, cargo unifies a
+dev-dependency's features into the bench profile as well, and `fah-api`'s
 `compile_error!` refuses that feature outside `debug_assertions` (p3-06 review
-X2, a p5-04 leftover). Until a follow-up moves the feature off the bench
-target, build it with
-`CARGO_PROFILE_BENCH_DEBUG_ASSERTIONS=true cargo bench --no-run -p fastadhunter --bench pipeline`.
-Every recorded `full_pipeline` A/B (p3-06, S3) used that override on **both**
-arms, so the comparison is fair, but its absolutes are not shipped codegen
-and must not become a budget row.
+X2, a p5-04 leftover). The dev-dependency no longer asks for it — the one test
+that needs it, `history_e2e.rs`, is gated on the package's own `test-harness`
+feature, which the `cargo test --all-features` gate turns on.
+
+**The override is no longer needed, and new runs must not use it.**
+`CARGO_PROFILE_BENCH_DEBUG_ASSERTIONS=true` was the standing workaround, and
+every recorded `full_pipeline` A/B (p3-06, S3) used it on **both** arms. Those
+comparisons stay fair, and their absolutes stay what they always were: **not
+shipped codegen, and not eligible to become a budget row.** Nothing about them
+changes retroactively. Only runs made from `3a1b5b8` onwards, without the
+override, measure the code that ships.
 
 Pinned, the same benches hold a confidence interval under 1 %. Trust a criterion
 delta only when its interval is narrow relative to the change it reports:
