@@ -659,7 +659,7 @@ The listener does not exist until `engine.mode` includes http, and the key is
 boot-class:
 
 ```routeros
-/container/envs/add name=fah-env key=FAH__ENGINE__MODE value=dns+http
+/container/envs/add list=fah-env key="FAH__ENGINE__MODE" value="dns+http"
 ```
 
 Restart the container, then confirm before touching the firewall:
@@ -783,7 +783,7 @@ It answers `restart_required: true`. Without the API, add a **new** envlist —
 never the key to `fah-env`, which other containers share:
 
 ```routeros
-/container/envs/add name=fah-mode key=FAH__ENGINE__MODE value=dns+http+https
+/container/envs/add list=fah-mode key="FAH__ENGINE__MODE" value="dns+http+https"
 /container/set [find comment="fastadhunter"] envlists=fah-env,fah-mode
 ```
 

@@ -92,6 +92,29 @@ dropped after binding, which the start-up log states.
 
 ## Commands that are not where you expect
 
+- **`/container/envs/add` and `/container/mounts/add` take `list=`, not
+  `name=`** — and `[find …]` matches on `list=` too. Every other RouterOS `add`
+  takes `name=`, so `name=` is what anyone reaches for, and RouterOS 7.21.5
+  answers `expected end of command (line 1 column 21)` — an error that names the
+  column and not the field, so it reads like a quoting problem. Confirmed on the
+  device 2026-09-14. `/container/envs/print detail` and
+  `/container/mounts/print detail` show the real fields:
+
+  ```routeros
+  /container/envs/add list=fah-env key="FAH__ENGINE__MODE" value="dns+http"
+  /container/mounts/add list=fah-config src=/kingston/fastadhunter/config dst=/config
+  ```
+
+  **This kept costing time because of where it was written, not whether it was.**
+  It was recorded correctly in
+  [p3-06-phase3-verification-review.md](code-review/phase3/p3-06-phase3-verification-review.md)
+  §2038 — inside a 2000-line task review nobody opens unless working that task —
+  while `deploy-rb5009.md` taught the wrong form for `envs` at two sites until
+  2026-09-14, and this file, which exists for exactly this, said nothing. Guide
+  fixed, fact moved here.
+- **`/container/add` takes `mountlists=` and `envlists=`, both plural.** Not
+  `mounts=`, not `envlist=`. The singular forms are silently not the same thing
+  — `mount=` exists and is a different, per-container field.
 - **`/disk/print` is top-level** — there is no `/system/disk`.
 - `/system/resource/print`'s `free-hdd-space` is the internal NAND, not the
   kingston SSD.
@@ -156,7 +179,7 @@ container*, not *copy a file*:
 2. `scp <name>-arm64.tar bobdenaut:kingston/` (see [deploy-rb5009.md](deploy-rb5009.md) §2).
 3. `/container/mounts/add` if it needs `/data` — read-only is usually enough,
    the cached list copies live there.
-4. `/container/add file=… interface=veth3 root-dir=… mounts=… cmd=… envlist=…`
+4. `/container/add file=… interface=veth3 root-dir=… mountlists=… envlists=… cmd=…`
 5. `/container/start`, read `/log print where topics~"container"`,
    `/container/remove`.
 
@@ -169,8 +192,11 @@ deployment-specific.
 **Container CPU affinity exists**: the `cpu-list` field on `/container`
 (verified 7.21.5, 2026-08-24). Empty means *no restriction*, not "no CPUs" —
 threads are schedulable on all four cores and compete with RouterOS's own
-`networking`, `bridging` and `firewall` tasks. Production carries `cpu-list=""`,
-so **do not pin a probe**: it would stop standing in for the thing it measures.
+`networking`, `bridging` and `firewall` tasks. Production carries
+`cpu-list=cpu0,cpu1,cpu2,cpu3` — read on the device 2026-09-14; an earlier
+version of this line said `cpu-list=""`, which is the same four cores by a
+different spelling but not what the box reports. **Give a probe the same list**:
+pinning it narrower would stop it standing in for the thing it measures.
 Where the x86 reference was core-pinned and the comparison needs it, take 3 runs
 and report the median instead.
 
