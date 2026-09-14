@@ -166,7 +166,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn an_ip_literal_sni_is_refused_before_resolution_unless_allowed() {
+    async fn an_ip_literal_sni_is_never_served_whatever_the_switch_says() {
         let refused = ip_literal_sni_outcome(false).await;
         assert_eq!(refused.refused_claim, 1);
         assert_eq!(refused.resolve_failures, 0);

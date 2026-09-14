@@ -40,6 +40,11 @@ Carried over from p3-06, unchanged in substance:
 - **RB5009 with the owner**: the **dst-nat 443 rule and its rollback**, Private
   DNS setup on a phone, a browsing pass, and `deploy-rb5009.md` gaining its
   HTTPS section. The owner runs every router command; this task proposes them.
+- **One shutdown observation**, carried from the integration audit's F4, which
+  was accepted on 2026-09-14 rather than left open: measure one actual container
+  shutdown duration on the target router and record it against the 10 s stop
+  budget. Not a criterion and not part of the soak — a soak never stops the
+  container, so this is the only place the figure can come from.
 - **Seven-day soak** on the deployed build, numbers recorded against the budget
   rows. Same shape as the 0.3.4 soak: hourly scheduled task, artefacts under
   `docs/code-review/phase3/soak-<version>/`. **Precondition below.**

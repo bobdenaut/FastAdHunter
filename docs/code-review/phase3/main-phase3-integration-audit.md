@@ -56,7 +56,7 @@ earlier Phase 3 audit [phase3-audit.md](phase3-audit.md), the task review
 | allocation domains | alloc review §Decisions: one acceptor on the base runtime, N `current_thread` runtimes on their own threads, permit before accept, runtime built inside the thread (F13), `watch` stop, dead-domain removal (F1), cap 64 (F2) | `server.rs:93-133` `serve_domains`, `domain.rs:105-165`; the merge replaced `Dispatch::Domains { senders, next }` with `Rotation` (same index arithmetic, same log lines) and the `Handoff` alias with an enum | yes | `server.rs` domain tests green; `git diff 857865d e0c6071 -- domain.rs` | low. Shift: `Server` keeps a `Rotation` copy for `TlsServer`, so aborting the HTTP acceptor no longer closes the domain inboxes; stop relies on the `watch` alone (`shutdown()` flips it, dropping `Server` drops the sender) — both present |
 | N=2 default | host-derived `max(1, cores / 2)`; RB5009 → 2; production pins the env to 2 | `schema/runtime.rs` identical to `main`; `MAX_HTTP_RUNTIMES`, the env arm and their tests untouched (`fah-config/src/lib.rs` diff main → HEAD is additions only) | yes | diff | none |
 | alloc finding 21 | DoT/DoH exchange spawned on the runtime that built the pool | `encrypted.rs:81` `Handle::try_current()`; the pool is built inside the base `block_on`; both `UpstreamResolver`s clone that pool | yes | test `the_exchange_lives_on_the_runtime_that_built_the_conn_not_the_caller` green; `encrypted.rs` diff main → HEAD is test literals only | assumption A1 |
-| IP-literal fix `0a716ec` / `6d591ad` | an allowed IP-literal `Host` is the destination, never resolved | `Proxy::approved_address` hunk intact (`proxy.rs` diff main → HEAD touches only the judge/emit extraction and the counters) | HTTP yes; HTTPS no → **F1** | `tls_server.rs` test `an_ip_literal_sni_is_refused_before_resolution_unless_allowed` pins `allowed → resolve_failures == 1` | low |
+| IP-literal fix `0a716ec` / `6d591ad` | an allowed IP-literal `Host` is the destination, never resolved | `Proxy::approved_address` hunk intact (`proxy.rs` diff main → HEAD touches only the judge/emit extraction and the counters) | HTTP yes; HTTPS no → **F1** | `tls_server.rs` test `an_ip_literal_sni_is_never_served_whatever_the_switch_says` pins `allowed → resolve_failures == 1` | low |
 | adaptive-only (p2.6-12, `fa9451a`) | one strategy; `"fallback"` rejected at load from TOML, env and API | `UpstreamStrategy { Adaptive }`; `TryFrom<String>` → `REMOVED_FALLBACK`; no `Fallback` remnant in `crates/` (grep); fixtures say `adaptive` | yes | `fah-config` 76/76; `p2.6-12-default-flip-review.md` | none here; that review's open items stand (CONTEXT.md:241, redundant `fah-env` opt-in) |
 | telemetry | per-listener counters, refused sum over both listeners, `concurrent_connections.https` | `ProxyCounters` + `connections`, `non_tls`, `hello_timeouts`, `upstream_cert_failures`; `From<ProxyStats> for ListenerCounters`; `TelemetryAdapter::listeners()`; the poll sums both listeners; the sampler reads both gauges (alloc F20's `None` slot now filled); `process.rs`, `memory.rs` identical to `main` | yes | `api` 117/117; code read | assumption A3 |
 | lifecycle | alloc 11a: HTTP drained before DNS is aborted | `Engine::shutdown`: https abort → http abort + `watch` + join (≤ 5 s drain + 1 s runtime) → dns → api → tasks (`main.rs:707-720`) | yes | code read | 11b still open, and now also reaches idle spliced sessions (F4) |
@@ -91,6 +91,91 @@ Severity-ranked. No fix applied.
 | F7 | Low | `crates/fah-dns/tests/adaptive_behaviour.rs:1247-1257` (the assert and its silent skip); `:1010-1021` `RecoveryScript::build` with the bucketing at `:1093-1096` (the sample asymmetry); `:1280-1292` (the three-arm loop) | `b5_recovery_and_flapping`'s p99 guard is three construction defects that compound, not one. **(a)** The `2.5` arm can never assert. The flapping window is six phases of `unit(0.1)` against black_hole's single `unit(2.0)`, so flapping collects ~1/3.33 of black_hole's samples by construction; with `CADENCE_MS = 50` its ceiling is 6 × 375 ms / 50 ms = **45 samples against a `>= 100` threshold**. Measured 35-41 across 7 runs. A faster box does not fix it: sampling is wall-clock paced, and `MissedTickBehavior::Delay` only removes ticks (11-20 % of nominal on every arm, both sides), never adds them. **(b)** The `12.5` and `37.5` arms do assert, but `p99_flapping <= 1.1 * p99_black_hole` breaks when the *reference* phase gets faster, not when flapping gets slower — `branch-0` failed on a black_hole of 1.53 ms, the lowest denominator in the whole set, with a numerator (2.27 ms) that passes everywhere else. The ratio is not stable on unchanged code: `branch-0` measured 1.48 and `branch-1` 0.91, same arm, same commit, same box. **(c)** A panic in one arm skips the ones after it — `branch-0` panicked at `12.5` and never ran `37.5`. Composed: in a bad run the first arm skips silently, the second raises a false alarm, and that alarm deletes the third, so the test verifies nothing while reporting a failure. | a gate run with `--include-ignored` fails on a test that cannot discriminate, and the safety net the `2.5` arm is assumed to provide does not exist on any machine. **Open, not closed by this audit:** on the `37.5` arm 2 of 3 `phase3-06` runs exceeded the threshold from the *numerator* side (p99_flapping 2.35 / 2.30 ms against denominators identical to main's) where 0 of 3 `main` runs did. The distributions overlap — the lowest p99_flapping in the set, 1.83 ms, is `phase3-06`'s — and the gap is ~0.3 ms on a ~2 ms p99, at the resolution of the instrument. Not a production signal: mock upstreams on a dev box, and PERFORMANCE.md's budgets are RB5009 figures | no fix proposed here; a merge is not the place to change a test. If the `37.5` question is taken up, the method is more percentiles, not more runs — that arm collects ~575 flapping samples per run, so a genuinely slower flapping phase moves p50 and p90 too, while a tail artefact moves only p99. The test prints p99 per phase and nothing else (`:1169-1177`), so answering it is itself a test change. Owner decides when `adaptive_behaviour.rs` is next touched |
 | F8 | Info | `crates/fah-config/src/schema/dns/mod.rs:29` and `:38-40`; `crates/fah-dns/src/udp.rs:28-40` | Two ceilings from the same review ship in opposite states. `tcp_max_connections` defaults to 1024, so F1's TCP bound is armed out of the box. `udp_max_inflight` defaults to 0, and `UdpInflightGauge::new` maps 0 to `NonZeroUsize::new(0) == None`, which skips the shed path entirely — so F2's UDP in-flight bound is inert unless the deployment TOML sets the key (`udp_max_inflight_defaults_to_zero_meaning_no_cap` pins that default deliberately). Sizing input if it is ever armed, from the F2 harness run uncapped on 2026-09-13: ~8 KiB per in-flight query, flat from rate 100 to 3000 and across `adaptive2`/`adaptive4`, so a cap of 4096 bounds that memory at roughly 32 MiB. | on a default deployment the UDP in-flight memory under an upstream outage is bounded by the outage's length and the query rate, not by a configured ceiling — the mechanism exists and does not run | predates the merge; this is `main`'s state, inherited unchanged, and it blocks nothing here. No default changed: that is the owner's call and a separate change |
 | F9 | Info | `crates/fah-dns/benches/upstream_select.rs:190-231`; `crates/fah-http/benches/proxy.rs` (`http_opaque_body`); `crates/fah-rules/benches/decisive.rs`. Artefacts: `E:/fah-bench-main-r1.txt`, `-main-r2`, `-merged-r1`, `-merged-r2`, `-quiet-{main,merged}-{a,b}` | Several benches cannot resolve the root CLAUDE.md 10 % gate on this Windows dev box, and the number that proves it is the spread of a side against **itself** — same checkout, same binary, two rounds, so any difference is instrument. Spread is `abs(a - b) / mean(a, b)`; quoting it against the smaller value instead inflates the same measurement (52.6 % becomes 71 %), so the formula belongs next to the figure. **Noisy sitting**, 4 rounds with a browser and an editor running, 54 comparable benches: 7 above 10 % — `http_opaque_body/direct_to_origin/1048576` 52.6 %, `.../through_proxy/1048576` 29.8 %, `transition/claim_probe` 29.1 %, `transition/claim_probe_harness_only` 27.4 %, `verdict_materialization/id_of/named` 19.6 %, `http_opaque_body/direct_to_origin/8388608` 14.0 %, `.../through_proxy/8388608` 13.8 %; 10 between 5 % and 10 %; 37 with no instability observed in two runs — which is not the same as stable, two rounds can agree by luck. **Quiet sitting**, browser closed, the 4 affected targets re-run twice a side: the floors do not collapse — 1 MiB direct 60.2 %, `decisive_rule/plain_empty_maps` 22.2 %, `claim_probe_harness_only` 17.8 %, `decisive_rule/plain` 15.4 %, 8 MiB through-proxy 13.9 %, `claim_probe` 12.1 %, 1 MiB through-proxy 10.0 %. The 8 KiB arms stay usable (4.5 %, 9.8 %). **The `upstream_select` claim arms are recorded because they look like a signal and are not.** Merged is above main on `claim_probe` in all 4 pairs, and that count is not evidence: with n = 4 one direction arises by chance one time in eight. What the set does say is that the effect is not real — the gap ranges from +4.4 % to +43 %, a factor of ten across four pairs; its smallest value sits below `main`'s own quiet-box spread for that arm (12.1 %); the companion arm `claim_probe_harness_only` holds in only 3 of 4 and reverses sign in the quiet `b` round (−4.7 %); and the bench's own control — `claim_probe` minus `claim_probe_harness_only`, which is the claim cost — averages 94 ns on main against 91.5 ns on merged over the four pairs, i.e. slightly cheaper on the merged side. The measured source is identical — `git diff main -- crates/fah-dns/src/upstream/` is empty — and 7 of the 9 arms in that same bench binary agree within 2.5 %, including `select/noop` at 587 ps, two cycles and the most alignment-sensitive figure in the set. The difference is confined to the two arms that spawn OS threads and synchronise on barriers (`spawn_racers`, `upstream_select.rs:190-206`). No mechanism is claimed: a layout shift from `fah-dns` gaining `dot.rs` would have moved `select/noop` first, and it did not | a reader who takes a >10 % line from one of these seven benches as a regression, or as an improvement, will be wrong in either direction; anyone tuning against them needs the floor in hand first | recorded, blocks nothing, no fix proposed. The 10 % gate stands for every bench whose floor is below it — 37 of 54 in the noisy set. For the seven listed a verdict needs a quieter machine or a harness without the threads, and PERFORMANCE.md's budgets are RB5009 figures regardless |
+
+## Status pass — 2026-09-14
+
+Every finding re-checked **against the code**, not against this file. Read at
+`12b18f4`. The audit was written on 2026-09-08; `p3-04`…`p3-09` and the merge
+have landed since, so a disposition written then is not evidence about today.
+
+| # | Status | Checked against |
+| --- | --- | --- |
+| F1 | **CLOSED 2026-09-14 — documentation corrected, no production code change** | see below |
+| F2 | **Closed by events** | `an_allowed_sni_is_spliced_on_an_allocation_domain` (`fah-http/tests/sni.rs:728`) drives splice through `domain_harness` at `NonZeroUsize::MIN`. That is the `domains: 1` splice test the disposition asked for. Landed `8a5c809`, 2026-09-08 13:20 — thirteen hours after this audit was written, and never recorded here |
+| F3 | **Holds.** Doc line still owed | `HANDOFF_QUEUE = 32` (`server.rs:31`), one `mpsc::channel(HANDOFF_QUEUE)` per domain (`:109`), and the HTTPS lane borrows the HTTP server's rotation rather than making its own, so both lanes share it |
+| F4 | **CLOSED 2026-09-14 — accepted, no production change** | see below |
+| F5 | **Closed by events** | `"https.listen.port"` is in the test's boot list (`fah-api/src/config_store.rs:369`). Same commit as F2, `8a5c809` |
+| F6 | **Closed by annotation** | `p3-06-phase3-verification-review.md:1383-1389` marks the section "Superseded 2026-09-08", carries the correction and cites F6 by name. Annotated rather than rewritten, which keeps the history the disposition wanted |
+| F7 | **Holds, unchanged** | `crates/fah-dns/tests/adaptive_behaviour.rs` last touched by `fa9451a`, 2026-09-07 — before this audit. Nothing has moved |
+| F8 | **Holds.** Owner's call | `udp_max_inflight: 0` (`fah-config/src/schema/dns/mod.rs:29`), `tcp_max_connections` still defaulted from `default_tcp_max_connections()` at `:28` |
+| F9 | **Holds, independently reconfirmed** | [`p3-10-track-b1-x86.md`](p3-10-track-b1-x86.md), 2026-09-13, found the same floor on benches F9 did not cover — the SNI splice groups and the intercepted handshake, 44–101 % between two runs of identical code. Where the two overlap they agree: `http_opaque_body`'s 1 MiB arm unusable, its 8 KiB arms usable |
+
+**What this pass changes.** Two of nine were fixed the same day this file was
+written and sat open for six days because nobody came back. Two need an owner
+decision and nothing else — F1 and F4. The remaining five are recorded
+observations or a doc line, and none of them blocks work.
+
+**No task file is opened by this pass.** A finding that closes by a decision or
+a doc line is not a task; only a production-code change would be, and the one
+candidate, F1, was decided against changing code.
+
+### F1 — owner decision, 2026-09-14
+
+**Decision: B — documentation correction, no production code change.**
+
+`allow_ip_literal_hosts` permits a direct IP-literal upstream connection on the
+HTTP proxy path only. An IP-literal SNI on the HTTPS path stays unsupported and
+is rejected at hostname resolution. That is intentional for the current
+implementation; the option does not provide symmetric IP-literal support across
+HTTP and HTTPS.
+
+What the code does, re-read at `12b18f4`:
+
+| Switch | HTTP | HTTPS |
+| --- | --- | --- |
+| off | refused at `claim.rs:86`, 403 | refused at `https.rs:164`, `refused_claim` |
+| on | `proxy.rs:482` returns `vec![ip]` and skips the resolver; `policy.check` still runs | no such branch — `https.rs:300` always calls `resolver.resolve(host)`, which fails on a literal; `resolve_failures` |
+
+Why not port the branch: RFC 6066 forbids an IP literal in SNI, so no compliant
+client produces one, and the switch is off by default. Adding a branch to the
+shipped HTTPS path for a case production cannot reach buys nothing and is the
+kind of complexity engineering principle 8 exists to refuse. The defect was the
+promise, not the behaviour.
+
+**Corrected:** `CONFIGURATION.md:352-360`, which claimed "Since p3-03 the same
+switch governs an IP-literal SNI on the HTTPS path". It now states the
+asymmetry and names this decision.
+
+**Not corrected, because it is true:** `API.md:146` — "Since p3-03 both also
+count the HTTPS SNI listener's refusals". `https.rs:165` does increment
+`refused_claim`.
+
+**Pinned by a test that already existed**, both arms, `tls_server.rs:169`:
+`allow = false` gives `refused_claim == 1` and `resolve_failures == 0`;
+`allow = true` gives `refused_claim == 0` and `resolve_failures == 1`. It was
+renamed from `an_ip_literal_sni_is_refused_before_resolution_unless_allowed` to
+`an_ip_literal_sni_is_never_served_whatever_the_switch_says`: the old name
+implied the switch allows the thing, which is the same wrong impression the
+documentation gave.
+
+### F4 — owner decision, 2026-09-14
+
+**Accepted — no production change.** The 5 s HTTP drain timeout is bounded below
+the RouterOS 10 s stop budget. Splice may keep an idle HTTPS session alive
+during drain, but it does not increase the configured maximum drain duration.
+DNS remains responsive during drain.
+
+The original disposition — "owner decision before the full-mode soak" — could
+not be met: full mode is interception on, `PARKED` since 2026-09-13. It was not
+re-hung on p3-11's seven-day soak either, because a soak does not measure stop
+time; only a deliberate stop does, and that is one data point whenever it is
+taken.
+
+`HTTP_DRAIN_TIMEOUT` stays at `Duration::from_secs(5)` (`main.rs:859`).
+
+**Carried to p3-11 as one observation, not a decision:** measure one actual
+container shutdown duration on the target router and record the result against
+the 10 s stop budget.
 
 ## Assumptions
 

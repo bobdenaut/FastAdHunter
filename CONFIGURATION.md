@@ -354,9 +354,15 @@ allow_ip_literal_hosts = false # boot   — whether a client may name a bare IP 
                               #           name never produces one, so this is
                               #           the shape of a probe; prefer
                               #           allow_destinations, which is checked
-                              #           against the resolved address. Since
-                              #           p3-03 the same switch governs an
-                              #           IP-literal SNI on the HTTPS path
+                              #           against the resolved address. It
+                              #           governs the HTTP proxy path only. On
+                              #           the HTTPS path an IP-literal SNI is
+                              #           never served: refused here while the
+                              #           switch is off, and failing at
+                              #           hostname resolution once it is on.
+                              #           The option does not offer symmetric
+                              #           IP-literal support across HTTP and
+                              #           HTTPS — decided 2026-09-14, audit F1
 
 # ─── Rule lists ────────────────────────────────────────────────────────
 [rules]
