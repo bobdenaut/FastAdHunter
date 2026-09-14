@@ -18,7 +18,8 @@ resolver keeps answering. Nothing restarts.
 
 In scope: `fah-http` (`Server`, `TlsServer`), `fah-api` (`ApiServer`),
 `crates/fastadhunter/src/{main.rs,supervisor.rs}`, two `Cargo.toml` feature
-lines, tests in five places, three documents (separate approvals).
+lines, tests in five places, three documents and one dashboard comment (each
+with its own approval).
 
 ## 2. Existing code paths — verified, not assumed
 
@@ -139,7 +140,8 @@ Names, which are what an operator reads: `"HTTP acceptor"`, `"HTTPS acceptor"`,
 `"API acceptor"`. They go through the existing `record_task_death` and the
 existing `error` line — no new counter, no new log shape, no new telemetry
 field. `counters.tasks_died` widens to include these three, which is the point
-and which is why the three documents in §8 have to change.
+and which is why the three documents in §8 — and the dashboard comment beside
+them — have to change.
 
 ### D4 — `ApiServer` is brought into the same shape as its two siblings
 
@@ -446,6 +448,21 @@ them, wait.
 - **`API.md:309-317`** — `counters.tasks_died` lists the supervised tasks by
   name; the three acceptors join the list. The sentence "A DNS listener dying is
   a different path and does exit the process" stays true and stays.
+- **`dashboard/frontend/src/pages/health/engine-card.tsx:15-19`** — the
+  dashboard already renders `counters.tasks_died` and is the one figure on that
+  card allowed to go red, so no code changes; the comment above it lists what
+  can die and becomes wrong the moment an acceptor does. **The replacement text
+  is approved verbatim (owner, 2026-09-14) and is not to be reworded during
+  implementation:**
+
+  > `counters.tasks_died` is the one figure here that is allowed to go red: a
+  > supervised task ended unexpectedly — a scheduler, the event fan-out, the
+  > perf sampler, an SWR worker, or one of the HTTP, HTTPS and API acceptors.
+  > The resolver keeps answering, but that task's work has stopped until the
+  > container is restarted; the engine log carries the task name and the cause.
+
+  CONTEXT.md keeps the canonical phrasing ("ends before shutdown — a panic, or a
+  loop that returned"); this card says the same thing in the page's own words.
 - **`docs/code-review/phase3/p3-10c-acceptor-death-observation-review.md`** —
   required by §TASK COMPLETION, and that requirement is its own permission. It
   records which route D5 took and the mutation results.
