@@ -182,8 +182,8 @@ None. Measurement only; no product code, no default, no doc outside this file.
 
 | Row | State |
 | --- | --- |
-| DoT/DoH request rate and latency (W1) | **not run** — the load generator does not exist. Its own deliverable and its own go |
-| Admin latency under DoH load, at and above 64 concurrent (W1) | **not run** — same generator |
+| DoT/DoH request rate and latency (W1) | **not run, and waiting on more than the tool.** The load generator does not exist — its own deliverable and its own go — but building it first would produce a figure with nothing to check it against: PERFORMANCE.md's `DoT / DoH added latency vs UDP, p50` is still `TBD`, to be set from the RB5009, and the note there says the TLS/HTTP legs do not convert, so an x86 run cannot stand in. The budget rows are `p3-11-verification-sni-scope.md`'s, and its device half waits on the deploy decision. Order: deploy → p3-11 fixes the SNI/DoT/DoH budgets → the generator is designed against them |
+| Admin latency under DoH load, at and above 64 concurrent (W1) | **not run** — same generator, same order. The 64 is `MAX_CONNECTIONS` in `fah-api/src/server.rs:33`, one semaphore for the whole API router, and `/dns-query` is a route on it, so a DoH connection holds a slot the dashboard would otherwise hold (A8) |
 | RSS burst → idle → collect, splice path (W1) | **not run** — no verified runner; the plain-HTTP procedure in the soak tooling may be reusable, unverified |
 | Held memory with interception on (W2) | not run |
 | Splice cost and throughput | measured here, **unresolved here**, and **resolved on the device 2026-09-14** — [p3-10-track-b2-rb5009.md](p3-10-track-b2-rb5009.md). The router repeated inside ±5 % where this box moved 15–19 %, and the two platforms answer the buffer question in opposite directions. The router's answer is the one used; x86 `splicebench` is not run again |
