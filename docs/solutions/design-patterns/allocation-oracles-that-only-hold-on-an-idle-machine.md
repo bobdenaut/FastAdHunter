@@ -25,8 +25,8 @@ symptoms:
 
 Four things are recorded here, all from tests that pass alone and fail in the
 full workspace suite. §1, §3 and §4 are settled and their fixes are in the tree.
-**§2 is open**, and it is the reason this file exists: a rare failure in
-`fah-dns --lib` whose name was lost, which nobody has reproduced since.
+**§2 is identified but not explained**: the `fah-dns --lib` failure whose name
+was lost has been reproduced and named, and why it happens is still open.
 
 §1 and §3 are the same defect at two scales — a measurement the scheduler can
 touch, asserted as if it could not. §4 is a different species: a wait that
@@ -104,7 +104,7 @@ Two files with a counting allocator were checked and deliberately left alone:
 and `fah-dns/tests/udp_inflight_cost.rs` only reports the figure. Neither
 compares batches, so neither has this failure mode.
 
-## 2. Open — one `fah-dns --lib` failure, name lost
+## 2. Identified 2026-09-14 — the `fah-dns --lib` failure. Cause still open
 
 ### What was seen
 
@@ -157,6 +157,71 @@ immune to machine load. The candidates are the ones on a real clock:
 `upstream/mod.rs` is the first suspect — real timeouts against local sockets and
 walk deadlines. `dot.rs` is the second: real TLS handshakes, and a 500 ms sleep
 in the connection-ceiling test. Both are guesses from shape, not from evidence.
+
+### Hunt, 2026-09-14 — reproduced, and the name is
+
+**`upstream::encrypted::tests::dot_timeout_invalidates_the_pooled_connection_so_the_next_query_reconnects`**,
+`crates/fah-dns/src/upstream/encrypted.rs:620`.
+
+```text
+thread 'upstream::encrypted::tests::dot_timeout_invalidates_the_pooled_connection_so_the_next_query_reconnects'
+panicked at crates\fah-dns\src\upstream\encrypted.rs:620:9:
+assertion `left == right` failed
+  left: 3
+ right: 2
+```
+
+The assertion is `assert_eq!(server.accepts.load(Ordering::Relaxed), 2)`. It runs
+after the pool has been made to time out against a blackholed DoT server and then
+reconnect.
+
+**Measured.** The assertion three lines above it, `tls_handshakes == 2`, passed in
+the same run. So the pool counted exactly two handshakes while the server counted
+**three accepts**: one TCP connection was accepted that produced no handshake the
+pool attributes to itself.
+
+**Hypothesis, not evidence.** The likeliest cause is a connection attempt still in
+flight when the blackholed query times out: it reaches the server's `accept()`
+without completing a handshake, and load widens the window enough to expose it.
+Nothing here verifies that. The reproduction does not distinguish it from any
+other source of a third accept.
+
+**Rate — one observation, which is not a rate.** All on the same tree the same
+evening:
+
+| Condition | Iterations | Failures |
+| --- | --- | --- |
+| whole target under load, run A | 30 | **1** |
+| whole target under load, run B | 60 | 0 |
+| whole target, no load | 30 | 0 |
+| the named test alone, weak load | 30 | 0 |
+
+So 1 in 90 under load, from a single hit. A binomial interval around one success
+in ninety trials spans roughly 1-in-3000 to 1-in-17, so the only defensible
+statement is that it is rare and that load is required — not how rare.
+
+The isolated-test row is the weakest of the four and should not be read as
+evidence of a lower rate: running one test removes the intra-target contention
+of `--test-threads=16` across 221 tests, and it finishes so fast that the load
+loop completed only one run beside it.
+
+**Method that worked**, where `--test-threads=16` alone was not enough:
+
+1. Pre-build both targets with `cargo test --no-run` and take the executable
+   paths out of `--message-format=json`. **Run the binaries directly.** Two
+   `cargo test` loops contend for the lock on `target/`, so the load loop dies
+   and the hunt runs on an idle box while appearing to run under load. That
+   happened twice before this attempt worked.
+2. Loop `acceptor_death` at `--test-threads=4` as the load — two real
+   `fastadhunter` binaries, 25–40 s a run. Give it 20 s of head start.
+3. Loop `fah_dns --lib --test-threads=16`, one invocation per iteration, each
+   redirected to its own file, and grep the files afterwards.
+
+Why it stayed hidden: the whole `fah-dns --lib` target finishes in 3.25 s, so the
+window is narrow and needs real contention rather than a merely busy machine.
+
+**No fix attempted.** Identifying it was the job; the cause and the repair are
+their own task.
 
 ### Why it matters more than it looks
 
