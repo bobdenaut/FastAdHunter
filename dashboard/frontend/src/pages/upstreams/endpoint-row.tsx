@@ -1,7 +1,7 @@
 import type { Upstream, UpstreamRtt } from '../../api/types';
 import { NO_RTT, millisLabel, rttLabel } from '../../charts/format';
 import { StatusPill } from '../../components/status-pill';
-import { failureRunShares, type UpstreamMode } from '../../derive';
+import { failureRunShares } from '../../derive';
 
 /** The word that goes where `v4` or `v6` would, and the reason it is not one.
  *  Nothing resolves a DoH URL's hostname to fill the field in — it is not a
@@ -22,7 +22,7 @@ const RUN_LENGTHS = 'runs of length 1,2,3,4+';
  * past rather than the present. `serving` is the endpoint the pool picks now,
  * `standby` is a healthy endpoint it has not reached, and `null` is a row where
  * the question does not apply: a penalized or probing endpoint says so in its
- * own pill, and no row carries a role under `fallback`.
+ * own pill.
  */
 export type EndpointRole = 'serving' | 'standby' | null;
 
@@ -37,25 +37,17 @@ const ROLE_TITLE: Record<'serving' | 'standby', string> = {
  * order, which is the same identity a query reports as its answering endpoint
  * (CONTEXT.md §Answering Endpoint) — it is read off the array, never invented.
  *
- * **The strategy gates the health half of the row.** Under `fallback` every row
- * publishes `state: healthy`, `penalty_round: 0` and zeros for penalties,
- * penalized seconds, probes and probe successes, which API.md states means *no
- * health state exists to report* — so those cells and the state pill are
- * omitted rather than rendered as good news.
  */
 export function EndpointRow({
   index,
   upstream,
-  mode,
   role,
 }: {
   index: number;
   upstream: Upstream;
-  mode: UpstreamMode;
   role: EndpointRole;
 }) {
-  const health = mode !== 'fallback';
-  const penalized = health && upstream.state === 'penalized';
+  const penalized = upstream.state === 'penalized';
   const runs = failureRunShares(upstream.failure_runs);
   const rtt = upstream.rtt;
 
@@ -70,7 +62,7 @@ export function EndpointRow({
           <span class="ep-address mono">{upstream.address}</span>
         </div>
         <div class="ep-state">
-          {health && <StatusPill status={upstream.state} />}
+          <StatusPill status={upstream.state} />
           {role !== null && (
             <span
               class={role === 'serving' ? 'pill ep-role' : 'pill ep-role standby'}
@@ -109,20 +101,16 @@ export function EndpointRow({
           label="TLS handshakes"
           value={upstream.tls_handshakes.toLocaleString()}
         />
-        {health && (
-          <>
-            <Cell label="penalties" value={upstream.penalties.toLocaleString()} />
-            <Cell
-              label="penalized for"
-              value={`${upstream.penalized_seconds_total.toLocaleString()} s`}
-            />
-            <Cell label="probes" value={upstream.probes.toLocaleString()} />
-            <Cell
-              label="probe successes"
-              value={upstream.probe_successes.toLocaleString()}
-            />
-          </>
-        )}
+        <Cell label="penalties" value={upstream.penalties.toLocaleString()} />
+        <Cell
+          label="penalized for"
+          value={`${upstream.penalized_seconds_total.toLocaleString()} s`}
+        />
+        <Cell label="probes" value={upstream.probes.toLocaleString()} />
+        <Cell
+          label="probe successes"
+          value={upstream.probe_successes.toLocaleString()}
+        />
       </div>
 
       <div class="ep-rtt">

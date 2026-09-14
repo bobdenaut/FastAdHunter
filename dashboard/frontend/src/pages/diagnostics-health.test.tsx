@@ -12,8 +12,8 @@ import { RuleListsCard } from './health/rule-lists-card';
 /**
  * Every figure on this page traces to `/health`, `/telemetry`, `/lists` or the
  * one `/config` strategy read. The two that could be got wrong are the endpoint
- * summary — which must not count `fallback`'s placeholder states — and the
- * memory pair, which is `null` off Linux and must never read as zero.
+ * summary — which must not count states it cannot attribute to a strategy — and
+ * the memory pair, which is `null` off Linux and must never read as zero.
  */
 
 const ROUTE: Route = {
@@ -246,15 +246,6 @@ describe('the endpoint summary', () => {
       <EndpointSummary mode="adaptive" upstreams={TELEMETRY.upstreams} />,
     );
     expect(dom.textContent).not.toContain('recovering');
-  });
-
-  it('shows no state counts under `fallback`', () => {
-    const dom = mount(
-      <EndpointSummary mode="fallback" upstreams={TELEMETRY.upstreams} />,
-    );
-    expect(dom.textContent).toContain('3 endpoints');
-    expect(dom.textContent).not.toContain('healthy');
-    expect(dom.textContent).toContain('publishes no health state');
   });
 
   it('says the strategy could not be read when it could not', () => {

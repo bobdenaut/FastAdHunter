@@ -408,12 +408,12 @@ describe('the failure-run histogram', () => {
 describe('the upstream rendering mode', () => {
   it('is the strategy when the configuration named one', () => {
     expect(upstreamMode('adaptive')).toBe('adaptive');
-    expect(upstreamMode('fallback')).toBe('fallback');
   });
 
-  it('is unknown when `/config` could not be read', () => {
-    // Not "adaptive by default": under `fallback` the zeros mean no health
-    // state exists, so guessing states the opposite of the truth.
+  it('is unknown when `/config` could not be read, or named one this build does not know', () => {
+    // Not "adaptive by default": a later engine can name a strategy added
+    // after this build, and guessing would read its states under the wrong
+    // rule.
     expect(upstreamMode(null)).toBe('unknown');
     expect(upstreamMode(undefined)).toBe('unknown');
     expect(upstreamMode('something-new')).toBe('unknown');
@@ -440,10 +440,9 @@ describe('which endpoint is serving', () => {
     expect(servingIndex([], 'adaptive')).toBeNull();
   });
 
-  it('names none under a strategy that publishes no health state', () => {
-    // Under `fallback` every row reads `healthy` because none of them is
-    // reporting — index 0 would be named whatever is happening to it.
-    expect(servingIndex(at('healthy', 'healthy'), 'fallback')).toBeNull();
+  it('names none when the strategy could not be read', () => {
+    // Without the strategy there is no rule these states follow, so naming
+    // index 0 would claim more than the page knows.
     expect(servingIndex(at('healthy', 'healthy'), 'unknown')).toBeNull();
   });
 });

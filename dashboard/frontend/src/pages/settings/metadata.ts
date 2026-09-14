@@ -233,8 +233,8 @@ export const SECTIONS: readonly SectionMeta[] = [
       {
         key: 'dns.upstreams.strategy',
         label: 'strategy',
-        help: 'fallback walks the servers in configured order on every query. adaptive penalizes an endpoint that keeps failing and probes it on the way past.',
-        control: { kind: 'enum', values: ['fallback', 'adaptive'] },
+        help: 'adaptive penalizes an endpoint that keeps failing and probes it on the way past. It is the only strategy the engine accepts.',
+        control: { kind: 'enum', values: ['adaptive'] },
         mutability: 'restart',
         source: `schema/dns/upstreams.rs UpstreamStrategy; ${BOOT_KEYS} dns.upstreams`,
       },

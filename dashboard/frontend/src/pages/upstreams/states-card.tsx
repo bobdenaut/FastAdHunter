@@ -1,6 +1,5 @@
 import { Card } from '../../components/card';
 import { StatusPill } from '../../components/status-pill';
-import type { UpstreamMode } from '../../derive';
 
 const STATES = [
   {
@@ -18,30 +17,10 @@ const STATES = [
 ];
 
 /**
- * What the three pills mean — and, under `fallback`, that there are no pills to
- * explain. The body is swapped rather than annotated: a legend for states that
- * do not exist is the same mistake as rendering their zeros.
+ * What the three pills mean. `adaptive` is the only strategy the engine
+ * accepts, so the legend describes its states and nothing else.
  */
-export function StatesCard({ mode }: { mode: UpstreamMode }) {
-  if (mode === 'fallback') {
-    return (
-      <Card title="What the states mean">
-        <p class="note">
-          Under the <span class="mono">fallback</span> strategy these states do
-          not apply — no health state exists to report, which is why this page
-          shows none. Every row publishes{' '}
-          <span class="mono">state: healthy</span> and zeros for penalties,
-          probes and penalized seconds whatever the endpoint is doing.
-        </p>
-        <p class="note">
-          <span class="mono">degraded</span> there simply means every endpoint
-          carries a non-zero consecutive-failure count. A secondary is only
-          attempted when the primary fails, so a streak on one can be hours old.
-        </p>
-      </Card>
-    );
-  }
-
+export function StatesCard() {
   return (
     <Card title="What the states mean">
       <div class="state-legend">
@@ -53,10 +32,8 @@ export function StatesCard({ mode }: { mode: UpstreamMode }) {
         ))}
       </div>
       <p class="note state-legend-foot">
-        Under the <span class="mono">fallback</span> strategy these states do
-        not apply — <span class="mono">degraded</span> there simply means every
-        endpoint carries a non-zero consecutive-failure count. The page names
-        the strategy in force so the reading is never ambiguous.
+        The page names the strategy in force above, so the reading is never
+        ambiguous.
       </p>
     </Card>
   );

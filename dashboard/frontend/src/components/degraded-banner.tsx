@@ -44,26 +44,12 @@ function explanation(mode: UpstreamMode): preact.ComponentChildren {
       </>
     );
   }
-  if (mode === 'fallback') {
-    return (
-      <>
-        Under the <span class="mono">fallback</span> strategy it means every
-        endpoint carries a non-zero consecutive-failure count. A secondary is
-        only attempted when the primary fails, so a streak there can be hours
-        old.
-      </>
-    );
-  }
-  // C14 — the configuration could not be read, so both readings are given and
-  // each is attributed to the strategy it belongs to. Guessing one would state
-  // the opposite of the truth half the time.
+  // C14 — the configuration could not be read, so the reading is given without
+  // being attributed to a strategy this page cannot name.
   return (
     <>
-      The strategy could not be read, so both readings apply: under{' '}
-      <span class="mono">adaptive</span> it means no endpoint is currently{' '}
-      <span class="mono">healthy</span>, and under{' '}
-      <span class="mono">fallback</span> that every endpoint carries a non-zero
-      consecutive-failure count.
+      The strategy could not be read. Under <span class="mono">adaptive</span> it
+      means no endpoint is currently <span class="mono">healthy</span>.
     </>
   );
 }

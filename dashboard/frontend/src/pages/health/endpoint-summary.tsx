@@ -5,10 +5,9 @@ import { upstreamStateCounts, type UpstreamMode } from '../../derive';
 /**
  * D3 — the endpoint states in one line, **under `adaptive` only**.
  *
- * Under `fallback` every row publishes `state: healthy` because no health state
- * exists to report (API.md), so the line becomes a count of endpoints with no
- * states attached rather than three zeros dressed as good news. `unknown` is
- * `GET /config` having failed and reads the same way.
+ * `unknown` is `GET /config` having failed, so the rule these states follow is
+ * unknown too: the line becomes a count of endpoints with no states attached
+ * rather than three figures dressed as a reading nobody vouched for.
  */
 export function EndpointSummary({
   mode,
@@ -33,9 +32,7 @@ export function EndpointSummary({
       ) : (
         <>
           {total} {plural}
-          {mode === 'fallback'
-            ? ' — the fallback strategy publishes no health state, so there is none to count'
-            : ' — the strategy could not be read, so no state count is shown'}
+          {' — the strategy could not be read, so no state count is shown'}
         </>
       )}{' '}
       <Link href="/upstreams" class="linky">

@@ -319,18 +319,15 @@ export function failureRunShares(runs: readonly number[]): number[] {
  * KTD5 / E25 — the strategy decides whether the health block can be read at
  * all.
  *
- * Under `fallback` every row publishes `state: healthy`, `penalty_round: 0` and
- * zeros for penalties, penalized seconds, probes and probe successes, which
- * API.md states means *no health state exists to report* — not "everything is
- * fine". Those cells are therefore omitted rather than rendered as good news.
- * `unknown` is `GET /config` having failed: the counters are still verbatim,
- * and the page says it cannot name the strategy.
+ * `unknown` is `GET /config` having failed, or an engine naming a strategy this
+ * build does not know: the counters are still verbatim, and the page says it
+ * cannot name the strategy rather than reading them under a rule it is
+ * guessing at.
  */
-export type UpstreamMode = 'adaptive' | 'fallback' | 'unknown';
+export type UpstreamMode = 'adaptive' | 'unknown';
 
 export function upstreamMode(strategy: string | null | undefined): UpstreamMode {
   if (strategy === 'adaptive') return 'adaptive';
-  if (strategy === 'fallback') return 'fallback';
   return 'unknown';
 }
 
@@ -344,11 +341,10 @@ export function upstreamMode(strategy: string | null | undefined): UpstreamMode 
  * its own — an endpoint that earns a penalty hands the role to the next one
  * until a probe brings it back.
  *
- * **`null` under any other mode.** Under `fallback` every row publishes
- * `state: healthy` because no health state exists to report, so "the first
- * healthy one" would name index 0 whatever is happening to it; and `unknown`
- * is not knowing which rule applies at all. A page that cannot read the
- * strategy cannot claim which endpoint serves.
+ * **`null` under `unknown`.** Not knowing the strategy is not knowing which
+ * rule the states follow, so "the first healthy one" would name index 0 without
+ * knowing the answer means anything. A page that cannot read the strategy
+ * cannot claim which endpoint serves.
  */
 export function servingIndex(
   upstreams: readonly { state: UpstreamState }[],
@@ -365,8 +361,8 @@ export function servingIndex(
  * D3 — how many endpoints are in each state, from `telemetry.upstreams[]`.
  *
  * **Read only under `adaptive`.** The caller gates on `upstreamMode`: under
- * `fallback` every row publishes `state: healthy` because no health state
- * exists to report, and counting those would state the opposite of the truth.
+ * `unknown` the strategy could not be read, so the rule these states follow is
+ * not known either and counting them would vouch for a reading nobody has.
  * The three keys are the whole vocabulary — `UpstreamState` has no fourth
  * value, so a "recovering" count has nothing behind it.
  */

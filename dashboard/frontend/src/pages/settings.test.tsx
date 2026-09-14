@@ -46,7 +46,7 @@ function config(over: Record<string, unknown> = {}): Record<string, unknown> {
         cleanup_interval_seconds: 360,
       },
       upstreams: {
-        strategy: 'fallback',
+        strategy: 'adaptive',
         timeout_ms: 800,
         penalty_failures: 2,
         servers: [{ address: '1.1.1.1', protocol: 'udp', hostname: null }],

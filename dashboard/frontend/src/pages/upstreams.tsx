@@ -25,13 +25,10 @@ import type { RangeKey } from './dashboard/ranges';
 /**
  * Health and state of each configured server.
  *
- * **The strategy is the key to the whole page**, and it is only on `/config`:
- * `telemetry.upstreams[]` does not carry it, and without it the health block
- * cannot be read at all. Under `fallback` every row publishes `state: healthy`,
- * `penalty_round: 0` and zeros for penalties, probes and penalized seconds,
- * which API.md is explicit means "no health state exists to report" and not
- * "everything is fine". Showing those zeros without naming the strategy states
- * the opposite of the truth, so this page names it or says it could not.
+ * **The strategy is only on `/config`**: `telemetry.upstreams[]` does not carry
+ * it. `adaptive` is the only one the engine accepts, but a page that could not
+ * read the strategy cannot promise the states follow its rule, so this page
+ * names the strategy or says it could not read one.
  *
  * **Its data lifecycle, in one place.** Two polled endpoints through the shared
  * registry (`/telemetry`, `/health`) and one `/config` read on mount — no
@@ -120,7 +117,6 @@ export function Upstreams(_props: PageProps) {
                   key={upstream.address}
                   index={index}
                   upstream={upstream}
-                  mode={mode}
                   // Decided once for the card rather than per row: the role is a
                   // statement about the array, and a row cannot see the rows
                   // above it to know whether one of them is already serving.
@@ -177,7 +173,7 @@ export function Upstreams(_props: PageProps) {
 
         <div class="row c2">
           <NoPieCard />
-          <StatesCard mode={mode} />
+          <StatesCard />
         </div>
       </main>
     </>

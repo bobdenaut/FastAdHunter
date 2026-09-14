@@ -11,11 +11,10 @@ import { endpointOrder } from './upstreams/rtt-chart';
 import { StatesCard } from './upstreams/states-card';
 
 /**
- * The one thing this page must never do is present `fallback`'s zeros as
- * health. API.md is explicit that under that strategy every row publishes
- * `state: healthy`, `penalty_round: 0` and zeros for penalties, penalized
- * seconds, probes and probe successes because **no health state exists to
- * report** — which is not the same as "everything is fine".
+ * The one thing this page must never do is read the health block as if it knew
+ * the rule behind it. `adaptive` is the only strategy the engine accepts, but
+ * a page whose `/config` call failed cannot say so, and then it names no
+ * serving endpoint and counts no states.
  *
  * The cards are mounted directly; the page itself is two `useRefresh` calls,
  * one `/config` one-shot and a layout, and its route declaration is pinned in
@@ -71,7 +70,7 @@ afterEach(() => {
 describe('an adaptive endpoint row', () => {
   it('carries the state pill and all eight counters', () => {
     const dom = mount(
-      <EndpointRow index={0} upstream={endpoint()} mode="adaptive" role={null} />,
+      <EndpointRow index={0} upstream={endpoint()} role={null} />,
     );
     expect(dom.querySelector('.pill')?.textContent).toBe('healthy');
     expect(dom.querySelectorAll('.ep-counters > div')).toHaveLength(8);
@@ -84,7 +83,7 @@ describe('an adaptive endpoint row', () => {
 
   it('names its index, which is the answering-endpoint identity', () => {
     const dom = mount(
-      <EndpointRow index={2} upstream={endpoint()} mode="adaptive" role={null} />,
+      <EndpointRow index={2} upstream={endpoint()} role={null} />,
     );
     expect(dom.querySelector('.ep-index')?.textContent).toBe('2');
   });
@@ -94,7 +93,6 @@ describe('an adaptive endpoint row', () => {
       <EndpointRow
         index={0}
         upstream={endpoint({ penalty_round: 3 })}
-        mode="adaptive"
         role={null}
       />,
     );
@@ -108,7 +106,6 @@ describe('an adaptive endpoint row', () => {
       <EndpointRow
         index={1}
         upstream={endpoint({ state: 'penalized', penalty_round: 3 })}
-        mode="adaptive"
         role={null}
       />,
     );
@@ -121,7 +118,6 @@ describe('an adaptive endpoint row', () => {
       <EndpointRow
         index={0}
         upstream={endpoint({ consecutive_failures: 7 })}
-        mode="adaptive"
         role={null}
       />,
     );
@@ -132,7 +128,7 @@ describe('an adaptive endpoint row', () => {
 describe('the role badge', () => {
   it('names the serving endpoint beside its state', () => {
     const dom = mount(
-      <EndpointRow index={0} upstream={endpoint()} mode="adaptive" role="serving" />,
+      <EndpointRow index={0} upstream={endpoint()} role="serving" />,
     );
     const pills = [...dom.querySelectorAll('.ep-state .pill')].map(
       (pill) => pill.textContent,
@@ -142,7 +138,7 @@ describe('the role badge', () => {
 
   it('marks a healthy endpoint that is not being reached', () => {
     const dom = mount(
-      <EndpointRow index={1} upstream={endpoint()} mode="adaptive" role="standby" />,
+      <EndpointRow index={1} upstream={endpoint()} role="standby" />,
     );
     expect(dom.querySelector('.ep-role')?.textContent).toBe('standby');
     expect(dom.querySelector('.ep-role')?.className).toContain('standby');
@@ -152,44 +148,9 @@ describe('the role badge', () => {
   // eye looks at and finds nothing in.
   it('draws nothing where there is no role to state', () => {
     const dom = mount(
-      <EndpointRow index={0} upstream={endpoint()} mode="adaptive" role={null} />,
+      <EndpointRow index={0} upstream={endpoint()} role={null} />,
     );
     expect(dom.querySelector('.ep-role')).toBeNull();
-  });
-});
-
-describe('a fallback endpoint row', () => {
-  it('omits the state pill and the four health cells', () => {
-    const dom = mount(
-      <EndpointRow index={0} upstream={endpoint()} mode="fallback" role={null} />,
-    );
-    expect(dom.querySelector('.pill')).toBeNull();
-    expect(dom.querySelectorAll('.ep-counters > div')).toHaveLength(4);
-    const text = dom.textContent ?? '';
-    for (const absent of [
-      'penalties',
-      'penalized for',
-      'probes',
-      'probe successes',
-    ]) {
-      expect(text).not.toContain(absent);
-    }
-  });
-
-  it('keeps the counters that mean the same thing under either strategy', () => {
-    const dom = mount(
-      <EndpointRow index={0} upstream={endpoint()} mode="fallback" role={null} />,
-    );
-    const text = (dom.textContent ?? '').replace(/\s+/g, ' ');
-    for (const present of [
-      'attempts',
-      'failures',
-      'consecutive',
-      'TLS handshakes',
-      'failure-run histogram',
-    ]) {
-      expect(text).toContain(present);
-    }
   });
 });
 
@@ -203,7 +164,6 @@ describe('the address family', () => {
           protocol: 'doh',
           family: null,
         })}
-        mode="adaptive"
         role={null}
       />,
     );
@@ -214,7 +174,7 @@ describe('the address family', () => {
 
   it('prints the family verbatim when the config gave one', () => {
     const dom = mount(
-      <EndpointRow index={0} upstream={endpoint({ family: 'v6' })} mode="adaptive" role={null} />,
+      <EndpointRow index={0} upstream={endpoint({ family: 'v6' })} role={null} />,
     );
     expect(dom.querySelector('.ep-state .note')?.textContent).toContain(
       'dot · v6',
@@ -228,7 +188,6 @@ describe('the failure-run histogram', () => {
       <EndpointRow
         index={1}
         upstream={endpoint({ failure_runs: [12, 21, 30, 39] })}
-        mode="adaptive"
         role={null}
       />,
     );
@@ -247,7 +206,6 @@ describe('the failure-run histogram', () => {
       <EndpointRow
         index={0}
         upstream={endpoint({ failure_runs: [0, 0, 0, 0] })}
-        mode="adaptive"
         role={null}
       />,
     );
@@ -265,7 +223,6 @@ describe('the failure-run histogram', () => {
       <EndpointRow
         index={1}
         upstream={endpoint({ state: 'penalized', failure_runs: [12, 21, 30, 39] })}
-        mode="adaptive"
         role={null}
       />,
     );
@@ -285,19 +242,11 @@ describe('the degraded banner', () => {
     expect(text).toContain('Clients are being served.');
   });
 
-  it('gives the fallback reading under fallback', () => {
-    const dom = mount(<DegradedBanner mode="fallback" />);
-    const text = (dom.textContent ?? '').replace(/\s+/g, ' ');
-    expect(text).toContain('non-zero consecutive-failure count');
-    expect(text).not.toContain('no endpoint is currently healthy');
-  });
-
-  it('gives both readings, attributed, when the strategy is unreadable', () => {
+  it('says so, and still gives the reading, when the strategy is unreadable', () => {
     const dom = mount(<DegradedBanner mode="unknown" />);
     const text = (dom.textContent ?? '').replace(/\s+/g, ' ');
     expect(text).toContain('The strategy could not be read');
     expect(text).toContain('no endpoint is currently healthy');
-    expect(text).toContain('non-zero consecutive-failure count');
   });
 
   it('carries no refresh controls of its own', () => {
@@ -311,17 +260,12 @@ describe('the degraded banner', () => {
 
 describe('the states legend', () => {
   it('explains the three pills under adaptive', () => {
-    const dom = mount(<StatesCard mode="adaptive" />);
+    const dom = mount(<StatesCard />);
     expect(
       [...dom.querySelectorAll('.pill')].map((node) => node.textContent),
     ).toEqual(['healthy', 'penalized', 'probing']);
   });
 
-  it('explains that there are no states under fallback', () => {
-    const dom = mount(<StatesCard mode="fallback" />);
-    expect(dom.querySelectorAll('.pill')).toHaveLength(0);
-    expect(dom.textContent).toContain('no health state exists to report');
-  });
 });
 
 /* ------------------------------------------------------- the page as a whole */
@@ -416,8 +360,10 @@ describe('which row the page marks as serving', () => {
     expect(rows[0]?.querySelector('.pill')?.textContent).toBe('penalized');
   });
 
-  it('marks no row when the strategy publishes no health state', async () => {
-    const dom = await mountPage({ dns: { upstreams: { strategy: 'fallback' } } });
+  it('marks no row when the strategy is one this build does not know', async () => {
+    const dom = await mountPage({
+      dns: { upstreams: { strategy: 'something-later' } },
+    });
     expect(dom.querySelectorAll('.ep-role')).toHaveLength(0);
   });
 });
@@ -428,9 +374,11 @@ describe('naming the strategy', () => {
     expect(dom.querySelector('.sub')?.textContent).toContain('strategy adaptive');
   });
 
-  it('names `fallback` just as plainly', async () => {
-    const dom = await mountPage({ dns: { upstreams: { strategy: 'fallback' } } });
-    expect(dom.querySelector('.sub')?.textContent).toContain('strategy fallback');
+  it('does not name a strategy it cannot read as one it knows', async () => {
+    const dom = await mountPage({
+      dns: { upstreams: { strategy: 'something-later' } },
+    });
+    expect(dom.querySelector('.sub')?.textContent).toContain('strategy unknown');
   });
 
   it('says it could not read one, and still renders the counters', async () => {
@@ -504,7 +452,6 @@ describe('the round-trip cells on an endpoint row', () => {
         upstream={endpoint({
           rtt: { count: 1000, sum_seconds: 12.5, p50: 0.01, p99: 0.05 },
         })}
-        mode="adaptive"
         role={null}
       />,
     );
@@ -521,7 +468,7 @@ describe('the round-trip cells on an endpoint row', () => {
   // has forwarded nothing serves zeros. Neither is a round trip of zero.
   it('prints nothing rather than a zero when there is no measurement', () => {
     const absent = mount(
-      <EndpointRow index={0} upstream={endpoint()} mode="adaptive" role={null} />,
+      <EndpointRow index={0} upstream={endpoint()} role={null} />,
     );
     expect(
       [...absent.querySelectorAll('.ep-rtt-cells > div')].every((cell) =>
@@ -537,7 +484,6 @@ describe('the round-trip cells on an endpoint row', () => {
         upstream={endpoint({
           rtt: { count: 0, sum_seconds: 0, p50: 0, p99: 0 },
         })}
-        mode="adaptive"
         role={null}
       />,
     );
@@ -547,19 +493,17 @@ describe('the round-trip cells on an endpoint row', () => {
   });
 
   it('keeps the round-trip group out of the counter grid', () => {
-    // The health cells are gated on the strategy; round trip is not, so a
-    // fallback row still carries it and the counter count stays four.
+    // Round trip has its own grid: adding it must not grow the counter grid.
     const dom = mount(
       <EndpointRow
         index={0}
         upstream={endpoint({
           rtt: { count: 10, sum_seconds: 0.1, p50: 0.01, p99: 0.01 },
         })}
-        mode="fallback"
         role={null}
       />,
     );
-    expect(dom.querySelectorAll('.ep-counters > div')).toHaveLength(4);
+    expect(dom.querySelectorAll('.ep-counters > div')).toHaveLength(8);
     expect(dom.querySelectorAll('.ep-rtt-cells > div')).toHaveLength(4);
   });
 });
