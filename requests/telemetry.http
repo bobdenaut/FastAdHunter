@@ -109,13 +109,22 @@ GET {{base}}/telemetry
 #
 # counters.tasks_died is the supervisor's tally: long-lived tasks (rules
 # scheduler, event fan-out, perf sampler, telemetry poll, policy ticker, SWR
-# workers, cache cleanup, the two stats schedulers) that ended before shutdown.
-# Checked every 10 s; each death is logged ONCE at `error` with the task name
-# and cause (panic message, or "returned"), then counted here. Report-only:
-# nothing restarts the task and the process does not exit — the resolver keeps
-# answering while that task's work stays stopped until the container is
-# restarted. Normal value 0. Non-zero: read the engine log, then restart.
+# workers, cache cleanup, the two stats schedulers, and the HTTP, HTTPS and API
+# acceptors) that ended before shutdown. Checked every 10 s; each death is
+# logged ONCE at `error` with the task name and cause (panic message, or
+# "returned"), then counted here. Report-only: nothing restarts the task and the
+# process does not exit — the resolver keeps answering while that task's work
+# stays stopped until the container is restarted. Normal value 0. Non-zero: read
+# the engine log, then restart.
 # /health does NOT change. A DNS listener dying is a different path and exits.
+#
+# The log line's task name says what you lost:
+#   HTTP acceptor    port 8080 stopped accepting; no proxying, no URL filtering
+#   HTTPS acceptor   port 8444's proxy leg stopped; no SNI filtering
+#   API acceptor     this endpoint, the dashboard and DoH are gone with it —
+#                    which is why a dead API acceptor is visible only in the log
+# DNS on 53 and DoT on 853 keep answering in all three cases. That is the whole
+# point of the split: a dead dashboard must not take the resolver with it.
 
 # ─── The producer boundary ─────────────────────────────────────────────
 #

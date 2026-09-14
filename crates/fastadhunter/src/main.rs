@@ -295,6 +295,38 @@ struct Engine {
     stats_schedulers: Vec<Supervised>,
     stats: Arc<fah_stats::Stats>,
     metrics: Arc<fah_metrics::Metrics>,
+    #[cfg(feature = "test-harness")]
+    kill: Option<KillRequest>,
+}
+
+#[cfg(feature = "test-harness")]
+struct KillRequest {
+    targets: Vec<String>,
+    sentinel: std::path::PathBuf,
+}
+
+#[cfg(feature = "test-harness")]
+fn kill_request() -> Option<KillRequest> {
+    const KILL_ACCEPTOR_ENV: &str = "FAH_TEST_KILL_ACCEPTOR";
+    const KILL_WHEN_ENV: &str = "FAH_TEST_KILL_ACCEPTOR_WHEN";
+
+    let named = std::env::var(KILL_ACCEPTOR_ENV).ok()?;
+    let sentinel = std::path::PathBuf::from(std::env::var_os(KILL_WHEN_ENV)?);
+    let targets: Vec<String> = named
+        .split(',')
+        .map(|name| name.trim().to_ascii_lowercase())
+        .filter(|name| !name.is_empty())
+        .collect();
+    if targets.is_empty() {
+        return None;
+    }
+    tracing::warn!(
+        targets = %targets.join(","),
+        sentinel = %sentinel.display(),
+        "built with the test-harness feature: the named acceptors lose their admission when \
+         that file appears. This build must never be shipped"
+    );
+    Some(KillRequest { targets, sentinel })
 }
 
 impl Engine {
@@ -757,6 +789,8 @@ impl Engine {
             stats_schedulers,
             stats,
             metrics,
+            #[cfg(feature = "test-harness")]
+            kill: kill_request(),
         })
     }
 
@@ -774,9 +808,70 @@ impl Engine {
         }
     }
 
+    #[cfg(feature = "test-harness")]
+    fn trip_kill_sentinel(&mut self) {
+        let Some(kill) = self.kill.as_ref() else {
+            return;
+        };
+        if !kill.sentinel.exists() {
+            return;
+        }
+        for target in &kill.targets {
+            match target.as_str() {
+                "http" => {
+                    if let Some(http) = self.http.as_ref() {
+                        http.close_admission();
+                    }
+                }
+                "https" => {
+                    if let Some(https) = self.https.as_ref() {
+                        https.close_admission();
+                    }
+                }
+                "api" => self.api.close_admission(),
+                unknown => tracing::warn!(
+                    acceptor = unknown,
+                    "FAH_TEST_KILL_ACCEPTOR names an acceptor that does not exist"
+                ),
+            }
+        }
+        tracing::warn!(
+            targets = %kill.targets.join(","),
+            "test-harness: admission closed on the named acceptors; their loops end on the \
+             next connection"
+        );
+        self.kill = None;
+    }
+
     async fn reap_dead_tasks(&mut self) {
+        #[cfg(feature = "test-harness")]
+        self.trip_kill_sentinel();
+
         let mut deaths = supervisor::reap(&mut self.tasks).await;
         deaths.extend(supervisor::reap(&mut self.stats_schedulers).await);
+
+        let mut acceptors = Vec::new();
+        if let Some(handle) = self
+            .http
+            .as_mut()
+            .and_then(fah_http::Server::take_finished_acceptor)
+        {
+            acceptors.push(("HTTP acceptor", handle));
+        }
+        if let Some(handle) = self
+            .https
+            .as_mut()
+            .and_then(fah_http::TlsServer::take_finished_acceptor)
+        {
+            acceptors.push(("HTTPS acceptor", handle));
+        }
+        if let Some(handle) = self.api.take_finished_acceptor() {
+            acceptors.push(("API acceptor", handle));
+        }
+        for (name, handle) in acceptors {
+            deaths.push(supervisor::death_of(name, handle).await);
+        }
+
         for death in deaths {
             self.metrics.record_task_death();
             tracing::error!(

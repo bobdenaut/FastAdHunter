@@ -8,6 +8,13 @@ publish.workspace = true
 [lints]
 workspace = true
 
+# `close_admission` on the HTTP and HTTPS acceptors (p3-10c D5): the only way
+# to end an accept loop in a running binary, so the e2e can prove a dead
+# acceptor is observed and the resolver keeps answering. Non-default and never
+# enabled by `cargo build --release`; the shipped build carries neither method.
+[features]
+test-harness = []
+
 # L3 (ARCHITECTURE.md §Dependency Layering): may depend on fah-rules (L2) and
 # L1 only, never on fah-dns / fah-api / fah-stats / fah-metrics — the binary
 # wires the siblings together. `fah-rules` and `fah-model` arrive with p2-04,

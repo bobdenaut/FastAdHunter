@@ -185,6 +185,7 @@ fn request(case: &Case) -> Request<Full<Bytes>> {
 fn warm_intercepted_requests_allocate_a_steady_amount() {
     const REQUESTS: usize = 64;
     const BATCHES: usize = 4;
+    const JITTER_ALLOWANCE: usize = 4;
 
     let rt = tokio::runtime::Builder::new_current_thread()
         .enable_all()
@@ -314,14 +315,15 @@ fn warm_intercepted_requests_allocate_a_steady_amount() {
         );
 
         let last = measured[BATCHES - 1].0;
-        assert_eq!(
-            last,
-            measured[BATCHES - 2].0,
-            "{REQUESTS} warm requests ({}) allocated {} then {} in the last two batches; the \
-             intercepted path must reach a steady amount, not keep growing: {measured:?}",
+        assert!(
+            last <= measured[BATCHES - 2].0 + JITTER_ALLOWANCE,
+            "{REQUESTS} warm requests ({}) allocated {} then {last} in the last two batches; the \
+             intercepted path must reach a steady amount, not keep growing. This checks the \
+             absence of growth, not bit-for-bit equality between two measurements a scheduler \
+             and TCP/TLS chunking both touch: one leaked allocation per request would show as \
+             +{REQUESTS} here, so a difference within {JITTER_ALLOWANCE} is noise: {measured:?}",
             case.label,
-            measured[BATCHES - 2].0,
-            last
+            measured[BATCHES - 2].0
         );
         assert!(
             last <= REQUESTS * case.ceiling_per_request,

@@ -80,6 +80,18 @@ impl TlsServer {
         Arc::clone(&self.connections)
     }
 
+    pub fn take_finished_acceptor(&mut self) -> Option<JoinHandle<()>> {
+        match &self.handle {
+            Some(handle) if handle.is_finished() => self.handle.take(),
+            _ => None,
+        }
+    }
+
+    #[cfg(feature = "test-harness")]
+    pub fn close_admission(&self) {
+        self.permits.close();
+    }
+
     pub fn shutdown(&self) {
         if let Some(handle) = &self.handle {
             handle.abort();
@@ -238,6 +250,71 @@ mod tests {
         assert_eq!(connections.take_peak(), 2);
         assert_eq!(connections.take_peak(), 1);
         drop(second);
+        server.shutdown();
+    }
+
+    async fn handed_over(server: &mut TlsServer) -> JoinHandle<()> {
+        let deadline = std::time::Instant::now() + Duration::from_secs(2);
+        loop {
+            if let Some(handle) = server.take_finished_acceptor() {
+                return handle;
+            }
+            assert!(
+                std::time::Instant::now() < deadline,
+                "a closed admission must end the accept loop"
+            );
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    }
+
+    async fn poke(addr: SocketAddr) {
+        let _ = TcpStream::connect(addr).await;
+    }
+
+    #[tokio::test]
+    async fn a_running_acceptor_is_not_handed_over() {
+        let mut server = TlsServer::bind(&config(0)).await.unwrap();
+        server.serve(proxy_with(Duration::from_secs(30)));
+
+        assert!(
+            server.take_finished_acceptor().is_none(),
+            "a live acceptor must keep its handle"
+        );
+        server.shutdown();
+    }
+
+    #[tokio::test]
+    async fn a_returned_acceptor_is_handed_over_once() {
+        let mut server = TlsServer::bind(&config(0)).await.unwrap();
+        let addr = server.local_addr();
+        server.serve(proxy_with(Duration::from_secs(30)));
+
+        server.permits.close();
+        poke(addr).await;
+
+        let handle = handed_over(&mut server).await;
+        assert!(
+            handle.await.is_ok(),
+            "the loop must end by returning, not by panicking or being cancelled"
+        );
+        assert!(
+            server.take_finished_acceptor().is_none(),
+            "a death is handed over once, not on every supervision tick"
+        );
+        server.shutdown();
+    }
+
+    #[tokio::test]
+    async fn shutdown_is_safe_after_the_handle_was_taken() {
+        let mut server = TlsServer::bind(&config(0)).await.unwrap();
+        let addr = server.local_addr();
+        server.serve(proxy_with(Duration::from_secs(30)));
+
+        server.permits.close();
+        poke(addr).await;
+        let taken = handed_over(&mut server).await;
+        assert!(taken.await.is_ok());
+
         server.shutdown();
     }
 

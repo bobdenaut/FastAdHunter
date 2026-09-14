@@ -349,9 +349,11 @@ against this document.
   checks every supervised task (CONTEXT.md §Supervised Task lists them) on a
   10 s tick; one that ended before shutdown is logged once and counted in
   `counters.tasks_died`. No restart, no exit: the resolver keeps answering, and
-  that task's work stays stopped until the container restarts. The API accept
-  loop and the HTTP acceptor are not supervised; only a DNS listener dying
-  exits the process.
+  that task's work stays stopped until the container restarts. The HTTP, HTTPS
+  and API acceptors are in that set: each keeps its handle so its own
+  `shutdown()` still stops it, and hands it over on the tick where it is found
+  finished. Only a DNS listener dying exits the process — a dead proxy or
+  dashboard acceptor must not take the resolver with it.
 - **The cache cleanup sweep** (`[dns.cache] cleanup_interval_seconds`) is the
   other one: a single task that removes entries past the serve-stale window.
   Nothing connects it to the query path — no channel, no shared state beyond the

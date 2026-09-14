@@ -5101,3 +5101,58 @@ async fn get_config_omits_https_interception() {
     let body = harness.get_json("/api/v1/config").await;
     assert!(body["https"].get("interception").is_none(), "{body}");
 }
+
+async fn handed_over(server: &mut ApiServer) -> tokio::task::JoinHandle<()> {
+    let deadline = std::time::Instant::now() + Duration::from_secs(2);
+    loop {
+        if let Some(handle) = server.take_finished_acceptor() {
+            return handle;
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "a closed admission must end the accept loop"
+        );
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+}
+
+async fn poke(server: &ApiServer) {
+    let _ = tokio::net::TcpStream::connect(server.local_addr()).await;
+}
+
+#[tokio::test]
+async fn a_running_acceptor_is_not_handed_over() {
+    let mut harness = start().await;
+    assert!(
+        harness.server.take_finished_acceptor().is_none(),
+        "a live acceptor must keep its handle"
+    );
+}
+
+#[tokio::test]
+async fn a_returned_acceptor_is_handed_over_once() {
+    let mut harness = start().await;
+    harness.server.close_admission();
+    poke(&harness.server).await;
+
+    let handle = handed_over(&mut harness.server).await;
+    assert!(
+        handle.await.is_ok(),
+        "the loop must end by returning, not by panicking or being cancelled"
+    );
+    assert!(
+        harness.server.take_finished_acceptor().is_none(),
+        "a death is handed over once, not on every supervision tick"
+    );
+}
+
+#[tokio::test]
+async fn shutdown_is_safe_after_the_handle_was_taken() {
+    let mut harness = start().await;
+    harness.server.close_admission();
+    poke(&harness.server).await;
+    let taken = handed_over(&mut harness.server).await;
+    assert!(taken.await.is_ok());
+
+    harness.server.shutdown();
+}

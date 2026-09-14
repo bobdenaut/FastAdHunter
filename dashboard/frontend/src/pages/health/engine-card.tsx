@@ -13,10 +13,10 @@ import { Link } from '../../router/link';
  * unavailable rather than as a zero-byte process.
  *
  * `counters.tasks_died` is the one figure here that is allowed to go red: a
- * scheduler, the event fan-out, the perf sampler or an SWR worker ended before
- * shutdown. The resolver keeps answering, but that task's work (list refresh,
- * stats, history, SWR) has stopped until the container is restarted; the
- * engine log carries the task name and the panic message.
+ * supervised task ended unexpectedly — a scheduler, the event fan-out, the perf
+ * sampler, an SWR worker, or one of the HTTP, HTTPS and API acceptors. The
+ * resolver keeps answering, but that task's work has stopped until the
+ * container is restarted; the engine log carries the task name and the cause.
  */
 export function EngineCard({ telemetry }: { telemetry: Telemetry | null }) {
   if (telemetry === null) {

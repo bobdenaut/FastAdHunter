@@ -45,16 +45,17 @@ pub async fn reap(tasks: &mut Vec<Supervised>) -> Vec<Death> {
             continue;
         }
         let task = tasks.swap_remove(index);
-        let cause = match task.handle.await {
-            Ok(()) => Cause::Returned,
-            Err(err) => classify(err),
-        };
-        deaths.push(Death {
-            name: task.name,
-            cause,
-        });
+        deaths.push(death_of(task.name, task.handle).await);
     }
     deaths
+}
+
+pub async fn death_of(name: &'static str, handle: JoinHandle<()>) -> Death {
+    let cause = match handle.await {
+        Ok(()) => Cause::Returned,
+        Err(err) => classify(err),
+    };
+    Death { name, cause }
 }
 
 fn classify(err: JoinError) -> Cause {
@@ -171,6 +172,27 @@ mod tests {
         assert_eq!(tasks.len(), 1);
         assert_eq!(tasks[0].name, "alive");
         tasks[0].handle.abort();
+    }
+
+    #[tokio::test]
+    async fn a_handle_handed_over_on_its_own_is_classified_the_same_way() {
+        let panicked = tokio::spawn(async { panic!("handed over") });
+        assert_eq!(
+            death_of("HTTP acceptor", panicked).await,
+            Death {
+                name: "HTTP acceptor",
+                cause: Cause::Panicked("handed over".to_owned()),
+            }
+        );
+
+        let returned = tokio::spawn(async {});
+        assert_eq!(
+            death_of("API acceptor", returned).await,
+            Death {
+                name: "API acceptor",
+                cause: Cause::Returned,
+            }
+        );
     }
 
     #[tokio::test]

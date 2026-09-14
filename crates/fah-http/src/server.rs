@@ -145,6 +145,18 @@ impl Server {
         self.rotation.clone()
     }
 
+    pub fn take_finished_acceptor(&mut self) -> Option<JoinHandle<()>> {
+        match &self.handle {
+            Some(handle) if handle.is_finished() => self.handle.take(),
+            _ => None,
+        }
+    }
+
+    #[cfg(feature = "test-harness")]
+    pub fn close_admission(&self) {
+        self.permits.close();
+    }
+
     pub fn shutdown(&mut self) {
         if let Some(handle) = &self.handle {
             handle.abort();
@@ -653,6 +665,95 @@ mod tests {
             .expect("a released permit must let the queued connection through");
         assert!(read.unwrap() > 0);
         server.shutdown();
+    }
+
+    async fn handed_over(server: &mut Server) -> JoinHandle<()> {
+        let deadline = Instant::now() + Duration::from_secs(2);
+        loop {
+            if let Some(handle) = server.take_finished_acceptor() {
+                return handle;
+            }
+            assert!(
+                Instant::now() < deadline,
+                "a closed admission must end the accept loop"
+            );
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    }
+
+    async fn poke(addr: SocketAddr) {
+        let _ = TcpStream::connect(addr).await;
+    }
+
+    #[tokio::test]
+    async fn a_running_acceptor_is_not_handed_over() {
+        let mut server = Server::bind(&config(0)).await.unwrap();
+        server.serve(proxy());
+
+        assert!(
+            server.take_finished_acceptor().is_none(),
+            "a live acceptor must keep its handle"
+        );
+        server.shutdown();
+    }
+
+    #[tokio::test]
+    async fn a_returned_acceptor_is_handed_over_once() {
+        let mut server = Server::bind(&config(0)).await.unwrap();
+        let addr = server.local_addr();
+        server.serve(proxy());
+
+        server.permits.close();
+        poke(addr).await;
+
+        let handle = handed_over(&mut server).await;
+        assert!(
+            handle.await.is_ok(),
+            "the loop must end by returning, not by panicking or being cancelled"
+        );
+        assert!(
+            server.take_finished_acceptor().is_none(),
+            "a death is handed over once, not on every supervision tick"
+        );
+        server.shutdown();
+    }
+
+    #[tokio::test]
+    async fn shutdown_is_safe_after_the_handle_was_taken() {
+        let mut server = Server::bind(&config(0)).await.unwrap();
+        let addr = server.local_addr();
+        let (factory, _built) = recording_factory(Duration::from_secs(5));
+        server
+            .serve_domains(NonZeroUsize::MIN, Duration::from_millis(200), factory)
+            .unwrap();
+
+        server.permits.close();
+        poke(addr).await;
+        let taken = handed_over(&mut server).await;
+        assert!(taken.await.is_ok());
+
+        let mut stop = server.stop.subscribe();
+        assert!(!*stop.borrow_and_update());
+        let took = tokio::task::spawn_blocking(move || {
+            let started = Instant::now();
+            server.shutdown();
+            (started.elapsed(), server)
+        })
+        .await
+        .unwrap();
+        assert!(
+            took.0 < Duration::from_secs(2),
+            "shutdown must still join the domain threads promptly, took {:?}",
+            took.0
+        );
+        assert!(
+            *stop.borrow_and_update(),
+            "shutdown must still flip the stop watch after the handle was taken"
+        );
+        assert!(
+            took.1.domains.is_empty(),
+            "shutdown must still drain the domain threads after the handle was taken"
+        );
     }
 
     #[tokio::test]

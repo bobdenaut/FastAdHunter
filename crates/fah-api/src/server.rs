@@ -43,7 +43,8 @@ pub struct ApiServer {
     local_addr: SocketAddr,
     tls: bool,
     events: EventHub,
-    accept_loop: JoinHandle<()>,
+    slots: Arc<Semaphore>,
+    accept_loop: Option<JoinHandle<()>>,
 }
 
 impl ApiServer {
@@ -72,13 +73,15 @@ impl ApiServer {
         let router = crate::routes::router(state.build(events.clone(), tls));
         let acceptor = tls_config.map(TlsAcceptor::from);
 
-        let accept_loop = tokio::spawn(accept(listener, router, acceptor));
+        let slots = Arc::new(Semaphore::new(MAX_CONNECTIONS));
+        let accept_loop = tokio::spawn(accept(listener, router, acceptor, Arc::clone(&slots)));
 
         Ok(Self {
             local_addr,
             tls,
             events,
-            accept_loop,
+            slots,
+            accept_loop: Some(accept_loop),
         })
     }
 
@@ -98,17 +101,34 @@ impl ApiServer {
         self.events.clone()
     }
 
+    pub fn take_finished_acceptor(&mut self) -> Option<JoinHandle<()>> {
+        match &self.accept_loop {
+            Some(handle) if handle.is_finished() => self.accept_loop.take(),
+            _ => None,
+        }
+    }
+
+    #[cfg(feature = "test-harness")]
+    pub fn close_admission(&self) {
+        self.slots.close();
+    }
+
     pub fn shutdown(&self) {
-        self.accept_loop.abort();
+        if let Some(handle) = self.accept_loop.as_ref() {
+            handle.abort();
+        }
     }
 }
 
-async fn accept(listener: TcpListener, router: Router, acceptor: Option<TlsAcceptor>) {
-    let slots = Arc::new(Semaphore::new(MAX_CONNECTIONS));
+async fn accept(
+    listener: TcpListener,
+    router: Router,
+    acceptor: Option<TlsAcceptor>,
+    slots: Arc<Semaphore>,
+) {
     loop {
         // Take the slot before accepting: at the ceiling the listener simply
         // pauses, and pending clients wait in the (bounded) kernel backlog.
-        // The semaphore is never closed, so acquire cannot fail.
         let Ok(slot) = Arc::clone(&slots).acquire_owned().await else {
             return;
         };

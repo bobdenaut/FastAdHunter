@@ -543,11 +543,19 @@ Not a domain *name*. In `fah-http` the word with an index (`fah-http-0`,
 
 A long-lived task the binary spawns, names, and checks on the 10 s telemetry
 tick: the rules scheduler, event fan-out, perf sampler, telemetry poll, policy
-ticker, SWR workers, cache cleanup and the two stats schedulers. One that ends
-before shutdown — a panic or a returned loop — is a **task death**: logged once
-at `error` with its name and cause, counted in `counters.tasks_died`, and left
-dead. Nothing restarts it and the process does not exit; the resolver keeps
-answering while that task's work stays stopped until the container restarts.
+ticker, SWR workers, cache cleanup, the two stats schedulers, and the HTTP,
+HTTPS and API acceptors. One that ends before shutdown — a panic or a returned
+loop — is a **task death**: logged once at `error` with its name and cause,
+counted in `counters.tasks_died`, and left dead. Nothing restarts it and the
+process does not exit; the resolver keeps answering while that task's work stays
+stopped until the container restarts.
 
-Not supervised: the DNS listeners (their death exits the process), the API
-accept loop and the HTTP acceptor.
+The three acceptors are supervised differently from the rest, and the difference
+is only in plumbing: each keeps its own handle so its `shutdown()` can still
+abort it, and hands that handle to the binary on the tick where it is found
+finished. What follows — one `error` line, one increment, no restart — is
+identical.
+
+Not supervised: the DNS listeners. Their death is a different path and **exits
+the process**, because a resolver that cannot listen has nothing left to do;
+a dead dashboard or proxy acceptor must not take the resolver with it.

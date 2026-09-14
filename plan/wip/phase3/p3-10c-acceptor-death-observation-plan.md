@@ -153,7 +153,7 @@ task:
    through `as_ref()`.
 2. The connection semaphore moves out of `accept()` and into the struct
    (`slots: Arc<Semaphore>`), passed into `accept()` as an argument — which is
-   how `fah-http` and `fah-http`'s TLS server already hold theirs
+   how `fah-http`'s `Server` and `TlsServer` already hold theirs
    (`server.rs:42`, `tls_server.rs:21`).
 
 Point 2 is what makes an `ApiServer` death reachable from a test at all (§7.3),
@@ -197,25 +197,54 @@ in-flight connections keep their permits and finish normally. The accept loop
 then ends through its own single production `return` (D2), so the reported cause
 is **`Cause::Returned`** — a real unplanned end, not a cancellation.
 
-**The test decides when.** `Engine::run` gains, under `cfg(test-harness)`, a
-200 ms interval arm that checks whether the sentinel path exists and, the first
-time it does, calls `close_admission()` on each named acceptor and logs a
-`warn!` naming them. The env vars are read once when `run()` starts. This is why
-the sentinel exists rather than a kill-at-boot: the test has to prove DNS worked
-**before** the death for §7.4's last step to mean anything, and a boot-time kill
-makes that ordering impossible.
+**The test decides when, and the check runs inside `reap_dead_tasks`.** The
+sentinel is examined at the top of `Engine::reap_dead_tasks`, as a
+`cfg(feature = "test-harness")` **statement** calling a gated method — not as a
+`tokio::select!` arm and not as a separate task. The first time the path exists,
+the method calls `close_admission()` on each acceptor named by the env var,
+logs a `warn!` naming them, and **marks the request consumed** so no later tick
+closes an already-closed semaphore. The env vars are read once when the run loop
+starts.
 
-The watcher is an arm of the existing loop, not a task, and deliberately not a
-`Supervised` one: a supervised watcher that returns after firing would itself be
-reaped as a death and inflate `counters.tasks_died`, which is the number §7.4
-asserts on.
+Three reasons it lives there rather than anywhere else:
+
+- **`select!` cannot carry it.** The macro's branch grammar is
+  `<pat> = <fut> (, if <cond>)? => <handler>,` with no slot for an attribute, so
+  `#[cfg(...)]` on a branch does not compile — verified against the compiler on
+  2026-09-14, after a first version of this decision assumed otherwise. An
+  attribute on a *statement* is ordinary Rust, which is why this shape works
+  where that one did not.
+- **It is the right place anyway.** The seam exists to provoke a death that this
+  very function then observes; putting the two in one place is honest rather
+  than merely convenient.
+- **No second frequency.** The earlier draft invented a 200 ms ticker purely for
+  the test. The supervision tick already runs every 10 s and is the clock this
+  task is about; a test-only cadence beside it would have been one more thing to
+  keep true.
+
+Not a task, deliberately, and not a `Supervised` one: a supervised watcher that
+returned after firing would itself be reaped as a death and inflate
+`counters.tasks_died`, which is the number §7.4 asserts on.
+
+The sentinel exists rather than a kill-at-boot because the test has to prove DNS
+worked **before** the death for §7.4's last step to mean anything, and a
+boot-time kill makes that ordering impossible.
+
+**What it costs the test.** The kill lands on a tick boundary rather than
+immediately, and the death is observed on the tick after that — up to roughly
+20 s from tripping the sentinel, about half that on average, plus jitter. §7.4's
+budget accounts for it; the figure is a timeout, not an expected runtime.
 
 **One behaviour the test has to account for**, verified in the loop's shape
 (`server.rs:177-181`): the permit is acquired **before** `accept()`, so an idle
 acceptor is parked inside `accept().await` and closing the semaphore does not
-wake it. It ends on its next trip round the loop. The test therefore opens one
-throwaway TCP connection to that port after tripping the sentinel — a plain
-connect is enough, the dispatch that follows it is irrelevant.
+wake it. It ends on its next trip round the loop. Exactly **one** connection is
+needed after the close — it makes the loop return from `accept`, dispatch, and
+fail at the next `acquire`. Since the test cannot know which tick fired the
+kill, it opens one throwaway connection **per selected acceptor on each polling
+interval** and **ignores the result**: once the acceptor is gone the listening
+socket is released, so those connects are refused, and a test that treats a
+refusal as a failure fails exactly when it succeeded.
 
 **Shipped builds carry none of this.** Every piece is behind
 `#[cfg(feature = "test-harness")]`; `fah-http` gains the feature (it has no
@@ -225,14 +254,15 @@ existing `test-harness` feature forwards to both. The release build is
 the warning already written in `crates/fastadhunter/Cargo.toml:15-21` ("Never
 pass `--all-features` to a release build") covers this seam too.
 
-### D6 — No restart, no exit, no new run-loop arm in a shipped build
+### D6 — No restart, no exit, and `run()` is not touched at all
 
-**Decided.** The supervision tick's arm keeps its shape: it calls
-`reap_dead_tasks().await` and loops. The only two returns in `run()` stay
-shutdown and `dns.fatal()`. The one arm added by D5 is `cfg(test-harness)` and
-is absent from every shipped build. This is the property the owner chose the destination
-for on 2026-09-13 — a dead dashboard acceptor must not take the resolver with
-it — so it is not re-opened here.
+**Decided.** The run loop keeps its exact shape: three arms, the supervision one
+calling `reap_dead_tasks().await` and looping. The only two returns stay
+shutdown and `dns.fatal()`. **No arm is added, in any build** — D5's seam is a
+gated statement inside `reap_dead_tasks`, so a shipped build compiles the same
+`run()` as today. This is the property the owner chose the destination for on
+2026-09-13 — a dead dashboard acceptor must not take the resolver with it — so
+it is not re-opened here.
 
 A dead acceptor is left dead. The listening socket is released when the loop's
 task is dropped, so the port stops accepting; clients get a refusal rather than
@@ -268,7 +298,9 @@ omission as an oversight.
 7. **`crates/fastadhunter/src/main.rs`** —
    - `reap_dead_tasks` asks the three acceptors and reports through the existing
      `record_task_death` + `error` line (D3);
-   - the `cfg(test-harness)` sentinel arm in `run()` (D5).
+   - a `cfg(test-harness)` statement at the top of the same function, calling a
+     gated one-shot method that trips the sentinel (D5). `run()` itself is not
+     edited.
 8. **Tests** — §7.
 
 Layering: no crate learns about another. `fah-http` and `fah-api` stay L3
@@ -279,7 +311,8 @@ which stays green with no change).
 ## 5. Control flow after the change
 
 ```text
-Engine::run, every 10 s
+Engine::reap_dead_tasks, on the 10 s supervision tick run() already has
+  |- [cfg(test-harness) only] trip the sentinel once, if it exists
   |- supervisor::reap(&mut tasks)                     unchanged
   |- supervisor::reap(&mut stats_schedulers)          unchanged
   |- http.take_finished_acceptor()   -> Some(handle) -> death_of("HTTP acceptor", h)
@@ -307,9 +340,12 @@ the other tasks, and the one §7.2 pins.
   type's `shutdown()`; a taken handle means the acceptor is already dead and
   `shutdown()` finds `None`, which is the behaviour `Option` already has for a
   never-served listener. §7.2.3 tests that case rather than assuming it.
-- **The D5 seam costs a shipped build nothing:** the two env reads, the 200 ms
-  arm and the three `close_admission` methods are all behind
-  `cfg(feature = "test-harness")`, which the release build never enables.
+- **The D5 seam costs a shipped build nothing:** the two env reads, the one-shot
+  sentinel statement in `reap_dead_tasks` and the three `close_admission`
+  methods are all behind `cfg(feature = "test-harness")`, which the release
+  build never enables. It adds no timer and no second polling frequency: under
+  the feature it is one `Path::exists` on a tick that already fires, and only
+  until the request is consumed.
 
 ## 7. Test strategy
 
@@ -374,11 +410,17 @@ inside the test's config directory that does not exist yet.
 
 1. resolve a domain over UDP and assert it answers — the resolver is **known
    alive before** anything dies, so step 5 is a comparison rather than a claim;
-2. create the sentinel file, then open one throwaway TCP connection to the HTTP
-   port and one to the HTTPS port, so both parked loops take their next trip
-   round and end (D5);
-3. poll `GET /api/v1/telemetry` every 500 ms for up to 20 s until
-   `counters.tasks_died >= 2`;
+2. create the sentinel file;
+3. poll `GET /api/v1/telemetry` every 500 ms for up to 35 s until
+   `counters.tasks_died >= 2`, and **on each interval open one throwaway TCP
+   connection per selected acceptor, ignoring the result**. The poke is what
+   makes a loop parked in `accept().await` take its next trip round after its
+   semaphore closed (D5); it is repeated because the test cannot know which tick
+   fired the kill, and its result is ignored because a dead acceptor's port
+   refuses the connection — treating that refusal as a failure would fail the
+   test at the moment it succeeded. The budget is a timeout, not an expected
+   runtime: the kill lands on a 10 s tick and the death is seen on the next one,
+   so about 10 s is typical and 20 s plus jitter is the worst case;
 4. assert the engine log holds both names — `task="HTTP acceptor"` and
    `task="HTTPS acceptor"` — and `cause=returned`, which is what says the loop
    ended through its own return rather than being cancelled. The harness keeps
@@ -391,14 +433,17 @@ inside the test's config directory that does not exist yet.
 not a shortcut: telemetry is served *by the acceptor under test*, so
 `counters.tasks_died` is unreadable once it dies. Step 3 becomes "poll
 `config_dir/engine.log` until it holds `task="API acceptor"` with
-`cause=returned`", and the test additionally asserts that a fresh TCP connect to
-the API port is refused — the acceptor is really gone, not merely logged about.
+`cause=returned`", with the same per-interval poke on the API port, and the test
+additionally asserts that a fresh TCP connect to the API port is refused — the
+acceptor is really gone, not merely logged about.
 Steps 1, 2 and 5 are unchanged, and step 5 is the one that matters most here:
 **DoH rides this acceptor**, so this boot is the only place that shows DoH dying
 without the resolver dying with it.
 
-Cost: two boots, each waiting up to one supervision tick — roughly 30 s for the
-file. That is the price of covering all three acceptors on the wire instead of
+Cost: two boots, each waiting two supervision ticks in the worst case — about
+20 s of waiting for the file in practice, with a 35 s timeout per boot so a
+loaded machine does not turn a slow tick into a red test. That is the price of
+covering all three acceptors on the wire instead of
 arguing that one stands for the others.
 
 ### 7.5 Mutation checks — apply, run, revert, record

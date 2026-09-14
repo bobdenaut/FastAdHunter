@@ -10,7 +10,10 @@
 ### HEALTHCHECK probes via `fastadhunter --healthcheck`.
 ### A supervised task dying does NOT flip `status`: that is
 ### counters.tasks_died on /api/v1/telemetry (telemetry.http) plus one
-### `error` log line.
+### `error` log line. That holds for the HTTP, HTTPS and API acceptors too —
+### this endpoint answers `ok` with the proxy dead, and if the API acceptor is
+### the one that died you cannot reach this route at all. `status` is about
+### resolving, not about every listener being up.
 GET {{base}}/health
 
 ### Same endpoint with a key. Sending one when none is required is harmless —
