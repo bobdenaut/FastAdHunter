@@ -1,4 +1,4 @@
-opt-in per-client HTTPS interception (own CA installed on the device — browsers honour it; most mobile apps pin or ignore the user store and must be excluded per host; the router must refuse UDP 443 so HTTP/3 cannot bypass it, SECURITY.md), and DoT/DoH listeners for Private DNS |# FastAdHunter
+# FastAdHunter
 
 > Network-wide ad blocking with predictable latency and the smallest memory
 > footprint we can defend with a measurement.
@@ -34,7 +34,7 @@ numbers below are measured on the target hardware, not estimated.
 | 2.5 | Pre-Adaptive hardening | ✅ done | `v0.2.19-phase2.5` |
 | 2.6 | Adaptive DNS Stage 1 | ✅ done — closed 2026-09-07; `adaptive` is the only strategy since p2.6-12, on `main` from 2026-09-11 | `soak-p2.6-11` |
 | 5 | Web dashboard | ✅ done — closed 2026-09-01, four verification rows deferred to the next deploy window | `0.3.0` |
-| 3 | HTTPS interception | 🚧 dev box done (p3-01…p3-05, p3-07…p3-09); p3-06's on-device campaign ran, four arms parked on hardware, awaiting the 24 h soak; the N3 follow-up closed 2026-09-11 as a technical experiment, not promoted | `phase3-06` |
+| 3 | HTTPS at the SNI + DoT/DoH | 🚧 on `main` since 2026-09-13 — p3-01…p3-05 and p3-07…p3-09 done. **It is SNI-only + DoT/DoH because interception is off**: the owner decided on 2026-09-13 not to use the interception code, so nothing is decrypted and p3-06 and p3-06b are parked. p3-10 and p3-11 open, and it is **not deployed** | `main`, untagged |
 | 4 | HTML filtering | ⬜ not started | — |
 
 Rows are in **execution** order, which is not numeric order: the dashboard is
@@ -42,7 +42,7 @@ numbered 5 by capability and scheduled ahead of HTTPS and HTML filtering because
 that is what the household needs next.
 
 Running in production on a MikroTik RB5009 as the household's only resolver, in
-`dns+http` mode, on **0.3.3** since 2026-09-09 (0.3.x since 2026-08-29). Phase
+`dns+http` mode, on **0.3.4** since 2026-09-11 (0.3.x since 2026-08-29). Phase
 2's engine work is deployed — the transparent HTTP proxy, URL-path rules,
 per-client Policies and the single JSON telemetry surface — and so is the Phase
 5 dashboard. Since 0.3.2 the HTTP engine runs on **allocation domains**
@@ -441,7 +441,17 @@ Fixed at container start via `engine.mode`:
 | ---- | ------- |
 | `dns` | Network-wide DNS filtering |
 | `dns+http` | …plus URL-level filtering of unencrypted HTTP — **deployed today** |
-| `dns+http+https` | …plus SNI-level HTTPS filtering for every client, opt-in per-client HTTPS interception (own CA, installed on the device), and DoT/DoH listeners for Private DNS |
+| `dns+http+https` | …plus SNI-level HTTPS filtering for every client — the connection is read at the SNI and then relayed untouched, never decrypted — and DoT/DoH listeners for Private DNS |
+
+The mode opens the HTTPS listener. It does **not** decide interception: that is
+the Interception Document's `clients` list, **empty since 2026-09-13** by owner
+decision, so every connection is spliced (SECURITY.md). The interception code
+ships compiled and a later decision can switch it on; turning it on means
+installing our CA on the device, and most mobile apps pin or ignore the user
+store and have to be excluded per host.
+
+Whatever the mode, the router must refuse UDP 443 outbound — otherwise HTTP/3
+bypasses the listener entirely and nothing above applies.
 
 A mode that does not name an engine means that engine's listener is **never
 bound** — not bound and idle.
