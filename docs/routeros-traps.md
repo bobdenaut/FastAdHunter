@@ -320,6 +320,37 @@ that the prefix held.
   default route. Measured 2026-08-09: `/ping 2606:4700:4700::1111` from the
   router, 100 % loss, with both present. Test it, do not infer it.
 
+## FastTrack takes a connection out of the filter chain
+
+**A filter rule placed after `fasttrack-connection` never sees an established
+flow again.** FastTrack short-circuits the firewall: after the first packet of a
+connection is fasttracked, the rest of that connection skips the filter path
+entirely. The rule is still there, still correct, and still counts nothing.
+
+This makes "place it ahead of the `accept established,related` rule" wrong
+advice on a default RouterOS chain, because `fasttrack-connection` sits ahead of
+that accept. A rule placed between the two catches new connections and misses
+every open one.
+
+Read the chain before adding anything:
+
+```routeros
+/ip/firewall/filter/print detail where chain=forward
+```
+
+Place ahead of whichever comes first — `fasttrack-connection` if present, the
+established accept otherwise. If neither carries a comment you can match, use
+the numeric index rather than guessing at a regex.
+
+Read on the owner's router 2026-09-14: `FastTrack` at index 7, `accept
+established,related,untracked (forward)` at index 9. So on that chain
+`place-before=[find comment="FastTrack"]` is the correct form, and
+`place-before=[find comment~"accept established"]` — which is what
+`deploy-rb5009.md` §5c said until then — lands two rules too late.
+
+A rule added this way still does not close connections that are **already**
+fasttracked. The client reconnects, or they expire.
+
 ## Steering one client
 
 Measured 2026-09-11 while steering the owner's Android phone to the probe
@@ -328,8 +359,8 @@ Measured 2026-09-11 while steering the owner's Android phone to the probe
 | Trap | What happens | Do instead |
 | --- | --- | --- |
 | v6 address list as the steer key | Android rotates temporary addresses on restart, airplane mode and on a timer — three new ones in one afternoon. Every flow from the new address goes straight to the origin and nothing on the box says so | match the client by `src-mac-address` in the dst-nat rule; read `/ipv6/neighbor/print where mac-address=…` to see what the phone currently uses |
-| Rule added or changed while the client is online | A connection keeps the NAT decision it was born with, and the `accept established,related` rules sit ahead of anything appended, so old flows keep bypassing until they close | cut the client's connections (airplane mode) after the change; verify with `/ipv6/firewall/connection/print where src-address~… and !dstnat` — zero rows, watched for 20 s |
-| tcp-only steer | HTTP/3 over UDP 443 goes around it (deploy-rb5009.md §5c) | refuse UDP 443 for the client, placed ahead of the established accept |
+| Rule added or changed while the client is online | A connection keeps the NAT decision it was born with, and both `fasttrack-connection` and the `accept established,related` rules sit ahead of anything appended, so old flows keep bypassing until they close | cut the client's connections (airplane mode) after the change; verify with `/ipv6/firewall/connection/print where src-address~… and !dstnat` — zero rows, watched for 20 s |
+| tcp-only steer | HTTP/3 over UDP 443 goes around it (deploy-rb5009.md §5c) | refuse UDP 443 for the client, placed ahead of `fasttrack-connection` — see §FastTrack takes a connection out of the filter chain, not merely ahead of the established accept |
 | "Issued by FastAdHunter CA" in the browser | shows what was presented, on the warning page too | the fatal alert in the probe log is what proves distrust |
 
 ## Logging — what is instrumented, and its traps

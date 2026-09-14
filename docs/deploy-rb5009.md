@@ -422,6 +422,51 @@ shorten the lease time temporarily.
 > router's LAN address, not on `172.17.0.2`, so the two do not collide. Leave
 > it configured as a fallback you can revert to (see §8).
 
+### What a client can still do instead — and what closes each route
+
+Handing out the address and steering `:53` covers the clients that ask. It does
+not cover the ones that do not. Three escape routes exist, they close by three
+different means, and one of them does not close at all here.
+
+| Route | Closed by | State |
+| --- | --- | --- |
+| Plain DNS to a public resolver, UDP/TCP 53 | a firewall drop on egress `:53` | **not in this guide** — add it, see below |
+| DoT to a public resolver, TCP 853 | a firewall drop on egress `:853` | **not in this guide** — add it, see below |
+| DoH to a public resolver, TCP 443 | not a firewall matter: it is HTTPS to an ordinary-looking host, with no port to filter on. It closes at the **SNI**, once §5c's steering is on and the resolver's hostname is on a blocklist | needs §5c plus a rule-list entry |
+
+The two firewall rules. `out-interface-list=WAN` is what makes them safe: LAN
+clients must still reach the container itself, which answers on `:53` and — once
+Phase 3 ships — on `:853` as its own DoT listener. Adjust `src-address` to the
+LAN subnet in front of you.
+
+```routeros
+/ip/firewall/filter/add chain=forward action=drop protocol=udp \
+  src-address=192.168.10.0/24 out-interface-list=WAN dst-port=53 \
+  comment="Block direct external DNS UDP"
+/ip/firewall/filter/add chain=forward action=drop protocol=tcp \
+  src-address=192.168.10.0/24 out-interface-list=WAN dst-port=53 \
+  comment="Block direct external DNS TCP"
+/ip/firewall/filter/add chain=forward action=drop protocol=tcp \
+  src-address=192.168.10.0/24 out-interface-list=WAN dst-port=853 \
+  comment="Block direct external DoT"
+```
+
+Placement follows §5c's rule: read the chain first and put these ahead of
+`fasttrack-connection`, or an already-open flow keeps passing.
+
+**DoH is the one that needs Phase 3.** A client pointed at
+`https://dns.google/dns-query` is making an ordinary HTTPS connection, and no
+port-based rule separates it from any other. What does separate it is the
+plaintext SNI, which §5c's `:443` steering puts in front of the container:
+`dns.google`, `cloudflare-dns.com`, `mozilla.cloudflare-dns.com` and the rest
+become blockable names like any other. A client that hides the SNI with ECH is
+closed rather than forwarded, because the destination cannot be recovered
+(§5c §The no-SNI / ECH warning).
+
+Until `:443` is steered, **DoH is open and nothing in this guide closes it.**
+Say so out loud when someone reports that a phone still shows ads; the
+troubleshooting table's row on this is the symptom, this section is the cause.
+
 ### Replacing an existing resolver — keep both, switch with a script
 
 If the router already runs another DNS filter (AdGuard Home, Pi-hole) and
@@ -780,18 +825,40 @@ and `add` appends to a chain with no terminal drop. Reuses §5b's
 must be refused**, or browsers and Cronet-based apps reach the origin over
 HTTP/3 and the steer never sees them. Browsers fall back to TCP only when QUIC
 fails; left open, it is a bypass (measured 2026-09-11,
-[p3-06-n3-alert-ab.md](code-review/phase3/p3-06-n3-alert-ab.md)). Place the
-reject ahead of the `accept established,related` rule, or an already-open
-QUIC flow keeps passing:
+[p3-06-n3-alert-ab.md](code-review/phase3/p3-06-n3-alert-ab.md)).
+
+**Place the reject ahead of `fasttrack-connection`, not merely ahead of
+`accept established,related`.** An earlier version of this section said the
+latter, and on the default RouterOS chain that is not enough: `FastTrack` sits
+*before* the accept rule, and a fasttracked connection leaves the filter path
+altogether after its first packet. A reject landing behind `FastTrack` never
+sees an established QUIC flow again. Read the chain before adding anything —
+`/ip/firewall/filter/print detail where chain=forward` — and place before
+whichever of the two comes first.
+
+On this router's chain, read 2026-09-14, that is the `FastTrack` rule:
 
 ```routeros
 /ip/firewall/filter/add chain=forward action=reject reject-with=icmp-admin-prohibited \
   protocol=udp dst-port=443 in-interface-list=LAN out-interface-list=WAN \
-  place-before=[find comment~"accept established"] comment="fastadhunter: no QUIC, force TCP"
+  place-before=[find comment="FastTrack"] comment="fastadhunter: no QUIC, force TCP"
 /ipv6/firewall/filter/add chain=forward action=drop protocol=udp dst-port=443 \
   in-interface-list=LAN out-interface-list=WAN \
-  place-before=[find comment~"accept established"] comment="fastadhunter v6: no QUIC, force TCP"
+  place-before=[find comment="FastTrack"] comment="fastadhunter v6: no QUIC, force TCP"
 ```
+
+The rule is narrow — UDP/443, LAN to WAN only — so sitting ahead of `FastTrack`
+costs nothing else: every other packet reaches it exactly as before.
+
+A chain with no `fasttrack-connection` rule keeps the original placement; match
+`comment~"accept established"` there instead. If neither comment exists on the
+router in front of you, use the numeric index rather than guessing at a regex.
+The mechanism, and why the accept rule alone is the wrong landmark, is in
+[routeros-traps.md](routeros-traps.md) §FastTrack takes a connection out of the
+filter chain.
+
+Already-open QUIC flows do **not** stop when the rule lands: they are already
+fasttracked. Clients reconnect, or the connections expire.
 
 New connections steer immediately; established flows finish on their conntrack
 entry — a connection keeps the NAT decision it was born with, so a client whose
@@ -1059,4 +1126,4 @@ design-level rather than a bug.
 | Lists never download, ruleset stays 0 | No egress — check the masquerade rule and that the container's `gateway=172.17.0.1` matches the bridge address |
 | LAN clients time out on DNS | DHCP not renewed yet, or the `forward` accept rules are missing |
 | API unreachable but DNS works | `api.address` bound narrower than `0.0.0.0`, or the 8443 forward rule is missing |
-| Ads still shown on the phone | Client using DoH/DoT to bypass the LAN resolver, or a hardcoded resolver — watch `WS /api/v1/events` for whether the domain reaches FastAdHunter at all |
+| Ads still shown on the phone | Client using DoH/DoT to bypass the LAN resolver, or a hardcoded resolver — watch `WS /api/v1/events` for whether the domain reaches FastAdHunter at all. §5 §What a client can still do instead names each route and what closes it; DoH stays open until §5c's `:443` steering is on |
