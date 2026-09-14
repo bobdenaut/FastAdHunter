@@ -219,13 +219,41 @@ async fn the_shipped_configuration_blocks_at_every_layer() {
         "shipped: the DoT listener reports itself: {certificates}"
     );
 
-    let telemetry = get_json(
-        &instance.http,
-        &instance.base,
-        &instance.key,
-        "/api/v1/telemetry",
-    )
-    .await;
+    let telemetry = {
+        let deadline = std::time::Instant::now() + Duration::from_secs(20);
+        loop {
+            let body = get_json(
+                &instance.http,
+                &instance.base,
+                &instance.key,
+                "/api/v1/telemetry",
+            )
+            .await;
+            if body["counters"]["dns_dot_connections"]["peak"]
+                .as_u64()
+                .unwrap_or_default()
+                >= 1
+            {
+                break body;
+            }
+            assert!(
+                std::time::Instant::now() < deadline,
+                "shipped: the two DoT exchanges above must reach counters.dns_dot_connections \
+                 within one telemetry poll interval; a gauge the DoT listener was never handed \
+                 reports zero forever: {}",
+                body["counters"]
+            );
+            tokio::time::sleep(Duration::from_millis(500)).await;
+        }
+    };
+    let dns_tcp_peak = telemetry["counters"]["dns_tcp_connections"]["peak"]
+        .as_u64()
+        .unwrap_or_default();
+    assert!(
+        (1..=2).contains(&dns_tcp_peak),
+        "shipped: the TCP gauge must reflect only the two plain-TCP exchanges this test made, \
+         got {dns_tcp_peak}"
+    );
     let https_counters = &telemetry["listeners"]["https"];
     assert_eq!(
         https_counters["handshakes_completed"]

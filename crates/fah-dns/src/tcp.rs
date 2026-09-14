@@ -111,8 +111,7 @@ pub async fn run<L: Accept, F: Forwarder>(
         let open = OpenConnection::enter(&gauge);
         tokio::spawn(async move {
             let served =
-                handle_connection(stream, &pipeline, client.ip(), Transport::Tcp, Some(&open))
-                    .await;
+                handle_connection(stream, &pipeline, client.ip(), Transport::Tcp, &open).await;
             report_connection_end(served, client, "TCP DNS");
             drop(open);
             drop(permit);
@@ -140,7 +139,7 @@ pub(crate) async fn handle_connection<S: AsyncRead + AsyncWrite + Unpin, F: Forw
     pipeline: &Pipeline<F>,
     client_ip: std::net::IpAddr,
     transport: Transport,
-    gauge: Option<&TcpConnectionGauge>,
+    gauge: &TcpConnectionGauge,
 ) -> std::io::Result<()> {
     loop {
         let mut len_buf = [0u8; 2];
@@ -152,9 +151,7 @@ pub(crate) async fn handle_connection<S: AsyncRead + AsyncWrite + Unpin, F: Forw
         }
         let len = u16::from_be_bytes(len_buf) as usize;
         if len > MAX_MESSAGE_LEN {
-            if let Some(gauge) = gauge {
-                gauge.closed_oversize.fetch_add(1, Ordering::Relaxed);
-            }
+            gauge.closed_oversize.fetch_add(1, Ordering::Relaxed);
             debug!(
                 client = %client_ip,
                 len,

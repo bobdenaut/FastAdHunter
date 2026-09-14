@@ -13,7 +13,7 @@ const PORT_SETTING: &str = "[dns.listen] port, or FAH__DNS__LISTEN__PORT";
 
 const DOT_PORT_SETTING: &str = "[dns.listen] dot_port, or FAH__DNS__LISTEN__DOT_PORT";
 
-use crate::dot::{self, DotTls};
+use crate::dot::{self, DotConnectionGauge, DotTls};
 use crate::pipeline::Pipeline;
 use crate::tcp::TcpConnectionGauge;
 use crate::udp::UdpInflightGauge;
@@ -34,6 +34,7 @@ pub struct Server {
     sockets: Option<Bound>,
     tcp_permits: Arc<Semaphore>,
     tcp_gauge: Arc<TcpConnectionGauge>,
+    dot_gauge: Arc<DotConnectionGauge>,
     udp_gauge: Arc<UdpInflightGauge>,
     handles: Vec<JoinHandle<()>>,
     fatal_tx: mpsc::Sender<ListenerDied>,
@@ -93,6 +94,7 @@ impl Server {
             }),
             tcp_permits: Arc::new(Semaphore::new(config.tcp_max_connections)),
             tcp_gauge: Arc::new(TcpConnectionGauge::default()),
+            dot_gauge: Arc::new(DotConnectionGauge::default()),
             udp_gauge: Arc::new(UdpInflightGauge::new(config.udp_max_inflight)),
             handles: Vec::new(),
             fatal_tx,
@@ -126,8 +128,9 @@ impl Server {
         match (bound.dot, dot) {
             (Some(listener), Some(tls)) => {
                 let dot_fatal = self.fatal_tx.clone();
+                let dot_gauge = Arc::clone(&self.dot_gauge);
                 self.handles.push(tokio::spawn(async move {
-                    let died = dot::run(listener, tls, pipeline).await;
+                    let died = dot::run(listener, tls, pipeline, dot_gauge).await;
                     let _ = dot_fatal.try_send(died);
                 }));
             }
@@ -144,6 +147,10 @@ impl Server {
 
     pub fn tcp_connections(&self) -> Arc<TcpConnectionGauge> {
         Arc::clone(&self.tcp_gauge)
+    }
+
+    pub fn dot_connections(&self) -> Arc<DotConnectionGauge> {
+        Arc::clone(&self.dot_gauge)
     }
 
     pub fn udp_inflight(&self) -> Arc<UdpInflightGauge> {

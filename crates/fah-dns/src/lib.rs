@@ -19,7 +19,7 @@ mod udp;
 mod upstream;
 
 pub use cache::{CacheClean, CacheCleanupStats, CacheStats, DEFAULT_REFRESH_CLAIM_LEASE};
-pub use dot::{DotTls, DOT_MAX_CONNECTIONS};
+pub use dot::{DotConnectionGauge, DotTls, DOT_MAX_CONNECTIONS};
 pub use pipeline::{Pipeline, Transport};
 pub use server::{ListenerDied, Server};
 pub use swr::SwrStats;

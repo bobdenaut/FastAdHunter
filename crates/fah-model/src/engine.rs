@@ -88,6 +88,8 @@ pub struct EngineCounters {
     #[serde(default)]
     pub dns_tcp_connections: DnsTcpConnections,
     #[serde(default)]
+    pub dns_dot_connections: DnsDotConnections,
+    #[serde(default)]
     pub dns_udp_inflight: DnsUdpInflight,
     #[serde(default)]
     pub tasks_died: u64,
@@ -99,6 +101,8 @@ pub struct DnsTcpConnections {
     pub peak: u64,
     pub closed_oversize: u64,
 }
+
+pub type DnsDotConnections = DnsTcpConnections;
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DnsUdpInflight {

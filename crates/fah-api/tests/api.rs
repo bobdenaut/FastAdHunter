@@ -428,6 +428,11 @@ impl TelemetrySource for FakeTelemetry {
                     peak: 9,
                     closed_oversize: 0,
                 },
+                dns_dot_connections: fah_model::DnsDotConnections {
+                    active: 5,
+                    peak: 23,
+                    closed_oversize: 1,
+                },
                 dns_udp_inflight: fah_model::DnsUdpInflight {
                     active: 4,
                     peak: 37,
@@ -1144,6 +1149,12 @@ async fn telemetry_matches_the_documented_shape() {
     assert_eq!(
         body["counters"]["dns_tcp_connections"]["closed_oversize"],
         0
+    );
+    assert_eq!(body["counters"]["dns_dot_connections"]["active"], 5);
+    assert_eq!(body["counters"]["dns_dot_connections"]["peak"], 23);
+    assert_eq!(
+        body["counters"]["dns_dot_connections"]["closed_oversize"],
+        1
     );
     assert_eq!(body["counters"]["dns_udp_inflight"]["active"], 4);
     assert_eq!(body["counters"]["dns_udp_inflight"]["peak"], 37);

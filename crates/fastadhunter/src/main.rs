@@ -711,8 +711,11 @@ impl Engine {
                         http: proxy_counters,
                         https: tls_proxy.as_ref().map(|proxy| proxy.counters()),
                     },
-                    dns.tcp_connections(),
-                    dns.udp_inflight(),
+                    DnsGaugeSources {
+                        tcp: dns.tcp_connections(),
+                        dot: dns.dot_connections(),
+                        udp: dns.udp_inflight(),
+                    },
                 ),
             ),
             Supervised::new(
@@ -1103,6 +1106,12 @@ struct ProxyCounterSources {
     https: Option<Arc<fah_http::ProxyCounters>>,
 }
 
+struct DnsGaugeSources {
+    tcp: Arc<fah_dns::TcpConnectionGauge>,
+    dot: Arc<fah_dns::DotConnectionGauge>,
+    udp: Arc<fah_dns::UdpInflightGauge>,
+}
+
 /// Refreshes the metrics that are read rather than pushed: the pipeline's
 /// channel-drop counter, per-upstream health and the compiled ruleset's size.
 ///
@@ -1116,8 +1125,7 @@ fn spawn_telemetry_poll(
     pipeline: Arc<fah_dns::Pipeline<fah_dns::UpstreamPool>>,
     upstreams: fah_dns::UpstreamPool,
     proxies: ProxyCounterSources,
-    dns_tcp: Arc<fah_dns::TcpConnectionGauge>,
-    dns_udp: Arc<fah_dns::UdpInflightGauge>,
+    dns: DnsGaugeSources,
 ) -> tokio::task::JoinHandle<()> {
     tokio::spawn(async move {
         let mut ticker = tokio::time::interval(TELEMETRY_POLL);
@@ -1126,8 +1134,9 @@ fn spawn_telemetry_poll(
             ticker.tick().await;
 
             metrics.set_dropped_events(pipeline.dropped_events());
-            metrics.set_dns_tcp_connections(dns_tcp.snapshot());
-            metrics.set_dns_udp_inflight(dns_udp.snapshot());
+            metrics.set_dns_tcp_connections(dns.tcp.snapshot());
+            metrics.set_dns_dot_connections(dns.dot.snapshot());
+            metrics.set_dns_udp_inflight(dns.udp.snapshot());
             let mut refusals = fah_metrics::RefusalSnapshot::default();
             for counters in [proxies.http.as_ref(), proxies.https.as_ref()]
                 .into_iter()

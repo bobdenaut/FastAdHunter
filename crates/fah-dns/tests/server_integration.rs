@@ -601,3 +601,140 @@ async fn the_configured_tcp_and_udp_ceilings_reach_the_listeners() {
     );
     server.shutdown();
 }
+
+async fn await_connections(
+    gauge: &fah_dns::TcpConnectionGauge,
+    ready: impl Fn(&fah_model::DnsTcpConnections) -> bool,
+) -> fah_model::DnsTcpConnections {
+    let deadline = Instant::now() + Duration::from_secs(5);
+    loop {
+        let snapshot = gauge.snapshot();
+        if ready(&snapshot) {
+            return snapshot;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "the connection gauge never reached the expected state: {snapshot:?}"
+        );
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+}
+
+fn self_signed_fallback() -> Arc<rustls::sign::CertifiedKey> {
+    use rustls::pki_types::{PrivateKeyDer, PrivatePkcs8KeyDer};
+    let signed = rcgen::generate_simple_self_signed(vec!["fallback.test".to_string()]).unwrap();
+    let key = PrivateKeyDer::from(PrivatePkcs8KeyDer::from(signed.signing_key.serialize_der()));
+    let signing_key = rustls::crypto::aws_lc_rs::sign::any_supported_type(&key).unwrap();
+    Arc::new(rustls::sign::CertifiedKey::new(
+        vec![signed.cert.der().clone()],
+        signing_key,
+    ))
+}
+
+async fn stream_roundtrip<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin>(
+    stream: &mut S,
+    request: &[u8],
+) -> Vec<u8> {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    let len = u16::try_from(request.len()).unwrap().to_be_bytes();
+    stream.write_all(&len).await.unwrap();
+    stream.write_all(request).await.unwrap();
+    let mut len_buf = [0u8; 2];
+    stream.read_exact(&mut len_buf).await.unwrap();
+    let mut reply = vec![0u8; u16::from_be_bytes(len_buf) as usize];
+    stream.read_exact(&mut reply).await.unwrap();
+    reply
+}
+
+/// DoT and plain TCP share the framing loop and the gauge *type*, so the only
+/// thing keeping the two figures apart is which instance each listener was
+/// handed. This drives one connection over each transport and checks both
+/// gauges after each — a shared instance fails in whichever direction it was
+/// shared.
+#[tokio::test]
+async fn each_dns_stream_listener_counts_into_its_own_gauge() {
+    fah_certs::install_crypto_provider();
+    let cert_dir = tempfile::tempdir().unwrap();
+    let store = Arc::new(fah_certs::CertStore::open(cert_dir.path()).unwrap());
+    store.generate_ca(&fah_certs::CaParams::default()).unwrap();
+    let ca_der = rustls::pki_types::CertificateDer::from(store.ca_public_der().unwrap());
+
+    let calls = Arc::new(AtomicU64::new(0));
+    let (pipeline, _data_dir) = build_pipeline(
+        SpyForwarder {
+            calls: Arc::clone(&calls),
+        },
+        "||blocked.example^\n",
+    )
+    .await;
+    let config = DnsConfig {
+        tcp_max_connections: 8,
+        listen: DnsListenConfig {
+            address: "127.0.0.1".to_string(),
+            port: 0,
+            dot_enabled: true,
+            dot_port: 0,
+            ..Default::default()
+        },
+        ..DnsConfig::default()
+    };
+    let mut server = Server::bind(&config).await.unwrap();
+    let tls = fah_dns::DotTls::new(store, self_signed_fallback()).unwrap();
+    server.serve(pipeline, Some(tls));
+
+    let dot = server.dot_connections();
+    let tcp = server.tcp_connections();
+    let request = encode_a_query("blocked.example.");
+
+    let mut roots = rustls::RootCertStore::empty();
+    roots.add(ca_der).unwrap();
+    let client = Arc::new(
+        rustls::ClientConfig::builder()
+            .with_root_certificates(roots)
+            .with_no_client_auth(),
+    );
+    let host = "dns.fah.test";
+    let plain = TcpStream::connect(server.dot_addr().unwrap())
+        .await
+        .unwrap();
+    let mut encrypted = tokio_rustls::TlsConnector::from(client)
+        .connect(
+            rustls::pki_types::ServerName::try_from(host.to_string()).unwrap(),
+            plain,
+        )
+        .await
+        .unwrap();
+    let reply = stream_roundtrip(&mut encrypted, &request).await;
+    assert_eq!(
+        Message::from_vec(&reply).unwrap().metadata.response_code,
+        ResponseCode::NoError
+    );
+    assert_eq!(dot.snapshot().active, 1, "the DoT connection is counted");
+    assert_eq!(
+        tcp.snapshot(),
+        fah_model::DnsTcpConnections::default(),
+        "no DoT connection may reach the TCP gauge"
+    );
+
+    drop(encrypted);
+    await_connections(&dot, |snapshot| snapshot.active == 0).await;
+
+    let mut plain = TcpStream::connect(server.tcp_addr()).await.unwrap();
+    let reply = stream_roundtrip(&mut plain, &request).await;
+    assert_eq!(
+        Message::from_vec(&reply).unwrap().metadata.response_code,
+        ResponseCode::NoError
+    );
+    assert_eq!(
+        tcp.snapshot().active,
+        1,
+        "the plain TCP connection is counted"
+    );
+    let after = dot.snapshot();
+    assert_eq!(
+        (after.active, after.peak),
+        (0, 1),
+        "the surviving DoT peak proves it was the DoT gauge that moved, not a shared one"
+    );
+    server.shutdown();
+}

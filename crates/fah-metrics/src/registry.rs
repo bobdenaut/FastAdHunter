@@ -64,6 +64,7 @@ pub struct Metrics {
     pub(crate) request_duration_forward: Histogram,
     pub(crate) dropped_events: AtomicU64,
     pub(crate) dns_tcp_connections: ArcSwap<fah_model::DnsTcpConnections>,
+    pub(crate) dns_dot_connections: ArcSwap<fah_model::DnsDotConnections>,
     pub(crate) dns_udp_inflight: ArcSwap<fah_model::DnsUdpInflight>,
     pub(crate) tasks_died: AtomicU64,
     /// Stale-while-refresh counters (ADR-0005). Stored as one value rather than
@@ -114,6 +115,7 @@ impl Metrics {
             request_duration_forward: Histogram::new(),
             dropped_events: AtomicU64::new(0),
             dns_tcp_connections: ArcSwap::new(Arc::new(fah_model::DnsTcpConnections::default())),
+            dns_dot_connections: ArcSwap::new(Arc::new(fah_model::DnsDotConnections::default())),
             dns_udp_inflight: ArcSwap::new(Arc::new(fah_model::DnsUdpInflight::default())),
             tasks_died: AtomicU64::new(0),
             swr: ArcSwap::new(Arc::new(SwrSnapshot::default())),
@@ -242,6 +244,10 @@ impl Metrics {
         self.dns_tcp_connections.store(Arc::new(snapshot));
     }
 
+    pub fn set_dns_dot_connections(&self, snapshot: fah_model::DnsDotConnections) {
+        self.dns_dot_connections.store(Arc::new(snapshot));
+    }
+
     pub fn set_dns_udp_inflight(&self, snapshot: fah_model::DnsUdpInflight) {
         self.dns_udp_inflight.store(Arc::new(snapshot));
     }
@@ -316,6 +322,7 @@ impl Metrics {
                 },
                 lists: **self.lists.load(),
                 dns_tcp_connections: **self.dns_tcp_connections.load(),
+                dns_dot_connections: **self.dns_dot_connections.load(),
                 dns_udp_inflight: **self.dns_udp_inflight.load(),
                 tasks_died: self.tasks_died.load(Ordering::Relaxed),
             },
@@ -697,6 +704,33 @@ mod tests {
         metrics.set_dns_tcp_connections(idle);
         assert_eq!(
             metrics.engine_telemetry().counters.dns_tcp_connections,
+            idle
+        );
+    }
+
+    #[test]
+    fn dns_dot_connections_round_trip_as_one_value() {
+        let metrics = Metrics::new();
+        let busy = fah_model::DnsDotConnections {
+            active: 5,
+            peak: 17,
+            closed_oversize: 1,
+        };
+        metrics.set_dns_dot_connections(busy);
+        assert_eq!(
+            metrics.engine_telemetry().counters.dns_dot_connections,
+            busy
+        );
+        assert_eq!(
+            metrics.engine_telemetry().counters.dns_tcp_connections,
+            fah_model::DnsTcpConnections::default(),
+            "the DoT value must land in its own slot, not the TCP one"
+        );
+
+        let idle = fah_model::DnsDotConnections { active: 0, ..busy };
+        metrics.set_dns_dot_connections(idle);
+        assert_eq!(
+            metrics.engine_telemetry().counters.dns_dot_connections,
             idle
         );
     }

@@ -4,6 +4,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use fah_certs::{CertStore, MintingResolver};
+use fah_common::connections::OpenConnection;
 use rustls::server::Acceptor;
 use rustls::sign::CertifiedKey;
 use rustls::ServerConfig;
@@ -19,6 +20,8 @@ use crate::pipeline::{Pipeline, Transport};
 use crate::server::ListenerDied;
 use crate::tcp;
 use crate::upstream::Forwarder;
+
+pub type DotConnectionGauge = crate::tcp::TcpConnectionGauge;
 
 pub const DOT_MAX_CONNECTIONS: usize = 64;
 
@@ -50,14 +53,16 @@ pub async fn run<F: Forwarder>(
     listener: TcpListener,
     tls: DotTls,
     pipeline: Arc<Pipeline<F>>,
+    gauge: Arc<DotConnectionGauge>,
 ) -> ListenerDied {
-    run_with(listener, tls, pipeline, HANDSHAKE_TIMEOUT).await
+    run_with(listener, tls, pipeline, gauge, HANDSHAKE_TIMEOUT).await
 }
 
 pub(crate) async fn run_with<F: Forwarder>(
     listener: TcpListener,
     tls: DotTls,
     pipeline: Arc<Pipeline<F>>,
+    gauge: Arc<DotConnectionGauge>,
     handshake_timeout: Duration,
 ) -> ListenerDied {
     let slots = Arc::new(Semaphore::new(DOT_MAX_CONNECTIONS));
@@ -91,10 +96,13 @@ pub(crate) async fn run_with<F: Forwarder>(
         }
         let pipeline = Arc::clone(&pipeline);
         let tls = tls.clone();
+        let open = OpenConnection::enter(&gauge);
         tokio::spawn(async move {
             let _slot = slot;
-            let served = serve_connection(stream, client, tls, &pipeline, handshake_timeout).await;
+            let served =
+                serve_connection(stream, client, tls, &pipeline, &open, handshake_timeout).await;
             tcp::report_connection_end(served, client, "DoT");
+            drop(open);
         });
     }
 }
@@ -104,6 +112,7 @@ async fn serve_connection<F: Forwarder>(
     client: SocketAddr,
     tls: DotTls,
     pipeline: &Pipeline<F>,
+    gauge: &DotConnectionGauge,
     handshake_timeout: Duration,
 ) -> io::Result<()> {
     let deadline = Instant::now() + handshake_timeout;
@@ -149,7 +158,7 @@ async fn serve_connection<F: Forwarder>(
     #[cfg(feature = "diag-timing")]
     diag.emit(client);
     let served =
-        tcp::handle_connection(&mut stream, pipeline, client.ip(), Transport::Dot, None).await;
+        tcp::handle_connection(&mut stream, pipeline, client.ip(), Transport::Dot, gauge).await;
     let _ = timeout(tcp::TCP_IDLE_TIMEOUT, stream.shutdown()).await;
     served
 }
@@ -337,6 +346,7 @@ mod tests {
 
     struct Listener {
         addr: SocketAddr,
+        gauge: Arc<DotConnectionGauge>,
         task: tokio::task::JoinHandle<ListenerDied>,
         _data_dir: tempfile::TempDir,
     }
@@ -351,11 +361,37 @@ mod tests {
         let (pipeline, data_dir) = testkit::pipeline();
         let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap();
         let addr = listener.local_addr().unwrap();
-        let task = tokio::spawn(run_with(listener, tls, pipeline, handshake_timeout));
+        let gauge = Arc::new(DotConnectionGauge::default());
+        let task = tokio::spawn(run_with(
+            listener,
+            tls,
+            pipeline,
+            Arc::clone(&gauge),
+            handshake_timeout,
+        ));
         Listener {
             addr,
+            gauge,
             task,
             _data_dir: data_dir,
+        }
+    }
+
+    async fn await_gauge(
+        gauge: &DotConnectionGauge,
+        ready: impl Fn(&fah_model::DnsDotConnections) -> bool,
+    ) -> fah_model::DnsDotConnections {
+        let deadline = std::time::Instant::now() + Duration::from_secs(2);
+        loop {
+            let snapshot = gauge.snapshot();
+            if ready(&snapshot) {
+                return snapshot;
+            }
+            assert!(
+                std::time::Instant::now() < deadline,
+                "the DoT connection gauge never reached the expected state: {snapshot:?}"
+            );
+            tokio::time::sleep(Duration::from_millis(10)).await;
         }
     }
 
@@ -547,6 +583,73 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn a_served_dot_connection_is_counted_and_released() {
+        let (_dir, store) = store_with_ca();
+        let (fallback, _) = self_signed_fallback();
+        let listener = listen(DotTls::new(store, fallback).unwrap(), HANDSHAKE_TIMEOUT).await;
+        let client = client_accepting_any();
+
+        let request = a_query();
+        let mut held = Vec::new();
+        for _ in 0..3 {
+            let mut stream = connect(listener.addr, Arc::clone(&client), HOST)
+                .await
+                .unwrap();
+            let reply = exchange(&mut stream, &request).await;
+            assert_eq!(
+                Message::from_vec(&reply).unwrap().metadata.id,
+                Message::from_vec(&request).unwrap().metadata.id
+            );
+            held.push(stream);
+        }
+        let busy = listener.gauge.snapshot();
+        assert_eq!(
+            (busy.active, busy.peak),
+            (3, 3),
+            "three served DoT connections must be open at once"
+        );
+
+        drop(held.pop());
+        let one_closed = await_gauge(&listener.gauge, |snapshot| snapshot.active == 2).await;
+        assert_eq!(
+            one_closed.peak, 3,
+            "peak is a high-water mark and never falls with active"
+        );
+
+        held.clear();
+        let idle = await_gauge(&listener.gauge, |snapshot| snapshot.active == 0).await;
+        assert_eq!(idle.peak, 3);
+        assert_eq!(idle.closed_oversize, 0);
+    }
+
+    #[tokio::test]
+    async fn a_dot_frame_over_the_bound_counts_closed_oversize() {
+        let (_dir, store) = store_with_ca();
+        let (fallback, _) = self_signed_fallback();
+        let listener = listen(DotTls::new(store, fallback).unwrap(), HANDSHAKE_TIMEOUT).await;
+
+        let mut stream = connect(listener.addr, client_accepting_any(), HOST)
+            .await
+            .unwrap();
+        let oversize = u16::try_from(tcp::MAX_MESSAGE_LEN + 1)
+            .unwrap()
+            .to_be_bytes();
+        stream.write_all(&oversize).await.unwrap();
+        let mut sink = [0u8; 1];
+        let read = timeout(Duration::from_secs(5), stream.read(&mut sink))
+            .await
+            .expect("the server must close a connection it will not serve");
+        assert!(
+            matches!(read, Ok(0)),
+            "the server must close without answering, got {read:?}"
+        );
+
+        let closed = await_gauge(&listener.gauge, |snapshot| snapshot.active == 0).await;
+        assert_eq!(closed.closed_oversize, 1);
+        assert_eq!(closed.peak, 1);
+    }
+
+    #[tokio::test]
     async fn the_connection_bound_queues_the_next_client_until_a_slot_frees() {
         let (_dir, store) = store_with_ca();
         let (fallback, _) = self_signed_fallback();
@@ -566,25 +669,38 @@ mod tests {
             );
         }
 
-        let queued = timeout(
-            Duration::from_millis(500),
-            connect(listener.addr, Arc::clone(&client), HOST),
-        )
-        .await;
+        let pending = tokio::spawn(connect(listener.addr, Arc::clone(&client), HOST));
+        tokio::time::sleep(Duration::from_millis(500)).await;
         assert!(
-            queued.is_err(),
-            "the {}th connection must wait, not be served",
+            !pending.is_finished(),
+            "the {}th handshake must not complete while all {DOT_MAX_CONNECTIONS} slots are held",
+            DOT_MAX_CONNECTIONS + 1
+        );
+        let filled = listener.gauge.snapshot();
+        assert_eq!(
+            (filled.active, filled.peak),
+            (DOT_MAX_CONNECTIONS as u64, DOT_MAX_CONNECTIONS as u64),
+            "an accepted {}th socket would show here as {}: the gauge counts at accept",
+            DOT_MAX_CONNECTIONS + 1,
             DOT_MAX_CONNECTIONS + 1
         );
 
         drop(held.pop());
-        let served = timeout(
-            Duration::from_secs(10),
-            connect(listener.addr, client, HOST),
-        )
-        .await
-        .expect("a freed slot must admit the next client")
-        .unwrap();
+        let served = timeout(Duration::from_secs(10), pending)
+            .await
+            .expect("a freed slot must admit the next client")
+            .expect("the queued connect task must not panic")
+            .unwrap();
+        let refilled = await_gauge(&listener.gauge, |snapshot| {
+            snapshot.active == DOT_MAX_CONNECTIONS as u64
+        })
+        .await;
+        assert_eq!(
+            refilled.peak,
+            DOT_MAX_CONNECTIONS as u64,
+            "the admitted client replaced the freed slot and never made a {}th",
+            DOT_MAX_CONNECTIONS + 1
+        );
         drop(served);
     }
 }
