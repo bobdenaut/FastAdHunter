@@ -29,10 +29,30 @@ const MAX_RATIO_HIGH: u64 = 56_250;
 const ENDPOINTS: usize = 2;
 const CADENCE_MS: u64 = 50;
 const TAIL_UNITS: f64 = 1.5;
+const FLAP_CYCLES: usize = 6;
+const FLAP_PHASE_MS: u64 = 3_000;
+const HEALTHY_RESET_UNITS: f64 = 2.0;
+const JITTER_FLOOR_PERCENT: u64 = 75;
 const REFRESH_FAILURE_COOLDOWN_SECONDS: u64 = 30;
 
 fn leg() -> Duration {
     Duration::from_millis(u64::from(TIMEOUT_MS))
+}
+
+fn allowed_flapping_penalties(penalty_max_ms: u64, flap_ms: u64) -> u64 {
+    let mut covered = 0u64;
+    let mut fitted = 0u64;
+    loop {
+        let round = u8::try_from(fitted + 1).unwrap_or(u8::MAX);
+        let floor = nominal_penalty_ms(round, PENALTY_BASE_MS, penalty_max_ms)
+            * JITTER_FLOOR_PERCENT
+            / 100;
+        if covered + floor > flap_ms {
+            return fitted + 1;
+        }
+        covered += floor;
+        fitted += 1;
+    }
 }
 
 fn nominal_penalty_ms(round: u8, base: u64, max: u64) -> u64 {
@@ -149,14 +169,23 @@ fn assert_answered(label: &str, report: &Metrics) {
     );
 }
 
+fn one_probe_per_query_findings(label: &str, samples: &[Sample]) -> Vec<String> {
+    samples
+        .iter()
+        .enumerate()
+        .filter(|(_, sample)| sample.probes_total() > 1)
+        .map(|(index, sample)| {
+            format!(
+                "{label}: query {index} carried {} probes, at most one is allowed",
+                sample.probes_total()
+            )
+        })
+        .collect()
+}
+
 fn assert_one_probe_per_query(label: &str, samples: &[Sample]) {
-    for (index, sample) in samples.iter().enumerate() {
-        assert!(
-            sample.probes_total() <= 1,
-            "{label}: query {index} carried {} probes, at most one is allowed",
-            sample.probes_total()
-        );
-    }
+    let findings = one_probe_per_query_findings(label, samples);
+    assert!(findings.is_empty(), "{}", findings.join("\n"));
 }
 
 #[derive(Clone, Copy)]
@@ -1007,16 +1036,36 @@ struct RecoveryScript {
 impl RecoveryScript {
     fn build(penalty_max_ms: u64, tail_units: f64) -> Self {
         let unit = |units: f64| Duration::from_secs_f64(penalty_max_ms as f64 * units / 1_000.0);
+        let flap = Duration::from_millis(FLAP_PHASE_MS);
         let mut phases = vec![
             ("healthy_pre", unit(0.4), Behaviour::Answer),
             ("black_hole", unit(2.0), Behaviour::BlackHole),
             ("healthy_mid", unit(0.6), Behaviour::Answer),
+            (
+                "healthy_reset",
+                unit(HEALTHY_RESET_UNITS),
+                Behaviour::Answer,
+            ),
         ];
-        let down = ["flap_down_1", "flap_down_2", "flap_down_3"];
-        let up = ["flap_up_1", "flap_up_2", "flap_up_3"];
-        for cycle in 0..3 {
-            phases.push((down[cycle], unit(0.1), Behaviour::BlackHole));
-            phases.push((up[cycle], unit(0.1), Behaviour::Answer));
+        let down: [&'static str; FLAP_CYCLES] = [
+            "flap_down_1",
+            "flap_down_2",
+            "flap_down_3",
+            "flap_down_4",
+            "flap_down_5",
+            "flap_down_6",
+        ];
+        let up: [&'static str; FLAP_CYCLES] = [
+            "flap_up_1",
+            "flap_up_2",
+            "flap_up_3",
+            "flap_up_4",
+            "flap_up_5",
+            "flap_up_6",
+        ];
+        for cycle in 0..FLAP_CYCLES {
+            phases.push((down[cycle], flap, Behaviour::BlackHole));
+            phases.push((up[cycle], flap, Behaviour::Answer));
         }
         phases.push(("healthy_tail", unit(tail_units), Behaviour::Answer));
         phases.push(("black_hole_tail", unit(0.1), Behaviour::BlackHole));
@@ -1089,10 +1138,36 @@ async fn run_b5(
 
     let mut black_hole_ms: Vec<f64> = Vec::new();
     let mut flapping_ms: Vec<f64> = Vec::new();
+    let mut black_hole_failures = 0u64;
+    let mut black_hole_probes = 0u64;
+    let mut black_hole_probe_successes = 0u64;
+    let mut flapping_failures = 0u64;
+    let mut flapping_probe_successes = 0u64;
+    let mut flapping_penalties = 0u64;
+    let mut down_phase_samples = [0usize; FLAP_CYCLES];
     for sample in &samples {
         match script.name_at(sample.at + offset) {
-            "black_hole" => black_hole_ms.push(sample.latency_ms()),
-            name if name.starts_with("flap_") => flapping_ms.push(sample.latency_ms()),
+            "black_hole" => {
+                black_hole_ms.push(sample.latency_ms());
+                black_hole_failures += sample.failures[0];
+                black_hole_probes += sample.probes[0];
+                black_hole_probe_successes += sample.probe_successes[0];
+            }
+            name if name.starts_with("flap_") => {
+                flapping_ms.push(sample.latency_ms());
+                flapping_failures += sample.failures[0];
+                flapping_probe_successes += sample.probe_successes[0];
+                flapping_penalties += sample.penalties[0];
+                if let Some(index) = name
+                    .strip_prefix("flap_down_")
+                    .and_then(|cycle| cycle.parse::<usize>().ok())
+                    .and_then(|cycle| cycle.checked_sub(1))
+                {
+                    if let Some(slot) = down_phase_samples.get_mut(index) {
+                        *slot += 1;
+                    }
+                }
+            }
             _ => {}
         }
     }
@@ -1158,8 +1233,7 @@ async fn run_b5(
     let flap_duration_ms =
         u64::try_from((script.start_of("healthy_tail") - flap_start).as_millis())
             .unwrap_or(u64::MAX);
-    let nominal_ms = nominal_penalty_ms(round_at_flap_start, PENALTY_BASE_MS, penalty_max_ms);
-    let flap_windows = flap_duration_ms.div_ceil(nominal_ms.max(1)).max(1);
+    let flap_windows = allowed_flapping_penalties(penalty_max_ms, flap_duration_ms);
     let tail_penalty = penalty_rounds
         .iter()
         .filter(|(phase, _)| *phase == "black_hole_tail")
@@ -1171,7 +1245,14 @@ async fn run_b5(
          recovery_ms={:?} first_probe_after_return_ms={:?} \
          secondary_always_healthy={secondary_always_healthy} \
          dead_high_water={} p99_black_hole_ms={p99_black_hole:.2} \
-         p99_flapping_ms={p99_flapping:.2} flap_probes={flap_probes} \
+         p99_flapping_ms={p99_flapping:.2} \
+         black_hole_failures={black_hole_failures} black_hole_probes={black_hole_probes} \
+         black_hole_probe_successes={black_hole_probe_successes} \
+         flapping_failures={flapping_failures} \
+         flapping_probe_successes={flapping_probe_successes} \
+         flapping_penalties={flapping_penalties} \
+         allowed_flapping_penalties={} \
+         down_phase_samples={down_phase_samples:?} flap_probes={flap_probes} \
          flap_windows={flap_windows} round_at_flap_start={round_at_flap_start} \
          penalty_rounds={penalty_rounds:?} tail_penalty_round={tail_penalty:?} \
          healthy_stretch_before_final_penalty_ms={:?} reset_threshold_ms={penalty_max_ms}",
@@ -1179,96 +1260,157 @@ async fn run_b5(
         recovery.map(|value| value.as_millis()),
         first_probe_after_return.map(|value| value.as_millis()),
         flaky.stats.dead_high_water(),
+        allowed_flapping_penalties(penalty_max_ms, FLAP_CYCLES as u64 * 2 * FLAP_PHASE_MS),
         final_penalty.map(|(_, stretch)| stretch.map(|value| value.as_millis())),
     );
 
     if strategy == UpstreamStrategy::Adaptive {
-        assert_one_probe_per_query(&label, &samples);
-        assert!(
+        let mut findings: Vec<String> = one_probe_per_query_findings(&label, &samples);
+        macro_rules! check {
+            ($holds:expr, $($message:tt)*) => {
+                if !$holds {
+                    findings.push(format!($($message)*));
+                }
+            };
+        }
+        check!(
             secondary_always_healthy,
             "{label}: the secondary must stay Healthy throughout"
         );
-        assert!(
+        check!(
             flaky.stats.dead_high_water() <= 1,
             "{label}: more than one request was outstanding at the dead endpoint ({})",
             flaky.stats.dead_high_water()
         );
-        let recovered = recovery.expect("the endpoint must return to Healthy");
+        check!(
+            recovery.is_some(),
+            "{label}: the endpoint never returned to Healthy"
+        );
+        check!(
+            first_probe_after_return.is_some(),
+            "{label}: no probe was claimed after the endpoint returned"
+        );
         let budget = Duration::from_millis(penalty_max_ms + CADENCE_MS);
-        let claimed =
-            first_probe_after_return.expect("a probe must be claimed after the endpoint returns");
         let jittered = Duration::from_millis(penalty_max_ms * 125 / 100 + CADENCE_MS);
-        println!(
-            "G3 recovery {label} first_probe_ms={} nominal_budget_ms={} jittered_budget_ms={} \
-             within_nominal={} within_jittered={}",
-            claimed.as_millis(),
-            budget.as_millis(),
-            jittered.as_millis(),
-            claimed <= budget,
-            claimed <= jittered
-        );
-        assert!(
-            claimed <= jittered,
-            "{label}: the first probe after the return came {claimed:?} late, \
-             jitter-aware budget {jittered:?}"
-        );
-        let stayed_up = recovered_at.is_some_and(|at| at <= flap_start);
-        if stayed_up {
-            assert!(
-                recovered <= jittered,
-                "{label}: recovery took {recovered:?}, jitter-aware budget {jittered:?}"
-            );
-        } else {
+        if let (Some(recovered), Some(claimed)) = (recovery, first_probe_after_return) {
             println!(
-                "G3 recovery {label} recovery_criterion=deferred recovery_ms={} \
-                 first_probe_after_return_ms={} budget_ms={} \
-                 healthy_window_ms={} reason=probe_landed_after_the_endpoint_went_dark_again",
-                recovered.as_millis(),
+                "G3 recovery {label} first_probe_ms={} nominal_budget_ms={} jittered_budget_ms={} \
+                 within_nominal={} within_jittered={}",
                 claimed.as_millis(),
                 budget.as_millis(),
-                (flap_start - healthy_mid_start).as_millis()
+                jittered.as_millis(),
+                claimed <= budget,
+                claimed <= jittered
             );
+            check!(
+                claimed <= jittered,
+                "{label}: the first probe after the return came {claimed:?} late, \
+                 jitter-aware budget {jittered:?}"
+            );
+            let stayed_up = recovered_at.is_some_and(|at| at <= flap_start);
+            if stayed_up {
+                check!(
+                    recovered <= jittered,
+                    "{label}: recovery took {recovered:?}, jitter-aware budget {jittered:?}"
+                );
+            } else {
+                println!(
+                    "G3 recovery {label} recovery_criterion=deferred recovery_ms={} \
+                     first_probe_after_return_ms={} budget_ms={} \
+                     healthy_window_ms={} reason=probe_landed_after_the_endpoint_went_dark_again",
+                    recovered.as_millis(),
+                    claimed.as_millis(),
+                    budget.as_millis(),
+                    (flap_start - healthy_mid_start).as_millis()
+                );
+            }
         }
         let mut previous = 0u8;
+        let mut entered_flapping = false;
         for (phase, round) in &penalty_rounds {
             if *phase == "black_hole_tail" || *phase == "healthy_tail" {
                 continue;
             }
-            assert!(
+            if phase.starts_with("flap_") && !entered_flapping {
+                entered_flapping = true;
+                previous = *round;
+                continue;
+            }
+            check!(
                 *round > previous || *round == 15,
                 "{label}: penalty_round must climb, saw {round} after {previous}"
             );
             previous = *round;
         }
-        assert!(
+        check!(
             flap_probes <= flap_windows,
             "{label}: {flap_probes} probes over {flap_windows} penalty windows in the flapping phase"
         );
-        if flapping_ms.len() >= 100 && black_hole_ms.len() >= 100 {
-            assert!(
-                p99_flapping <= 1.1 * p99_black_hole,
-                "{label}: p99_flapping {p99_flapping:.2} exceeds 1.1 x p99_black_hole {p99_black_hole:.2}"
-            );
-        } else {
-            println!(
-                "G3 recovery {label} p99_comparison=undecidable flapping_n={} black_hole_n={}",
-                flapping_ms.len(),
-                black_hole_ms.len()
+        let black_hole_failed_probes = black_hole_probes.saturating_sub(black_hole_probe_successes);
+        let flapping_failed_probes = flap_probes.saturating_sub(flapping_probe_successes);
+        check!(
+            black_hole_failures >= black_hole_failed_probes
+                && flapping_failures >= flapping_failed_probes,
+            "{label}: a failed probe always records a transport failure, so failures below failed \
+             probes means the counters disagree — black_hole {black_hole_failures} against \
+             {black_hole_failed_probes}, flapping {flapping_failures} against \
+             {flapping_failed_probes}. No verdict can rest on them"
+        );
+        for (cycle, seen) in down_phase_samples.iter().enumerate() {
+            check!(
+                *seen > 0,
+                "{label}: flap_down_{} carried no query, so nothing ever gave the pool the chance \
+                 to re-select the dead endpoint in that cycle",
+                cycle + 1
             );
         }
+        check!(
+            FLAP_PHASE_MS < penalty_max_ms,
+            "{label}: a flap_up of {FLAP_PHASE_MS} ms reaches the {penalty_max_ms} ms reset \
+             threshold, so the round could reset inside the flapping phase and the allowance below \
+             does not hold"
+        );
+        let first_flap_round = penalty_rounds
+            .iter()
+            .find(|(phase, _)| phase.starts_with("flap_"))
+            .map(|(_, round)| *round);
+        check!(
+            first_flap_round == Some(1),
+            "{label}: the first penalty inside the flapping phase used round {first_flap_round:?}, \
+             not 1, so healthy_reset did not carry a long enough healthy stretch and the windows \
+             are not nominal(1..k). The round is reset when a penalty is applied, never by the \
+             probe success that precedes it, so {round_at_flap_start} in the state word at flap \
+             start is expected and is not the check"
+        );
+        let flap_ms = FLAP_CYCLES as u64 * 2 * FLAP_PHASE_MS;
+        let allowed_penalties = allowed_flapping_penalties(penalty_max_ms, flap_ms);
+        check!(
+            flapping_penalties <= allowed_penalties,
+            "{label}: {flapping_penalties} penalties over {flap_ms} ms of flapping against an \
+             allowance of {allowed_penalties}. The allowance is the number of nominal backoff \
+             windows that fit at their {JITTER_FLOOR_PERCENT}% jitter floor, so exceeding it means \
+             the windows stopped growing — the round is resetting on the short recoveries"
+        );
         if let Some((round, Some(stretch))) = final_penalty {
             if stretch >= Duration::from_millis(penalty_max_ms) {
-                assert_eq!(
-                    round, 1,
-                    "{label}: a penalty after {stretch:?} of continuous health must reset the round"
+                check!(
+                    round == 1,
+                    "{label}: a penalty after {stretch:?} of continuous health must reset the \
+                     round, saw {round}"
                 );
             } else {
-                assert!(
+                check!(
                     round > 1,
                     "{label}: a penalty after only {stretch:?} of health must not reset the round"
                 );
             }
         }
+        assert!(
+            findings.is_empty(),
+            "{label}: {} of the arm's checks failed, every check was run:\n{}",
+            findings.len(),
+            findings.join("\n")
+        );
     }
     report
 }
@@ -1277,19 +1419,45 @@ async fn run_b5(
 #[ignore]
 async fn b5_recovery_and_flapping() {
     require_serial("B.5");
-    for (ratio, penalty_max_ms) in [
+    let arms = [
         ("2.5", MAX_RATIO_LOW),
         ("12.5", MAX_RATIO_SHIPPED),
         ("37.5", MAX_RATIO_HIGH),
-    ] {
-        run_b5(
+    ];
+    let mut failed: Vec<String> = Vec::new();
+    for (ratio, penalty_max_ms) in arms {
+        let outcome = tokio::spawn(run_b5(
             UpstreamStrategy::Adaptive,
             penalty_max_ms,
             ratio,
             TAIL_UNITS,
-        )
+        ))
         .await;
+        if let Err(err) = outcome {
+            let detail = if err.is_panic() {
+                panic_detail(err.into_panic())
+            } else {
+                "the arm was cancelled".to_string()
+            };
+            println!("G3 recovery B.5 ratio={ratio} arm=FAILED");
+            failed.push(format!("ratio={ratio}: {detail}"));
+        }
     }
+    assert!(
+        failed.is_empty(),
+        "B.5: {} of {} arms failed, every arm was run:\n{}",
+        failed.len(),
+        arms.len(),
+        failed.join("\n")
+    );
+}
+
+fn panic_detail(payload: Box<dyn std::any::Any + Send>) -> String {
+    payload
+        .downcast_ref::<String>()
+        .cloned()
+        .or_else(|| payload.downcast_ref::<&str>().map(|text| (*text).to_string()))
+        .unwrap_or_else(|| "panicked with a payload that is not a string".to_string())
 }
 
 async fn run_b6(strategy: UpstreamStrategy, count: usize) -> Metrics {
