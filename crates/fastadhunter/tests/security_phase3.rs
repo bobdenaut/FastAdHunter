@@ -382,7 +382,21 @@ fn read_config(instance: &Instance, file: &str) -> String {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn ca_key_unreachable_via_every_route() {
-    let instance = boot_full(full(Ipv4Addr::new(127, 0, 0, 20), &["127.0.0.1"])).await;
+    walk_every_route_for_key_material(Ipv4Addr::new(127, 0, 0, 20), &[], "clients: []").await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn ca_key_unreachable_via_every_route_with_a_client_listed() {
+    walk_every_route_for_key_material(
+        Ipv4Addr::new(127, 0, 0, 28),
+        &["127.0.0.1"],
+        "clients: [127.0.0.1]",
+    )
+    .await;
+}
+
+async fn walk_every_route_for_key_material(origin_ip: Ipv4Addr, clients: &[&str], mode: &str) {
+    let instance = boot_full(full(origin_ip, clients)).await;
     instance.generate_ca().await;
 
     let ca_key_pem = read_config(&instance, "ca-key.pem");
@@ -466,7 +480,8 @@ async fn ca_key_unreachable_via_every_route() {
         "the walk must cover every documented route under every credential"
     );
     println!(
-        "ca_key_unreachable_via_every_route: {walked} requests over {} routes x 3 credentials, 0 leaks",
+        "ca_key_unreachable_via_every_route [{mode}]: {walked} requests over {} routes x 3 \
+         credentials, 0 leaks",
         routes.len()
     );
 }
@@ -631,6 +646,73 @@ async fn bad_upstream_cert_is_not_masked() {
     assert!(
         origin.accepts.load(Ordering::Relaxed) >= 2,
         "the binary contacted the origin to verify it on every attempt"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_bad_origin_certificate_is_relayed_untouched_when_interception_is_off() {
+    let origin_ip = Ipv4Addr::new(127, 0, 0, 24);
+    let Some(listener) = bind_origin(origin_ip).await else {
+        eprintln!("{}", skip_origin_message(origin_ip));
+        return;
+    };
+    let (origin_cert, origin_key) = self_signed_origin(&[PAGE_HOST]);
+    let origin = run_tls_origin(
+        listener,
+        origin_cert.clone(),
+        origin_key,
+        Arc::new(pseudo_random_payload(1024, 24)),
+    );
+
+    let instance = boot_full(full(origin_ip, &[])).await;
+    let ca_der = instance.generate_ca().await;
+    let mut events = connect_events(&instance.base, &instance.key).await;
+    let https = instance.ports.https();
+
+    let trusting_the_origin = tls_connect_from(
+        Some(LOCAL),
+        https,
+        PAGE_HOST,
+        client_config_trusting(origin_cert.to_vec()),
+    )
+    .await;
+    assert!(
+        trusting_the_origin.is_ok(),
+        "a client trusting the origin's own certificate must complete the handshake through the \
+         splice: anything else means the certificate was replaced"
+    );
+
+    let trusting_our_ca = tls_connect_from(
+        Some(LOCAL),
+        https,
+        PAGE_HOST,
+        client_config_trusting(ca_der.clone()),
+    )
+    .await;
+    assert!(
+        trusting_our_ca.is_err(),
+        "trusting our CA must not be enough: with nobody listed, nothing is re-signed and the \
+         client sees the origin's own certificate"
+    );
+
+    let event = await_event(&mut events, "https-sni pass", |data| {
+        data["kind"] == "https-sni" && data["domain"] == PAGE_HOST
+    })
+    .await;
+    assert_eq!(
+        event["verdict"], "pass",
+        "the SNI verdict decides the connection; the origin's certificate is not our business: \
+         {event}"
+    );
+
+    let certificates = instance.certificates().await;
+    assert_eq!(
+        certificates["leaf_cache"]["minted_total"], 0,
+        "an origin the binary would refuse under interception costs no leaf when nobody is listed"
+    );
+    assert!(
+        origin.accepts.load(Ordering::Relaxed) >= 2,
+        "both connections must reach the origin: the splice relays, it does not verify"
     );
 }
 
