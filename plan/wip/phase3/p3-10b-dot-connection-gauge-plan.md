@@ -84,11 +84,11 @@ Rejected:
 Why: it mirrors `tcp_connections()` and `udp_inflight()` exactly, and it keeps
 `Option` out of the telemetry poll. With DoT disabled the three figures stay
 zero, which is what `dns_udp_inflight` already does when `udp_max_inflight = 0`
-(API.md:300-305). Cost of the always-on gauge: two `AtomicU32` and one
-`AtomicU64` per process.
+(API.md:300-305). Cost of the always-on gauge: §6 states it once, in one place.
 
 Rejected: `Option<Arc<…>>` threaded through `serve()`, the accessor and
-`spawn_telemetry_poll`, to save 16 bytes and gain a branch on every poll.
+`spawn_telemetry_poll`, to save one small allocation and gain a branch on every
+poll.
 
 ### D3 — A connection is counted at accept, not after the handshake
 
@@ -257,9 +257,14 @@ every 10 s: main.rs poll -> dot_gauge.snapshot() -> metrics.set_dns_dot_connecti
   `fetch_sub` when it ends — the cost TCP already pays, on a path that is
   already doing a TLS handshake. The per-message `len > MAX_MESSAGE_LEN` branch
   loses an `Option` check.
-- **Memory:** one `Arc<TcpConnectionGauge>` per process (two `AtomicU32`, one
-  `AtomicU64`), one more `ArcSwap` slot in the registry, 24 bytes more in the
-  telemetry payload.
+- **Memory — the only statement of it in this plan.** One more gauge, the same
+  shape as the TCP one, allocated once per `Server` (so once per process), plus
+  one more `ArcSwap` slot in the registry and three more `u64` in the telemetry
+  payload. Exact byte figures are deliberately not asserted here: atomic layout,
+  alignment and padding decide them, and this task is bounded to the order of
+  magnitude — tens of bytes, constant, not growing with traffic or uptime. If a
+  figure is ever needed, take it from a `size_of` after the build, not from this
+  document.
 - **Concurrency:** all counters are `Relaxed` atomics read only by the 10 s
   poll; `active` and `peak` are maintained by the same RAII guard TCP uses, so a
   connection task that panics still decrements. No lock, no allocation.
@@ -288,12 +293,52 @@ client's FIN.
    assert `closed_oversize == 1`, poll until `active == 0`. This is the figure
    nothing else in the suite can see.
 3. **`the_connection_bound_queues_the_next_client_until_a_slot_frees`**
-   (`dot.rs:550`, extended, not replaced) — with the 64 connections held, assert
-   `(active, peak) == (DOT_MAX_CONNECTIONS, DOT_MAX_CONNECTIONS)`; after the
-   65th is shown to be queued, assert `peak` is still `DOT_MAX_CONNECTIONS` —
-   never 65, because the permit is taken before `accept()` and the queued client
-   is never accepted. This assertion is the one p3-10 B2's row rests on: it
-   proves the gauge measures admitted connections, which is what the cap bounds.
+   (`dot.rs:550`, extended, not replaced). This is the test p3-10 B2's row rests
+   on, so it needs two separate oracles, not one. `peak == 64` alone is not
+   evidence: a gauge that never incremented at all also reads 64 once the first
+   64 are counted, and a 65th connection that *was* accepted would have to be
+   caught by something.
+
+   **Oracle 1 — the 65th is not accepted.** The existing test drops the 65th
+   `connect` future when its 500 ms timeout fires, so nothing can be read off it
+   afterwards. Replace that with a connect kept alive and interrogated while it
+   is still pending:
+
+   ```rust
+   let pending = tokio::spawn(connect(listener.addr, Arc::clone(&client), HOST));
+   tokio::time::sleep(Duration::from_millis(500)).await;
+   assert!(
+       !pending.is_finished(),
+       "the 65th handshake must not complete while all {DOT_MAX_CONNECTIONS} slots are held"
+   );
+   ```
+
+   The TCP connect itself succeeds through the kernel backlog — that is not the
+   claim. The claim is that the listener never called `accept()` on it, because
+   the permit is acquired *before* `accept()` (`dot.rs:62-66`) and all 64 are
+   held. Two independent facts say so: the handshake has produced no ServerHello
+   (`!pending.is_finished()`), and the gauge — which increments immediately
+   after `accept()` — still reads 64:
+
+   ```rust
+   let filled = listener.gauge.snapshot();
+   assert_eq!(
+       (filled.active, filled.peak),
+       (DOT_MAX_CONNECTIONS as u64, DOT_MAX_CONNECTIONS as u64),
+       "an accepted 65th socket would show here as 65: the gauge counts at accept"
+   );
+   ```
+
+   Those two together are what proves "queued, not served". Either alone is
+   weaker: `is_finished()` on its own would also be false if the server had
+   accepted the socket and merely stalled in the handshake, and `active == 64`
+   on its own would also hold if the client had never connected.
+
+   **Oracle 2 — the ceiling is never exceeded.** Drop one held connection, await
+   `pending` to a served stream (the existing assertion that a freed slot admits
+   the next client), then assert `active == DOT_MAX_CONNECTIONS` again and
+   `peak == DOT_MAX_CONNECTIONS` still — the new admission replaced the freed
+   one and never made a 65th.
 
 ### 7.2 `crates/fah-dns/tests/server_integration.rs` — wiring, both directions
 
