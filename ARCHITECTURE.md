@@ -122,7 +122,10 @@ must not have it (ADR-0004).
 ## Upstreams
 
 - Protocols: plain UDP/53 with TCP fallback, DoT, DoH (Hickory + rustls).
-- Strategy: ordered parallel fallback — primary first, next on timeout/failure.
+- Strategy: `adaptive`, the only one accepted since 0.3.3 — the configured order
+  is walked, an endpoint that keeps failing is penalized and skipped until its
+  penalty expires, and one query then probes it on the way past. Penalized is
+  not removed: every endpoint penalized, the query still goes out.
 - Defaults: `1.1.1.1`, `9.9.9.9`, plain DNS; encrypted upstreams are opt-in.
 
 ---
