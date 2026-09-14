@@ -39,7 +39,45 @@ pub(crate) async fn append_line(path: &Path, line: &str) -> io::Result<()> {
         .append(true)
         .open(path)
         .await?;
-    file.write_all(line.as_bytes()).await?;
-    file.write_all(b"\n").await?;
+    let mut framed = String::with_capacity(line.len() + 1);
+    framed.push_str(line);
+    framed.push('\n');
+    file.write_all(framed.as_bytes()).await?;
+    file.flush().await?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn a_line_is_written_with_one_terminator_into_a_directory_made_on_demand() {
+        let data = tempfile::tempdir().expect("data volume");
+        let path = data.path().join("history").join("rollup.jsonl");
+
+        append_line(&path, r#"{"hour":1}"#).await.expect("append");
+
+        let written = std::fs::read_to_string(&path).expect("read back");
+        assert_eq!(written, "{\"hour\":1}\n");
+    }
+
+    #[tokio::test]
+    async fn every_appended_line_carries_its_own_terminator() {
+        let data = tempfile::tempdir().expect("data volume");
+        let path = data.path().join("perf.jsonl");
+
+        for line in ["one", "two", "three"] {
+            append_line(&path, line).await.expect("append");
+        }
+
+        let written = std::fs::read_to_string(&path).expect("read back");
+        assert_eq!(written, "one\ntwo\nthree\n");
+        assert_eq!(
+            written.matches('\n').count(),
+            3,
+            "a record written without its terminator glues itself to the next one, and the \
+             reader skips the line that results"
+        );
+    }
 }

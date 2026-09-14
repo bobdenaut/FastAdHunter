@@ -176,12 +176,16 @@ below. Kept here so the next pass knows what was verified and against what.
   and the client — with `snapshot_interval_seconds = 300` the shutdown flush
   is the only write that can have done so. `flush_history` captures completed
   hours only, so a post-boot query inside the current hour is proven through
-  the snapshot, not the rollups. Residual, not a risk: a `tokio::fs` write a
-  scheduler had already dispatched when the abort landed can still finish
-  after the await; for history that is a rollup line without its `\n`
-  followed by the flush's duplicate, which the reader skips (one hour lost) —
-  pre-existing, a microsecond window once per 300 s. Events still in the
-  fan-out channel at abort are dropped.
+  the snapshot, not the rollups. The residual noted here was worse than it
+  read, and is repaired on 2026-09-14: `append_line` wrote the record and its
+  `\n` as two awaited calls, so an abort between them left a line without its
+  terminator, glued to the next one and skipped by the reader — one hour lost.
+  It also never called `flush`, and `tokio::fs::File` does not flush on drop,
+  so under a loaded blocking pool the line could be **lost outright**. The
+  record is now framed once and flushed before the file is dropped, with two
+  tests in `fah-stats/src/history/mod.rs`; the missing flush was found by the
+  first of them failing in a full-suite run. Events still in the fan-out
+  channel at abort are dropped.
 - **F11 — long-lived task death unobserved** (was minor). `Engine::run`
   scans every supervised handle — `Engine::tasks` and
   `Engine::stats_schedulers`, each wrapped in `supervisor::Supervised` with a
