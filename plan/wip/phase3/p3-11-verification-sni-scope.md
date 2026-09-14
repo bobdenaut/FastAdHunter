@@ -36,7 +36,22 @@ Carried over from p3-06, unchanged in substance:
   be intercepted; and the arm that proves the decision is in force,
   **interception disabled ⇒ byte-identical splice** (sampled).
 - **End-to-end offline**, one scripted scenario: DNS block, HTTP URL block, SNI
-  block, DoT query, DoH query. No intercepted-URL leg.
+  block, DoT query, DoH query. No intercepted-URL leg. **DONE 2026-09-14** —
+  `crates/fastadhunter/tests/shipped_path_e2e.rs`. It was owed because the only
+  scenario that walked every layer, `full_mode_blocks_at_every_layer`, boots
+  with `clients: ["127.0.0.1"]`: it runs with interception on, the configuration
+  that is not shipping.
+- **A DNS query over TCP**, at binary level. **DONE 2026-09-14** — step 2 of the
+  same test, through a new `resolve_tcp` helper in `tests/common/mod.rs`. Until
+  then `server_integration.rs` covered the connection ceiling and the shed path
+  in process, and nothing checked that the binary's TCP listener answers.
+- **A DoT query answered in the shipped configuration.** **DONE 2026-09-14** —
+  step 5, blocked and allowed. Two tests came close and neither closed it:
+  `encrypted_latency.rs` queries DoT for real but runs `mode = "dns"`, with no
+  HTTP or HTTPS listener; `security_phase3.rs:806` runs the shipped
+  configuration but asserts only that the listener reports `listening`. It
+  matters because the API server's 64-slot budget is shared with DoH
+  (p3-10 A8), and DoT beside a live HTTPS listener is what ships.
 - **RB5009 with the owner**: the **dst-nat 443 rule and its rollback**, Private
   DNS setup on a phone, a browsing pass, and `deploy-rb5009.md` gaining its
   HTTPS section. The owner runs every router command; this task proposes them.
@@ -67,6 +82,61 @@ Tooling is current and is not rewritten here: `p3-06-smoke-plan.md` layers 0–3
 and `p3-06-testing-plan.md` had their scripts moved off the dead
 `https.interception` key by p3-06b §3b, run green and committed (`223bf79`).
 The interception arms inside those plans do not run.
+
+## What covers the shipped path today
+
+Read at `73d79aa`, 2026-09-14. Two levels answer different questions:
+**crate-level** tests exercise the logic in process and say the code is right;
+**binary-level** tests in `crates/fastadhunter/tests/` spawn the real
+executable and are the only ones that say the shipped *configuration* works.
+"Shipped configuration" means `clients: []` — a binary test that lists a client
+is measuring W2, whatever else it also proves.
+
+Five binary-level tests boot it. Four predate this task:
+`splice_is_byte_identical_when_interception_is_off` (`security_phase3.rs:756`),
+`dns_query_is_the_only_new_unauthenticated_route` (`:803`),
+`exports_contain_no_private_material` (`:638`), and
+`listing_a_client_through_the_api_applies_on_the_next_connection`
+(`e2e_https.rs:419`), which starts empty and then lists a client, so it spans
+both modes by design.
+
+The fifth is **`the_shipped_configuration_blocks_at_every_layer`**
+(`shipped_path_e2e.rs`), written 2026-09-14 to close the three gaps below. It
+walks DNS over UDP and TCP, plain HTTP, an SNI block and an SNI splice, DoT and
+DoH in one run, each layer with an allowed control beside the blocked case so a
+null IP is read as a verdict and not as a failure.
+
+Only the rows that are not a plain yes are worth carrying:
+
+| Capability | Crate level | Binary level | Shipped configuration? |
+| --- | --- | --- | --- |
+| No-SNI hello, non-TLS bytes, hello timeout | `sni.rs:459`, `:489`, `:611` | only inside `full_mode`, interception on | **no** |
+| Idle spliced session closed, permit returned | `sni.rs:518` | none | **no** |
+| HTTPS lane saturation leaves the HTTP lane bounded | `sni.rs:772` | none | **no** |
+| DNS over TCP | `server_integration.rs` — ceilings, shed path | `shipped_path_e2e.rs` step 2 | **yes**, since 2026-09-14 |
+| DoT `:853`, a query answered | `fah-dns` | `shipped_path_e2e.rs` step 5, blocked and allowed | **yes**, since 2026-09-14 |
+| SNI block | `sni.rs:301` | `shipped_path_e2e.rs` step 4, with the event's `verdict` and `bytes: 0` | **yes**, since 2026-09-14 |
+| Splice on an allocation domain | `sni.rs:728` | `shipped_path_e2e.rs` — the run asserts the domain-lane log line and then splices through it | **yes**, since 2026-09-14 |
+| DoH `/dns-query` | `fah-api` | `security_phase3.rs:843` — 200, `application/dns-message`, non-empty body | **yes** |
+| SNI allow → splice, byte for byte | `sni.rs:254`, `:344` | `security_phase3.rs:756`, three samples against a direct exchange | **yes** |
+
+DNS over UDP, plain HTTP, the API's auth walk, shutdown and the allocation
+ceilings are all covered at both levels in the shipped configuration and are not
+listed.
+
+**What makes the new test discriminate.** An end-to-end walk that only asserts
+blocks proves little: everything failing looks like everything blocking. Two
+things guard against that. Every layer carries an allowed control. And the
+splice leg compares the certificate the client received against the origin's
+own, byte for byte — a minted leaf there means an allocation domain terminated
+TLS, which the empty client list forbids. Verified by flipping `clients` to
+`["127.0.0.1"]` locally: the test fails, and the failure names interception as
+the cause. Reverted.
+
+**A gap here is not a defect.** The SNI block is decided at `https.rs:171`,
+before the interception branch at `:183`, so the two modes share it; crate-level
+coverage is `sni.rs:301`. What is missing is evidence in the configuration that
+runs, not confidence in the behaviour.
 
 ## Acceptance criteria
 

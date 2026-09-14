@@ -343,6 +343,28 @@ pub fn decode_answer(bytes: &[u8]) -> Answer {
     }
 }
 
+pub async fn resolve_tcp(port: u16, domain: &str) -> Answer {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    let mut stream = tokio::net::TcpStream::connect((Ipv4Addr::LOCALHOST, port))
+        .await
+        .expect("connect to the DNS TCP listener");
+    stream.set_nodelay(true).expect("nodelay");
+    stream
+        .write_all(&framed_query(&a_query(domain)))
+        .await
+        .expect("send framed query");
+
+    let mut len_buf = [0u8; 2];
+    tokio::time::timeout(Duration::from_secs(5), stream.read_exact(&mut len_buf))
+        .await
+        .unwrap_or_else(|_| panic!("no DNS-over-TCP response for {domain} within 5s"))
+        .expect("response length");
+    let mut reply = vec![0u8; u16::from_be_bytes(len_buf) as usize];
+    stream.read_exact(&mut reply).await.expect("response body");
+    decode_answer(&reply)
+}
+
 pub async fn resolve_dot(
     port: u16,
     domain: &str,
