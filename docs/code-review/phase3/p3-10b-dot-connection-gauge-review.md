@@ -296,3 +296,57 @@ Whether F1 and F2 are closed now or deferred is the owner's decision, not this
 review's. Deferring them leaves `main.rs`'s slot wiring and D3's "counted at
 accept" semantics covered by inspection alone, going into a seven-day soak that
 reads exactly those two things.
+
+## Fixes applied — 2026-09-14
+
+Owner approved the findings for fixing on 2026-09-14 ("fix all findings"), which
+covered the API.md edit F3 asks for. Four findings needed a change; two were
+notes recording settled decisions and needed none.
+
+| # | Outcome | What changed |
+| - | ------- | ------------ |
+| F1 | fixed | `crates/fastadhunter/tests/shipped_path_e2e.rs` holds `CONCURRENT_DOT = 3` DoT connections open at once, then asserts `counters.dns_dot_connections.peak == 3` **by equality** and `counters.dns_tcp_connections.peak < 3`. The plain-TCP exchanges in that test are sequential, so the TCP gauge cannot reach 3 and the two slots are no longer numerically interchangeable. New helper `common::open_dot` opens a DoT stream and hands it back for the caller to hold — `resolve_dot` opens and closes in one call and could not express this |
+| F2 | fixed | `crates/fah-dns/src/dot.rs` gains `a_connection_is_counted_before_its_handshake_completes`: a bare `TcpStream` that never sends a ClientHello must read `active == 1` while it is open and `0` once closed. That is D3 stated as a test — the slot is held from accept, so the figure that sizes `DOT_MAX_CONNECTIONS` has to include a client stalling in a handshake |
+| F3 | fixed | `API.md:227` payload example gains the group; `:292-306` replaces the "handed no gauge" paragraph with the DoT group's own entry, including the counted-at-accept rule and the surviving truth that the 64-cap has no config key; `:396` adds the field to the 10 s poll note. The TCP entry now says to size `[dns] tcp_max_connections` from that gauge alone |
+| F4 | no change needed | The `DnsGaugeSources` deviation is sound; D7 was the inaccurate part |
+| F5 | no change needed | The aliases are transparent by decision (D1). F1's fix closes the one place where that actually bit |
+| F6 | fixed | `crates/fah-dns/tests/server_integration.rs`: `tcp_roundtrip` now connects and delegates to `stream_roundtrip` (the duplicate copy is gone), and `await_inflight` / `await_connections` are two thin callers of one `await_snapshot` helper |
+
+Beyond the findings, at the owner's request: API.md gains a short §"This document
+and `requests/`" stating that a change here is not finished until the matching
+runnable `.http` file says the same thing. For this task that meant
+`requests/telemetry.http` (a `counters.dns_dot_connections` block beside the TCP
+one, and the poll note now covering all three connection groups) and
+`requests/settings.http` (the post-soak retune path warns to read the TCP figure
+alone). No new endpoint: this task adds a field to an existing payload.
+
+### Verification
+
+Mutations re-run after the fixes, each applied to a clean tree, run, then
+reverted from a backup:
+
+| Mutation | Before the fixes | After |
+| -------- | ---------------- | ----- |
+| `main.rs` feeds `dns.tcp.snapshot()` to `set_dns_dot_connections` | survived `shipped_path_e2e` | **kills it** — the DoT poll never reaches 3 and the assertion times out (33.3 s) |
+| `OpenConnection::enter` moved out of the accept loop into `serve_connection`, after `start.into_stream(...)` | no test would have failed | **kills** `a_connection_is_counted_before_its_handshake_completes` with `active: 0, peak: 0`; the other nine DoT tests still pass, which is precisely why the new one was needed |
+
+Gates, whole workspace, after the fixes and with the mutations reverted:
+
+```text
+cargo fmt --all -- --check                                     clean
+cargo clippy --workspace --all-targets -- -D warnings          clean
+cargo test --all-features --workspace                          61 targets ok, 0 failed
+```
+
+`crates/fah-dns --lib dot::` is 10/10 (nine existing plus the new one),
+`--test server_integration` 13/13, `--all-features -p fastadhunter --test
+shipped_path_e2e` 2/2. The `intercept_alloc` flake recorded under §Other
+observations did not reappear in this run.
+
+### Status after fixes
+
+**PASS.** F1, F2, F3 and F6 are closed with the evidence above; F4 and F5 were
+notes on settled decisions and are closed as no-change. Nothing is deferred.
+
+The documentation rows under §Remaining TODOs other than API.md — project-state,
+p3-10's B2 row, the phase table — are still owed and still need their own yes.

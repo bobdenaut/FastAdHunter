@@ -196,8 +196,15 @@ async fn udp_roundtrip(server_addr: SocketAddr, request: &[u8]) -> Vec<u8> {
 }
 
 async fn tcp_roundtrip(server_addr: SocketAddr, request: &[u8]) -> Vec<u8> {
-    use tokio::io::{AsyncReadExt, AsyncWriteExt};
     let mut stream = TcpStream::connect(server_addr).await.unwrap();
+    stream_roundtrip(&mut stream, request).await
+}
+
+async fn stream_roundtrip<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin>(
+    stream: &mut S,
+    request: &[u8],
+) -> Vec<u8> {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
     let len = u16::try_from(request.len()).unwrap().to_be_bytes();
     stream.write_all(&len).await.unwrap();
     stream.write_all(request).await.unwrap();
@@ -484,15 +491,23 @@ async fn await_inflight(
     gauge: &fah_dns::UdpInflightGauge,
     ready: impl Fn(&fah_model::DnsUdpInflight) -> bool,
 ) -> fah_model::DnsUdpInflight {
+    await_snapshot("the UDP in-flight gauge", || gauge.snapshot(), ready).await
+}
+
+async fn await_snapshot<S: std::fmt::Debug>(
+    what: &str,
+    read: impl Fn() -> S,
+    ready: impl Fn(&S) -> bool,
+) -> S {
     let deadline = Instant::now() + Duration::from_secs(5);
     loop {
-        let snapshot = gauge.snapshot();
+        let snapshot = read();
         if ready(&snapshot) {
             return snapshot;
         }
         assert!(
             Instant::now() < deadline,
-            "the UDP in-flight gauge never reached the expected state: {snapshot:?}"
+            "{what} never reached the expected state: {snapshot:?}"
         );
         tokio::time::sleep(Duration::from_millis(10)).await;
     }
@@ -606,18 +621,7 @@ async fn await_connections(
     gauge: &fah_dns::TcpConnectionGauge,
     ready: impl Fn(&fah_model::DnsTcpConnections) -> bool,
 ) -> fah_model::DnsTcpConnections {
-    let deadline = Instant::now() + Duration::from_secs(5);
-    loop {
-        let snapshot = gauge.snapshot();
-        if ready(&snapshot) {
-            return snapshot;
-        }
-        assert!(
-            Instant::now() < deadline,
-            "the connection gauge never reached the expected state: {snapshot:?}"
-        );
-        tokio::time::sleep(Duration::from_millis(10)).await;
-    }
+    await_snapshot("the connection gauge", || gauge.snapshot(), ready).await
 }
 
 fn self_signed_fallback() -> Arc<rustls::sign::CertifiedKey> {
@@ -629,21 +633,6 @@ fn self_signed_fallback() -> Arc<rustls::sign::CertifiedKey> {
         vec![signed.cert.der().clone()],
         signing_key,
     ))
-}
-
-async fn stream_roundtrip<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin>(
-    stream: &mut S,
-    request: &[u8],
-) -> Vec<u8> {
-    use tokio::io::{AsyncReadExt, AsyncWriteExt};
-    let len = u16::try_from(request.len()).unwrap().to_be_bytes();
-    stream.write_all(&len).await.unwrap();
-    stream.write_all(request).await.unwrap();
-    let mut len_buf = [0u8; 2];
-    stream.read_exact(&mut len_buf).await.unwrap();
-    let mut reply = vec![0u8; u16::from_be_bytes(len_buf) as usize];
-    stream.read_exact(&mut reply).await.unwrap();
-    reply
 }
 
 /// DoT and plain TCP share the framing loop and the gauge *type*, so the only

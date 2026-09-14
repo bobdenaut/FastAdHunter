@@ -66,6 +66,9 @@ Content-Type: application/json
 ### once at Server::bind, so the new value applies on the next start. This is
 ### the post-soak retune path: read counters.dns_tcp_connections.peak from
 ### telemetry.http, pick the ceiling, persist it here, restart the container.
+### Read that figure ALONE — counters.dns_dot_connections is a separate gauge
+### bounded by a separate, compiled-in cap, and adding the two would size this
+### ceiling from traffic it does not bound.
 POST {{base}}/config
 {{auth}}
 Content-Type: application/json

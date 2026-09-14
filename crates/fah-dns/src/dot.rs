@@ -583,6 +583,26 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn a_connection_is_counted_before_its_handshake_completes() {
+        let (_dir, store) = store_with_ca();
+        let (fallback, _) = self_signed_fallback();
+        let listener = listen(DotTls::new(store, fallback).unwrap(), HANDSHAKE_TIMEOUT).await;
+
+        let silent = TcpStream::connect(listener.addr).await.unwrap();
+        let counted = await_gauge(&listener.gauge, |snapshot| snapshot.active == 1).await;
+        assert_eq!(
+            counted.peak, 1,
+            "a connection that has sent no ClientHello still holds a slot, so it is counted \
+             at accept rather than after the handshake"
+        );
+
+        drop(silent);
+        let released = await_gauge(&listener.gauge, |snapshot| snapshot.active == 0).await;
+        assert_eq!(released.peak, 1);
+        assert_eq!(released.closed_oversize, 0);
+    }
+
+    #[tokio::test]
     async fn a_served_dot_connection_is_counted_and_released() {
         let (_dir, store) = store_with_ca();
         let (fallback, _) = self_signed_fallback();

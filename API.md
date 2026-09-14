@@ -7,6 +7,23 @@ client communicate exclusively through this API.
 - All bodies are JSON, UTF-8.
 - Versioned under `/api/v1/`.
 
+## This document and `requests/`
+
+Everything documented here has a runnable counterpart in
+[`requests/`](requests/) — one `.http` file per area, written for the REST
+Client extension and pointed at a live instance.
+
+**The two move together.** A change to this document — a new endpoint, a new
+field, a changed shape or a changed meaning — is not finished until the
+matching `.http` file says the same thing. A request that cannot be run is a
+claim nobody has checked, and a `.http` file that still describes last
+release's payload is worse than none: it is read as current.
+
+In practice that means adding the call to the right file when an endpoint
+appears, and editing the reading notes inside it when a payload gains a field.
+The files carry more than the call — they carry how to read the answer — so the
+prose has to be kept true as well, not only the URL.
+
 ## Authentication
 
 Single API key (bearer token), generated on first boot, rotatable.
@@ -225,6 +242,7 @@ Top-level blocks: `process`, `ruleset`, `counters`, `latency`, `upstreams`,
                        "bytes_freed": 9871232, "last_duration_micros": 1842 },
     "lists": { "bodies": 17, "not_modified": 3, "bytes_fetched": 27580000 },
     "dns_tcp_connections": { "active": 2, "peak": 9, "closed_oversize": 0 },
+    "dns_dot_connections": { "active": 1, "peak": 6, "closed_oversize": 0 },
     "dns_udp_inflight": { "active": 0, "peak": 0, "shed": 0 },
     "tasks_died": 0
   },
@@ -291,12 +309,19 @@ Reading it correctly:
   connections closed because a client's 2-byte length prefix exceeded the
   internal 16 KiB message bound (`fah_dns::MAX_MESSAGE_LEN`). Non-zero
   `closed_oversize` on a household LAN is a misbehaving client, not a limit to
-  raise. The DoT listener is **not** in this figure. It shares the framing loop
-  and the same 16 KiB bound but is handed no gauge, so a DoT connection appears
-  in no `active`/`peak` and a DoT frame closed over the bound raises no
-  `closed_oversize`. DoT is bounded separately by a compiled-in 64-connection
-  cap (`fah_dns::DOT_MAX_CONNECTIONS`), which has no counter and no config key:
-  saturation on 853 is visible only in the `debug` log.
+  raise. The DoT listener is **not** in this figure; it has its own, below. Size
+  `[dns] tcp_max_connections` from this one alone — adding the two would size a
+  ceiling from traffic it does not bound.
+- **`counters.dns_dot_connections` is the same three figures for DoT**, on
+  `[dns.listen] dot_port`. Same meanings, same 16 KiB bound
+  (`fah_dns::MAX_MESSAGE_LEN`), a separate gauge — one number for two transports
+  could not answer a question about either. A connection is counted **when it is
+  accepted**, before its TLS handshake completes, because a slot is held from
+  that moment: a client stuck or stalling in a handshake occupies one of the 64
+  and belongs in the figure that says whether 64 is enough. DoT is bounded by
+  that compiled-in cap (`fah_dns::DOT_MAX_CONNECTIONS`), which still has **no
+  config key**; `peak` at 64 means the cap was reached and the next client
+  waited in the kernel backlog.
 - **`counters.dns_udp_inflight` is the UDP admission guard in numbers.** All
   three are zero while `[dns] udp_max_inflight` is `0` (the default): the
   listener then touches no counter and counts nothing. With a ceiling set,
@@ -388,8 +413,9 @@ Reading it correctly:
 - No `ruleset.heap_bytes`: that is `memory.ruleset_bytes`, so the number has one
   home.
 - `ruleset`, `upstreams`, `counters.swr`, `counters.cache_cleanup`,
-  `counters.dns_tcp_connections` and `counters.dns_udp_inflight` are pushed
-  into the registry on a 10 s poll, so they can be up to one interval old.
+  `counters.dns_tcp_connections`, `counters.dns_dot_connections` and
+  `counters.dns_udp_inflight` are pushed into the registry on a 10 s poll, so
+  they can be up to one interval old.
   `cache` and `memory` are read at request time.
 
 ---

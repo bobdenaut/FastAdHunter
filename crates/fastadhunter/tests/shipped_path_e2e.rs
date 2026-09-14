@@ -11,12 +11,13 @@ use tokio::net::TcpStream;
 
 use common::{
     await_event, bind_origin, boot_full, client_config_trusting, connect_events, get_json,
-    insecure_client_config, put_user_rules, resolve, resolve_doh_post, resolve_dot, resolve_tcp,
-    run_tls_origin, self_signed_origin, skip_origin_message, tls_connect_from, FullMode, AD_HOST,
-    DOMAIN_LANE_LOG, DOT_HOSTNAME, FULL_MODE_HTTP_RUNTIMES, PAGE_HOST,
+    insecure_client_config, open_dot, put_user_rules, resolve, resolve_doh_post, resolve_dot,
+    resolve_tcp, run_tls_origin, self_signed_origin, skip_origin_message, tls_connect_from,
+    FullMode, AD_HOST, DOMAIN_LANE_LOG, DOT_HOSTNAME, FULL_MODE_HTTP_RUNTIMES, PAGE_HOST,
 };
 
 const ORIGIN_IP: Ipv4Addr = Ipv4Addr::new(127, 0, 0, 40);
+const CONCURRENT_DOT: usize = 3;
 const ALLOWED_HOST: &str = "allowed.example.com";
 const ORIGIN_PAYLOAD: &[u8] = b"origin payload, relayed byte for byte\n";
 
@@ -180,7 +181,7 @@ async fn the_shipped_configuration_blocks_at_every_layer() {
     let allowed = resolve_dot(
         instance.ports.dot,
         ALLOWED_HOST,
-        client_config_trusting(ca_der),
+        client_config_trusting(ca_der.clone()),
         DOT_HOSTNAME,
     )
     .await;
@@ -189,6 +190,19 @@ async fn the_shipped_configuration_blocks_at_every_layer() {
         vec![ORIGIN_IP],
         "5/6 DoT: an allowed domain is forwarded over DoT"
     );
+
+    let mut concurrent = Vec::with_capacity(CONCURRENT_DOT);
+    for _ in 0..CONCURRENT_DOT {
+        concurrent.push(
+            open_dot(
+                instance.ports.dot,
+                client_config_trusting(ca_der.clone()),
+                DOT_HOSTNAME,
+            )
+            .await,
+        );
+    }
+    drop(concurrent);
 
     let blocked = resolve_doh_post(&instance.http, &instance.base, AD_HOST).await;
     assert_eq!(
@@ -232,15 +246,17 @@ async fn the_shipped_configuration_blocks_at_every_layer() {
             if body["counters"]["dns_dot_connections"]["peak"]
                 .as_u64()
                 .unwrap_or_default()
-                >= 1
+                == CONCURRENT_DOT as u64
             {
                 break body;
             }
             assert!(
                 std::time::Instant::now() < deadline,
-                "shipped: the two DoT exchanges above must reach counters.dns_dot_connections \
-                 within one telemetry poll interval; a gauge the DoT listener was never handed \
-                 reports zero forever: {}",
+                "shipped: the {CONCURRENT_DOT} DoT connections held open above must reach \
+                 counters.dns_dot_connections.peak within one telemetry poll interval; a gauge \
+                 the DoT listener was never handed reports zero forever, and the TCP gauge in \
+                 this slot never reaches {CONCURRENT_DOT} because this test opens its plain-TCP \
+                 connections one at a time: {}",
                 body["counters"]
             );
             tokio::time::sleep(Duration::from_millis(500)).await;
@@ -250,9 +266,9 @@ async fn the_shipped_configuration_blocks_at_every_layer() {
         .as_u64()
         .unwrap_or_default();
     assert!(
-        (1..=2).contains(&dns_tcp_peak),
-        "shipped: the TCP gauge must reflect only the two plain-TCP exchanges this test made, \
-         got {dns_tcp_peak}"
+        dns_tcp_peak < CONCURRENT_DOT as u64,
+        "shipped: the TCP gauge must reflect only the sequential plain-TCP exchanges this test \
+         made, never the {CONCURRENT_DOT} concurrent DoT connections, got {dns_tcp_peak}"
     );
     let https_counters = &telemetry["listeners"]["https"];
     assert_eq!(

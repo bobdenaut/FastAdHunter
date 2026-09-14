@@ -365,6 +365,25 @@ pub async fn resolve_tcp(port: u16, domain: &str) -> Answer {
     decode_answer(&reply)
 }
 
+pub async fn open_dot(
+    port: u16,
+    tls: Arc<rustls::ClientConfig>,
+    sni: &str,
+) -> tokio_rustls::client::TlsStream<tokio::net::TcpStream> {
+    let tcp = tokio::net::TcpStream::connect((Ipv4Addr::LOCALHOST, port))
+        .await
+        .expect("connect to the DoT listener");
+    tcp.set_nodelay(true).expect("nodelay");
+    let name = rustls::pki_types::ServerName::try_from(sni.to_string()).expect("a valid SNI");
+    tokio::time::timeout(
+        Duration::from_secs(10),
+        tokio_rustls::TlsConnector::from(tls).connect(name, tcp),
+    )
+    .await
+    .expect("DoT handshake within 10s")
+    .expect("DoT handshake")
+}
+
 pub async fn resolve_dot(
     port: u16,
     domain: &str,

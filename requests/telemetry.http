@@ -87,13 +87,25 @@ GET {{base}}/telemetry
 #   closed_oversize  connections closed because the client's length prefix
 #                    exceeded the internal 16 KiB message bound; non-zero on a
 #                    household LAN is a misbehaving client, not a limit to raise
+# DoT is NOT in this group. Size [dns] tcp_max_connections from this one alone;
+# adding the two sizes a ceiling from traffic it does not bound.
+#
+# counters.dns_dot_connections is the same three figures for DoT, on
+# [dns.listen] dot_port, in a gauge of its own — one number for two transports
+# could not answer a question about either. Same meanings, same 16 KiB bound.
+# A connection is counted WHEN IT IS ACCEPTED, before the TLS handshake
+# completes: a client stalling in a handshake already holds one of the 64
+# slots, so it belongs in the figure that says whether 64 is enough. The cap is
+# compiled in (fah_dns::DOT_MAX_CONNECTIONS) and has no config key; `peak` at
+# 64 means it was reached and the next client waited in the kernel backlog.
 #
 # counters.dns_udp_inflight is the UDP admission guard ([dns] udp_max_inflight):
 #   active           GAUGE — UDP queries in flight right now
 #   peak             process-lifetime high-water mark of `active`
 #   shed             datagrams dropped unanswered because the ceiling was full
 # All zero while the key is 0 (the default): no counter touched, no counting.
-# Pushed on the same 10 s poll as ruleset/upstreams — up to one interval old.
+# All three connection groups are pushed on the same 10 s poll as
+# ruleset/upstreams — up to one interval old.
 #
 # counters.tasks_died is the supervisor's tally: long-lived tasks (rules
 # scheduler, event fan-out, perf sampler, telemetry poll, policy ticker, SWR
