@@ -1,3 +1,5 @@
+#![cfg(feature = "test-harness")]
+
 //! End-to-end proof of the observability history (phase 1.5): the real
 //! `fah-stats` writers persist rollups, a daily top-N and a perf sample to a
 //! tempdir `/data`, and the real `fah-api` server reads them straight back over

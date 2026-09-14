@@ -71,10 +71,16 @@ libc = "0.2"
 
 [dev-dependencies]
 criterion = { workspace = true }
-# `history_e2e.rs` builds an `AuthState` with a known password. The feature is
-# non-default and rides a dev-dependency edge only, so `cargo build --release`
-# (Dockerfile:86) never sees it — `resolver = "2"` is what guarantees that.
-fah-api = { path = "../fah-api", features = ["test-harness"] }
+# `history_e2e.rs` builds an `AuthState` with a known password, which needs
+# `fah-api/test-harness`. The feature is deliberately NOT requested here: cargo
+# unifies a dev-dependency's features into the bench profile as well, and
+# `fah-api` refuses the feature outside `debug_assertions`, which made
+# `cargo bench -p fastadhunter` impossible to build (p3-06 review X2). It comes
+# from this package's own `test-harness` feature instead, which chains it, and
+# `history_e2e.rs` is gated on that feature. The gate is
+# `cargo test --all-features`, which turns it on; a bare `cargo test -p
+# fastadhunter` compiles that file away on purpose.
+fah-api = { path = "../fah-api" }
 # http2: the encrypted_latency harness's DoH arm negotiates h2, the protocol the
 # LAN client (p4-lan.mjs) speaks; without it P4 and P4-LAN compare HTTP/1.1
 # against h2 on that transport.
