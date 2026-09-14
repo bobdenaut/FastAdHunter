@@ -9,7 +9,7 @@ use hickory_proto::op::{Message, OpCode, ResponseCode};
 use hickory_proto::rr::rdata::{A, AAAA};
 use hickory_proto::rr::{RData, Record, RecordType};
 use rand::Rng;
-use tokio::net::{TcpListener, UdpSocket};
+use tokio::net::UdpSocket;
 
 #[derive(Clone, Copy, Debug)]
 pub enum Distribution {
@@ -304,10 +304,7 @@ impl MockUpstream {
 }
 
 pub async fn closed_tcp_addr() -> SocketAddr {
-    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let addr = listener.local_addr().unwrap();
-    drop(listener);
-    addr
+    SocketAddr::from(([127, 0, 0, 1], 1))
 }
 
 fn reply(request: &Message, rcode: Option<ResponseCode>, ttl: u32) -> Message {

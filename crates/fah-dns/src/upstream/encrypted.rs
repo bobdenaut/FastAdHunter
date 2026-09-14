@@ -285,7 +285,7 @@ mod tests {
     use hickory_proto::rr::{Name, RData, Record, RecordType};
     use rustls::pki_types::{CertificateDer, PrivateKeyDer, PrivatePkcs8KeyDer};
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
-    use tokio::net::TcpListener;
+    use tokio::net::{TcpListener, TcpStream};
     use tokio_rustls::TlsAcceptor;
 
     use super::super::{Forwarder, UpstreamPool};
@@ -317,6 +317,17 @@ mod tests {
         accepts: Arc<AtomicU64>,
         cert: CertificateDer<'static>,
         blackhole: Arc<AtomicBool>,
+        probes: Arc<std::sync::Mutex<Vec<String>>>,
+    }
+
+    impl DotServer {
+        fn probe_report(&self) -> String {
+            match self.probes.lock() {
+                Ok(probes) if probes.is_empty() => "no accepts recorded".to_string(),
+                Ok(probes) => probes.join("\n"),
+                Err(poisoned) => poisoned.into_inner().join("\n"),
+            }
+        }
     }
 
     /// A minimal DoT server on an ephemeral port: rcgen self-signed cert for
@@ -324,6 +335,18 @@ mod tests {
     /// simulates an upstream's idle-close policy: `None` serves a connection
     /// forever, `Some(n)` closes it after `n` answers.
     async fn dot_server(queries_per_connection: Option<usize>) -> DotServer {
+        dot_server_on(
+            SocketAddr::from((Ipv4Addr::LOCALHOST, 0)),
+            queries_per_connection,
+        )
+        .await
+        .unwrap()
+    }
+
+    async fn dot_server_on(
+        bind: SocketAddr,
+        queries_per_connection: Option<usize>,
+    ) -> io::Result<DotServer> {
         let signed = rcgen::generate_simple_self_signed(vec!["localhost".to_string()]).unwrap();
         let cert = signed.cert.der().clone();
         let key = PrivateKeyDer::from(PrivatePkcs8KeyDer::from(signed.signing_key.serialize_der()));
@@ -333,22 +356,35 @@ mod tests {
             .unwrap();
         let acceptor = TlsAcceptor::from(Arc::new(server_tls));
 
-        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let listener = TcpListener::bind(bind).await?;
         let addr = listener.local_addr().unwrap();
         let accepts = Arc::new(AtomicU64::new(0));
         let accepts_counter = Arc::clone(&accepts);
         let blackhole = Arc::new(AtomicBool::new(false));
         let connection_blackhole = Arc::clone(&blackhole);
+        let probes: Arc<std::sync::Mutex<Vec<String>>> =
+            Arc::new(std::sync::Mutex::new(Vec::new()));
+        let accept_probes = Arc::clone(&probes);
         tokio::spawn(async move {
             loop {
-                let Ok((stream, _)) = listener.accept().await else {
+                let Ok((stream, peer)) = listener.accept().await else {
                     return;
                 };
-                accepts_counter.fetch_add(1, Ordering::Relaxed);
+                let seq = accepts_counter.fetch_add(1, Ordering::Relaxed) + 1;
+                record(
+                    &accept_probes,
+                    format!("accept listener={addr} seq={seq} peer={peer}"),
+                );
                 let acceptor = acceptor.clone();
                 let blackhole = Arc::clone(&connection_blackhole);
+                let tls_probes = Arc::clone(&accept_probes);
                 tokio::spawn(async move {
-                    let Ok(mut tls) = acceptor.accept(stream).await else {
+                    let handshake = acceptor.accept(stream).await;
+                    record(
+                        &tls_probes,
+                        format!("tls    seq={seq} peer={peer} ok={}", handshake.is_ok()),
+                    );
+                    let Ok(mut tls) = handshake else {
                         return;
                     };
                     let mut served = 0usize;
@@ -380,11 +416,52 @@ mod tests {
                 });
             }
         });
-        DotServer {
+        Ok(DotServer {
             addr,
             accepts,
             cert,
             blackhole,
+            probes,
+        })
+    }
+
+    fn record(probes: &Arc<std::sync::Mutex<Vec<String>>>, line: String) {
+        if let Ok(mut probes) = probes.lock() {
+            probes.push(line);
+        }
+    }
+
+    static DIALLED: std::sync::Mutex<Vec<String>> = std::sync::Mutex::new(Vec::new());
+
+    fn note_dial(addresses: &[String]) {
+        let who = std::thread::current()
+            .name()
+            .unwrap_or("an unnamed thread")
+            .to_string();
+        if let Ok(mut dialled) = DIALLED.lock() {
+            for address in addresses {
+                dialled.push(format!("{address} dialled by {who}"));
+            }
+        }
+    }
+
+    fn dials_on(port: u16) -> String {
+        let needle = format!(":{port} ");
+        let dialled = match DIALLED.lock() {
+            Ok(dialled) => dialled.clone(),
+            Err(poisoned) => poisoned.into_inner().clone(),
+        };
+        let matched: Vec<String> = dialled
+            .into_iter()
+            .filter(|line| line.contains(&needle))
+            .collect();
+        if matched.is_empty() {
+            "nothing in this process dialled that port. Only the DoT and DoH pools built through \
+             dot_pool_from and the direct connect in the reuse experiment are journalled, so an \
+             empty list clears the instrumented path rather than the whole process"
+                .to_string()
+        } else {
+            matched.join("\n")
         }
     }
 
@@ -405,6 +482,7 @@ mod tests {
         tls: Arc<ClientConfig>,
         timeout_ms: u32,
     ) -> UpstreamPool {
+        note_dial(&addresses);
         UpstreamPool::with_tls_config(
             &DnsUpstreamsConfig {
                 strategy: UpstreamStrategy::Adaptive,
@@ -491,10 +569,7 @@ mod tests {
     }
 
     async fn closed_tcp_addr() -> SocketAddr {
-        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let addr = listener.local_addr().unwrap();
-        drop(listener);
-        addr
+        SocketAddr::from(([127, 0, 0, 1], 1))
     }
 
     #[tokio::test]
@@ -617,7 +692,102 @@ mod tests {
             2,
             "the blackholed connection must be replaced, not reused"
         );
-        assert_eq!(server.accepts.load(Ordering::Relaxed), 2);
+        let accepts = server.accepts.load(Ordering::Relaxed);
+        if accepts != 2 {
+            tokio::time::sleep(Duration::from_millis(200)).await;
+            panic!(
+                "expected 2 accepts, saw {accepts}. The lines below are a temporary probe kept to \
+                 capture the next occurrence of the rare failure recorded in \
+                 docs/solutions/design-patterns/allocation-oracles-that-only-hold-on-an-idle-machine.md \
+                 section 2. They demonstrate no cause and are not a fix.\n\
+                 --- accepts ---\n{}\n--- what dialled port {} from inside this process ---\n{}",
+                server.probe_report(),
+                server.addr.port(),
+                dials_on(server.addr.port())
+            );
+        }
+    }
+
+    const REUSED_PORT_TRIES: usize = 16;
+
+    async fn wait_until(budget: Duration, mut reached: impl FnMut() -> bool) -> bool {
+        let started = Instant::now();
+        while started.elapsed() < budget {
+            if reached() {
+                return true;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        reached()
+    }
+
+    #[tokio::test]
+    async fn reusing_a_freed_port_reproduces_the_third_accept_without_attributing_the_flake() {
+        let mut bound = None;
+        for _ in 0..REUSED_PORT_TRIES {
+            let freed = TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let handed_out = freed.local_addr().unwrap();
+            drop(freed);
+            if let Ok(server) = dot_server_on(handed_out, None).await {
+                bound = Some(server);
+                break;
+            }
+        }
+        let Some(server) = bound else {
+            panic!(
+                "a port that bind(:0) handed out and then released must be bindable again within \
+                 {REUSED_PORT_TRIES} tries"
+            );
+        };
+
+        note_dial(&[server.addr.to_string()]);
+        let intruder = TcpStream::connect(server.addr)
+            .await
+            .expect("the freed port belongs to our listener now, so a connect meant for whoever held it before lands here");
+        assert!(
+            wait_until(Duration::from_secs(5), || {
+                server.accepts.load(Ordering::Relaxed) >= 1
+            })
+            .await,
+            "the connection that mistook this port for another server must be accepted before \
+             the pool opens its own"
+        );
+        drop(intruder);
+        assert!(
+            wait_until(Duration::from_secs(5), || {
+                server.probe_report().contains("ok=false")
+            })
+            .await,
+            "a plain TCP client sends no ClientHello, so its handshake must fail while the \
+             accept it caused still counts"
+        );
+
+        let pool = dot_pool_of(&[&server], BLACKHOLE_TIMEOUT_MS);
+        assert!(pool.forward(&a_query()).await.is_ok());
+        server.blackhole.store(true, Ordering::Relaxed);
+        assert_eq!(
+            pool.forward(&a_query()).await.unwrap_err().kind(),
+            io::ErrorKind::TimedOut
+        );
+        server.blackhole.store(false, Ordering::Relaxed);
+        assert!(pool.forward(&a_query()).await.is_ok());
+
+        assert_eq!(
+            pool.status()[0].tls_handshakes,
+            2,
+            "the pool handshakes twice here exactly as it does with no intruder on the port"
+        );
+        assert_eq!(
+            server.accepts.load(Ordering::Relaxed),
+            3,
+            "two accepts from the pool plus one from a connect that arrived after the port had \
+             changed hands. This reproduces the signature of the rare failure recorded in \
+             docs/solutions/design-patterns/allocation-oracles-that-only-hold-on-an-idle-machine.md \
+             section 2 - accepts == 3 while tls_handshakes == 2 - and proves only that the \
+             mechanism can produce it. It does not show that the historical failure came from \
+             this mechanism.\n{}",
+            server.probe_report()
+        );
     }
 
     #[tokio::test]
