@@ -1,5 +1,5 @@
 ---
-title: Allocation oracles that only hold on an idle machine, and one flake still unidentified
+title: Allocation oracles that only hold on an idle machine, and one flake named but not explained
 date: 2026-09-14
 category: design-patterns
 module: fah-http, fah-dns
@@ -327,88 +327,95 @@ The timeout was not raised and no production code was touched.
 counter returning to zero cannot: zero is also its value before anything was
 taken. Wait on the monotonic thing the assertion is actually about.
 
-## Handover — prompt for the agent that hunts it
+## Handover — prompt for the agent that finds the cause
 
-Paste this as that agent's first message. It is written to be self-contained;
-everything it needs from this file is repeated inside it.
+The previous prompt here asked an agent to identify the test. **That is done —
+see §2 §Hunt, 2026-09-14 — and the old prompt is obsolete.** What follows
+replaces it and asks for the cause instead. Paste it as that agent's first
+message; it repeats everything it needs from this file.
 
 ```text
-You are hunting one rare test failure in the FastAdHunter repository
-(E:\FastAdHunter). Reply in Romanian, briefly. Your job is to IDENTIFY it, not
-to fix it.
+You are finding the cause of one named test failure in the FastAdHunter
+repository (E:\FastAdHunter). Reply in Romanian, briefly. Your job is to EXPLAIN
+it from the code. Do not fix anything, do not relax the assertion, and do not
+modify production code.
 
-WHAT IS KNOWN
-On 2026-09-14, one run of `cargo test --all-features --workspace` reported:
+THE TEST
+upstream::encrypted::tests::dot_timeout_invalidates_the_pooled_connection_so_the_next_query_reconnects
+in crates/fah-dns/src/upstream/encrypted.rs. It fails at line 620 on
 
-    test result: FAILED. 220 passed; 1 failed; 2 ignored
-    error: test failed, to rerun pass `-p fah-dns --lib`
+    assert_eq!(server.accepts.load(Ordering::Relaxed), 2);
 
-The failing test's name was lost: the command that produced it ran the suite
-twice — once to count results, once to grep — and the output kept was from the
-run that passed. Immediately afterwards `fah-dns --lib` was run four times
-standalone (221/221 each) and the full workspace suite five more times (62
-targets green each). Nothing reproduced it.
+with left 3, right 2.
 
-So: something in the `fah-dns` library test target fails rarely, and the only
-run that ever showed it was a full-workspace run, where two real `fastadhunter`
-binaries were also running on four worker threads each for 25–40 s.
+WHAT IS MEASURED, AND WHAT IS NOT
+Measured: in the one observed failure, the assertion three lines above at :617,
+tls_handshakes == 2, PASSED in the same run. So the pool counted two TLS
+handshakes while the test server counted three TCP accepts. One accepted
+connection produced no handshake the pool attributes to itself.
 
-It is NOT the allocation-oracle family described in the file this prompt came
-from (`docs/solutions/design-patterns/allocation-oracles-that-only-hold-on-an-idle-machine.md`,
-§1) — those live in separate test targets and were fixed the same day.
+Not measured: why. A connection attempt still in flight when the blackholed query
+times out is one hypothesis. Another is that the two counters are simply read at
+different instants with nothing synchronising them - pool.status() is a snapshot
+taken at :617, server.accepts is an atomic read at :620 - so a third connection
+being established right then would show exactly this. Neither is established.
 
-READ FIRST, AND ONLY THIS
-- `docs/solutions/design-patterns/allocation-oracles-that-only-hold-on-an-idle-machine.md`
-  — §2 is this bug; §1 is the neighbouring problem, already settled, so you do
-  not re-derive it.
-Do not read the phase plans or the root documents. This is not task work.
+REPRODUCTION - observations, not a rate
+One hit in ninety runs of the whole fah-dns --lib target under load. Zero in
+thirty without load. Zero in thirty running this test alone under weak load.
+Zero in a second sixty-run batch under load. A single hit does not give a rate;
+a binomial interval around it spans roughly 1-in-3000 to 1-in-17. Treat it as
+"rare, and needs load".
 
-METHOD — in this order
-1. Never lose the name again. One run per invocation, output redirected to a
-   file, `--no-fail-fast`, then read the file. Do not pipe a second run into
-   grep.
-2. Reproduce the load that exposed it: loop `cargo test --all-features -p
-   fah-dns --lib` 20–30 times while `cargo test --all-features -p fastadhunter
-   --test acceptor_death` runs alongside, and add `-- --test-threads=16` so the
-   target's own tests contend with each other.
-3. Once it falls, narrow: run that one test in a loop, with and without
-   background load, and establish whether contention alone makes it
-   deterministic.
+METHOD - and do not start with it
+DO NOT RUN ANYTHING IN YOUR FIRST PASS. Read the code first. Runs cost ten
+minutes each and the last three taught nothing the source could not.
 
-WHERE TO LOOK IF IT WILL NOT FALL
-52 of `fah-dns`'s unit tests use `#[tokio::test(start_paused = true)]` and are
-immune to machine load. The candidates are the real-clock ones: `upstream/mod.rs`
-(22), `pipeline.rs` (16), `dot.rs` (10), `cache.rs` (10). `upstream/mod.rs` is
-the first suspect — real timeouts against local sockets and walk deadlines —
-and `dot.rs` the second: real TLS handshakes plus a 500 ms sleep in the
-connection-ceiling test. Both are guesses from shape, not evidence; say so if
-you end up leaning on them.
+Read crates/fah-dns/src/upstream/encrypted.rs and follow the whole path the test
+drives, in order:
+  1. the first connection;
+  2. the TLS handshake and where tls_handshakes is incremented;
+  3. taking the pooled connection for a query;
+  4. the timeout against the blackholed server;
+  5. invalidating the pooled connection;
+  6. reconnecting;
+  7. the TCP accept on the test server;
+  8. the TLS handshake on the new connection;
+  9. cleanup, Drop, cancellation.
 
-Reading a suspect's source to judge whether its assertion depends on "this
-happened within N milliseconds" is legitimate and cheap. Deciding it is the
-culprit without a captured failure is not.
+Keep the two counters apart throughout: a TCP accept() on the server, versus a
+TLS handshake the pool counts. Find every path that can produce the first
+without the second. Look specifically at concurrent or in-flight connection
+attempts, a reconnect started before an earlier attempt is fully closed,
+timeout or cancellation during connect or handshake, Drop and cleanup order,
+pooling and reuse and how a pooled connection is invalidated, and any implicit
+retry or race between queries.
+
+Do not assume the third accept is a bug. Do not assume the test server is at
+fault. Start from the measured fact: accepts=3 alongside tls_handshakes=2.
+
+REPORT, in this order
+  1. the exact timeline the code permits;
+  2. every candidate for the third TCP accept;
+  3. which candidates the code demonstrates and which stay hypotheses;
+  4. whether this looks like production behaviour, test-harness behaviour, or
+     both;
+  5. only if a root cause is demonstrated from the code, a proposed fix.
 
 CONSTRAINTS
 - Do not use python for anything (repo rule 17). Use the editor tools, or sed.
-- Do not modify any test, any production code, or any .md, except the one file
-  named under REPORTING.
+- Do not modify production code, the test, or the assertion.
 - No commit, no push, no tag.
 - Do not touch the RB5009 router.
-- The machine is shared with a running hourly scheduled task, `FAH-soak-0.3.4`.
-  Do not stop or disturb it. Expect your loops to compete with it once an hour.
-- Loops cost real CPU and the fans are audible. Prefer 20–30 focused iterations
-  over an open-ended run, and stop as soon as you have a name.
+- The machine shares an hourly scheduled task, FAH-soak-0.3.4. Do not disturb it.
+- If you do end up running anything later, pre-build with cargo test --no-run,
+  take the executable paths from --message-format=json and run the binaries
+  directly. Two cargo test loops contend for the lock on target/, so a load loop
+  launched beside a cargo run dies and the hunt silently runs on an idle box.
+  That wasted two attempts during the identification.
 
-REPORTING
-Append your result to §2 of
-`docs/solutions/design-patterns/allocation-oracles-that-only-hold-on-an-idle-machine.md`
-under a new heading `### Hunt, <date>`:
-- how many iterations you ran and under what load;
-- the captured failure verbatim, if you got one — test name, assertion, values;
-- what you concluded, separating measured evidence from inference;
-- if you did not reproduce it: say that plainly, with the iteration count, and
-  leave the section open rather than closing it on a guess.
-
-Then stop and report in chat in two or three sentences: reproduced or not, the
-name if you have it, and what you would do next. Do not fix it.
+Append your result to this file under a new heading "### Cause hunt, <date>" in
+§2, separating what the code demonstrates from what you infer. If you cannot
+demonstrate a cause, say so plainly and leave it open rather than closing it on
+a guess.
 ```
