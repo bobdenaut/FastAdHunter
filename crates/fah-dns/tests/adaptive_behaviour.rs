@@ -44,9 +44,8 @@ fn allowed_flapping_penalties(penalty_max_ms: u64, flap_ms: u64) -> u64 {
     let mut fitted = 0u64;
     loop {
         let round = u8::try_from(fitted + 1).unwrap_or(u8::MAX);
-        let floor = nominal_penalty_ms(round, PENALTY_BASE_MS, penalty_max_ms)
-            * JITTER_FLOOR_PERCENT
-            / 100;
+        let floor =
+            nominal_penalty_ms(round, PENALTY_BASE_MS, penalty_max_ms) * JITTER_FLOOR_PERCENT / 100;
         if covered + floor > flap_ms {
             return fitted + 1;
         }
@@ -1456,7 +1455,11 @@ fn panic_detail(payload: Box<dyn std::any::Any + Send>) -> String {
     payload
         .downcast_ref::<String>()
         .cloned()
-        .or_else(|| payload.downcast_ref::<&str>().map(|text| (*text).to_string()))
+        .or_else(|| {
+            payload
+                .downcast_ref::<&str>()
+                .map(|text| (*text).to_string())
+        })
         .unwrap_or_else(|| "panicked with a payload that is not a string".to_string())
 }
 
