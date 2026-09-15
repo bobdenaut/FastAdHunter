@@ -454,6 +454,18 @@ LAN subnet in front of you.
 Placement follows §5c's rule: read the chain first and put these ahead of
 `fasttrack-connection`, or an already-open flow keeps passing.
 
+**Reaching our own `:853` — check it, do not assume it.** The rules above are
+egress-only, so they never touch a LAN client talking to the container. What
+they also never do is *allow* it. On this router, read 2026-09-15, the forward
+chain carries explicit accepts for the container on `:53` (indexes 11 and 12)
+and nothing for `:853`; the chain's last rule drops WAN traffic only, so a LAN
+client reaching `:853` falls off the end and takes RouterOS's default. That is
+an accept today, and it is not something to rely on silently — a later rule
+appended at the end of the chain changes it without touching anything named
+`fastadhunter`. Before setting Private DNS on a phone, confirm the DoT listener
+answers from a LAN host rather than from the router itself, and add an explicit
+accept beside the `:53` pair if the chain ever grows a terminal drop.
+
 **DoH is the one that needs Phase 3.** A client pointed at
 `https://dns.google/dns-query` is making an ordinary HTTPS connection, and no
 port-based rule separates it from any other. What does separate it is the
@@ -766,9 +778,17 @@ image and the DNS path are untouched either way.
 ## 5c. HTTPS (Phase 3, `dns+http+https`)
 
 Optional and independent of §5b: skip it and HTTPS goes straight out, filtered
-only by DNS. Reversible by removing two firewall rules. **Read §The no-SNI
-warning before steering** — this is the one step in this guide that can break
-sites the DNS layer never touched.
+only by DNS. Reversible by removing the rules §Rollback lists — up to seven,
+across `nat` and `filter`, v4 and v6. An earlier version of this line said two,
+and counted only the NAT half. **Read §The no-SNI warning before steering** —
+this is the one step in this guide that can break sites the DNS layer never
+touched.
+
+**Order matters, in one place.** Prove the listener, reject QUIC, add the skip
+and the dst-nat, verify. The QUIC reject goes first because a browser that
+already prefers HTTP/3 walks past a TCP-only steer: land the dst-nat first and
+the first verification reads as "nothing arrives", when what is happening is
+that everything left over UDP.
 
 ### Turn on the HTTPS engine
 
@@ -943,8 +963,22 @@ certificate, with a public issuer that is never `FastAdHunter CA`, and a
 ```
 
 For v6, `[find comment~"fastadhunter https v6"]`. HTTPS goes straight out again
-immediately. To disable the engine too, set `engine.mode` back to `dns+http`
-and restart; the image, the DNS path and §5b are untouched either way.
+immediately.
+
+**Then the QUIC rejects, which live in `filter` and not in `nat`:**
+
+```routeros
+/ip/firewall/filter/remove [find comment="fastadhunter: no QUIC, force TCP"]
+/ipv6/firewall/filter/remove [find comment="fastadhunter v6: no QUIC, force TCP"]
+```
+
+Forgetting these is the failure this rollback exists to prevent, and it is a
+quiet one. HTTPS works again over TCP, so nothing looks broken; HTTP/3 stays
+refused for the whole household with no fastadhunter rule left in NAT to
+explain why, and the next person to look at it blames the ISP or the browser.
+
+To disable the engine too, set `engine.mode` back to `dns+http` and restart;
+the image, the DNS path and §5b are untouched either way.
 
 ## 6. On-device verification checklist
 
