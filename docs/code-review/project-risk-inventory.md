@@ -1,4 +1,4 @@
-# Project risk inventory — surveyed on `main` at `baa2ecd`, 2026-09-11; F1, F2 and F10 closed the same day, F11, F3 and F6 on 2026-09-12 (§Closed); F13 opened 2026-09-13 on the Phase 3 merge; F14 opened and closed 2026-09-15, found by enumerating `BOOT_KEYS` against the keys with a live consumer
+# Project risk inventory — surveyed on `main` at `baa2ecd`, 2026-09-11; F1, F2 and F10 closed the same day, F11, F3 and F6 on 2026-09-12 (§Closed); F13 opened 2026-09-13 on the Phase 3 merge; F14 opened and closed 2026-09-15, found by enumerating `BOOT_KEYS` against the keys with a live consumer; F15 and F16 opened 2026-09-15 the same way, against `/telemetry` and its dashboard consumers and against the per-listener runtime dispositions
 
 **This is an inventory, not a backlog.** Nothing here is scheduled, and nothing
 here is a finding against a task. It records where the code on `main` is
@@ -114,6 +114,8 @@ judgement, unmeasured.
 | F9 | minor | verified, no action | `fah-dns/src/upstream/encrypted.rs:48-50` | The comment says the provider "owns the JoinSet the exchanges' background I/O tasks spawn into". Checked in `hickory-net` 0.26.1 (`src/runtime.rs:139-148`): `TokioRuntimeProvider(TokioHandle { join_set: Arc<Mutex<JoinSet<()>>> })`; `spawn_bg` spawns into the set and reaps finished tasks (`:221`); clones share the `Arc`, so the last clone dropping aborts the I/O tasks. The comment is accurate. The `std::sync::Mutex` inside `spawn_bg` is taken per connect, not per query. |
 | F12 | minor | note | `fastadhunter/src/main.rs:243,254` | The runtime is dropped at the end of `main` with no `shutdown_timeout`. Tokio 1.53 `Runtime::drop` waits for blocking-pool tasks that are running, so a stop that lands inside a `spawn_blocking` compile (`lifecycle/mod.rs:1268`) or validation parse (`:764`) waits for it to finish. Bounded by compile time; relevant only to "a container that will not stop cleanly" in item 3. |
 | F13 | minor | recommendation | `fah-dns/src/dot.rs:63,152`; `fah-dns/src/tcp.rs:138` | DoT reuses `handle_connection` but passes `None` for the gauge, deliberately: mixing it into `dns_tcp_connections` would corrupt the figure that sizes `[dns] tcp_max_connections`. The consequence is that DoT has no telemetry at all — no `active`, no `peak`, no oversize count — and its 64-connection cap is compiled in, so a saturated DoT listener is invisible on `/telemetry`. Not a defect; a `dns_dot_connections` block on the same shape would close it. Recorded 2026-09-13 on the Phase 3 merge; scoped to `phase3-06` merged into `main`, since DoT does not exist on `main` alone. |
+| F15 | minor | recommendation | `fah-api/src/telemetry.rs:121-131`; `fah-model/src/engine.rs:167-196`; `dashboard/frontend/src/api/types.ts:170-178` | **The whole `listeners` block of `/api/v1/telemetry` has no dashboard consumer.** `TelemetryResponse` serves `process`, the flattened engine (`ruleset`, `counters`, `latency`, `upstreams`), `listeners`, `cache` and `memory`; the dashboard's `interface Telemetry` models every one of those **except `listeners`**, and TypeScript's structural typing means an unmodelled block is silently ignored rather than a type error. `ListenerCounters` carries 17 fields, served for `http` and for `https`. Six reach the UI in aggregate through `engine.http`, which *is* modelled and which API.md:197-199 describes as the sum of the per-listener figures. The other eleven have **no route into the interface at all**: `connections`, `requests`, `blocked`, `resolve_failures`, `upstream_failures`, `upstream_cert_failures`, `client_cert_rejections`, the three TLS alert counters, `handshakes_completed`, `non_http`, `non_tls`, `hello_timeouts`, `dropped_events`. Those are the instruments for reading the Phase 3 HTTPS lane — why a handshake closed, whether a client is refusing the CA, whether the ClientHello deadline fired — and today they are reachable only by `curl`. **What keeps it minor:** `listeners.http` and `listeners.https` are `Option` and are `null` under the shipped `mode = "dns"`, so the block is empty in production today; the same structural argument the post-merge audit's S3 row makes about `concurrent_connections`. It stops being empty the moment the mode flips, which is what Phase 3 is for. Same class as **N2** ([post-merge-audit-2026-09-15.md](phase3/post-merge-audit-2026-09-15.md)), an order of magnitude larger: N2 is three DNS gauges, this is a block of 34 leaves. Found 2026-09-15 by enumerating the `/telemetry` field set against `dashboard/frontend/src`; the rest of that sweep is clean (§Checked and clean). **This one the merge created, unlike every other finding of that sweep.** At `bc49e4e`, the pre-merge tip of `main`, `TelemetryResponse` had no `listeners` field — the block arrived with `44f3c83` (p3-06, 2026-09-02), which is an ancestor of neither `bc49e4e` nor `d307c36`, the commit the deployed 0.3.4 image is built from. `interface Telemetry` is byte-identical at `bc49e4e` and today, so on 0.3.4 the two sides were in balance: seven blocks served, seven modelled. N2 is the opposite case — `dns_tcp_connections`, `dns_udp_inflight` and `tasks_died` were already in `EngineCounters` at `bc49e4e`, so that gap predates the merge as N1, R1's HTTP half and F14 all do. The merge opened this one by adding an eighth top-level block to a family nothing enumerates, and TypeScript's structural typing meant an unmodelled block produced no signal anywhere. **Not a defect — nothing is wrong, one consumer is absent.** The API serves the block correctly and the dashboard does not fail on it; an unmodelled JSON field is silently ignored, which is also why adding the block produced no signal. **Disposition undecided by the owner (2026-09-15): whether the dashboard consumes `listeners` at all, and what of it, is an open product question, not a pending task.** |
+| F16 | minor | recommendation | `fastadhunter/src/main.rs:846-882`; `fastadhunter/src/adapters.rs:279,301-308`; `fah-api/src/routes.rs:152-162`; `fah-metrics/src/registry.rs:255` | **A dead acceptor leaves no queryable trace of which one died.** `reap_dead_tasks` collects the finished HTTP, HTTPS and API acceptor handles, writes one `tracing::error!` carrying `task = "HTTP acceptor"`, and increments `counters.tasks_died`. The log line is the only place the *identity* exists; `tasks_died` is a bare count. Once that line has scrolled, every queryable surface still reports the lane as healthy: `GET /config` still answers `mode = "dns+http"`, `GET /health` still answers `ok` (`degraded()` is strictly about upstreams), and `/telemetry`'s `listeners.http` is still an object, because `adapters.rs:301-308` builds it from the boot-time presence of `ProxyCounters` rather than from liveness — so its counters persist, frozen. The HTTP lane is down and nothing a client can ask says so. **Not a defect — this is F11's design working as decided** (§Closed: report-only supervisor, no restart, no exit, `/health` unchanged). F11 settled whether to *restart* a dead task; it never took a position on whether the identity should be *queryable*, which is the question this row opens rather than reopening that one. **What keeps it minor:** an acceptor only dies from a bug, and none has been observed — `acceptor_death.rs` has to inject one through the `test-harness` kill sentinel to produce the case. Smallest fix direction, if it is ever wanted: the name of the most recent death beside `tasks_died`, which costs one field and no new mechanism. Found 2026-09-15, incidentally, by the per-listener disposition sweep — that sweep's own question came back clean (§Checked and clean); this fell out beside it. |
 
 ## Closed
 
@@ -263,6 +265,43 @@ below. Kept here so the next pass knows what was verified and against what.
 
 Recorded so the next pass can skip them.
 
+- **Per-listener runtime dispositions, 2026-09-15.** The question is narrower
+  than "does every listener have one": a runtime disposition earns its keep only
+  where the actual state **can differ from what the config says**. Of the four
+  optional serving surfaces, exactly one can: **DoT**, because `dot_enabled =
+  true` still ends closed if the API certificate pair it falls back on fails to
+  load (`main.rs:605-623`) — and that is the one that has `DotListener::Closed
+  { reason }`, four cases, on `GET /api/v1/certificates`. The other three are
+  derivable from config alone. **DoH** is served iff `doh_enabled && api.tls`,
+  both returned by `GET /api/v1/config`, and no failure path closes it quietly:
+  with `api.tls = true` and a broken certificate, `main.rs:536` returns `Err`
+  and the process exits rather than serving without DoH. **HTTP** and **HTTPS**
+  bind iff `engine.mode` says so, and a bind failure exits. DNS UDP/TCP and the
+  API always bind. This **refines SP8** without contradicting it
+  ([post-merge-audit-2026-09-15.md](phase3/post-merge-audit-2026-09-15.md)):
+  DoH's state is not hidden, it is two config reads away, which is a better
+  argument for leaving the boot warning as the only signal than the row itself
+  made. The one state that is genuinely unqueryable is **F16**, and it is about
+  a task dying, not a listener being configured off.
+
+- **Schema → CONFIGURATION.md, 2026-09-15.** The direction the `Env:` walk does
+  not cover: a field that exists in `crates/fah-config/src/schema/**` and has no
+  line in the document. **25 structs, 55 leaf keys, all 55 documented**,
+  including the array-of-tables ones (`[[dns.upstreams.servers]]`,
+  `[[rules.lists]]`, `[[policies]]`, `[[policies.assignments]]`). The
+  enumeration itself was checked for completeness: no private fields and no
+  `serde(skip)` in `schema/`, so nothing hides from the field list. Four keys
+  are absent from the *active* TOML block and documented as comments beside it
+  rather than missing — `servers[].hostname` (`:216`), `lists[].refresh_hours`
+  (`:383`), the whole `[[policies]]` shape (`:400-421`), and
+  `https.interception` (`:335`). One wording note, no action: `:335` says
+  `[https.interception]` "NO LONGER EXISTS", and the schema both keeps it and
+  must — `interception_store.rs:84` reads it to detect a migration, and
+  `deny_unknown_fields` would stop an old TOML from booting if the field were
+  deleted. Writing the section today is migrated or warned about, not rejected;
+  the sentence is true about where the values live, not about what the parser
+  accepts.
+
 - Per-query path allocates: datagram `to_vec`, task, hickory parse, `domain_of`
   `String` (`qtype.rs:24`), `CacheKey` `Box<str>` (`cache.rs:81`), response
   `Vec<u8>`; the matcher walk (`matcher.rs:900`) allocates nothing;
@@ -329,12 +368,18 @@ Recorded so the next pass can skip them.
 - The sweep that found F14 checked one family end to end and the rest of it is
   **clean**: every field of all thirteen `Config` sections is either in
   `BOOT_KEYS` or claimed runtime, and three of the four claimed-runtime keys
-  (`rules.lists`, `policies`, `schedule.timezone`) do have a live consumer. Four
-  neighbouring families are **not** enumerated by anything and are where the next
-  one of these would be: schema fields against CONFIGURATION.md in the
-  schema → doc direction (only doc → schema has been checked), `/telemetry`
-  fields against dashboard consumers, and per-listener runtime dispositions
-  (DoT has `DotListener::Closed`, DoH has nothing).
+  (`rules.lists`, `policies`, `schedule.timezone`) do have a live consumer.
+  **All four neighbouring families have now been counted**, 2026-09-15, and the
+  sweep is finished: `BOOT_KEYS` against the keys with a live consumer, which
+  produced **F14**; schema → CONFIGURATION.md, **clean**; `/telemetry` against
+  dashboard consumers, which produced **F15** — N2 was *not* the only instance
+  there, and the one nobody had named is thirty-four leaves rather than three;
+  and per-listener runtime dispositions, **clean**, though **F16** fell out
+  beside it. Both clean results are in §Checked and clean with their numbers, so
+  a later pass can skip them rather than re-deriving them. Whoever opens the
+  next family: the method is to write down both sides of a set and compare the
+  counts, and every finding of this sweep was an absent member that no diff
+  could have shown.
 - Outside this file, needing an owner go: [CLAUDE.md](../../../CLAUDE.md)
   §Layout lists root `tests/` and `benches/` — both are `.gitkeep`-only;
   every test and bench lives under `crates/*/`.
