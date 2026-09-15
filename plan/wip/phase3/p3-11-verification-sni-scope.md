@@ -138,6 +138,50 @@ before the interception branch at `:183`, so the two modes share it; crate-level
 coverage is `sni.rs:301`. What is missing is evidence in the configuration that
 runs, not confidence in the behaviour.
 
+## What closing the three `no` rows would take
+
+Read 2026-09-15 at `bed4a0b`. None of it needs a new harness:
+`common/mod.rs`'s `boot_full(FullMode { clients: vec![], .. })` boots the
+shipped configuration — `boot_full_in` writes that list straight into
+`interception.json` — and `shipped_path_e2e.rs` is already that pattern,
+importing every helper it uses rather than declaring its own. New arms go there.
+
+**The one part that is not a line number.** There is no HTTPS session or permit
+observable in telemetry. `ListenerCounters` counts outcomes, not occupancy, and
+the `active` / `peak` gauges exist for DNS TCP, DoT and UDP alone
+(`fah-model/src/engine.rs:98-112`). Rows 2 and 3 therefore cannot be asserted
+from `/api/v1/telemetry` at all; they are proved the way the crate tests prove
+them, behaviourally, through `https.max_connections` and `https.idle_timeout_ms`
+(`fah-config/src/lib.rs:172`, `:185`).
+
+**No-SNI hello, non-TLS bytes, hello timeout.** Crate level:
+`a_hello_without_sni_is_classified_by_config`,
+`garbage_on_the_https_port_is_closed_and_counted` and
+`a_preconnect_closed_unused_is_a_hello_timeout_not_garbage`
+(`fah-http/tests/sni.rs:611`, `:459`, `:489`). Two of the three already run at
+binary level inside `full_mode_blocks_at_every_layer` — the no-SNI probe at
+`e2e_https.rs:110`, the non-TLS bytes at `:275` with `non_tls` asserted per
+listener at `:290` — so what is missing is the empty client list, not the
+mechanism. `client_hello_without_sni()` is already in `common` (`:1083`);
+`raw_probe` is not, it is local at `e2e_https.rs:539`. The hello timeout has no
+binary coverage in either configuration; its counter is `hello_timeouts`
+(`engine.rs:188`). Cheapest of the three.
+
+**Idle spliced session closed, permit returned.** Crate level: `sni.rs:518`,
+which does not inspect the semaphore — it sets `max_connections: 1` and a 400 ms
+idle, then requires a second connection to get through. A binary test repeats
+that shape, and its cost is the only harness change in the batch:
+`full_mode_config` hardcodes `idle_timeout_ms = 10000` and never writes
+`max_connections`, so both have to become `FullMode` fields — a struct every
+binary test shares.
+
+**HTTPS lane saturation leaves the HTTP lane bounded.** Crate level:
+`sni.rs:772`. Needs the same `max_connections` knob, concurrent connections, and
+a check that the HTTP lane still answers. Heaviest of the three and the most
+timing-dependent: on a loaded dev box this is the shape that produces flakes
+(project-state.md §Open, honestly carries the DoT accept precedent). Whether it
+earns a binary-level arm is a decision separate from the other two.
+
 ## Acceptance criteria
 
 - Every budget row listed above is bench-backed on dev hardware and then
@@ -180,3 +224,17 @@ The reason is that a soak cannot be repaired afterwards. The traffic is gone.
 Both are cheap and neither depends on the device. If either slips, the soak
 waits — restarting a seven-day run costs a week, and starting it blind costs the
 same week plus a wrong default.
+
+One further question belongs to the same moment: whether the soak needs an
+HTTPS session gauge — `active` / `peak` for spliced sessions and their permits,
+which telemetry does not carry today (§What closing the three `no` rows would
+take).
+
+**Decided 2026-09-15: no.** No pending decision depends on the figure, which is
+what separates it from `dns.tcp_max_connections` and p3-10b; a permit leak
+surfaces as refused connections rather than as a missing number; and
+accumulation would show in the RSS the soak already reads.
+
+**Re-asked once before the soak starts.** The answer above is dated because it
+is this soak's answer, not a standing one, and a gauge that turns out to be
+wanted during the week cannot be added during the week.
