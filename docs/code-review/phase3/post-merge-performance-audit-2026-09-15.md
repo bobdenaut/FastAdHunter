@@ -75,6 +75,27 @@ end. Smallest fix: promote `RetryPolicy` (`fah-dns/src/backoff.rs:13`, currently
 `fah-http` importing `fah-dns`, so copying the policy is not an option and the
 L1 move is the only non-duplicating fix.
 
+The seam the test needs also already exists: `tcp.rs:60` defines
+`trait Accept`, with the `set_nodelay` call and its `debug!` inside the
+`TcpListener` impl, and `tcp::run` is generic over it. `server.rs:181` takes a
+concrete `TcpListener` instead, so it cannot be handed a listener that fails on
+demand. Moving `Accept` to `fah-common` alongside `RetryPolicy` lets
+`accept_loop` reuse both and adds no new abstraction; defining a second
+identical trait inside `fah-http` would work but duplicates it.
+
+**Drop the permit before the sleep.** `server.rs:188` acquires the admission
+permit before `accept`, so a backoff added naively would sleep holding one —
+one fewer slot for the connections still being served. The error path has to
+release it and re-acquire after the sleep. Supervision needs nothing new:
+`Server::take_finished_acceptor` already hands the binary the loop's handle once
+it returns, so a `Fatal` exit is already observable.
+
+Acceptance: the admission permit is released before any backoff, and the test
+asserts that invariant directly — `max_connections = 1`, a controlled clock, an
+`accept` that fails persistently, and `Semaphore::available_permits() == 1`
+while the acceptor sleeps. That is a stable value to assert, unlike a count of
+attempts per wall-clock interval.
+
 Severity: medium. No memory growth; CPU starvation of the DNS listeners on the
 same runtime is the real cost.
 
@@ -100,11 +121,72 @@ leaf minting gives one line per connection. `tcp.rs:129` is already classified �
 and what is left is per connection. `response.rs:165` has unproven reachability;
 the absence of a limit is not in question either way.
 
-**The shared fix is the throttle, not the classification.** A counter plus
-"log the first occurrence and every Nth, with the total in the fields" belongs
-in `fah-common` (L1, reachable from both `fah-dns` and `fah-http`) — engineering
-principle 4. Four hand-rolled counters would be the same logic copied four
+**The shared fix is the throttle, not the classification.** It belongs in
+`fah-common` (L1, reachable from both `fah-dns` and `fah-http`) — engineering
+principle 4; four hand-rolled counters would be the same logic copied four
 times.
+
+**Throttle on time, not on a count.** "Every Nth occurrence" keeps the log rate
+proportional to the failure rate: at 10 kqps and N = 1024, `udp.rs:176` still
+writes ~10 lines a second, which is the flood this finding is about. The rate
+has to be independent of traffic. Shape:
+
+```rust
+pub struct LogThrottle {
+    origin: Instant,
+    last_millis: AtomicU64,
+    total: AtomicU64,
+    interval: Duration,
+}
+
+impl LogThrottle {
+    pub fn new(interval: Duration) -> Self;
+    pub fn note(&self, now: Instant) -> Option<u64>;
+}
+```
+
+`note` increments `total`, then attempts a `compare_exchange` on `last_millis`;
+the one thread that wins emits, and the line carries the cumulative total. The
+counter is never reset, which removes cross-window attribution and the
+off-by-one over whether the emitting event counts itself. A reader who wants a
+rate subtracts two lines.
+
+The contract, which has to be settled before the code is written:
+
+| Question | Answer |
+| -------- | ------ |
+| what the number means | cumulative events since process start, **best-effort telemetry** — a line is monotonic, but it is not a perfect snapshot of every concurrent event that landed just before it. Not an audit count |
+| does the line include its own event | yes: the emitting thread logs the value its own `fetch_add` returned, not a fresh `load` |
+| time origin | `origin: Instant` captured in `new()`; `note(now)` converts `now` to millis since it. This costs the `const fn` — `Instant::now()` is not const |
+| "never logged" | sentinel `last_millis == 0`, so the stored value is `elapsed_millis + 1` and real time zero is 1 |
+| why not `Mutex<Option<Instant>>` | simpler to reason about, but it puts a lock on an error path a remote can drive — contention exactly when things are failing |
+
+The clock arrives as a parameter, which keeps `note` pure: the test feeds it
+fabricated instants and needs neither a paused runtime nor a subscriber that
+captures lines. Cost: two atomics and an `Instant` per instance, no allocation,
+no lock, and nothing on the success path — the counter only moves on an error.
+
+**Ownership decides whether the throttle works at all.** A per-connection
+instance is not a throttle: a client that opens many connections gets one line
+each and the interval means nothing. Every instance must be reachable through an
+`Arc` owned by listener-scoped or process-scoped state, and nothing held
+by-value in a `Clone` type — `DotTls` (`dot.rs:30-34`) is `Clone` and is cloned
+once per connection, so a throttle field there would be exactly the defect.
+
+| Site | Owner | Scope |
+| ---- | ----- | ----- |
+| `udp.rs:176` | `UdpInflightGauge` (`udp.rs:20-25`) | one per listener; it already holds `shed`, a counter of the same kind |
+| `response.rs:165` | `Pipeline` | one per process — `udp::run`, `tcp::run` and `dot::run` all take the same `Arc<Pipeline<F>>` |
+| `dot.rs:194` | the DoT connection gauge | one per listener |
+| `tcp.rs:129` | the TCP connection gauge | one per listener, already in scope where `report_connection_end` is called |
+
+`DotConnectionGauge` is an alias of `TcpConnectionGauge` (`dot.rs:24`,
+`tcp.rs:27`), so one field on that struct serves both sites — with separate
+instances, one per listener. A client using both transports therefore earns two
+lines per interval rather than one. Deliberate: the gauges are per listener, and
+merging them would couple the two listeners for nothing.
+
+No `static` anywhere — hard rule 10 forbids the hidden state.
 
 **Classification stays per site**, because the error kinds differ:
 
@@ -115,8 +197,12 @@ times.
   `NetworkUnreachable` and `PermissionDenied` (a firewall reject); those belong
   at `debug!`. `MessageSize` stays at `warn!` — that one is our own truncation
   bug. All four `ErrorKind`s are stable on MSRV 1.96.
-- `response.rs:165` — an encode failure is always ours; no demotion, throttle
-  only.
+- `response.rs:165` — an encode failure is always ours, so nothing is demoted.
+  This site needs the log moved, not throttled in place: `encode` is a free
+  function in a pure-logic module, so giving it a throttle means either a
+  `static` or a parameter that couples the module to logging. Return the
+  fallback to the caller and let `Pipeline` log it — engineering principle 6,
+  the library holds the logic and the caller owns the effects.
 - `dot.rs:194` — a `JoinError` is either a panic or a cancellation; the panic
   case is ours and stays at `warn!`.
 - `tcp.rs:129` — classification already correct; throttle only.
@@ -425,7 +511,7 @@ None. Read-only audit.
 | Finding | Action | Severity | Owner decision |
 | ------- | ------ | -------- | -------------- |
 | A1 | move `RetryPolicy` to `fah-common`, use it in `server.rs accept_loop` | medium | open |
-| A2 | one throttle helper in `fah-common`, then wire the four sites; classify the UDP send error at `udp.rs:176` — `ConnectionRefused`, `HostUnreachable`, `NetworkUnreachable`, `PermissionDenied` → `debug!` | medium | open |
+| A2 | one time-based throttle in `fah-common`, then wire three sites and move the `response.rs:165` log to `Pipeline`; classify the UDP send error at `udp.rs:176` — `ConnectionRefused`, `HostUnreachable`, `NetworkUnreachable`, `PermissionDenied` → `debug!` | medium | open |
 | A3 | hold; the offset encode is invalid, and the three valid fixes each need a measurement first | low | open |
 | A4 | report observed / ceiling / headroom whenever an oracle is cited | low | open |
 | A5 | write the shard-lock exception into hard rule 3 | low | open |
