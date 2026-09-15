@@ -228,11 +228,12 @@ No `static` anywhere — hard rule 10 forbids the hidden state.
 
 - `udp.rs:176` — `is_client_disconnect` does **not** transfer here. It matches
   `BrokenPipe`, `ConnectionReset`, `ConnectionAborted` and `UnexpectedEof`,
-  which are stream errors UDP does not produce. `send_to` returns
-  `ConnectionRefused` (ICMP port unreachable), `HostUnreachable`,
-  `NetworkUnreachable` and `PermissionDenied` (a firewall reject); those belong
-  at `debug!`. `MessageSize` stays at `warn!` — that one is our own truncation
-  bug. All four `ErrorKind`s are stable on MSRV 1.96.
+  which are stream errors UDP does not produce. The kinds that belong at
+  `debug!` are `HostUnreachable`, `NetworkUnreachable` and `PermissionDenied`;
+  everything else keeps its `warn!`, because a reply that will not leave the
+  host is our own bug. This list was measured rather than reasoned about — see
+  §UDP send errno probe, which removed a fourth kind and corrected one claim
+  made here.
 - `response.rs:165` — an encode failure is always ours, so nothing is demoted.
   This site needs the log moved, not throttled in place: `encode` is a free
   function in a pure-logic module, so giving it a throttle means either a
@@ -634,6 +635,79 @@ A1's test is falsifiable and was shown to fail both ways before being reverted:
 Memory delta: three `LogThrottle` instances of 32 bytes each, process-lifetime,
 plus one on the accept loop's frame per listener. Far below the <1 MB threshold.
 
+### UDP send errno probe — 2026-09-15
+
+A2's classification listed four `ErrorKind`s chosen by reasoning about POSIX
+errno, and its test asserted that reasoning back to itself without touching a
+socket. `crates/fah-dns/examples/udp_send_errno.rs` measures it instead: it
+drives `send_to` on an **unconnected** `UdpSocket`, the kind `udp::run` binds,
+and prints the raw errno beside the `ErrorKind`.
+
+Run on Linux 6.18 under WSL2, x86_64, static musl, cross-linked from the dev box
+with `rust-lld`:
+
+| Case | Result |
+| ---- | ------ |
+| unconnected, closed port, 1st / 2nd / 3rd send | `Ok(64)` every time |
+| **connected**, closed port, 2nd send | errno 111 → `ConnectionRefused` |
+| unconnected, broadcast without `SO_BROADCAST` | errno 13 → `PermissionDenied` |
+| unconnected, 70 000-byte payload | errno 90 → `Uncategorized` |
+| unconnected, IPv6 `2001:db8::1` with no route | errno 101 → `NetworkUnreachable` |
+| unconnected, `0.0.0.0:53` and `240.0.0.1:53` | `Ok(64)` |
+
+Every row is consistent with one reading, offered as the explanation of these
+observations rather than as a law: errors the local kernel decides synchronously
+surface on `send_to`, while errors delivered later by ICMP do not unless the
+socket is connected. Routing and permission failures are the former,
+port-unreachable is the latter.
+
+Two corrections followed, both shipped:
+
+- **`ConnectionRefused` is removed from the classifier.** It **was not produced
+  by the unconnected `send_to` path FAH uses, under the tested Linux
+  environment**; the probe showed it only for a connected UDP socket. Three
+  sends to a closed port returned `Ok`, and only the connected socket saw errno
+  111. `udp::run` never connects, so the branch had nothing to catch here.
+  Engineering principle 14 — a branch no observation can reach is deleted, not
+  kept for safety. The test that replaces it is named for the reason, since the
+  code cannot carry one:
+  `a_refused_port_is_not_classified_because_this_socket_is_never_connected`.
+- **This document claimed `MessageSize` stays at `warn!`.** EMSGSIZE maps to
+  `Uncategorized`, not to any named kind. The behaviour was right by accident —
+  an unnamed kind is not in the demotion list, so it keeps its warning — but the
+  claim named a variant the probe does not produce.
+
+`HostUnreachable` was **not observed** and is kept on plausibility: no case here
+produced errno 113. It stays classified because the mechanism that yields
+`NetworkUnreachable` is the same route-lookup failure, and neither can be an
+ICMP artefact. Treat it as unconfirmed rather than measured.
+
+Scope of the result: measured on one host, one kernel and one architecture. The
+errno → `ErrorKind` mapping is Rust's own `decode_error_kind`, which has no
+architecture-specific step, and which errno the kernel picks is kernel logic
+rather than architecture — so the same mapping is **expected** on aarch64/musl,
+expected and not measured. The routing rows depend on this host's routing table
+and should not be carried anywhere. The example is checked in so the container
+can settle the ARM case on its own hardware whenever a probe runs there, which
+is the only place that answer exists.
+
+### Wiring test for the UDP send path
+
+The classification and the throttle were each tested in isolation, and nothing
+proved `handle_datagram` called them in the right order — an inverted condition
+would have passed both. `Datagrams` is already a trait, so a stub whose
+`send_to` returns a chosen kind now drives the real call site, and the
+assertion reads `UdpInflightGauge`'s throttle count rather than captured log
+output: unchanged for a demoted kind, incremented for a fault of ours.
+
+Falsified by inverting the branch in `handle_datagram`, then reverted. The two
+tests failed in opposite directions — `left: 1, right: 0` and `left: 0,
+right: 1` — which is what distinguishes a wiring test from a restatement of the
+code.
+
+Gate after both changes: `cargo test --all-features --workspace` **1 651
+passed / 0 failed**, up from 1 648.
+
 ### Self-check
 
 | Check | Result |
@@ -663,6 +737,13 @@ The audit itself changed nothing. A1 and A2 then did:
 | `fah-dns/src/pipeline.rs` | `encode_failures` throttle and `Pipeline::encoded`, wired into the three encode sites |
 | `fah-http/src/server.rs` | local `trait Accept`, `accept_loop` generic over it, never-fatal backoff, permit released before the sleep, throttled `warn`, and the falsifiable test |
 | `fah-http/Cargo.toml` | tokio `test-util` in dev-dependencies, for the controlled clock |
+
+A2's follow-ups then changed two more:
+
+| File | Change |
+| ---- | ------ |
+| `fah-dns/examples/udp_send_errno.rs` | new — the errno probe, std only, runnable wherever the container runs |
+| `fah-dns/src/udp.rs` | `ConnectionRefused` dropped from `is_client_unreachable`, one test renamed to carry the reason, and the `Datagrams` wiring test added |
 
 A6 then changed one more, with no behaviour:
 

@@ -194,12 +194,10 @@ async fn handle_datagram<S: Datagrams, F: Forwarder>(
 }
 
 fn is_client_unreachable(err: &io::Error) -> bool {
-    use std::io::ErrorKind::{
-        ConnectionRefused, HostUnreachable, NetworkUnreachable, PermissionDenied,
-    };
+    use std::io::ErrorKind::{HostUnreachable, NetworkUnreachable, PermissionDenied};
     matches!(
         err.kind(),
-        ConnectionRefused | HostUnreachable | NetworkUnreachable | PermissionDenied
+        HostUnreachable | NetworkUnreachable | PermissionDenied
     )
 }
 
@@ -245,9 +243,18 @@ mod tests {
     }
 
     #[test]
+    fn a_refused_port_is_not_classified_because_this_socket_is_never_connected() {
+        assert!(
+            !is_client_unreachable(&io::Error::from(io::ErrorKind::ConnectionRefused)),
+            "not produced by the unconnected send_to this listener uses, in the \
+             environment measured by crates/fah-dns/examples/udp_send_errno.rs; \
+             the probe saw errno 111 only on a connected socket"
+        );
+    }
+
+    #[test]
     fn a_network_that_cannot_take_the_reply_is_not_our_fault() {
         for kind in [
-            io::ErrorKind::ConnectionRefused,
             io::ErrorKind::HostUnreachable,
             io::ErrorKind::NetworkUnreachable,
             io::ErrorKind::PermissionDenied,
@@ -271,6 +278,68 @@ mod tests {
             assert!(
                 !is_client_unreachable(&io::Error::from(kind)),
                 "{kind:?} must keep its warning: the stream kinds never reach a datagram send"
+            );
+        }
+    }
+
+    struct RefusingSocket {
+        kind: io::ErrorKind,
+    }
+
+    impl Datagrams for RefusingSocket {
+        async fn recv_from(&self, _buf: &mut [u8]) -> io::Result<(usize, SocketAddr)> {
+            Err(io::Error::other("this socket exercises the send path only"))
+        }
+
+        async fn send_to(&self, _reply: &[u8], _client: SocketAddr) -> io::Result<usize> {
+            Err(io::Error::from(self.kind))
+        }
+    }
+
+    async fn send_failures_after(kind: io::ErrorKind) -> u64 {
+        let (pipeline, _data_dir) = testkit::pipeline();
+        let gauge = Arc::new(UdpInflightGauge::new(0));
+        let listener = Listener {
+            socket: RefusingSocket { kind },
+            gauge: Arc::clone(&gauge),
+        };
+        handle_datagram(
+            &listener,
+            &pipeline,
+            &query("wiring.example."),
+            SocketAddr::from((Ipv4Addr::LOCALHOST, 5353)),
+        )
+        .await;
+        gauge.send_failures.total()
+    }
+
+    #[tokio::test]
+    async fn an_undeliverable_reply_never_spends_the_warn_budget() {
+        for kind in [
+            io::ErrorKind::HostUnreachable,
+            io::ErrorKind::NetworkUnreachable,
+            io::ErrorKind::PermissionDenied,
+        ] {
+            assert_eq!(
+                send_failures_after(kind).await,
+                0,
+                "{kind:?} is the client's own network and must not reach the throttle"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn a_send_fault_of_our_own_reaches_the_throttle() {
+        for kind in [
+            io::ErrorKind::InvalidInput,
+            io::ErrorKind::Other,
+            io::ErrorKind::BrokenPipe,
+            io::ErrorKind::ConnectionRefused,
+        ] {
+            assert_eq!(
+                send_failures_after(kind).await,
+                1,
+                "{kind:?} is ours and must be counted and logged"
             );
         }
     }
