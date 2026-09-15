@@ -2,7 +2,7 @@
 
 Replaces the first pass of the same date (commit `2b03a30`), whose lock, panic
 and oracle figures were wrong; the corrected counts are below and the reason the
-first pass undercounted is A10.
+first pass undercounted is A7.
 
 ## Summary
 
@@ -14,10 +14,10 @@ first pass undercounted is A10.
   **N/A — SNAPSHOT** and are not reported as zeros.
 - Scope is the four hot-path entry points plus their one-level callees, 13
   files. Every count is production-only; the `#[cfg(test)]` tail is excluded.
-- Ten findings, none blocking. Two medium: an accept loop with no backoff (A1)
-  and a `warn!` per UDP datagram (A2). Three more unrated `warn!` paths (A3–A5),
-  one per-reply realloc (A6), two method findings (A7, A10) and two
-  documentation findings (A8, A9).
+- Seven findings, none blocking. Two medium: an accept loop with no backoff
+  (A1), and four unrated `warn!` paths that are one defect in four places and
+  share one fix (A2). Then one per-reply realloc (A3), two method findings
+  (A4, A7) and two documentation findings (A5, A6).
 - All five oracles pass. Observed counts are reported with their ceilings and
   headroom: 8 of 12 ceiling checks clear by exactly the 4-allocation jitter
   allowance, so the ceilings equal today's measurements.
@@ -30,14 +30,14 @@ first pass undercounted is A10.
   review registry already uses them for whole files
   (`phase2.6/f2-udp-inflight.md`, `phase2.6/f3-name-alloc-attribution.md`,
   `phase3/f7-flapping-oracle-redesign.md`), so the first pass's local F1–F4
-  collided with them. F1 is A2 here, F2 is A8, F3 is A6, F4 is A9.
+  collided with them. F1 is A2 here, F2 is A5, F3 is A3, F4 is A6.
 - `server.rs:181 accept_loop` is in scope even though the entry-point list names
   `tls_server.rs`: that file only spawns it. Both the HTTP and the HTTPS
   listeners run this one loop, and no earlier audit covered it.
 - Correct as written, not findings: the shard-selected `std::sync::Mutex` in
   `cache.rs` (documented exception to hard rule 3 —
   [ARCHITECTURE.md](../../../ARCHITECTURE.md) §Runtime Model and the `cache.rs`
-  header; A8 asks for the rule text, not a code change); `tokio::sync::Mutex` at
+  header; A5 asks for the rule text, not a code change); `tokio::sync::Mutex` at
   `intercept.rs:486` and `swr.rs:173`, both scoping the guard so the `.await`
   that matters runs outside it; `judge` building `ModelRequest` unconditionally,
   since `events` is `Some` on every production wiring path (`main.rs:588`,
@@ -78,82 +78,54 @@ L1 move is the only non-duplicating fix.
 Severity: medium. No memory growth; CPU starvation of the DNS listeners on the
 same runtime is the real cost.
 
-### A2 — `warn!` per datagram on UDP reply failure, no rate limit
+### A2 — four `warn!` paths a client can drive, none rate-limited
 
-`crates/fah-dns/src/udp.rs:176`
+One defect in four places. The listeners that *do* limit their log volume set
+the contrast: the `recv`/`accept` paths run `RetryPolicy` (`udp.rs:141`,
+`tcp.rs:96`, `dot.rs:81`) and the cleanup sweep is bounded by its interval
+(`pipeline.rs:223`). The RouterOS log buffer is small — `pipeline.rs:236`
+already reasons about exactly this cost.
 
-```rust
-        warn!(error = %err, client = %client, "failed to send UDP DNS reply");
-```
+| Site | Evidence | Rate |
+| ---- | -------- | ---- |
+| `udp.rs:176` | `warn!(error = %err, client = %client, "failed to send UDP DNS reply")` | one line per datagram |
+| `response.rs:165` | `warn!(error = %err, "failed to encode DNS response; falling back to SERVFAIL")` | one line per query, every transport |
+| `dot.rs:194` | `warn!(host = %logged, error = %err, "DoT leaf pre-warm task failed")` | one line per DoT connection |
+| `tcp.rs:129` | `warn!(error = %err, client = %client, "{what} connection ended with an error")` | one line per connection |
 
-The `recv` path in the same file is backoff-limited by `RetryPolicy`
-(`udp.rs:141`), and TCP routes client disconnects to `debug!` (`tcp.rs:127`).
-This path does neither: a client network that stops accepting replies produces
-one `warn` line per query. The RouterOS log buffer is small — `pipeline.rs:236`
-already reasons about exactly this cost for the cleanup sweep.
+Reachability differs. `udp.rs:176` needs only a client network that stops
+accepting replies. `dot.rs:194` fires on `JoinError`, so a repeatable panic in
+leaf minting gives one line per connection. `tcp.rs:129` is already classified —
+`is_client_disconnect` (`tcp.rs:136`) sends the ordinary hang-ups to `debug!` —
+and what is left is per connection. `response.rs:165` has unproven reachability;
+the absence of a limit is not in question either way.
 
-Fix: classify, then throttle. `is_client_disconnect` (`tcp.rs:136`) does **not**
-transfer — it matches `BrokenPipe`, `ConnectionReset`, `ConnectionAborted` and
-`UnexpectedEof`, which are stream errors that UDP does not produce. `send_to`
-returns `ConnectionRefused` (ICMP port unreachable), `HostUnreachable`,
-`NetworkUnreachable` and `PermissionDenied` (a firewall reject); those belong at
-`debug!`. `MessageSize` must stay at `warn!` — that one is our own truncation
-bug. Add a private counter to `UdpInflightGauge` (`udp.rs:20-25`) and log the
-surviving `warn` on the first occurrence and every 1024th, with the total in the
-fields. All four `ErrorKind`s are stable on MSRV 1.96.
+**The shared fix is the throttle, not the classification.** A counter plus
+"log the first occurrence and every Nth, with the total in the fields" belongs
+in `fah-common` (L1, reachable from both `fah-dns` and `fah-http`) — engineering
+principle 4. Four hand-rolled counters would be the same logic copied four
+times.
 
-Severity: medium. An unauthenticated remote can sustain it; no memory growth,
-log history loss only.
+**Classification stays per site**, because the error kinds differ:
 
-### A3 — `warn!` per query on encode failure, no rate limit
+- `udp.rs:176` — `is_client_disconnect` does **not** transfer here. It matches
+  `BrokenPipe`, `ConnectionReset`, `ConnectionAborted` and `UnexpectedEof`,
+  which are stream errors UDP does not produce. `send_to` returns
+  `ConnectionRefused` (ICMP port unreachable), `HostUnreachable`,
+  `NetworkUnreachable` and `PermissionDenied` (a firewall reject); those belong
+  at `debug!`. `MessageSize` stays at `warn!` — that one is our own truncation
+  bug. All four `ErrorKind`s are stable on MSRV 1.96.
+- `response.rs:165` — an encode failure is always ours; no demotion, throttle
+  only.
+- `dot.rs:194` — a `JoinError` is either a panic or a cancellation; the panic
+  case is ours and stays at `warn!`.
+- `tcp.rs:129` — classification already correct; throttle only.
 
-`crates/fah-dns/src/response.rs:165`
+Severity: medium, carried by `udp.rs:176`, which an unauthenticated remote can
+sustain. The other three are low on their own. No memory growth anywhere; log
+history loss only.
 
-```rust
-        warn!(error = %err, "failed to encode DNS response; falling back to SERVFAIL");
-```
-
-On the reply path of every transport. The file header argues the fallback cannot
-itself fail, but says nothing about volume: if the condition is ever reachable —
-an upstream answer or synthesized name that will not encode — it is one `warn`
-per query, the same shape as A2 and on a hotter path. Reachability is unproven;
-the absence of a rate limit is not.
-
-Fix: the A2 shape — a counter, and log on the first occurrence and every Nth.
-
-Severity: low-medium. Log history loss only.
-
-### A4 — `warn!` per DoT connection when the pre-warm task fails
-
-`crates/fah-dns/src/dot.rs:194`
-
-```rust
-        Err(err) => warn!(host = %logged, error = %err, "DoT leaf pre-warm task failed"),
-```
-
-Fires on `JoinError`, i.e. the `spawn_blocking` at `dot.rs:188` panicked or was
-cancelled. A repeatable panic in leaf minting gives one `warn` per DoT
-connection, driven by any client that can reconnect.
-
-Severity: low. Same fix shape as A2.
-
-### A5 — `warn!` per TCP/DoT connection for every non-disconnect error
-
-`crates/fah-dns/src/tcp.rs:129`
-
-```rust
-        warn!(error = %err, client = %client, "{what} connection ended with an error");
-```
-
-Classification is already right — `is_client_disconnect` (`tcp.rs:136`) routes
-the ordinary hang-ups to `debug!`. What is left is per connection and unrated:
-a client that reliably triggers a non-disconnect error and reconnects produces
-one `warn` per connection.
-
-Severity: low. Weaker than A3 and A4 because connection setup costs the client
-more.
-
-### A6 — one extra allocation per TCP/DoT reply, and the obvious fix is invalid
+### A3 — one extra allocation per TCP/DoT reply, and the obvious fix is invalid
 
 `crates/fah-dns/src/tcp.rs:183`
 
@@ -181,7 +153,7 @@ Fix: hold until a measurement justifies one of the three. Engineering principle
 
 Severity: low. Small cost, no correct small fix.
 
-### A7 — the oracle ceilings equal today's measurements, so a pass carries no margin
+### A4 — the oracle ceilings equal today's measurements, so a pass carries no margin
 
 `crates/fah-dns/tests/forward_alloc.rs:276`,
 `crates/fah-http/tests/proxy_alloc.rs:246`,
@@ -202,7 +174,7 @@ does. No code change.
 
 Severity: low. Method, not code.
 
-### A8 — hard rule 3 forbids locks on the hot path; the cache takes one per query
+### A5 — hard rule 3 forbids locks on the hot path; the cache takes one per query
 
 `crates/fah-dns/src/cache.rs:46`, `cache.rs:519`
 
@@ -214,7 +186,7 @@ Fix: write the exception into hard rule 3 in [CLAUDE.md](../../../CLAUDE.md).
 
 Severity: low. Documentation only.
 
-### A9 — hard rule 7 does not describe the tree, and the hook cites a different number
+### A6 — hard rule 7 does not describe the tree, and the hook cites a different number
 
 `CLAUDE.md` hard rule 7 forbids Rust comments. `crates/**/*.rs` holds 8369
 comment lines (6992 of them under `crates/*/src`).
@@ -228,7 +200,7 @@ finding.
 
 Severity: low. Documentation only.
 
-### A10 — cutting a file at the first `#[cfg(test)]` undercounts `cache.rs`
+### A7 — cutting a file at the first `#[cfg(test)]` undercounts `cache.rs`
 
 `crates/fah-dns/src/cache.rs:675`, `:685`, `:862`
 
@@ -269,7 +241,7 @@ Severity: low, but it invalidated part of this audit's first pass.
 | `cache.rs:485` | `domain.into()` | per query | the cache key; pre-lowercased by the caller |
 | `udp.rs:157` | `buf[..len].to_vec()` | per datagram | moved into the spawned task |
 | `tcp.rs:164` | `vec![0u8; len]` | per message | `len` capped at `MAX_MESSAGE_LEN` (16 KiB) |
-| `tcp.rs:183` | `reply.splice(0..0, len)` | per TCP/DoT reply | realloc + memmove — **A6** |
+| `tcp.rs:183` | `reply.splice(0..0, len)` | per TCP/DoT reply | realloc + memmove — **A3** |
 | `response.rs:70-129` | 10 × query / record / name clone | per synthesized reply | hickory owns its records |
 | `response.rs:164` | `message.to_vec()` | per reply | exact-size wire buffer |
 | `cache.rs:600,614` | `answers.clone()`, `authorities.clone()` | per store (miss) | the cached answer itself |
@@ -291,9 +263,9 @@ once-per-process. One finding (A6); nothing retained.
 
 | Site | Kind | Frequency | Verdict |
 | ---- | ---- | --------- | ------- |
-| `cache.rs:519` | `std::sync::Mutex`, shard-selected | per query | A8, documented exception |
-| `cache.rs:626` | same | per store | A8 |
-| `cache.rs:555,566` | same | per refresh job | A8 |
+| `cache.rs:519` | `std::sync::Mutex`, shard-selected | per query | A5, documented exception |
+| `cache.rs:626` | same | per store | A5 |
+| `cache.rs:555,566` | same | per refresh job | A5 |
 | `cache.rs:719,778` | same | per stats read / per sweep | off the query path |
 | `swr.rs:155` | `std::sync::Mutex` | once per process | guard is a temporary, dropped at the statement |
 | `swr.rs:173` | `tokio::sync::Mutex` | per refresh job | held across `recv().await` only; scoped before the forward |
@@ -332,9 +304,9 @@ No `fs::`, `File::`, `env::var`, `rand::` or `std::thread` on any hot path:
 | Site | Per occurrence | Rate limit | Verdict |
 | ---- | -------------- | ---------- | ------- |
 | `udp.rs:176` | one `warn` per datagram | none | **A2** |
-| `response.rs:165` | one `warn` per query | none | **A3** |
-| `dot.rs:194` | one `warn` per DoT connection | none | **A4** |
-| `tcp.rs:129` | one `warn` per connection | classification only | **A5** |
+| `response.rs:165` | one `warn` per query | none | **A2** |
+| `dot.rs:194` | one `warn` per DoT connection | none | **A2** |
+| `tcp.rs:129` | one `warn` per connection | classification only | **A2** |
 | `server.rs:208` | one `debug` per loop iteration | none, and the loop does not sleep | **A1** |
 | `udp.rs:143`, `tcp.rs:99`, `dot.rs:83` | one `warn` per retry | `RetryPolicy` backoff + `Fatal` exit | bounded |
 | `pipeline.rs:223` | one `warn` per failed sweep | the sweep interval | bounded |
@@ -430,7 +402,7 @@ allocations, pass. `dedup_alloc_bound`:
 pass.
 
 Reading: 8 of 12 ceiling checks clear by exactly the jitter allowance, so the
-ceilings are today's measurements (A7). Superseded by re-running the same
+ceilings are today's measurements (A4). Superseded by re-running the same
 commands; the dev profile and this box are part of the result.
 
 ### Self-check
@@ -453,15 +425,15 @@ None. Read-only audit.
 | Finding | Action | Severity | Owner decision |
 | ------- | ------ | -------- | -------------- |
 | A1 | move `RetryPolicy` to `fah-common`, use it in `server.rs accept_loop` | medium | open |
-| A2 | classify the UDP send error — `ConnectionRefused`, `HostUnreachable`, `NetworkUnreachable`, `PermissionDenied` → `debug!`; counter + throttle for the rest | medium | open |
-| A3 | counter + throttle on `response.rs:165` | low-medium | open |
-| A4 | counter + throttle on `dot.rs:194` | low | open |
-| A5 | counter + throttle on `tcp.rs:129` | low | open |
-| A6 | hold; the offset encode is invalid, and the three valid fixes each need a measurement first | low | open |
-| A7 | report observed / ceiling / headroom whenever an oracle is cited | low | open |
-| A8 | write the shard-lock exception into hard rule 3 | low | open |
-| A9 | fix the hook's rule number; decide what hard rule 7 should say | low | open |
-| A10 | anchor the `#[cfg(test)]` cut at column 0 in the audit recipe | low | open |
+| A2 | one throttle helper in `fah-common`, then wire the four sites; classify the UDP send error at `udp.rs:176` — `ConnectionRefused`, `HostUnreachable`, `NetworkUnreachable`, `PermissionDenied` → `debug!` | medium | open |
+| A3 | hold; the offset encode is invalid, and the three valid fixes each need a measurement first | low | open |
+| A4 | report observed / ceiling / headroom whenever an oracle is cited | low | open |
+| A5 | write the shard-lock exception into hard rule 3 | low | open |
+| A6 | fix the hook's rule number; decide what hard rule 7 should say | low | open |
+| A7 | anchor the `#[cfg(test)]` cut at column 0 in the audit recipe | low | open |
 
-**PASS WITH DEFERRED FINDINGS** — A1 and A2 medium, A3 low-medium, A4–A10 low.
-Nothing blocks.
+A1 and A2 share a dependency: both want something in `fah-common` — the retry
+policy and the log throttle. Doing them in one change keeps the L1 surface to
+one review.
+
+**PASS WITH DEFERRED FINDINGS** — A1 and A2 medium, A3–A7 low. Nothing blocks.
