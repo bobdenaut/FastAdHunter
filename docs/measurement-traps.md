@@ -87,6 +87,26 @@ measured arms from each sitting in a different part of it.
   into the residual at once. Re-baseline across such a deploy; a step is not a
   slope.
 
+## A metric can be present and not measuring
+
+`dns_udp_inflight` reports `peak: 0`, `shed: 0` on a build that served 420 000
+queries over 3.3 days. The gauge is not idle, it is inert: `admit()`
+(`fah-dns/src/udp.rs:37`) returns before touching `active` or `peak` when
+`udp_max_inflight = 0`, which is the shipped default and was confirmed live on
+the container on 2026-09-15. `dns_tcp_connections` sits beside it in the same
+document and is a different type — `fah-common`'s `ConnectionGauge` counts
+unconditionally on every `enter` — so its `peak: 33` is real. Reading the two as
+a pair is the trap: one name, one JSON object, two behaviours.
+
+The consequence outlives the default. A ceiling that is off cannot be sized from
+evidence, because nothing is collected while it is off, and no amount of extra
+soak time changes that. Before quoting any `peak` or `shed`, check whether the
+thing that counts sits behind the thing that limits.
+
+Audit context: [main-phase3-integration-audit.md](code-review/phase3/main-phase3-integration-audit.md)
+F8, which recorded the inert bound. The inert instrument is the part that F8
+does not say.
+
 ## Cost attribution
 
 - Subtract harness cost before attributing time to a pipeline stage.
