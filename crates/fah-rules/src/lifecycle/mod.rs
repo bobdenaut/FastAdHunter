@@ -350,7 +350,7 @@ pub struct ListManager {
     fetch_timeout: Duration,
     /// `[rules] refresh_hours_default` — the interval a list without its own
     /// `refresh_hours` override follows.
-    default_refresh_hours: u32,
+    default_refresh_hours: AtomicU32,
     /// Mutable at runtime: `POST`/`DELETE /api/v1/lists` add and remove
     /// entries while the scheduler and in-flight refreshes run. Entries are
     /// `Arc`'d so a caller can clone one out and drop the guard before
@@ -491,7 +491,7 @@ impl ListManager {
             data_dir,
             http,
             fetch_timeout: DEFAULT_FETCH_TIMEOUT,
-            default_refresh_hours: config.refresh_hours_default,
+            default_refresh_hours: AtomicU32::new(config.refresh_hours_default),
             entries: RwLock::new(entries),
             last_attempted: Mutex::new(HashMap::new()),
             pending_cache: Mutex::new(HashMap::new()),
@@ -610,7 +610,7 @@ impl ListManager {
                     list_status.last_refreshed = Some(refreshed_at);
                 }
             }
-            if age >= entry.interval(self.default_refresh_hours) {
+            if age >= entry.interval(self.default_refresh_hours()) {
                 continue;
             }
             // `checked_sub`, not `-`: an age wider than the monotonic clock's
@@ -1118,7 +1118,7 @@ impl ListManager {
                 let last = self.last_attempted.lock().unwrap().get(&entry.id).copied();
                 match last {
                     None => true,
-                    Some(last) => now >= last + entry.interval(self.default_refresh_hours),
+                    Some(last) => now >= last + entry.interval(self.default_refresh_hours()),
                 }
             })
             .map(Arc::clone)
@@ -1350,6 +1350,14 @@ impl ListManager {
     /// (`PolicyState::refresh`).
     pub fn set_policies(&self, policies: PolicySet) {
         self.policies.store(Arc::new(policies));
+    }
+
+    pub fn default_refresh_hours(&self) -> u32 {
+        self.default_refresh_hours.load(Ordering::Relaxed)
+    }
+
+    pub fn set_default_refresh_hours(&self, hours: u32) {
+        self.default_refresh_hours.store(hours, Ordering::Relaxed);
     }
 
     /// Publishes a freshly compiled ruleset and, in the same step, records what
@@ -3376,7 +3384,7 @@ mod tests {
         let manager = ListManager::new(&config, data_dir.path().to_path_buf()).unwrap();
         let entry = manager.find("a").unwrap();
         assert_eq!(
-            entry.interval(manager.default_refresh_hours),
+            entry.interval(manager.default_refresh_hours()),
             Duration::from_secs(3600),
             "zero interval must clamp to the 1h floor (an unclamped 0 would refresh every tick)"
         );
@@ -3414,6 +3422,72 @@ mod tests {
             manager.matcher().lookup("block.example.net", &QueryType::A),
             MatchDecision::Block(_)
         ));
+        handle.abort();
+    }
+
+    fn blocks(manager: &ListManager, host: &str) -> bool {
+        matches!(
+            manager.matcher().lookup(host, &QueryType::A),
+            MatchDecision::Block(_)
+        )
+    }
+
+    async fn wait_until_blocked(manager: &ListManager, host: &str, context: &str) {
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+        while !blocks(manager, host) {
+            assert!(
+                std::time::Instant::now() < deadline,
+                "{context}: {host} never reached the live matcher"
+            );
+            tokio::task::yield_now().await;
+        }
+    }
+
+    async fn spin_for(real: std::time::Duration) {
+        let deadline = std::time::Instant::now() + real;
+        while std::time::Instant::now() < deadline {
+            tokio::task::yield_now().await;
+        }
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_live_change_to_the_default_interval_moves_the_next_refresh() {
+        let data_dir = tempfile::tempdir().unwrap();
+        let source = data_dir.path().join("custom.txt");
+        tokio::fs::write(&source, "first.example.net\n")
+            .await
+            .unwrap();
+
+        let config = config_with(vec![list("local", "custom.txt")]);
+        let manager = Arc::new(ListManager::new(&config, data_dir.path().to_path_buf()).unwrap());
+        assert_eq!(manager.default_refresh_hours(), 24);
+
+        let handle = manager.spawn_scheduler();
+        wait_until_blocked(&manager, "first.example.net", "the boot refresh").await;
+
+        tokio::fs::write(&source, "second.example.net\n")
+            .await
+            .unwrap();
+
+        tokio::time::advance(Duration::from_secs(2 * 3600)).await;
+        spin_for(std::time::Duration::from_secs(1)).await;
+        assert!(
+            !blocks(&manager, "second.example.net"),
+            "two hours in, a 24 h default must not have refreshed yet. Without this arm the \
+             assertion below proves only that a refresh happened, not that the new interval \
+             caused it — and this arm has had more elapsed time than the one that follows"
+        );
+
+        manager.set_default_refresh_hours(1);
+        tokio::time::advance(SCHEDULER_TICK).await;
+        wait_until_blocked(
+            &manager,
+            "second.example.net",
+            "one scheduler tick after the default dropped to 1 h, with 2 h already elapsed",
+        )
+        .await;
+
+        assert_eq!(manager.default_refresh_hours(), 1);
         handle.abort();
     }
 

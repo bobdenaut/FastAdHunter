@@ -25,7 +25,9 @@ built-in defaults  <  config file  <  environment variables  <  API changes
 A key is **runtime** only when something re-reads it after the patch. Three do:
 `history.enabled` and `history.retention_days` (pushed into the history
 writers' shared retention atomic) and
-`rules.refresh_hours_default` (read per request), plus the list set, which the
+`rules.refresh_hours_default`, which `POST /api/v1/config` stores into the list
+manager's own atomic — the value the **refresh scheduler** reads, not merely the
+one `/config` and `/lists` report back — plus the list set, which the
 `/lists` endpoints keep in step with the file. Everything else is read once
 during startup — the cache and upstream pool are built there, the query-log and
 stats intervals become timers, the log level becomes a tracing filter — so it is

@@ -1,4 +1,4 @@
-# Project risk inventory — surveyed on `main` at `baa2ecd`, 2026-09-11; F1, F2 and F10 closed the same day, F11, F3 and F6 on 2026-09-12 (§Closed); F13 opened 2026-09-13 on the Phase 3 merge
+# Project risk inventory — surveyed on `main` at `baa2ecd`, 2026-09-11; F1, F2 and F10 closed the same day, F11, F3 and F6 on 2026-09-12 (§Closed); F13 opened 2026-09-13 on the Phase 3 merge; F14 opened and closed 2026-09-15, found by enumerating `BOOT_KEYS` against the keys with a live consumer
 
 **This is an inventory, not a backlog.** Nothing here is scheduled, and nothing
 here is a finding against a task. It records where the code on `main` is
@@ -100,8 +100,8 @@ error fires schedules an hour off twice a year and nothing crashes.
 ## Findings
 
 Severity: **blocker** = must be fixed before the next merge (none found);
-**material** = worth a task before Phase 3 closes (none open — F1, F2 and F10
-moved to §Closed); **minor** = record only.
+**material** = worth a task before Phase 3 closes (none open — F1, F2, F10 and
+F14 moved to §Closed); **minor** = record only.
 Class: **defect** = confirmed against source; **recommendation** = a
 judgement, unmeasured.
 
@@ -120,6 +120,36 @@ judgement, unmeasured.
 Retired from the findings table by the close-out audit of 2026-09-11 on
 `main` following `b0b091e`, and by the later passes that name their own date
 below. Kept here so the next pass knows what was verified and against what.
+
+- **F14 — `rules.refresh_hours_default` promised runtime and delivered boot**
+  (was material, defect). Opened and closed 2026-09-15. The key is absent from
+  `BOOT_KEYS`, so `POST /api/v1/config` answered `applied: true,
+  restart_required: false`, and the only component the key governs never saw
+  the new value: `ListManager` copied it into a plain `u32` at construction and
+  the refresh loop read that field. Its **two readers** are what hid it — the
+  `/lists` handlers read it live off the config store, so `GET /config` and
+  `GET /lists` both reported the new number while the scheduler kept the old
+  one. The status surface lied consistently with the config, and the only
+  witness was the timing of the next fetch. It reached the shipped default:
+  `oisd-basic` carries no per-list `refresh_hours`, so it falls back to the
+  frozen value. Fixed by making the field an `AtomicU32` with
+  `ListManager::set_default_refresh_hours`, called from `post_config` beside
+  the `[history]` and `schedule.timezone` applies it already ran — the same
+  atomic shape `ListEntry::refresh_hours` uses five lines above it, and no new
+  port, since `fah-api` holds the `Arc<ListManager>` directly. Guarded by
+  `a_live_change_to_the_default_interval_moves_the_next_refresh` (`fah-rules`,
+  paused clock, with a control arm that is given *more* elapsed time than the
+  positive one) and `a_refresh_interval_patch_reaches_the_scheduler_and_not_only_the_report`
+  (`fah-api`). Mutation-verified, and the two mutations fall on different tests:
+  reverting the atomic fails the behavioural one, deleting the `post_config`
+  call fails the wiring one while the behavioural one still passes.
+  **Predated the Phase 3 merge** — the frozen field is `7920415`, the
+  classification `e056190` (p1.5-07), both ancestors of `bc49e4e`.
+  What let it survive every earlier pass is recorded in §Remaining TODOs: the
+  family *was* enumerated, at `config_store.rs`, but the enumeration's
+  `consumer` column named a reader (`"the lists handlers, per request"`) rather
+  than an applier, and the assertion only checked the classification. That
+  string now names `set_default_refresh_hours`.
 
 - **F6 — `judge()`/`emit()` allocations on the HTTP request path** (was minor,
   recommendation). Closed by `3287418` (H1-H3/D1), 2026-09-12, after the
@@ -287,6 +317,24 @@ Recorded so the next pass can skip them.
   `/api/v1/telemetry`, check the container fd budget, and set the final
   `tcp_max_connections` default; record corpus, workload and device in a
   `docs/code-review/` file. F4–F9, F12 are record-only.
+- **F14 is closed** (§Closed), and the lesson it leaves is about the *shape of
+  an enumeration test*, not about this key. The family did have one, at
+  `config_store.rs`: a list of runtime keys, each paired with a `consumer`
+  string, asserted with `!is_boot_key(key)`. The assertion checked the
+  classification and never the consumer, and the consumer named for this key was
+  a **reader**, not an applier. An enumeration that names the wrong side of the
+  contract certifies the defect instead of catching it. When the next one of
+  these is written, the column has to name what applies the value, and something
+  has to fail when that applier is missing.
+- The sweep that found F14 checked one family end to end and the rest of it is
+  **clean**: every field of all thirteen `Config` sections is either in
+  `BOOT_KEYS` or claimed runtime, and three of the four claimed-runtime keys
+  (`rules.lists`, `policies`, `schedule.timezone`) do have a live consumer. Four
+  neighbouring families are **not** enumerated by anything and are where the next
+  one of these would be: schema fields against CONFIGURATION.md in the
+  schema → doc direction (only doc → schema has been checked), `/telemetry`
+  fields against dashboard consumers, and per-listener runtime dispositions
+  (DoT has `DotListener::Closed`, DoH has nothing).
 - Outside this file, needing an owner go: [CLAUDE.md](../../../CLAUDE.md)
   §Layout lists root `tests/` and `benches/` — both are `.gitkeep`-only;
   every test and bench lives under `crates/*/`.

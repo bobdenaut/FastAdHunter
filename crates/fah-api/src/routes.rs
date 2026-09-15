@@ -1468,6 +1468,10 @@ async fn post_config(
     // recompile the policy set and republish. No ruleset rebuild: the masks
     // do not depend on the clock. Idempotent, so it runs after every apply.
     let config = state.config.current();
+    state
+        .rules
+        .set_default_refresh_hours(config.rules.refresh_hours_default);
+
     match fah_rules::PolicySet::from_config(&config.schedule.timezone, &config.policies) {
         Ok(policies) => {
             state.rules.set_policies(policies);

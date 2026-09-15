@@ -21,8 +21,10 @@ use serde_json::Value;
 /// change it live" — it is that something actually re-reads it after a patch.
 /// Only three keys clear it today, each with a real consumer: `history.enabled`
 /// and `history.retention_days` (pushed through `apply_history_config` into
-/// the writers' shared atomic), `rules.refresh_hours_default` (read per
-/// request by the lists handlers), and since p2-06 `schedule.timezone` and
+/// the writers' shared atomic), `rules.refresh_hours_default` (stored by
+/// `post_config` into `ListManager`'s atomic, which the refresh scheduler
+/// reads — the lists handlers only report it, and reading it live was not
+/// enough: F14), and since p2-06 `schedule.timezone` and
 /// `policies` (recompiled and republished into the live client → policy
 /// snapshot). Everything else is consumed once during
 /// boot — `DnsCache::new`, `UpstreamPool::from_config`, `Pipeline::new`,
@@ -393,7 +395,8 @@ mod tests {
             ),
             (
                 "rules.refresh_hours_default",
-                "the lists handlers, per request",
+                "post_config -> ListManager::set_default_refresh_hours, the atomic the \
+                 scheduler reads (the lists handlers only report it)",
             ),
             (
                 "schedule.timezone",

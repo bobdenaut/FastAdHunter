@@ -2849,6 +2849,39 @@ async fn a_runtime_config_change_applies_live_and_is_written_back_to_the_toml() 
     assert_eq!(reparsed.rules.refresh_hours_default, 6);
 }
 
+#[tokio::test]
+async fn a_refresh_interval_patch_reaches_the_scheduler_and_not_only_the_report() {
+    let harness = start().await;
+    assert_eq!(
+        harness.rules.default_refresh_hours(),
+        24,
+        "the harness starts on the documented default"
+    );
+
+    let body: Value = harness
+        .client
+        .post(harness.url("/api/v1/config"))
+        .bearer_auth(&harness.key)
+        .json(&json!({"rules": {"refresh_hours_default": 6}}))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(body["applied"], true);
+    assert_eq!(body["restart_required"], false);
+
+    assert_eq!(
+        harness.rules.default_refresh_hours(),
+        6,
+        "the patch answered applied-without-restart, so the value the scheduler reads has to \
+         be the new one. GET /config and GET /lists report it straight off the config store, \
+         so they answer 6 whether or not the scheduler ever hears about it — this is the only \
+         assertion here that can tell the two apart"
+    );
+}
+
 /// Rule lists have exactly one runtime owner: the `/lists` endpoints, which
 /// apply live and write the TOML back. A `rules.lists` array reaching
 /// `POST /config` would be a second writer that never reloads the engine — and
