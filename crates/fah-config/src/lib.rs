@@ -2,6 +2,7 @@
 
 mod env;
 mod error;
+pub mod port_setting;
 mod schema;
 mod tz;
 
@@ -1124,6 +1125,40 @@ format = "text"
                 !matches!(outcome, Err(ConfigError::UnknownEnvKey { .. })),
                 "CONFIGURATION.md documents `Env: {var}` but `env::apply_one` has no arm for it, \
                  so setting it fails the whole config load instead of overriding the key"
+            );
+        }
+    }
+
+    #[test]
+    fn every_advertised_port_variable_reaches_the_field_its_setting_names() {
+        type PortField = fn(&Config) -> u16;
+
+        let cases: [(&str, PortField); 5] = [
+            (port_setting::DNS, |config| config.dns.listen.port),
+            (port_setting::DOT, |config| config.dns.listen.dot_port),
+            (port_setting::HTTP, |config| config.http.listen.port),
+            (port_setting::HTTPS, |config| config.https.listen.port),
+            (port_setting::API, |config| config.api.port),
+        ];
+
+        for (setting, field) in cases {
+            let var = setting.split(", or ").nth(1).unwrap_or_else(|| {
+                panic!(
+                    "`{setting}` is handed to an operator on a bind failure but advertises no \
+                     environment variable"
+                )
+            });
+            let pairs = vec![(var.to_string(), "9999".to_string())];
+            let config = apply_env_overrides(Config::default(), &pairs).unwrap_or_else(|err| {
+                panic!(
+                    "a bind failure tells the operator to set {var}, but the next config load \
+                     refuses it, so the process cannot start with it set: {err}"
+                )
+            });
+            assert_eq!(
+                field(&config),
+                9999,
+                "{var} did not reach the field `{setting}` names"
             );
         }
     }

@@ -101,6 +101,10 @@ fn apply_one(
             config.dns.upstreams.penalty_failures = coerce_u32(var, path, value)?
         }
 
+        ["http", "listen", "port"] => config.http.listen.port = coerce_u16(var, path, value)?,
+
+        ["https", "listen", "port"] => config.https.listen.port = coerce_u16(var, path, value)?,
+
         ["rules", "refresh_hours_default"] => {
             config.rules.refresh_hours_default = coerce_u32(var, path, value)?
         }

@@ -107,8 +107,9 @@ must not have it (ADR-0004).
 ### HTTPS SNI (Phase 3)
 
 - TCP on `[https.listen]`, default **8444** — not 443 (privileged) and not 8443
-  (`[api] port`; a shared default would make `dns+http+https` fail to boot, so a
-  config setting them equal is rejected at load). The router dst-nats 443 here.
+  (`[api] port`; a shared default would make `dns+http+https` fail to boot, so in
+  that mode a config setting them equal is rejected at load — under `dns` neither
+  listener binds and the pair is allowed). The router dst-nats 443 here.
 - Bound **only** when `engine.mode` is `dns+http+https`, on the same reasoning
   as HTTP above.
 - The accept loop is **the same code** as HTTP's: `server::accept_loop` takes

@@ -51,6 +51,15 @@ status-pass 2026-09-14), [plan/plan-merge.md](../../../plan/plan-merge.md)
   makes `https.listen.port` checked **less** often than before, and the e2e
   harness had to stop drawing duplicate ports. SP2, SP3 and SP8 were excluded by
   instruction and are untouched.
+- **The two fix commits were then reviewed independently** — scope and findings
+  in §Independent review of the fix commits, prefix `R`. One should-fix and six
+  notes; no blocker, and no defect in the DNS or HTTP data path. **R1** was N1's
+  class surviving in a second population: `fah-http`'s two `PORT_SETTING`
+  constants advertised `FAH__HTTP__LISTEN__PORT` and `FAH__HTTPS__LISTEN__PORT`,
+  which `apply_one` had no arm for, and the SP6 fix printed one of them on every
+  port collision. **RESOLVED the same day** — the two arms landed, the five
+  constants moved to `fah-config` where a test can reach them, and both mutation
+  controls fail as they must (§R1 Resolution). R2–R7 stay open as notes.
 
 ## Decisions
 
@@ -418,9 +427,30 @@ file and in git history.
 
 #### Left open on purpose
 
-CONFIGURATION.md needed no correction. `:436` offered `::` for `[api] address`;
-the fix makes that true, so SP4's documentation arm closed through the code
-rather than through an edit.
+**SP4's documentation arm closed through the code**: `CONFIGURATION.md:436`
+offered `::` for `[api] address` and the fix makes that true, so no edit was
+needed there.
+
+**That was read too widely at the time — "CONFIGURATION.md needed no correction"
+was written, and it is false for SP1.** The relaxation the new policy introduces
+is exactly what two entries described as unconditional:
+
+| Where | Said | True after `2eb5018` |
+| --- | --- | --- |
+| `CONFIGURATION.md` `[dns.listen] dot_port` | "must differ from every other listener port" | Only from a listener that actually binds, and only on an overlapping address. Under the shipped `mode = "dns"`, `dot_port` equal to `[http.listen] port` validates clean |
+| `CONFIGURATION.md` `[https.listen] port` | "A value equal to `[api]`, `[http.listen]` or `[dns.listen]` port is rejected at load, by name" | Only when HTTPS binds; `dot_port` belongs in that list now; and only on an overlapping address |
+| `ARCHITECTURE.md` §HTTPS SNI | "a config setting them equal is rejected at load" | Reads unconditional; true only in `dns+http+https` |
+
+All three corrected 2026-09-15 alongside the R1 fix. The root-document sweep that
+found them also confirmed the rest: `API.md:1118` still holds — the new
+`["https", "listen", "port"]` arm is a different path from
+`https.interception.clients`, which still fails boot as an unknown key — and
+`CONTEXT.md:354`, `ROADMAP.md:45`, SECURITY.md, README.md, PERFORMANCE.md,
+RULE_ENGINE.md and CONTRIBUTING.md say nothing this batch invalidates.
+
+One statement the fix made **true** rather than stale: `ARCHITECTURE.md:72-73`,
+"Every engine binds through `fah_common::listen`", was false while SP5 stood —
+the API did not — and is accurate from `2eb5018` on.
 
 ### Probed clean in the second pass
 
@@ -446,6 +476,118 @@ above it: these were the paths most likely to hold a second SP1, and they do not
 | Is `dns.udp_max_inflight = 0` an unchecked ceiling beside `tcp_max_connections = 0`, which **is** refused? | **No — it is intentional and pinned.** `0` means "no cap": the default is `0` (`schema/dns/mod.rs:29`), `UdpInflightGauge::new` feeds it to `NonZeroUsize::new` so `None` admits everything (`fah-dns/src/udp.rs:28-40`), and `lib.rs:864-873` asserts the override keeps it. `runtime.http_runtimes = 0` is the same shape — shared runtime (`main.rs:675`). Not an inconsistency with the five `== 0` refusals at `lib.rs:172-204` |
 | Is the bind order still what ADR-0004 requires? | **Yes.** DNS (`main.rs:409`) and HTTP (`:428`) bind before the privilege drop at `:480` and serve after it. The API binds at `:639`, after the drop — which is correct for an unprivileged admin port and is also why SP5's second arm exists |
 | What is still reachable after a bind fails at startup? | **Nothing.** `Engine::start` propagates with `?`, `run` returns `ExitCode::FAILURE` (`main.rs:264-268`) and the process exits, closing whatever was already bound. The API binds last, so on any earlier failure there is no HTTP surface at all: recovery is a hand edit of `/config/fastadhunter.toml` or a `FAH__` variable, plus a restart. `--healthcheck` does not help — it passed on every SP1 and SP4 reproduction |
+
+## Independent review of the fix commits — 2026-09-15
+
+Read-only pass over `f32f214` (N1) and `2eb5018` (SP1 / SP4 / SP5 / SP6) by a
+reviewer who did not write them. Nothing was changed. Scope: plan compliance
+against §N1 Resolution and §Second-pass resolutions, correctness, architecture,
+performance, memory, Rust quality, tests, regression. **Line numbers below are
+anchored to `2eb5018`.** Findings carry an **`R` prefix** — `N` belongs to the
+merge audit, `SP` to the second pass.
+
+Test counts in §Second-pass resolutions were re-run and match: `cargo test -p
+fah-config --lib` 97, `cargo test -p fah-common --lib` 44.
+
+### R1 — two `PORT_SETTING` strings name environment variables `apply_one` refuses
+
+**Status: RESOLVED 2026-09-15** — see §R1 Resolution. The row below is the state
+that was found, in the past tense, and its line numbers stay anchored to
+`2eb5018`, the tip before the fix. Severity and title are unchanged: they
+describe the defect, not its disposition.
+
+| | |
+| --- | --- |
+| Severity | **should-fix** — operator-facing; following the hint fails the boot, and the hint is now printed on the one failure the product inflicts on itself |
+| Class | **confirmed defect** + **coverage gap** |
+| Evidence | `fah-http/src/server.rs:29` is `"[http.listen] port, or FAH__HTTP__LISTEN__PORT"` and `fah-http/src/tls_server.rs:15` is the `https` equivalent. `fah-config/src/env.rs:42-133` has no `["http", …]` and no `["https", …]` arm at all — the `_ =>` arm at `:127-132` returns `UnknownEnvKey`, which `apply_env_overrides` propagates and `load_inner` fails on. Setting either variable stops the process from starting. The other three constants are sound: `FAH__API__PORT` (`env.rs:121`), `FAH__DNS__LISTEN__PORT` (`:57`), `FAH__DNS__LISTEN__DOT_PORT` (`:61`) |
+| What `2eb5018` changed about it | The `AddrInUse` arm previously dropped `port_setting` (that was SP6). It now interpolates it (`fah-common/src/listen.rs:105-108`), so the variable is printed on a port collision — the most common listener failure — where before nothing was printed. The `PermissionDenied` arm (`:100-104`) already carried the same wrong hint, silently |
+| Affected path | `crates/fah-http/src/server.rs`, `crates/fah-http/src/tls_server.rs`, `crates/fah-config/src/env.rs` |
+| Why it matters | Identical in class to N1: a documented `FAH__` name with no arm behind it, fail-closed at boot. N1's own §Recommended action said a test walking documented names against `apply_one` "closes the gap for good" — it closes the CONFIGURATION.md arm only. `every_env_variable_configuration_md_documents_has_an_override_arm` (`fah-config/src/lib.rs:1096`) scans the three `Env:` lines in the document; the five `PORT_SETTING` constants are a second population of advertised names and nothing walks them |
+| Mitigating | SP1 now refuses an HTTP/HTTPS port collision at validation, so the `AddrInUse` hint for those two listeners is reached only when a foreign process holds the port. It is still reached, and `PermissionDenied` on `[http.listen] port` below 1024 always was |
+| Recommended action | Owner decision, two shapes, mirroring N1: add `["http", "listen", "port"]` and `["https", "listen", "port"]` arms (`coerce_u16`), or drop the `, or FAH__…` suffix from the two constants. Either way, the durable guard is a test that drives all five `PORT_SETTING` strings through `apply_env_overrides` and rejects `UnknownEnvKey` — the same shape as the CONFIGURATION.md test, over the other population |
+
+#### R1 Resolution — 2026-09-15
+
+Owner chose to implement rather than to stop advertising, and set the guard
+before any code was written: the variable is the practical knob in a distroless
+container, where `/container set envlist=…` and a restart beat reaching into the
+`/config` volume. **Line numbers in this subsection are the post-fix ones.**
+
+| What | Where |
+| --- | --- |
+| The two missing arms, `coerce_u16`, mirroring `["dns", "listen", "port"]` at `env.rs:57` | `crates/fah-config/src/env.rs:104`, `:106` (+4) |
+| The five `PORT_SETTING` strings, moved to the one crate that can verify them — `fah-common` owns `bind_error` but is an L1 sibling of `fah-config` and may not import it, so the allowlist is out of its reach | `crates/fah-config/src/port_setting.rs` (new, 5 constants), `pub mod port_setting` at `lib.rs:5` |
+| Each listener imports its own, aliased so the call sites and the two existing `fah-dns` argument tests are untouched | `fah-dns/src/server.rs:6`, `fah-http/src/server.rs:17`, `fah-http/src/tls_server.rs:7`, `fah-api/src/server.rs:16` |
+| Anti-drift: the variable name is parsed **out of the constant**, not written as a literal beside it, so a renamed constant carries the test with it. Three things fail it — a setting that advertises no variable, a variable with no arm, an arm that writes another field | `every_advertised_port_variable_reaches_the_field_its_setting_names` (`lib.rs:1133`) |
+| The two keys documented in the style of the surrounding entries | `CONFIGURATION.md:227`, `:259` |
+
+The text of all five constants is byte-identical to what the four bind sites
+printed before the move. `bind_error` still takes `&str` and `fah-common` gained
+no dependency. Layering holds: `fah-dns`, `fah-http` and `fah-api` (L3) already
+depended on `fah-config` (L1).
+
+**Negative control — two mutations, run and reverted.** The test cannot be run on
+the pre-fix tree at all: it references `fah_config::port_setting`, which does not
+exist there, so it would fail to compile rather than fail on the defect. Mutation
+of the working tree is the control that actually discriminates.
+
+| Mutation | Result |
+| --- | --- |
+| Both new `apply_one` arms deleted | Fails on the load: ``a bind failure tells the operator to set FAH__HTTP__LISTEN__PORT, but the next config load refuses it, so the process cannot start with it set: environment variable FAH__HTTP__LISTEN__PORT does not map to a known config key (`http.listen.port`)`` — the R1 defect, reproduced |
+| `["http", "listen", "port"]` made to write `config.https.listen.port` | Fails on the value: ``FAH__HTTP__LISTEN__PORT did not reach the field `[http.listen] port, or FAH__HTTP__LISTEN__PORT` names — left: 8080, right: 9999``. `8080` is `http.listen.port`'s untouched default, so the field assertion discriminates and not just the arm's existence |
+
+`9999` is not the default of any of the five ports (53, 853, 8080, 8444, 8443),
+which is what makes the second mutation visible.
+
+| Gate after the fix, Windows dev box | Result |
+| --- | --- |
+| `cargo fmt --all -- --check` | clean |
+| `cargo clippy --workspace --all-targets --all-features -- -D warnings` | clean |
+| `cargo test --all-features --workspace` | **1633 passed, 0 failed** (1632 before) |
+| `cargo test -p fah-config --lib` | 98 (97 before) |
+
+Clippy required one deviation from the shape agreed beforehand: `[(&str, fn(&Config) -> u16); 5]`
+is refused as `very complex type used`, so the test carries a local
+`type PortField = fn(&Config) -> u16;`.
+
+`every_env_variable_configuration_md_documents_has_an_override_arm` now walks
+five names instead of three; its `>= 3` floor (R5) is unchanged and still passes.
+
+Scope held: no HTTP/HTTPS **address** overrides, no change to the general `FAH__`
+contract at `CONFIGURATION.md:11-13`, SP2/SP3/SP8 and R2–R7 untouched.
+
+### R2–R7 — notes
+
+| # | Where | Finding | Direction |
+| --- | --- | --- | --- |
+| R2 | `fah-config/src/lib.rs:811-849` | `every_active_listener_pair_is_compared_for_a_port_collision` drives **5 of the 10 pairs** — `api–dns`, `http–dns`, `http–api`, `https–http`, `dot–https`. `dot–api` is covered at `:753` and the three `https` pairs at `:790`, leaving **`dot–dns` and `dot–http` asserted by nothing**. SP1's §Recommended action asked for all ten. Real risk is low: `validate_listen_sockets` is one uniform double loop, and every socket appears in at least one covered case, so deleting a row from the table still fails the suite | Add the two cases, or rename the test to what it checks |
+| R3 | `lib.rs:505-510` | `addresses_overlap` decides family with `is_ipv4()`, so an IPv4-mapped literal misses: `::ffff:10.0.0.1` beside `10.0.0.1` on one port returns `false` and validates clean. Fail-open, and the bind failure now reports through `bind_error`, so the outcome is a named error rather than a bare errno | Canonicalize v4-mapped v6 before comparing, if the shape is ever worth the line |
+| R4 | `lib.rs:551-562` | The blamed key is the later entry in the table, not the edited one. A `dns–api` collision reports `api.port` even when the operator changed `[dns.listen] port`. The message names both endpoints with address and port, so it stays navigable | None required; recorded so the asymmetry is not read as a bug |
+| R5 | `lib.rs:1113-1118` | The anti-drift floor is `documented.len() >= 3`, exactly today's count. A reformat that leaves 3 of 5 `Env:` names matchable passes silently. The test also reads `../../CONFIGURATION.md` from a lib unit test, so `cargo test -p fah-config` depends on a file outside the crate | Assert an exact count, or keep the floor and accept the window |
+| R6 | `fah-api/tests/api.rs:5183-5204` | `the_unspecified_ipv6_api_address_binds_one_dual_stack_socket` binds `[::]:0` — every interface — for the duration of the run, and needs IPv6 present on the host. `the_api_binds_an_ipv6_literal_and_serves_on_it` (`:5167`) already proves `listen_addr` handles the bracket trap on `::1` | Keep if the dual-stack assertion is wanted; note the host dependency |
+| R7 | `lib.rs:512` | `validate_listen_sockets(config: &Config, addresses: ListenAddresses)` receives both the whole config and the addresses derived from it — two sources for one field. Minor: `free_tcp_port_excluding` (`fastadhunter/tests/common/mod.rs:665`) reuses `DNS_PORT_DRAWS` (`:33`) for TCP draws | Cosmetic; fold into the next touch |
+
+### Checked and found acceptable
+
+| Category | Verdict |
+| --- | --- |
+| Plan compliance | Every unit in §What changed exists at the claimed anchor: `validate_listen_sockets` called from `validate` at `lib.rs:142-150`, the overlap relation at `:501-510`, `validate_ip` returning its parse at `:478`, `EngineMode::serves_http`/`serves_https` at `schema/engine.rs:40-55`, `PORT_SETTING` at `fah-api/src/server.rs:27`, the `AddrInUse` arm at `fah-common/src/listen.rs:105-108`. SP2, SP3 and SP8 are untouched, as instructed |
+| Correctness | The agreed rule is implemented as written. `addresses_overlap`'s truth table matches the `IPV6_V6ONLY` policy `fah-common/src/listen.rs:7-13` commits to: `::` covers both families, `0.0.0.0` covers IPv4 only, a concrete v4 and a concrete v6 never overlap. DoT is compared on `dns.listen.address`, which is where `fah-dns/src/server.rs:72` binds it. `port = 0` cannot produce a collision storm — `validate_nonzero_port` refuses it for the four always-on keys first, and a disabled DoT socket is skipped |
+| Socket inventory | The five-entry table matches the production bind sites exactly. `grep` for `bind_tcp(`/`bind_udp(`/`TcpListener::bind` outside tests returns DNS UDP, DNS TCP, DoT, HTTP, HTTPS, API and nothing else; `fah-api/src/tls.rs:6` is the SAN probe socket, not a listener |
+| Architecture | `fah-api` (L3) → `fah-common` (L1) is downward and the dependency was already declared. `EngineMode::serves_*` gives "would this listener bind" one home, used by both `validate` and `main.rs:427`/`:435`; `http_enabled`/`https_enabled` are deleted rather than left beside it. Both matches stay exhaustive, so a fourth mode still fails to compile |
+| Performance | No hot-path contact. `validate` runs at boot and on `POST /api/v1/config`. The socket table is a five-element array on the stack, `format!` runs only on the error return, and `validate_ip` returning `IpAddr` removes a second parse of each address |
+| Memory | No retained state, no new allocation outside error strings, nothing that grows with traffic or uptime |
+| Rust quality | No `unwrap`/`expect` added on a production path. `bind_tcp`'s socket2 branch is synchronous, so the API bind has no new cancellation hazard. `ListenSocket` holds `SocketAddr` and `&'static str` — no clones |
+| Regression | No configuration that previously worked is newly refused: address-aware comparison is strictly more permissive for the `https` and `dot` pairs, and the three newly-compared pairs failed at bind anyway. `is_port_conflict`'s needles (`fastadhunter/tests/common/mod.rs:236-251`) do not match the new validation wording — `"two TCP listeners cannot bind one socket"` contains no `"socket address"` — so a genuine refusal still fails the gate instead of being retried |
+| SAN path, newly reachable | SP4 makes an IPv6 `[api] address` bindable for the first time, so `fah-certs/src/api.rs:72-91` receives one. It parses to `IpAddr`, filters unspecified, and the baseline already carries `::1` (`:18-21`) — the new state is handled |
+| DNS / HTTP data path | No defect found. Neither commit touches it |
+
+**Verdict of this pass: PASS with one should-fix (R1) and six notes.** R1 is not a
+regression of the fix's own logic — it is the N1 class surviving in a second
+population of advertised `FAH__` names, which `2eb5018` made visible on the
+`AddrInUse` path. **R1 is RESOLVED**, same day, on the owner's approval and to a
+shape agreed before any code was written; R2–R7 stay open as notes.
 
 ## Established correct
 
@@ -519,6 +661,25 @@ N1, and the SP4 fix makes `:436` right rather than needing an edit. The sweep's
 scratch TOML files, and the reproduction files re-run after the fix, were written
 outside the repository and removed.
 
+The R1 fix:
+
+| File | Change |
+| --- | --- |
+| `crates/fah-config/src/port_setting.rs` | new, +9 — the five constants |
+| `crates/fah-config/src/lib.rs` | +36 — `pub mod port_setting`, one test |
+| `crates/fah-config/src/env.rs` | +4 — the two arms |
+| `crates/fah-dns/src/server.rs` | +1 −5 — two local constants replaced by one import |
+| `crates/fah-http/src/server.rs` | +1 −3 — the same |
+| `crates/fah-http/src/tls_server.rs` | +1 −2 — the same |
+| `crates/fah-api/src/server.rs` | +1 −2 — the same |
+| `CONFIGURATION.md` | +2 — one `Env:` line under each of the two port entries |
+
+The review pass that found R1 changed no code. Its only edit is this file —
+§Independent review of the fix commits, the summary bullet that points at it, the
+`R` rows in §Remaining TODOs and the closing verdict. It ran
+`cargo test -p fah-config --lib` and `cargo test -p fah-common --lib` to confirm
+the 97 / 44 counts §Second-pass resolutions claims, and nothing else.
+
 ## Remaining TODOs
 
 - N2: owner decision — a Health row for the three DNS gauges, or a line saying
@@ -535,22 +696,36 @@ outside the repository and removed.
 - SP8: owner decision, still open — a `doh` field beside `dot` in
   `CertificatesResponse`, or a documented line saying the boot warning is all
   there is. Excluded from the fix pass by instruction.
+- R1: **closed** 2026-09-15, nothing further owed. See §R1 Resolution.
+- R2: owner decision — two more cases (`dot–dns`, `dot–http`) in
+  `every_active_listener_pair_is_compared_for_a_port_collision`, or a name that
+  matches what it checks.
+- R3–R7: nothing owed; fold into the next touch of the files named.
 - The follow-up the fix created is **closed** the same day: `main.rs`'s
   `http_enabled` / `https_enabled` are deleted and the two call sites use
   `EngineMode::serves_http` / `serves_https` directly. One statement of the fact,
   not two. The rationale comment that sat above them could not move with the
   match — see §Second-pass resolutions §The duplicate the fix created.
 
-N1, SP1, SP4, SP5 and SP6 are closed and owe nothing further; their fixes are in
-the same commit as this file. Nothing here is pushed — `origin/main` and
-`backup/main` stay at `8fec41d` until a push gets its own go.
+N1, SP1, SP4, SP5, SP6 and R1 are closed and owe nothing further. N1's fix is
+`f32f214`; the SP fixes are `2eb5018`, the commit that also carried the first
+writing of this file; R1's fix is uncommitted at the time of writing and needs
+its own go. `origin/main` and `backup/main` are both on `2eb5018` — read them
+with `git ls-remote`, not from this line, which named `8fec41d` after that had
+stopped being true.
 
 **PASS WITH DEFERRED FINDINGS** — five confirmed defects, **all five resolved
 the same day** (N1, Medium; SP1 and SP4, Medium; SP5 and SP6, Low). Still open:
-two coverage gaps (N2 and SP8, Low), one potential issue (SP2, Low), two
-intentional deviations (N3 and SP3, Info). SP7 closed through SP1's rule rather
-than a change of its own. **No defect was found in the DNS or HTTP data path**,
-and nothing here blocks further Phase 3 work.
+one should-fix from the independent review (R1), two coverage gaps (N2 and SP8,
+Low), one potential issue (SP2, Low), six notes (R2–R7), two intentional
+deviations (N3 and SP3, Info). SP7 closed through SP1's rule rather than a change
+of its own. **No defect was found in the DNS or HTTP data path**, by any of the
+four passes, and nothing here blocks further Phase 3 work.
+
+The independent review adds the one lesson the fix set did not draw for itself:
+closing a documentation-to-code drift for the names a *document* advertises does
+not close it for the names the *code* advertises. `PORT_SETTING` is the second
+population, it was never walked, and two of its five entries are wrong (R1).
 
 What the defect set said as a group, and what the fix answered: the
 configuration layer validated types and ranges thoroughly and relationships only

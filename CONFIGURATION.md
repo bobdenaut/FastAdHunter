@@ -123,8 +123,9 @@ address = "::"                # boot    — bind address; "::" = one dual-stack
 port = 53                     # boot    — UDP + TCP
 dot_enabled = true            # boot    — DNS-over-TLS listener (RFC 7858)
 dot_port = 853                # boot    — TCP; binds before the privilege drop
-                              #           like 53; must differ from every other
-                              #           listener port. Serves a CA-minted
+                              #           like 53; rejected at load if it collides
+                              #           with another listener that binds, on an
+                              #           overlapping address. Serves a CA-minted
                               #           certificate for the hostname the client
                               #           sends when a CA exists (Android Private
                               #           DNS hostname mode needs the CA
@@ -224,6 +225,7 @@ address = "::"                # boot    — as [dns.listen]: "::" is one
 port = 8080                   # boot    — NOT 80: the container is unprivileged
                               #           after the ADR-0004 drop, and the router
                               #           dst-nats 80 here instead
+                              #           Env: FAH__HTTP__LISTEN__PORT
 
 [http]
 max_connections = 1024        # boot    — ceiling on concurrent connections; the
@@ -252,9 +254,13 @@ port = 8444                   # boot    — NOT 443 (privileged, ADR-0004) and
                               #           uses — two listeners on one default
                               #           port would make dns+http+https fail
                               #           to boot on an untouched config. The
-                              #           router dst-nats 443 here. A value equal
-                              #           to [api], [http.listen] or [dns.listen]
-                              #           port is rejected at load, by name
+                              #           router dst-nats 443 here. When this
+                              #           listener binds (dns+http+https), a value
+                              #           colliding with [api], [http.listen],
+                              #           [dns.listen] port or dot_port on an
+                              #           overlapping address is rejected at load,
+                              #           by name
+                              #           Env: FAH__HTTPS__LISTEN__PORT
 
 [https]
 max_connections = 1024        # boot    — ceiling on concurrent HTTPS sessions,

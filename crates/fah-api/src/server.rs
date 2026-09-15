@@ -13,6 +13,7 @@ use std::time::Duration;
 
 use axum::Router;
 use fah_common::listen::{bind_error, bind_tcp, listen_addr};
+use fah_config::port_setting::API as PORT_SETTING;
 use hyper_util::rt::{TokioExecutor, TokioIo};
 use hyper_util::server::conn::auto::Builder;
 use hyper_util::service::TowerToHyperService;
@@ -23,8 +24,6 @@ use tokio_rustls::TlsAcceptor;
 
 use crate::events::EventHub;
 use crate::state::AppStateBuilder;
-
-const PORT_SETTING: &str = "[api] port, or FAH__API__PORT";
 
 /// Ceiling on concurrently-served connections (hard rule 4: bounded
 /// everything — this listener was the one place memory could grow with

@@ -4,16 +4,16 @@ Where the work is right now. **Rewrite this file — never append.** History
 belongs in `git log`, `docs/code-review/` and the phase tables; this file is only
 what is true today.
 
-**Last updated:** 2026-09-15 (fourth pass — the listener-configuration sweep and
-the SP1/SP4/SP5/SP6 fix, uncommitted)
+**Last updated:** 2026-09-15 (fifth pass — the independent review of the two fix
+commits and the R1 fix it found, uncommitted)
 
 ## Now
 
 | | |
 | --- | --- |
-| Branch | **Phase 3 landed on `main`** on 2026-09-13, by fast-forward — `bc49e4e..78238b4`, 105 commits, no merge commit ([plan/plan-merge.md](../plan/plan-merge.md), all five steps closed). `main` is at **`f32f214`** — the post-merge audit and the N1 fix — and **both remotes carry it**: `origin/main` and `backup/main` are at `f32f214` too, so nothing is unpushed. What is outstanding is **uncommitted, not unpushed** (§Tree). Twenty-three commits followed the Phase 3 tip `180beb8`; the last ten before this session are listed in §Session 2026-09-14/15, and the ten from 2026-09-15 are `1055d1b`, `d93f4ad`, `5f91db5`, `5b346d7`, `dac5be0`, `99e4953`, `355a4d3`, `8c69114`, `8fec41d` and `f32f214` — bench harness, tests and documentation, except `f32f214`, which carries the N1 production fix in `fah-config/src/env.rs`. Read the tip from `git rev-parse main`, not from this row: it named `99e4953` for two commits after that stopped being true. `phase3-06` (`78238b4`) has served its purpose and sits well behind. Rollback tags: `main-pre-phase3-merge` = `ebc46f1`, `phase3-06-pre-main-merge` = `185139b`; `eb693e2` is the merge commit inside the branch, two parents. `pre-alloc-domain-2026-09-06` = `64be513` stays the rollback point before the allocation domains |
-| Tree | **dirty — eight modified files, nothing untracked, no commit yet.** The listener-configuration fix (SP1, SP4, SP5, SP6 — §Post-merge audit): `crates/fah-config/src/lib.rs` (+253 −40, the socket-collision table, the address-overlap relation, seven tests), `crates/fah-config/src/schema/engine.rs` (+16, `EngineMode::serves_http` / `serves_https`), `crates/fah-api/src/server.rs` (+7 −7, the API bind through `listen_addr` + `bind_tcp` + `bind_error`), `crates/fah-api/tests/api.rs` (+93 −9, four bind tests and the harness options they need), `crates/fah-common/src/listen.rs` (+15 −4, the `AddrInUse` arm), `crates/fastadhunter/src/main.rs` (+8 −28, `http_enabled` / `https_enabled` deleted in favour of the `EngineMode` methods), `crates/fastadhunter/tests/common/mod.rs` (+29 −8, distinct port draws), plus the audit file and this one. Gates green on the working tree; **the commit needs its own go.** One stash remains, `stash@{0}` ("phase3-06 project-state Next row"); it predates this work and is not ours |
-| Tests | **The gate ran on the working tree, 2026-09-15, Windows dev box: `cargo fmt --all -- --check` and `cargo clippy --workspace --all-targets --all-features -- -D warnings` clean, `cargo test --all-features --workspace` 1 632 passed / 0 failed, two consecutive full runs.** Twelve tests were added by the listener fix, and `fah-config` is at 97 (90 before), `fah-common` 44 (43), `fah-api --test api` 137 (133). `shipped_path_e2e` now carries six tests in 21 s — four added on 2026-09-15 for the HTTPS listener's own edge cases, the last of them mutation-verified (`max_connections: 2` fails its negative control). The dashboard ran on the same tip and is green: `npm run typecheck` clean, **58 test files, 1 043 tests, 0 failures** (three fewer than the 1 046 of 2026-09-14 — the `fallback` mode's tests went with the mode in `5b5d3e8`), and `npm run build` is under budget at 136 921 B gzip against 153 600 B. `cargo bench -p fastadhunter --bench pipeline --no-run` builds for the first time since p5-04, with no profile override (`3a1b5b8`). The `e2e` `WSAEACCES` trap (§Known-good gate note) did not fire. Bench A/B against `main` over four alternating rounds: **no regression demonstrated** |
+| Branch | **Phase 3 landed on `main`** on 2026-09-13, by fast-forward — `bc49e4e..78238b4`, 105 commits, no merge commit ([plan/plan-merge.md](../plan/plan-merge.md), all five steps closed). `main` is at **`2eb5018`** — the post-merge audit, the N1 fix and the listener fix — and **both remotes carry it**: `git ls-remote` puts `origin/main` and `backup/main` on `2eb5018` too, so nothing is unpushed. Read the remotes that way, not from the tracking refs, and never from this row. What is outstanding is **uncommitted, not unpushed** (§Tree). Twenty-four commits followed the Phase 3 tip `180beb8`; the last ten before this session are listed in §Session 2026-09-14/15, and the eleven from 2026-09-15 are `1055d1b`, `d93f4ad`, `5f91db5`, `5b346d7`, `dac5be0`, `99e4953`, `355a4d3`, `8c69114`, `8fec41d`, `f32f214` and `2eb5018` — bench harness, tests and documentation, except the last two, which are production: `f32f214` the N1 environment arms in `fah-config/src/env.rs`, `2eb5018` the listener-collision matrix, the API bind and the `AddrInUse` hint. Read the tip from `git rev-parse main`, not from this row: it named `99e4953` for two commits after that stopped being true. `phase3-06` (`78238b4`) has served its purpose and sits well behind. Rollback tags: `main-pre-phase3-merge` = `ebc46f1`, `phase3-06-pre-main-merge` = `185139b`; `eb693e2` is the merge commit inside the branch, two parents. `pre-alloc-domain-2026-09-06` = `64be513` stays the rollback point before the allocation domains |
+| Tree | **dirty — eight modified files and one untracked, no commit yet.** The R1 fix (§Post-merge audit, the independent review): `crates/fah-config/src/port_setting.rs` (**new**, +9 — the five bind-failure settings, moved to the one crate that can verify the `FAH__` names they advertise), `crates/fah-config/src/lib.rs` (+36, `pub mod port_setting` and one test), `crates/fah-config/src/env.rs` (+4, the `http.listen.port` and `https.listen.port` arms), `crates/fah-dns/src/server.rs`, `crates/fah-http/src/server.rs`, `crates/fah-http/src/tls_server.rs`, `crates/fah-api/src/server.rs` (each −2…−5 +1, the local constant replaced by an aliased import so no call site moves), plus `CONFIGURATION.md` (+2, one `Env:` line under each of the two port entries), the audit file and this one. Gates green on the working tree; **the commit needs its own go.** One stash remains, `stash@{0}` ("phase3-06 project-state Next row"); it predates this work and is not ours |
+| Tests | **The gate ran on the working tree, 2026-09-15, Windows dev box: `cargo fmt --all -- --check` and `cargo clippy --workspace --all-targets --all-features -- -D warnings` clean, `cargo test --all-features --workspace` 1 633 passed / 0 failed.** The listener fix added twelve tests and the R1 fix one, so `fah-config --lib` is at 98 (97 after the listener fix, 90 before it), `fah-common` 44 (43), `fah-api --test api` 137 (133). The R1 test is mutation-verified in both directions — deleting the two new arms fails it on `UnknownEnvKey`, pointing one arm at the wrong field fails it on the value. `shipped_path_e2e` now carries six tests in 21 s — four added on 2026-09-15 for the HTTPS listener's own edge cases, the last of them mutation-verified (`max_connections: 2` fails its negative control). The dashboard ran on the same tip and is green: `npm run typecheck` clean, **58 test files, 1 043 tests, 0 failures** (three fewer than the 1 046 of 2026-09-14 — the `fallback` mode's tests went with the mode in `5b5d3e8`), and `npm run build` is under budget at 136 921 B gzip against 153 600 B. `cargo bench -p fastadhunter --bench pipeline --no-run` builds for the first time since p5-04, with no profile override (`3a1b5b8`). The `e2e` `WSAEACCES` trap (§Known-good gate note) did not fire. Bench A/B against `main` over four alternating rounds: **no regression demonstrated** |
 | Version | 0.3.4 (workspace, since `4e7a6de`), untagged. Newest tags `v0.3.2` (`89aac76`), `pre-alloc-domain-2026-09-06`, `soak-p2.6-11` |
 | Deployed | **0.3.4, and not from today's merge.** Nothing was deployed on 2026-09-13 — landing Phase 3 on `main` is not a deployment, and deploying it is a separate decision that has not been made. Production runs image `kingston/fastadhunter-arm64-0.3.4.tar` as container `fastadhunter-0.3.4`, booted **2026-09-11T22:02:48Z**, HTTP allocation domains, N=2 (`FAH__RUNTIME__HTTP_RUNTIMES=2` on `fah-env`), `veth1` / `172.17.0.2`, mounts `fah-config,fah-data`. `GET /health` on 2026-09-13 18:24 local answered `0.3.4`, uptime 148 853 s. **The build commit is recorded nowhere** — neither `/health` nor the soak capture carries one; by timestamp the image matches `d307c36` with the version already at 0.3.4, the bump itself committed three minutes after the boot as `4e7a6de`. A **seven-day soak is running on this build**: t0 `2026-09-11T22:13:21Z`, ending ~2026-09-18T22:00Z, hourly scheduled task `FAH-soak-0.3.4`, artefacts under `docs/code-review/phase2.6/soak-0.3.4/` — untracked and gitignored, so they live outside the repository. The p3-06 probe (`fah-probe` on `veth3` / 172.17.0.4) was torn down 2026-09-11 evening; `veth3` remains, no test firewall rule or address list remains. Deploying Phase 3 is a separate decision and it has not been made |
 | Build ≠ tip | the running 0.3.4 **has** the F10 stats flush (`32d7776`), the F1 TCP bound (`ed28395`), the F2 UDP ceiling (`b0b091e`), their close-out tests (`ad110d8`) and adaptive-only (`d307c36`) — every one of them committed before its 01:02 local boot. It **lacks** everything from the day after: the F11 supervisor (`0fb8dd0`), F3's query borrow and pre-sized `domain_of` (`07d4d68`, `c220956`), the H1-H3/D1 allocation removals (`3287418`), the idle upstream pool reaper (`8941770`), the HTTP refusal-counter split (`28c751d`) — and the whole of Phase 3: certificates, SNI filtering, HTTPS interception, the DoT and DoH listeners. The `strategy = "adaptive"` precondition is settled rather than pending: that boot already happened and the config loaded |
@@ -214,6 +214,44 @@ exhaustive. The match moved to `schema/engine.rs`; the rationale could not,
 because hard rule 7 forbids an agent writing Rust comments. Behaviour is
 self-enforcing without it — the match really is exhaustive — but the reasoning
 now lives only in the audit file and in git history.
+
+#### Independent review of the two fix commits — 2026-09-15, findings R1–R7
+
+`f32f214` and `2eb5018` were then reviewed by a reviewer who did not write them:
+plan compliance against the resolutions above, correctness, architecture,
+performance, memory, Rust quality, tests, regression. **One should-fix, six
+notes, no blocker, and no defect in the DNS or HTTP data path.**
+
+- **R1 — closed 2026-09-15.** `fah-http`'s two `PORT_SETTING` constants
+  advertised `FAH__HTTP__LISTEN__PORT` and `FAH__HTTPS__LISTEN__PORT`;
+  `env::apply_one` had no arm for either, so following the hint stopped the
+  process from booting. N1's class in a **second population**: N1's anti-drift
+  test walks the names *CONFIGURATION.md* advertises, and nothing walked the
+  names the *code* advertises. The two arms landed, the five constants moved to
+  `fah-config/src/port_setting.rs` — `fah-common` owns `bind_error` but is an L1
+  sibling and may not import the allowlist — and one test parses the variable out
+  of each constant, so a renamed constant carries its own check. CONFIGURATION.md
+  gained the two `Env:` lines, which makes the doc-walking test cover five names
+  instead of three.
+- **R2–R7 — open, notes, nothing owed.** The pair-matrix test drives 5 of the 10
+  pairs (`dot–dns` and `dot–http` asserted by nothing, though the validator is one
+  uniform loop); `addresses_overlap` misses IPv4-mapped IPv6; the blamed key is
+  the later entry in the socket table, not the edited one; the `Env:` scan's
+  `>= 3` floor equals the count it guards; one API test binds `[::]:0` on every
+  interface and needs host IPv6; `validate_listen_sockets` takes both the config
+  and the addresses derived from it.
+
+**Neither R1 nor N1 was created by the Phase 3 merge** — worth recording, because
+the audit that found them was triggered by it. `git merge-base --is-ancestor`
+against `bc49e4e`, the pre-merge tip of `main`: N1's two keys landed on `main`
+itself on 2026-09-11 (`ed28395`, `b0b091e`), and R1's **HTTP half** landed on
+2026-07-26 with p2-01 (`4ef6d4a`). Only R1's **HTTPS half** arrived with the merge
+(`40ca0cc`, p3-03) — `tls_server.rs` did not exist on `main` before it. On
+pre-merge `main` the wrong HTTP variable was near-invisible: `bind_error`'s
+`AddrInUse` arm dropped `port_setting` entirely, so it printed only on
+`PermissionDenied`, which needs `[http.listen] port` below 1024 against a default
+of 8080. **SP6's fix is what made a two-month-old defect visible.** The version
+number does not discriminate any of this: `bc49e4e` already reads `0.3.4`.
 
 ## Risk inventory close-out — 2026-09-11
 

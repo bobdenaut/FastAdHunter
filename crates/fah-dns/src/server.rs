@@ -3,15 +3,11 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 
 use fah_common::listen::{bind_error, bind_tcp, bind_udp, listen_addr};
+use fah_config::port_setting::{DNS as PORT_SETTING, DOT as DOT_PORT_SETTING};
 use fah_config::DnsConfig;
 use tokio::net::{TcpListener, UdpSocket};
 use tokio::sync::{mpsc, Semaphore};
 use tokio::task::JoinHandle;
-
-/// Named in bind failures so the operator is sent to the right setting.
-const PORT_SETTING: &str = "[dns.listen] port, or FAH__DNS__LISTEN__PORT";
-
-const DOT_PORT_SETTING: &str = "[dns.listen] dot_port, or FAH__DNS__LISTEN__DOT_PORT";
 
 use crate::dot::{self, DotConnectionGauge, DotTls};
 use crate::pipeline::Pipeline;

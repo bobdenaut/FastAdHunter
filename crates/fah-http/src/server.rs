@@ -14,6 +14,7 @@ use std::thread::JoinHandle as ThreadHandle;
 use std::time::Duration;
 
 use fah_common::listen::{bind_error, bind_tcp, listen_addr};
+use fah_config::port_setting::HTTP as PORT_SETTING;
 use fah_config::HttpConfig;
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::{mpsc, watch, Semaphore};
@@ -24,9 +25,6 @@ use fah_common::connections::{ConnectionGauge, OpenConnection};
 use crate::domain::{self, Accepted, Handoff, ProxyFactory};
 use crate::https::TlsProxy;
 use crate::proxy::Proxy;
-
-/// Named in bind failures so the operator is sent to the right setting.
-const PORT_SETTING: &str = "[http.listen] port, or FAH__HTTP__LISTEN__PORT";
 
 const HANDOFF_QUEUE: usize = 32;
 
