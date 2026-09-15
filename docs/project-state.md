@@ -4,17 +4,17 @@ Where the work is right now. **Rewrite this file — never append.** History
 belongs in `git log`, `docs/code-review/` and the phase tables; this file is only
 what is true today.
 
-**Last updated:** 2026-09-15 (eighth pass — the hot-path audit was rewritten as
-one file, and its two medium findings shipped as `26ffe1c`; tree clean, both
-remotes current)
+**Last updated:** 2026-09-15 (ninth pass — the hot-path audit's two medium
+findings shipped as `26ffe1c`, and the no-comments hook now gates the dashboard
+as `3e97d16`; tree clean, both remotes current)
 
 ## Now
 
 | | |
 | --- | --- |
-| Branch | **Phase 3 landed on `main`** on 2026-09-13, by fast-forward — `bc49e4e..78238b4`, 105 commits, no merge commit ([plan/plan-merge.md](../plan/plan-merge.md), all five steps closed). `main` is at **`26ffe1c`** — the A1/A2 listener fix — and **both remotes carry it**: `git ls-remote` puts `origin/main` and `backup/main` on `26ffe1c` too, so nothing is unpushed. Read the remotes that way, not from the tracking refs, and never from this row. Read the tip from `git rev-parse main`, not from this row either: it named `99e4953` for two commits after that stopped being true, and `9d9d792` for six more. Six commits followed `9d9d792`: `e8e7cf8` the enumeration sweep's record, `2b03a30` `bd6b1f0` `0662df4` `8abb9c1` the hot-path audit and its rewrites, and `26ffe1c` the only production one — §Hot-path audit below. Everything before them is in `git log`; the ten from 2026-09-14/15 are listed in §Session 2026-09-14/15. `phase3-06` (`78238b4`) has served its purpose and sits well behind. Rollback tags: `main-pre-phase3-merge` = `ebc46f1`, `phase3-06-pre-main-merge` = `185139b`; `eb693e2` is the merge commit inside the branch, two parents. `pre-alloc-domain-2026-09-06` = `64be513` stays the rollback point before the allocation domains |
+| Branch | **Phase 3 landed on `main`** on 2026-09-13, by fast-forward — `bc49e4e..78238b4`, 105 commits, no merge commit ([plan/plan-merge.md](../plan/plan-merge.md), all five steps closed). `main` is at **`3e97d16`** — the no-comments hook extended to the dashboard — and **both remotes carry it**: `git ls-remote` puts `origin/main` and `backup/main` on `3e97d16` too, so nothing is unpushed. Read the remotes that way, not from the tracking refs, and never from this row. Read the tip from `git rev-parse main`, not from this row either: it named `99e4953` for two commits after that stopped being true, and `9d9d792` for six more. Eight commits followed `9d9d792`: `e8e7cf8` the enumeration sweep's record, `2b03a30` `bd6b1f0` `0662df4` `8abb9c1` the hot-path audit and its rewrites, `26ffe1c` the A1/A2 listener fix and the only production one of the set, `ad12103` this file, and `3e97d16` the hook — §Hot-path audit below. Everything before them is in `git log`; the ten from 2026-09-14/15 are listed in §Session 2026-09-14/15. `phase3-06` (`78238b4`) has served its purpose and sits well behind. Rollback tags: `main-pre-phase3-merge` = `ebc46f1`, `phase3-06-pre-main-merge` = `185139b`; `eb693e2` is the merge commit inside the branch, two parents. `pre-alloc-domain-2026-09-06` = `64be513` stays the rollback point before the allocation domains |
 | Tree | **clean — nothing modified, nothing untracked, nothing unpushed.** One stash remains, `stash@{0}` ("phase3-06 project-state Next row"); it predates all of this work and is not ours |
-| Tests | **The gate ran at `26ffe1c`, 2026-09-15, Windows dev box: `cargo fmt --all -- --check` and `cargo clippy --workspace --all-targets -- -D warnings` clean, `cargo test --all-features --workspace` 1 648 passed / 0 failed** (1 635 at `9d9d792`). The A1/A2 fix added thirteen: `fah-common --lib` is at 58 (44 before — `retry` carried its four moved tests plus two for `never_fatal`, `throttle` brought nine), `fah-dns --lib` 220 (218, two classification tests) and `fah-http --lib` 92 (91, the falsifiable accept-loop test). The dashboard figures below were measured at `9d9d792` and were not re-run for a change that touches no frontend code. From the earlier passes and still current: the listener fix added twelve tests, R1 one and F14 two, so `fah-config --lib` is at 98 (97 after the listener fix, 90 before it) and `fah-api --test api` 138 (133). Both of the last two fixes are mutation-verified: for R1, deleting the two new arms fails its test on `UnknownEnvKey` and pointing one arm at the wrong field fails it on the value; for F14, reverting the atomic fails the behavioural test while deleting the `post_config` call fails the wiring test and leaves the behavioural one passing — which is the proof the two cover different halves. `shipped_path_e2e` now carries six tests in 21 s — four added on 2026-09-15 for the HTTPS listener's own edge cases, the last of them mutation-verified (`max_connections: 2` fails its negative control). The dashboard ran on the same tip and is green: `npm run typecheck` clean, **58 test files, 1 043 tests, 0 failures** (three fewer than the 1 046 of 2026-09-14 — the `fallback` mode's tests went with the mode in `5b5d3e8`), and `npm run build` is under budget at 136 921 B gzip against 153 600 B. `cargo bench -p fastadhunter --bench pipeline --no-run` builds for the first time since p5-04, with no profile override (`3a1b5b8`). The `e2e` `WSAEACCES` trap (§Known-good gate note) did not fire. Bench A/B against `main` over four alternating rounds: **no regression demonstrated** |
+| Tests | **The gate ran at `26ffe1c`, the last commit to touch compilable code — `ad12103` and `3e97d16` are this file, a shell hook and its own test, so no gate was owed.** 2026-09-15, Windows dev box: `cargo fmt --all -- --check` and `cargo clippy --workspace --all-targets -- -D warnings` clean, `cargo test --all-features --workspace` 1 648 passed / 0 failed** (1 635 at `9d9d792`). The A1/A2 fix added thirteen: `fah-common --lib` is at 58 (44 before — `retry` carried its four moved tests plus two for `never_fatal`, `throttle` brought nine), `fah-dns --lib` 220 (218, two classification tests) and `fah-http --lib` 92 (91, the falsifiable accept-loop test). The dashboard figures below were measured at `9d9d792` and were not re-run for a change that touches no frontend code. From the earlier passes and still current: the listener fix added twelve tests, R1 one and F14 two, so `fah-config --lib` is at 98 (97 after the listener fix, 90 before it) and `fah-api --test api` 138 (133). Both of the last two fixes are mutation-verified: for R1, deleting the two new arms fails its test on `UnknownEnvKey` and pointing one arm at the wrong field fails it on the value; for F14, reverting the atomic fails the behavioural test while deleting the `post_config` call fails the wiring test and leaves the behavioural one passing — which is the proof the two cover different halves. `shipped_path_e2e` now carries six tests in 21 s — four added on 2026-09-15 for the HTTPS listener's own edge cases, the last of them mutation-verified (`max_connections: 2` fails its negative control). The dashboard ran on the same tip and is green: `npm run typecheck` clean, **58 test files, 1 043 tests, 0 failures** (three fewer than the 1 046 of 2026-09-14 — the `fallback` mode's tests went with the mode in `5b5d3e8`), and `npm run build` is under budget at 136 921 B gzip against 153 600 B. `cargo bench -p fastadhunter --bench pipeline --no-run` builds for the first time since p5-04, with no profile override (`3a1b5b8`). The `e2e` `WSAEACCES` trap (§Known-good gate note) did not fire. Bench A/B against `main` over four alternating rounds: **no regression demonstrated** |
 | Version | 0.3.4 (workspace, since `4e7a6de`), untagged. Newest tags `v0.3.2` (`89aac76`), `pre-alloc-domain-2026-09-06`, `soak-p2.6-11` |
 | Deployed | **0.3.4, and not from today's merge.** Nothing was deployed on 2026-09-13 — landing Phase 3 on `main` is not a deployment, and deploying it is a separate decision that has not been made. Production runs image `kingston/fastadhunter-arm64-0.3.4.tar` as container `fastadhunter-0.3.4`, booted **2026-09-11T22:02:48Z**, HTTP allocation domains, N=2 (`FAH__RUNTIME__HTTP_RUNTIMES=2` on `fah-env`), `veth1` / `172.17.0.2`, mounts `fah-config,fah-data`. `GET /health` on 2026-09-13 18:24 local answered `0.3.4`, uptime 148 853 s. **The build commit is recorded nowhere** — neither `/health` nor the soak capture carries one; by timestamp the image matches `d307c36` with the version already at 0.3.4, the bump itself committed three minutes after the boot as `4e7a6de`. A **seven-day soak is running on this build**: t0 `2026-09-11T22:13:21Z`, ending ~2026-09-18T22:00Z, hourly scheduled task `FAH-soak-0.3.4`, artefacts under `docs/code-review/phase2.6/soak-0.3.4/` — untracked and gitignored, so they live outside the repository. The p3-06 probe (`fah-probe` on `veth3` / 172.17.0.4) was torn down 2026-09-11 evening; `veth3` remains, no test firewall rule or address list remains. Deploying Phase 3 is a separate decision and it has not been made |
 | Build ≠ tip | the running 0.3.4 **has** the F10 stats flush (`32d7776`), the F1 TCP bound (`ed28395`), the F2 UDP ceiling (`b0b091e`), their close-out tests (`ad110d8`) and adaptive-only (`d307c36`) — every one of them committed before its 01:02 local boot. It **lacks** everything from the day after: the F11 supervisor (`0fb8dd0`), F3's query borrow and pre-sized `domain_of` (`07d4d68`, `c220956`), the H1-H3/D1 allocation removals (`3287418`), the idle upstream pool reaper (`8941770`), the HTTP refusal-counter split (`28c751d`) — and the whole of Phase 3: certificates, SNI filtering, HTTPS interception, the DoT and DoH listeners. The `strategy = "adaptive"` precondition is settled rather than pending: that boot already happened and the config loaded |
@@ -135,10 +135,43 @@ available: the review registry already uses them for whole files
 - **A throttle must not be per connection.** `DotTls` is `Clone` and is cloned
   once per connection; a throttle field there would have been the defect itself.
   Instances live on the connection gauges and on `Pipeline`.
-- **A3–A7 open, all low.** A3 is the TCP/DoT length-prefix realloc, held
-  deliberately: encoding at a two-byte offset is invalid, because hickory emits
-  name-compression pointers as absolute buffer indices. A4 and A7 are method
-  findings, A5 and A6 want owner decisions on the text of hard rules 3 and 7.
+- **A6 — fixed 2026-09-15 in `3e97d16`, and two claims under it withdrawn.** The
+  hook cited "hard rule 20" for a rule CLAUDE.md numbers 7, left over from
+  `plan/CLAUDE.md`'s old copy of the principles; it references the rule by name
+  now. Withdrawn: that 8369 comment lines mean rule 7 "does not describe the
+  tree" — a prohibition is not a description, and the existing comments predate
+  it — and that the hook is too strict for rejecting an edit that carries a
+  pre-existing comment through unchanged. **Hard rule 7 is not open for
+  discussion.** A comment is an input cost paid on every read of the file, by
+  every agent, in every session, against a one-time benefit. A rule that needs
+  the model's judgement to apply ("2–3 lines where needed") was tried and
+  eroded; a binary, machine-checkable one holds.
+- **A3, A4, A5 and A7 open, all low.** A3 is the TCP/DoT length-prefix realloc,
+  held deliberately: encoding at a two-byte offset is invalid, because hickory
+  emits name-compression pointers as absolute buffer indices. A4 and A7 are
+  method findings. A5 is the only one waiting on an owner decision — the text of
+  hard rule 3, which forbids hot-path locks the cache legitimately takes.
+
+### The no-comments hook now covers the dashboard — `3e97d16`
+
+`.claude/hooks/no-rust-comments.sh` gates `.rs`, `.ts` and `.tsx`. The dashboard
+had never had a gate and sits at **15.7 % comment lines** (6342 of 40469)
+against **9.7 %** in `crates` (8405 of 86829) — and the `crates` figure is
+mostly pre-hook code, since the hook blocks new edits rather than cleaning old
+ones. Single-line template literals are stripped before the scan: `socket.ts`
+builds a websocket URL with a literal `//` inside backticks, which the old
+string-stripping read as a comment. No new exemption was needed — the dashboard
+has zero functional pragmas, so all 6342 lines are prose.
+
+`.claude/hooks/no-rust-comments.test.sh` covers it: 14 cases, blocked / allowed /
+out of scope, and falsified rather than trusted — dropping `.ts` from the
+extension filter fails three, dropping the backtick stripping fails exactly the
+template-literal case. The `MultiEdit` path had no coverage before.
+
+**The existing comments are left alone, deliberately.** Each is either a
+duplicate of a fact that already has a home — `api/types.ts` cites API.md for
+the two traps it repeats, and both are there at `API.md:289` and `:784` — or the
+only copy, and deleting it loses the fact. Per file, not a `sed`.
 
 ### Post-merge audit — 2026-09-15
 
