@@ -17,7 +17,9 @@ extension, no per-device agent.
 It filters **DNS and HTTP today**. HTTPS filtering at the SNI plus the DoT/DoH
 listeners (Phase 3) are built and on `main`, **not deployed**; they ship with
 interception off, so nothing is ever decrypted. HTML filtering (Phase 4) is
-designed and not started.
+designed, and **parked** — rewriting a page needs its body, a body needs
+decryption, and decryption is what this deployment declined
+([ADR-0009](docs/decisions/0009-phase-4-parked.md)).
 
 **Performance is the primary feature.** Every architectural decision is
 evaluated by its effect on throughput, latency and allocations — and the
@@ -37,7 +39,7 @@ numbers below are measured on the target hardware, not estimated.
 | 2.6 | Adaptive DNS Stage 1 | ✅ done — closed 2026-09-07; `adaptive` is the only strategy since p2.6-12, on `main` from 2026-09-11 | `soak-p2.6-11` |
 | 5 | Web dashboard | ✅ done — closed 2026-09-01, four verification rows deferred to the next deploy window | `0.3.0` |
 | 3 | HTTPS at the SNI + DoT/DoH | 🚧 on `main` since 2026-09-13 — p3-01…p3-05 and p3-07…p3-09 done. **It is SNI-only + DoT/DoH because interception is off**: the owner decided on 2026-09-13 not to use the interception code, so nothing is decrypted and p3-06 and p3-06b are parked. p3-10 and p3-11 open, and it is **not deployed** | `main`, untagged |
-| 4 | HTML filtering | ⬜ not started | — |
+| 4 | HTML filtering | ⏸ **parked 2026-09-15** — it needs the page body, the body needs decryption, and decryption is the thing this deployment declined. Plain HTTP, the one path it could still reach, carried 2 900 requests and zero blocks in 3.3 days ([ADR-0009](docs/decisions/0009-phase-4-parked.md)) | — |
 
 Rows are in **execution** order, which is not numeric order: the dashboard is
 numbered 5 by capability and scheduled ahead of HTTPS and HTML filtering because
@@ -437,8 +439,8 @@ Pass-through: stream origin ⇄ client, byte for byte
 **The body is never parsed and never buffered.** Images, archives, PDFs and video
 stream through untouched — buffering a response to inspect it would make memory
 grow with traffic, which the bounded-everything rule forbids outright. HTML
-rewriting is Phase 4 — not started — and will be opt-in, for that content type
-alone.
+rewriting was Phase 4, which is **parked** (ADR-0009), so the body is not parsed
+on any path — not as a default, and not behind an opt-in either.
 
 The verdict is taken on the **head**, before the origin is resolved, so a blocked
 request costs no DNS lookup and no upstream connection — measured **48–55 %
@@ -747,7 +749,7 @@ FastAdHunter/
 | Allocator | mimalloc | +27 % throughput, −17 % CPU/query vs mallocng |
 | Scanning | memchr | SIMD single-byte search — not regex |
 | Terminal UI | ratatui | the monitor only; the engine has no UI dependency |
-| HTML | lol_html *(Phase 4)* | streaming rewriter, never buffers a document |
+| HTML | ~~lol_html~~ | the streaming rewriter Phase 4 would have used; **parked 2026-09-15**, never compiled in (ADR-0009) |
 
 > **Rule:** do not reinvent cryptography. rustls, rcgen and x509-parser are the
 > complete crypto surface.
@@ -775,12 +777,14 @@ firewall · a replacement for a good browser extension.
 | **2.6** ✅ | Adaptive DNS Stage 1 — per-endpoint health, penalty and skip on repeated transport failure, on-path recovery probing; in production opt-in since 2026-08-25, closed 2026-09-07; `adaptive` is the only strategy and `fallback` is deleted since p2.6-12 (on `main` from 2026-09-11). Shipped alongside as 0.3.2: HTTP allocation domains (ADR-0006) |
 | **5** ✅ | Web dashboard — thirteen screens, 128,730 B gzip at 0.3.0, served by `fah-api` on one origin, session-cookie auth, every figure backed by an endpoint that exists; released as 0.3.0, closed 2026-09-01 with four verification rows deferred |
 | **3** 🚧 | HTTPS filtered at the SNI with no decryption, certificate management, DoT/DoH listeners, live Interception Document + client-rejection view (ADR-0008) — on `main` since 2026-09-13, **not deployed**. The interception code ships compiled but switched off by owner decision, which is why the delivered capability is SNI + DoT/DoH. p3-10 (performance characterization) and p3-11 (verification and the seven-day soak) are open; both wait in part on the deploy decision |
-| **4** ⬜ | HTML filtering with `lol_html`, cosmetic rules — not started |
+| **4** ⏸ | HTML filtering with `lol_html`, cosmetic rules — **parked 2026-09-15**. Reviving it needs **both** interception switched on and URL-path lists loaded; the deployed ruleset is 720 URL rules against 1 182 029 DNS ones ([ADR-0009](docs/decisions/0009-phase-4-parked.md)) |
 
-Execution order is 2.5 → 2.6 → **5** → 3 → 4. Each of Phases 3 and 4 sends the
-dashboard back for a capability re-review: Phase 3's certificate screens and
-client-rejection view landed with p3-09, and Phase 4 will change what the
-rule-partition figures mean.
+Execution order was 2.5 → 2.6 → **5** → 3 → 4, and it ends at 3: Phase 4 is
+parked, so Phase 3 is the last one that ships. Phase 3 sent the dashboard back
+for a capability re-review, and the certificate screens and client-rejection
+view landed with p3-09. The second re-review Phase 4 would have forced — cosmetic
+rules leaving `rules_inactive`, and the Lists partition changing meaning — is not
+owed.
 
 Detail and per-phase task status: [ROADMAP.md](ROADMAP.md) and `plan/`.
 

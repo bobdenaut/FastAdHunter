@@ -17,7 +17,7 @@ RB5009, not merely written.
 | 2.6 — Adaptive DNS Stage 1 | ✅ done — closed 2026-09-07; `adaptive` is the only strategy since p2.6-12, cherry-picked to `main` 2026-09-11 after the A/B measurement | `soak-p2.6-11` · `v0.3.2` |
 | 5 — web dashboard | ✅ done — closed 2026-09-01, four verification rows deferred | `0.3.0` |
 | 3 — HTTPS | 🚧 p3-01…p3-05 done, p3-06 `AWAITING SOAK` | — |
-| 4 — HTML filtering | ⬜ not started | — |
+| 4 — HTML filtering | ⏸ **parked 2026-09-15** — [ADR-0009](docs/decisions/0009-phase-4-parked.md) | — |
 
 Production runs **0.3.3** — HTTP served on allocation domains
 ([ADR-0006](docs/decisions/0006-http-allocation-domains.md)), N=2, plus the
@@ -317,10 +317,11 @@ dashboard that contradicts it is worse than no dashboard.
 
 Evidence: [docs/code-review/phase5/](docs/code-review/phase5/).
 
-**Phase 3 and Phase 4 each trigger a dashboard re-review** when they land — Phase
-3 adds certificate UI and per-client HTTPS-interception controls, Phase 4 moves
-cosmetic rules out of `rules_inactive` and changes the Lists partition. Neither
-is designed for in advance.
+**Phase 3 triggers a dashboard re-review** when it lands — certificate UI and
+per-client HTTPS-interception controls, not designed for in advance. Phase 4
+would have triggered a second one, moving cosmetic rules out of `rules_inactive`
+and changing the Lists partition; parked 2026-09-15, so that re-review is not
+owed.
 
 ## Phase 3 — HTTPS 🚧 **IN PROGRESS** (`plan/wip/phase3/`)
 
@@ -355,7 +356,21 @@ RB5009 — is open, owner-side.
 - DoT/DoH **listeners** (Android Private DNS support)
 - Operating mode `dns+http+https`
 
-## Phase 4 — HTML Filtering
+## Phase 4 — HTML Filtering — PARKED 2026-09-15
+
+**Not being built.** Owner decision, with its evidence in
+[ADR-0009](docs/decisions/0009-phase-4-parked.md). Rewriting HTML needs the
+response body; an HTTPS body needs TLS termination, which is interception, and
+interception is off because installing the CA on televisions, WiFi routers and
+appliances is an operational risk the household will not take. What remains is
+plain HTTP: 2 900 requests and zero blocks across 3.3 days of real traffic, and
+a deployed ruleset carrying 720 URL rules against 1 182 029 DNS ones.
+
+Reviving it needs **both** interception switched on and URL-path lists loaded.
+Either alone leaves the rewriter with nothing to act on. The five task files in
+`plan/open/phase4/` stay as written.
+
+What it would have delivered:
 
 - Streaming HTML rewriting powered by lol_html — element/cosmetic rules
   activate; the differentiator AdGuard Home lacks
@@ -406,11 +421,13 @@ blocker into a compromise of every account in the house, and it requires
 weakening `Content-Security-Policy` on sites that set one. Reopening this needs
 a strong new case and an ADR, not an implementation.
 
-**Serializability is the only thing this costs today.** If cosmetic rules are
-ever served to a client rather than only applied in-process by `lol_html`, the
-compiled cosmetic form is what would travel. Designing it to be writable out is
-free during Phase 4 and expensive afterwards — see `plan/open/phase4/`. Build
-no endpoint and no protocol; keep the shape open, and decide later.
+**Serializability was the only thing this cost, and the moment has passed.** If
+cosmetic rules were ever served to a client rather than applied in-process by
+`lol_html`, the compiled cosmetic form is what would travel, and designing it to
+be writable out was free during Phase 4 and expensive afterwards. Phase 4 is
+parked (ADR-0009), so there is no compiled cosmetic form to keep open — the cost
+returns with the phase, together with everything else it would have brought.
+Build no endpoint and no protocol.
 
 And should filter lists ever drive script execution, copy uBlock's constraint
 exactly: a list may **reference** pre-written, audited scriptlets with

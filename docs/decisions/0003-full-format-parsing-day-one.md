@@ -39,6 +39,12 @@ against the real pre-change parser (`docs/code-review/phase2/p2-03-review.md`).
 
 The correction's practical consequence is now visible in the type itself:
 `InactiveReason` carries only variants that genuinely stay inactive, and a
-rule a tier *can* answer carries its payload. Phase 4 will pay the same bill
-again for cosmetic rules, which remain payload-free deliberately — 24,368 in
-EasyList alone.
+rule a tier *can* answer carries its payload. Phase 4 would have paid the same
+bill again for cosmetic rules, which remain payload-free deliberately — 24,368
+in EasyList alone.
+
+> **Annotation, 2026-09-15.** That second bill is not coming: Phase 4 is parked
+> ([ADR-0009](0009-phase-4-parked.md)). Nothing here is reversed — cosmetic rules
+> are still parsed, still classified, and still land in `rules_inactive`, which
+> is exactly what this decision asked for. What changes is that they now stay
+> there.

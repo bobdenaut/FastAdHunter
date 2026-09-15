@@ -307,7 +307,8 @@ status lives in each phase's `CLAUDE.md` table.
   calibrate performance; the measured ~9× x86 → RB5009 factor is the stable
   reference (PERFORMANCE.md §Budgets).
 - Container: distroless/static, musl static binary, volumes `/config` + `/data`.
-- Tech stack is fixed: Tokio, Hyper/Axum, Hickory, rustls, lol_html (Phase 4).
+- Tech stack is fixed: Tokio, Hyper/Axum, Hickory, rustls. `lol_html` was
+  Phase 4's and is not in the build — the phase is parked (ADR-0009).
 
 ## Responses
 

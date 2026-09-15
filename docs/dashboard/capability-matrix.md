@@ -17,12 +17,15 @@ before any page is written and marked below as *(p5-03)* or *(p5-04)*: the
 `/events` subscription protocol, the in-force policy on `GET /clients`, and the
 session routes. Everything else in this file is what already ships.
 
-**Re-review after Phase 3 and Phase 4.** Phase 5 is deliberately built ahead of
-both. Phase 3 brings certificate machinery and per-client HTTPS interception —
-a screen this file currently has no row for, and a control the Clients page will
-need. Phase 4 activates cosmetic rules, which today land in `rules_inactive`;
-the Lists partition gains a band. Neither is designed for now, and both come back
-to this file when they land.
+**Re-review after Phase 3.** Phase 5 is deliberately built ahead of it. Phase 3
+brings certificate machinery and per-client HTTPS interception — a screen this
+file currently has no row for, and a control the Clients page will need. It is
+not designed for now and comes back to this file when it lands.
+
+Phase 4 would have forced a second re-review: cosmetic rules leaving
+`rules_inactive`, and the Lists partition gaining a band. It is parked as of
+2026-09-15 ([ADR-0009](../decisions/0009-phase-4-parked.md)), so that re-review
+is not owed and the partition keeps the meaning it has today.
 
 ## The API surface, in full
 

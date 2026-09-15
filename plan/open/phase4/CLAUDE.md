@@ -14,15 +14,33 @@ proven in isolation before it touches the proxy (streaming + bounded memory
 must be solid first). Pipeline integration wires verdicts, policies, events
 and stats together, then proof against budgets.
 
+> **PARKED 2026-09-15 — all five tasks.** Owner decision, recorded with its
+> evidence in [ADR-0009](../../../docs/decisions/0009-phase-4-parked.md).
+> Rewriting HTML needs the response body; an HTTPS body needs TLS termination,
+> which is interception, and interception is off since 2026-09-13 because
+> installing the CA on televisions, WiFi routers and appliances is an
+> operational risk the household will not take. That leaves plain HTTP, which
+> carried 2 900 requests and zero blocks in 3.3 days of real traffic, and the
+> deployed ruleset is 720 URL rules against 1 182 029 DNS ones — 0.06 %.
+>
+> Nothing here is abandoned: the task files stay as written and a later decision
+> restores them. Reviving the phase needs **both** interception switched on and
+> URL-path lists loaded; either alone leaves the rewriter with nothing to act on.
+>
+> Per [plan/CLAUDE.md](../../CLAUDE.md), a phase may close with parked tasks in
+> it. When Phase 3 closes, the selector moves this phase to `wip`, finds no
+> `WAITING` task, and moves it to `closed` — the closure is a recorded
+> consequence, not an ad-hoc folder move.
+
 **Always select the first task whose `STATUS` is `WAITING`.**
 
 | # | Task file | Outcome | MODEL | STATUS |
 |---|-----------|---------|-------|--------|
-| 1 | `p4-01-html-scaffold.md` | `[html]` config + gating + doc/diagram updates; rewrite hook stub | Opus | WAITING |
-| 2 | `p4-02-cosmetic-rules-activation.md` | Cosmetic rules compile into per-hostname selector sets (heavy) | Opus | WAITING |
-| 3 | `p4-03-streaming-rewriter.md` | lol_html streaming rewriter: bounded, charset/encoding-aware (heavy) | Opus | WAITING |
-| 4 | `p4-04-pipeline-integration.md` | Selective application in HTTP/HTTPS pipeline; policies, events, stats | Opus | WAITING |
-| 5 | `p4-05-phase4-verification.md` | Rewrite budgets in PERFORMANCE.md, benches, e2e, RB5009 validation | Opus | WAITING |
+| 1 | `p4-01-html-scaffold.md` | `[html]` config + gating + doc/diagram updates; rewrite hook stub | Opus | PARKED |
+| 2 | `p4-02-cosmetic-rules-activation.md` | Cosmetic rules compile into per-hostname selector sets (heavy) | Opus | PARKED |
+| 3 | `p4-03-streaming-rewriter.md` | lol_html streaming rewriter: bounded, charset/encoding-aware (heavy) | Opus | PARKED |
+| 4 | `p4-04-pipeline-integration.md` | Selective application in HTTP/HTTPS pipeline; policies, events, stats | Opus | PARKED |
+| 5 | `p4-05-phase4-verification.md` | Rewrite budgets in PERFORMANCE.md, benches, e2e, RB5009 validation | Opus | PARKED |
 
 ## TASK START / PHASE CONTEXT
 

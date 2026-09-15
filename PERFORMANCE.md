@@ -211,9 +211,10 @@ the full measurement.
   of CPU per day. At default settings it usually reclaims nothing, because
   `serve_stale = true` makes an entry sweepable only 24 h past TTL — read
   `counters.cache_cleanup.bytes_freed` near zero as normal.
-- **Inspected content (HTML) is budgeted separately and does not exist yet.**
-  Phase 4 rewrites HTML through `lol_html`; the HTTP rows above are the opaque
-  path and must not be read as covering it.
+- **Inspected content (HTML) has no budget and will not get one.** Phase 4 would
+  have rewritten HTML through `lol_html` and is parked (ADR-0009), so the opaque
+  path above is the only path there is. The rows are complete rather than
+  partial.
 - 10 k QPS is ~100× a busy household's peak. The headroom is the proof of
   efficiency, and it is what keeps p99 flat at real loads.
 
@@ -351,5 +352,6 @@ Beat AdGuard Home and Blocky on **both** axes:
 
 - **Efficiency** — their steady-state RAM (roughly 100–200 MB and 50–100 MB
   respectively) is our ceiling territory; our target is below both.
-- **Functionality** — streaming HTML rewriting powered by lol_html (Phase 4)
-  filters inside pages, which neither does.
+- **Functionality** — filtering inside pages, which neither does, would have
+  come from Phase 4's `lol_html` rewriter. That phase is parked (ADR-0009), so
+  this is a difference we chose not to take rather than one we hold.

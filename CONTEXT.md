@@ -15,8 +15,9 @@ of three kinds, decided by what it *addresses*:
 - **DNS-applicable** — acts on a domain name. Answered by the Domain Tier.
 - **request-applicable** — acts on a URL or on request context (`$script`,
   `$third-party`). Answered by the URL Tier since Phase 2.
-- **inactive** — no tier answers it yet: cosmetic (Phase 4), `$client`
-  (Policies), and patterns no supported syntax expresses.
+- **inactive** — no tier answers it: cosmetic rules, which Phase 4 would have
+  activated and which stay inactive now that it is parked (ADR-0009); `$client`
+  (Policies); and patterns no supported syntax expresses.
 
 "non-DNS" is retired as a category name — it merged the second and third, which
 is precisely the distinction that matters now that the URL Tier exists.
@@ -320,8 +321,9 @@ is no separate HTTPS engine.
 A request the HTTP Engine relays without inspecting or buffering its body:
 bytes are streamed between client and origin in both directions. The common
 case and the fast path. Distinct from a **Block**, which is answered locally
-and never reaches the origin. Response bodies are always pass-through in
-Phase 2; Phase 4 adds opt-in HTML rewriting for that content type alone.
+and never reaches the origin. Response bodies are **always** pass-through:
+Phase 4 would have added opt-in HTML rewriting and is parked (ADR-0009), so the
+word carries no exception.
 
 ### Interception
 

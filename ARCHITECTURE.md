@@ -171,7 +171,8 @@ Pipeline properties:
   archives, PDFs and video pass byte-for-byte. Buffering a response to inspect
   it would make memory grow with traffic, which hard rule 4 forbids outright,
   and it is not the job — parsing arbitrary payloads is what an antivirus does.
-  HTML rewriting arrives in Phase 4 and is opt-in per content type.
+  HTML rewriting would have arrived in Phase 4, which is parked (ADR-0009), so
+  no path parses a body.
 - **The fast path is the common path.** Most requests match nothing. That case
   must cost a verdict lookup and a copy loop, nothing else — it is benched in
   p2-02 *before* filtering exists, so a later regression has a baseline to fail
@@ -386,8 +387,9 @@ See [ADR-0002](docs/decisions/0002-no-embedded-database.md).
 ## Principles
 
 - **Zero-copy where possible** — buffers referenced, not copied.
-- **Streaming before buffering** — later phases process HTTP/HTML incrementally
-  (lol_html); nothing loads whole documents.
+- **Streaming before buffering** — nothing loads a whole document. HTML would
+  have been processed incrementally through `lol_html`; Phase 4 is parked
+  (ADR-0009), so the principle now holds by never opening a body at all.
 - **No runtime regex compilation** — rules compile to matchers at load time.
 - **Deterministic execution** — bounded structures everywhere; memory does not
   grow with traffic.
