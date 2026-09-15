@@ -835,6 +835,87 @@ format = "text"
     }
 
     #[test]
+    fn dns_tcp_max_connections_env_override_applies_and_is_validated() {
+        let pairs = vec![(
+            "FAH__DNS__TCP_MAX_CONNECTIONS".to_string(),
+            "512".to_string(),
+        )];
+        let config = apply_env_overrides(Config::default(), &pairs).unwrap();
+        assert_eq!(config.dns.tcp_max_connections, 512);
+
+        let pairs = vec![("FAH__DNS__TCP_MAX_CONNECTIONS".to_string(), "x".to_string())];
+        assert!(matches!(
+            apply_env_overrides(Config::default(), &pairs).unwrap_err(),
+            ConfigError::InvalidEnvValue { .. }
+        ));
+
+        let pairs = vec![("FAH__DNS__TCP_MAX_CONNECTIONS".to_string(), "0".to_string())];
+        let config = apply_env_overrides(Config::default(), &pairs).unwrap();
+        assert!(matches!(
+            validate(&config).unwrap_err(),
+            ConfigError::Validation {
+                key: "dns.tcp_max_connections",
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn dns_udp_max_inflight_env_override_applies_and_zero_stays_no_cap() {
+        let pairs = vec![("FAH__DNS__UDP_MAX_INFLIGHT".to_string(), "4096".to_string())];
+        let config = apply_env_overrides(Config::default(), &pairs).unwrap();
+        assert_eq!(config.dns.udp_max_inflight, 4096);
+        validate(&config).unwrap();
+
+        let pairs = vec![("FAH__DNS__UDP_MAX_INFLIGHT".to_string(), "0".to_string())];
+        let config = apply_env_overrides(Config::default(), &pairs).unwrap();
+        assert_eq!(config.dns.udp_max_inflight, 0);
+        validate(&config).unwrap();
+
+        let pairs = vec![("FAH__DNS__UDP_MAX_INFLIGHT".to_string(), "x".to_string())];
+        assert!(matches!(
+            apply_env_overrides(Config::default(), &pairs).unwrap_err(),
+            ConfigError::InvalidEnvValue { .. }
+        ));
+    }
+
+    #[test]
+    fn every_env_variable_configuration_md_documents_has_an_override_arm() {
+        let doc = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../CONFIGURATION.md");
+        let text = std::fs::read_to_string(&doc)
+            .unwrap_or_else(|err| panic!("read {}: {err}", doc.display()));
+
+        let documented: Vec<String> = text
+            .lines()
+            .filter_map(|line| line.split("Env: ").nth(1))
+            .map(|rest| {
+                rest.split_whitespace()
+                    .next()
+                    .unwrap_or_default()
+                    .to_string()
+            })
+            .filter(|var| var.starts_with("FAH__"))
+            .collect();
+
+        assert!(
+            documented.len() >= 3,
+            "the `Env:` scan found {} names; CONFIGURATION.md changed shape and this test \
+             stopped checking anything",
+            documented.len()
+        );
+
+        for var in documented {
+            let pairs = vec![(var.clone(), "1".to_string())];
+            let outcome = apply_env_overrides(Config::default(), &pairs);
+            assert!(
+                !matches!(outcome, Err(ConfigError::UnknownEnvKey { .. })),
+                "CONFIGURATION.md documents `Env: {var}` but `env::apply_one` has no arm for it, \
+                 so setting it fails the whole config load instead of overriding the key"
+            );
+        }
+    }
+
+    #[test]
     fn env_override_wins_over_file_and_defaults() {
         let config = Config::from_toml_str("[dns.cache]\nmax_entries = 500\n").unwrap();
         let pairs = vec![(

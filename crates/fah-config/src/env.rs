@@ -46,6 +46,13 @@ fn apply_one(
             config.runtime.http_runtimes = coerce_usize(var, path, value)?
         }
 
+        ["dns", "tcp_max_connections"] => {
+            config.dns.tcp_max_connections = coerce_usize(var, path, value)?
+        }
+        ["dns", "udp_max_inflight"] => {
+            config.dns.udp_max_inflight = coerce_usize(var, path, value)?
+        }
+
         ["dns", "listen", "address"] => config.dns.listen.address = value.to_string(),
         ["dns", "listen", "port"] => config.dns.listen.port = coerce_u16(var, path, value)?,
         ["dns", "listen", "dot_enabled"] => {

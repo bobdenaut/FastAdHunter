@@ -142,3 +142,33 @@ fn healthcheck_never_creates_the_config_file() {
         "healthcheck wrote the config file; it should be read-only"
     );
 }
+
+#[test]
+fn the_documented_dns_ceiling_env_overrides_survive_a_real_config_load() {
+    let dir = tempfile::tempdir().unwrap();
+    let config_path = dir.path().join("fastadhunter.toml");
+
+    for (var, value) in [
+        ("FAH__DNS__TCP_MAX_CONNECTIONS", "512"),
+        ("FAH__DNS__UDP_MAX_INFLIGHT", "4096"),
+    ] {
+        let output = Command::new(env!("CARGO_BIN_EXE_fastadhunter"))
+            .args(["--config", config_path.to_str().unwrap(), "--healthcheck"])
+            .env("FAH__DNS__LISTEN__PORT", free_udp_port().to_string())
+            .env(var, value)
+            .output()
+            .unwrap();
+
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(
+            !stderr.contains("does not map to a known config key"),
+            "{var}={value} is documented in CONFIGURATION.md but the config load refused it, \
+             so the process cannot start with it set: {stderr}"
+        );
+        assert!(
+            stderr.contains("dns-probe"),
+            "the run must have reached the probe, otherwise this test proves nothing about \
+             {var}: {stderr}"
+        );
+    }
+}

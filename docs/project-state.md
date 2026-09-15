@@ -4,14 +4,14 @@ Where the work is right now. **Rewrite this file — never append.** History
 belongs in `git log`, `docs/code-review/` and the phase tables; this file is only
 what is true today.
 
-**Last updated:** 2026-09-15 (second pass — the p3-11 binary-level arms)
+**Last updated:** 2026-09-15 (third pass — the post-merge audit and the N1 fix)
 
 ## Now
 
 | | |
 | --- | --- |
-| Branch | **Phase 3 landed on `main`** on 2026-09-13, by fast-forward — `bc49e4e..78238b4`, 105 commits, no merge commit ([plan/plan-merge.md](../plan/plan-merge.md), all five steps closed). `main` is now **`99e4953`** and **`origin/main` and `backup/main` are both there** — nothing local, nothing unpushed. Twenty-three commits followed the Phase 3 tip `180beb8`; the last ten before this session are listed in §Session 2026-09-14/15, and the six from 2026-09-15 are `1055d1b`, `d93f4ad`, `5f91db5`, `5b346d7`, `dac5be0` and `99e4953` — tests and documentation only, no production code. `phase3-06` (`78238b4`) has served its purpose and sits well behind. Rollback tags: `main-pre-phase3-merge` = `ebc46f1`, `phase3-06-pre-main-merge` = `185139b`; `eb693e2` is the merge commit inside the branch, two parents. `pre-alloc-domain-2026-09-06` = `64be513` stays the rollback point before the allocation domains |
-| Tree | **clean — nothing modified, nothing untracked.** One stash remains, `stash@{0}` ("phase3-06 project-state Next row"); it predates this work and is not ours. The last change to land was `99e4953`, the measurement trap about a ceiling that takes its own gauge down with it |
+| Branch | **Phase 3 landed on `main`** on 2026-09-13, by fast-forward — `bc49e4e..78238b4`, 105 commits, no merge commit ([plan/plan-merge.md](../plan/plan-merge.md), all five steps closed). `main` now carries **one local commit ahead of `8fec41d`** — the post-merge audit, the N1 fix and this file. **`origin/main` and `backup/main` are both at `8fec41d`**, so that commit is unpushed and the push needs its own go. Twenty-three commits followed the Phase 3 tip `180beb8`; the last ten before this session are listed in §Session 2026-09-14/15, and the nine from 2026-09-15 are `1055d1b`, `d93f4ad`, `5f91db5`, `5b346d7`, `dac5be0`, `99e4953`, `355a4d3`, `8c69114` and `8fec41d` — bench harness, tests and documentation, no production code. Read the tip from `git rev-parse main`, not from this row: it named `99e4953` for two commits after that stopped being true. `phase3-06` (`78238b4`) has served its purpose and sits well behind. Rollback tags: `main-pre-phase3-merge` = `ebc46f1`, `phase3-06-pre-main-merge` = `185139b`; `eb693e2` is the merge commit inside the branch, two parents. `pre-alloc-domain-2026-09-06` = `64be513` stays the rollback point before the allocation domains |
+| Tree | **clean — nothing modified, nothing untracked.** The last change to land is the post-merge audit and the N1 fix in one commit: `crates/fah-config/src/env.rs` (the two missing env arms), `crates/fah-config/src/lib.rs` (three tests), `crates/fastadhunter/tests/healthcheck.rs` (one process-level test), plus this file and the audit — +118 lines of code, no deletions, gates green (§Post-merge audit). One stash remains, `stash@{0}` ("phase3-06 project-state Next row"); it predates this work and is not ours |
 | Tests | **The gate ran on the tip, 2026-09-15, Windows dev box: `cargo fmt --all -- --check` and `cargo clippy --workspace --all-targets -- -D warnings` clean, `cargo test --all-features --workspace` 0 failed across 62 targets.** `shipped_path_e2e` now carries six tests in 21 s — four added on 2026-09-15 for the HTTPS listener's own edge cases, the last of them mutation-verified (`max_connections: 2` fails its negative control). The dashboard ran on the same tip and is green: `npm run typecheck` clean, **58 test files, 1 043 tests, 0 failures** (three fewer than the 1 046 of 2026-09-14 — the `fallback` mode's tests went with the mode in `5b5d3e8`), and `npm run build` is under budget at 136 921 B gzip against 153 600 B. `cargo bench -p fastadhunter --bench pipeline --no-run` builds for the first time since p5-04, with no profile override (`3a1b5b8`). The `e2e` `WSAEACCES` trap (§Known-good gate note) did not fire. Bench A/B against `main` over four alternating rounds: **no regression demonstrated** |
 | Version | 0.3.4 (workspace, since `4e7a6de`), untagged. Newest tags `v0.3.2` (`89aac76`), `pre-alloc-domain-2026-09-06`, `soak-p2.6-11` |
 | Deployed | **0.3.4, and not from today's merge.** Nothing was deployed on 2026-09-13 — landing Phase 3 on `main` is not a deployment, and deploying it is a separate decision that has not been made. Production runs image `kingston/fastadhunter-arm64-0.3.4.tar` as container `fastadhunter-0.3.4`, booted **2026-09-11T22:02:48Z**, HTTP allocation domains, N=2 (`FAH__RUNTIME__HTTP_RUNTIMES=2` on `fah-env`), `veth1` / `172.17.0.2`, mounts `fah-config,fah-data`. `GET /health` on 2026-09-13 18:24 local answered `0.3.4`, uptime 148 853 s. **The build commit is recorded nowhere** — neither `/health` nor the soak capture carries one; by timestamp the image matches `d307c36` with the version already at 0.3.4, the bump itself committed three minutes after the boot as `4e7a6de`. A **seven-day soak is running on this build**: t0 `2026-09-11T22:13:21Z`, ending ~2026-09-18T22:00Z, hourly scheduled task `FAH-soak-0.3.4`, artefacts under `docs/code-review/phase2.6/soak-0.3.4/` — untracked and gitignored, so they live outside the repository. The p3-06 probe (`fah-probe` on `veth3` / 172.17.0.4) was torn down 2026-09-11 evening; `veth3` remains, no test firewall rule or address list remains. Deploying Phase 3 is a separate decision and it has not been made |
@@ -97,6 +97,55 @@ Still holding, none of them blocking — except F7, which closed on 2026-09-14:
 `E:/fah-main-bench` is **kept**, detached at `ebc46f1`: the frozen pre-Phase-3
 baseline p3-10 measures against. Rebuilt later it would be a different baseline,
 not the same one. Do not switch its checkout or delete its `target/`.
+
+### Post-merge audit — 2026-09-15
+
+[post-merge-audit-2026-09-15.md](code-review/phase3/post-merge-audit-2026-09-15.md)
+covers what the 2026-09-08 audit could not: it was written against the first
+in-branch merge, and the second one (`eb693e2`, the landing) was reviewed only by
+plan-merge's §Step 2 and §Step 4 checklists. Scope was agreed before the pass and
+kept small — the `ConnectionGauge` move to `fah-common`, the `eb693e2` hunks no
+earlier review names, instrumentation validity, and merge-window tests that could
+pass with the wiring they prove broken. **PASS WITH DEFERRED FINDINGS.**
+
+Two facts worth carrying out of it, neither obvious from the code:
+
+- The true pre-integration base is **`bc49e4e`**, not the tag. `main-pre-phase3-merge`
+  (`ebc46f1`) is its parent, one plan-doc commit behind, and is the frozen bench
+  checkout — a rollback point, never a diff base.
+- `git show --cc --stat` on a merge prints files taken whole from one side too.
+  The real hand-decision surface of `eb693e2` is **36 files**, not 67; it is the
+  intersection of `git diff --name-only <parent> eb693e2` over both parents.
+
+Findings:
+
+- **N1 — closed 2026-09-15, the only defect found.** `CONFIGURATION.md` documented
+  `FAH__DNS__TCP_MAX_CONNECTIONS` and `FAH__DNS__UDP_MAX_INFLIGHT`, and
+  `env::apply_one` had no arm for either, so its `_ =>` arm returned
+  `UnknownEnvKey` and **the process refused to start** with a documented variable
+  set. Independently re-verified and reproduced on the built binary before any
+  fix. The two arms landed with three `fah-config` tests, one child-process test
+  through `--healthcheck` (no `std::env::set_var`), and an anti-drift test that
+  walks every `Env: FAH__…` name in CONFIGURATION.md through
+  `apply_env_overrides` — the doc and the allowlist can no longer diverge with
+  the suite green. Gates green: `fmt` and `clippy -D warnings` clean,
+  `cargo test --all-features --workspace` 0 failed, `fah-config` 90 passed
+  (87 before), `healthcheck` 6 (5 before). **This is the same `udp_max_inflight`
+  F8 leaves inert at 0** — arming it from the container's `fah-env` was the one
+  route that looked available and did not exist.
+- **N2 — open, low.** `counters.dns_tcp_connections`, `dns_dot_connections` and
+  `dns_udp_inflight` reach `/api/v1/telemetry` correctly and have no dashboard
+  consumer; `tasks_died` does. These are the figures CONFIGURATION.md tells the
+  operator to retune the ceilings from. Owner's call: a Health row, or a line
+  saying they are telemetry-API-only.
+- **N3 — info, nothing owed.** `strategy_ab.rs` loops over one strategy since
+  `fallback` was removed; the disposition is already recorded and the harness is
+  not claimed to discriminate.
+
+Not reopened, by instruction: F1–F9, p3-10 Track A, p3-11, and the dashboard as a
+review surface. Untouched and still true: an unknown `FAH__` variable on a fresh
+`/config` volume still leaves a defaults-only TOML before the load fails, because
+`Config::load` writes before it applies the environment. Outside N1's scope.
 
 ## Risk inventory close-out — 2026-09-11
 
