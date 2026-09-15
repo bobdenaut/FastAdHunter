@@ -665,6 +665,12 @@ pub struct FullMode {
     pub clients: Vec<String>,
     pub api_tls: bool,
     pub upstream_root: Option<Vec<u8>>,
+    pub https_limits: Option<HttpsLimits>,
+}
+
+pub struct HttpsLimits {
+    pub max_connections: u32,
+    pub idle_timeout_ms: u64,
 }
 
 pub const FULL_MODE_HTTP_RUNTIMES: usize = 2;
@@ -680,6 +686,13 @@ pub fn full_mode_config(ports: &Ports, upstream: SocketAddr, mode: &FullMode) ->
     let origin_ip = mode.origin_ip;
     let api_tls = mode.api_tls;
     let http_runtimes = FULL_MODE_HTTP_RUNTIMES;
+    let https_limits = match &mode.https_limits {
+        Some(limits) => format!(
+            "idle_timeout_ms = {}\nmax_connections = {}",
+            limits.idle_timeout_ms, limits.max_connections
+        ),
+        None => "idle_timeout_ms = 10000".to_string(),
+    };
     format!(
         r#"
 [engine]
@@ -711,7 +724,7 @@ port = {http_port}
 
 [https]
 hello_timeout_ms = 5000
-idle_timeout_ms = 10000
+{https_limits}
 
 [https.listen]
 address = "127.0.0.1"

@@ -11,14 +11,16 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 
 use common::{
-    await_event, bind_origin, boot_full, client_config_trusting, client_hello_without_sni,
-    connect_events, get_json, insecure_client_config, open_dot, put_user_rules, raw_probe, resolve,
-    resolve_doh_post, resolve_dot, resolve_tcp, run_tls_origin, self_signed_origin,
-    skip_origin_message, tls_connect_from, FullMode, Instance, AD_HOST, DOMAIN_LANE_LOG,
-    DOT_HOSTNAME, FULL_MODE_HTTP_RUNTIMES, PAGE_HOST,
+    await_event, bind_origin, boot_full, client_config_trusting, client_hello,
+    client_hello_without_sni, connect_events, get_json, insecure_client_config, open_dot,
+    put_user_rules, raw_probe, resolve, resolve_doh_post, resolve_dot, resolve_tcp, run_tls_origin,
+    self_signed_origin, skip_origin_message, tls_connect_from, FullMode, HttpsLimits, Instance,
+    AD_HOST, DOMAIN_LANE_LOG, DOT_HOSTNAME, FULL_MODE_HTTP_RUNTIMES, PAGE_HOST,
 };
 
 const ORIGIN_IP: Ipv4Addr = Ipv4Addr::new(127, 0, 0, 40);
+const IDLE_ORIGIN_IP: Ipv4Addr = Ipv4Addr::new(127, 0, 0, 41);
+const IDLE_TIMEOUT: Duration = Duration::from_millis(2000);
 const CONCURRENT_DOT: usize = 3;
 const ALLOWED_HOST: &str = "allowed.example.com";
 const ORIGIN_PAYLOAD: &[u8] = b"origin payload, relayed byte for byte\n";
@@ -388,12 +390,100 @@ async fn a_connection_closed_before_its_hello_is_counted_as_a_hello_timeout() {
     );
 }
 
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn an_idle_spliced_session_is_closed_and_its_permit_returned() {
+    let Some(origin) = bind_origin(IDLE_ORIGIN_IP).await else {
+        eprintln!(
+            "{} Without an origin to splice to there is no session to leave idle.",
+            skip_origin_message(IDLE_ORIGIN_IP)
+        );
+        return;
+    };
+    tokio::spawn(async move {
+        let mut accepted = Vec::new();
+        while let Ok((stream, _)) = origin.accept().await {
+            accepted.push(stream);
+        }
+    });
+
+    let instance = boot_shipped_with(
+        IDLE_ORIGIN_IP,
+        Some(HttpsLimits {
+            max_connections: 1,
+            idle_timeout_ms: IDLE_TIMEOUT.as_millis() as u64,
+        }),
+    )
+    .await;
+    let https = instance.ports.https();
+
+    let mut spliced = TcpStream::connect(SocketAddr::from((Ipv4Addr::LOCALHOST, https)))
+        .await
+        .expect("connect the session that will go idle");
+    spliced
+        .write_all(&client_hello(PAGE_HOST))
+        .await
+        .expect("send the hello that opens the splice");
+
+    let mut queued = TcpStream::connect(SocketAddr::from((Ipv4Addr::LOCALHOST, https)))
+        .await
+        .expect("connect the session that waits for the permit");
+    queued
+        .write_all(b"not tls")
+        .await
+        .expect("send plain bytes");
+
+    let mut byte = [0u8; 1];
+    assert!(
+        tokio::time::timeout(IDLE_TIMEOUT / 4, queued.read(&mut byte))
+            .await
+            .is_err(),
+        "max_connections = 1 must hold the second connection behind the live splice: a plain \
+         listener closes plain bytes at once, so being read here would mean the cap was never \
+         applied and the permit assertion below would prove nothing"
+    );
+
+    let ended = tokio::time::timeout(IDLE_TIMEOUT * 10, spliced.read(&mut byte))
+        .await
+        .expect("the idle deadline must close a silent spliced session");
+    assert!(
+        matches!(ended, Ok(0) | Err(_)),
+        "the client must see the idle session end, got {ended:?}"
+    );
+
+    let served = tokio::time::timeout(Duration::from_secs(10), queued.read(&mut byte))
+        .await
+        .expect("the returned permit must let the waiting connection through")
+        .expect("the waiting connection is read once the permit is free");
+    assert_eq!(
+        served, 0,
+        "the waiting connection is judged as plain bytes and closed, not answered"
+    );
+
+    let https_counters = await_https_counters(&instance, "the waiting connection", |counters| {
+        counters["non_tls"].as_u64().unwrap_or_default() == 1
+    })
+    .await;
+    assert_eq!(
+        https_counters["hello_timeouts"]
+            .as_u64()
+            .unwrap_or_default(),
+        0,
+        "a spliced session that reached a verdict and then went idle is not a hello timeout: \
+         {https_counters}"
+    );
+}
+
 async fn boot_shipped() -> Instance {
+    boot_shipped_with(ORIGIN_IP, None).await
+}
+
+async fn boot_shipped_with(origin_ip: Ipv4Addr, https_limits: Option<HttpsLimits>) -> Instance {
     boot_full(FullMode {
-        origin_ip: ORIGIN_IP,
+        origin_ip,
         clients: Vec::new(),
         api_tls: true,
         upstream_root: None,
+        https_limits,
     })
     .await
 }

@@ -49,6 +49,7 @@ async fn full_mode_blocks_at_every_layer() {
         clients: vec!["127.0.0.1".to_string()],
         api_tls: true,
         upstream_root: Some(origin_cert.to_vec()),
+        https_limits: None,
     })
     .await;
     let log = instance.engine_log();
@@ -440,6 +441,7 @@ async fn listing_a_client_through_the_api_applies_on_the_next_connection() {
         clients: Vec::new(),
         api_tls: true,
         upstream_root: Some(origin_cert.to_vec()),
+        https_limits: None,
     })
     .await;
     let https = instance.ports.https();

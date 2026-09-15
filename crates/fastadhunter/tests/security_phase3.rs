@@ -49,6 +49,7 @@ fn full(origin_ip: Ipv4Addr, clients: &[&str]) -> FullMode {
         clients: clients.iter().map(|client| client.to_string()).collect(),
         api_tls: true,
         upstream_root: None,
+        https_limits: None,
     }
 }
 
@@ -1001,6 +1002,7 @@ async fn dns_query_is_the_only_new_unauthenticated_route() {
             clients: Vec::new(),
             api_tls: false,
             upstream_root: None,
+            https_limits: None,
         },
     )
     .await;
