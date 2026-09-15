@@ -12,10 +12,10 @@ use tokio::net::TcpStream;
 
 use common::{
     await_event, bind_origin, boot_full, client_config_trusting, client_hello_without_sni,
-    connect_events, get_json, insecure_client_config, put_user_rules, resolve, resolve_doh_post,
-    resolve_dot, run_tls_http_origin, self_signed_origin, skip_origin_message, skips_allowed,
-    tls_connect_from, FullMode, AD_HOST, ALLOW_SKIP_ENV, DOMAIN_LANE_LOG, DOT_HOSTNAME,
-    FULL_MODE_HTTP_RUNTIMES, PAGE_HOST,
+    connect_events, get_json, insecure_client_config, put_user_rules, raw_probe, resolve,
+    resolve_doh_post, resolve_dot, run_tls_http_origin, self_signed_origin, skip_origin_message,
+    skips_allowed, tls_connect_from, FullMode, AD_HOST, ALLOW_SKIP_ENV, DOMAIN_LANE_LOG,
+    DOT_HOSTNAME, FULL_MODE_HTTP_RUNTIMES, PAGE_HOST,
 };
 
 const ORIGIN_IP: Ipv4Addr = Ipv4Addr::new(127, 0, 0, 30);
@@ -534,17 +534,4 @@ async fn listing_a_client_through_the_api_applies_on_the_next_connection() {
         !toml.contains("interception"),
         "the TOML never gains the keys back: {toml}"
     );
-}
-
-async fn raw_probe(port: u16, bytes: &[u8]) -> Vec<u8> {
-    let mut stream = TcpStream::connect(SocketAddr::from((Ipv4Addr::LOCALHOST, port)))
-        .await
-        .expect("connect to the HTTPS listener");
-    stream.write_all(bytes).await.expect("send the hello");
-    let mut received = Vec::new();
-    tokio::time::timeout(Duration::from_secs(10), stream.read_to_end(&mut received))
-        .await
-        .expect("the listener closes a no-SNI hello within 10 s")
-        .ok();
-    received
 }

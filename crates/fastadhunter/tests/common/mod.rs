@@ -1084,6 +1084,21 @@ pub fn client_hello_without_sni() -> Vec<u8> {
     hello_record(&[])
 }
 
+pub async fn raw_probe(port: u16, bytes: &[u8]) -> Vec<u8> {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    let mut stream = tokio::net::TcpStream::connect((Ipv4Addr::LOCALHOST, port))
+        .await
+        .expect("connect to the listener under probe");
+    stream.write_all(bytes).await.expect("send the probe");
+    let mut received = Vec::new();
+    tokio::time::timeout(Duration::from_secs(10), stream.read_to_end(&mut received))
+        .await
+        .expect("the listener closes the probed connection within 10 s")
+        .ok();
+    received
+}
+
 fn hello_record(extensions: &[u8]) -> Vec<u8> {
     let mut body = Vec::new();
     body.extend_from_slice(&[0x03, 0x03]);

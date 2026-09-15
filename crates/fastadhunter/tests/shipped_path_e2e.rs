@@ -6,14 +6,16 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use hickory_proto::op::ResponseCode;
+use serde_json::Value;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 
 use common::{
-    await_event, bind_origin, boot_full, client_config_trusting, connect_events, get_json,
-    insecure_client_config, open_dot, put_user_rules, resolve, resolve_doh_post, resolve_dot,
-    resolve_tcp, run_tls_origin, self_signed_origin, skip_origin_message, tls_connect_from,
-    FullMode, AD_HOST, DOMAIN_LANE_LOG, DOT_HOSTNAME, FULL_MODE_HTTP_RUNTIMES, PAGE_HOST,
+    await_event, bind_origin, boot_full, client_config_trusting, client_hello_without_sni,
+    connect_events, get_json, insecure_client_config, open_dot, put_user_rules, raw_probe, resolve,
+    resolve_doh_post, resolve_dot, resolve_tcp, run_tls_origin, self_signed_origin,
+    skip_origin_message, tls_connect_from, FullMode, Instance, AD_HOST, DOMAIN_LANE_LOG,
+    DOT_HOSTNAME, FULL_MODE_HTTP_RUNTIMES, PAGE_HOST,
 };
 
 const ORIGIN_IP: Ipv4Addr = Ipv4Addr::new(127, 0, 0, 40);
@@ -41,13 +43,7 @@ async fn the_shipped_configuration_blocks_at_every_layer() {
         }
     };
 
-    let instance = boot_full(FullMode {
-        origin_ip: ORIGIN_IP,
-        clients: Vec::new(),
-        api_tls: true,
-        upstream_root: None,
-    })
-    .await;
+    let instance = boot_shipped().await;
 
     let log = instance.engine_log();
     assert!(
@@ -289,6 +285,144 @@ async fn the_shipped_configuration_blocks_at_every_layer() {
         "shipped: nothing in this scenario spoke plaintext at the HTTPS port, so a non-zero \
          value means the two listener counter sets reached the API transposed: {https_counters}"
     );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_hello_without_sni_is_closed_and_classified_rather_than_counted_as_garbage() {
+    let instance = boot_shipped().await;
+    let mut events = connect_events(&instance.base, &instance.key).await;
+
+    let answered = raw_probe(instance.ports.https(), &client_hello_without_sni()).await;
+    assert!(
+        answered.is_empty(),
+        "a hello carrying no SNI is closed, never answered: {} bytes",
+        answered.len()
+    );
+
+    let event = await_event(&mut events, "https-sni no-SNI", |data| {
+        data["kind"] == "https-sni" && data["domain"] == ""
+    })
+    .await;
+    assert_eq!(
+        event["verdict"], "pass",
+        "[https.sni] no_sni defaults to pass, so a hello with no name is classified: {event}"
+    );
+
+    let https = await_https_counters(&instance, "the no-SNI connection", |https| {
+        https["connections"].as_u64().unwrap_or_default() >= 1
+    })
+    .await;
+    assert_eq!(
+        https["non_tls"].as_u64().unwrap_or_default(),
+        0,
+        "a well-formed hello without a name is TLS. Counting it as garbage would hide the \
+         classification the verdict above records: {https}"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn plain_bytes_at_the_https_port_are_closed_and_counted_against_the_https_listener() {
+    let instance = boot_shipped().await;
+
+    let answered = raw_probe(
+        instance.ports.https(),
+        b"GET / HTTP/1.1\r\nHost: plain.invalid\r\n\r\n",
+    )
+    .await;
+    assert!(
+        answered.is_empty(),
+        "plain HTTP at the HTTPS port is closed, never answered: {} bytes",
+        answered.len()
+    );
+
+    await_https_counters(&instance, "the plain-HTTP probe", |https| {
+        https["non_tls"].as_u64().unwrap_or_default() == 1
+    })
+    .await;
+
+    let telemetry = get_json(
+        &instance.http,
+        &instance.base,
+        &instance.key,
+        "/api/v1/telemetry",
+    )
+    .await;
+    assert_eq!(
+        telemetry["listeners"]["http"]["non_tls"]
+            .as_u64()
+            .unwrap_or_default(),
+        0,
+        "non_tls belongs to the HTTPS listener alone — the plain listener never reads a \
+         ClientHello. A non-zero value here means the two counter sets reached the API \
+         transposed: {}",
+        telemetry["listeners"]["http"]
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_connection_closed_before_its_hello_is_counted_as_a_hello_timeout() {
+    let instance = boot_shipped().await;
+
+    let preconnect = TcpStream::connect(SocketAddr::from((
+        Ipv4Addr::LOCALHOST,
+        instance.ports.https(),
+    )))
+    .await
+    .expect("connect to the HTTPS listener");
+    drop(preconnect);
+
+    let https = await_https_counters(&instance, "a connection closed before its hello", |https| {
+        https["hello_timeouts"].as_u64().unwrap_or_default() == 1
+    })
+    .await;
+    assert_eq!(
+        https["non_tls"].as_u64().unwrap_or_default(),
+        0,
+        "silence is not garbage: a browser preconnect that is never used must not be counted \
+         as a non-TLS client: {https}"
+    );
+    assert_eq!(
+        https["requests"].as_u64().unwrap_or_default(),
+        0,
+        "a connection that never reached a verdict is not a request: {https}"
+    );
+}
+
+async fn boot_shipped() -> Instance {
+    boot_full(FullMode {
+        origin_ip: ORIGIN_IP,
+        clients: Vec::new(),
+        api_tls: true,
+        upstream_root: None,
+    })
+    .await
+}
+
+async fn await_https_counters(
+    instance: &Instance,
+    what: &str,
+    ready: impl Fn(&Value) -> bool,
+) -> Value {
+    let deadline = std::time::Instant::now() + Duration::from_secs(20);
+    loop {
+        let body = get_json(
+            &instance.http,
+            &instance.base,
+            &instance.key,
+            "/api/v1/telemetry",
+        )
+        .await;
+        let https = body["listeners"]["https"].clone();
+        if ready(&https) {
+            return https;
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "{what} must reach the HTTPS listener's counters within one telemetry poll \
+             interval, got {https}"
+        );
+        tokio::time::sleep(Duration::from_millis(500)).await;
+    }
 }
 
 async fn fetch_http(proxy_port: u16, host: &str, path: &str) -> (u16, String) {
