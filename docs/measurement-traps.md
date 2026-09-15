@@ -110,6 +110,13 @@ does not say.
 ## Cost attribution
 
 - Subtract harness cost before attributing time to a pipeline stage.
+- **An in-place API destroys its input, so refreshing it lands in your timer.**
+  Measure the refresh as its own control arm rather than arguing about whether it
+  matters. `aead_open` needs a fresh copy of the sealed record every round: that
+  copy was under 3 % of the figure on the dev box and ~10 % on the RB5009 — same
+  code, contamination three times larger, because the ratio between
+  hardware-accelerated work and a plain copy is not the same on two platforms.
+  The same shape appears in any in-place decompressor or parser.
 - A two-point fit across corpora differing 26× in rule count **cannot** attribute
   a gap to one variable. That mistake produced "97 % of the lookup is the
   unindexed scan"; the real figure was 32 %.

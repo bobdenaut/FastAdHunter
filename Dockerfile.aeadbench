@@ -1,0 +1,62 @@
+# syntax=docker/dockerfile:1
+#
+# Throwaway on-device probe: bulk AEAD cost on the RB5009, the deferred
+# "rustls AES-GCM ms/MiB" row of p3-10 Track B2.
+#
+# NOT a deployable artefact. Same reasoning as Dockerfile.splicebench — the
+# shipped image is distroless and RouterOS exposes no `docker exec`, so the only
+# way to measure on that CPU is a second container whose entrypoint *is* the
+# measurement. It writes nothing, mounts nothing, opens no socket at all, and
+# exits when done; results come back through RouterOS's container log.
+#
+# Why a probe rather than a deploy: B2's own file records that this row "could
+# be answered without the deploy, the same way this one did". It needs no
+# steered traffic, no listener and no live container — only the CPU.
+#
+# What it does and does not answer: it measures the AEAD rustls runs underneath
+# its record layer, seal and open, over 16 KiB records. That is the CPU cost of
+# encryption alone. End-to-end throughput at any line rate also depends on the
+# NIC, the forwarding path, memory bandwidth and the scheduler, none of which
+# this measures — see p3-10-track-b2-rb5009.md §What this does not say.
+#
+# Build (arm64, legacy docker-archive for RouterOS — see docs/deploy-rb5009.md
+# §1: OCI layout makes RouterOS hang at `extracting` forever with no error):
+#
+#   docker buildx build --platform linux/arm64 -f Dockerfile.aeadbench \
+#     -t fah-aeadbench:1 -o type=docker,dest=fah-aeadbench-arm64.tar .
+#   tar -xOf fah-aeadbench-arm64.tar manifest.json      # check "Layers"
+#   # if blobs/sha256/... then convert:
+#   docker run --rm -v "$PWD:/work" quay.io/skopeo/stable copy \
+#     --insecure-policy oci-archive:/work/fah-aeadbench-arm64.tar \
+#     docker-archive:/work/fah-aeadbench-rosready.tar:fah-aeadbench:1
+
+# Same base and Rust version as Dockerfile, so the compiler and libc match what
+# production is built with — otherwise the ARM figures describe a toolchain the
+# router never runs. The AES path in particular is chosen by aws-lc-rs at
+# runtime from the CPU's crypto extensions, so the binary must be the one the
+# router would actually execute.
+FROM rust:1.96.0-alpine AS builder
+
+# mimalloc compiles C via the `cc` crate and needs libc headers. The probe
+# selects mimalloc explicitly (see crates/fah-http/examples/aeadbench.rs) to
+# match the shipped binary's allocator.
+RUN apk add --no-cache musl-dev
+
+WORKDIR /build
+COPY . .
+
+RUN cargo build --release --locked -p fah-http --example aeadbench
+
+FROM gcr.io/distroless/static-debian12:nonroot
+
+COPY --from=builder /build/target/release/examples/aeadbench /aeadbench
+
+# Root, like the production image, purely so nothing here can fail on a
+# permission difference the measurement would then have to explain.
+USER 0:0
+
+# The argument is MiB per thread. 256 gives roughly a second per arm on a CPU
+# nine times slower than the dev box, which is long enough that the timer
+# resolution and the thread spawn disappear into it.
+ENTRYPOINT ["/aeadbench"]
+CMD ["256"]

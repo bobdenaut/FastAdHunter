@@ -78,6 +78,11 @@ tempfile = "3"
 # the binary's job (`crates/fastadhunter/src/allocator.rs`) — and an example
 # imposes nothing on dependents.
 mimalloc = { workspace = true }
+# Example-only (`examples/aeadbench.rs`): the bulk AEAD rustls runs underneath
+# its record layer, measured without the record layer, because the question is
+# the CPU cost of encryption alone. A dev-dependency imposes nothing on
+# dependents and leaves the production graph unchanged.
+aws-lc-rs = "1.17"
 
 [[bench]]
 name = "intercept"

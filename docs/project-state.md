@@ -185,8 +185,12 @@ restart (the 0.3.1 code path, same image). Rollback of the build:
 Deferred, each its own go: 11b graceful shutdown of keep-alive connections
 (finish the in-flight exchange instead of the whole transfer); dashboard
 settings metadata for `runtime.http_runtimes` (review finding 3); the capacity
-microbench (rustls AES-GCM and lol_html ms/MiB on the RB5009) that decides
-whether N=2 clears 1 Gbit with TLS; IPv6 privacy-address rotation versus
+microbench that decides whether N=2 clears 1 Gbit with TLS — **its AES-GCM half
+ran 2026-09-15** by probe, no deploy, ~1.0 ms/MiB per core and so ~12 % of one
+core at line rate, which removes encryption as the explanation but answers
+nothing about the NIC, the forwarding path or the scheduler
+([p3-10-track-b2-rb5009.md](code-review/phase3/p3-10-track-b2-rb5009.md)
+§Measurements — bulk AEAD cost); the lol_html half is Phase 4 and untouched; IPv6 privacy-address rotation versus
 address-exact client identity — reviewed 2026-09-07
 ([ipv6-privacy-rotation-review.md](code-review/phase2.6/ipv6-privacy-rotation-review.md)),
 nothing built, direction is the owner's call.

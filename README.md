@@ -676,6 +676,30 @@ therefore cannot calibrate performance here — the reference is the measured **
 x86 → RB5009 factor**, which **does not convert HTTP work**, where the observed
 spread is 4.55–10.09×.
 
+### What encryption costs on this CPU
+
+Measured 2026-09-15 by a throwaway probe container — `veth3`, no mounts, no
+sockets, four seconds of work, the live resolver never stopped. It calls the
+bulk AEAD that rustls calls underneath its record layer, `aws-lc-rs` seal and
+open over 16 KiB records, so what it times is encryption and nothing else. Two
+runs agreed inside 1 % on almost every arm; worst case 3.6 %.
+
+**AES-128-GCM costs ~1.0 ms/MiB on one core.** A gigabit is 119.2 MiB/s, so
+line-rate encryption is about **12 % of one core**, and there are four. AES beats
+ChaCha20-Poly1305 by **5.3×**, which is how you know the ARMv8 crypto extensions
+are present and used — on a CPU without them that ranking inverts and ChaCha
+would be the right default here. The same arm runs at 0.107 ms/MiB on the x86 dev
+box, so this is also an independent **9.3×** check on the conversion factor
+above, on a workload that is purely CPU.
+
+It says nothing about reaching a gigabit end to end. The NIC, the router's
+forwarding path (~67–70 MiB/s) and the scheduler are all unmeasured, and the
+shipped build terminates no TLS on the proxy path at all — an HTTPS connection is
+read at the SNI and relayed byte for byte. This cost belongs to the DoT listener,
+to DoH and to the API, not to the path that carries browsing traffic. Full
+result, with its limits:
+[p3-10-track-b2-rb5009.md](docs/code-review/phase3/p3-10-track-b2-rb5009.md).
+
 ---
 
 ## Repository layout

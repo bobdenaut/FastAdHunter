@@ -134,6 +134,16 @@ across URL lengths — so the gap is CPU throughput, not memory bandwidth, and a
 pinned dev-box bench usually answers the on-device question without building a
 probe container.
 
+A thirteenth arm, from a different domain, agrees: bulk AEAD measured by probe on
+2026-09-15 runs **0.999 ms/MiB** on the device against **0.107** on the dev box —
+**9.3×**
+([p3-10-track-b2-rb5009.md](docs/code-review/phase3/p3-10-track-b2-rb5009.md)
+§Measurements — bulk AEAD cost). It is worth naming because it is the arm most
+likely to have broken the factor rather than confirmed it: both sides run
+hardware-accelerated AES, ARMv8 crypto extensions here and AES-NI there, and a
+factor built on scalar work had no reason to survive two different accelerators.
+It did.
+
 **It converts CPU-bound work only.** p2-08's HTTP arms — syscall- and copy-bound,
 across two OS network stacks — came out **4.55–10.09×**. Anything dominated by
 socket I/O needs a probe container, not a conversion
@@ -158,6 +168,15 @@ the full measurement.
   *unique* rules move the build phase 41.6 → 93.3 ms, ~19 % of a whole compile,
   paid once per compile and never per query. Two non-overlapping 1 M lists
   compile to 57.7 MiB, **past the 40 MB budget** (p1.5-05).
+- **TLS bulk crypto costs ~1.0 ms/MiB per core on the device.** AES-128-GCM on
+  the ARMv8 crypto extensions, measured by probe 2026-09-15. Encrypting at
+  line-rate gigabit is about **12 % of one core** of four, so termination is not
+  where a throughput ceiling would come from. AES beats ChaCha20-Poly1305 by
+  **5.3×**, which says the extensions are present and rustls's default preference
+  is right for this box. It is pure AEAD — no record layer, no sockets — and the
+  shipped build terminates no TLS on the proxy path at all, so this cost belongs
+  to the DoT listener, DoH and the API rather than to browsing traffic (p3-10
+  Track B2).
 - **Per-client policy resolution costs +8.5 ns per query, and a deployment with
   no policies pays it too.** Schedules are evaluated on a 20 s tick and swapped
   atomically, so the query path does no time arithmetic and no name lookup. 15
