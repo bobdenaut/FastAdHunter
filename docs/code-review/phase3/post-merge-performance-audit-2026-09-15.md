@@ -1,8 +1,18 @@
 # Audit — hot path, memory and Rust quality at `2b03a30`
 
 Replaces the first pass of the same date (commit `2b03a30`), whose lock, panic
-and oracle figures were wrong; the corrected counts are below and the reason the
-first pass undercounted is A7.
+and oracle figures were wrong. The corrected counts are below.
+
+Why the first pass undercounted, since it is not a finding about this code: the
+audit recipe cut each file at its first `#[cfg(test)]`, and `cache.rs` carries
+that attribute on two individual methods (`len` at `:675`, `queue_len` at
+`:685`) long before the test module at `:862`. The cut therefore dropped 187
+lines of production code — `note_lookup`, `clean`, `cleanup_stats`,
+`positive_ttl`, `negative_ttl` — and with them 2 lock sites and 2 clock reads,
+which is how a pass over files that hold locks reported "0 locks". Anchoring the
+pattern at column 0, `grep -n '^#\[cfg(test)\]'`, fixes it; of the 13 files in
+scope only `cache.rs` differs between the two patterns. The recipe lives in
+chat, not in the repo, so nothing here can hold that fix.
 
 Every `file:line` here is as of `2b03a30`. A1 and A2 were fixed afterwards, so
 the lines they name have moved — each of those two sections ends with what
@@ -18,16 +28,18 @@ shipped, and §Fix verification carries the evidence.
   **N/A — SNAPSHOT** and are not reported as zeros.
 - Scope is the four hot-path entry points plus their one-level callees, 13
   files. Every count is production-only; the `#[cfg(test)]` tail is excluded.
-- Seven findings, none blocking. **A1 and A2, the two medium ones, are fixed** —
-  an accept loop with no backoff, and four unrated `warn!` paths that are one
-  defect in four places. Each entry keeps what was found and then states what
-  shipped, including where the implementation departed from the proposal and
-  why. A6 is fixed too, and two claims filed under it are withdrawn there. Still
-  open: one per-reply realloc (A3), two method findings (A4, A7) and one
-  documentation finding (A5).
-- All five oracles pass. Observed counts are reported with their ceilings and
-  headroom: 8 of 12 ceiling checks clear by exactly the 4-allocation jitter
-  allowance, so the ceilings equal today's measurements.
+- Six findings, none blocking, and **four are fixed**: A1 and A2, the two medium
+  ones — an accept loop with no backoff, and four unrated `warn!` paths that are
+  one defect in four places — plus A5 and A6, both documentation. Each entry
+  keeps what was found and then states what shipped, including where the
+  implementation departed from the proposal and why, and A6 carries two claims
+  filed under it that are withdrawn. **Nothing is open.** A3 is deferred with a
+  named reopening criterion, and A4 was resolved procedurally — neither carries
+  work.
+- All five oracles pass, reported as observed / ceiling / headroom: 8 of 12
+  ceiling checks clear by exactly the 4-allocation jitter allowance, so the
+  ceilings equal today's measurements. A pass means no regression beyond the
+  allowance; it does not mean four allocations are available to spend.
 - Hot path holds otherwise: 0 `unsafe`, 0 `panic!`, 0 `Regex`, 0 std guards
   across `.await`, no memory retained per query or per request.
 
@@ -44,7 +56,8 @@ shipped, and §Fix verification carries the evidence.
 - Correct as written, not findings: the shard-selected `std::sync::Mutex` in
   `cache.rs` (documented exception to hard rule 3 —
   [ARCHITECTURE.md](../../../ARCHITECTURE.md) §Runtime Model and the `cache.rs`
-  header; A5 asks for the rule text, not a code change); `tokio::sync::Mutex` at
+  header; A5 fixed the rule text, the code was never the problem);
+  `tokio::sync::Mutex` at
   `intercept.rs:486` and `swr.rs:173`, both scoping the guard so the `.await`
   that matters runs outside it; `judge` building `ModelRequest` unconditionally,
   since `events` is `Some` on every production wiring path (`main.rs:588`,
@@ -283,10 +296,15 @@ the loop is hand-rolled), a `BufWriter` per connection (~8 KiB × connections),
 or a framing buffer reused per connection (amortizes the realloc, keeps the
 `encode` allocation).
 
-Fix: hold until a measurement justifies one of the three. Engineering principle
-8 — the gain is one realloc per reply on the minority transports.
-
 Severity: low. Small cost, no correct small fix.
+
+**DEFERRED — measure before optimizing. Revisit if DoT becomes a dominant
+transport.** Owner's decision, 2026-09-15. Nothing is owed and no work is
+tracked: the reasoning is that the obvious fix is invalid, the three valid ones
+each cost more than the realloc, and TCP/DoT are not the dominant transports
+today. The reopening criterion is concrete — Android Private DNS is DoT, so
+household phones moving to it would make DoT the main path and change the
+premise.
 
 ### A4 — the oracle ceilings equal today's measurements, so a pass carries no margin
 
@@ -304,10 +322,17 @@ code measured, so these are tight regression detectors: one extra allocation per
 query or request fails them immediately, which is what they are for. Reporting
 them as "passed" invites the opposite reading — that there is room.
 
-Fix: report observed, ceiling and headroom together, as the oracle table below
-does. No code change.
-
 Severity: low. Method, not code.
+
+**RESOLVED PROCEDURALLY, not tracked as work.** Owner's decision, 2026-09-15:
+this is not a code item and gets no task. From here on every oracle citation
+carries three numbers in one place, observed / ceiling / headroom — `832 / 836 /
+4` — and the interpretation is stated rather than left to the reader:
+
+> PASS means no regression beyond the measurement allowance; it does not mean
+> four allocations are available to spend.
+
+The oracle tables below already follow it.
 
 ### A5 — hard rule 3 forbids locks on the hot path; the cache takes one per query
 
@@ -317,9 +342,39 @@ Design, not defect — a shard-selected `std::sync::Mutex`, argued in the file
 header and in [ARCHITECTURE.md](../../../ARCHITECTURE.md) §Runtime Model. The
 rule as written is contradicted by the shipped design.
 
-Fix: write the exception into hard rule 3 in [CLAUDE.md](../../../CLAUDE.md).
-
 Severity: low. Documentation only.
+
+**FIXED.** Hard rule 3 in [CLAUDE.md](../../../CLAUDE.md) now reads "no
+allocations, no regex, and no locks the architecture does not already name",
+followed by "a new hot-path lock needs an ADR and its own figure in a
+measurement file" and a pointer to ARCHITECTURE.md §Runtime Model.
+
+Two wordings were rejected on the way, and the reasons are the useful part.
+**Rewording the rule around contention** — "no *contended* locks" — describes
+the shipped design more truthfully, since what rule 3 protects is the absence of
+blocking and contention rather than the absence of the word `Mutex`. It was
+dropped because it turns a greppable rule into a judgement, and a judgement is
+resolved by the agent applying it: every lock looks uncontended to the agent
+adding it. **"No *unjustified* locks"** fails the same way — justification is a
+paragraph anyone can write. The shipped text replaces judgement with two
+artifacts that exist or do not: an ADR, and a figure in a measurement file.
+
+The canonical text lives in `CLAUDE.md` only. Six other files reference rule 3;
+none restates it, so there is no second copy to drift — the failure that put
+rules 19 and 20 in `plan/CLAUDE.md` where nobody read them.
+
+Removing the lock instead was considered and declined. It needs immutable
+entries swapped by compare-and-swap, the refresh claim moved into an atomic in
+the entry, and a lock-free eviction queue — the last being the real work, since
+the alternative, probabilistic eviction, changes the cache's behaviour and not
+just its implementation. It also brings epoch-based reclamation, which defers
+frees and so pushes against hard rule 4. All of that to save a CAS and an atomic
+store on a path where a miss waits on the network. Principles 8 and 16.
+
+The measurement that would reopen this, and it is cheap: count `try_lock`
+failures per shard under household traffic. No failures over a week means no
+contention and nothing to remove — and it produces exactly the figure the new
+rule text asks for.
 
 ### A6 — the no-comments hook cited a rule number that does not exist
 
@@ -357,22 +412,6 @@ agent one retry; a false pass costs the tree exactly what the rule exists to
 prevent. The case offered as evidence was mis-attributed too: a struct that
 landed between a doc comment and its function came from a badly chosen edit
 anchor, not from the hook.
-
-### A7 — cutting a file at the first `#[cfg(test)]` undercounts `cache.rs`
-
-`crates/fah-dns/src/cache.rs:675`, `:685`, `:862`
-
-The audit recipe cuts each file at the first `#[cfg(test)]`. `cache.rs` carries
-that attribute on two individual methods (`len`, `queue_len`) before the test
-module at `:862`, so the cut drops 187 lines of production code —
-`note_lookup`, `clean`, `cleanup_stats`, `positive_ttl`, `negative_ttl` — and
-with them 2 lock sites and 2 clock reads. That is how the first pass of this
-audit reached "0 locks".
-
-Fix: anchor the pattern at column 0 — `grep -n '^#\[cfg(test)\]'`. Of the 13
-files in scope only `cache.rs` differs between the two patterns.
-
-Severity: low, but it invalidated part of this audit's first pass.
 
 ## Measurements
 
@@ -637,15 +676,16 @@ A6 then changed one more, with no behaviour:
 | ------- | ------ | -------- | -------------- |
 | A1 | **fixed** — see §Fix verification | medium | done |
 | A2 | **fixed** — see §Fix verification | medium | done |
-| A3 | hold; the offset encode is invalid, and the three valid fixes each need a measurement first | low | open |
-| A4 | report observed / ceiling / headroom whenever an oracle is cited | low | open |
-| A5 | write the shard-lock exception into hard rule 3 | low | open |
+| A3 | **deferred** — measure before optimizing; revisit if DoT becomes a dominant transport | low | deferred |
+| A4 | **resolved procedurally** — every oracle citation carries observed / ceiling / headroom; no task | low | done |
+| A5 | **fixed** — hard rule 3 names the exception and requires an ADR plus a measurement for any new hot-path lock | low | done |
 | A6 | **fixed** — the hook cites the rule by name now; two claims withdrawn | low | done |
-| A7 | anchor the `#[cfg(test)]` cut at column 0 in the audit recipe | low | open |
 
 A1 and A2 shared a dependency — both wanted something in `fah-common`, the retry
 policy and the log throttle — so they landed as one change, keeping the L1
 surface to one review.
 
-**PASS WITH DEFERRED FINDINGS** — A1 and A2 were medium and are fixed, A6 was
-low and is fixed; A3, A4, A5 and A7 are low and open. Nothing blocks.
+**PASS WITH DEFERRED FINDINGS** — A1 and A2 were medium, A5 and A6 low, and all
+four are fixed. A3 is low and deferred, with DoT becoming a dominant transport as
+its reopening criterion. A4 was low and is resolved procedurally, not as work.
+Nothing blocks and nothing is owed.

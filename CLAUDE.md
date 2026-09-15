@@ -76,9 +76,11 @@ section is needed.
    channels. `crates/fastadhunter/tests/layering.rs` enforces this.
 2. **`fah-model` purity**: data types and trivial traits only. No business
    logic, no I/O, no parsers, no cache.
-3. **Hot path**: no locks, no allocations, no regex. Ruleset/config changes via
-   atomic swap. Rule Engine runs BEFORE the cache; the cache never stores
-   verdicts.
+3. **Hot path**: no allocations, no regex, and no locks the architecture does
+   not already name. A new hot-path lock needs an ADR and its own figure in a
+   measurement file — see [ARCHITECTURE.md](ARCHITECTURE.md) §Runtime Model for
+   the DNS cache's shard `Mutex`. Ruleset/config changes via atomic swap. Rule
+   Engine runs BEFORE the cache; the cache never stores verdicts.
 4. **Bounded everything**: memory must not grow with traffic or uptime.
 5. **No hand-rolled crypto**: rustls, rcgen, x509-parser, argon2, aws-lc-rs
    only. `argon2` hashes the dashboard password; `aws-lc-rs` supplies the

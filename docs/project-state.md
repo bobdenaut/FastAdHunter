@@ -117,7 +117,7 @@ headroom when the ceilings equal the measurements: 8 of 12 ceiling checks clear
 by exactly the 4-allocation jitter allowance, so they are tight regression
 detectors and nothing more.
 
-Findings are labelled `A1`–`A7`, local to that file. Bare `F` numbers were not
+Findings are labelled `A1`–`A6`, local to that file. Bare `F` numbers were not
 available: the review registry already uses them for whole files
 (`phase2.6/f2-udp-inflight.md`, `f3-name-alloc-attribution.md`,
 `phase3/f7-flapping-oracle-redesign.md`).
@@ -146,11 +146,27 @@ available: the review registry already uses them for whole files
   every agent, in every session, against a one-time benefit. A rule that needs
   the model's judgement to apply ("2–3 lines where needed") was tried and
   eroded; a binary, machine-checkable one holds.
-- **A3, A4, A5 and A7 open, all low.** A3 is the TCP/DoT length-prefix realloc,
-  held deliberately: encoding at a two-byte offset is invalid, because hickory
-  emits name-compression pointers as absolute buffer indices. A4 and A7 are
-  method findings. A5 is the only one waiting on an owner decision — the text of
-  hard rule 3, which forbids hot-path locks the cache legitimately takes.
+- **A5 — fixed 2026-09-15.** Hard rule 3 now reads "no allocations, no regex,
+  and no locks the architecture does not already name", and requires an ADR plus
+  a figure in a measurement file for any new hot-path lock. Two wordings were
+  rejected: "no *contended* locks" describes the design more truthfully but
+  needs the agent's judgement to apply, and "no *unjustified* locks" fails the
+  same way — so judgement was replaced by two artifacts that either exist or do
+  not. Removing the cache's lock was considered and declined; the trigger to
+  revisit is a `try_lock`-failure count per shard under household traffic.
+- **A7 removed, not fixed.** It described a bug in the audit recipe, which is
+  neither performance, memory nor code quality, so it does not belong in a
+  findings list. The fact survives in the audit's own header, because it is why
+  the first pass reported "0 locks".
+- **A3 deferred, A4 resolved procedurally — nothing from this audit is open.**
+  A3 is the TCP/DoT length-prefix realloc: measure before optimizing, revisit if
+  DoT becomes a dominant transport, which Android Private DNS would do. The
+  obvious fix stays invalid whatever the traffic — hickory emits
+  name-compression pointers as absolute buffer indices. A4 is not a code item
+  and gets no task: **every oracle citation carries observed / ceiling /
+  headroom** — `832 / 836 / 4` — and says what it means, since a pass means no
+  regression beyond the measurement allowance and not four allocations
+  available to spend.
 
 ### The no-comments hook now covers the dashboard — `3e97d16`
 
