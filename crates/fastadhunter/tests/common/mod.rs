@@ -88,11 +88,18 @@ impl ApiScheme {
 }
 
 impl Ports {
+    fn taken(&self) -> Vec<u16> {
+        let mut taken = vec![self.dns, self.api, self.dot];
+        taken.extend(self.http.get());
+        taken.extend(self.https.get());
+        taken
+    }
+
     pub fn https(&self) -> u16 {
         match self.https.get() {
             Some(port) => port,
             None => {
-                let port = free_tcp_port();
+                let port = free_tcp_port_excluding(&self.taken());
                 self.https.set(Some(port));
                 port
             }
@@ -109,7 +116,7 @@ impl Ports {
         match self.http.get() {
             Some(port) => port,
             None => {
-                let port = free_tcp_port();
+                let port = free_tcp_port_excluding(&self.taken());
                 self.http.set(Some(port));
                 port
             }
@@ -148,10 +155,12 @@ pub async fn boot_with(
     config: impl Fn(&Ports) -> String,
 ) -> (Guard, Ports, String) {
     for attempt in 1..=BOOT_ATTEMPTS {
+        let dns = free_udp_port();
+        let api = free_tcp_port_excluding(&[dns]);
         let ports = Ports {
-            dns: free_udp_port(),
-            api: free_tcp_port(),
-            dot: free_tcp_port(),
+            dns,
+            api,
+            dot: free_tcp_port_excluding(&[dns, api]),
             http: Cell::new(None),
             https: Cell::new(None),
         };
@@ -651,6 +660,16 @@ pub fn free_tcp_port() -> u16 {
         .local_addr()
         .expect("local addr")
         .port()
+}
+
+pub fn free_tcp_port_excluding(taken: &[u16]) -> u16 {
+    for _ in 0..DNS_PORT_DRAWS {
+        let port = free_tcp_port();
+        if !taken.contains(&port) {
+            return port;
+        }
+    }
+    panic!("no ephemeral TCP port outside {taken:?} in {DNS_PORT_DRAWS} draws")
 }
 
 pub const ORIGIN_PORT: u16 = 443;

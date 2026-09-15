@@ -424,7 +424,7 @@ impl Engine {
         // serving would still hold the port against anything else on the host
         // and would still answer a connect(), which is indistinguishable from
         // a hung proxy.
-        let mut http = if http_enabled(config.engine.mode) {
+        let mut http = if config.engine.mode.serves_http() {
             let server = fah_http::Server::bind(&config.http).await?;
             tracing::info!(addr = %server.local_addr(), "HTTP listener bound");
             Some(server)
@@ -432,7 +432,7 @@ impl Engine {
             None
         };
 
-        let mut https = if https_enabled(config.engine.mode) {
+        let mut https = if config.engine.mode.serves_https() {
             let server = fah_http::TlsServer::bind(&config.https).await?;
             tracing::info!(addr = %server.local_addr(), "HTTPS SNI listener bound");
             Some(server)
@@ -914,26 +914,6 @@ impl Engine {
                 "stats flush at shutdown timed out; up to one snapshot interval of aggregates lost"
             );
         }
-    }
-}
-
-/// Whether `engine.mode` includes the HTTP engine.
-///
-/// Matched exhaustively rather than with a `_ => false` catch-all: adding a
-/// fourth mode should fail to compile until someone decides what it means for
-/// HTTP, instead of silently defaulting to "off" and leaving an operator with
-/// a mode that names http and a port nothing listens on.
-fn http_enabled(mode: fah_config::EngineMode) -> bool {
-    match mode {
-        fah_config::EngineMode::Dns => false,
-        fah_config::EngineMode::DnsHttp | fah_config::EngineMode::DnsHttpHttps => true,
-    }
-}
-
-fn https_enabled(mode: fah_config::EngineMode) -> bool {
-    match mode {
-        fah_config::EngineMode::Dns | fah_config::EngineMode::DnsHttp => false,
-        fah_config::EngineMode::DnsHttpHttps => true,
     }
 }
 
@@ -1672,16 +1652,16 @@ mod tests {
     /// must. The acceptance criterion of p2-01 in one assertion pair.
     #[test]
     fn http_starts_only_in_modes_that_name_it() {
-        assert!(!http_enabled(fah_config::EngineMode::Dns));
-        assert!(http_enabled(fah_config::EngineMode::DnsHttp));
-        assert!(http_enabled(fah_config::EngineMode::DnsHttpHttps));
+        assert!(!fah_config::EngineMode::Dns.serves_http());
+        assert!(fah_config::EngineMode::DnsHttp.serves_http());
+        assert!(fah_config::EngineMode::DnsHttpHttps.serves_http());
     }
 
     #[test]
     fn https_starts_only_in_the_mode_that_names_it() {
-        assert!(!https_enabled(fah_config::EngineMode::Dns));
-        assert!(!https_enabled(fah_config::EngineMode::DnsHttp));
-        assert!(https_enabled(fah_config::EngineMode::DnsHttpHttps));
+        assert!(!fah_config::EngineMode::Dns.serves_https());
+        assert!(!fah_config::EngineMode::DnsHttp.serves_https());
+        assert!(fah_config::EngineMode::DnsHttpHttps.serves_https());
     }
 
     #[test]

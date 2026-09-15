@@ -102,9 +102,10 @@ pub fn bind_error(proto: &str, addr: SocketAddr, err: io::Error, port_setting: &
              lowers net.ipv4.ip_unprivileged_port_start, or a port above 1023 \
              ({port_setting})"
         ),
-        io::ErrorKind::AddrInUse => {
-            " — another process in this network namespace already holds it".to_string()
-        }
+        io::ErrorKind::AddrInUse => format!(
+            " — already in use, by another listener of this process or by another \
+             process in this network namespace ({port_setting})"
+        ),
         _ => String::new(),
     };
     io::Error::new(err.kind(), format!("binding {proto} {addr}: {err}{hint}"))
@@ -138,8 +139,18 @@ mod tests {
     #[test]
     fn address_in_use_names_the_conflict_not_the_privilege() {
         let text = message(io::ErrorKind::AddrInUse);
-        assert!(text.contains("already holds"), "got: {text}");
+        assert!(text.contains("already in use"), "got: {text}");
         assert!(!text.contains("CAP_NET_BIND_SERVICE"), "got: {text}");
+    }
+
+    #[test]
+    fn address_in_use_keeps_the_config_setting_and_does_not_blame_a_foreign_process() {
+        let text = message(io::ErrorKind::AddrInUse);
+        assert!(text.contains("FAH__DNS__LISTEN__PORT"), "got: {text}");
+        assert!(
+            text.contains("another listener of this process"),
+            "got: {text}"
+        );
     }
 
     /// An unexpected errno still gets the socket and address it failed on.

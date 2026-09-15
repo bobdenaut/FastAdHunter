@@ -37,6 +37,22 @@ pub enum EngineMode {
     DnsHttpHttps,
 }
 
+impl EngineMode {
+    pub fn serves_http(self) -> bool {
+        match self {
+            EngineMode::Dns => false,
+            EngineMode::DnsHttp | EngineMode::DnsHttpHttps => true,
+        }
+    }
+
+    pub fn serves_https(self) -> bool {
+        match self {
+            EngineMode::Dns | EngineMode::DnsHttp => false,
+            EngineMode::DnsHttpHttps => true,
+        }
+    }
+}
+
 impl FromStr for EngineMode {
     type Err = &'static str;
 

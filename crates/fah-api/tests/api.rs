@@ -543,6 +543,8 @@ struct HarnessOptions {
     certs: bool,
     doh: bool,
     interception_runtime: fah_api::InterceptionRuntime,
+    address: &'static str,
+    port: u16,
 }
 
 impl Default for HarnessOptions {
@@ -554,6 +556,8 @@ impl Default for HarnessOptions {
             certs: true,
             doh: true,
             interception_runtime: fah_api::InterceptionRuntime::Live,
+            address: "127.0.0.1",
+            port: 0,
         }
     }
 }
@@ -563,6 +567,10 @@ async fn start() -> Harness {
 }
 
 async fn start_with(options: HarnessOptions) -> Harness {
+    try_start_with(options).await.unwrap()
+}
+
+async fn try_start_with(options: HarnessOptions) -> std::io::Result<Harness> {
     let config_dir = tempfile::tempdir().unwrap();
     let data_dir = tempfile::tempdir().unwrap();
 
@@ -626,9 +634,7 @@ async fn start_with(options: HarnessOptions) -> Harness {
         },
     };
 
-    let server = ApiServer::bind("127.0.0.1", 0, tls_config, state)
-        .await
-        .unwrap();
+    let server = ApiServer::bind(options.address, options.port, tls_config, state).await?;
     let base = server.base_url();
 
     let client = reqwest::Client::builder()
@@ -638,7 +644,7 @@ async fn start_with(options: HarnessOptions) -> Harness {
         .build()
         .unwrap();
 
-    Harness {
+    Ok(Harness {
         server,
         client,
         key,
@@ -654,7 +660,7 @@ async fn start_with(options: HarnessOptions) -> Harness {
         document_path,
         _config_dir: config_dir,
         data_dir,
-    }
+    })
 }
 
 impl Harness {
@@ -5155,4 +5161,81 @@ async fn shutdown_is_safe_after_the_handle_was_taken() {
     assert!(taken.await.is_ok());
 
     harness.server.shutdown();
+}
+
+#[tokio::test]
+async fn the_api_binds_an_ipv6_literal_and_serves_on_it() {
+    let harness = start_with(HarnessOptions {
+        address: "::1",
+        ..HarnessOptions::default()
+    })
+    .await;
+
+    let bound = harness.server.local_addr();
+    assert!(bound.is_ipv6(), "got {bound}");
+    assert!(harness.base.contains("[::1]"), "got {}", harness.base);
+
+    let response = harness.get("/api/v1/stats").await;
+    assert!(response.status().is_success(), "got {}", response.status());
+}
+
+#[tokio::test]
+async fn the_unspecified_ipv6_api_address_binds_one_dual_stack_socket() {
+    let harness = start_with(HarnessOptions {
+        address: "::",
+        ..HarnessOptions::default()
+    })
+    .await;
+
+    let bound = harness.server.local_addr();
+    assert!(
+        bound.is_ipv6() && bound.ip().is_unspecified(),
+        "got {bound}"
+    );
+
+    let over_ipv4 = harness
+        .client
+        .get(format!("https://127.0.0.1:{}/health", bound.port()))
+        .send()
+        .await
+        .expect("clearing IPV6_V6ONLY lets an IPv4 peer reach the same socket");
+    assert!(over_ipv4.status().is_success());
+}
+
+#[tokio::test]
+async fn an_api_bind_conflict_names_the_api_port_setting() {
+    let first = start().await;
+    let taken = first.server.local_addr();
+
+    let err = match try_start_with(HarnessOptions {
+        port: taken.port(),
+        ..HarnessOptions::default()
+    })
+    .await
+    {
+        Ok(_) => panic!("the first server already holds {taken}"),
+        Err(err) => err,
+    };
+
+    let text = err.to_string();
+    assert_eq!(err.kind(), std::io::ErrorKind::AddrInUse, "got {text}");
+    assert!(text.contains(&taken.to_string()), "got {text}");
+    assert!(text.contains("FAH__API__PORT"), "got {text}");
+    assert!(!text.contains("CAP_NET_BIND_SERVICE"), "got {text}");
+}
+
+#[tokio::test]
+async fn an_unparseable_api_address_names_the_api_section() {
+    let err = match try_start_with(HarnessOptions {
+        address: "not-an-ip",
+        ..HarnessOptions::default()
+    })
+    .await
+    {
+        Ok(_) => panic!("an address that is not an IP cannot bind"),
+        Err(err) => err,
+    };
+
+    assert_eq!(err.kind(), std::io::ErrorKind::InvalidInput);
+    assert!(err.to_string().contains("[api]"), "got {err}");
 }

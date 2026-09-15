@@ -12,6 +12,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use axum::Router;
+use fah_common::listen::{bind_error, bind_tcp, listen_addr};
 use hyper_util::rt::{TokioExecutor, TokioIo};
 use hyper_util::server::conn::auto::Builder;
 use hyper_util::service::TowerToHyperService;
@@ -22,6 +23,8 @@ use tokio_rustls::TlsAcceptor;
 
 use crate::events::EventHub;
 use crate::state::AppStateBuilder;
+
+const PORT_SETTING: &str = "[api] port, or FAH__API__PORT";
 
 /// Ceiling on concurrently-served connections (hard rule 4: bounded
 /// everything — this listener was the one place memory could grow with
@@ -56,13 +59,10 @@ impl ApiServer {
         tls_config: Option<Arc<rustls::ServerConfig>>,
         state: AppStateBuilder,
     ) -> io::Result<Self> {
-        let addr: SocketAddr = format!("{address}:{port}").parse().map_err(|err| {
-            io::Error::new(
-                io::ErrorKind::InvalidInput,
-                format!("invalid [api] address: {err}"),
-            )
-        })?;
-        let listener = TcpListener::bind(addr).await?;
+        let addr = listen_addr(address, port, "api")?;
+        let listener = bind_tcp(addr)
+            .await
+            .map_err(|err| bind_error("TCP", addr, err, PORT_SETTING))?;
         // `port == 0` (tests) asks the OS for an ephemeral port — report the
         // one actually bound, mirroring `fah_dns::Server`.
         let local_addr = listener.local_addr()?;

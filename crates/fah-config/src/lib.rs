@@ -6,7 +6,7 @@ mod schema;
 mod tz;
 
 use std::fs;
-use std::net::IpAddr;
+use std::net::{IpAddr, SocketAddr};
 use std::path::Path;
 
 pub use error::ConfigError;
@@ -122,14 +122,14 @@ pub const MAX_UPSTREAM_SERVERS: usize = 8;
 pub const MAX_HTTP_RUNTIMES: usize = 64;
 
 fn validate(config: &Config) -> Result<(), ConfigError> {
-    validate_ip("dns.listen.address", &config.dns.listen.address)?;
-    validate_ip("api.address", &config.api.address)?;
+    let dns_address = validate_ip("dns.listen.address", &config.dns.listen.address)?;
+    let api_address = validate_ip("api.address", &config.api.address)?;
     // Validated unconditionally, not only when `engine.mode` includes http:
     // the file is written back whole, so a malformed `[http.listen]` should be
     // rejected while the operator is editing it, not on the restart months
     // later that first turns the mode on.
-    validate_ip("http.listen.address", &config.http.listen.address)?;
-    validate_ip("https.listen.address", &config.https.listen.address)?;
+    let http_address = validate_ip("http.listen.address", &config.http.listen.address)?;
+    let https_address = validate_ip("https.listen.address", &config.https.listen.address)?;
 
     validate_nonzero_port("dns.listen.port", config.dns.listen.port)?;
     validate_nonzero_port("api.port", config.api.port)?;
@@ -137,37 +137,17 @@ fn validate(config: &Config) -> Result<(), ConfigError> {
     validate_nonzero_port("https.listen.port", config.https.listen.port)?;
     if config.dns.listen.dot_enabled {
         validate_nonzero_port("dns.listen.dot_port", config.dns.listen.dot_port)?;
-        for (section, port) in [
-            ("[dns.listen] port", config.dns.listen.port),
-            ("[api] port", config.api.port),
-            ("[http.listen] port", config.http.listen.port),
-            ("[https.listen] port", config.https.listen.port),
-        ] {
-            if config.dns.listen.dot_port == port {
-                return Err(ConfigError::Validation {
-                    key: "dns.listen.dot_port",
-                    message: format!(
-                        "must differ from {section} ({port}); two listeners cannot bind one port"
-                    ),
-                });
-            }
-        }
     }
 
-    for (section, port) in [
-        ("[api] port", config.api.port),
-        ("[http.listen] port", config.http.listen.port),
-        ("[dns.listen] port", config.dns.listen.port),
-    ] {
-        if config.https.listen.port == port {
-            return Err(ConfigError::Validation {
-                key: "https.listen.port",
-                message: format!(
-                    "must differ from {section} ({port}); two listeners cannot bind one port"
-                ),
-            });
-        }
-    }
+    validate_listen_sockets(
+        config,
+        ListenAddresses {
+            dns: dns_address,
+            api: api_address,
+            http: http_address,
+            https: https_address,
+        },
+    )?;
 
     if config.https.max_connections == 0 {
         return Err(ConfigError::Validation {
@@ -495,14 +475,95 @@ fn validate_allowed_destination(entry: &str) -> Result<(), ConfigError> {
     }
 }
 
-fn validate_ip(key: &'static str, address: &str) -> Result<(), ConfigError> {
+fn validate_ip(key: &'static str, address: &str) -> Result<IpAddr, ConfigError> {
     address
         .parse::<IpAddr>()
-        .map(|_| ())
         .map_err(|source| ConfigError::Validation {
             key,
             message: source.to_string(),
         })
+}
+
+struct ListenAddresses {
+    dns: IpAddr,
+    api: IpAddr,
+    http: IpAddr,
+    https: IpAddr,
+}
+
+struct ListenSocket {
+    key: &'static str,
+    label: &'static str,
+    addr: SocketAddr,
+    active: bool,
+}
+
+fn is_dual_stack(address: IpAddr) -> bool {
+    matches!(address, IpAddr::V6(v6) if v6.is_unspecified())
+}
+
+fn addresses_overlap(a: IpAddr, b: IpAddr) -> bool {
+    if a == b || is_dual_stack(a) || is_dual_stack(b) {
+        return true;
+    }
+    a.is_ipv4() == b.is_ipv4() && (a.is_unspecified() || b.is_unspecified())
+}
+
+fn validate_listen_sockets(config: &Config, addresses: ListenAddresses) -> Result<(), ConfigError> {
+    let listen = &config.dns.listen;
+    let sockets = [
+        ListenSocket {
+            key: "dns.listen.port",
+            label: "[dns.listen] port",
+            addr: SocketAddr::new(addresses.dns, listen.port),
+            active: true,
+        },
+        ListenSocket {
+            key: "api.port",
+            label: "[api] port",
+            addr: SocketAddr::new(addresses.api, config.api.port),
+            active: true,
+        },
+        ListenSocket {
+            key: "http.listen.port",
+            label: "[http.listen] port",
+            addr: SocketAddr::new(addresses.http, config.http.listen.port),
+            active: config.engine.mode.serves_http(),
+        },
+        ListenSocket {
+            key: "https.listen.port",
+            label: "[https.listen] port",
+            addr: SocketAddr::new(addresses.https, config.https.listen.port),
+            active: config.engine.mode.serves_https(),
+        },
+        ListenSocket {
+            key: "dns.listen.dot_port",
+            label: "[dns.listen] dot_port",
+            addr: SocketAddr::new(addresses.dns, listen.dot_port),
+            active: listen.dot_enabled,
+        },
+    ];
+
+    for (index, later) in sockets.iter().enumerate() {
+        if !later.active {
+            continue;
+        }
+        for earlier in sockets[..index].iter().filter(|socket| socket.active) {
+            if later.addr.port() == earlier.addr.port()
+                && addresses_overlap(later.addr.ip(), earlier.addr.ip())
+            {
+                return Err(ConfigError::Validation {
+                    key: later.key,
+                    message: format!(
+                        "{} overlaps {} ({}); two TCP listeners cannot bind one socket",
+                        later.addr, earlier.label, earlier.addr
+                    ),
+                });
+            }
+        }
+    }
+
+    Ok(())
 }
 
 fn validate_nonzero_port(key: &'static str, port: u16) -> Result<(), ConfigError> {
@@ -727,19 +788,171 @@ format = "text"
 
     #[test]
     fn the_https_listener_may_not_share_another_listener_port() {
+        let full = "[engine]\nmode = \"dns+http+https\"\n";
         for (section, toml) in [
-            ("[api] port", "[https.listen]\nport = 8443\n"),
-            ("[http.listen] port", "[https.listen]\nport = 8080\n"),
+            ("[api] port", format!("{full}[https.listen]\nport = 8443\n")),
+            (
+                "[http.listen] port",
+                format!("{full}[https.listen]\nport = 8080\n"),
+            ),
             (
                 "[dns.listen] port",
-                "[dns.listen]\nport = 5353\n[https.listen]\nport = 5353\n",
+                format!("{full}[dns.listen]\nport = 5353\n[https.listen]\nport = 5353\n"),
             ),
         ] {
-            let config = Config::from_toml_str(toml).unwrap();
+            let config = Config::from_toml_str(&toml).unwrap();
             let message = config.validate().unwrap_err().to_string();
             assert!(message.contains("https.listen.port"), "{message}");
             assert!(message.contains(section), "{message}");
         }
+    }
+
+    #[test]
+    fn every_active_listener_pair_is_compared_for_a_port_collision() {
+        let full = "[engine]\nmode = \"dns+http+https\"\n";
+        for (key, section, toml) in [
+            (
+                "api.port",
+                "[dns.listen] port",
+                format!("{full}[dns.listen]\nport = 9000\n[api]\nport = 9000\n"),
+            ),
+            (
+                "http.listen.port",
+                "[dns.listen] port",
+                format!("{full}[dns.listen]\nport = 9000\n[http.listen]\nport = 9000\n"),
+            ),
+            (
+                "http.listen.port",
+                "[api] port",
+                format!("{full}[api]\nport = 9000\n[http.listen]\nport = 9000\n"),
+            ),
+            (
+                "https.listen.port",
+                "[http.listen] port",
+                format!("{full}[http.listen]\nport = 9000\n[https.listen]\nport = 9000\n"),
+            ),
+            (
+                "dns.listen.dot_port",
+                "[https.listen] port",
+                format!("{full}[dns.listen]\ndot_port = 9000\n[https.listen]\nport = 9000\n"),
+            ),
+        ] {
+            let config = Config::from_toml_str(&toml).unwrap();
+            let message = config.validate().unwrap_err().to_string();
+            assert!(message.contains(key), "expected key {key}: {message}");
+            assert!(
+                message.contains(section),
+                "expected the other endpoint {section}: {message}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_collision_message_names_both_endpoints_with_address_and_port() {
+        let toml = "[dns.listen]\naddress = \"0.0.0.0\"\nport = 9000\n[api]\naddress = \
+                    \"0.0.0.0\"\nport = 9000\n";
+        let message = Config::from_toml_str(toml)
+            .unwrap()
+            .validate()
+            .unwrap_err()
+            .to_string();
+        assert!(message.contains("0.0.0.0:9000"), "{message}");
+        assert!(message.contains("[dns.listen] port"), "{message}");
+        assert!(message.contains("api.port"), "{message}");
+    }
+
+    #[test]
+    fn a_listener_that_does_not_bind_cannot_collide() {
+        for toml in [
+            "[api]\nport = 8080\n",
+            "[engine]\nmode = \"dns+http\"\n[http.listen]\nport = 8444\n",
+            "[dns.listen]\ndot_enabled = false\ndot_port = 8443\n",
+            "[dns.listen]\ndot_enabled = false\ndot_port = 53\n",
+        ] {
+            Config::from_toml_str(toml)
+                .unwrap()
+                .validate()
+                .unwrap_or_else(|err| panic!("{toml:?} binds no overlapping pair: {err}"));
+        }
+    }
+
+    #[test]
+    fn enabling_a_listener_is_what_makes_a_parked_collision_fail() {
+        let parked = "[api]\nport = 8080\n";
+        Config::from_toml_str(parked)
+            .unwrap()
+            .validate()
+            .expect("in dns mode the HTTP listener never binds");
+
+        let enabled = format!("[engine]\nmode = \"dns+http\"\n{parked}");
+        let message = Config::from_toml_str(&enabled)
+            .unwrap()
+            .validate()
+            .unwrap_err()
+            .to_string();
+        assert!(message.contains("http.listen.port"), "{message}");
+        assert!(message.contains("[api] port"), "{message}");
+    }
+
+    #[test]
+    fn two_listeners_on_disjoint_addresses_may_share_a_port() {
+        for toml in [
+            "[engine]\nmode = \"dns+http+https\"\n[https.listen]\naddress = \
+             \"192.168.1.1\"\nport = 9000\n[api]\naddress = \"10.0.0.1\"\nport = 9000\n",
+            "[api]\naddress = \"127.0.0.1\"\nport = 9000\n[dns.listen]\naddress = \
+             \"::1\"\nport = 9000\n",
+            "[api]\naddress = \"0.0.0.0\"\nport = 9000\n[dns.listen]\naddress = \
+             \"fd00::1\"\nport = 9000\n",
+        ] {
+            Config::from_toml_str(toml)
+                .unwrap()
+                .validate()
+                .unwrap_or_else(|err| panic!("{toml:?} cannot conflict: {err}"));
+        }
+    }
+
+    #[test]
+    fn a_wildcard_address_overlaps_the_concrete_ones_it_covers() {
+        for (dns, api) in [
+            ("0.0.0.0", "192.168.1.1"),
+            ("192.168.1.1", "0.0.0.0"),
+            ("::", "192.168.1.1"),
+            ("::", "fd00::1"),
+            ("fd00::1", "::"),
+            ("::", "0.0.0.0"),
+            ("0.0.0.0", "::"),
+            ("::", "::"),
+            ("127.0.0.1", "127.0.0.1"),
+        ] {
+            let toml = format!(
+                "[dns.listen]\naddress = \"{dns}\"\nport = 9000\n[api]\naddress = \
+                 \"{api}\"\nport = 9000\n"
+            );
+            let err = Config::from_toml_str(&toml)
+                .unwrap()
+                .validate()
+                .unwrap_err();
+            assert!(
+                err.to_string().contains("api.port"),
+                "{dns} and {api} overlap: {err}"
+            );
+        }
+    }
+
+    #[test]
+    fn address_overlap_is_decided_by_family_and_wildcards() {
+        let ip = |text: &str| text.parse::<IpAddr>().unwrap();
+
+        assert!(addresses_overlap(ip("::"), ip("192.168.1.1")));
+        assert!(addresses_overlap(ip("::"), ip("0.0.0.0")));
+        assert!(addresses_overlap(ip("::"), ip("fd00::1")));
+        assert!(addresses_overlap(ip("0.0.0.0"), ip("192.168.1.1")));
+        assert!(addresses_overlap(ip("127.0.0.1"), ip("127.0.0.1")));
+
+        assert!(!addresses_overlap(ip("0.0.0.0"), ip("fd00::1")));
+        assert!(!addresses_overlap(ip("192.168.1.1"), ip("10.0.0.1")));
+        assert!(!addresses_overlap(ip("::1"), ip("fd00::1")));
+        assert!(!addresses_overlap(ip("127.0.0.1"), ip("::1")));
     }
 
     #[test]
