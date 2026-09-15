@@ -4,16 +4,17 @@ Where the work is right now. **Rewrite this file — never append.** History
 belongs in `git log`, `docs/code-review/` and the phase tables; this file is only
 what is true today.
 
-**Last updated:** 2026-09-15 (seventh pass — the enumeration sweep finished, four
-families counted, F15 and F16 recorded; documentation only, uncommitted)
+**Last updated:** 2026-09-15 (eighth pass — the hot-path audit was rewritten as
+one file, and its two medium findings shipped as `26ffe1c`; tree clean, both
+remotes current)
 
 ## Now
 
 | | |
 | --- | --- |
-| Branch | **Phase 3 landed on `main`** on 2026-09-13, by fast-forward — `bc49e4e..78238b4`, 105 commits, no merge commit ([plan/plan-merge.md](../plan/plan-merge.md), all five steps closed). `main` is at **`9d9d792`** — the post-merge audit and the N1, listener, R1 and F14 fixes — and **both remotes carry it**: `git ls-remote` puts `origin/main` and `backup/main` on `9d9d792` too, so nothing is unpushed. Read the remotes that way, not from the tracking refs, and never from this row. What is outstanding is **uncommitted, not unpushed** (§Tree). Twenty-six commits followed the Phase 3 tip `180beb8`; the last ten before this session are listed in §Session 2026-09-14/15, and the thirteen from 2026-09-15 are `1055d1b`, `d93f4ad`, `5f91db5`, `5b346d7`, `dac5be0`, `99e4953`, `355a4d3`, `8c69114`, `8fec41d`, `f32f214`, `2eb5018`, `b67ecec` and `9d9d792` — bench harness, tests and documentation, except the last four, which are production: `f32f214` the N1 environment arms in `fah-config/src/env.rs`, `2eb5018` the listener-collision matrix, the API bind and the `AddrInUse` hint, `b67ecec` the R1 `FAH__HTTP__LISTEN__PORT` / `FAH__HTTPS__LISTEN__PORT` arms and the `port_setting` constants, `9d9d792` the F14 live `refresh_hours_default`. Read the tip from `git rev-parse main`, not from this row: it named `99e4953` for two commits after that stopped being true. `phase3-06` (`78238b4`) has served its purpose and sits well behind. Rollback tags: `main-pre-phase3-merge` = `ebc46f1`, `phase3-06-pre-main-merge` = `185139b`; `eb693e2` is the merge commit inside the branch, two parents. `pre-alloc-domain-2026-09-06` = `64be513` stays the rollback point before the allocation domains |
-| Tree | **dirty — documentation only: `docs/code-review/project-risk-inventory.md` and this file, nothing untracked, no commit yet.** No code is outstanding; F14 and everything before it shipped in `9d9d792` and earlier. What is uncommitted is the enumeration sweep's record — F15, F16, the two clean results in §Checked and clean, and the family bullet in §Remaining TODOs. **The commit needs its own go.** One stash remains, `stash@{0}` ("phase3-06 project-state Next row"); it predates this work and is not ours |
-| Tests | **The gate ran at `9d9d792`, 2026-09-15, Windows dev box: `cargo fmt --all -- --check` and `cargo clippy --workspace --all-targets --all-features -- -D warnings` clean, `cargo test --all-features --workspace` 1 635 passed / 0 failed.** The listener fix added twelve tests, R1 one and F14 two, so `fah-config --lib` is at 98 (97 after the listener fix, 90 before it), `fah-common` 44 (43), `fah-api --test api` 138 (133). Both of the last two fixes are mutation-verified: for R1, deleting the two new arms fails its test on `UnknownEnvKey` and pointing one arm at the wrong field fails it on the value; for F14, reverting the atomic fails the behavioural test while deleting the `post_config` call fails the wiring test and leaves the behavioural one passing — which is the proof the two cover different halves. `shipped_path_e2e` now carries six tests in 21 s — four added on 2026-09-15 for the HTTPS listener's own edge cases, the last of them mutation-verified (`max_connections: 2` fails its negative control). The dashboard ran on the same tip and is green: `npm run typecheck` clean, **58 test files, 1 043 tests, 0 failures** (three fewer than the 1 046 of 2026-09-14 — the `fallback` mode's tests went with the mode in `5b5d3e8`), and `npm run build` is under budget at 136 921 B gzip against 153 600 B. `cargo bench -p fastadhunter --bench pipeline --no-run` builds for the first time since p5-04, with no profile override (`3a1b5b8`). The `e2e` `WSAEACCES` trap (§Known-good gate note) did not fire. Bench A/B against `main` over four alternating rounds: **no regression demonstrated** |
+| Branch | **Phase 3 landed on `main`** on 2026-09-13, by fast-forward — `bc49e4e..78238b4`, 105 commits, no merge commit ([plan/plan-merge.md](../plan/plan-merge.md), all five steps closed). `main` is at **`26ffe1c`** — the A1/A2 listener fix — and **both remotes carry it**: `git ls-remote` puts `origin/main` and `backup/main` on `26ffe1c` too, so nothing is unpushed. Read the remotes that way, not from the tracking refs, and never from this row. Read the tip from `git rev-parse main`, not from this row either: it named `99e4953` for two commits after that stopped being true, and `9d9d792` for six more. Six commits followed `9d9d792`: `e8e7cf8` the enumeration sweep's record, `2b03a30` `bd6b1f0` `0662df4` `8abb9c1` the hot-path audit and its rewrites, and `26ffe1c` the only production one — §Hot-path audit below. Everything before them is in `git log`; the ten from 2026-09-14/15 are listed in §Session 2026-09-14/15. `phase3-06` (`78238b4`) has served its purpose and sits well behind. Rollback tags: `main-pre-phase3-merge` = `ebc46f1`, `phase3-06-pre-main-merge` = `185139b`; `eb693e2` is the merge commit inside the branch, two parents. `pre-alloc-domain-2026-09-06` = `64be513` stays the rollback point before the allocation domains |
+| Tree | **clean — nothing modified, nothing untracked, nothing unpushed.** One stash remains, `stash@{0}` ("phase3-06 project-state Next row"); it predates all of this work and is not ours |
+| Tests | **The gate ran at `26ffe1c`, 2026-09-15, Windows dev box: `cargo fmt --all -- --check` and `cargo clippy --workspace --all-targets -- -D warnings` clean, `cargo test --all-features --workspace` 1 648 passed / 0 failed** (1 635 at `9d9d792`). The A1/A2 fix added thirteen: `fah-common --lib` is at 58 (44 before — `retry` carried its four moved tests plus two for `never_fatal`, `throttle` brought nine), `fah-dns --lib` 220 (218, two classification tests) and `fah-http --lib` 92 (91, the falsifiable accept-loop test). The dashboard figures below were measured at `9d9d792` and were not re-run for a change that touches no frontend code. From the earlier passes and still current: the listener fix added twelve tests, R1 one and F14 two, so `fah-config --lib` is at 98 (97 after the listener fix, 90 before it) and `fah-api --test api` 138 (133). Both of the last two fixes are mutation-verified: for R1, deleting the two new arms fails its test on `UnknownEnvKey` and pointing one arm at the wrong field fails it on the value; for F14, reverting the atomic fails the behavioural test while deleting the `post_config` call fails the wiring test and leaves the behavioural one passing — which is the proof the two cover different halves. `shipped_path_e2e` now carries six tests in 21 s — four added on 2026-09-15 for the HTTPS listener's own edge cases, the last of them mutation-verified (`max_connections: 2` fails its negative control). The dashboard ran on the same tip and is green: `npm run typecheck` clean, **58 test files, 1 043 tests, 0 failures** (three fewer than the 1 046 of 2026-09-14 — the `fallback` mode's tests went with the mode in `5b5d3e8`), and `npm run build` is under budget at 136 921 B gzip against 153 600 B. `cargo bench -p fastadhunter --bench pipeline --no-run` builds for the first time since p5-04, with no profile override (`3a1b5b8`). The `e2e` `WSAEACCES` trap (§Known-good gate note) did not fire. Bench A/B against `main` over four alternating rounds: **no regression demonstrated** |
 | Version | 0.3.4 (workspace, since `4e7a6de`), untagged. Newest tags `v0.3.2` (`89aac76`), `pre-alloc-domain-2026-09-06`, `soak-p2.6-11` |
 | Deployed | **0.3.4, and not from today's merge.** Nothing was deployed on 2026-09-13 — landing Phase 3 on `main` is not a deployment, and deploying it is a separate decision that has not been made. Production runs image `kingston/fastadhunter-arm64-0.3.4.tar` as container `fastadhunter-0.3.4`, booted **2026-09-11T22:02:48Z**, HTTP allocation domains, N=2 (`FAH__RUNTIME__HTTP_RUNTIMES=2` on `fah-env`), `veth1` / `172.17.0.2`, mounts `fah-config,fah-data`. `GET /health` on 2026-09-13 18:24 local answered `0.3.4`, uptime 148 853 s. **The build commit is recorded nowhere** — neither `/health` nor the soak capture carries one; by timestamp the image matches `d307c36` with the version already at 0.3.4, the bump itself committed three minutes after the boot as `4e7a6de`. A **seven-day soak is running on this build**: t0 `2026-09-11T22:13:21Z`, ending ~2026-09-18T22:00Z, hourly scheduled task `FAH-soak-0.3.4`, artefacts under `docs/code-review/phase2.6/soak-0.3.4/` — untracked and gitignored, so they live outside the repository. The p3-06 probe (`fah-probe` on `veth3` / 172.17.0.4) was torn down 2026-09-11 evening; `veth3` remains, no test firewall rule or address list remains. Deploying Phase 3 is a separate decision and it has not been made |
 | Build ≠ tip | the running 0.3.4 **has** the F10 stats flush (`32d7776`), the F1 TCP bound (`ed28395`), the F2 UDP ceiling (`b0b091e`), their close-out tests (`ad110d8`) and adaptive-only (`d307c36`) — every one of them committed before its 01:02 local boot. It **lacks** everything from the day after: the F11 supervisor (`0fb8dd0`), F3's query borrow and pre-sized `domain_of` (`07d4d68`, `c220956`), the H1-H3/D1 allocation removals (`3287418`), the idle upstream pool reaper (`8941770`), the HTTP refusal-counter split (`28c751d`) — and the whole of Phase 3: certificates, SNI filtering, HTTPS interception, the DoT and DoH listeners. The `strategy = "adaptive"` precondition is settled rather than pending: that boot already happened and the config loaded |
@@ -98,6 +99,46 @@ Still holding, none of them blocking — except F7, which closed on 2026-09-14:
 `E:/fah-main-bench` is **kept**, detached at `ebc46f1`: the frozen pre-Phase-3
 baseline p3-10 measures against. Rebuilt later it would be a different baseline,
 not the same one. Do not switch its checkout or delete its `target/`.
+
+### Hot-path audit and the A1/A2 fix — 2026-09-15
+
+[post-merge-performance-audit-2026-09-15.md](code-review/phase3/post-merge-performance-audit-2026-09-15.md).
+**Not the same file as the integration audit below**, whose name differs by one
+word (`post-merge-audit-…`); the two are easy to confuse and cover different
+things. This one is hot-path performance, memory and Rust quality, read-only,
+SNAPSHOT mode — there was no code diff to review.
+
+Its first pass was wrong and was rewritten over four commits. It had reported
+"0 locks" and "0 panics" for files its own scope listed, because cutting each
+file at the first `#[cfg(test)]` drops 187 lines of `cache.rs` production code —
+that attribute sits on two individual methods long before the test module.
+Anchor such a cut at column 0. It had also read passing allocation oracles as
+headroom when the ceilings equal the measurements: 8 of 12 ceiling checks clear
+by exactly the 4-allocation jitter allowance, so they are tight regression
+detectors and nothing more.
+
+Findings are labelled `A1`–`A7`, local to that file. Bare `F` numbers were not
+available: the review registry already uses them for whole files
+(`phase2.6/f2-udp-inflight.md`, `f3-name-alloc-attribution.md`,
+`phase3/f7-flapping-oracle-redesign.md`).
+
+- **A1, A2 — fixed 2026-09-15 in `26ffe1c`**, the only production commit of the
+  set. The HTTP/HTTPS accept loop had no backoff, so descriptor exhaustion spun a
+  core; and four `warn!` sites a client could drive had nothing limiting their
+  rate. `RetryPolicy` moved from `fah-dns` to `fah-common` (hard rule 1 forbids
+  `fah-http` importing `fah-dns`), and `LogThrottle` is new there.
+- **The acceptor recovers rather than dying** — owner's decision. `Fatal` after
+  40 consecutive errors is ~33 s and descriptor exhaustion outlasts that, so
+  `accept_loop` uses `RetryPolicy::never_fatal()`. The three DNS listeners keep
+  the old escalation. The signal is a throttled `warn` with a cumulative count,
+  not a task death through `record_task_death`.
+- **A throttle must not be per connection.** `DotTls` is `Clone` and is cloned
+  once per connection; a throttle field there would have been the defect itself.
+  Instances live on the connection gauges and on `Pipeline`.
+- **A3–A7 open, all low.** A3 is the TCP/DoT length-prefix realloc, held
+  deliberately: encoding at a two-byte offset is invalid, because hickory emits
+  name-compression pointers as absolute buffer indices. A4 and A7 are method
+  findings, A5 and A6 want owner decisions on the text of hard rules 3 and 7.
 
 ### Post-merge audit — 2026-09-15
 
