@@ -15,6 +15,8 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use fah_common::connections::{ConnectionGauge, OpenConnection};
+use fah_common::retry::{RetryDecision, RetryPolicy};
+use fah_common::throttle::LogThrottle;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::Semaphore;
@@ -23,10 +25,25 @@ use tracing::{debug, warn};
 
 pub const MAX_MESSAGE_LEN: usize = 16 * 1024;
 
-#[derive(Debug, Default)]
+pub const CONNECTION_WARN_INTERVAL: Duration = Duration::from_secs(60);
+
+#[derive(Debug)]
 pub struct TcpConnectionGauge {
     connections: ConnectionGauge,
     closed_oversize: AtomicU64,
+    connection_errors: LogThrottle,
+    prewarm_failures: LogThrottle,
+}
+
+impl Default for TcpConnectionGauge {
+    fn default() -> Self {
+        Self {
+            connections: ConnectionGauge::default(),
+            closed_oversize: AtomicU64::new(0),
+            connection_errors: LogThrottle::new(CONNECTION_WARN_INTERVAL),
+            prewarm_failures: LogThrottle::new(CONNECTION_WARN_INTERVAL),
+        }
+    }
 }
 
 impl TcpConnectionGauge {
@@ -47,7 +64,6 @@ impl AsRef<ConnectionGauge> for TcpConnectionGauge {
     }
 }
 
-use crate::backoff::{RetryDecision, RetryPolicy};
 use crate::pipeline::{Pipeline, Transport};
 use crate::server::ListenerDied;
 use crate::upstream::Forwarder;
@@ -112,21 +128,45 @@ pub async fn run<L: Accept, F: Forwarder>(
         tokio::spawn(async move {
             let served =
                 handle_connection(stream, &pipeline, client.ip(), Transport::Tcp, &open).await;
-            report_connection_end(served, client, "TCP DNS");
+            report_connection_end(served, client, "TCP DNS", &open);
             drop(open);
             drop(permit);
         });
     }
 }
 
-pub(crate) fn report_connection_end(result: io::Result<()>, client: SocketAddr, what: &str) {
+pub(crate) fn report_connection_end(
+    result: io::Result<()>,
+    client: SocketAddr,
+    what: &str,
+    gauge: &TcpConnectionGauge,
+) {
     let Err(err) = result else {
         return;
     };
     if is_client_disconnect(&err) {
         debug!(error = %err, client = %client, "{what} client disconnected");
-    } else {
-        warn!(error = %err, client = %client, "{what} connection ended with an error");
+        return;
+    }
+    match gauge.connection_errors.note(std::time::Instant::now()) {
+        Some(failures) => {
+            warn!(error = %err, client = %client, failures, "{what} connection ended with an error")
+        }
+        None => debug!(error = %err, client = %client, "{what} connection ended with an error"),
+    }
+}
+
+pub(crate) fn report_prewarm_failure(
+    err: &tokio::task::JoinError,
+    host: &str,
+    what: &str,
+    gauge: &TcpConnectionGauge,
+) {
+    match gauge.prewarm_failures.note(std::time::Instant::now()) {
+        Some(failures) => {
+            warn!(host = %host, error = %err, failures, "{what} leaf pre-warm task failed")
+        }
+        None => debug!(host = %host, error = %err, "{what} leaf pre-warm task failed"),
     }
 }
 
@@ -205,8 +245,8 @@ mod tests {
     use tokio::io::{duplex, DuplexStream};
 
     use super::*;
-    use crate::backoff::FATAL_CONSECUTIVE_ERRORS;
     use crate::testkit;
+    use fah_common::retry::FATAL_CONSECUTIVE_ERRORS;
 
     #[test]
     fn a_reply_is_framed_as_one_buffer_with_its_big_endian_length_in_front() {

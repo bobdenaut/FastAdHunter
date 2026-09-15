@@ -3,7 +3,6 @@
 //! ([`upstream::UpstreamPool`]: plain UDP with TCP truncation retry, DoT,
 //! DoH, ordered fallback).
 
-mod backoff;
 mod cache;
 mod dot;
 mod pipeline;

@@ -65,6 +65,7 @@ tokio = { workspace = true, features = [
     "net",
     "sync",
     "time",
+    "test-util",
     "macros",
     "rt-multi-thread",
 ] }

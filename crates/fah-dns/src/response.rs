@@ -7,7 +7,7 @@ use std::net::{Ipv4Addr, Ipv6Addr};
 use hickory_proto::op::{Edns, Message, Query, ResponseCode};
 use hickory_proto::rr::rdata::{A, AAAA};
 use hickory_proto::rr::{RData, Record};
-use tracing::warn;
+use hickory_proto::ProtoError;
 
 use crate::cache::CachedAnswer;
 use crate::rewrite::{RewriteAddress, RewriteOutcome};
@@ -15,6 +15,11 @@ use crate::rewrite::{RewriteAddress, RewriteOutcome};
 /// Default UDP payload size when a request carries no EDNS OPT record
 /// ([RFC 1035] historical default, mirrored by every resolver).
 const NO_EDNS_UDP_PAYLOAD: u16 = 512;
+
+pub(crate) struct Encoded {
+    pub(crate) bytes: Vec<u8>,
+    pub(crate) failure: Option<ProtoError>,
+}
 
 /// Empty skeleton response: id/op_code mirrored, `RD` echoed, `RA` set (we
 /// answer authoritatively for blocked queries and relay for the rest), EDNS
@@ -147,12 +152,16 @@ pub(crate) fn max_udp_payload(request: &Message) -> u16 {
 /// Encodes `message`, truncating it (RFC 1035 §4.1.1 `TC` bit: header +
 /// question only, answers dropped) if it would exceed `budget` over UDP.
 /// TCP callers pass `u16::MAX` so truncation never triggers.
-pub(crate) fn encode_for_transport(message: &Message, budget: u16) -> Vec<u8> {
-    let bytes = encode(message);
-    if bytes.len() <= budget as usize {
-        return bytes;
+pub(crate) fn encode_for_transport(message: &Message, budget: u16) -> Encoded {
+    let encoded = encode(message);
+    if encoded.bytes.len() <= budget as usize {
+        return encoded;
     }
-    encode(&message.truncate())
+    let truncated = encode(&message.truncate());
+    Encoded {
+        bytes: truncated.bytes,
+        failure: encoded.failure.or(truncated.failure),
+    }
 }
 
 /// Encodes a message to wire bytes. Falls back to a bare `SERVFAIL` (which
@@ -160,17 +169,23 @@ pub(crate) fn encode_for_transport(message: &Message, budget: u16) -> Vec<u8> {
 /// near-impossible chance the real message doesn't fit its own encoding
 /// constraints — callers must never propagate a panic from a malformed
 /// upstream answer or oversized synthesized name.
-fn encode(message: &Message) -> Vec<u8> {
-    message.to_vec().unwrap_or_else(|err| {
-        warn!(error = %err, "failed to encode DNS response; falling back to SERVFAIL");
-        Message::error_msg(
-            message.metadata.id,
-            message.metadata.op_code,
-            ResponseCode::ServFail,
-        )
-        .to_vec()
-        .unwrap_or_default()
-    })
+fn encode(message: &Message) -> Encoded {
+    match message.to_vec() {
+        Ok(bytes) => Encoded {
+            bytes,
+            failure: None,
+        },
+        Err(err) => Encoded {
+            bytes: Message::error_msg(
+                message.metadata.id,
+                message.metadata.op_code,
+                ResponseCode::ServFail,
+            )
+            .to_vec()
+            .unwrap_or_default(),
+            failure: Some(err),
+        },
+    }
 }
 
 #[cfg(test)]
@@ -267,8 +282,8 @@ mod tests {
                 RData::A(A(Ipv4Addr::UNSPECIFIED)),
             ));
         }
-        let bytes = encode_for_transport(&response, 64);
-        assert!(bytes.len() <= 64 || bytes.len() < encode(&response).len());
+        let bytes = encode_for_transport(&response, 64).bytes;
+        assert!(bytes.len() <= 64 || bytes.len() < encode(&response).bytes.len());
         let decoded = Message::from_vec(&bytes).unwrap();
         assert!(decoded.metadata.truncation);
         assert!(decoded.answers.is_empty());
@@ -317,7 +332,7 @@ mod tests {
     fn tcp_budget_never_truncates() {
         let (request, query) = request_with_query(RecordType::A);
         let response = blocked(&request, &query, 10, None);
-        let bytes = encode_for_transport(&response, u16::MAX);
+        let bytes = encode_for_transport(&response, u16::MAX).bytes;
         let decoded = Message::from_vec(&bytes).unwrap();
         assert!(!decoded.metadata.truncation);
         assert_eq!(decoded.answers.len(), 1);

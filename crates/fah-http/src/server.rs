@@ -6,6 +6,7 @@
 //! `IPV6_V6ONLY` — an HTTP listener that quietly refused IPv6 while DNS served
 //! it would be invisible until a v6-only client failed.
 
+use std::future::Future;
 use std::io;
 use std::net::SocketAddr;
 use std::num::NonZeroUsize;
@@ -14,6 +15,8 @@ use std::thread::JoinHandle as ThreadHandle;
 use std::time::Duration;
 
 use fah_common::listen::{bind_error, bind_tcp, listen_addr};
+use fah_common::retry::{RetryDecision, RetryPolicy, BACKOFF_MAX};
+use fah_common::throttle::LogThrottle;
 use fah_config::port_setting::HTTP as PORT_SETTING;
 use fah_config::HttpConfig;
 use tokio::net::{TcpListener, TcpStream};
@@ -27,6 +30,25 @@ use crate::https::TlsProxy;
 use crate::proxy::Proxy;
 
 const HANDOFF_QUEUE: usize = 32;
+
+const ACCEPT_WARN_INTERVAL: Duration = Duration::from_secs(60);
+
+pub(crate) trait Accept: Send + Sync + 'static {
+    fn accept(&self) -> impl Future<Output = io::Result<(TcpStream, SocketAddr)>> + Send;
+}
+
+impl Accept for TcpListener {
+    fn accept(&self) -> impl Future<Output = io::Result<(TcpStream, SocketAddr)>> + Send {
+        TcpListener::accept(self)
+    }
+}
+
+fn sustained_failure(throttle: &LogThrottle, delay: Duration) -> Option<u64> {
+    if delay < BACKOFF_MAX {
+        return None;
+    }
+    throttle.note(std::time::Instant::now())
+}
 
 /// Owns the accept loop. Dropping this does not stop it — call
 /// [`Server::shutdown`], matching `fah_dns::Server`.
@@ -178,18 +200,21 @@ impl Server {
 ///
 /// Since p2-02 the permit is held for the whole transfer rather than released
 /// immediately, so the ceiling now genuinely binds — the gap p2-01 documented.
-pub(crate) async fn accept_loop(
-    listener: TcpListener,
+pub(crate) async fn accept_loop<L: Accept>(
+    listener: L,
     permits: Arc<Semaphore>,
     connections: Arc<ConnectionGauge>,
     mut dispatch: Dispatch,
 ) {
+    let mut policy = RetryPolicy::never_fatal();
+    let sustained = LogThrottle::new(ACCEPT_WARN_INTERVAL);
     loop {
         let Ok(permit) = Arc::clone(&permits).acquire_owned().await else {
             return;
         };
         match listener.accept().await {
             Ok((stream, peer)) => {
+                policy.on_success();
                 // Proxied writes are small and latency-visible; Nagle would
                 // hold a request head waiting for more to send.
                 if let Err(err) = stream.set_nodelay(true) {
@@ -206,7 +231,21 @@ pub(crate) async fn accept_loop(
                     .await;
             }
             Err(err) => {
-                tracing::debug!(error = %err, "accept failed");
+                drop(permit);
+                let delay = match policy.on_error() {
+                    RetryDecision::Sleep(delay) => delay,
+                    RetryDecision::Fatal => BACKOFF_MAX,
+                };
+                match sustained_failure(&sustained, delay) {
+                    Some(failures) => tracing::warn!(
+                        error = %err,
+                        retry_in_ms = delay.as_millis(),
+                        failures,
+                        "accept keeps failing; the listener is retrying and accepting nothing new"
+                    ),
+                    None => tracing::debug!(error = %err, "accept failed"),
+                }
+                tokio::time::sleep(delay).await;
             }
         }
     }
@@ -294,6 +333,7 @@ impl Rotation {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::atomic::{AtomicU32, Ordering};
     use std::time::{Duration, Instant};
 
     use fah_common::egress::DestinationPolicy;
@@ -365,6 +405,68 @@ mod tests {
     /// that want it use [`proxy_with`] and say so.
     fn proxy() -> Arc<Proxy> {
         proxy_with(Duration::from_secs(5))
+    }
+
+    struct NeverAccepts {
+        attempts: Arc<AtomicU32>,
+    }
+
+    impl Accept for NeverAccepts {
+        fn accept(&self) -> impl Future<Output = io::Result<(TcpStream, SocketAddr)>> + Send {
+            self.attempts.fetch_add(1, Ordering::Relaxed);
+            std::future::ready(Err(io::Error::other("too many open files")))
+        }
+    }
+
+    async fn settle() {
+        for _ in 0..16 {
+            tokio::task::yield_now().await;
+        }
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_failing_accept_releases_its_admission_permit_and_does_not_spin() {
+        let attempts = Arc::new(AtomicU32::new(0));
+        let permits = Arc::new(Semaphore::new(1));
+        let acceptor = tokio::spawn(accept_loop(
+            NeverAccepts {
+                attempts: Arc::clone(&attempts),
+            },
+            Arc::clone(&permits),
+            Arc::new(ConnectionGauge::default()),
+            Dispatch::Shared(proxy()),
+        ));
+
+        settle().await;
+
+        assert!(
+            attempts.load(Ordering::Relaxed) >= 1,
+            "the loop must have tried to accept at least once"
+        );
+        assert_eq!(
+            permits.available_permits(),
+            1,
+            "the admission permit must be released before the backoff sleep, not held across it"
+        );
+
+        let parked = attempts.load(Ordering::Relaxed);
+        for _ in 0..4 {
+            settle().await;
+        }
+        assert_eq!(
+            attempts.load(Ordering::Relaxed),
+            parked,
+            "retrying without the clock advancing is a busy loop"
+        );
+
+        tokio::time::advance(BACKOFF_MAX).await;
+        settle().await;
+        assert!(
+            attempts.load(Ordering::Relaxed) > parked,
+            "the loop must resume once the backoff has elapsed"
+        );
+
+        acceptor.abort();
     }
 
     #[tokio::test]

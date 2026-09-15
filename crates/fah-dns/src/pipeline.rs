@@ -13,6 +13,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+use fah_common::throttle::LogThrottle;
 use fah_config::DnsCacheConfig;
 use fah_model::{
     AnswerOutcome, ClientTransport, Event, Query as FahQuery, QueryEvent, StaleServe, Verdict,
@@ -21,6 +22,8 @@ use fah_rules::{ListManager, MatchDecision, PolicyState};
 use hickory_proto::op::{Message, MessageType, OpCode, Query as WireQuery, ResponseCode};
 use tokio::sync::mpsc;
 use tracing::trace;
+
+const ENCODE_FAILURE_WARN_INTERVAL: Duration = Duration::from_secs(60);
 
 use crate::cache::{DnsCache, Lookup, STALE_SERVE_TTL};
 use crate::qtype::{domain_of, to_fah_query_type};
@@ -128,6 +131,7 @@ pub struct Pipeline<F: Forwarder> {
     /// (ARCHITECTURE.md §Runtime Model: "a slow consumer drops events rather
     /// than back-pressuring the pipeline"). Exposed for p1-08's metrics.
     dropped_events: Arc<AtomicU64>,
+    encode_failures: Arc<LogThrottle>,
 }
 
 impl<F: Forwarder> Pipeline<F> {
@@ -152,7 +156,26 @@ impl<F: Forwarder> Pipeline<F> {
             },
             events,
             dropped_events: Arc::new(AtomicU64::new(0)),
+            encode_failures: Arc::new(LogThrottle::new(ENCODE_FAILURE_WARN_INTERVAL)),
         }
+    }
+
+    fn encoded(&self, message: &Message, budget: u16) -> Vec<u8> {
+        let encoded = response::encode_for_transport(message, budget);
+        if let Some(err) = encoded.failure {
+            match self.encode_failures.note(std::time::Instant::now()) {
+                Some(failures) => tracing::warn!(
+                    error = %err,
+                    failures,
+                    "failed to encode a DNS response; served SERVFAIL instead"
+                ),
+                None => tracing::debug!(
+                    error = %err,
+                    "failed to encode a DNS response; served SERVFAIL instead"
+                ),
+            }
+        }
+        encoded.bytes
     }
 
     /// Attaches the shared policy state. Without it every client is judged
@@ -319,16 +342,10 @@ impl<F: Forwarder> Pipeline<F> {
             return None;
         }
         if request.metadata.op_code != OpCode::Query {
-            return Some(response::encode_for_transport(
-                &response::error(&request, ResponseCode::NotImp),
-                budget,
-            ));
+            return Some(self.encoded(&response::error(&request, ResponseCode::NotImp), budget));
         }
         let Some(query) = request.queries.first() else {
-            return Some(response::encode_for_transport(
-                &response::error(&request, ResponseCode::FormErr),
-                budget,
-            ));
+            return Some(self.encoded(&response::error(&request, ResponseCode::FormErr), budget));
         };
 
         let started = Instant::now();
@@ -394,7 +411,7 @@ impl<F: Forwarder> Pipeline<F> {
             transport,
         );
 
-        Some(response::encode_for_transport(&resolved.response, budget))
+        Some(self.encoded(&resolved.response, budget))
     }
 
     /// The Allow/Pass path: cache first (ADR-0001 — the verdict already ran

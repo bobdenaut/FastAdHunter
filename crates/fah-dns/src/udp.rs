@@ -7,14 +7,18 @@ use std::net::SocketAddr;
 use std::num::NonZeroUsize;
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::Arc;
+use std::time::Duration;
 
+use fah_common::retry::{RetryDecision, RetryPolicy};
+use fah_common::throttle::LogThrottle;
 use tokio::net::UdpSocket;
-use tracing::warn;
+use tracing::{debug, warn};
 
-use crate::backoff::{RetryDecision, RetryPolicy};
 use crate::pipeline::{Pipeline, Transport};
 use crate::server::ListenerDied;
 use crate::upstream::Forwarder;
+
+pub const SEND_FAILURE_WARN_INTERVAL: Duration = Duration::from_secs(60);
 
 #[derive(Debug)]
 pub struct UdpInflightGauge {
@@ -22,6 +26,7 @@ pub struct UdpInflightGauge {
     active: AtomicUsize,
     peak: AtomicUsize,
     shed: AtomicU64,
+    send_failures: LogThrottle,
 }
 
 impl UdpInflightGauge {
@@ -31,6 +36,7 @@ impl UdpInflightGauge {
             active: AtomicUsize::new(0),
             peak: AtomicUsize::new(0),
             shed: AtomicU64::new(0),
+            send_failures: LogThrottle::new(SEND_FAILURE_WARN_INTERVAL),
         }
     }
 
@@ -158,13 +164,13 @@ pub async fn run<S: Datagrams, F: Forwarder>(
         let admitted = Admitted(Arc::clone(&listener));
         let pipeline = Arc::clone(&pipeline);
         tokio::spawn(async move {
-            handle_datagram(&admitted.0.socket, &pipeline, &datagram, client).await;
+            handle_datagram(&admitted.0, &pipeline, &datagram, client).await;
         });
     }
 }
 
 async fn handle_datagram<S: Datagrams, F: Forwarder>(
-    socket: &S,
+    listener: &Listener<S>,
     pipeline: &Pipeline<F>,
     datagram: &[u8],
     client: SocketAddr,
@@ -172,9 +178,29 @@ async fn handle_datagram<S: Datagrams, F: Forwarder>(
     let Some(reply) = pipeline.handle(datagram, client.ip(), Transport::Udp).await else {
         return;
     };
-    if let Err(err) = socket.send_to(&reply, client).await {
-        warn!(error = %err, client = %client, "failed to send UDP DNS reply");
+    let Err(err) = listener.socket.send_to(&reply, client).await else {
+        return;
+    };
+    if is_client_unreachable(&err) {
+        debug!(error = %err, client = %client, "UDP DNS reply undeliverable");
+        return;
     }
+    match listener.gauge.send_failures.note(std::time::Instant::now()) {
+        Some(failures) => {
+            warn!(error = %err, client = %client, failures, "failed to send UDP DNS reply")
+        }
+        None => debug!(error = %err, client = %client, "failed to send UDP DNS reply"),
+    }
+}
+
+fn is_client_unreachable(err: &io::Error) -> bool {
+    use std::io::ErrorKind::{
+        ConnectionRefused, HostUnreachable, NetworkUnreachable, PermissionDenied,
+    };
+    matches!(
+        err.kind(),
+        ConnectionRefused | HostUnreachable | NetworkUnreachable | PermissionDenied
+    )
 }
 
 #[cfg(test)]
@@ -190,9 +216,9 @@ mod tests {
     use tokio::sync::Notify;
 
     use super::*;
-    use crate::backoff::FATAL_CONSECUTIVE_ERRORS;
     use crate::testkit;
     use crate::upstream::ForwardOutcome;
+    use fah_common::retry::FATAL_CONSECUTIVE_ERRORS;
 
     struct FlakySocket {
         errors_before_first_success: u32,
@@ -215,6 +241,37 @@ mod tests {
 
         async fn send_to(&self, reply: &[u8], _client: SocketAddr) -> io::Result<usize> {
             Ok(reply.len())
+        }
+    }
+
+    #[test]
+    fn a_network_that_cannot_take_the_reply_is_not_our_fault() {
+        for kind in [
+            io::ErrorKind::ConnectionRefused,
+            io::ErrorKind::HostUnreachable,
+            io::ErrorKind::NetworkUnreachable,
+            io::ErrorKind::PermissionDenied,
+        ] {
+            assert!(
+                is_client_unreachable(&io::Error::from(kind)),
+                "{kind:?} is the client's network, not a fault of ours"
+            );
+        }
+    }
+
+    #[test]
+    fn a_reply_that_does_not_fit_is_our_own_truncation_bug() {
+        for kind in [
+            io::ErrorKind::InvalidInput,
+            io::ErrorKind::Other,
+            io::ErrorKind::BrokenPipe,
+            io::ErrorKind::ConnectionReset,
+            io::ErrorKind::UnexpectedEof,
+        ] {
+            assert!(
+                !is_client_unreachable(&io::Error::from(kind)),
+                "{kind:?} must keep its warning: the stream kinds never reach a datagram send"
+            );
         }
     }
 

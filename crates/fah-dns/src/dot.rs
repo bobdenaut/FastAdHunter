@@ -5,6 +5,7 @@ use std::time::Duration;
 
 use fah_certs::{CertStore, MintingResolver};
 use fah_common::connections::OpenConnection;
+use fah_common::retry::{RetryDecision, RetryPolicy};
 use rustls::server::Acceptor;
 use rustls::sign::CertifiedKey;
 use rustls::ServerConfig;
@@ -15,7 +16,6 @@ use tokio::time::{timeout, timeout_at, Instant};
 use tokio_rustls::LazyConfigAcceptor;
 use tracing::{debug, warn};
 
-use crate::backoff::{RetryDecision, RetryPolicy};
 use crate::pipeline::{Pipeline, Transport};
 use crate::server::ListenerDied;
 use crate::tcp;
@@ -101,7 +101,7 @@ pub(crate) async fn run_with<F: Forwarder>(
             let _slot = slot;
             let served =
                 serve_connection(stream, client, tls, &pipeline, &open, handshake_timeout).await;
-            tcp::report_connection_end(served, client, "DoT");
+            tcp::report_connection_end(served, client, "DoT", &open);
             drop(open);
         });
     }
@@ -140,9 +140,9 @@ async fn serve_connection<F: Forwarder>(
     let mut diag = DiagTiming::at_sni();
     if let Some(host) = sni {
         #[cfg(not(feature = "diag-timing"))]
-        prewarm(&tls.store, host).await;
+        prewarm(&tls.store, host, gauge).await;
         #[cfg(feature = "diag-timing")]
-        prewarm(&tls.store, host, &mut diag).await;
+        prewarm(&tls.store, host, gauge, &mut diag).await;
     }
     let mut stream = match timeout_at(deadline, start.into_stream(tls.config)).await {
         Ok(Ok(stream)) => stream,
@@ -166,6 +166,7 @@ async fn serve_connection<F: Forwarder>(
 async fn prewarm(
     store: &Arc<CertStore>,
     host: String,
+    gauge: &DotConnectionGauge,
     #[cfg(feature = "diag-timing")] diag: &mut DiagTiming,
 ) {
     let store = Arc::clone(store);
@@ -191,7 +192,7 @@ async fn prewarm(
         Ok(Err(err)) => {
             debug!(host = %logged, error = %err, "DoT leaf not minted; serving the fallback certificate")
         }
-        Err(err) => warn!(host = %logged, error = %err, "DoT leaf pre-warm task failed"),
+        Err(err) => tcp::report_prewarm_failure(&err, &logged, "DoT", gauge),
     }
 }
 

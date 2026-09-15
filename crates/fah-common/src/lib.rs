@@ -6,6 +6,8 @@ pub mod histogram;
 pub mod listen;
 pub mod process;
 pub mod resolve;
+pub mod retry;
+pub mod throttle;
 
 use thiserror::Error;
 

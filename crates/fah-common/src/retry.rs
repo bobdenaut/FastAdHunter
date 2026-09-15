@@ -1,34 +1,55 @@
 use std::time::Duration;
 
-pub(crate) const BACKOFF_INITIAL: Duration = Duration::from_millis(10);
-pub(crate) const BACKOFF_MAX: Duration = Duration::from_secs(1);
-pub(crate) const FATAL_CONSECUTIVE_ERRORS: u32 = 40;
+pub const BACKOFF_INITIAL: Duration = Duration::from_millis(10);
+pub const BACKOFF_MAX: Duration = Duration::from_secs(1);
+pub const FATAL_CONSECUTIVE_ERRORS: u32 = 40;
 
-pub(crate) enum RetryDecision {
+#[derive(Debug)]
+pub enum RetryDecision {
     Sleep(Duration),
     Fatal,
 }
 
-#[derive(Default)]
-pub(crate) struct RetryPolicy {
+#[derive(Debug)]
+pub struct RetryPolicy {
     consecutive: u32,
+    fatal_after: Option<u32>,
+}
+
+impl Default for RetryPolicy {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl RetryPolicy {
-    pub(crate) fn new() -> Self {
-        Self::default()
+    pub fn new() -> Self {
+        Self {
+            consecutive: 0,
+            fatal_after: Some(FATAL_CONSECUTIVE_ERRORS),
+        }
     }
 
-    pub(crate) fn on_error(&mut self) -> RetryDecision {
+    pub fn never_fatal() -> Self {
+        Self {
+            consecutive: 0,
+            fatal_after: None,
+        }
+    }
+
+    pub fn on_error(&mut self) -> RetryDecision {
         self.consecutive = self.consecutive.saturating_add(1);
-        if self.consecutive >= FATAL_CONSECUTIVE_ERRORS {
+        if self
+            .fatal_after
+            .is_some_and(|limit| self.consecutive >= limit)
+        {
             return RetryDecision::Fatal;
         }
         let factor = 1u32.checked_shl(self.consecutive - 1).unwrap_or(u32::MAX);
         RetryDecision::Sleep(BACKOFF_INITIAL.saturating_mul(factor).min(BACKOFF_MAX))
     }
 
-    pub(crate) fn on_success(&mut self) {
+    pub fn on_success(&mut self) {
         self.consecutive = 0;
     }
 }
@@ -79,6 +100,27 @@ mod tests {
         let mut policy = RetryPolicy::new();
         for _ in 1..FATAL_CONSECUTIVE_ERRORS {
             assert!(sleep_millis(policy.on_error()) <= BACKOFF_MAX.as_millis());
+        }
+    }
+
+    #[test]
+    fn a_never_fatal_policy_keeps_sleeping_past_the_threshold() {
+        let mut policy = RetryPolicy::never_fatal();
+        for _ in 0..FATAL_CONSECUTIVE_ERRORS * 4 {
+            assert!(matches!(policy.on_error(), RetryDecision::Sleep(_)));
+        }
+        assert_eq!(sleep_millis(policy.on_error()), BACKOFF_MAX.as_millis());
+    }
+
+    #[test]
+    fn a_never_fatal_policy_follows_the_same_progression_as_a_fatal_one() {
+        let mut fatal = RetryPolicy::new();
+        let mut forgiving = RetryPolicy::never_fatal();
+        for _ in 1..FATAL_CONSECUTIVE_ERRORS {
+            assert_eq!(
+                sleep_millis(fatal.on_error()),
+                sleep_millis(forgiving.on_error())
+            );
         }
     }
 }

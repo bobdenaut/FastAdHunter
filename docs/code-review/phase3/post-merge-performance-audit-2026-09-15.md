@@ -4,6 +4,10 @@ Replaces the first pass of the same date (commit `2b03a30`), whose lock, panic
 and oracle figures were wrong; the corrected counts are below and the reason the
 first pass undercounted is A7.
 
+Every `file:line` here is as of `2b03a30`. A1 and A2 were fixed afterwards, so
+the lines they name have moved — each of those two sections ends with what
+shipped, and §Fix verification carries the evidence.
+
 ## Summary
 
 - `base commit: e8e7cf8` · `head commit: 2b03a30` · `mode: SNAPSHOT`. The working
@@ -14,10 +18,12 @@ first pass undercounted is A7.
   **N/A — SNAPSHOT** and are not reported as zeros.
 - Scope is the four hot-path entry points plus their one-level callees, 13
   files. Every count is production-only; the `#[cfg(test)]` tail is excluded.
-- Seven findings, none blocking. Two medium: an accept loop with no backoff
-  (A1), and four unrated `warn!` paths that are one defect in four places and
-  share one fix (A2). Then one per-reply realloc (A3), two method findings
-  (A4, A7) and two documentation findings (A5, A6).
+- Seven findings, none blocking. **A1 and A2, the two medium ones, are fixed** —
+  an accept loop with no backoff, and four unrated `warn!` paths that are one
+  defect in four places. Each entry keeps what was found and then states what
+  shipped, including where the implementation departed from the proposal and
+  why. Still open: one per-reply realloc (A3), two method findings (A4, A7) and
+  two documentation findings (A5, A6).
 - All five oracles pass. Observed counts are reported with their ceilings and
   headroom: 8 of 12 ceiling checks clear by exactly the 4-allocation jitter
   allowance, so the ceilings equal today's measurements.
@@ -44,9 +50,15 @@ first pass undercounted is A7.
   `main.rs:1127`).
 - The oracles run under `cargo test`, i.e. the dev profile: `debug_assert!` is
   live and nothing is optimized. The numbers are regression detectors on this
-  dev box, not production allocation counts for the RB5009.
-- No bench was run and no regression claim is made. With no code diff there is
-  nothing for a bench to discriminate.
+  dev box, not production allocation counts for the RB5009. No bench was run and
+  no regression claim is made — the A1/A2 fix touches only error paths, so there
+  is nothing on a bench's success path for it to move.
+- **The HTTP/HTTPS acceptor recovers rather than dying** (owner's decision,
+  2026-09-15). `RetryPolicy::never_fatal()` there, `RetryPolicy::new()` and its
+  ~33 s escalation unchanged for the three DNS listeners. Descriptor exhaustion
+  clears on its own and routinely outlasts 33 s, so the signal is a throttled
+  `warn` with a cumulative count, not a dead task reported through
+  `record_task_death`.
 
 ## Bugs found
 
@@ -70,34 +82,43 @@ All three DNS listeners already handle this: `udp.rs:141`, `tcp.rs:96`,
 
 Violates engineering principle 4 (shared behaviour in one place) and hard rule 4
 in spirit — the log volume grows with uptime under a condition the loop cannot
-end. Smallest fix: promote `RetryPolicy` (`fah-dns/src/backoff.rs:13`, currently
-`pub(crate)`) to `fah-common`, then use it in `accept_loop`. Hard rule 1 forbids
-`fah-http` importing `fah-dns`, so copying the policy is not an option and the
-L1 move is the only non-duplicating fix.
-
-The seam the test needs also already exists: `tcp.rs:60` defines
-`trait Accept`, with the `set_nodelay` call and its `debug!` inside the
-`TcpListener` impl, and `tcp::run` is generic over it. `server.rs:181` takes a
-concrete `TcpListener` instead, so it cannot be handed a listener that fails on
-demand. Moving `Accept` to `fah-common` alongside `RetryPolicy` lets
-`accept_loop` reuse both and adds no new abstraction; defining a second
-identical trait inside `fah-http` would work but duplicates it.
-
-**Drop the permit before the sleep.** `server.rs:188` acquires the admission
-permit before `accept`, so a backoff added naively would sleep holding one —
-one fewer slot for the connections still being served. The error path has to
-release it and re-acquire after the sleep. Supervision needs nothing new:
-`Server::take_finished_acceptor` already hands the binary the loop's handle once
-it returns, so a `Fatal` exit is already observable.
-
-Acceptance: the admission permit is released before any backoff, and the test
-asserts that invariant directly — `max_connections = 1`, a controlled clock, an
-`accept` that fails persistently, and `Semaphore::available_permits() == 1`
-while the acceptor sleeps. That is a stable value to assert, unlike a count of
-attempts per wall-clock interval.
+end.
 
 Severity: medium. No memory growth; CPU starvation of the DNS listeners on the
 same runtime is the real cost.
+
+**FIXED.** `RetryPolicy` moved from `fah-dns/src/backoff.rs` to
+`fah-common/src/retry.rs` — hard rule 1 forbids `fah-http` importing `fah-dns`,
+so the L1 move was the only non-duplicating route. `new()` keeps its exact
+behaviour and its four tests came with it; `never_fatal()` is new. The DNS
+listeners import the moved type and are otherwise untouched.
+
+`accept_loop` now runs `RetryPolicy::never_fatal()`, releases the admission
+permit before the sleep, and takes the `Fatal` arm as a sleep at the ceiling so
+no future policy change can silently end the listener:
+
+```rust
+            Err(err) => {
+                drop(permit);
+                let delay = match policy.on_error() {
+                    RetryDecision::Sleep(delay) => delay,
+                    RetryDecision::Fatal => BACKOFF_MAX,
+                };
+```
+
+Three implementation decisions that differ from what this section first
+proposed, each for a reason found while writing the code:
+
+| Proposed | Shipped | Why |
+| -------- | ------- | --- |
+| reuse `Fatal`, let supervision see the death | `never_fatal()`, the listener recovers by itself | owner's decision. `FATAL_CONSECUTIVE_ERRORS = 40` with the sleep capped at 1 s means Fatal after ~33 s, and descriptor exhaustion routinely outlasts that. A listener that can recover should recover; the throttled `warn` and its cumulative count are the signal instead |
+| move `trait Accept` to `fah-common` and share it with `fah-dns` | a local `trait Accept` in `fah-http/src/server.rs` | not the same trait. `fah-dns`'s has an associated `Stream` type, which its own tests need for in-memory duplex streams; `fah-http`'s `Dispatch` hands `Accepted<TcpStream>` on, and `detach()` exists only for `TcpStream`. Sharing would have forced the dispatch generic for no gain. The failing test listener returns only `Err`, so a trait fixed to `TcpStream` costs it nothing |
+| a throttle field on a gauge | a `LogThrottle` local to the loop frame | the failure happens in the loop itself, which lives exactly as long as the listener. No `Arc`, no struct field. A2's sites do need gauge ownership, because they log from spawned per-connection tasks |
+
+One isolated failure still logs at `debug!`: a client that aborts between the
+handshake and our call is ordinary. The `warn!` fires only once the backoff has
+reached `BACKOFF_MAX`, i.e. the failure is sustained, and then at most once per
+`ACCEPT_WARN_INTERVAL` (60 s).
 
 ### A2 — four `warn!` paths a client can drive, none rate-limited
 
@@ -136,12 +157,13 @@ pub struct LogThrottle {
     origin: Instant,
     last_millis: AtomicU64,
     total: AtomicU64,
-    interval: Duration,
+    interval_millis: u64,
 }
 
 impl LogThrottle {
     pub fn new(interval: Duration) -> Self;
     pub fn note(&self, now: Instant) -> Option<u64>;
+    pub fn total(&self) -> u64;
 }
 ```
 
@@ -210,6 +232,32 @@ No `static` anywhere — hard rule 10 forbids the hidden state.
 Severity: medium, carried by `udp.rs:176`, which an unauthenticated remote can
 sustain. The other three are low on their own. No memory growth anywhere; log
 history loss only.
+
+**FIXED.** `LogThrottle` shipped in `fah-common/src/throttle.rs` exactly as the
+contract above specifies, with nine tests: the first event always logs, events
+inside the interval are suppressed, the boundary logs again with the cumulative
+total, suppressed events still count toward the next line, a zero interval logs
+everything, real time zero is not mistaken for "never logged", and eight threads
+driving 2000 events produce exactly one line and lose no count.
+
+Per site:
+
+| Site | What shipped |
+| ---- | ------------ |
+| `udp.rs` | `is_client_unreachable` demotes `ConnectionRefused`, `HostUnreachable`, `NetworkUnreachable` and `PermissionDenied` to `debug!` and returns; everything else goes through `UdpInflightGauge::send_failures`. `handle_datagram` now takes `&Listener<S>` rather than `&S`, which is how it reaches the gauge |
+| `response.rs` | `encode` returns `Encoded { bytes, failure: Option<ProtoError> }` and logs nothing. `Pipeline::encoded` logs through `encode_failures` and hands the bytes on; the three call sites in `handle` route through it |
+| `tcp.rs` | `report_connection_end` takes `&TcpConnectionGauge` and throttles the non-disconnect arm. The call sites pass `&open` — `OpenConnection` derefs to the gauge, so nothing new is threaded through |
+| `dot.rs` | `tcp::report_prewarm_failure` throttles the `JoinError` arm through the same gauge. `prewarm` takes `&DotConnectionGauge`, passed down from `serve_connection`, which already had it |
+
+`TcpConnectionGauge` gained two throttle fields, `connection_errors` and
+`prewarm_failures`, and a hand-written `Default` — `LogThrottle` has none, and
+inventing one would have meant inventing an interval. Because
+`DotConnectionGauge` is an alias, both DNS-over-stream listeners get the fields
+with one change and keep separate instances.
+
+Classification is tested as a pure function, not through the log: the four
+unreachable kinds must demote, and `InvalidInput`, `Other`, `BrokenPipe`,
+`ConnectionReset` and `UnexpectedEof` must not.
 
 ### A3 — one extra allocation per TCP/DoT reply, and the obvious fix is invalid
 
@@ -491,6 +539,38 @@ Reading: 8 of 12 ceiling checks clear by exactly the jitter allowance, so the
 ceilings are today's measurements (A4). Superseded by re-running the same
 commands; the dev profile and this box are part of the result.
 
+### Fix verification — A1 and A2
+
+Gates, whole workspace: `cargo fmt --all -- --check` clean,
+`cargo clippy --workspace --all-targets -- -D warnings` clean,
+`cargo test --all-features --workspace` green.
+
+Oracles re-run after the fix, same commands and same dev box as above:
+
+| Case | Before | After | Ceiling |
+| ---- | ------ | ----- | ------- |
+| blocked, inline / heap name | 832 / 1216 | 832 / 1216 | 836 / 1220 |
+| cache hit, inline / heap name | 640 / 1024 | 640 / 1024 | 644 / 1028 |
+| miss, inline name Udp / Tcp / Dot / Doh | 1054 / 1034 / 1031 / 1027 | 1054 / 1034 / 1036 / 1025 | 1092 |
+| miss, heap name Udp / Tcp / Dot / Doh | 1476 / 1476 / 1472 / 1472 | 1478 / 1476 / 1474 / 1472 | 1540 |
+| `proxy_alloc`, `intercept_alloc`, `url_lookup_alloc`, `dedup_alloc_bound` | pass | pass | — |
+
+The blocked and cache-hit cases are byte-identical, which is the meaningful
+comparison: they are the deterministic ones. The miss cases moved between −2 and
++5 allocations over 64 queries, inside their own spread, and every case is still
+under its ceiling. Nothing was added to a success path: the new clock reads and
+atomics sit on error paths only.
+
+A1's test is falsifiable and was shown to fail both ways before being reverted:
+
+| Wiring broken | Result |
+| ------------- | ------ |
+| `drop(permit)` removed | `available_permits()` asserts `left: 0, right: 1` |
+| `tokio::time::sleep(delay)` removed | 10240 accept attempts where the passing run makes 2048 |
+
+Memory delta: three `LogThrottle` instances of 32 bytes each, process-lifetime,
+plus one on the accept loop's frame per listener. Far below the <1 MB threshold.
+
 ### Self-check
 
 | Check | Result |
@@ -504,22 +584,38 @@ commands; the dev profile and this box are part of the result.
 
 ## Files changed
 
-None. Read-only audit.
+The audit itself changed nothing. A1 and A2 then did:
+
+| File | Change |
+| ---- | ------ |
+| `fah-common/src/retry.rs` | new — `RetryPolicy` moved here from `fah-dns`, plus `never_fatal()` and two tests for it |
+| `fah-common/src/throttle.rs` | new — `LogThrottle` and its nine tests |
+| `fah-common/src/lib.rs` | two module declarations |
+| `fah-dns/src/backoff.rs` | deleted — moved to L1 |
+| `fah-dns/src/lib.rs` | the `backoff` module declaration dropped |
+| `fah-dns/src/udp.rs` | `is_client_unreachable`, the `send_failures` throttle on the gauge, `handle_datagram` takes the listener, two classification tests |
+| `fah-dns/src/tcp.rs` | two throttle fields and a hand-written `Default` on the gauge, `report_connection_end` throttled, `report_prewarm_failure` added |
+| `fah-dns/src/dot.rs` | passes the gauge into `prewarm`, both log sites routed through `tcp::` |
+| `fah-dns/src/response.rs` | `Encoded { bytes, failure }`; the module no longer logs |
+| `fah-dns/src/pipeline.rs` | `encode_failures` throttle and `Pipeline::encoded`, wired into the three encode sites |
+| `fah-http/src/server.rs` | local `trait Accept`, `accept_loop` generic over it, never-fatal backoff, permit released before the sleep, throttled `warn`, and the falsifiable test |
+| `fah-http/Cargo.toml` | tokio `test-util` in dev-dependencies, for the controlled clock |
 
 ## Remaining TODOs
 
 | Finding | Action | Severity | Owner decision |
 | ------- | ------ | -------- | -------------- |
-| A1 | move `RetryPolicy` to `fah-common`, use it in `server.rs accept_loop` | medium | open |
-| A2 | one time-based throttle in `fah-common`, then wire three sites and move the `response.rs:165` log to `Pipeline`; classify the UDP send error at `udp.rs:176` — `ConnectionRefused`, `HostUnreachable`, `NetworkUnreachable`, `PermissionDenied` → `debug!` | medium | open |
+| A1 | **fixed** — see §Fix verification | medium | done |
+| A2 | **fixed** — see §Fix verification | medium | done |
 | A3 | hold; the offset encode is invalid, and the three valid fixes each need a measurement first | low | open |
 | A4 | report observed / ceiling / headroom whenever an oracle is cited | low | open |
 | A5 | write the shard-lock exception into hard rule 3 | low | open |
 | A6 | fix the hook's rule number; decide what hard rule 7 should say | low | open |
 | A7 | anchor the `#[cfg(test)]` cut at column 0 in the audit recipe | low | open |
 
-A1 and A2 share a dependency: both want something in `fah-common` — the retry
-policy and the log throttle. Doing them in one change keeps the L1 surface to
-one review.
+A1 and A2 shared a dependency — both wanted something in `fah-common`, the retry
+policy and the log throttle — so they landed as one change, keeping the L1
+surface to one review.
 
-**PASS WITH DEFERRED FINDINGS** — A1 and A2 medium, A3–A7 low. Nothing blocks.
+**PASS WITH DEFERRED FINDINGS** — A1 and A2 were medium and are fixed; A3–A7 are
+low and open. Nothing blocks.
