@@ -22,8 +22,9 @@ shipped, and §Fix verification carries the evidence.
   an accept loop with no backoff, and four unrated `warn!` paths that are one
   defect in four places. Each entry keeps what was found and then states what
   shipped, including where the implementation departed from the proposal and
-  why. Still open: one per-reply realloc (A3), two method findings (A4, A7) and
-  two documentation findings (A5, A6).
+  why. A6 is fixed too, and two claims filed under it are withdrawn there. Still
+  open: one per-reply realloc (A3), two method findings (A4, A7) and one
+  documentation finding (A5).
 - All five oracles pass. Observed counts are reported with their ceilings and
   headroom: 8 of 12 ceiling checks clear by exactly the 4-allocation jitter
   allowance, so the ceilings equal today's measurements.
@@ -320,19 +321,42 @@ Fix: write the exception into hard rule 3 in [CLAUDE.md](../../../CLAUDE.md).
 
 Severity: low. Documentation only.
 
-### A6 — hard rule 7 does not describe the tree, and the hook cites a different number
+### A6 — the no-comments hook cited a rule number that does not exist
 
-`CLAUDE.md` hard rule 7 forbids Rust comments. `crates/**/*.rs` holds 8369
-comment lines (6992 of them under `crates/*/src`).
-`.claude/hooks/no-rust-comments.sh:3` blocks agent edits only, and cites "hard
-rule 20" while `CLAUDE.md` numbers it 7. The rule, the hook and the code state
-three different things.
+`.claude/hooks/no-rust-comments.sh:3` said it enforced "hard rule 20";
+`CLAUDE.md` numbers that rule 7. The hook was written against
+`plan/CLAUDE.md`'s old copy of the principles, which had a rule 19 and a rule
+20, and the number was left behind when the list was consolidated into the root
+file. Only a reader who opens the script sees it — the block message cites no
+rule number.
 
-Fix: the hook's number is a one-line change. What the rule should say — a total
-ban, or `//` banned and `///` allowed — is an owner decision, not an audit
-finding.
+Severity: low. One line, no behaviour.
 
-Severity: low. Documentation only.
+**FIXED.** The reference is now by name rather than by index, so reordering the
+list cannot break it again, and the line records why the old number was wrong.
+The detection logic is untouched and was re-verified after the edit: `// nope`
+is blocked with `exit 2`, and the three intended exemptions still pass — a URL
+inside a string literal, `// SAFETY:`, and any path that is not `.rs`.
+
+**Two earlier claims under this number are withdrawn.**
+
+The first was that hard rule 7 "does not describe the tree", on the evidence of
+8369 comment lines under `crates/**/*.rs`. That is not a defect. The rule is a
+prohibition on adding comments, not a description of what the tree contains; the
+existing comments predate it. Presenting the count as a finding framed the rule
+itself as the thing needing a decision, which it is not — comments are an input
+cost paid on every read of a file, by every agent, in every session, against a
+one-time benefit.
+
+The second was that the hook is too strict, because it rejects an edit whose new
+text merely carries a pre-existing comment through unchanged. A guard is useful
+because it is blunt. Comparing added comment lines against removed ones turns a
+rule into a judgement — an agent could reword a comment while "moving" it — and
+complexity inside a guard is a hole in the guard. A false rejection costs the
+agent one retry; a false pass costs the tree exactly what the rule exists to
+prevent. The case offered as evidence was mis-attributed too: a struct that
+landed between a doc comment and its function came from a badly chosen edit
+anchor, not from the hook.
 
 ### A7 — cutting a file at the first `#[cfg(test)]` undercounts `cache.rs`
 
@@ -391,7 +415,7 @@ Severity: low, but it invalidated part of this audit's first pass.
 | once per process | `pipeline.rs:144,147,148,154,175`, `cache.rs:445,454`, `swr.rs:96,160`, `proxy.rs:278,280`, `tls_server.rs:36,37` | 13 sites | construction |
 
 Totals: 26 per-query / per-request / per-connection sites itemized, 13
-once-per-process. One finding (A6); nothing retained.
+once-per-process. One finding (A3); nothing retained.
 
 ### Locks
 
@@ -601,6 +625,12 @@ The audit itself changed nothing. A1 and A2 then did:
 | `fah-http/src/server.rs` | local `trait Accept`, `accept_loop` generic over it, never-fatal backoff, permit released before the sleep, throttled `warn`, and the falsifiable test |
 | `fah-http/Cargo.toml` | tokio `test-util` in dev-dependencies, for the controlled clock |
 
+A6 then changed one more, with no behaviour:
+
+| File | Change |
+| ---- | ------ |
+| `.claude/hooks/no-rust-comments.sh` | line 3 cites the rule by name instead of by number, and records why the old number was wrong. Detection untouched |
+
 ## Remaining TODOs
 
 | Finding | Action | Severity | Owner decision |
@@ -610,12 +640,12 @@ The audit itself changed nothing. A1 and A2 then did:
 | A3 | hold; the offset encode is invalid, and the three valid fixes each need a measurement first | low | open |
 | A4 | report observed / ceiling / headroom whenever an oracle is cited | low | open |
 | A5 | write the shard-lock exception into hard rule 3 | low | open |
-| A6 | fix the hook's rule number; decide what hard rule 7 should say | low | open |
+| A6 | **fixed** — the hook cites the rule by name now; two claims withdrawn | low | done |
 | A7 | anchor the `#[cfg(test)]` cut at column 0 in the audit recipe | low | open |
 
 A1 and A2 shared a dependency — both wanted something in `fah-common`, the retry
 policy and the log throttle — so they landed as one change, keeping the L1
 surface to one review.
 
-**PASS WITH DEFERRED FINDINGS** — A1 and A2 were medium and are fixed; A3–A7 are
-low and open. Nothing blocks.
+**PASS WITH DEFERRED FINDINGS** — A1 and A2 were medium and are fixed, A6 was
+low and is fixed; A3, A4, A5 and A7 are low and open. Nothing blocks.
