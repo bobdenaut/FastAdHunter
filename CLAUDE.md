@@ -4,12 +4,9 @@ Guidance for AI agents working in this repository.
 
 ## Working language
 
-Agents **respond in Romanian**. The user may write in Romanian or English;
-the reply is Romanian either way.
-
-Written artifacts stay in **English**: documentation, commit messages, code,
-identifiers, API fields and the `docs/code-review/` files. Only the chat
-changes language.
+**English throughout** — chat and written artifacts alike: documentation, commit
+messages, code, identifiers, API fields and the `docs/code-review/` files. The
+user may write in Romanian; the reply is English either way.
 
 Ignore IDE/markdown-lint diagnostics (MD060, MD028, etc.) silently — do not
 narrate or explain them in chat.
@@ -217,7 +214,11 @@ check" and OOM-killed the live resolver.
    numbers that were asked for. **Brief means fewer sentences, not denser
    ones** — ordinary words, complete sentences, understood on the first read.
    A sentence that has to be read twice was not made shorter, only harder, and
-   it costs the reader more than the words it saved.
+   it costs the reader more than the words it saved. **Write like a person
+   talking, never like a telegram.** No dropped articles, no headless fragments,
+   no clipped noun stacks. "Cache takes lock per query" is not a shorter version
+   of "the cache takes a lock on every query" — it is the same length to read
+   and worse to read. Cut sentences, not grammar.
 2. **Challenge, don't accept.** Form an independent judgment before replying and
    lead with it. The failure mode is subtle — opening with validation and burying
    the objection, softening a real disagreement into "you might also consider",
