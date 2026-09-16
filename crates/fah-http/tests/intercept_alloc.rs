@@ -184,7 +184,7 @@ fn request(case: &Case) -> Request<Full<Bytes>> {
 #[test]
 fn warm_intercepted_requests_allocate_a_steady_amount() {
     const REQUESTS: usize = 64;
-    const BATCHES: usize = 4;
+    const BATCHES: usize = 6;
     const JITTER_ALLOWANCE: usize = 4;
 
     let rt = tokio::runtime::Builder::new_current_thread()
