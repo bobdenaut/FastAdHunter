@@ -318,16 +318,24 @@ impl Rotation {
             match self.senders[index].send(handoff).await {
                 Ok(()) => return,
                 Err(mpsc::error::SendError(returned)) => {
-                    tracing::error!(
-                        http_domain = index,
-                        "HTTP domain is not accepting; removed from the rotation"
-                    );
                     self.senders.remove(index);
+                    match self.senders.len() {
+                        0 => tracing::error!(
+                            http_domain = index,
+                            "the last HTTP domain stopped accepting; every later connection is \
+                             dropped until the container restarts"
+                        ),
+                        remaining => tracing::error!(
+                            http_domain = index,
+                            remaining,
+                            "HTTP domain is not accepting; removed from the rotation"
+                        ),
+                    }
                     handoff = returned;
                 }
             }
         }
-        tracing::error!("no HTTP domain left; connection dropped");
+        tracing::debug!("no HTTP domain left; connection dropped");
     }
 }
 

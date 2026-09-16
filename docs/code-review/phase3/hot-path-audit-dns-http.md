@@ -1062,32 +1062,48 @@ was written at the owner's explicit instruction naming this path.
 
 ## Remaining TODOs
 
-Ordered by what buys the most for the least.
+Ordered by what buys the most for the least. **Status is the only part of this
+document that moves**; the findings above are the record as taken and are not
+rewritten when one is fixed. Read status here, evidence there.
 
-| # | Action | Why now |
-| - | ------ | -------- |
-| 1 | Apply Finding 1 — six `.unwrap_or_else(PoisonError::into_inner)` | Two-line change, no cost on any axis, removes a silent permanent failure mode the supervision tick cannot see |
-| 2 | **Measure Finding 2 on the RB5009, at `http_runtimes = 2`** | Promoted to HIGH on the cross-check; the question is whether a second dripper stalls unrelated proxy traffic, not the CPU ratio alone |
-| 3 | Apply Finding 4 — drop the `key.clone()` at `pipeline.rs:459` | One character shorter, one allocation fewer |
-| 4 | Apply Finding 5 — move the "no domain left" `error!` to the transition | Small, and it protects the log buffer that would explain the failure |
-| 5 | Add an `HTTPS`-type case to `forward_alloc` | Turns Finding 9 from an argument into a number, without touching production code. This is the whole of Finding 9's immediate action |
-| 6 | Raise `intercept_alloc`'s `BATCHES` to 6 | Removes the one-batch-of-evidence problem in Finding 7 |
-| 7 | Measure Finding 3 with `diag-timing` | Second candidate for PERFORMANCE.md's recorded 1.389 ms DoT budget miss; `dispatch_wait_us` settles it |
-| 8 | Add an oracle for the listener layer | Closes the Finding 8 gap for `udp.rs`, `tcp.rs` and the F3 `splice` |
-| 9 | Add a >64 KiB TCP reply test | Pins the `tcp.rs:222` invariant to a test instead of a comparison in another file |
-| 10 | Work the Finding 10 debt register down, one row at a time | The allocation-free invariant stands; §Measurements lists every surviving allocation, and each needs elimination or a measured justification. Items 3, 5 and 8 above are its first instalments |
-| 11 | F3 stays open | The realloc at `tcp.rs:223` is real; the previously proposed fix is invalid and no replacement is offered here |
+| # | Action | Status | Why now |
+| - | ------ | ------ | -------- |
+| 1 | Apply Finding 1 — six `.unwrap_or_else(PoisonError::into_inner)` | **FIXED** `3ce7ec5` | Two-line change, no cost on any axis, removes a silent permanent failure mode the supervision tick cannot see |
+| 2 | **Measure Finding 2 on the RB5009, at `http_runtimes = 2`** | OPEN — needs the device | Promoted to HIGH on the cross-check; the question is whether a second dripper stalls unrelated proxy traffic, not the CPU ratio alone |
+| 3 | Apply Finding 4 — drop the `key.clone()` at `pipeline.rs:459` | **FIXED** `c93e2d1` | One character shorter, one allocation fewer |
+| 4 | Apply Finding 5 — move the "no domain left" `error!` to the transition | **FIXED** — this commit | Small, and it protects the log buffer that would explain the failure |
+| 5 | Add an `HTTPS`-type case to `forward_alloc` | OPEN | Turns Finding 9 from an argument into a number, without touching production code. This is the whole of Finding 9's immediate action |
+| 6 | Raise `intercept_alloc`'s `BATCHES` to 6 | OPEN | Removes the one-batch-of-evidence problem in Finding 7 |
+| 7 | Measure Finding 3 with `diag-timing` | OPEN — needs the device | Second candidate for PERFORMANCE.md's recorded 1.389 ms DoT budget miss; `dispatch_wait_us` settles it |
+| 8 | Add an oracle for the listener layer | OPEN | Closes the Finding 8 gap for `udp.rs`, `tcp.rs` and the F3 `splice` |
+| 9 | Add a >64 KiB TCP reply test | OPEN | Pins the `tcp.rs:222` invariant to a test instead of a comparison in another file |
+| 10 | Work the Finding 10 debt register down, one row at a time | ONGOING | The allocation-free invariant stands; §Measurements lists every surviving allocation, and each needs elimination or a measured justification. Items 3, 5 and 8 above are its first instalments |
+| 11 | F3 stays open | OPEN — no valid fix offered | The realloc at `tcp.rs:223` is real; the previously proposed fix is invalid and no replacement is offered here |
 
-**PASS WITH DEFERRED FINDINGS** — 1 high (2: ClientHello rescan, on one of two
-threads carrying all proxy traffic, driven by any LAN device), 1 medium (1:
-poisoned cache shard kills a shard's keyspace permanently and invisibly), 6 low
-(3: `spawn_blocking` per DoT connection; 4: removable `CacheKey` clone; 5:
-unthrottled `error!` per connection; 6: two host copies per DoT connection; 9:
-`QueryType::Other` allocates per query, unmeasured — immediate action is the
-measurement only; 10: the hot path does not yet satisfy PERFORMANCE.md's
-allocation-free invariant — performance debt, worked down per row), 2
-informational (7: oracle ceilings pinned at zero margin; 8: listener layer has
-no oracle).
+**What the three fixed rows changed.** Item 1 added
+`a_shard_poisoned_by_a_panicking_sweep_still_serves_and_stores`, which fails on
+a `PoisonError` without the fix — so Finding 1's "no test exists" note is
+answered by that commit rather than by an edit here. Items 3 and 4 added no
+test: a move versus a clone is enforced by the compiler, and asserting a log
+level needs a tracing capture this workspace does not have. Both gaps are
+named in their findings and both remain open.
+
+**PASS WITH DEFERRED FINDINGS** — as taken: 1 high (2: ClientHello rescan, on
+one of two threads carrying all proxy traffic, driven by any LAN device),
+1 medium (1: poisoned cache shard kills a shard's keyspace permanently and
+invisibly — **fixed, `3ce7ec5`**), 6 low (3: `spawn_blocking` per DoT
+connection; 4: removable `CacheKey` clone — **fixed, `c93e2d1`**; 5:
+unthrottled `error!` per connection — **fixed, this commit**; 6: two host copies
+per DoT connection; 9: `QueryType::Other` allocates per query, unmeasured —
+immediate action is the measurement only; 10: the hot path does not yet satisfy
+PERFORMANCE.md's allocation-free invariant — performance debt, worked down per
+row), 2 informational (7: oracle ceilings pinned at zero margin; 8: listener
+layer has no oracle).
+
+**Three fixed, seven open.** Still open: 2 (high, deferred behind an RB5009
+measurement), 3, 6, 7, 8, 9, 10. The verdict stays PASS WITH DEFERRED FINDINGS
+because it records the audit as taken; the fixes are tracked in §Remaining
+TODOs and in git, not by rewriting the findings.
 
 No finding blocks — Finding 2 is a browsing-availability lever, not a DNS
 outage, and the resolver keeps answering throughout.
