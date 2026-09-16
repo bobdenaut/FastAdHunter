@@ -2282,6 +2282,43 @@ table.t tbody tr:hover td {
   text-align: right;
 }
 
+/* The sortable headers are the control — there is no sort button anywhere on
+   this page. They must read as the header row they replace, so the element is
+   a button only for the keyboard and the screen reader: every piece of button
+   chrome is taken back off, and the caret is the whole visual difference
+   between the active column and the other one. */
+.sort-head {
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  text-transform: inherit;
+  letter-spacing: inherit;
+}
+
+.client-head .c-queries.sort-head,
+.client-head .c-blocked.sort-head {
+  justify-content: flex-end;
+}
+
+.sort-head:hover {
+  color: var(--accent);
+}
+
+.sort-head[aria-pressed='true'] {
+  color: var(--accent);
+}
+
+.sort-caret {
+  font-size: 9px;
+  line-height: 1;
+}
+
 .c-seen {
   color: var(--text-muted);
   text-align: left;

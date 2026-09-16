@@ -22,7 +22,7 @@ import { classifyAssignment } from '../policy/assignment';
 import type { PageProps } from '../router/routes';
 import { ContentHeader } from '../shell/content-header';
 
-import { compareAddressesDesc } from './clients/address';
+import { compareAddressesAsc } from './clients/address';
 import { AssignDialog } from './clients/assign-dialog';
 import { ClientRow } from './clients/client-row';
 import {
@@ -31,6 +31,7 @@ import {
   WhatThisIsNot,
 } from './clients/legend-card';
 import { RenameField } from './clients/rename-field';
+import { blockedShare } from './clients/share';
 
 /**
  * Every address that has actually asked something, and the policy in force for
@@ -64,6 +65,45 @@ import { RenameField } from './clients/rename-field';
  */
 type Family = 'all' | ClientFamily;
 
+type SortColumn = 'address' | 'queries' | 'blocked' | 'share';
+
+type SortDirection = 'asc' | 'desc';
+
+interface Sort {
+  column: SortColumn;
+  direction: SortDirection;
+}
+
+const OPENING_DIRECTION: Record<SortColumn, SortDirection> = {
+  address: 'asc',
+  queries: 'desc',
+  blocked: 'desc',
+  share: 'desc',
+};
+
+const SORT_KEYS: Record<
+  Exclude<SortColumn, 'address'>,
+  (client: Client) => number
+> = {
+  queries: (client) => client.queries_24h,
+  blocked: (client) => client.blocked_24h,
+  share: blockedShare,
+};
+
+const HEAD: readonly {
+  cell: string;
+  label: string;
+  column: SortColumn | null;
+}[] = [
+  { cell: 'c-ip', label: 'Address', column: 'address' },
+  { cell: 'c-name', label: 'Name', column: null },
+  { cell: 'c-policy', label: 'Policy in force', column: null },
+  { cell: 'c-queries', label: 'Queries 24 h', column: 'queries' },
+  { cell: 'c-blocked', label: 'Blocked', column: 'blocked' },
+  { cell: 'c-share', label: 'Blocked share', column: 'share' },
+  { cell: 'c-seen', label: 'Last seen', column: null },
+];
+
 const FAMILIES: readonly { value: Family; label: string; noun: string }[] = [
   { value: 'all', label: 'all', noun: 'client' },
   { value: 'v4', label: 'IPv4', noun: 'IPv4 client' },
@@ -77,6 +117,19 @@ function clientNoun(family: Family, count: number): string {
   return count === 1 ? noun : `${noun}s`;
 }
 
+function SortCaret({ direction }: { direction: SortDirection }) {
+  return (
+    <>
+      <span class="sort-caret" aria-hidden="true">
+        {direction === 'asc' ? '▲' : '▼'}
+      </span>
+      <span class="visually-hidden">
+        {direction === 'asc' ? ', ascending' : ', descending'}
+      </span>
+    </>
+  );
+}
+
 export function Clients(_props: PageProps) {
   const [clients, setClients] = useState<readonly Client[] | null>(null);
   const [policies, setPolicies] = useState<PoliciesResponse | null>(null);
@@ -84,6 +137,10 @@ export function Clients(_props: PageProps) {
   const [mutationError, setMutationError] = useState<Error | null>(null);
   const [search, setSearch] = useState('');
   const [family, setFamily] = useState<Family>('v4');
+  const [sort, setSort] = useState<Sort>({
+    column: 'address',
+    direction: 'asc',
+  });
   const [openIp, setOpenIp] = useState<string | null>(null);
   const [renamingIp, setRenamingIp] = useState<string | null>(null);
   const [assigningIp, setAssigningIp] = useState<string | null>(null);
@@ -191,13 +248,30 @@ export function Clients(_props: PageProps) {
     [run],
   );
 
+  const sortBy = useCallback((column: SortColumn) => {
+    setSort((current) =>
+      current.column === column
+        ? { column, direction: current.direction === 'asc' ? 'desc' : 'asc' }
+        : { column, direction: OPENING_DIRECTION[column] },
+    );
+  }, []);
+
   const items = clients ?? [];
   const policyItems = policies?.items ?? [];
 
   /**
-   * Search, then order — and the order is **descending by address**, on the
-   * numeric key rather than the string ([`addressKey`](./clients/address)).
-   * The family is already narrowed by the read
+   * Search, then order. The order is whichever column header was last
+   * clicked — **ascending by address** to open with, on the numeric key rather
+   * than the string ([`addressKey`](./clients/address)). The three number
+   * columns sort on the figure the row draws, share included
+   * ([`blockedShare`](./clients/share) is the one that draws it), and every
+   * header toggles its own direction.
+   *
+   * **The tie-break is always the address, ascending, whichever way the
+   * primary key points.** Two clients on the same count would otherwise swap
+   * places between reads, and reversing the tie-break with the column would
+   * make a descending list read as a different set of rows rather than the
+   * same ones upside down. The family is already narrowed by the read
    * ([`client_registry.rs`](../../../crates/fah-stats/src/client_registry.rs)
    * keys on the address, not the device).
    */
@@ -210,8 +284,15 @@ export function Clients(_props: PageProps) {
           client.ip.toLowerCase().includes(needle) ||
           (client.name ?? '').toLowerCase().includes(needle),
       )
-      .sort((left, right) => compareAddressesDesc(left.ip, right.ip));
-  }, [items, search]);
+      .sort((left, right) => {
+        const primary =
+          sort.column === 'address'
+            ? compareAddressesAsc(left.ip, right.ip)
+            : SORT_KEYS[sort.column](left) - SORT_KEYS[sort.column](right);
+        const directed = sort.direction === 'desc' ? -primary : primary;
+        return directed || compareAddressesAsc(left.ip, right.ip);
+      });
+  }, [items, search, sort]);
 
   const assigning = items.find((client) => client.ip === assigningIp) ?? null;
 
@@ -278,14 +359,27 @@ export function Clients(_props: PageProps) {
           ) : (
             <div class="clients-scroll">
               <div class="clients-table">
-                <div class="client-head" aria-hidden="true">
-                  <span class="c-ip">Address</span>
-                  <span class="c-name">Name</span>
-                  <span class="c-policy">Policy in force</span>
-                  <span class="c-queries">Queries 24 h</span>
-                  <span class="c-blocked">Blocked</span>
-                  <span class="c-share">Blocked share</span>
-                  <span class="c-seen">Last seen</span>
+                <div class="client-head">
+                  {HEAD.map(({ cell, label, column }) =>
+                    column === null ? (
+                      <span key={cell} class={cell}>
+                        {label}
+                      </span>
+                    ) : (
+                      <button
+                        key={cell}
+                        type="button"
+                        class={`${cell} sort-head`}
+                        aria-pressed={sort.column === column}
+                        onClick={() => sortBy(column)}
+                      >
+                        {label}
+                        {sort.column === column && (
+                          <SortCaret direction={sort.direction} />
+                        )}
+                      </button>
+                    ),
+                  )}
                   <span class="c-actions" />
                 </div>
                 {visible.map((client) => (

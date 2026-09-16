@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { addressKey, compareAddressesDesc, isV6 } from './address';
+import { addressKey, compareAddressesAsc, isV6 } from './address';
 
 /**
  * The two properties the Clients table's order depends on: an address sorts
@@ -7,7 +7,7 @@ import { addressKey, compareAddressesDesc, isV6 } from './address';
  * interleave.
  */
 describe('address ordering', () => {
-  const desc = (ips: string[]) => [...ips].sort(compareAddressesDesc);
+  const asc = (ips: string[]) => [...ips].sort(compareAddressesAsc);
 
   it('tells the families apart', () => {
     expect(isV6('192.168.10.1')).toBe(false);
@@ -16,18 +16,18 @@ describe('address ordering', () => {
 
   it('orders IPv4 numerically, not as text', () => {
     // The failure this exists for: `.9` must not follow `.10`.
-    expect(desc(['192.168.10.9', '192.168.10.10', '192.168.10.100'])).toEqual([
-      '192.168.10.100',
-      '192.168.10.10',
+    expect(asc(['192.168.10.100', '192.168.10.10', '192.168.10.9'])).toEqual([
       '192.168.10.9',
+      '192.168.10.10',
+      '192.168.10.100',
     ]);
   });
 
   it('orders across octets, not just the last', () => {
-    expect(desc(['192.168.20.11', '192.168.10.50', '10.0.0.1'])).toEqual([
-      '192.168.20.11',
-      '192.168.10.50',
+    expect(asc(['192.168.20.11', '192.168.10.50', '10.0.0.1'])).toEqual([
       '10.0.0.1',
+      '192.168.10.50',
+      '192.168.20.11',
     ]);
   });
 
@@ -37,30 +37,28 @@ describe('address ordering', () => {
   });
 
   it('orders IPv6 groups numerically', () => {
-    expect(desc(['fd6c::9', 'fd6c::10', 'fd6c::100'])).toEqual([
-      'fd6c::100',
-      'fd6c::10',
+    expect(asc(['fd6c::100', 'fd6c::10', 'fd6c::9'])).toEqual([
       'fd6c::9',
+      'fd6c::10',
+      'fd6c::100',
     ]);
   });
 
   it('keeps the families contiguous', () => {
-    const sorted = desc(['192.168.10.1', 'fd6c::2', '10.0.0.1', 'fd6c::1']);
-    expect(sorted).toEqual(['fd6c::2', 'fd6c::1', '192.168.10.1', '10.0.0.1']);
+    const sorted = asc(['192.168.10.1', 'fd6c::2', '10.0.0.1', 'fd6c::1']);
+    expect(sorted).toEqual(['10.0.0.1', '192.168.10.1', 'fd6c::1', 'fd6c::2']);
   });
 
-  /** A row that arrived is a row that gets drawn — malformed input sorts last
-   *  rather than throwing. */
   it('does not throw on an address it cannot parse', () => {
     expect(() => addressKey('not-an-address')).not.toThrow();
     expect(addressKey('192.168.1')).toBe('v0:192.168.1');
   });
 
-  it('sorts a malformed address last under the descending order', () => {
-    expect(desc(['192.168.1', '10.0.0.1', 'fd6c::1'])).toEqual([
-      'fd6c::1',
-      '10.0.0.1',
+  it('sorts a malformed address first under the ascending order', () => {
+    expect(asc(['10.0.0.1', 'fd6c::1', '192.168.1'])).toEqual([
       '192.168.1',
+      '10.0.0.1',
+      'fd6c::1',
     ]);
   });
 });

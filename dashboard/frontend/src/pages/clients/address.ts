@@ -23,7 +23,7 @@ export function isV6(ip: string): boolean {
  * contiguous rather than interleaved by coincidence of digits.
  *
  * An address that parses as neither takes the `v0` prefix, so under the
- * table's descending order it sorts **last**, under its own literal text,
+ * table's ascending order it sorts **first**, under its own literal text,
  * rather than throwing — a row that arrived is a row that gets drawn.
  */
 export function addressKey(ip: string): string {
@@ -44,14 +44,15 @@ export function addressKey(ip: string): string {
 }
 
 /**
- * The one comparator the table uses: descending by [`addressKey`], compared
- * as plain code units rather than `localeCompare` — the keys are ASCII by
- * construction and a locale has no business in their order.
+ * The table's own order: ascending by [`addressKey`], compared as plain code
+ * units rather than `localeCompare` — the keys are ASCII by construction and a
+ * locale has no business in their order. It is also the tie-break when the
+ * table is ordered by query count, so equal counts keep a stable place.
  */
-export function compareAddressesDesc(left: string, right: string): number {
+export function compareAddressesAsc(left: string, right: string): number {
   const leftKey = addressKey(left);
   const rightKey = addressKey(right);
-  if (leftKey < rightKey) return 1;
-  if (leftKey > rightKey) return -1;
+  if (leftKey < rightKey) return -1;
+  if (leftKey > rightKey) return 1;
   return 0;
 }

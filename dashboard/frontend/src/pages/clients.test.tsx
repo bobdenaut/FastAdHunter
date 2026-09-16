@@ -44,7 +44,7 @@ const CLIENTS: Client[] = [
     name: 'tv',
     policy: 'kids',
     assignment_source: 'direct',
-    queries_24h: 18204,
+    queries_24h: 9118,
     blocked_24h: 6902,
   }),
   client({
@@ -227,45 +227,161 @@ describe('what loading the page costs', () => {
       ['GET', '/api/v1/policies'],
     ]);
   });
+
+  it('opens ascending by address and reorders from the column header, client-side', async () => {
+    const dom = await mount();
+    const header = (cell: string) =>
+      dom.querySelector<HTMLElement>(`.client-head .${cell}.sort-head`);
+    const addresses = () =>
+      rows(dom).map((row) => row.querySelector('.c-ip')?.textContent?.trim());
+    const ASCENDING = [
+      '192.168.10.7',
+      '192.168.10.15',
+      '192.168.10.22',
+      '192.168.10.50',
+      '192.168.20.11',
+    ];
+
+    expect(header('c-ip')?.getAttribute('aria-pressed')).toBe('true');
+    expect(header('c-queries')?.getAttribute('aria-pressed')).toBe('false');
+    expect(addresses()).toEqual(ASCENDING);
+
+    await click(header('c-queries'));
+    expect(header('c-queries')?.getAttribute('aria-pressed')).toBe('true');
+    expect(header('c-ip')?.getAttribute('aria-pressed')).toBe('false');
+    expect(addresses()).toEqual([
+      '192.168.10.15',
+      '192.168.10.22',
+      '192.168.10.50',
+      '192.168.20.11',
+      '192.168.10.7',
+    ]);
+
+    await click(header('c-ip'));
+    expect(addresses()).toEqual(ASCENDING);
+    expect(calls()).toHaveLength(2);
+  });
+
+  it('flips the direction when the column already sorted is clicked again', async () => {
+    const dom = await mount();
+    const header = (cell: string) =>
+      dom.querySelector<HTMLElement>(`.client-head .${cell}.sort-head`);
+    const addresses = () =>
+      rows(dom).map((row) => row.querySelector('.c-ip')?.textContent?.trim());
+    const caret = (cell: string) =>
+      header(cell)?.querySelector('.sort-caret')?.textContent;
+
+    expect(caret('c-ip')).toBe('▲');
+    await click(header('c-ip'));
+    expect(caret('c-ip')).toBe('▼');
+    expect(addresses()).toEqual([
+      '192.168.20.11',
+      '192.168.10.50',
+      '192.168.10.22',
+      '192.168.10.15',
+      '192.168.10.7',
+    ]);
+
+    await click(header('c-queries'));
+    expect(caret('c-queries')).toBe('▼');
+    expect(caret('c-ip')).toBeUndefined();
+
+    await click(header('c-queries'));
+    expect(caret('c-queries')).toBe('▲');
+    expect(addresses()).toEqual([
+      '192.168.10.7',
+      '192.168.20.11',
+      '192.168.10.22',
+      '192.168.10.50',
+      '192.168.10.15',
+    ]);
+    expect(calls()).toHaveLength(2);
+  });
+
+  it('orders by blocked and by blocked share, which are not the same order', async () => {
+    const dom = await mount();
+    const header = (cell: string) =>
+      dom.querySelector<HTMLElement>(`.client-head .${cell}.sort-head`);
+    const addresses = () =>
+      rows(dom).map((row) => row.querySelector('.c-ip')?.textContent?.trim());
+
+    await click(header('c-blocked'));
+    expect(addresses()).toEqual([
+      '192.168.10.50',
+      '192.168.10.15',
+      '192.168.10.22',
+      '192.168.20.11',
+      '192.168.10.7',
+    ]);
+
+    await click(header('c-share'));
+    expect(addresses()).toEqual([
+      '192.168.10.50',
+      '192.168.20.11',
+      '192.168.10.22',
+      '192.168.10.15',
+      '192.168.10.7',
+    ]);
+    expect(
+      rows(dom).map((row) => row.querySelector('.c-share-figure')?.textContent),
+    ).toEqual(['75.7 %', '32.2 %', '13.2 %', '10.0 %', '0 %']);
+
+    await click(header('c-share'));
+    expect(addresses()).toEqual([
+      '192.168.10.7',
+      '192.168.10.15',
+      '192.168.10.22',
+      '192.168.20.11',
+      '192.168.10.50',
+    ]);
+    expect(calls()).toHaveLength(2);
+  });
 });
 
 describe('the policy column', () => {
   it('renders every classification branch the fixture reaches', async () => {
     const dom = await mount();
-    const chips = rows(dom).map((row) => ({
-      chip: row.querySelector('.pchip')?.textContent,
-      dashed: row.querySelector('.pchip')?.classList.contains('inh'),
-      note: row.querySelector('.pol-note')?.textContent,
-    }));
-    // Descending by address, so `192.168.20.11` leads and `192.168.10.7` ends.
-    expect(chips).toEqual([
-      { chip: 'guest', dashed: true, note: 'via 192.168.20.0/24' },
-      {
-        chip: 'kids',
-        dashed: false,
-        note: 'mon–fri · 21:00 → 07:00 · in force',
-      },
-      {
-        chip: 'kids',
-        dashed: false,
-        note: 'sat–sun · all day · window shut now — default in force',
-      },
-      {
-        chip: 'default',
-        dashed: true,
-        note: 'inherited · no assignment',
-      },
-      { chip: 'default', dashed: true, note: 'inherited · no assignment' },
-    ]);
+    const chipFor = (ip: string) => {
+      const row = rowFor(dom, ip);
+      return {
+        chip: row?.querySelector('.pchip')?.textContent,
+        dashed: row?.querySelector('.pchip')?.classList.contains('inh'),
+        note: row?.querySelector('.pol-note')?.textContent,
+      };
+    };
+    expect(chipFor('192.168.20.11')).toEqual({
+      chip: 'guest',
+      dashed: true,
+      note: 'via 192.168.20.0/24',
+    });
+    expect(chipFor('192.168.10.50')).toEqual({
+      chip: 'kids',
+      dashed: false,
+      note: 'mon–fri · 21:00 → 07:00 · in force',
+    });
+    expect(chipFor('192.168.10.22')).toEqual({
+      chip: 'kids',
+      dashed: false,
+      note: 'sat–sun · all day · window shut now — default in force',
+    });
+    expect(chipFor('192.168.10.15')).toEqual({
+      chip: 'default',
+      dashed: true,
+      note: 'inherited · no assignment',
+    });
+    expect(chipFor('192.168.10.7')).toEqual({
+      chip: 'default',
+      dashed: true,
+      note: 'inherited · no assignment',
+    });
   });
 
   it('renders `unnamed` and a 0 % share without dividing by zero', async () => {
     const dom = await mount();
-    expect(rows(dom)[2]?.querySelector('.c-name')?.textContent).toBe('unnamed');
-    expect(rows(dom)[2]?.querySelector('.c-name')?.className).toContain(
-      'unnamed',
-    );
-    const printer = rows(dom)[4];
+    const unnamed = rowFor(dom, '192.168.10.22');
+    expect(unnamed?.querySelector('.c-name')?.textContent).toBe('unnamed');
+    expect(unnamed?.querySelector('.c-name')?.className).toContain('unnamed');
+    const printer = rowFor(dom, '192.168.10.7');
     expect(printer?.querySelector('.c-share-figure')?.textContent).toBe('0 %');
     expect(
       (printer?.querySelector('.c-share-fill') as HTMLElement).style.width,
@@ -276,9 +392,9 @@ describe('the policy column', () => {
 describe('the three mutations', () => {
   it('renames without a confirmation and re-reads both responses', async () => {
     const dom = await mount();
-    await click(rows(dom)[4]?.querySelector('.iconbtn'));
+    await click(rowFor(dom, '192.168.10.7')?.querySelector('.iconbtn'));
     await click(
-      [...(rows(dom)[4]?.querySelectorAll('button') ?? [])].find(
+      [...(rowFor(dom, '192.168.10.7')?.querySelectorAll('button') ?? [])].find(
         (button) => button.textContent === 'Rename',
       ),
     );
@@ -372,7 +488,7 @@ describe('the three mutations', () => {
 
   it('clears the assignment when `default` is chosen', async () => {
     const dom = await mount();
-    await click(rows(dom)[1]?.querySelector('.iconbtn'));
+    await click(rowFor(dom, '192.168.10.50')?.querySelector('.iconbtn'));
     await click(
       [...dom.querySelectorAll('button')].find(
         (button) => button.textContent === 'Change policy',
@@ -407,7 +523,7 @@ describe('the three mutations', () => {
       }
       return Promise.resolve(route(path, init));
     });
-    await click(rows(dom)[1]?.querySelector('.iconbtn'));
+    await click(rowFor(dom, '192.168.10.50')?.querySelector('.iconbtn'));
     await click(
       [...dom.querySelectorAll('button')].find(
         (button) => button.textContent === 'Change policy',
@@ -499,9 +615,9 @@ describe('mutations racing the route (F4/F5/F6)', () => {
       return Promise.resolve(route(path, init));
     });
     const dom = await mount();
-    await click(rows(dom)[4]?.querySelector('.iconbtn'));
+    await click(rowFor(dom, '192.168.10.7')?.querySelector('.iconbtn'));
     await click(
-      [...(rows(dom)[4]?.querySelectorAll('button') ?? [])].find(
+      [...(rowFor(dom, '192.168.10.7')?.querySelectorAll('button') ?? [])].find(
         (button) => button.textContent === 'Rename',
       ),
     );
@@ -582,9 +698,9 @@ describe('mutations racing the route (F4/F5/F6)', () => {
       }
       return Promise.reject(new TypeError('offline'));
     });
-    await click(rows(dom)[4]?.querySelector('.iconbtn'));
+    await click(rowFor(dom, '192.168.10.7')?.querySelector('.iconbtn'));
     await click(
-      [...(rows(dom)[4]?.querySelectorAll('button') ?? [])].find(
+      [...(rowFor(dom, '192.168.10.7')?.querySelectorAll('button') ?? [])].find(
         (button) => button.textContent === 'Rename',
       ),
     );

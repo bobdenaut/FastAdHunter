@@ -5,6 +5,8 @@ import type { Classification } from '../../policy/assignment';
 import { Icon } from '../../shell/icon';
 import { lastSeenLabel } from '../../time';
 
+import { blockedShare } from './share';
+
 /**
  * One client, one DOM, both widths. Desktop lays the cells as
  * `Clients.dc.html`'s eight columns; below 768 px the same cells become
@@ -39,10 +41,7 @@ export function ClientRow({
   /** The expanded region: the two actions, or the rename field. */
   children?: ComponentChildren;
 }) {
-  const share =
-    client.queries_24h === 0
-      ? 0
-      : (client.blocked_24h / client.queries_24h) * 100;
+  const share = blockedShare(client);
 
   return (
     <div class={open ? 'client-row is-open' : 'client-row'}>
