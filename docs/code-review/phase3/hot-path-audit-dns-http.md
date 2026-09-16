@@ -1390,3 +1390,111 @@ original numbers rather than being renumbered, because they are referred to by
 number elsewhere. Read the severity from each heading, not from its position.
 F1 appears closed, F2 cited as already argued, F3 closed on measurement, F4 not
 a code matter.
+
+## Shit found by Fable
+
+Read-only review of the five fix commits and the two measurement closures,
+2026-09-16. Dev box, x86-64, `rustc 1.96.0`, debug profile. Evidence:
+`cargo test -p fah-model -p fah-rules -p fah-stats -p fah-api -p fah-dns -p fah-http`
+— 34 test binaries, 0 failures. No Rust comment added by any fix commit; the
+bench's one added line is the `// SAFETY:` exception.
+
+### Summary
+
+- All five code fixes — `3ce7ec5`, `c93e2d1`, `bb15de7`, `f51a830`, `af5cf61`
+  — are correct and match the finding each one closes. Nothing blocks.
+- Two LOW residuals, five informational, two doc-drift rows.
+- Finding 2 and Finding 3 were closed on the RB5009 and are not re-measured
+  here. The reasoning holds on its own: the 16 KiB cap × `hello_timeout` ×
+  `max_connections` bounds the rescan, and ~62 µs of a 1.389 ms miss does not
+  buy a new lock reachable from an async worker.
+
+### Findings
+
+Severity-ranked.
+
+#### S1 — LOW · a recovered shard keeps serving, but its byte count is no longer true
+
+`crates/fah-dns/src/cache.rs:803` and `:810`; the same class at `:348`
+(`insert`'s eviction loop).
+
+**Failure scenario.** A panic mid-`retain` in `clean` unwinds the locals
+`freed` and `removed`. The entries `retain` already dropped are gone from the
+map, but `guard.bytes` is never decremented for them and `sweep_queue` never
+runs. `Shard::bytes` over-counts for the life of the process, so
+`over_bounds()` evicts earlier than the configured `byte_capacity` allows.
+Bounded — hard rule 4 holds — and the cost is hit rate, not memory.
+
+**Smallest fix.** `clean` already walks every entry; sum the surviving
+entries' `entry_heap_bytes` in that walk and assign `guard.bytes` from it
+instead of subtracting `freed`. Every sweep then self-heals any skew. Cost:
+none on the query path; the sweep is already O(entries).
+
+Finding 1's "Cost: none" stands. Its "recovers" reads better as "keeps
+serving" — the guard is recovered, the invariant behind it is not re-checked.
+
+#### S2 — LOW · `parse_qtype` coerces any unknown spelling to `TYPE0`
+
+`crates/fah-api/src/wire.rs:302-307`.
+
+`"qtype": "FOO"` or `"qtype": "TYPE99999"` on `POST /api/v1/rules/test`
+becomes `QueryType::Other(0)` and is echoed back as `TYPE0`. Before `af5cf61`
+the caller's text came back unchanged. Silent coercion, no `400`. API.md pins
+nothing here, so it is an owner decision: reject with `400`, or document the
+coercion.
+
+#### S3 — INFORMATIONAL · an unreachable arm in `qtype_label`
+
+`crates/fah-api/src/wire.rs:279`. `qtype_name` matches `Other` first, so the
+`"OTHER"` arm never runs. Delete it (principle 14) or route `qtype_name`
+through it.
+
+#### S4 — INFORMATIONAL · the "last domain" error fires once per acceptor, not once
+
+`crates/fah-http/src/server.rs:322`. `Rotation` is `Clone`, and
+`crates/fah-http/src/tls_server.rs:47` takes its own copy via
+`http.rotation()`. Each acceptor removes senders independently and each logs
+the transition — up to two lines, bounded by the acceptor count. Finding 5's
+purpose (no per-connection `error!`) is met. `http_domain = index` names a
+rotation slot after removals, not a stable domain id — pre-existing.
+
+#### S5 — INFORMATIONAL · the poison test installs a process-global panic hook
+
+`crates/fah-dns/src/cache.rs:1851-1856`. Lib tests run in parallel; a test
+that panics inside that window loses its message (it still fails). One user
+in the crate today, so harmless until a second appears.
+
+#### S6 — INFORMATIONAL · the F3 bench measures a copy of `frame_reply`
+
+`crates/fah-dns/benches/frame_reply.rs:70` duplicates
+`crates/fah-dns/src/tcp.rs:221`, which is `pub(crate)` and so unreachable
+from a bench. A later change to `frame_reply` leaves the bench measuring the
+old construct with no signal.
+
+#### S7 — INFORMATIONAL · dashboard comments still describe `Other(name)`
+
+`dashboard/frontend/src/pages/rule-tester/query-form.tsx:6-7` and
+`dashboard/frontend/src/api/types.ts:771-772` say `parse_qtype` maps
+everything but `A` and `AAAA` to `Other(name)`. Comment drift only; the chips
+and the request shape are unaffected.
+
+### Verified — nothing to add
+
+| Commit | Checked | Result |
+| ------ | ------- | ------ |
+| `3ce7ec5` (F1) | `lock_shard` at all six sites; the test poisons a shard under `catch_unwind`, then asserts `lookup`, `store` and `clean` still work; `Ok` arm is the branch `unwrap` already took | correct |
+| `c93e2d1` (F4) | `key` is dead after `offer`; `answer` is still borrowed after it; a move into a returning branch is compiler-enforced | correct |
+| `bb15de7` (F5) | transition lines bounded by domain count; per-connection line at `debug!`; `send` exits on an empty rotation | correct, see S4 |
+| `f51a830` (F7) | assertions still read the last two batches; warm-up now gets four | correct |
+| `af5cf61` (F9) | `qtype_bit` returns 0 for `Other`, exactly what `rrtype_bit` returned for an unknown name, so negated `$dnstype` semantics are unchanged; the drift guard pins all 15 indices to `rrtype_bit`'s table; the live feed and the rule tester reach JSON through `qtype_name`, so the serde-derive shape (`{"Other":65534}`) is never on the wire; nothing persists `QueryType` via serde — snapshot and history store bucket indices; `forward_alloc` ceilings ratcheted 12→11, 11→10, 18→17 | correct, see S2 and S3 |
+| `52eec09` (F3) | bench-only; no production file touched; the one added comment is `// SAFETY:` | correct, see S6 |
+
+### Doc drift in this file
+
+| Where | What | Proposed |
+| ----- | ---- | -------- |
+| lines 596, 1342, 1369, 1379 | "working tree pending" / "commit pending" — `af5cf61` landed 2026-09-16 | say so; put the hash in TODO row 5 |
+| API.md, `qtype` field | the RFC 3597 `TYPE<n>` spelling exists only in this file | one sentence beside the field; CONTEXT.md §Record Type stays accurate, the eleven stats labels did not change |
+
+**PASS WITH DEFERRED FINDINGS** — S1 and S2 are owner decisions; S3–S7 are
+housekeeping. No fix commit is wrong.
