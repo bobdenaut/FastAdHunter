@@ -27,11 +27,34 @@ import argparse
 import datetime as dt
 import json
 import os
+import re
 import ssl
 import subprocess
 import sys
 import urllib.error
 import urllib.request
+
+CONTAINER_ENTRY = re.compile(r"^ {0,4}\d+ +[A-Z]+ ", re.M)
+OWN_CONTAINER = re.compile(r'name="fastadhunter[^"]*"')
+MEMORY_CURRENT = re.compile(r"memory-current=(\S+)")
+
+
+def own_container_memory(text):
+    """`memory-current` of the fastadhunter container, or None.
+
+    `/container/print detail` lists every container on the router, so the last
+    `memory-current=` in the output belongs to whatever printed last, not
+    necessarily to us. Entries start at a line-initial index, which is how the
+    text is split back into one block per container.
+    """
+    starts = [m.start() for m in CONTAINER_ENTRY.finditer(text)]
+    for i, start in enumerate(starts):
+        end = starts[i + 1] if i + 1 < len(starts) else len(text)
+        entry = text[start:end]
+        if OWN_CONTAINER.search(entry):
+            found = MEMORY_CURRENT.search(entry)
+            return found.group(1) if found else None
+    return None
 
 JSON_ENDPOINTS = {
     "telemetry": "/api/v1/telemetry",
@@ -171,11 +194,13 @@ def main():
         pass
     try:
         text = open(os.path.join(outdir, "routeros-container.txt"), encoding="utf-8").read()
-        for token in text.split():
-            if token.startswith("memory-current="):
-                meta["container_memory_current"] = token.split("=", 1)[1]
-    except OSError:
-        pass
+        current = own_container_memory(text)
+        if current is None:
+            errors["routeros-container"] = "no fastadhunter container in /container/print detail"
+        else:
+            meta["container_memory_current"] = current
+    except OSError as exc:
+        errors["routeros-container"] = repr(exc)
     with open(os.path.join(outdir, "meta.json"), "w", encoding="utf-8", newline="\n") as f:
         json.dump(meta, f, indent=1, sort_keys=True)
 

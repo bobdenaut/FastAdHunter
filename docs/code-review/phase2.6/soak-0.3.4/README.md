@@ -90,11 +90,21 @@ Undo at tend: `powercfg /change standby-timeout-dc 600`, lid close back to `1`.
 
 ## Remaining TODOs
 
-- [ ] Write the reducer around day 2; validate every column by hand against
-      `20260911T221321Z-t0` before pointing it at the full set.
+- [x] Reducer written — `reduce.py`, one file, no arguments runs every section
+      (`pulls perf memory floor diurnal peak container upstream http service lists`).
+      Every figure in this document is recomputed from `pulls/` alone.
 - [ ] At tend: `schtasks /delete /tn "FAH-soak-0.3.4" /f`, backfill the full
       perf series in one request, then analyse.
 - [ ] Decide whether `sample_interval_seconds` 360 is kept for future soaks.
+      The §Decision below recommends keeping it; day 5 found nothing that 60 s
+      would have caught. Still the owner's checkbox.
+- [x] `collect-soak.py` fixed 2026-09-16 — `own_container_memory()` picks the
+      `fastadhunter-*` entry out of `/container/print detail` instead of keeping
+      the last `memory-current=` in the file, and a no-match now lands in
+      `meta.errors` instead of writing a plausible wrong number. Replayed over
+      all 116 stored pulls: 116/116 match, one value changes (Problem 1).
+- [ ] Re-derive the container-offset series with `20260916T100001Z` repaired —
+      it moves n from 115 to 116 and shifts the offset mean and trend slightly.
 
 ---
 
@@ -403,3 +413,373 @@ and already fixed, just not in this build, though the size of its contribution
 here is unmeasured. Whether the floor plateaus is the one open question, and
 it cannot be answered before h168. Nothing here justifies stopping the soak or
 touching the router.
+
+---
+
+## Interim analysis — 2026-09-16, day 5 of 7
+
+Second read-only pass, re-read from `20260911T221321Z-t0` as the day-3 section
+said it would. Every figure below comes from `reduce.py`; nothing is carried
+forward from the day-3 numbers. The soak is still running; two days remain.
+
+**Data cutoff — everything below stops here.**
+
+| Boundary | Value |
+| -------- | ----- |
+| Pulls | 116, `20260911T221321Z-t0` → `20260916T160001Z` |
+| **Last pull analysed** | **`20260916T160001Z`** = 2026-09-16T16:00:01Z, uptime 113.94 h |
+| Last perf row analysed | 2026-09-16T15:57:26Z (row 1140 of the deduped series) |
+| Covered | h0 → **h113**. The G2 window is h48 → h168, so 66 of 120 h are in hand |
+| Soak ends | ~2026-09-18T22:00Z (h168) |
+
+**Units.** MiB (÷2^20) throughout, as in the day-3 section.
+
+### What day 5 supersedes
+
+| Day-3 statement | Day-5 value |
+| --------------- | ----------- |
+| `peak_rss` high-water **147.46 MiB** | **155.52 MiB** — two further steps, both on a list refresh |
+| Container offset "stable, 54.9 MiB p50, stdev 2.93 over the last 48 pulls" | Not stable across the week: **+3.21 MiB/day, R² 0.630**, mean 52.26 over the first 24 pulls against 65.72 over the last 24 |
+| "0.3.4 sits 6–8 MiB below 0.3.1 at the same hour" | True to h72 only. The two floors **cross at h72**; 0.3.4 is above 0.3.1 in four of the five 6 h windows since, by up to **+6.0 MiB** (one window, h78–84, is 1.7 MiB below) |
+| Upstream health "clear — 0 penalties" | **1 penalty, 24 penalized seconds, 1 probe** at h93.3 |
+| `memory-high` sized off 147 MiB + offset ≈ 202 MiB | Neither 202 nor 225 MiB is the right basis — size from p2-11's measured saturation, ≈ **250 MiB** with the offset. Finding 6 |
+| Memory drift "cannot be read yet" at 23 of 120 h | **It can now.** The residual floor doubled, 19.0 → 38.6 MiB, and remained elevated across every 12 h bucket. Finding 4 |
+
+The day-3 section is left as written. Its method was right; four of its numbers
+were simply read too early.
+
+### Finding 4 — the residual floor doubled while everything accounted for stayed flat
+
+`residual = process_rss − accounted`
+([memory.rs:188](../../../crates/fah-model/src/memory.rs)). Across the run so
+far — h0 to h113.9, every hour of it — **the residual floor doubled and remained
+elevated across every 12 h bucket**, and nothing the process can name accounts
+for it. That is the claim, not "the slope is positive": a positive slope with a
+mediocre R² reads like a weak signal, and this is not one.
+
+| Floor, MiB | h0–12 | h96–108 | Change |
+| ---------- | ----- | ------- | ------ |
+| RSS | 44.6 | 66.2 | **+21.6** |
+| Residual | 19.0 | 38.6 | **+19.6 — it doubled** |
+| `accounted_bytes` | 25.59 (min of 1140 samples) | 28.00 (max) | +2.4, bounded |
+
+Same hours compared each day, so the household's evening traffic cannot flatter
+the trend:
+
+| Day | Floor 01–06 UTC | Δ | Floor 12–17 UTC | Δ |
+| --- | --------------- | - | --------------- | - |
+| 09-12 | 51.6 | — | 52.5 | — |
+| 09-13 | 52.9 | +1.3 | 54.7 | +2.2 |
+| 09-14 | 58.3 | +5.3 | 59.0 | +4.3 |
+| 09-15 | 66.5 | **+8.2** | 65.2 | **+6.3** |
+| 09-16 | 66.2 | −0.3 | 64.9 | −0.4 |
+
+Both windows agree, so this is not a traffic artefact, and the rise **accelerated**
+through 09-15 rather than settling. The last day is flat in both windows; one day
+against four decides nothing, and h168 says whether it was anything.
+
+12 h floors, RSS / residual. Two buckets dip on the one before them — h24 and the
+half-length h108 — and **neither comes back down toward the h0 level**; that is
+what "remained elevated" means here, not strict monotonicity:
+
+```text
+h0    44.6 / 19.0     h48   56.4 / 28.6     h96   66.2 / 38.6
+h12   52.5 / 25.4     h60   58.1 / 30.6     h108  64.9 / 37.1  (half window)
+h24   52.3 / 25.2     h72   61.3 / 33.9
+h36   54.7 / 26.8     h84   63.7 / 36.3
+```
+
+Method figure, for continuity with day 3 and F33 — hourly minima, least squares,
+per the G2 method in
+[resoak-0.3.1-memory-diagnosis.md](../resoak-0.3.1-memory-diagnosis.md)
+§Hand-off: h4–end is +4.25 MiB/day RSS and +4.09 residual at R² 0.703/0.678;
+the G2 window h48–end is +4.48 and +4.54 at R² 0.430/0.431. **A linear fit
+averages an acceleration and reads gentler than the floors above.** The floors
+are the claim; the slope is a summary of them, not a weaker version of them.
+
+The 6 h RSS minima against 0.3.1 on the same device, same method (F33):
+
+```text
+0.3.1  43.4 52.1 52.3 54.5 58.2 58.4 63.3 61.4 | 64.1 64.4 63.8 63.5 63.2 63.0 61.2 60.8 62.5
+0.3.4  44.6 49.9 52.5 52.5 52.3 53.2 54.7 55.6 | 57.3 56.4 58.1 59.0 64.3 61.3 65.2 63.7 68.5 66.2 64.9
+                                          h48 ─┘                    h72 ─┘
+```
+
+0.3.1 flattened at h48 and stayed in a 60.8–64.4 band for the rest of its run.
+0.3.4 kept climbing through it, crossed at h72, and peaked at 68.5 in h96–102.
+**The day-3 read of a slower, lower floor does not survive two more days.**
+What survives is the day-3 caveat: `8941770` is not in this build, so this run
+is the "before" arm and the gap is the size of what the fix is worth here.
+
+`accounted_bytes` is still bounded — min 25.59, p50 27.47, p95 27.96, max 28.00
+MiB over 1140 samples. `ruleset_bytes` 24.14 → 24.36, `stats_clients_bytes`
+1.01 flat, `stats_aggregates_bytes` 0.39–0.60, `cache_estimated_bytes` 0.00 →
+1.88. `rss_file` 5.07 → 8.97. Everything else is residual by construction.
+
+`stats_clients_bytes` is byte-identical (1058917) in all 116 pulls while the
+client count goes 651 → 691. That is not a frozen estimator:
+[heap.rs:58](../../../crates/fah-stats/src/heap.rs) rounds the bucket count to
+the next power of two, and both 651 and 691 land in the same 1024 slots.
+
+**The mechanism is already named and it is not new.** `8941770` — the idle
+upstream-pool reaper — is not an ancestor of 0.3.4 (day-3 §The headline). Idle
+connections are evicted only lazily at checkout, and live state outside the
+accounted set lands wholly in `residual_bytes`. The HTTP bursts release in full
+(§Excursions); the floor underneath them does not. **How much of the +19.6 MiB
+that mechanism accounts for is still unmeasured on this device** — that is what
+the A/B against `8941770` is for, and this run is its "before" arm.
+
+### Finding 5 — RETRACTED: the committed counter cannot decrease, so its shape says nothing
+
+**Withdrawn 2026-09-16, same day it was written.** It claimed the allocator was
+holding memory it never returned. The evidence for that claim was
+`allocator_committed_bytes` being monotone across 1140 samples — which is a
+property of the counter, not of the memory.
+
+[memory.rs:98-112](../../../crates/fah-model/src/memory.rs) says so outright,
+measured on this device at 0.2.7: mimalloc v3 **does not decrement
+`current_commit` when a purge returns pages to the OS**, so it reads as a
+lifetime high-water mark, and "318 MB against 70 MB RSS was the measured state".
+The field's own documentation ends "Do not subtract anything from this field and
+present the result as retention." This section did exactly that.
+
+`current_commit == peak_commit` in **116 of 116 pulls** is the documented
+signature of a counter that never decrements, so the observation is consistent
+with any amount of memory having been released, including all of it. Should the
+two ever diverge, the counter tracks releases and the question reopens.
+
+The steps below are kept because they are real and they date the refresh
+transients. They are **not** evidence of retention. What they shadow is
+`peak_rss`, and that mechanism was measured two phases ago:
+[p2-11-compile-transient.md](../phase2/p2-11-compile-transient.md) — "not one
+compile's cost, it is a ratchet across successive compiles, driven by mimalloc's
+deferred purge, **saturating at ~230 MiB**", cut to 181.4 MiB by
+`MIMALLOC_PURGE_DELAY=0`. A ratchet with a measured ceiling is bounded.
+
+| Committed step | When | `list_fetch.bodies` in that interval |
+| -------------- | ---- | ------------------------------------ |
+| 141.1 → 226.8 | boot +7 min | 0 → 4 (ruleset compile) |
+| 226.8 → 287.7 | boot +43 min | 4 → 13 |
+| 287.7 → 291.7 | boot +1 h | 13 → 14 |
+| 291.7 → **311.2** | 09-15 11:45, h85.7 | 37 → 38 |
+| 311.2 → **323.3** | 09-15 22:09, h96.1 | 38 → 42 |
+| 323.3 → **324.2** | 09-15 22:51, h96.8 | 50 → 51 |
+
+Every step lands on a list-refresh sample; none lands on an HTTP burst, which is
+the one durable thing this table shows — the refresh transient, not the proxy,
+is what moves the high-water marks. 0.3.4 reads 155.52 MiB of `peak_rss` on
+763017 rules, **below** p2-11's post-fix 181.4 MiB on 798250, so the ratchet is
+sitting lower in this build than the last time it was measured.
+
+Committed is address space mimalloc accounts for, not resident memory: it never
+enters the cgroup's `memory-current` and it is not the floor. Finding 4 is
+measured on RSS from `/proc/self/status` and is untouched by this retraction.
+
+### Finding 6 — the high-water mark moved, and the `memory-high` arithmetic moves with it
+
+| `peak_rss` step | When | Cause |
+| --------------- | ---- | ----- |
+| 90.23 MiB | boot, +3 s | pre-ruleset |
+| 137.91 MiB | +7 min | ruleset compile |
+| 142.02 / 146.12 MiB | +43 min / +1 h | first refresh |
+| 147.46 MiB | 09-13 11:03, h37.0 | one body, `bodies` 17 → 18 |
+| 154.80 MiB | 09-15 11:45, h85.7 | `bodies` 37 → 38 |
+| **155.52 MiB** | 09-15 22:45, h96.7 | `bodies` 42 → 50 |
+
+Day 3's Finding 3 holds on mechanism and fails on magnitude: list refresh still
+sets the high-water, and the high-water is 8 MiB higher than the number that
+section published. Steady-state RSS is ~65 MiB, now **2.4× below** the mark.
+
+Container offset (own container only, the one mis-parsed pull excluded): n=115,
+mean 58.24, sd 5.62, p50 57.10, range 42.26–69.45, **trend +3.21 MiB/day at R²
+0.630**. Within a day it is tight — sd 1.84 over the last 24 pulls. Across the
+week it is not. Highest container `memory-current` actually observed: **158.4
+MiB**, at 09-15 19:00 with `process_rss` 91.1.
+
+**Sizing — and 225 MiB is the wrong basis.** 155.5 MiB of process + 69.5 MiB of
+offset ≈ 225 MiB is this run's *ratchet position*, not where the ratchet stops.
+[p2-11-compile-transient.md](../phase2/p2-11-compile-transient.md) measured the
+saturation point on this device: ~230 MiB pre-fix, **181.4 MiB** after
+`MIMALLOC_PURGE_DELAY=0`, on 798250 rules against this run's 763017.
+
+| Basis | Figure |
+| ----- | ------ |
+| This run's observed peak + max offset | 155.5 + 69.5 ≈ 225 MiB |
+| p2-11 saturation, post-fix, larger corpus | 181.4 MiB |
+| Saturation + the same offset | 181.4 + 69.5 ≈ **250 MiB** |
+
+A limit sized from a soak's observed peak fits today's corpus and not next
+quarter's; the rule list grew 7381 rules in five days. **Size from a measured
+saturation point on the current corpus, never from a run's high-water.** The
+container is `memory-high=unlimited` today, which is why nothing died this week.
+This does not change the verdict on `memory-high=200M` — it was under the peak
+then and is further under every basis above now.
+
+### Finding 7 — the first upstream penalty of the run, inside the heaviest HTTP hour
+
+| When | Event |
+| ---- | ----- |
+| h61.6 | 1.1.1.1 `failures` 0 → 1, isolated |
+| h66.8 | 1 → 2, isolated |
+| h92.2 | 2 → 3, isolated |
+| **h93.3, 2026-09-15T19:21:26Z** | **3 → 7 in one 6 min interval**: `failure_runs` gains a run of 4, `penalty_failures=2` arms, 1 penalty, 24 `penalized_seconds_total`, 1 probe, 1 probe success |
+| h111.9 | 7 → 8, isolated |
+
+`failure_runs=[4,0,0,1]` reads as four runs of one and one run of four — 4·1 +
+1·4 = 8 failures, which is the whole count. `adaptive` did exactly what
+ARCHITECTURE.md §Upstreams specifies: penalise after 2 consecutive, skip for 24 s,
+probe on the way past, restore on success. No SERVFAIL reached a client
+(`servfail_synthesized` 0, `servfail_relayed` 1 for the whole run).
+
+The run of 4 sits at the tail of the largest HTTP hour of the soak — 1537.3 MB
+of `response_bytes` in the hour ending 09-15 18:00, RSS ramping 65.9 → 90.6.
+**Observation, not a finding**: heavy proxy traffic and the only DNS upstream
+failure run of the week fall in the same 90 minutes. One co-occurrence proves
+nothing; it needs its own test on a quiet device.
+
+### Excursions — unchanged mechanism, released in full
+
+The 09-15 burst at 6 min resolution, the best-resolved excursion of the run:
+
+```text
+17:03  rss 65.9  anon 56.9  acc 27.2  resid 38.7  conc_http  6
+17:21  rss 74.5  anon 65.5  acc 27.3  resid 47.2  conc_http 36
+17:33  rss 86.1  anon 77.1  acc 27.4  resid 58.7  conc_http  5
+18:51  rss 90.6  anon 81.7  acc 27.4  resid 63.2  conc_http  0
+19:57  rss 64.8  anon 55.8  acc 27.5  resid 37.3  conc_http  1
+```
+
+`accounted` never moves. All of it is `rss_anon`, all of it is residual, and
+**all of it comes back** in ~2.5 h. Same shape as the day-3 excursion, so the
+bursts themselves are not what lifts the floor.
+
+Eight hourly RSS steps of ≥8 MiB in the run; the four positive ones are at
+h36, h68, h76 and h91, all in the hours carrying the largest HTTP transfers.
+Pearson correlation of per-pull Δ`http.response_bytes` against Δ`residual_bytes`
+is **+0.451** over 115 intervals — real, and far from a clean law.
+
+The day-3 observation that retention does not scale with bytes on ARM64 gets
+stronger, not weaker: 1537 MB at a high-water of 36 left +24.7 MiB; 184 MB at a
+high-water of 6 left +22.7 MiB. Bytes moved by 8×, retention by 9 %.
+
+### Problems found
+
+| # | Problem | Evidence | Impact |
+| - | ------- | -------- | ------ |
+| 1 | `collect-soak.py` wrote the **last** `memory-current=` it saw into `meta.json`, with no container filter — **fixed 2026-09-16** | `20260916T100001Z` recorded 33.9 MiB while the FAH container was at 135.7 | Was silent: `meta.errors` stayed empty. `own_container_memory()` now selects the `fastadhunter-*` entry and records an error when there is none |
+| 2 | A second container, **`fah-diagprobe`** (33.9 MiB, `cpu-usage=21.5`), was running on the RB5009 at 09-16 10:00 | `pulls/20260916T100001Z/routeros-container.txt`, two entries | Contaminates that hour: router `free-memory` dips to 666.8 MiB, its lowest of the run, against 710.3 and 710.2 either side |
+| 3 | ~~Committed allocator address space never returns~~ — **retracted, Finding 5** | `current_commit == peak_commit` in 116/116 pulls is the documented signature of a counter that never decrements | None. The claim had no evidence behind it; `memory.rs` and p2-11 had already answered it |
+| 4 | Day-3 and day-5 figures alike were published from windows too short to carry them (offset stability, floor advantage over 0.3.1, the allocator claim) | §What day 5 supersedes, Finding 5 | Method risk, not a code defect. Three of the four came from reading a within-window observation as a property, and one from not reading the field's own documentation first |
+
+Problem 1 was the only one that wanted a code change, and it was in the
+collector, not in FAH. **No problem found in this pass is a FAH defect.** The
+one finding that points at FAH is the floor, and its named mechanism —
+`8941770`, absent from this build — was already diagnosed before the soak began.
+
+### Flags — status at day 5
+
+| Flag | Verdict |
+| ---- | ------- |
+| Memory drift | **trips, without qualifier** — the residual floor **doubled** (19.0 → 38.6 MiB) and remained elevated across every 12 h bucket, while `accounted_bytes` stayed bounded at 28.00 MiB over 1140 samples. Finding 4 |
+| Container divergence | **trips** — offset +3.21 MiB/day at R² 0.630, 52.26 → 65.72 MiB. Finding 6 |
+| Upstream health | **trips** — 8 failures, 1 penalty, 24 penalized seconds. Behaviour matched the spec exactly; the flag is about the counter moving, and it moved. Finding 7 |
+| List refresh | **trips for the high-water, clear for the floor** — both new `peak_rss` steps land on refresh samples; the ≥8 MiB hourly excursions do not. The mechanism is the p2-11 compile ratchet, which has a measured ceiling. Finding 6 |
+| Cache pressure | clear — `evictions` 0, `expired` 0, 1923 of 50000 entries, 1.88 of 64 MiB, 1139 cleanup runs freeing 3.15 MB |
+| Shed | clear — `events_dropped` 0, `udp_inflight.shed` 0, `swr.dropped` 0, `swr.failed` 0 |
+| Answer quality | clear — `servfail_synthesized` 0, `servfail_relayed` 1, `refused_relayed` 0 |
+| Listener bounds | clear — `dns_tcp_connections.peak` 33 of 1024, `closed_oversize` 0 |
+
+Four flags trip at day 5 against none at day 3. Memory drift is the one that
+matters: the other three are a page-cache offset, a bounded compile ratchet and
+a 24-second failover that worked.
+
+### Dataset integrity
+
+| Check | Result |
+| ----- | ------ |
+| Pulls | 116, span 113.78 h; cadence 3598–3602 s outside the two t0-adjacent pulls |
+| `meta.errors` | empty in 116/116 — the dashboard catch-all never fired |
+| `collector.log` | 115 lines, `errors=0` on every one (t0 was pulled by hand and is not logged) |
+| Restarts | none; `uptime_seconds` strictly increasing to 113.94 h, `version` 0.3.4 in all 116 |
+| Perf series, deduped, `ts >= 2026-09-11T22:02:48Z` | **1140 rows, 1140 expected, no holes**; one 395 s interval at boot, 1138 at 360 s |
+| Container log `WARN`/`ERROR` | 0 lines across all 116 pulls |
+| RouterOS problem log | newest line identical in 116/116 — `2026-09-12 01:07:38 IPv6 global UP` |
+| Config | 6 daily `config.json`, **1 distinct hash** — nothing was changed under the run |
+| Container count | 1 in 115 pulls, 2 in one (Problem 2) |
+
+Router uptime is 114.0 h, matching the process: the RB5009 rebooted at the soak's
+t0, so `write-sect-since-reboot` 134 → 5257 (+5123, ~1080/day) covers exactly
+this run. `free-hdd-space` is flat at 973.8 MiB, so `/data` is still not on
+internal storage.
+
+### Service figures, 113.9 h
+
+| Figure | Value |
+| ------ | ----- |
+| Queries | 546653 (mean 1.333 qps; hour-of-day median 0.46 → 3.20; busiest sample 20.33 qps) |
+| Blocked | 434118 = 79.41 % |
+| Cache hit rate, of non-blocked | 94.71 % (106584 hits / 5951 misses) |
+| Stale share of hits | 56.94 %, refreshed by SWR: 58607 enqueued, 58607 completed, 2077 deduplicated, 0 failed, 0 dropped |
+| Mean latency | forward 21.57 ms, block 0.034 ms, cache hit 0.048 ms |
+| CPU | 294 s user + 379 s system over 410194 s = **0.164 % of one core** |
+| HTTP | 2183.6 MB `response_bytes`, 6214 pass, 0 block, 317 refused (2.78/h), mean 124.6 ms |
+| Lists | 53 bodies, 118.1 MB fetched, `not_modified` **3**; ruleset 755636 → 763017 rules (+7381, +0.22 MiB) |
+| Clients | 651 → 691 (+8/day), `stats_clients_bytes` unchanged |
+| Upstream RTT | 1.1.1.1 p50 5.0 ms in all 116 pulls, cumulative mean 9.00 ms; p99 moves 250 ↔ 100 ms on a bucket edge only |
+| Router free-memory | 787.0 → 706.6 MiB (−16.9 MiB/day), container `memory-current` 94.4 → 136.9 MiB |
+
+Accounting still reconciles to the query. Upstream attempts 64566 = `cache_misses`
+5951 + `swr.completed` 58607 + **8** failover retries, and 8 is exactly the
+failure count. `cache_stale` 60686 = `swr.enqueued` 58607 + `swr.deduplicated`
+2077, within 2.
+
+Observations carried forward unchanged, each needing its own test: the 57 %
+stale-serve share at `min_ttl_seconds` 600; `not_modified` 3 of 56 fetch
+attempts at `refresh_hours` 48, so nearly every refresh buffers a full body;
+`http.refused` 317 at 2.78/h, expected from `allow_ip_literal_hosts=false` but
+still unverified. And the day-3 caveat stands: both IPv6 upstreams report
+`state: "healthy"` on 0 attempts and 0 probes, which is the initial value, never
+tested.
+
+### For the tend read — revised
+
+- **Take the final floor reading before the full backfill**, unchanged from day 3.
+- **Lead with the 12 h floors and the same-hour-of-day table, not with a slope.**
+  A linear fit averages an acceleration and reads gentler than the floors do.
+  `reduce.py floor` prints both.
+- Compute G2 as hourly minima, least squares, **h48 → h168**, and keep it as the
+  continuity figure with F33 — not as the claim.
+- **Do not fit short tail windows.** h72/h84/h96-to-end have n of 42/30/18 at R²
+  0.009/0.035/0.453; day 5 gave them equal billing with the main trend and read
+  a plateau into a noisy series. They belong in the script's output, not in a
+  finding.
+- **Do not derive retention from `allocator_committed_bytes`.** It is monotone by
+  construction ([memory.rs:98-112](../../../crates/fah-model/src/memory.rs)) and
+  day 5 got this wrong. Record it, do not interpret it.
+- The container-offset series can now use all 116 pulls — the collector is fixed
+  and `20260916T100001Z` re-parses to 135.7 MiB (Problem 1).
+- **`8941770` is the next measurement on this device**, not a tend chore. This
+  run is the "before" arm of an A/B that has never been run on the RB5009, and
+  the floor is what it is meant to move.
+
+### Verdict at day 5
+
+No crash, no restart, no shed, no eviction, no SERVFAIL synthesis, no listener
+saturation, no log error and no config drift in 113.9 h at 0.164 % of one core.
+`adaptive` handled its first real failover to specification. The excursions are
+HTTP and they release in full.
+
+What changed since day 3 is the floor, and it is the whole story of this pass.
+**The residual floor doubled — 19.0 → 38.6 MiB — and remained elevated across
+every 12 h bucket**, while everything the process can account for stayed inside
+28.00 MiB. It did not flatten where 0.3.1's did, it crossed above 0.3.1 at h72,
+and the rise accelerated (+1.3, +5.3, +8.2 MiB/day on same-hour comparisons)
+rather than settling. One flat final day does not undo four rising ones.
+
+Day 5 also had to withdraw one of its own findings: the allocator-retention claim
+was built on a counter that cannot decrease, and the repo had documented that
+before this soak began. That correction removes a false cause; it removes
+nothing from the floor, which is measured on RSS and stands.
+
+Nothing here justifies stopping the soak or touching the router. It does justify
+treating `8941770` as the next thing to measure on this device.
