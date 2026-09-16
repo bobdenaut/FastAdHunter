@@ -20,6 +20,22 @@ function withoutComments(text: string): string {
 
 const BARE = withoutComments(CSS);
 
+const LAYOUT = withoutComments(
+  readFileSync(fileURLToPath(new URL('./layout.css', import.meta.url)), 'utf8'),
+);
+
+function mediaBlock(source: string, query: string, needle: string): string {
+  let at = 0;
+  for (;;) {
+    const start = source.indexOf(query, at);
+    expect(start, `no ${query} block mentions ${needle}`).toBeGreaterThan(-1);
+    const end = source.indexOf('\n}', start);
+    const block = source.slice(start, end === -1 ? undefined : end);
+    if (block.includes(needle)) return block;
+    at = start + query.length;
+  }
+}
+
 describe('the blocked-share fills', () => {
   /**
    * `.bar > span` sets the accent and is one type selector more specific than
@@ -34,6 +50,24 @@ describe('the blocked-share fills', () => {
         new RegExp(`(?:^|[,}\\s])\\.${fill}\\s*\\{`, 'm'),
       );
     }
+  });
+});
+
+describe('the Diagnostics group in the icon rail', () => {
+  it('shows its members and hides the head, since `.sb .sub2` is display:none there and a disclosure would open nothing', () => {
+    expect(LAYOUT).toMatch(/\n\.it-rail-child \{\s*display: none;/);
+
+    const rail = mediaBlock(LAYOUT, '@media (max-width: 1199px)', '.sub2');
+    expect(rail).toMatch(
+      /\.sb \.sub2,\s*\.sb \.it-group-wide \{\s*display: none;/,
+    );
+    expect(rail).toMatch(/\.sb \.it-rail-child \{\s*display: flex;/);
+
+    const drawer = mediaBlock(LAYOUT, '@media (max-width: 767px)', '.sub2');
+    expect(drawer).toMatch(
+      /\.sb \.sub2,\s*\.sb \.it-group-wide \{\s*display: flex;/,
+    );
+    expect(drawer).toMatch(/\.sb \.it-rail-child \{\s*display: none;/);
   });
 });
 

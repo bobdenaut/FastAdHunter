@@ -37,7 +37,7 @@ describe('the sidebar', () => {
 
   it('renders every product screen plus the Diagnostics group head', () => {
     const el = mount(<Sidebar path="/" open={false} onNavigate={() => {}} />);
-    const labels = [...el.querySelectorAll('.it')]
+    const labels = [...el.querySelectorAll('.it:not(.it-rail-child)')]
       .map((n) => n.textContent)
       // Registered only under `import.meta.env.DEV`, which vitest sets.
       .filter((label) => label !== 'Component gallery');
@@ -55,6 +55,23 @@ describe('the sidebar', () => {
       'Settings',
       'Diagnostics',
     ]);
+  });
+
+  it('gives the icon rail a row per group member, where a head would disclose children the rail cannot draw', () => {
+    const el = mount(
+      <Sidebar path="/diagnostics/memory" open={false} onNavigate={() => {}} />,
+    );
+    const rail = [...el.querySelectorAll('.it-rail-child')];
+    expect(rail.map((n) => n.getAttribute('href'))).toEqual([
+      '/diagnostics/health',
+      '/diagnostics/memory',
+    ]);
+    expect(rail.map((n) => n.textContent)).toEqual(['Health', 'Memory']);
+    expect(rail.map((n) => n.classList.contains('on'))).toEqual([false, true]);
+    expect(
+      rail.map((n) => n.querySelector('use')?.getAttribute('href')?.slice(-7)),
+    ).toEqual(['nostics', '#memory']);
+    expect(el.querySelectorAll('.it-group-wide')).toHaveLength(1);
   });
 
   it('keeps the Diagnostics group collapsed off a diagnostics route', () => {

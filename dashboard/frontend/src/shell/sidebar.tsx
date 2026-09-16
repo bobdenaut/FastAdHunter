@@ -24,6 +24,8 @@ const ICONS: Record<string, string> = {
   '/live-feed': 'live-feed',
   '/settings': 'settings',
   '/dev/gallery': 'diagnostics',
+  '/diagnostics/health': 'diagnostics',
+  '/diagnostics/memory': 'memory',
 };
 
 const SECTION_ORDER: Section[] = [
@@ -140,6 +142,14 @@ export function Sidebar({
  * **The head is a button, not a link.** It has no landing route of its own:
  * pointing it at the first child made "show me what is in here" load a screen
  * nobody asked for, and on a phone it closed the drawer on the way.
+ *
+ * **The icon rail has no head at all.** Between 768 and 1199 px the sidebar is
+ * icons only and `.sb .sub2` is `display: none`, so a disclosure there opens
+ * children nothing can draw and the group's screens were unreachable across
+ * that whole band. The members take its place as rail rows of their own, each
+ * with its own glyph, and the head is hidden. All three placements are
+ * rendered and the sheet shows exactly one; `display: none` keeps the other two
+ * out of the tab order rather than merely out of sight.
  */
 function Group({
   group,
@@ -180,7 +190,7 @@ function Group({
           one. */}
       <button
         type="button"
-        class={`it it-group${inside ? ' on' : ''}`}
+        class={`it it-group it-group-wide${inside ? ' on' : ''}`}
         aria-expanded={expanded}
         onClick={() =>
           setToggledOn((current) => (current === path ? null : path))
@@ -189,6 +199,15 @@ function Group({
         <Icon name={group} />
         <span>{GROUP_LABELS[group]}</span>
       </button>
+      {members.map((route) => (
+        <Item
+          key={`rail-${route.path}`}
+          route={route}
+          path={path}
+          onNavigate={onNavigate}
+          extra="it-rail-child"
+        />
+      ))}
       {expanded &&
         members.map((route) => (
           <Link
@@ -211,16 +230,18 @@ function Item({
   route,
   path,
   onNavigate,
+  extra,
 }: {
   route: Route;
   path: string;
   onNavigate: () => void;
+  extra?: string;
 }) {
   const active = route.path === path;
   return (
     <Link
       href={route.path}
-      class={`it${active ? ' on' : ''}`}
+      class={`it${extra === undefined ? '' : ` ${extra}`}${active ? ' on' : ''}`}
       {...(active ? { 'aria-current': 'page' as const } : {})}
       onClickCapture={onNavigate}
     >

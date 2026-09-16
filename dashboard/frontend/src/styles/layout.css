@@ -87,6 +87,15 @@
   cursor: pointer;
 }
 
+/* The group's members as rail rows of their own. A disclosure is useless where
+   the children cannot be drawn, so between 768 and 1199 px the head goes and
+   these take its place — one glyph each, the same rows every other screen gets.
+   One placement is visible at a time and the rest are `display: none`, which
+   keeps them out of the tab order as well as out of sight. */
+.it-rail-child {
+  display: none;
+}
+
 .sub2 {
   display: flex;
   align-items: center;
@@ -319,8 +328,13 @@
   .sb .brand span,
   .sb .sec,
   .sb .it span,
-  .sb .sub2 {
+  .sb .sub2,
+  .sb .it-group-wide {
     display: none;
+  }
+
+  .sb .it-rail-child {
+    display: flex;
   }
 
   .sb .brand,
@@ -391,8 +405,13 @@
   .sb .brand span,
   .sb .sec,
   .sb .it span,
-  .sb .sub2 {
+  .sb .sub2,
+  .sb .it-group-wide {
     display: flex;
+  }
+
+  .sb .it-rail-child {
+    display: none;
   }
 
   .sb .brand,
