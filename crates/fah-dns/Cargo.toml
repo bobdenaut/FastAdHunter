@@ -58,6 +58,14 @@ harness = false
 name = "upstream"
 harness = false
 
+# F3 screening gate: the RFC 1035 length prefix on the TCP/DoT reply path
+# (`tcp.rs:frame_reply`), front-insertion versus a two-slice iovec, across reply
+# sizes and both capacity shapes. Measurement only; no production code depends
+# on it.
+[[bench]]
+name = "frame_reply"
+harness = false
+
 # Stage 1 selector and state-update cost (p2.6-08 S1-M): pure functions over a
 # synthetic health slice, no sockets, no runtime. Pinned to one core, except
 # transition/claim_probe which needs four.

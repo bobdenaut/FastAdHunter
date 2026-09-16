@@ -35,8 +35,8 @@ readings.
   SVCB / TXT / PTR query is invisible to them.
 - No `unsafe` anywhere in scope. No `std::sync` guard is held across an `.await`.
 - F1 looks closed: the UDP reply failure path now goes through `LogThrottle`.
-  F2 is the documented cache shard `Mutex` — cited, not re-reported. F3 is still
-  open at `tcp.rs:223`. F4 is not a code matter.
+  F2 is the documented cache shard `Mutex` — cited, not re-reported. F3 is
+  closed at `tcp.rs:223` — measured, no code change. F4 is not a code matter.
 
 ## Decisions
 
@@ -843,7 +843,7 @@ bumps, no allocation.
 | Site | Construct | Why | Frequency | Verdict |
 | ---- | --------- | --- | --------- | ------- |
 | `tcp.rs:204` | `vec![0u8; len]` | read buffer sized from the length prefix | per query | a reusable per-connection buffer would remove it; not proposed without a measurement. **Uncovered — Finding 8** |
-| `tcp.rs:223` | `reply.splice(0..0, len)` | RFC 1035 length prefix | per query | **F3, still open.** Memmove of the whole reply, plus a realloc when the `Vec` is exactly full. The previously proposed fix (encoding at a two-byte offset) is invalid — hickory stores name-compression pointers as absolute buffer indices, so the offset corrupts every one of them |
+| `tcp.rs:223` | `reply.splice(0..0, len)` | RFC 1035 length prefix | per query | **F3, closed — measured.** 13–16 ns at real reply sizes, and the realloc fires only when the reply lands exactly on hickory's capacity. The vectored alternative is *slower* below ~1 KiB. See §TCP length-prefix framing (F3). The earlier proposed fix (encoding at a two-byte offset) is invalid regardless — hickory stores name-compression pointers as absolute buffer indices, so the offset corrupts every one of them |
 
 #### `fah-dns/src/response.rs`
 
@@ -967,6 +967,76 @@ produces the `Box<str>`.
 | `tls_server.rs` | none on the accept path; 2 × `Arc::new` at `36-37` once per process | clean |
 | `server.rs` | 2 `Arc::clone` per connection (`server.rs:263`, `272`), refcount only; `Arc::new` ×2 at `89` once per process | clean |
 | `intercept.rs` | `frame_for` clones a `PathAndQuery` (`intercept.rs:537`) and a `HeaderValue` (`551`) per intercepted request; both are `Bytes`-backed refcount bumps | clean |
+
+### TCP length-prefix framing (F3)
+
+Dev box, x86-64, `rustc 1.96.0`, **release profile**, mimalloc, criterion 0.5,
+7 reply sizes × 2 capacity shapes, 2026-09-16. Superseded by re-running
+`cargo bench -p fah-dns --bench frame_reply`.
+
+Two realistic implementations, not one against an empty operation:
+
+- **splice** — `frame_reply`'s construct verbatim, front-insertion into the
+  reply `Vec`.
+- **iovec** — the prefix plus the `[IoSlice; 64]` array tokio itself builds
+  per write (`tokio-1.53.1/src/io/util/write_all_buf.rs:50`), which is the
+  work a vectored write would actually add.
+
+Capacity shapes model hickory's encoder, which starts at
+`Vec::with_capacity(512)` and doubles (`hickory-proto-0.26.1/src/op/message.rs:503`):
+**spare** = the reply fits inside that capacity; **exact** = the reply ends
+exactly on it, so the prepend must grow.
+
+Time per framing operation, median of 100 samples:
+
+| Reply | splice, spare | splice, exact | iovec |
+| ----: | ------------: | ------------: | ----: |
+| 64 B | 13.4 ns | 26.3 ns | 16.3 ns |
+| 256 B | 15.6 ns | 33.1 ns | 16.5 ns |
+| 500 B | 14.5 ns | 50.9 ns | 16.4 ns |
+| 512 B | 29.1 ns | 48.2 ns | 16.7 ns |
+| 1 KiB | 53.6 ns | 91.7 ns | 17.0 ns |
+| 4 KiB | 60.3 ns | 141.4 ns | 16.2 ns |
+| 16 KiB | 209.7 ns | 413.1 ns | 17.1 ns |
+
+Allocations, one framing operation per row, counting allocator over mimalloc:
+
+| Reply | Shape | Capacity before | Capacity after | Allocations | Bytes |
+| ----: | ----- | --------------: | -------------: | ----------: | ----: |
+| 500 B | spare | 512 | 512 | 0 | 0 |
+| 500 B | exact | 500 | 1000 | 1 | 1000 |
+| 512 B | spare | 1024 | 1024 | 0 | 0 |
+| 512 B | exact | 512 | 1024 | 1 | 1024 |
+| 16 KiB | spare | 32768 | 32768 | 0 | 0 |
+| 16 KiB | exact | 16384 | 32768 | 1 | 32768 |
+
+`iovec` allocates zero at every size and shape. Sizes 64 B, 256 B, 1 KiB and
+4 KiB follow the same pattern and are omitted.
+
+What the numbers settle:
+
+- **The 1 µs screening gate is not reached at any size**, worst case included
+  (16 KiB, exact capacity, 413 ns). At the sizes real traffic produces the cost
+  is 13–16 ns, under 0.2 % of a query.
+- **The realloc is not a per-reply cost.** It fires only in the exact shape,
+  which needs the encoded message to land precisely on a power-of-two boundary.
+- **The vectored alternative is slower below ~1 KiB.** Its ~16.4 ns is flat
+  across every size because the `[IoSlice; 64]` array — 1 KiB of stack — is
+  built per write regardless of payload. Under 512 B the memmove costs less
+  than that array. The crossover sits between 512 B and 1 KiB.
+- The iovec figure is **optimistic**: it measures slice construction only, not
+  the `writev` syscall, which costs marginally more kernel-side than a plain
+  `write`. On DoT the gap is smaller still, since rustls copies the plaintext
+  into its own record buffer either way.
+
+Two limits on the claim. The splice spare-capacity column reads as a slope, not
+as point values — the 512 B row (29.1 ns) sits off-trend against 500 B
+(14.5 ns) because that shape doubles the touched buffer, which is criterion
+batch cache pressure rather than framing cost. And DNS reaches TCP precisely
+when the reply is large, so the size distribution on this path is heavier than
+UDP's; at the 16 KiB ceiling `MAX_MESSAGE_LEN` allows, the vectored path would
+save ~190 ns on this box, ~1.7 µs on the RB5009 at the ~9× factor, against the
+~85 µs per query the device measures.
 
 ### Locks
 
@@ -1242,8 +1312,20 @@ containing type's `Send` or `Sync` status moved.
 
 ## Files changed
 
-None. This audit is read-only; this document is the only file written, and it
-was written at the owner's explicit instruction naming this path.
+The audit itself is read-only: no production file was changed by it, and this
+document was written at the owner's explicit instruction naming this path.
+
+Two benchmark-only files were added afterwards, to settle F3:
+
+| File | What | Production impact |
+| ---- | ---- | ----------------- |
+| `crates/fah-dns/benches/frame_reply.rs` | new — the F3 screening bench behind §TCP length-prefix framing | none; nothing in `crates/*/src` references it |
+| `crates/fah-dns/Cargo.toml` | one `[[bench]]` entry registering it with `harness = false` | none; build metadata only |
+
+`tcp.rs` is unchanged. The bench is kept rather than deleted because it is
+cheap, reproducible, and is the reason no complexity was added to the framing
+path — the argument for *not* changing `tcp.rs` needs its evidence to stay
+runnable.
 
 ## Remaining TODOs
 
@@ -1263,7 +1345,7 @@ rewritten when one is fixed. Read status here, evidence there.
 | 8 | Add an oracle for the listener layer | OPEN | Closes the Finding 8 gap for `udp.rs`, `tcp.rs` and the F3 `splice` |
 | 9 | Add a >64 KiB TCP reply test | OPEN | Pins the `tcp.rs:222` invariant to a test instead of a comparison in another file |
 | 10 | Work the Finding 10 debt register down, one row at a time | ONGOING | The allocation-free invariant stands; §Measurements lists every surviving allocation, and each needs elimination or a measured justification. Items 3, 5 and 8 above are its first instalments |
-| 11 | F3 stays open | OPEN — no valid fix offered | The realloc at `tcp.rs:223` is real; the previously proposed fix is invalid and no replacement is offered here |
+| 11 | Measure F3 — the length-prefix framing at `tcp.rs:223` | **CLOSED — measured, no code change** | 13–16 ns at real reply sizes, an order of magnitude under the 1 µs screening gate at every size; the realloc is a capacity edge, not a per-reply cost; the vectored alternative is slower below ~1 KiB. See §TCP length-prefix framing (F3) |
 
 **What the three fixed rows changed.** Item 1 added
 `a_shard_poisoned_by_a_panicking_sweep_still_serves_and_stores`, which fails on
@@ -1290,8 +1372,11 @@ allocation-free invariant — performance debt, worked down per row),
 2 informational (7: oracle ceilings pinned at zero margin — **fixed,
 `f51a830`**; 8: listener layer has no oracle).
 
-**Seven resolved, three open.** Fixed by a change: 1, 4, 5, 7. Closed by
-measurement with no change: 2, 3. Redesigned and validated, commit pending: 9.
+**Eight resolved, three open.** Fixed by a change: 1, 4, 5, 7. Closed by
+measurement with no change: 2, 3, and the TCP length-prefix framing tracked as
+TODO row 11 — F3 in the earlier review's numbering, which is not one of this
+audit's ten findings, so the ten split 7 resolved / 3 open and the eighth is
+that row. Redesigned and validated, commit pending: 9.
 Still open: 6, 8, 10. The verdict stays PASS WITH DEFERRED FINDINGS because it
 records the audit as taken; the outcomes are tracked in §Remaining TODOs and in
 git, not by rewriting the findings.
@@ -1303,5 +1388,5 @@ no action.
 2 and 9 were both raised on the documentation cross-check and kept their
 original numbers rather than being renumbered, because they are referred to by
 number elsewhere. Read the severity from each heading, not from its position.
-F1 appears closed, F2 cited as already argued, F3 still open, F4 not a code
-matter.
+F1 appears closed, F2 cited as already argued, F3 closed on measurement, F4 not
+a code matter.
