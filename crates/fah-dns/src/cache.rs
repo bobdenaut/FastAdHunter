@@ -43,7 +43,7 @@ use std::collections::hash_map::{self, RandomState};
 use std::collections::{HashMap, VecDeque};
 use std::hash::BuildHasher;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
 
 use fah_config::DnsCacheConfig;
@@ -389,6 +389,10 @@ impl Shard {
     }
 }
 
+fn lock_shard(shard: &Mutex<Shard>) -> MutexGuard<'_, Shard> {
+    shard.lock().unwrap_or_else(PoisonError::into_inner)
+}
+
 pub(crate) struct DnsCache {
     shards: Vec<Mutex<Shard>>,
     hash_builder: RandomState,
@@ -516,7 +520,7 @@ impl DnsCache {
     /// rules cannot drift between a claiming and a non-claiming read.
     fn lookup_inner(&self, key: &CacheKey, claim_refresh: bool) -> Lookup {
         let shard = &self.shards[self.shard_index(key)];
-        let mut guard = shard.lock().unwrap();
+        let mut guard = lock_shard(shard);
         let Some(entry) = guard.map.get_mut(key) else {
             return Lookup::Miss;
         };
@@ -552,7 +556,7 @@ impl DnsCache {
     /// while the refresh was in flight, and there is then nothing to suppress.
     pub(crate) fn suppress_refresh(&self, key: &CacheKey, cooldown: Duration) {
         let shard = &self.shards[self.shard_index(key)];
-        let mut guard = shard.lock().unwrap();
+        let mut guard = lock_shard(shard);
         if let Some(entry) = guard.map.get_mut(key) {
             entry.refresh_suppressed_until = Some(Instant::now() + cooldown);
         }
@@ -563,7 +567,7 @@ impl DnsCache {
     /// never reaches a worker — the bounded queue was full.
     pub(crate) fn release_refresh_claim(&self, key: &CacheKey) {
         let shard = &self.shards[self.shard_index(key)];
-        let mut guard = shard.lock().unwrap();
+        let mut guard = lock_shard(shard);
         if let Some(entry) = guard.map.get_mut(key) {
             entry.refresh_suppressed_until = None;
         }
@@ -623,7 +627,7 @@ impl DnsCache {
 
     fn insert(&self, key: CacheKey, answer: CachedAnswer, ttl_seconds: u32) {
         let idx = self.shard_index(&key);
-        let mut guard = self.shards[idx].lock().unwrap();
+        let mut guard = lock_shard(&self.shards[idx]);
         let now = Instant::now();
 
         let entry = Entry {
@@ -716,7 +720,7 @@ impl DnsCache {
             estimated_bytes: 0,
         };
         for shard in &self.shards {
-            let guard = shard.lock().unwrap();
+            let guard = lock_shard(shard);
             stats.capacity += guard.capacity as u64;
             stats.max_bytes += guard.byte_capacity;
             stats.entries += guard.map.len() as u64;
@@ -775,7 +779,7 @@ impl DnsCache {
             duration: Duration::ZERO,
         };
         for shard in &self.shards {
-            let mut guard = shard.lock().unwrap();
+            let mut guard = lock_shard(shard);
             outcome.entries_before += guard.map.len() as u64;
             let serve_stale = self.serve_stale;
             let mut freed = 0u64;
@@ -1834,5 +1838,28 @@ mod tests {
             handle.await.unwrap();
         }
         assert!(cache.len() <= 64);
+    }
+
+    #[test]
+    fn a_shard_poisoned_by_a_panicking_sweep_still_serves_and_stores() {
+        let cache = DnsCache::new(&config(100), DEFAULT_REFRESH_CLAIM_LEASE);
+        let key = a_key(&cache, "example.com.");
+        assert!(cache.store(key.clone(), &positive_response(100)));
+
+        let index = cache.shard_index(&key);
+        let previous = std::panic::take_hook();
+        std::panic::set_hook(Box::new(|_| {}));
+        let panicked = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let _guard = cache.shards[index].lock().unwrap();
+            panic!("a cleanup sweep panicked under the shard lock");
+        }));
+        std::panic::set_hook(previous);
+
+        assert!(panicked.is_err());
+        assert!(cache.shards[index].is_poisoned());
+        assert!(matches!(cache.lookup(&key), Lookup::Fresh(..)));
+        assert!(cache.store(key.clone(), &positive_response(50)));
+        assert!(matches!(cache.lookup(&key), Lookup::Fresh(..)));
+        assert_eq!(cache.clean(false).entries_before, 1);
     }
 }
