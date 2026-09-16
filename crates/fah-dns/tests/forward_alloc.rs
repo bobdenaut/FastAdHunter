@@ -155,11 +155,12 @@ impl Forwarder for StubForwarder {
 }
 
 fn raw_query(name: &str) -> Vec<u8> {
+    raw_query_of(name, RecordType::A)
+}
+
+fn raw_query_of(name: &str, qtype: RecordType) -> Vec<u8> {
     let mut message = Message::query();
-    message.add_query(WireQuery::query(
-        Name::from_ascii(name).unwrap(),
-        RecordType::A,
-    ));
+    message.add_query(WireQuery::query(Name::from_ascii(name).unwrap(), qtype));
     message.to_vec().unwrap()
 }
 
@@ -226,21 +227,40 @@ fn warm_pipeline_handles_allocate_a_steady_amount() {
         rt.block_on(pipeline_blocking_one_domain(data_dir.path(), StubForwarder));
 
     let cases = [
-        ("blocked, inline name", "blocked.example.com.", 13),
+        (
+            "blocked, inline name",
+            "blocked.example.com.",
+            RecordType::A,
+            13,
+        ),
         (
             "blocked, heap name",
             "a-very-long-subdomain-label-here.blocked.example.com.",
+            RecordType::A,
             19,
         ),
-        ("cache hit, inline name", "example.org.", 10),
+        ("cache hit, inline name", "example.org.", RecordType::A, 10),
         (
             "cache hit, heap name",
             "a-very-long-subdomain-label-here.allowed.example.org.",
+            RecordType::A,
             16,
         ),
+        (
+            "blocked HTTPS, inline name",
+            "blocked.example.com.",
+            RecordType::HTTPS,
+            12,
+        ),
+        (
+            "cache hit HTTPS, inline name",
+            "example.org.",
+            RecordType::HTTPS,
+            11,
+        ),
     ];
-    for (label, name, ceiling_per_handle) in cases {
-        let raw = raw_query(name);
+    for (label, name, qtype, ceiling_per_handle) in cases {
+        let raw = raw_query_of(name, qtype);
         for transport in TRANSPORTS {
             for _ in 0..HANDLES {
                 rt.block_on(pipeline.handle(black_box(&raw), CLIENT, transport))
@@ -298,17 +318,29 @@ fn warm_pipeline_misses_stay_under_the_ceiling() {
         rt.block_on(pipeline_blocking_one_domain(data_dir.path(), AnsweringStub));
 
     let cases = [
-        ("miss, inline name", "m{i:04}.example.net.", 17),
+        (
+            "miss, inline name",
+            "m{i:04}.example.net.",
+            RecordType::A,
+            17,
+        ),
         (
             "miss, heap name",
             "a-very-long-subdomain-label-here-{i:04}.miss.example.net.",
+            RecordType::A,
             24,
+        ),
+        (
+            "miss HTTPS, inline name",
+            "h{i:04}.example.net.",
+            RecordType::HTTPS,
+            18,
         ),
     ];
     let mut results = Vec::new();
-    for (label, pattern, ceiling_per_handle) in cases {
+    for (label, pattern, qtype, ceiling_per_handle) in cases {
         let raws: Vec<Vec<u8>> = (0..HANDLES * 3 * TRANSPORTS.len())
-            .map(|i| raw_query(&pattern.replace("{i:04}", &format!("{i:04}"))))
+            .map(|i| raw_query_of(&pattern.replace("{i:04}", &format!("{i:04}")), qtype))
             .collect();
         let mut next = raws.iter();
         for transport in TRANSPORTS {

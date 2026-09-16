@@ -471,15 +471,38 @@ allocation was moved one crate upstream, not removed.
 AAAA **and** HTTPS (type 65) for the same name, so roughly a third of real
 client queries take this allocation. PTR, TXT, MX and SVCB add to it.
 
-**No oracle sees it.** `raw_query` hard-codes `RecordType::A`
-(`crates/fah-dns/tests/forward_alloc.rs:161`), so the 10-23 allocations per
-query in §Measurements are a **lower bound on real traffic**, not the figure
-for it.
+**No oracle saw it, until step 1 below.** `raw_query` hard-coded
+`RecordType::A`, so every DNS figure in §Measurements was measured on the one
+query type that does *not* allocate, and all of them are a **lower bound on
+real traffic**.
+
+**Step 1 is done, and it confirms the finding.** `forward_alloc` now carries
+three `RecordType::HTTPS` cases. Measured at 64 handles, dev box, debug
+profile, superseded by re-running
+`cargo test -p fah-dns --test forward_alloc -- --nocapture`:
+
+| Case | Observed | Ceiling | Headroom | Per query | vs the A case |
+| ---- | -------- | ------- | -------- | --------- | ------------- |
+| blocked HTTPS, inline name | 768 | 772 | 4 | 12 | 13 → 12, **−1** |
+| cache hit HTTPS, inline name | 704 | 708 | 4 | 11 | 10 → 11, **+1** |
+| miss HTTPS, inline name | 1093 | 1156 | 63 | 17.1 | ~16.3 → ~17.1, **+1** |
+
+**+1 per query on the cache-hit and miss paths**, which is the allocation this
+finding names. The cache-hit row isolates it cleanly: both types replay a
+negative `NOERROR` entry, so the response construction is identical and the
+`QueryType::Other` string is the only difference.
+
+**The blocked path is −1, and that is not this finding being wrong.**
+`response::blocked` synthesizes no record for a type that is neither A nor
+AAAA, so it skips a `Record::from_rdata` and a name clone — two allocations
+saved against the one the qtype string costs. Blocking an HTTPS query is
+cheaper than blocking an A query, and the qtype string is still there.
 
 **Smallest fix, in two steps.**
 
-1. Add an `HTTPS` case to `forward_alloc` and read the number. Test-only, no
-   production change, and it turns this finding into a measurement.
+1. **DONE.** Add an `HTTPS` case to `forward_alloc` and read the number.
+   Test-only, no production change, and it turns this finding into a
+   measurement. The numbers are in the table above.
 
 2. If the measurement confirms that this allocation is material, redesign
    `QueryType` around the compile-time-fixed record-type vocabulary already
@@ -488,10 +511,14 @@ for it.
    `String` allocation in `fah-dns` and allow `fah-stats::qtype_index` to use an
    enum-to-index match instead of string comparisons.
 
-**The immediate action is step 1 only.** Step 2 touches an L1 crate's public
-API and a documented JSON field — `qtype` on the query event (API.md) — and is
-not a trade to make against a predicted allocation. It is conditional on the
-measurement, not scheduled by this finding.
+**Step 2 is now an owner decision, not a blocked one.** Its condition — "if the
+measurement confirms that this allocation is material" — has an answer to judge
+against: **+1 out of 11 on a cache hit, roughly 9 %, on about a third of real
+queries.** Whether that is material is the call to make; this finding does not
+make it. What has not changed is the cost of acting: step 2 touches an L1
+crate's public API and a documented JSON field, `qtype` on the query event
+(API.md). For the named ten record types the serialization is unchanged; only a
+genuinely unknown type's rendering needs care.
 
 **What goes wrong if it is not fixed.** One avoidable allocation on about a
 third of real queries, and a measurement set that cannot see it.
@@ -1071,9 +1098,9 @@ rewritten when one is fixed. Read status here, evidence there.
 | 1 | Apply Finding 1 — six `.unwrap_or_else(PoisonError::into_inner)` | **FIXED** `3ce7ec5` | Two-line change, no cost on any axis, removes a silent permanent failure mode the supervision tick cannot see |
 | 2 | **Measure Finding 2 on the RB5009, at `http_runtimes = 2`** | OPEN — needs the device | Promoted to HIGH on the cross-check; the question is whether a second dripper stalls unrelated proxy traffic, not the CPU ratio alone |
 | 3 | Apply Finding 4 — drop the `key.clone()` at `pipeline.rs:459` | **FIXED** `c93e2d1` | One character shorter, one allocation fewer |
-| 4 | Apply Finding 5 — move the "no domain left" `error!` to the transition | **FIXED** — this commit | Small, and it protects the log buffer that would explain the failure |
-| 5 | Add an `HTTPS`-type case to `forward_alloc` | OPEN | Turns Finding 9 from an argument into a number, without touching production code. This is the whole of Finding 9's immediate action |
-| 6 | Raise `intercept_alloc`'s `BATCHES` to 6 | OPEN | Removes the one-batch-of-evidence problem in Finding 7 |
+| 4 | Apply Finding 5 — move the "no domain left" `error!` to the transition | **FIXED** `bb15de7` | Small, and it protects the log buffer that would explain the failure |
+| 5 | Add an `HTTPS`-type case to `forward_alloc` | **DONE** — this commit | Turned Finding 9 from an argument into a number, with no production change. **+1 allocation per query confirmed** on the cache-hit and miss paths; see Finding 9 |
+| 6 | Raise `intercept_alloc`'s `BATCHES` to 6 | **FIXED** `f51a830` | Removed the one-batch-of-evidence problem in Finding 7 |
 | 7 | Measure Finding 3 with `diag-timing` | OPEN — needs the device | Second candidate for PERFORMANCE.md's recorded 1.389 ms DoT budget miss; `dispatch_wait_us` settles it |
 | 8 | Add an oracle for the listener layer | OPEN | Closes the Finding 8 gap for `udp.rs`, `tcp.rs` and the F3 `splice` |
 | 9 | Add a >64 KiB TCP reply test | OPEN | Pins the `tcp.rs:222` invariant to a test instead of a comparison in another file |
@@ -1093,17 +1120,19 @@ one of two threads carrying all proxy traffic, driven by any LAN device),
 1 medium (1: poisoned cache shard kills a shard's keyspace permanently and
 invisibly — **fixed, `3ce7ec5`**), 6 low (3: `spawn_blocking` per DoT
 connection; 4: removable `CacheKey` clone — **fixed, `c93e2d1`**; 5:
-unthrottled `error!` per connection — **fixed, this commit**; 6: two host copies
-per DoT connection; 9: `QueryType::Other` allocates per query, unmeasured —
-immediate action is the measurement only; 10: the hot path does not yet satisfy
-PERFORMANCE.md's allocation-free invariant — performance debt, worked down per
-row), 2 informational (7: oracle ceilings pinned at zero margin; 8: listener
-layer has no oracle).
+unthrottled `error!` per connection — **fixed, `bb15de7`**; 6: two host copies
+per DoT connection; 9: `QueryType::Other` allocates per query — **measured,
++1 per query on the cache-hit and miss paths**, and step 2 is now an owner
+decision; 10: the hot path does not yet satisfy PERFORMANCE.md's
+allocation-free invariant — performance debt, worked down per row),
+2 informational (7: oracle ceilings pinned at zero margin — **fixed,
+`f51a830`**; 8: listener layer has no oracle).
 
-**Three fixed, seven open.** Still open: 2 (high, deferred behind an RB5009
-measurement), 3, 6, 7, 8, 9, 10. The verdict stays PASS WITH DEFERRED FINDINGS
-because it records the audit as taken; the fixes are tracked in §Remaining
-TODOs and in git, not by rewriting the findings.
+**Four fixed, six open.** Fixed: 1, 4, 5, 7. Still open: 2 (high, deferred
+behind an RB5009 measurement), 3, 6, 8, 9, 10 — with 9 now measured rather than
+argued, so what is left of it is a decision. The verdict stays PASS WITH
+DEFERRED FINDINGS because it records the audit as taken; the fixes are tracked
+in §Remaining TODOs and in git, not by rewriting the findings.
 
 No finding blocks — Finding 2 is a browsing-availability lever, not a DNS
 outage, and the resolver keeps answering throughout.
