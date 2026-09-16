@@ -45,6 +45,7 @@ pub struct ApiServer {
     local_addr: SocketAddr,
     tls: bool,
     events: EventHub,
+    #[cfg(feature = "test-harness")]
     slots: Arc<Semaphore>,
     accept_loop: Option<JoinHandle<()>>,
 }
@@ -79,6 +80,7 @@ impl ApiServer {
             local_addr,
             tls,
             events,
+            #[cfg(feature = "test-harness")]
             slots,
             accept_loop: Some(accept_loop),
         })
