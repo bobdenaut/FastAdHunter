@@ -123,8 +123,12 @@ is a router write) with `openssl s_client` and `source == "imported"` after;
 (dst-nat 443 v4 + the v6 decision), P7 — the 24 h full-mode soak on the
 production container (RAM ≤ 128 MB steady; the minted-leaf hit-rate row ≥ 90 %
 from the `leaf_cache` counters; watch items a–f), and P8 / P9 proper on the
-soak deploy. **The full-mode soak cannot start before the 0.3.3 soak ends
-2026-09-16** (project-state §Now) — it is the same container.
+soak deploy. ~~The full-mode soak cannot start before the 0.3.3 soak ends
+2026-09-16~~ — **lapsed 2026-09-16.** That soak became 0.3.4 and was stopped on
+day 5 with a memory finding (`ad795b0`,
+`docs/code-review/phase2.6/soak-0.3.4/README.md` §day 5), so the container is
+free. The full-mode soak is blocked by the PARKED decision on interception
+instead, which no schedule flips.
 
 ## The Mac endpoint
 

@@ -16,7 +16,11 @@ step 1 of §Phasing. The ADR settles the what; this task and its approved plan
 settle the how. Read §Two lifetimes, §The document and its API, §Atomic swap,
 §`FAH__`, §Migration, §Detect instead of predict, §A long exclusion list,
 §Consequences and §Acceptance before planning. The code lands on `phase3-06`;
-nothing deploys until the 0.3.3 soak verdict (docs/project-state.md §Next).
+~~nothing deploys until the 0.3.3 soak verdict~~ — **that verdict is in as of
+2026-09-16**: the soak became 0.3.4, was stopped on day 5, and found the residual
+floor doubled (`ad795b0`, `docs/code-review/phase2.6/soak-0.3.4/README.md`
+§day 5). Deployment is gated by the PARKED interception decision now, not by a
+soak.
 
 ## Scope
 

@@ -62,7 +62,8 @@ Carried over from p3-06, unchanged in substance:
   container, so this is the only place the figure can come from.
 - **Seven-day soak** on the deployed build, numbers recorded against the budget
   rows. Same shape as the 0.3.4 soak: hourly scheduled task, artefacts under
-  `docs/code-review/phase3/soak-<version>/`. **Precondition below.**
+  `docs/code-review/phase3/soak-<version>/`. **Preconditions below — one of them
+  is new, and it is a memory finding, not a scheduling one.**
 - Two soak readings that exist only because p3-10's follow-ups landed. Neither
   is a re-verification — each task proves its own instrument works on the dev
   box; these are the first readings under real traffic, which is the one thing a
@@ -212,6 +213,38 @@ The reason is that a soak cannot be repaired afterwards. The traffic is gone.
 Both are cheap and neither depends on the device. If either slips, the soak
 waits — restarting a seven-day run costs a week, and starting it blind costs the
 same week plus a wrong default.
+
+**Third precondition, added 2026-09-16: the deployed build carries `8941770`.**
+
+The 0.3.4 production soak was stopped on day 5 rather than run to h168, because
+its question was already answered. Report and reducer at `ad795b0`,
+`docs/code-review/phase2.6/soak-0.3.4/README.md` §Interim analysis — day 5:
+
+| Figure | h0–12 | h96–108 |
+| ------ | ----- | ------- |
+| Residual floor | 19.0 MiB | 38.6 MiB — **doubled, and elevated in every 12 h bucket** |
+| RSS floor | 44.6 MiB | 66.2 MiB |
+| `accounted_bytes` | 25.59 MiB (min of 1140 samples) | 28.00 MiB (max) — bounded |
+
+Same-hour-of-day floors rose +1.3, +5.3, +8.2 MiB/day and were still
+accelerating when the run was stopped. `8941770` — *fix(http): reap idle
+upstream connections by giving the pool a timer* — is **not an ancestor of
+0.3.4**, and the retention it fixes lands wholly in `residual_bytes`, which is
+the shape observed.
+
+Why this gates the soak rather than merely informing it: a seven-day run on a
+build with a known unbounded floor measures the leak, not the phase. Its RAM
+budget row (`RSS steady-state ≤ 128 MB`) would fail on a defect already
+diagnosed and already fixed elsewhere, and the week would have to be run again
+against the fixed build anyway. **Confirm `git merge-base --is-ancestor 8941770
+<deployed-tag>` before the first pull, and record the result in the soak's
+README alongside the version.**
+
+Two things this precondition does *not* claim. The size of `8941770`'s
+contribution to that floor is **unmeasured on the RB5009** — the dev-box A/B is
++18.23 MB against +4.26 MB, and nothing has carried it on ARM64. And a floor
+that still rises with the fix in place would be a new finding, not a repeat;
+0.3.4 is the "before" arm of that A/B and this soak is the natural "after".
 
 One further question belongs to the same moment: whether the soak needs an
 HTTPS session gauge — `active` / `peak` for spliced sessions and their permits,

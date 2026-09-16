@@ -1033,8 +1033,12 @@ reference if it is.
 
 ## 17. Dependencies
 
-Depends on p3-04 (the machinery). Nothing deploys before the 0.3.3 soak
-verdict; code lands on `phase3-06`. What the next tasks consume from this one
+Depends on p3-04 (the machinery). ~~Nothing deploys before the 0.3.3 soak
+verdict~~ — **in as of 2026-09-16**: the soak became 0.3.4, was stopped on day 5,
+and found the residual floor doubled (`ad795b0`,
+`docs/code-review/phase2.6/soak-0.3.4/README.md` §day 5). Deployment is gated by
+the PARKED interception decision now. Code lands on `phase3-06`. What the next
+tasks consume from this one
 is stated in their plans: p3-08 the `Interception`/`InterceptionState`
 runtime contract and the accept-arm invariant; p3-09 the endpoint and the
 `details` contract.

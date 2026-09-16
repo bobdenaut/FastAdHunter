@@ -243,11 +243,16 @@ retained and inert — is in
 
 §7 covers the dev box. The rows below need the tip image on the probe and the
 owner's device; the agent proposes and verifies, the owner runs. Gate: B5–B10
-landed. The 0.3.3 soak verdict gates the final phase decision, not N1–N4. The
-load arms are a separate matter: the p3-06 query flood of 2026-09-08
-invalidated the production soak then running on the same RB5009, so P1–P3 and
-the measurement arms of Runbook 1–4 wait for the soak to end or for the owner's
-explicit acceptance of that risk. Copy verbatim into a fresh session.
+landed. ~~The 0.3.3 soak verdict gates the final phase decision, not N1–N4.~~
+**Superseded 2026-09-16.** That soak became 0.3.4 and was stopped on day 5 with
+its verdict already in hand — the residual floor doubled, 19.0 → 38.6 MiB, while
+`accounted_bytes` held at 28.00 MiB (`ad795b0`,
+`docs/code-review/phase2.6/soak-0.3.4/README.md` §day 5). **No production soak is
+running on the RB5009**, so the load arms no longer wait on one: the p3-06 query
+flood of 2026-09-08 invalidated the soak then running, and that constraint has
+lapsed with it. P1–P3 and the measurement arms of Runbook 1–4 are unblocked on
+that ground alone — this task is PARKED, so nothing here is picked up without a
+new decision. Copy verbatim into a fresh session.
 
 > Read `plan/CLAUDE.md`, then `plan/wip/phase3/p3-06-after-interception-impl.md`
 > in full, then `docs/routeros-traps.md`. Root `CLAUDE.md` is loaded and its
@@ -272,10 +277,11 @@ explicit acceptance of that risk. Copy verbatim into a fresh session.
 > existed on this device, so the legacy block is **placed** before the first
 > start rather than found. N1 was run this way on 2026-09-11 and passed; if it
 > has already run, its precondition is spent and re-running it needs a wiped
-> config directory. Whether the production 0.3.3 soak
-> is still running on the RB5009 — if it is, the load arms in step 2 are
-> blocked until the owner explicitly accepts the risk of invalidating it, as
-> the 2026-09-08 flood did. If any of these is missing, say which and stop.
+> config directory. No production soak is running on the RB5009 — 0.3.4 was
+> stopped on day 5, 2026-09-16 (`ad795b0`) — so the load arms in step 2 are not
+> blocked on one; confirm that is still true before running them, because the
+> 2026-09-08 flood invalidated the soak then running. If any of these is
+> missing, say which and stop.
 >
 > **Task.** Execute §2 in §4's order and report per row against the row's
 > Pass column. Nothing is skipped, reordered or worked around; a failing row is
