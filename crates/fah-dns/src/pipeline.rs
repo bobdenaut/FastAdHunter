@@ -456,7 +456,7 @@ impl<F: Forwarder> Pipeline<F> {
             } => {
                 if let Some(swr) = &self.swr {
                     if claimed_refresh {
-                        swr.offer(&self.cache, key.clone());
+                        swr.offer(&self.cache, key);
                     } else {
                         swr.note_deduplicated();
                     }
