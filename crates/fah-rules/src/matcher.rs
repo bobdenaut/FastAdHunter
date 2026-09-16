@@ -213,11 +213,25 @@ fn rrtype_bit(name: &str) -> u32 {
 const KNOWN_TYPES_MASK: u32 = (1 << 15) - 1;
 
 fn qtype_bit(qtype: &QueryType) -> u32 {
-    match qtype {
-        QueryType::A => rrtype_bit("A"),
-        QueryType::Aaaa => rrtype_bit("AAAA"),
-        QueryType::Other(name) => rrtype_bit(name),
-    }
+    let index = match qtype {
+        QueryType::A => 0,
+        QueryType::Aaaa => 1,
+        QueryType::Https => 2,
+        QueryType::Svcb => 3,
+        QueryType::Cname => 4,
+        QueryType::Mx => 5,
+        QueryType::Txt => 6,
+        QueryType::Ns => 7,
+        QueryType::Ptr => 8,
+        QueryType::Srv => 9,
+        QueryType::Soa => 10,
+        QueryType::Caa => 11,
+        QueryType::Ds => 12,
+        QueryType::Dnskey => 13,
+        QueryType::Naptr => 14,
+        QueryType::Other(_) => return 0,
+    };
+    1 << index
 }
 
 /// `$dnstype=A|AAAA` (or comma-separated) -> a bitmask over [`rrtype_bit`].
@@ -1411,19 +1425,49 @@ mod tests {
             MatchDecision::Block(_)
         ));
         assert!(matches!(
-            m.lookup("ads.example.com", &QueryType::Other("HTTPS".into())),
+            m.lookup("ads.example.com", &QueryType::Https),
             MatchDecision::Block(_)
         ));
     }
 
     #[test]
-    fn other_qtype_name_is_case_insensitive() {
-        let rule = block_with("ads.example.com", dnstype("HTTPS"));
+    fn a_dnstype_rule_is_matched_by_the_named_variant_however_the_rule_spells_it() {
+        let rule = block_with("ads.example.com", dnstype("https"));
         let m = matcher_with(&[("", rule)]);
         assert!(matches!(
-            m.lookup("ads.example.com", &QueryType::Other("https".into())),
+            m.lookup("ads.example.com", &QueryType::Https),
             MatchDecision::Block(_)
         ));
+    }
+
+    #[test]
+    fn every_named_query_type_carries_the_bit_its_rule_spelling_parses_to() {
+        let pairs = [
+            (QueryType::A, "A"),
+            (QueryType::Aaaa, "AAAA"),
+            (QueryType::Https, "HTTPS"),
+            (QueryType::Svcb, "SVCB"),
+            (QueryType::Cname, "CNAME"),
+            (QueryType::Mx, "MX"),
+            (QueryType::Txt, "TXT"),
+            (QueryType::Ns, "NS"),
+            (QueryType::Ptr, "PTR"),
+            (QueryType::Srv, "SRV"),
+            (QueryType::Soa, "SOA"),
+            (QueryType::Caa, "CAA"),
+            (QueryType::Ds, "DS"),
+            (QueryType::Dnskey, "DNSKEY"),
+            (QueryType::Naptr, "NAPTR"),
+        ];
+        let mut seen = 0u32;
+        for (qtype, name) in pairs {
+            let bit = qtype_bit(&qtype);
+            assert_eq!(bit, rrtype_bit(name), "{qtype:?} versus {name}");
+            assert_ne!(bit, 0, "{qtype:?} carries no bit");
+            seen |= bit;
+        }
+        assert_eq!(seen, KNOWN_TYPES_MASK);
+        assert_eq!(qtype_bit(&QueryType::Other(65534)), 0);
     }
 
     #[test]

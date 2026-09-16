@@ -154,10 +154,6 @@ impl Forwarder for StubForwarder {
     }
 }
 
-fn raw_query(name: &str) -> Vec<u8> {
-    raw_query_of(name, RecordType::A)
-}
-
 fn raw_query_of(name: &str, qtype: RecordType) -> Vec<u8> {
     let mut message = Message::query();
     message.add_query(WireQuery::query(Name::from_ascii(name).unwrap(), qtype));
@@ -250,13 +246,13 @@ fn warm_pipeline_handles_allocate_a_steady_amount() {
             "blocked HTTPS, inline name",
             "blocked.example.com.",
             RecordType::HTTPS,
-            12,
+            11,
         ),
         (
             "cache hit HTTPS, inline name",
             "example.org.",
             RecordType::HTTPS,
-            11,
+            10,
         ),
     ];
     for (label, name, qtype, ceiling_per_handle) in cases {
@@ -334,7 +330,7 @@ fn warm_pipeline_misses_stay_under_the_ceiling() {
             "miss HTTPS, inline name",
             "h{i:04}.example.net.",
             RecordType::HTTPS,
-            18,
+            17,
         ),
     ];
     let mut results = Vec::new();

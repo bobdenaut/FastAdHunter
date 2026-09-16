@@ -16,7 +16,20 @@ pub(crate) fn to_fah_query_type(record_type: RecordType) -> QueryType {
     match record_type {
         RecordType::A => QueryType::A,
         RecordType::AAAA => QueryType::Aaaa,
-        other => QueryType::Other(other.to_string()),
+        RecordType::HTTPS => QueryType::Https,
+        RecordType::SVCB => QueryType::Svcb,
+        RecordType::CNAME => QueryType::Cname,
+        RecordType::MX => QueryType::Mx,
+        RecordType::TXT => QueryType::Txt,
+        RecordType::NS => QueryType::Ns,
+        RecordType::PTR => QueryType::Ptr,
+        RecordType::SRV => QueryType::Srv,
+        RecordType::SOA => QueryType::Soa,
+        RecordType::CAA => QueryType::Caa,
+        RecordType::DS => QueryType::Ds,
+        RecordType::DNSKEY => QueryType::Dnskey,
+        RecordType::NAPTR => QueryType::Naptr,
+        other => QueryType::Other(other.into()),
     }
 }
 
@@ -42,10 +55,32 @@ mod tests {
     }
 
     #[test]
-    fn other_types_carry_their_wire_name() {
+    fn the_named_set_maps_to_its_own_variants_and_allocates_nothing() {
+        let pairs = [
+            (RecordType::HTTPS, QueryType::Https),
+            (RecordType::SVCB, QueryType::Svcb),
+            (RecordType::CNAME, QueryType::Cname),
+            (RecordType::MX, QueryType::Mx),
+            (RecordType::TXT, QueryType::Txt),
+            (RecordType::NS, QueryType::Ns),
+            (RecordType::PTR, QueryType::Ptr),
+            (RecordType::SRV, QueryType::Srv),
+            (RecordType::SOA, QueryType::Soa),
+            (RecordType::CAA, QueryType::Caa),
+            (RecordType::DS, QueryType::Ds),
+            (RecordType::DNSKEY, QueryType::Dnskey),
+            (RecordType::NAPTR, QueryType::Naptr),
+        ];
+        for (wire, expected) in pairs {
+            assert_eq!(to_fah_query_type(wire), expected, "{wire}");
+        }
+    }
+
+    #[test]
+    fn an_unnamed_type_carries_its_wire_code() {
         assert_eq!(
-            to_fah_query_type(RecordType::HTTPS),
-            QueryType::Other("HTTPS".to_string())
+            to_fah_query_type(RecordType::Unknown(65534)),
+            QueryType::Other(65534)
         );
     }
 

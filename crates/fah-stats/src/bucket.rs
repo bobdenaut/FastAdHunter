@@ -32,17 +32,20 @@ pub(crate) fn qtype_index(qtype: &QueryType) -> usize {
     match qtype {
         QueryType::A => 0,
         QueryType::Aaaa => 1,
-        QueryType::Other(label) => match label.as_str() {
-            "HTTPS" => 2,
-            "MX" => 3,
-            "TXT" => 4,
-            "PTR" => 5,
-            "NS" => 6,
-            "SOA" => 7,
-            "SRV" => 8,
-            "CNAME" => 9,
-            _ => QTYPE_OTHER,
-        },
+        QueryType::Https => 2,
+        QueryType::Mx => 3,
+        QueryType::Txt => 4,
+        QueryType::Ptr => 5,
+        QueryType::Ns => 6,
+        QueryType::Soa => 7,
+        QueryType::Srv => 8,
+        QueryType::Cname => 9,
+        QueryType::Svcb
+        | QueryType::Caa
+        | QueryType::Ds
+        | QueryType::Dnskey
+        | QueryType::Naptr
+        | QueryType::Other(_) => QTYPE_OTHER,
     }
 }
 
@@ -312,19 +315,10 @@ mod tests {
     fn qtype_index_maps_named_types_and_lumps_the_rest() {
         assert_eq!(QTYPE_LABELS[qtype_index(&QueryType::A)], "A");
         assert_eq!(QTYPE_LABELS[qtype_index(&QueryType::Aaaa)], "AAAA");
-        assert_eq!(
-            QTYPE_LABELS[qtype_index(&QueryType::Other("HTTPS".into()))],
-            "HTTPS"
-        );
-        assert_eq!(
-            QTYPE_LABELS[qtype_index(&QueryType::Other("CNAME".into()))],
-            "CNAME"
-        );
-        // An unnamed record type lands in OTHER, never out of bounds.
-        assert_eq!(
-            QTYPE_LABELS[qtype_index(&QueryType::Other("NAPTR".into()))],
-            "OTHER"
-        );
+        assert_eq!(QTYPE_LABELS[qtype_index(&QueryType::Https)], "HTTPS");
+        assert_eq!(QTYPE_LABELS[qtype_index(&QueryType::Cname)], "CNAME");
+        assert_eq!(QTYPE_LABELS[qtype_index(&QueryType::Naptr)], "OTHER");
+        assert_eq!(QTYPE_LABELS[qtype_index(&QueryType::Other(65534))], "OTHER");
     }
 
     #[test]

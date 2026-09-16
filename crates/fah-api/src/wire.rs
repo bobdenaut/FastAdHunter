@@ -254,9 +254,29 @@ fn display_domain(domain: &str) -> String {
 /// resolver called it for everything else.
 pub fn qtype_name(qtype: &QueryType) -> String {
     match qtype {
-        QueryType::A => "A".to_string(),
-        QueryType::Aaaa => "AAAA".to_string(),
-        QueryType::Other(name) => name.clone(),
+        QueryType::Other(code) => format!("TYPE{code}"),
+        named => qtype_label(named).to_string(),
+    }
+}
+
+fn qtype_label(qtype: &QueryType) -> &'static str {
+    match qtype {
+        QueryType::A => "A",
+        QueryType::Aaaa => "AAAA",
+        QueryType::Https => "HTTPS",
+        QueryType::Svcb => "SVCB",
+        QueryType::Cname => "CNAME",
+        QueryType::Mx => "MX",
+        QueryType::Txt => "TXT",
+        QueryType::Ns => "NS",
+        QueryType::Ptr => "PTR",
+        QueryType::Srv => "SRV",
+        QueryType::Soa => "SOA",
+        QueryType::Caa => "CAA",
+        QueryType::Ds => "DS",
+        QueryType::Dnskey => "DNSKEY",
+        QueryType::Naptr => "NAPTR",
+        QueryType::Other(_) => "OTHER",
     }
 }
 
@@ -266,7 +286,25 @@ pub fn parse_qtype(name: &str) -> QueryType {
     match name.to_ascii_uppercase().as_str() {
         "A" => QueryType::A,
         "AAAA" => QueryType::Aaaa,
-        other => QueryType::Other(other.to_string()),
+        "HTTPS" => QueryType::Https,
+        "SVCB" => QueryType::Svcb,
+        "CNAME" => QueryType::Cname,
+        "MX" => QueryType::Mx,
+        "TXT" => QueryType::Txt,
+        "NS" => QueryType::Ns,
+        "PTR" => QueryType::Ptr,
+        "SRV" => QueryType::Srv,
+        "SOA" => QueryType::Soa,
+        "CAA" => QueryType::Caa,
+        "DS" => QueryType::Ds,
+        "DNSKEY" => QueryType::Dnskey,
+        "NAPTR" => QueryType::Naptr,
+        other => QueryType::Other(
+            other
+                .strip_prefix("TYPE")
+                .and_then(|code| code.parse().ok())
+                .unwrap_or(0),
+        ),
     }
 }
 
@@ -1246,11 +1284,31 @@ mod tests {
         for qtype in [
             QueryType::A,
             QueryType::Aaaa,
-            QueryType::Other("TXT".to_string()),
+            QueryType::Https,
+            QueryType::Svcb,
+            QueryType::Cname,
+            QueryType::Mx,
+            QueryType::Txt,
+            QueryType::Ns,
+            QueryType::Ptr,
+            QueryType::Srv,
+            QueryType::Soa,
+            QueryType::Caa,
+            QueryType::Ds,
+            QueryType::Dnskey,
+            QueryType::Naptr,
+            QueryType::Other(65534),
         ] {
-            assert_eq!(parse_qtype(&qtype_name(&qtype)), qtype);
+            assert_eq!(parse_qtype(&qtype_name(&qtype)), qtype, "{qtype:?}");
         }
         assert_eq!(parse_qtype("aaaa"), QueryType::Aaaa);
+        assert_eq!(parse_qtype("https"), QueryType::Https);
+    }
+
+    #[test]
+    fn an_unnamed_qtype_keeps_the_rfc_3597_spelling() {
+        assert_eq!(qtype_name(&QueryType::Other(65534)), "TYPE65534");
+        assert_eq!(parse_qtype("TYPE64"), QueryType::Other(64));
     }
 
     #[test]

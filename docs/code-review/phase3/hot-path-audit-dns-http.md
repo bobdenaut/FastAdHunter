@@ -153,7 +153,59 @@ the process, with no log line pointing at it.
 thing to write: poison a shard from a panicking scope, then assert `lookup`
 still returns `Lookup::Miss` rather than panicking.
 
-### 2 — HIGH · `read_client_hello` rescans the whole buffer after every read
+### 2 — CLOSED, no code change · `read_client_hello` rescans the whole buffer after every read
+
+**Measured on the RB5009 and closed, 2026-09-16 — the amplification does not
+bite.** A diag-timing probe on veth3 (`fah-diagprobe`, http_runtimes=2, the
+production default) was driven with a **corrected** adversarial ClientHello: a
+single ClientHello fragmented into ~4051 tiny handshake records, declaring a
+large non-SNI extension whose body never arrives, so `scan_client_hello`
+genuinely stays `Incomplete` and re-walks every accumulated record on each read
+— the O(records²) path this finding names. The first attempt was a bad
+stimulus that resolved to `NoSni` after ~40 bytes; the corrected one was
+verified to engage the real path (`listeners.https.hello_timeouts` 0 → 12 when
+the drippers were held to the 10 s timeout).
+
+Ladder of concurrent drippers against normal HTTPS-peek and HTTP-proxy traffic
+on the two shared allocation domains, dev-box client, pace 0.6 ms:
+
+| drippers | HTTPS p50 | HTTPS p95 | HTTP p50 | HTTP p95 | conns Δ |
+| -------: | --------: | --------: | -------: | -------: | ------: |
+| 0 | 16.1 | 30.0 | 16.1 | 24.2 | 30 |
+| 2 | 16.2 | 31.1 | 16.5 | 31.2 | 34 |
+| 4 | 17.0 | 30.5 | 16.4 | 29.6 | 38 |
+| 8 | 14.5 | 29.9 | 17.9 | 29.9 | 51 |
+| 16 | 14.5 | 29.2 | 15.1 | 28.4 | 78 |
+| 32 | 5.8 | 26.0 | 5.6 | 25.6 | 126 |
+
+**p95 is flat from 0 to 32 drippers — 16× the two domain threads — for both
+HTTPS and HTTP.** The 2-dripper row (exactly one per domain, the case
+http_runtimes=2 makes worst) is indistinguishable from baseline. `conns Δ`
+climbs 30 → 126 as the drippers reconnect on the 16 KiB cap, so the load
+genuinely reached `read_client_hello` at every step. The p50 drop at 32 is
+client-side scheduling on the single dev-box driver, not a server effect; p95
+is the load-bearing number and it does not move.
+
+**Why it does not bite:** `MAX_HELLO_BYTES = 16 KiB` caps records at ~2730, so
+the O(records²) rescan is ~7 M trivial integer steps per connection spread over
+at most the 10 s `hello_timeout`, and `[https] max_connections` bounds how many
+such connections can exist at once. The three limits together neutralise the
+amplification on the RB5009. **The residual lever is raw connection count, which
+is a different bound than rescan amplification and is exactly what
+`max_connections` exists to hold.**
+
+CPU was not sampled (it needs a RouterOS read, off limits here); the
+latency-interference measurement answers the severity question on its own —
+the domains were never starved.
+
+**Disposition:** closed without a code change. `scan_client_hello` is left
+exactly as it was. Corpus/workload/device: adversarial 4051-record ClientHello,
+0.6 ms pace, up to 32 concurrent drippers, `fah-diagprobe` on RB5009 veth3,
+http_runtimes=2, 2026-09-16. Superseded only by a workload that moves p95 — a
+sustained many-thousand-connection flood would, but that is the
+`max_connections` bound's problem, not the parser's.
+
+--- the read-only audit's original argument, kept for the record ---
 
 `crates/fah-http/src/https.rs:394-412`:
 
@@ -229,7 +281,48 @@ HTTPS proxying. Not a crash, not unbounded, and not a DNS outage — a
 browsing-availability lever that SECURITY.md's own threat model says is within
 reach of a compromised LAN device.
 
-### 3 — LOW · `spawn_blocking` on every DoT connection, including cache hits
+### 3 — CLOSED, no code change · `spawn_blocking` on every DoT connection, including cache hits
+
+**Measured on the RB5009 and closed, 2026-09-16 — the round trip is real but
+not worth removing.** The diag-timing probe on veth3 was driven through 6 cold
+first-sight DoT handshakes (each mints a leaf) and 19 warm handshakes to one
+repeated host (leaf cached — `leaf_cache.prewarm_hits` went 0 → 19, `minted`
+0 → 6, so the warm cohort is exactly the cache-hit path this finding names).
+
+Per-stage timing from the container's `DoT first-sight timing` line, µs:
+
+| stage | cold (n=6) | warm (n=19) | what it is |
+| ----- | ---------: | ----------: | ---------- |
+| `dispatch_wait_us` | ~65 | **~62** | the `spawn_blocking` round trip — this finding's target |
+| `prewarm_us` | ~2008 | ~9 | leaf mint (cold) versus cache lookup (warm) |
+| `handshake_after_prewarm_us` | ~4700 | ~4700 | TLS crypto + LAN RTT, client-contaminated |
+| `sni_to_dispatch_us` | ~0 | ~0 | SNI parse |
+
+**The `spawn_blocking` overhead is `dispatch_wait_us` ≈ 62 µs, stable across
+the whole sample (cold and warm alike).** Against PERFORMANCE.md's recorded
+1.389 ms DoT budget miss that is **~4.5 %** — measurable, not material. The miss
+is dominated by the cold mint (`prewarm_us` ≈ 2.0 ms here, itself 4× the 450 µs
+`certs_mint` budget — a CPU-regime effect, not this finding) and by handshake
+completion. And `spawn_blocking` moves the work **off** the domain thread onto
+the blocking pool, so the task awaits rather than burning a DNS worker: the
+"displacing query tasks" concern is minimal.
+
+**The fix was considered and rejected on this measurement, not deferred.**
+Adding a `CertStore` accessor that runs the leaf-cache fast path inline on the
+async thread — guarded by `leaf.rs`'s `std::sync::Mutex` touched from an async
+worker — would save ~62 µs on a warm connection at the cost of new
+synchronization on a hot path. Principles 8 and 16: an optimisation must be
+justified by a measurement, and ~62 µs against a millisecond-scale miss does not
+justify a new lock reachable from async. `serve_connection` and `prewarm` are
+left exactly as they are.
+
+**Disposition:** closed without a code change. Corpus/workload/device: 6 cold +
+19 warm DoT handshakes, `fah-diagprobe` on RB5009 veth3, CA present, 2026-09-16.
+Revisit only if DoT becomes latency-critical (Android Private DNS at scale) —
+the trigger and the invalid alternative are unchanged from A3 in the earlier
+audit.
+
+--- the read-only audit's original argument, kept for the record ---
 
 `crates/fah-dns/src/dot.rs:166-190`:
 
@@ -440,7 +533,72 @@ different question, and it does not bound per-datagram allocation.
 
 Why it was not run here: no oracle exists to run. Named rather than fixed.
 
-### 9 — LOW · `QueryType::Other` allocates per query, against the vocabulary's own reasoning
+### 9 — CLOSED, redesign accepted · `QueryType::Other` allocates per query, against the vocabulary's own reasoning
+
+**Validated and closed, 2026-09-16 — the redesign is accepted.** Both steps are
+done: measured, implemented, and confirmed on the RB5009.
+
+**Implementation.** `QueryType::Other(String)` becomes a fixed `Copy` enum —
+the ten CONTEXT.md §Record Type labels plus the rest of the `rrtype_bit` set
+(SVCB, CAA, DS, DNSKEY, NAPTR) as named variants, and `Other(u16)` carrying the
+raw wire code for anything else. `to_fah_query_type` maps each wire type to its
+variant with no allocation; `fah_rules::matcher::qtype_bit` and
+`fah_stats::bucket::qtype_index` become enum-to-index matches instead of string
+compares; the API renders an unknown type as its RFC 3597 `TYPE<n>` spelling.
+A drift guard (`every_named_query_type_carries_the_bit_its_rule_spelling_parses_to`)
+pins the enum's indices against `rrtype_bit`'s table so the two vocabularies
+cannot silently diverge.
+
+**Allocation equality — the authoritative measure, dev box.** `forward_alloc`
+gained three `RecordType::HTTPS` cases. Before the redesign HTTPS cost one more
+allocation than A on every path; after it:
+
+| cache-hit case | before | after |
+| -------------- | -----: | ----: |
+| A, inline name | 640 | 640 |
+| HTTPS, inline name | 704 | **640** |
+
+HTTPS cache-hit is now bit-for-bit equal to A (miss likewise, 1030 = 1031). The
++1 per query the finding named is gone, not reduced.
+
+**RB5009 / aarch64 functional validation.** The diag-timing probe on veth3
+processed A, AAAA, HTTPS (named), SVCB (named → OTHER bucket) and unknown type
+65534 (`Other(u16)`) without error or panic; a real `www.example.com HTTPS`
+answered `NOERROR`. Every `QueryType` arm runs on the device.
+
+**RB5009 controlled cache-hit experiment.** 50 names pre-warmed for both A and
+HTTPS, then six contiguous 5000-query phases against that **frozen** cache, so
+the only variable between an A phase and an HTTPS phase is the query type:
+
+| phase | CPU/q | dRSS | dCEST | hits/miss |
+| ----- | ----: | ---: | ----: | --------- |
+| A #1 | 91.0 µs | −372 KiB | 0 | 5000/0 |
+| HTTPS #1 | 75.8 µs | −1384 KiB | 0 | 5000/0 |
+| A #2 | 70.8 µs | −40 KiB | 0 | 5000/0 |
+| HTTPS #2 | 95.0 µs | −40 KiB | 0 | 5000/0 |
+| A #3 | 93.6 µs | −28 KiB | 0 | 5000/0 |
+| HTTPS #3 | 93.2 µs | −44 KiB | 0 | 5000/0 |
+
+Every phase pure hits, `dCEST = 0`, cache entries **7907 → 7907** — memory is
+not confounded by negative-cache fill. **A mean ≈ 85 µs/q, HTTPS ≈ 88 µs/q, with
+fully overlapping ranges (70–95).** No RSS growth attributable to the workload.
+
+**What the device can and cannot show.** The shipped probe has **no counting
+allocator** — that is a test-only harness — so the device cannot count
+allocations. Allocation equality (640 = 640) is therefore established by the
+dev-box oracle; the device establishes runtime equivalence (A and HTTPS
+indistinguishable in CPU and memory) and bounded memory (frozen cache, no
+growth). A ~1 µs qtype delta would sit below this device measurement's ~85 µs/q
+floor regardless, which is exactly why the oracle carries the +0 claim and the
+device carries the equivalence claim.
+
+**Verdict:** F9 fully validated and closed; the `QueryType` redesign is
+accepted. The corresponding code is in the working tree pending the clean-process
+gate and an explicit commit go.
+
+--- the read-only audit's original argument, kept for the record ---
+
+### 9-orig — LOW · `QueryType::Other` allocates per query, against the vocabulary's own reasoning
 
 `crates/fah-dns/src/qtype.rs:19`:
 
@@ -1096,12 +1254,12 @@ rewritten when one is fixed. Read status here, evidence there.
 | # | Action | Status | Why now |
 | - | ------ | ------ | -------- |
 | 1 | Apply Finding 1 — six `.unwrap_or_else(PoisonError::into_inner)` | **FIXED** `3ce7ec5` | Two-line change, no cost on any axis, removes a silent permanent failure mode the supervision tick cannot see |
-| 2 | **Measure Finding 2 on the RB5009, at `http_runtimes = 2`** | OPEN — needs the device | Promoted to HIGH on the cross-check; the question is whether a second dripper stalls unrelated proxy traffic, not the CPU ratio alone |
+| 2 | Measure Finding 2 on the RB5009, at `http_runtimes = 2` | **CLOSED — measured, no code change** | Up to 32 drippers (16× the domains) moved p95 not at all; the 16 KiB cap + hello_timeout + max_connections neutralise it. See Finding 2 |
 | 3 | Apply Finding 4 — drop the `key.clone()` at `pipeline.rs:459` | **FIXED** `c93e2d1` | One character shorter, one allocation fewer |
 | 4 | Apply Finding 5 — move the "no domain left" `error!` to the transition | **FIXED** `bb15de7` | Small, and it protects the log buffer that would explain the failure |
-| 5 | Add an `HTTPS`-type case to `forward_alloc` | **DONE** — this commit | Turned Finding 9 from an argument into a number, with no production change. **+1 allocation per query confirmed** on the cache-hit and miss paths; see Finding 9 |
+| 5 | Finding 9: measure, then redesign `QueryType` | **CLOSED — redesign accepted, validated** | `forward_alloc` HTTPS cases proved +1/query; the `Copy` `Other(u16)` redesign removes it (HTTPS cache-hit 704 → 640 = A); dev-box oracle + RB5009 controlled cache-hit experiment confirm. Code in the working tree pending the clean gate. See Finding 9 |
 | 6 | Raise `intercept_alloc`'s `BATCHES` to 6 | **FIXED** `f51a830` | Removed the one-batch-of-evidence problem in Finding 7 |
-| 7 | Measure Finding 3 with `diag-timing` | OPEN — needs the device | Second candidate for PERFORMANCE.md's recorded 1.389 ms DoT budget miss; `dispatch_wait_us` settles it |
+| 7 | Measure Finding 3 with `diag-timing` | **CLOSED — measured, no code change** | `dispatch_wait_us` ≈ 62 µs, ~4.5% of the 1.389 ms miss; the inline-cache fast path was rejected on the number, not deferred. See Finding 3 |
 | 8 | Add an oracle for the listener layer | OPEN | Closes the Finding 8 gap for `udp.rs`, `tcp.rs` and the F3 `splice` |
 | 9 | Add a >64 KiB TCP reply test | OPEN | Pins the `tcp.rs:222` invariant to a test instead of a comparison in another file |
 | 10 | Work the Finding 10 debt register down, one row at a time | ONGOING | The allocation-free invariant stands; §Measurements lists every surviving allocation, and each needs elimination or a measured justification. Items 3, 5 and 8 above are its first instalments |
@@ -1115,27 +1273,31 @@ test: a move versus a clone is enforced by the compiler, and asserting a log
 level needs a tracing capture this workspace does not have. Both gaps are
 named in their findings and both remain open.
 
-**PASS WITH DEFERRED FINDINGS** — as taken: 1 high (2: ClientHello rescan, on
-one of two threads carrying all proxy traffic, driven by any LAN device),
+**PASS WITH DEFERRED FINDINGS** — as taken: 1 high (2: ClientHello rescan —
+**measured on the RB5009 and closed, no code change**; up to 32 drippers moved
+p95 not at all, the 16 KiB cap neutralises the amplification),
 1 medium (1: poisoned cache shard kills a shard's keyspace permanently and
 invisibly — **fixed, `3ce7ec5`**), 6 low (3: `spawn_blocking` per DoT
-connection; 4: removable `CacheKey` clone — **fixed, `c93e2d1`**; 5:
+connection — **measured on the RB5009 and closed, no code change**;
+`dispatch_wait_us` ≈ 62 µs, the inline-cache fast path rejected on the number;
+4: removable `CacheKey` clone — **fixed, `c93e2d1`**; 5:
 unthrottled `error!` per connection — **fixed, `bb15de7`**; 6: two host copies
-per DoT connection; 9: `QueryType::Other` allocates per query — **measured,
-+1 per query on the cache-hit and miss paths**, and step 2 is now an owner
-decision; 10: the hot path does not yet satisfy PERFORMANCE.md's
+per DoT connection; 9: `QueryType::Other` allocates per query — **redesigned to a
+`Copy` `Other(u16)`, validated on the RB5009, accepted**; the +1/query is gone
+(HTTPS cache-hit 640 = A), code in the working tree pending the clean gate;
+10: the hot path does not yet satisfy PERFORMANCE.md's
 allocation-free invariant — performance debt, worked down per row),
 2 informational (7: oracle ceilings pinned at zero margin — **fixed,
 `f51a830`**; 8: listener layer has no oracle).
 
-**Four fixed, six open.** Fixed: 1, 4, 5, 7. Still open: 2 (high, deferred
-behind an RB5009 measurement), 3, 6, 8, 9, 10 — with 9 now measured rather than
-argued, so what is left of it is a decision. The verdict stays PASS WITH
-DEFERRED FINDINGS because it records the audit as taken; the fixes are tracked
-in §Remaining TODOs and in git, not by rewriting the findings.
+**Seven resolved, three open.** Fixed by a change: 1, 4, 5, 7. Closed by
+measurement with no change: 2, 3. Redesigned and validated, commit pending: 9.
+Still open: 6, 8, 10. The verdict stays PASS WITH DEFERRED FINDINGS because it
+records the audit as taken; the outcomes are tracked in §Remaining TODOs and in
+git, not by rewriting the findings.
 
-No finding blocks — Finding 2 is a browsing-availability lever, not a DNS
-outage, and the resolver keeps answering throughout.
+No finding blocks — the one HIGH and the DoT dispatch were both measured down to
+no action.
 
 **Numbers are stable, so §Findings no longer reads in severity order.** Findings
 2 and 9 were both raised on the documentation cross-check and kept their

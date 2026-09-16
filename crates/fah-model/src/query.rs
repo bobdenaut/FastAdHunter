@@ -7,11 +7,24 @@ use serde::{Deserialize, Serialize};
 ///
 /// This is FastAdHunter's own lightweight type, not a DNS wire type — those
 /// belong to `hickory-proto` and are used by `fah-dns` only.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum QueryType {
     A,
     Aaaa,
-    Other(String),
+    Https,
+    Svcb,
+    Cname,
+    Mx,
+    Txt,
+    Ns,
+    Ptr,
+    Srv,
+    Soa,
+    Caa,
+    Ds,
+    Dnskey,
+    Naptr,
+    Other(u16),
 }
 
 /// One DNS question received from a client: domain, record type, client
@@ -59,9 +72,35 @@ mod tests {
 
     #[test]
     fn query_type_other_serde_roundtrip() {
-        let qtype = QueryType::Other("TXT".to_string());
+        let qtype = QueryType::Other(65534);
         let json = serde_json::to_string(&qtype).unwrap();
         let back: QueryType = serde_json::from_str(&json).unwrap();
         assert_eq!(qtype, back);
+    }
+
+    #[test]
+    fn every_named_query_type_survives_serde() {
+        let named = [
+            QueryType::A,
+            QueryType::Aaaa,
+            QueryType::Https,
+            QueryType::Svcb,
+            QueryType::Cname,
+            QueryType::Mx,
+            QueryType::Txt,
+            QueryType::Ns,
+            QueryType::Ptr,
+            QueryType::Srv,
+            QueryType::Soa,
+            QueryType::Caa,
+            QueryType::Ds,
+            QueryType::Dnskey,
+            QueryType::Naptr,
+        ];
+        for qtype in named {
+            let json = serde_json::to_string(&qtype).unwrap();
+            let back: QueryType = serde_json::from_str(&json).unwrap();
+            assert_eq!(qtype, back);
+        }
     }
 }
