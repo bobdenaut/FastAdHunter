@@ -1,5 +1,5 @@
 [engine]
-mode = "dns+http"
+mode = "dns+http+https"
 
 [runtime]
 http_runtimes = 2
@@ -11,6 +11,9 @@ udp_max_inflight = 0
 [dns.listen]
 address = "::"
 port = 53
+dot_enabled = true
+dot_port = 853
+doh_enabled = true
 
 [dns.blocking]
 mode = "null_ip"
@@ -55,6 +58,18 @@ header_timeout_ms = 10000
 [http.listen]
 address = "::"
 port = 8080
+
+[https]
+max_connections = 1024
+hello_timeout_ms = 10000
+idle_timeout_ms = 60000
+
+[https.listen]
+address = "::"
+port = 8444
+
+[https.sni]
+no_sni = "block"
 
 [egress]
 allow_destinations = []
