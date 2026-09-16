@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { addressKey, compareAddressesAsc, isV6 } from './address';
+import { addressKey, compareKeys, isV6 } from './address';
 
 /**
  * The two properties the Clients table's order depends on: an address sorts
@@ -7,7 +7,11 @@ import { addressKey, compareAddressesAsc, isV6 } from './address';
  * interleave.
  */
 describe('address ordering', () => {
-  const asc = (ips: string[]) => [...ips].sort(compareAddressesAsc);
+  const asc = (ips: string[]) =>
+    [...ips]
+      .map((ip) => ({ ip, key: addressKey(ip) }))
+      .sort((left, right) => compareKeys(left.key, right.key))
+      .map(({ ip }) => ip);
 
   it('tells the families apart', () => {
     expect(isV6('192.168.10.1')).toBe(false);

@@ -44,15 +44,20 @@ export function addressKey(ip: string): string {
 }
 
 /**
- * The table's own order: ascending by [`addressKey`], compared as plain code
- * units rather than `localeCompare` — the keys are ASCII by construction and a
- * locale has no business in their order. It is also the tie-break when the
- * table is ordered by query count, so equal counts keep a stable place.
+ * The table's own order: two [`addressKey`] results ascending, compared as
+ * plain code units rather than `localeCompare` — the keys are ASCII by
+ * construction and a locale has no business in their order. It is also the
+ * tie-break under every other column, ascending whichever way that column
+ * points, so equal counts keep a stable place.
+ *
+ * **Keys, not addresses.** A comparator that built its own would build one per
+ * comparison, 2·n·log₂n of them, and an IPv6 key is eight `padStart`s and a
+ * `join`. The table builds n once and sorts those — measured at 4096 IPv6
+ * rows, 48.4 ms became 2.9 ms
+ * (`docs/code-review/phase5/adhoc-clients-column-sort-review.md`).
  */
-export function compareAddressesAsc(left: string, right: string): number {
-  const leftKey = addressKey(left);
-  const rightKey = addressKey(right);
-  if (leftKey < rightKey) return -1;
-  if (leftKey > rightKey) return 1;
+export function compareKeys(left: string, right: string): number {
+  if (left < right) return -1;
+  if (left > right) return 1;
   return 0;
 }

@@ -244,6 +244,19 @@ describe('the Clients table grid', () => {
     expect(columns[columns.length - 1]).toBe('44px');
   });
 
+  it('holds the queries header at 100px, its label plus the sort caret', () => {
+    const columns = tracks
+      .replace(/minmax\([^)]*\)/g, 'T')
+      .split(' ')
+      .filter((token) => token !== '');
+    expect(columns[3]).toBe('100px');
+  });
+
+  it('reserves the caret box on idle headers so no label moves when clicked', () => {
+    expect(declared('.sort-caret.is-idle', 'display')).toBeNull();
+    expect(declaration('.sort-caret.is-idle', 'opacity')).toBe('0.35');
+  });
+
   it('gives the header and the rows one grid rather than two that agree', () => {
     expect(
       declaration('.client-head,\n.client-row', 'grid-template-columns'),

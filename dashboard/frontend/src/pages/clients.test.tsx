@@ -7,6 +7,22 @@ import type { Client, PoliciesResponse } from '../api/types';
 import type { Route } from '../router/routes';
 import Clients from './clients';
 
+const { keyBuilds } = vi.hoisted(() => ({ keyBuilds: { count: 0 } }));
+
+vi.mock('./clients/address', async () => {
+  const actual =
+    await vi.importActual<typeof import('./clients/address')>(
+      './clients/address',
+    );
+  return {
+    ...actual,
+    addressKey: (ip: string) => {
+      keyBuilds.count += 1;
+      return actual.addressKey(ip);
+    },
+  };
+});
+
 /**
  * The acceptance criterion is "loading Clients issues one request for the
  * list, asserted by counting requests, not by inspection" — plus D1's second
@@ -206,7 +222,9 @@ describe('what loading the page costs', () => {
 
   it('opens on IPv4 and re-reads with `?family=` when a chip is picked', async () => {
     const dom = await mount();
-    const group = dom.querySelector('[aria-label="Filter by address family"]');
+    const group = dom.querySelector(
+      '.ch-right [aria-label="Filter by address family"]',
+    );
     const chip = (label: string) =>
       [...(group?.querySelectorAll('button') ?? [])].find(
         (button) => button.textContent === label,
@@ -224,6 +242,23 @@ describe('what loading the page costs', () => {
       ['GET', '/api/v1/clients?family=v6'],
       ['GET', '/api/v1/policies'],
       ['GET', '/api/v1/clients'],
+      ['GET', '/api/v1/policies'],
+    ]);
+  });
+
+  it('repeats the family filter in the title, where the phone title bar drops it', async () => {
+    const dom = await mount();
+    const mobile = dom.querySelector('.ch .chips-mobile');
+    const chip = (label: string) =>
+      [...(mobile?.querySelectorAll('button') ?? [])].find(
+        (button) => button.textContent === label,
+      );
+    expect(mobile?.querySelectorAll('.chip')).toHaveLength(3);
+    expect(chip('IPv4')?.getAttribute('aria-pressed')).toBe('true');
+
+    await click(chip('IPv6'));
+    expect(calls().slice(2)).toEqual([
+      ['GET', '/api/v1/clients?family=v6'],
       ['GET', '/api/v1/policies'],
     ]);
   });
@@ -262,6 +297,37 @@ describe('what loading the page costs', () => {
     expect(calls()).toHaveLength(2);
   });
 
+  it('builds one address key per row on the read and not one more per click', async () => {
+    keyBuilds.count = 0;
+    const dom = await mount();
+    const header = (cell: string) =>
+      dom.querySelector<HTMLElement>(`.client-head .${cell}.sort-head`);
+    expect(keyBuilds.count).toBe(CLIENTS.length);
+
+    await click(header('c-queries'));
+    await click(header('c-queries'));
+    await click(header('c-share'));
+    await click(header('c-blocked'));
+    await click(header('c-ip'));
+    expect(keyBuilds.count).toBe(CLIENTS.length);
+  });
+
+  it('carets every sortable header, the idle ones showing what a click opens', async () => {
+    const dom = await mount();
+    expect(
+      [...dom.querySelectorAll('.client-head .sort-head')].map((head) => ({
+        cell: head.className.split(' ')[0],
+        glyph: head.querySelector('.sort-caret')?.textContent,
+        idle: head.querySelector('.sort-caret')?.classList.contains('is-idle'),
+      })),
+    ).toEqual([
+      { cell: 'c-ip', glyph: '▲', idle: false },
+      { cell: 'c-queries', glyph: '▼', idle: true },
+      { cell: 'c-blocked', glyph: '▼', idle: true },
+      { cell: 'c-share', glyph: '▼', idle: true },
+    ]);
+  });
+
   it('flips the direction when the column already sorted is clicked again', async () => {
     const dom = await mount();
     const header = (cell: string) =>
@@ -270,8 +336,11 @@ describe('what loading the page costs', () => {
       rows(dom).map((row) => row.querySelector('.c-ip')?.textContent?.trim());
     const caret = (cell: string) =>
       header(cell)?.querySelector('.sort-caret')?.textContent;
+    const idle = (cell: string) =>
+      header(cell)?.querySelector('.sort-caret')?.classList.contains('is-idle');
 
     expect(caret('c-ip')).toBe('▲');
+    expect(idle('c-ip')).toBe(false);
     await click(header('c-ip'));
     expect(caret('c-ip')).toBe('▼');
     expect(addresses()).toEqual([
@@ -284,7 +353,9 @@ describe('what loading the page costs', () => {
 
     await click(header('c-queries'));
     expect(caret('c-queries')).toBe('▼');
-    expect(caret('c-ip')).toBeUndefined();
+    expect(idle('c-queries')).toBe(false);
+    expect(caret('c-ip')).toBe('▲');
+    expect(idle('c-ip')).toBe(true);
 
     await click(header('c-queries'));
     expect(caret('c-queries')).toBe('▲');

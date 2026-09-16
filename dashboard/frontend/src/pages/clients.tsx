@@ -17,12 +17,13 @@ import { Card } from '../components/card';
 import { Chip } from '../components/chip';
 import { EmptyState } from '../components/empty-state';
 import { ErrorState } from '../components/error-state';
+import { blockedPercent } from '../derive';
 import { nowMs } from '../lifecycle/timers';
 import { classifyAssignment } from '../policy/assignment';
 import type { PageProps } from '../router/routes';
 import { ContentHeader } from '../shell/content-header';
 
-import { compareAddressesAsc } from './clients/address';
+import { addressKey, compareKeys } from './clients/address';
 import { AssignDialog } from './clients/assign-dialog';
 import { ClientRow } from './clients/client-row';
 import {
@@ -31,7 +32,6 @@ import {
   WhatThisIsNot,
 } from './clients/legend-card';
 import { RenameField } from './clients/rename-field';
-import { blockedShare } from './clients/share';
 
 /**
  * Every address that has actually asked something, and the policy in force for
@@ -87,7 +87,7 @@ const SORT_KEYS: Record<
 > = {
   queries: (client) => client.queries_24h,
   blocked: (client) => client.blocked_24h,
-  share: blockedShare,
+  share: (client) => blockedPercent(client.queries_24h, client.blocked_24h),
 };
 
 const HEAD: readonly {
@@ -117,15 +117,26 @@ function clientNoun(family: Family, count: number): string {
   return count === 1 ? noun : `${noun}s`;
 }
 
-function SortCaret({ direction }: { direction: SortDirection }) {
+function SortCaret({
+  direction,
+  active,
+}: {
+  direction: SortDirection;
+  active: boolean;
+}) {
   return (
     <>
-      <span class="sort-caret" aria-hidden="true">
+      <span
+        class={active ? 'sort-caret' : 'sort-caret is-idle'}
+        aria-hidden="true"
+      >
         {direction === 'asc' ? '▲' : '▼'}
       </span>
-      <span class="visually-hidden">
-        {direction === 'asc' ? ', ascending' : ', descending'}
-      </span>
+      {active && (
+        <span class="visually-hidden">
+          {direction === 'asc' ? ', ascending' : ', descending'}
+        </span>
+      )}
     </>
   );
 }
@@ -264,8 +275,13 @@ export function Clients(_props: PageProps) {
    * clicked — **ascending by address** to open with, on the numeric key rather
    * than the string ([`addressKey`](./clients/address)). The three number
    * columns sort on the figure the row draws, share included
-   * ([`blockedShare`](./clients/share) is the one that draws it), and every
-   * header toggles its own direction.
+   * ([`blockedPercent`](../derive) is the one that draws it), and every header
+   * toggles its own direction.
+   *
+   * **The address key is built once per row, in `keyed` above.** It is memoised
+   * on the read rather than on the sort, so clicking a header re-sorts without
+   * rebuilding a single key; the comparator only ever compares two strings
+   * ([`compareKeys`](./clients/address) says what that cost).
    *
    * **The tie-break is always the address, ascending, whichever way the
    * primary key points.** Two clients on the same count would otherwise swap
@@ -275,26 +291,47 @@ export function Clients(_props: PageProps) {
    * ([`client_registry.rs`](../../../crates/fah-stats/src/client_registry.rs)
    * keys on the address, not the device).
    */
+  const keyed = useMemo(
+    () => items.map((client) => ({ client, key: addressKey(client.ip) })),
+    [items],
+  );
+
   const visible = useMemo(() => {
     const needle = search.trim().toLowerCase();
-    return items
+    const count = sort.column === 'address' ? null : SORT_KEYS[sort.column];
+    const descending = sort.direction === 'desc';
+    return keyed
       .filter(
-        (client) =>
+        ({ client }) =>
           needle === '' ||
           client.ip.toLowerCase().includes(needle) ||
           (client.name ?? '').toLowerCase().includes(needle),
       )
       .sort((left, right) => {
         const primary =
-          sort.column === 'address'
-            ? compareAddressesAsc(left.ip, right.ip)
-            : SORT_KEYS[sort.column](left) - SORT_KEYS[sort.column](right);
-        const directed = sort.direction === 'desc' ? -primary : primary;
-        return directed || compareAddressesAsc(left.ip, right.ip);
-      });
-  }, [items, search, sort]);
+          count === null
+            ? compareKeys(left.key, right.key)
+            : count(left.client) - count(right.client);
+        const directed = descending ? -primary : primary;
+        return directed || compareKeys(left.key, right.key);
+      })
+      .map(({ client }) => client);
+  }, [keyed, search, sort]);
 
   const assigning = items.find((client) => client.ip === assigningIp) ?? null;
+
+  const familyChips = (
+    <span class="chips" role="group" aria-label="Filter by address family">
+      {FAMILIES.map(({ value, label }) => (
+        <Chip
+          key={value}
+          label={label}
+          on={family === value}
+          onPick={() => setFamily(value)}
+        />
+      ))}
+    </span>
+  );
 
   return (
     <>
@@ -317,19 +354,15 @@ export function Clients(_props: PageProps) {
         )}
 
         <Card
-          title="Observed clients"
+          title={
+            <>
+              Observed clients
+              <span class="chips-mobile">{familyChips}</span>
+            </>
+          }
           tools={
             <>
-              <span class="chips" role="group" aria-label="Filter by address family">
-                {FAMILIES.map(({ value, label }) => (
-                  <Chip
-                    key={value}
-                    label={label}
-                    on={family === value}
-                    onPick={() => setFamily(value)}
-                  />
-                ))}
-              </span>
+              {familyChips}
               <input
                 type="search"
                 class="field-input search-input"
@@ -374,9 +407,14 @@ export function Clients(_props: PageProps) {
                         onClick={() => sortBy(column)}
                       >
                         {label}
-                        {sort.column === column && (
-                          <SortCaret direction={sort.direction} />
-                        )}
+                        <SortCaret
+                          active={sort.column === column}
+                          direction={
+                            sort.column === column
+                              ? sort.direction
+                              : OPENING_DIRECTION[column]
+                          }
+                        />
                       </button>
                     ),
                   )}

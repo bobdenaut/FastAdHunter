@@ -2222,13 +2222,19 @@ table.t tbody tr:hover td {
      The share track's floor is its own header: BLOCKED SHARE, uppercase 12px
      with 0.06em tracking, runs ~108px and at 92px overran into Last seen.
 
+     The queries track is 100px, not the 88px it was before the headers became
+     sort controls. QUERIES 24 H measures 85.1px and the caret box adds 12.5px:
+     at 88px the label started 9.6px left of its track and ate the whole 10px
+     gutter. BLOCKED (69.0px of 74px) and BLOCKED SHARE (113.7px of 120px) fit
+     as they are. Measured at 1400px, Chrome, system-ui.
+
      Policy grows at 1fr, not 1.5fr, so the spare width goes to Name. Its floor
      is the one-line chip-and-note, measured at 197px ("default" beside
      "inherited · no assignment"): at 196px the note dropped under the chip and
      every row grew by a line. */
   grid-template-columns:
     minmax(268px, 1.1fr) minmax(96px, 1.7fr) minmax(204px, 1fr)
-    88px 74px 120px 76px 44px;
+    100px 74px 120px 76px 44px;
   align-items: start;
   min-width: min-content;
 }
@@ -2285,8 +2291,8 @@ table.t tbody tr:hover td {
 /* The sortable headers are the control — there is no sort button anywhere on
    this page. They must read as the header row they replace, so the element is
    a button only for the keyboard and the screen reader: every piece of button
-   chrome is taken back off, and the caret is the whole visual difference
-   between the active column and the other one. */
+   chrome is taken back off, and the caret carries the whole visual difference
+   between the active column and the other three. */
 .sort-head {
   font: inherit;
   color: inherit;
@@ -2314,9 +2320,18 @@ table.t tbody tr:hover td {
   color: var(--accent);
 }
 
+/* Every sortable header draws a caret, so the box is reserved and the label
+   does not jump sideways when a column is activated. The idle ones are the
+   affordance: a header that carries no caret at all reads as the static label
+   it used to be, and a phone has no hover to discover it with. Idle shows the
+   direction the first click would open in, not the one in force. */
 .sort-caret {
   font-size: 9px;
   line-height: 1;
+}
+
+.sort-caret.is-idle {
+  opacity: 0.35;
 }
 
 .c-seen {
@@ -2426,8 +2441,47 @@ table.t tbody tr:hover td {
   /* `MobileClients.dc.html`: one card per client — name and address, the chip
      row, one stats row, last-seen, and the two actions when it is open. The
      same cells, re-laid; no second component tree and no viewport listener. */
+  /* The header row is also the sort control, so the phone card list does not
+     sort — it keeps whatever order it was given, address ascending on a fresh
+     load. Eight columns of header do not survive this width, and the card list
+     draws no column to click. */
   .client-head {
     display: none;
+  }
+
+  /* The family filter is the page's only re-read and `.ch .chips` is
+     display:none at this width, so without a second placement the phone cannot
+     switch family at all. It goes on the title's own row rather than above the
+     cards: the search input already takes the line below, and a filter the
+     reader has to scroll past the first card to find is a filter they do not
+     use. Same control at two placements, exactly one of them rendered. */
+  .card:has(.clients-table) .ch > span:first-child {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex: 1 1 auto;
+  }
+
+  /* Right-aligned, where the same control sits on the desktop title bar and
+     where the thumb is. `margin-left: auto` rather than `space-between` so the
+     title keeps its place if the filter ever grows a fourth chip. */
+  .card:has(.clients-table) .chips-mobile {
+    display: flex;
+    margin-bottom: 0;
+    margin-left: auto;
+  }
+
+  /* This placement is inside `.ch`, so the rule that hides the chart range
+     pickers up there hides it too. It is the one control that has to stay. */
+  .card:has(.clients-table) .ch .chips-mobile .chips {
+    display: flex;
+  }
+
+  /* `.chips-mobile .chip` is `flex: 1` for the full-width placement above a
+     chart, and a 0 basis in a title row collapses all three to nothing. Here
+     they size to their own words and keep the 44px height. */
+  .card:has(.clients-table) .chips-mobile .chip {
+    flex: 0 0 auto;
   }
 
   .clients-scroll {

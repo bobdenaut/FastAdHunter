@@ -1,11 +1,10 @@
 import type { ComponentChildren } from 'preact';
 import type { Client } from '../../api/types';
 import { PolicyChip } from '../../components/policy-chip';
+import { blockedPercent } from '../../derive';
 import type { Classification } from '../../policy/assignment';
 import { Icon } from '../../shell/icon';
 import { lastSeenLabel } from '../../time';
-
-import { blockedShare } from './share';
 
 /**
  * One client, one DOM, both widths. Desktop lays the cells as
@@ -41,7 +40,7 @@ export function ClientRow({
   /** The expanded region: the two actions, or the rename field. */
   children?: ComponentChildren;
 }) {
-  const share = blockedShare(client);
+  const share = blockedPercent(client.queries_24h, client.blocked_24h);
 
   return (
     <div class={open ? 'client-row is-open' : 'client-row'}>

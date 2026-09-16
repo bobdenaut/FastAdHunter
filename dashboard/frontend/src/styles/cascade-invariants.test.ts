@@ -37,6 +37,25 @@ describe('the blocked-share fills', () => {
   });
 });
 
+describe('the Clients family filter', () => {
+  it('is rendered twice and hidden once, so `.ch .chips` cannot take the page’s only re-read off the phone', () => {
+    expect(BARE).toMatch(/\.ch \.chips \{\s*display: none;/);
+    expect(BARE).toMatch(/\n\.chips-mobile \{\s*display: none;/);
+    expect(BARE).toMatch(
+      /\.card:has\(\.clients-table\) \.chips-mobile \{\s*display: flex;/,
+    );
+    expect(BARE).toMatch(
+      /\.card:has\(\.clients-table\) \.ch \.chips-mobile \.chips \{\s*display: flex;/,
+    );
+  });
+
+  it('sizes the phone chips from their own words, since `flex: 1` is a zero basis that collapses them in a title row', () => {
+    expect(BARE).toMatch(
+      /\.card:has\(\.clients-table\) \.chips-mobile \.chip \{\s*flex: 0 0 auto;/,
+    );
+  });
+});
+
 describe('touch targets', () => {
   /**
    * The 44 px rules live in the `≤ 767 px` blocks, so a tablet between 768 and
