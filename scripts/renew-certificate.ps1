@@ -4,10 +4,12 @@
     deploys it to the FastAdHunter container on bobdenaut.
 
 .DESCRIPTION
-    Written for Windows PowerShell 5.1 and Task Scheduler. Safe to run monthly:
-    lego decides for itself whether the certificate is due (default window is a
-    third of the lifetime, so 30 days on a 90-day certificate) and no-ops
-    otherwise.
+    Written for Windows PowerShell 5.1 and Task Scheduler. Safe to run on any
+    cadence: lego decides for itself whether the certificate is due (default
+    window is a third of the lifetime, so 30 days on a 90-day certificate) and
+    no-ops otherwise. Schedule it weekly - monthly can leave as little as a week
+    of margin depending on where the window falls. See
+    docs/public-certificate.md.
 
     The default run never touches the router. Deployment is opt-in via -Deploy
     because it stops and starts the household's only DNS resolver.

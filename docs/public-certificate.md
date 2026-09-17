@@ -476,8 +476,9 @@ That date is not something to track by hand. lego 5 has no separate `renew`
 subcommand — `run` is "get or renew" and decides for itself, defaulting to
 one third of the certificate's lifetime remaining, which is 30 days on a 90-day
 certificate and lands exactly on 2026-11-08. `--renew-days N` overrides it.
-Running `run` monthly is therefore safe: outside the window it is a no-op that
-costs one ACME directory fetch.
+Running `run` on a schedule is therefore safe: outside the window it is a no-op
+that costs one ACME directory fetch. Run it weekly rather than monthly - see
+§Setting up the scheduled tasks for why the cadence changes the margin.
 
 One flag matters for automation. lego adds a **random sleep before a renewal**
 and its own help recommends against `--no-random-sleep` for automated runs, so a
@@ -649,7 +650,7 @@ visible without opening a log.
 **The default run never touches the router.** Deployment is opt-in precisely
 because it restarts the household's resolver.
 
-Two tasks are enough — daily warning, monthly renewal. Everything below was
+Two tasks are enough — daily warning, weekly renewal. Everything below was
 created, run and deleted on this box on 2026-09-17, so the defaults quoted are
 measured rather than assumed.
 
@@ -661,13 +662,33 @@ $sc = 'E:\FastAdHunter\scripts\renew-certificate.ps1'
 schtasks /Create /TN "FAH cert check" /SC DAILY /ST 08:00 /F `
   /TR "$ps -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$sc`" -CheckOnly"
 
-# Monthly, 1st at 04:00 - renew and deploy if due; a no-op otherwise
-schtasks /Create /TN "FAH cert renew" /SC MONTHLY /D 1 /ST 04:00 /F `
+# Weekly, Sunday at 04:00 - renew and deploy if due; a no-op otherwise
+schtasks /Create /TN "FAH cert renew" /SC WEEKLY /D SUN /ST 04:00 /F `
   /TR "$ps -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$sc`" -Deploy"
 ```
 
-Monthly is safe because lego decides: outside the window the run costs one ACME
-directory fetch and exits having changed nothing.
+Any cadence is safe because lego decides: outside the window the run costs one
+ACME directory fetch and exits having changed nothing.
+
+**Weekly, not monthly, and the reason is arithmetic rather than taste.** The
+renewal window opens 30 days before expiry, which for the current pair is
+2026-11-08. A task running on the 1st of each month meets that as follows:
+
+| Run | Outcome | Margin if it renews |
+| --- | ------- | ------------------- |
+| 2026-11-01 | skips — 7 days too early | — |
+| 2026-12-01 | renews | **7 days** |
+| *weekly, 2026-11-09* | renews | **29 days** |
+
+Monthly leaves a week to absorb an empty token, a Cloudflare hiccup or a
+rate-limit lockout, and the next attempt after a failure is a month away. Weekly
+costs four directory fetches a month and leaves four times the runway. The
+`-CheckOnly` task is an independent nudge either way: it starts returning `2`
+the day the window opens.
+
+04:00 is for the **restart**, not for lego. The renewal itself is
+time-of-day-agnostic; what wants an unsociable hour is the container coming back,
+because it takes the household off DNS while it does.
 
 `-WindowStyle Hidden` keeps a console from flashing up every morning. Neither
 task needs elevation — the script writes only inside the repo and talks over the
@@ -680,7 +701,7 @@ Measured on the tasks created above. Fix them or know you have accepted them.
 | Setting | schtasks default | Why it matters |
 | ------- | ---------------- | -------------- |
 | `LogonType` | **`Interactive`** — "Interactive only" | The task does not run unless that user is logged on. A laptop sitting at the lock screen is fine; one that is logged out is not. |
-| `StartWhenAvailable` | **`False`** | A missed run is **not** made up. If the machine is off at 04:00 on the 1st, the monthly renewal simply never happens that month — silently. This is the one that actually loses you a certificate. |
+| `StartWhenAvailable` | **`False`** | A missed run is **not** made up. If the machine is off at 04:00 on a Sunday, that week's renewal attempt simply never happens — silently. Weekly means the next attempt is seven days away rather than thirty, which softens this, but it does not remove it. This is the one that actually loses you a certificate. |
 | `ExecutionTimeLimit` | `PT72H` (3 days) | Already ample. lego's random pre-renewal sleep is nowhere near this, so nothing needs changing — noted only because it is the setting people reach for first. |
 
 `schtasks` cannot set `StartWhenAvailable`; use the scheduler cmdlets:
