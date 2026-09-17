@@ -207,7 +207,7 @@ what API.md:911 and CONFIGURATION.md:386 promise.
 | `cargo fmt --all -- --check` | clean (fix, and re-run in the fix review) |
 | `cargo clippy --workspace --all-targets --all-features -- -D warnings` | clean (one `sort_unstable_by_key` lint fixed on the way; re-run clean) |
 | `cargo test -p fah-api -p fah-rules -p fah-stats -p fah-model` | 149 + 139 + 2, 253 + 1 + 2 + 9 + 10 + 1 + 7, 80, 63 — all passed, 0 failed |
-| `cargo test --all-features --workspace` (fix review) | every binary `ok`, 0 failed, 3 ignored (pre-existing), exit 0 |
+| `cargo test --all-features --workspace` (fix review) | 1 662 passed / 0 failed / 12 ignored, 62 suites, exit 0 — a first count through the `rtk` output filter read 3 ignored; the filter drops whole `test result:` lines |
 | Red-before-fix | both negative tests fail on the old code by construction: the rooted path was `201`, the empty newest file reset the cursor to `None` |
 
 ## Files reviewed
