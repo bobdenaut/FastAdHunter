@@ -2040,6 +2040,8 @@ async fn a_traversal_shaped_id_or_path_is_rejected_at_the_boundary() {
         json!({"url": "https://example.org/l.txt", "id": "../../config/apikey"}),
         json!({"url": "https://example.org/l.txt", "id": "UPPER"}),
         json!({"path": "../outside.txt"}),
+        json!({"path": "lists/../../outside.txt"}),
+        json!({"path": "/config/auth-hash"}),
     ] {
         let response = harness
             .client
@@ -2059,6 +2061,26 @@ async fn a_traversal_shaped_id_or_path_is_rejected_at_the_boundary() {
         json!([]),
         "nothing was persisted"
     );
+}
+
+#[tokio::test]
+async fn a_rooted_path_inside_the_data_dir_is_accepted() {
+    let harness = start().await;
+    let file = harness.data_dir.path().join("srcs").join("local.txt");
+    std::fs::create_dir_all(file.parent().unwrap()).unwrap();
+    std::fs::write(&file, "ads.example.com\n").unwrap();
+
+    let response = harness
+        .client
+        .post(harness.url("/api/v1/lists"))
+        .bearer_auth(&harness.key)
+        .json(&json!({"path": file.to_str().unwrap(), "id": "local"}))
+        .send()
+        .await
+        .unwrap();
+    let status = response.status();
+    let body: Value = response.json().await.unwrap();
+    assert_eq!(status, 201, "{body}");
 }
 
 #[tokio::test]

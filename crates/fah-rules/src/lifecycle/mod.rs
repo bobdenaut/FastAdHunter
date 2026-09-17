@@ -435,6 +435,10 @@ enum CommitOutcome {
 }
 
 impl ListManager {
+    pub fn data_dir(&self) -> &std::path::Path {
+        &self.data_dir
+    }
+
     /// Builds a manager whose list downloads use the *system* resolver.
     ///
     /// Correct for tests, benches and any host with a working

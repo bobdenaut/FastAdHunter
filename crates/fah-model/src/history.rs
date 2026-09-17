@@ -24,6 +24,7 @@ pub struct HourRollup {
     /// `SRV`, `CNAME`, `OTHER`); zero buckets are omitted. `OTHER` lumps every
     /// record type outside the named set — a fixed-size counter on the hot
     /// path can't hold an unbounded set of type strings (hard rule 4).
+    #[serde(default)]
     pub per_type: BTreeMap<String, u64>,
 }
 

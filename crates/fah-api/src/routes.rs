@@ -580,12 +580,15 @@ async fn create_list(
     // hardening, not an auth boundary — but traversal must die here, before
     // any `Path::join`.
     if let Some(path) = body.path.as_deref() {
-        if std::path::Path::new(path)
+        use std::path::Component::{ParentDir, Prefix, RootDir};
+        let candidate = std::path::Path::new(path);
+        let traverses = candidate.components().any(|part| matches!(part, ParentDir));
+        let rooted = candidate
             .components()
-            .any(|part| matches!(part, std::path::Component::ParentDir))
-        {
+            .any(|part| matches!(part, RootDir | Prefix(_)));
+        if traverses || (rooted && !candidate.starts_with(state.rules.data_dir())) {
             return Err(ApiError::ValidationFailed(
-                "path must not contain '..'".to_string(),
+                "path must stay inside the data dir and must not contain '..'".to_string(),
             ));
         }
     }

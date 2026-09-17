@@ -55,13 +55,9 @@ impl RollupWriter {
         }
     }
 
-    /// Restores the cursors from the files already on disk so a restart neither
-    /// re-appends a persisted hour nor re-flushes a persisted day. Reads only
-    /// the newest rollup file (hours are appended ascending, so the global max
-    /// hour lives there) and the newest top-file's day.
     pub(crate) async fn boot(&mut self) -> io::Result<()> {
         fs::create_dir_all(&self.dir).await?;
-        let mut newest_rollup: Option<(u64, PathBuf)> = None;
+        let mut rollups: Vec<(u64, PathBuf)> = Vec::new();
         let mut max_top_day: Option<u64> = None;
 
         let mut read = fs::read_dir(&self.dir).await?;
@@ -73,9 +69,7 @@ impl RollupWriter {
                 .and_then(|s| s.strip_suffix(".jsonl"))
                 .and_then(parse_day)
             {
-                if newest_rollup.as_ref().is_none_or(|(d, _)| day > *d) {
-                    newest_rollup = Some((day, entry.path()));
-                }
+                rollups.push((day, entry.path()));
             } else if let Some(day) = name
                 .strip_prefix("top-")
                 .and_then(|s| s.strip_suffix(".json"))
@@ -85,13 +79,20 @@ impl RollupWriter {
             }
         }
 
-        if let Some((_, path)) = newest_rollup {
-            if let Ok(text) = fs::read_to_string(&path).await {
-                self.last_hour_written = text
-                    .lines()
-                    .filter_map(|line| serde_json::from_str::<HourRollup>(line).ok())
-                    .map(|rollup| rollup.hour_epoch)
-                    .max();
+        rollups.sort_unstable_by_key(|(day, _)| std::cmp::Reverse(*day));
+        self.last_hour_written = None;
+        for (_, path) in &rollups {
+            let Ok(text) = fs::read_to_string(path).await else {
+                continue;
+            };
+            let newest_hour = text
+                .lines()
+                .filter_map(|line| serde_json::from_str::<HourRollup>(line).ok())
+                .map(|rollup| rollup.hour_epoch)
+                .max();
+            if newest_hour.is_some() {
+                self.last_hour_written = newest_hour;
+                break;
             }
         }
         self.last_day_flushed = max_top_day;
@@ -331,6 +332,66 @@ mod tests {
         )
         .await;
         assert_eq!(lines.len(), 2);
+    }
+
+    #[tokio::test]
+    async fn boot_walks_past_an_empty_newest_day_file_to_the_last_written_hour() {
+        let dir = tempfile::tempdir().unwrap();
+        let base = 818 * HOURS_PER_DAY;
+        {
+            let mut writer = RollupWriter::new(dir.path().to_path_buf(), retention(90));
+            writer.boot().await.unwrap();
+            writer
+                .append_hours(&[hour_rollup(base + 22, 10), hour_rollup(base + 23, 20)])
+                .await
+                .unwrap();
+        }
+        fs::write(
+            dir.path()
+                .join(format!("rollup-{}.jsonl", date_string(819))),
+            "",
+        )
+        .await
+        .unwrap();
+
+        let mut restarted = RollupWriter::new(dir.path().to_path_buf(), retention(90));
+        restarted.boot().await.unwrap();
+        assert_eq!(restarted.last_hour_written, Some(base + 23));
+
+        restarted
+            .append_hours(&[hour_rollup(base + 22, 10), hour_rollup(base + 23, 20)])
+            .await
+            .unwrap();
+        let lines = read_lines(
+            &dir.path()
+                .join(format!("rollup-{}.jsonl", date_string(818))),
+        )
+        .await;
+        assert_eq!(
+            lines.len(),
+            2,
+            "an empty newest file must not reset the cursor"
+        );
+    }
+
+    #[tokio::test]
+    async fn boot_reads_a_row_that_carries_no_per_type() {
+        let dir = tempfile::tempdir().unwrap();
+        let base = 818 * HOURS_PER_DAY;
+        fs::write(
+            dir.path()
+                .join(format!("rollup-{}.jsonl", date_string(818))),
+            format!(
+                "{{\"hour_epoch\":{},\"queries\":1,\"blocked\":0,\"cache_hits\":0}}\n",
+                base + 5
+            ),
+        )
+        .await
+        .unwrap();
+
+        let mut writer = RollupWriter::new(dir.path().to_path_buf(), retention(90));
+        writer.boot().await.unwrap();
+        assert_eq!(writer.last_hour_written, Some(base + 5));
     }
 
     #[tokio::test]
