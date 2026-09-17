@@ -783,9 +783,10 @@ export interface InterceptionDocument {
 /* --------------------------------------------------------------- rule tester */
 
 /**
- * `qtype` is anything the resolver can name: `parse_qtype` maps everything but
- * `A` and `AAAA` to `Other(name)`, so the five the artboard draws are all
- * valid. `client` and `policy` may both be sent — an explicit `policy` wins.
+ * `qtype` is anything the resolver can name: `parse_qtype` knows fifteen
+ * record types and maps anything else to `Other(code)`, so the five the
+ * artboard draws are all valid. `client` and `policy` may both be sent — an
+ * explicit `policy` wins.
  */
 export interface RuleTestBody {
   domain: string;

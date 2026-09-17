@@ -784,11 +784,18 @@ impl DnsCache {
             let serve_stale = self.serve_stale;
             let mut freed = 0u64;
             let mut removed = 0u64;
+            let mut kept = 0u64;
             guard
                 .map
                 .retain(|key, entry| match entry.state(now, serve_stale) {
-                    EntryState::Fresh => true,
-                    EntryState::Stale if !purge_stale => true,
+                    EntryState::Fresh => {
+                        kept += entry_heap_bytes(key, entry);
+                        true
+                    }
+                    EntryState::Stale if !purge_stale => {
+                        kept += entry_heap_bytes(key, entry);
+                        true
+                    }
                     state => {
                         freed += entry_heap_bytes(key, entry);
                         removed += 1;
@@ -800,7 +807,7 @@ impl DnsCache {
                         false
                     }
                 });
-            guard.bytes = guard.bytes.saturating_sub(freed);
+            guard.bytes = kept;
             // Only when this shard actually lost entries: a sweep that finds
             // nothing — the common case at default settings, since an entry is
             // only `Expired` 24h past its TTL — must stay a walk and nothing
@@ -1861,5 +1868,27 @@ mod tests {
         assert!(cache.store(key.clone(), &positive_response(50)));
         assert!(matches!(cache.lookup(&key), Lookup::Fresh(..)));
         assert_eq!(cache.clean(false).entries_before, 1);
+    }
+
+    #[tokio::test]
+    async fn a_sweep_recomputes_the_byte_count_from_the_entries_it_keeps() {
+        let cache = DnsCache::new(&config(100), DEFAULT_REFRESH_CLAIM_LEASE);
+        cache.store(a_key(&cache, "one.example."), &positive_response(3600));
+        cache.store(a_key(&cache, "two.example."), &positive_response(3600));
+        let truthful = cache.stats().bytes;
+        assert!(truthful > 0);
+
+        for shard in &cache.shards {
+            shard.lock().unwrap().bytes += 1 << 40;
+        }
+        assert_ne!(cache.stats().bytes, truthful);
+
+        let outcome = cache.clean(false);
+        assert_eq!(outcome.entries_after, 2);
+        assert_eq!(
+            cache.stats().bytes,
+            truthful,
+            "a sweep that removes nothing must still put the byte count back on the entries"
+        );
     }
 }

@@ -290,6 +290,35 @@ mod tests {
     }
 
     #[test]
+    fn a_reply_the_tcp_length_prefix_cannot_describe_is_cut_at_the_prefix_range_and_framed_true() {
+        let (request, query) = request_with_query(RecordType::A);
+        let mut response = blocked(&request, &query, 10, None);
+        for i in 0..1200 {
+            response.add_answer(Record::from_rdata(
+                Name::from_str(&format!("{i:0>60}.ads.example.com.")).unwrap(),
+                10,
+                RData::A(A(Ipv4Addr::UNSPECIFIED)),
+            ));
+        }
+
+        let encoded = encode_for_transport(&response, u16::MAX);
+        assert!(encoded.failure.is_none());
+        assert!(encoded.bytes.len() <= usize::from(u16::MAX));
+        let decoded = Message::from_vec(&encoded.bytes).unwrap();
+        assert!(decoded.metadata.truncation);
+        assert!(decoded.answers.len() < 1200);
+
+        let mut framed = encoded.bytes;
+        let payload = framed.len();
+        crate::tcp::frame_reply(&mut framed);
+        assert_eq!(
+            usize::from(u16::from_be_bytes([framed[0], framed[1]])),
+            payload,
+            "the two-byte prefix must describe exactly the bytes behind it"
+        );
+    }
+
+    #[test]
     fn a_sub_512_edns_payload_is_clamped_up_per_rfc_6891() {
         let (mut request, _query) = request_with_query(RecordType::A);
         let mut edns = Edns::new();

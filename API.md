@@ -989,6 +989,7 @@ Dry-run a verdict: `{ "domain": "ads.example.com", "qtype": "A", "client": "192.
 | field | meaning |
 | --- | --- |
 | `client` | address *or* client name. Selects the policy in force for it and satisfies `$client` rules. Live since p2-06. |
+| `qtype` | a record type name as the query event spells it (§Events), `TYPE<n>` included. |
 | `policy` (request) | test under a named policy directly, ignoring assignments — "what would kids see?". Unknown id → `422`. |
 | `policy` (response) | which policy decided; `default` when nothing was assigned. |
 
@@ -1266,7 +1267,9 @@ A `query` event carries every pipeline, tagged by `kind` — `dns`, `http`,
 Every key is always **present**, so a client never has to tell "absent" from
 "not applicable": a DNS event leaves the HTTP-only fields `null` (`method`,
 `path`, `resource_type`, `status`, `bytes`), and an HTTP event leaves `qtype`
-`null` and `cached` `false`. One key is conditional: `transport` — the
+`null` and `cached` `false`. A DNS event's `qtype` is the record type's name
+(`A`, `AAAA`, `HTTPS`, …) or, for a type the resolver does not name, the RFC
+3597 spelling `TYPE<n>`. One key is conditional: `transport` — the
 listener a DNS query arrived on, `udp` | `tcp` | `dot` | `doh` — is present on
 every `kind: dns` item and absent (not `null`) on the HTTP kinds, which have
 no DNS transport.

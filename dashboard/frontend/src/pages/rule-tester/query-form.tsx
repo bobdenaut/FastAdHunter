@@ -3,9 +3,9 @@ import { Card } from '../../components/card';
 import { DEFAULT_POLICY } from '../../policy/assignment';
 
 /**
- * `parse_qtype` maps everything but `A` and `AAAA` to `Other(name)`, so the
- * five the artboard draws are all valid and the chips are not an invented
- * enum.
+ * `parse_qtype` names fifteen record types, `HTTPS`, `PTR` and `TXT` among
+ * them, and maps anything else to `Other(code)`, so the five the artboard
+ * draws are all valid and the chips are not an invented enum.
  */
 export const QUERY_TYPES = ['A', 'AAAA', 'HTTPS', 'PTR', 'TXT'] as const;
 

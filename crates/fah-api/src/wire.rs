@@ -253,14 +253,7 @@ fn display_domain(domain: &str) -> String {
 /// The wire spelling of a record type: `"A"`, `"AAAA"`, or whatever the
 /// resolver called it for everything else.
 pub fn qtype_name(qtype: &QueryType) -> String {
-    match qtype {
-        QueryType::Other(code) => format!("TYPE{code}"),
-        named => qtype_label(named).to_string(),
-    }
-}
-
-fn qtype_label(qtype: &QueryType) -> &'static str {
-    match qtype {
+    let label = match qtype {
         QueryType::A => "A",
         QueryType::Aaaa => "AAAA",
         QueryType::Https => "HTTPS",
@@ -276,8 +269,9 @@ fn qtype_label(qtype: &QueryType) -> &'static str {
         QueryType::Ds => "DS",
         QueryType::Dnskey => "DNSKEY",
         QueryType::Naptr => "NAPTR",
-        QueryType::Other(_) => "OTHER",
-    }
+        QueryType::Other(code) => return format!("TYPE{code}"),
+    };
+    label.to_string()
 }
 
 /// Parses the wire spelling back into a [`QueryType`] for

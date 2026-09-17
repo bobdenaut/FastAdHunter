@@ -593,8 +593,7 @@ floor regardless, which is exactly why the oracle carries the +0 claim and the
 device carries the equivalence claim.
 
 **Verdict:** F9 fully validated and closed; the `QueryType` redesign is
-accepted. The corresponding code is in the working tree pending the clean-process
-gate and an explicit commit go.
+accepted. The code landed as `af5cf61` on 2026-09-16.
 
 --- the read-only audit's original argument, kept for the record ---
 
@@ -1262,7 +1261,7 @@ threshold, which is why finding 6 says not to do it on its own.
 
 | Site | Construct | What the fallback hides if it is wrong |
 | ---- | --------- | -------------------------------------- |
-| `tcp.rs:222` | `u16::try_from(reply.len()).unwrap_or(u16::MAX)` | **a reply over 65535 bytes would be framed as 65535**, so the client reads a short message and every following message on that connection is misaligned. **Currently unreachable**: TCP callers pass `budget = u16::MAX`, and `encode_for_transport` at `response.rs:156-159` truncates whenever `encoded.bytes.len() > budget as usize`. So `reply.len() <= 65535` always holds. **The invariant rests on that one comparison, not on a test.** Worth a test that feeds a >64 KiB message through the TCP path and asserts the `TC` bit rather than a mis-framed prefix |
+| `tcp.rs:222` | `u16::try_from(reply.len()).unwrap_or(u16::MAX)` | **a reply over 65535 bytes would be framed as 65535**, so the client reads a short message and every following message on that connection is misaligned. **Currently unreachable**: TCP callers pass `budget = u16::MAX`, and `encode_for_transport` at `response.rs:156-159` truncates whenever `encoded.bytes.len() > budget as usize`. So `reply.len() <= 65535` always holds. **The invariant rested on that one comparison, not on a test, until 2026-09-17** — and on a guard this row missed: hickory's `BinEncoder` refuses to grow past 65535 and sets `TC` itself, so the budget comparison is never the last line of defence. Pinned by TODO row 9's test |
 | `cache.rs:97-102` | `Name::from_ascii(…).unwrap_or_else(…)` | a key holding an unparseable name refreshes the root instead. Counted as a failed refresh, so it shows up in `SwrStats::failed` rather than vanishing |
 | `udp.rs:83` | `u64::try_from(count).unwrap_or(u64::MAX)` | a `usize` over `u64::MAX` — impossible on 64-bit |
 | `https.rs:427` | `as_millis(…).min(u128::from(u64::MAX))` | a duration over 584 million years |
@@ -1327,6 +1326,23 @@ cheap, reproducible, and is the reason no complexity was added to the framing
 path — the argument for *not* changing `tcp.rs` needs its evidence to stay
 runnable.
 
+The 2026-09-17 batch — S1, S3, S7, TODO row 9 and both doc-drift rows, on the
+owner's approval:
+
+| File | Change |
+| ---- | ------ |
+| `crates/fah-dns/src/cache.rs` | +32 −3 — `clean` assigns the kept total (S1), and its test |
+| `crates/fah-dns/src/response.rs` | +29 — the TCP length-prefix test (TODO row 9) |
+| `crates/fah-api/src/wire.rs` | +4 −10 — `qtype_label` folded into `qtype_name` (S3) |
+| `dashboard/frontend/src/api/types.ts`, `pages/rule-tester/query-form.tsx` | two comments corrected (S7) |
+| `API.md` | +4 −1 — the `TYPE<n>` spelling under §Events, one `qtype` row in the `/rules/test` table |
+
+Gates for that batch, Windows dev box: `cargo fmt --all -- --check` clean;
+`cargo clippy --workspace --all-targets -- -D warnings` clean with and without
+`--all-features`; `cargo test --all-features --workspace` **1659 passed, 0
+failed** (1657 before); `tsc --noEmit` clean; `vitest run` 625 passed. The S1
+test was run red before its fix landed.
+
 ## Remaining TODOs
 
 Ordered by what buys the most for the least. **Status is the only part of this
@@ -1339,11 +1355,11 @@ rewritten when one is fixed. Read status here, evidence there.
 | 2 | Measure Finding 2 on the RB5009, at `http_runtimes = 2` | **CLOSED — measured, no code change** | Up to 32 drippers (16× the domains) moved p95 not at all; the 16 KiB cap + hello_timeout + max_connections neutralise it. See Finding 2 |
 | 3 | Apply Finding 4 — drop the `key.clone()` at `pipeline.rs:459` | **FIXED** `c93e2d1` | One character shorter, one allocation fewer |
 | 4 | Apply Finding 5 — move the "no domain left" `error!` to the transition | **FIXED** `bb15de7` | Small, and it protects the log buffer that would explain the failure |
-| 5 | Finding 9: measure, then redesign `QueryType` | **CLOSED — redesign accepted, validated** | `forward_alloc` HTTPS cases proved +1/query; the `Copy` `Other(u16)` redesign removes it (HTTPS cache-hit 704 → 640 = A); dev-box oracle + RB5009 controlled cache-hit experiment confirm. Code in the working tree pending the clean gate. See Finding 9 |
+| 5 | Finding 9: measure, then redesign `QueryType` | **FIXED** `af5cf61` | `forward_alloc` HTTPS cases proved +1/query; the `Copy` `Other(u16)` redesign removes it (HTTPS cache-hit 704 → 640 = A); dev-box oracle + RB5009 controlled cache-hit experiment confirm. See Finding 9 |
 | 6 | Raise `intercept_alloc`'s `BATCHES` to 6 | **FIXED** `f51a830` | Removed the one-batch-of-evidence problem in Finding 7 |
 | 7 | Measure Finding 3 with `diag-timing` | **CLOSED — measured, no code change** | `dispatch_wait_us` ≈ 62 µs, ~4.5% of the 1.389 ms miss; the inline-cache fast path was rejected on the number, not deferred. See Finding 3 |
 | 8 | Add an oracle for the listener layer | OPEN | Closes the Finding 8 gap for `udp.rs`, `tcp.rs` and the F3 `splice` |
-| 9 | Add a >64 KiB TCP reply test | OPEN | Pins the `tcp.rs:222` invariant to a test instead of a comparison in another file |
+| 9 | Add a >64 KiB TCP reply test | **FIXED** 2026-09-17 | `a_reply_the_tcp_length_prefix_cannot_describe_is_cut_at_the_prefix_range_and_framed_true` in `response.rs`: 1200 answers; hickory's encoder, not the budget comparison, cuts the message at 65535 with `TC` set, and the framed prefix equals the payload |
 | 10 | Work the Finding 10 debt register down, one row at a time | ONGOING | The allocation-free invariant stands; §Measurements lists every surviving allocation, and each needs elimination or a measured justification. Items 3, 5 and 8 above are its first instalments |
 | 11 | Measure F3 — the length-prefix framing at `tcp.rs:223` | **CLOSED — measured, no code change** | 13–16 ns at real reply sizes, an order of magnitude under the 1 µs screening gate at every size; the realloc is a capacity edge, not a per-reply cost; the vectored alternative is slower below ~1 KiB. See §TCP length-prefix framing (F3) |
 
@@ -1366,7 +1382,7 @@ connection — **measured on the RB5009 and closed, no code change**;
 unthrottled `error!` per connection — **fixed, `bb15de7`**; 6: two host copies
 per DoT connection; 9: `QueryType::Other` allocates per query — **redesigned to a
 `Copy` `Other(u16)`, validated on the RB5009, accepted**; the +1/query is gone
-(HTTPS cache-hit 640 = A), code in the working tree pending the clean gate;
+(HTTPS cache-hit 640 = A), landed as `af5cf61`;
 10: the hot path does not yet satisfy PERFORMANCE.md's
 allocation-free invariant — performance debt, worked down per row),
 2 informational (7: oracle ceilings pinned at zero margin — **fixed,
@@ -1376,7 +1392,7 @@ allocation-free invariant — performance debt, worked down per row),
 measurement with no change: 2, 3, and the TCP length-prefix framing tracked as
 TODO row 11 — F3 in the earlier review's numbering, which is not one of this
 audit's ten findings, so the ten split 7 resolved / 3 open and the eighth is
-that row. Redesigned and validated, commit pending: 9.
+that row. Redesigned and validated, landed as `af5cf61`: 9.
 Still open: 6, 8, 10. The verdict stays PASS WITH DEFERRED FINDINGS because it
 records the audit as taken; the outcomes are tracked in §Remaining TODOs and in
 git, not by rewriting the findings.
@@ -1415,6 +1431,13 @@ Severity-ranked.
 
 #### S1 — LOW · a recovered shard keeps serving, but its byte count is no longer true
 
+**FIXED 2026-09-17.** `clean` sums the entries it keeps during the walk it
+already makes and assigns the total, so any skew heals at the next sweep.
+`a_sweep_recomputes_the_byte_count_from_the_entries_it_keeps` skews every shard
+by 2⁴⁰ and expects one sweep to put the total back: red before the change,
+green after. The `insert` eviction loop keeps its subtraction — it runs on the
+query path, and the sweep now corrects it.
+
 `crates/fah-dns/src/cache.rs:803` and `:810`; the same class at `:348`
 (`insert`'s eviction loop).
 
@@ -1445,6 +1468,9 @@ coercion.
 
 #### S3 — INFORMATIONAL · an unreachable arm in `qtype_label`
 
+**FIXED 2026-09-17.** `qtype_label` is folded into `qtype_name`: the `Other`
+arm returns the RFC 3597 spelling directly, and the `"OTHER"` literal is gone.
+
 `crates/fah-api/src/wire.rs:279`. `qtype_name` matches `Other` first, so the
 `"OTHER"` arm never runs. Delete it (principle 14) or route `qtype_name`
 through it.
@@ -1473,6 +1499,9 @@ old construct with no signal.
 
 #### S7 — INFORMATIONAL · dashboard comments still describe `Other(name)`
 
+**FIXED 2026-09-17.** Both comments now describe the fifteen named types and
+`Other(code)`.
+
 `dashboard/frontend/src/pages/rule-tester/query-form.tsx:6-7` and
 `dashboard/frontend/src/api/types.ts:771-772` say `parse_qtype` maps
 everything but `A` and `AAAA` to `Other(name)`. Comment drift only; the chips
@@ -1493,8 +1522,9 @@ and the request shape are unaffected.
 
 | Where | What | Proposed |
 | ----- | ---- | -------- |
-| lines 596, 1342, 1369, 1379 | "working tree pending" / "commit pending" — `af5cf61` landed 2026-09-16 | say so; put the hash in TODO row 5 |
-| API.md, `qtype` field | the RFC 3597 `TYPE<n>` spelling exists only in this file | one sentence beside the field; CONTEXT.md §Record Type stays accurate, the eleven stats labels did not change |
+| lines 596, 1342, 1369, 1379 | "working tree pending" / "commit pending" — `af5cf61` landed 2026-09-16 | say so; put the hash in TODO row 5 — **done 2026-09-17** |
+| API.md, `qtype` field | the RFC 3597 `TYPE<n>` spelling exists only in this file | one sentence beside the field; CONTEXT.md §Record Type stays accurate, the eleven stats labels did not change — **done 2026-09-17**: §Events names the spelling and the `/rules/test` table points at it |
 
-**PASS WITH DEFERRED FINDINGS** — S1 and S2 are owner decisions; S3–S7 are
-housekeeping. No fix commit is wrong.
+**PASS WITH DEFERRED FINDINGS** — S1, S3 and S7 fixed 2026-09-17, with TODO
+row 9 and both doc-drift rows; S2 is an owner decision; S4–S6 are housekeeping.
+No fix commit is wrong.
