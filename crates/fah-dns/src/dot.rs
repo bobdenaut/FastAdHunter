@@ -140,9 +140,13 @@ async fn serve_connection<F: Forwarder>(
     let mut diag = DiagTiming::at_sni();
     if let Some(host) = sni {
         #[cfg(not(feature = "diag-timing"))]
-        prewarm(&tls.store, host, gauge).await;
+        let prewarmed = timeout_at(deadline, prewarm(&tls.store, host, gauge)).await;
         #[cfg(feature = "diag-timing")]
-        prewarm(&tls.store, host, gauge, &mut diag).await;
+        let prewarmed = timeout_at(deadline, prewarm(&tls.store, host, gauge, &mut diag)).await;
+        if prewarmed.is_err() {
+            debug!(client = %client, "DoT leaf pre-warm did not finish before the handshake deadline");
+            return Ok(());
+        }
     }
     let mut stream = match timeout_at(deadline, start.into_stream(tls.config)).await {
         Ok(Ok(stream)) => stream,
@@ -723,5 +727,44 @@ mod tests {
             DOT_MAX_CONNECTIONS + 1
         );
         drop(served);
+    }
+
+    #[test]
+    fn a_stalled_leaf_pre_warm_is_cut_at_the_handshake_deadline_and_frees_its_slot() {
+        let runtime = tokio::runtime::Builder::new_multi_thread()
+            .worker_threads(1)
+            .max_blocking_threads(1)
+            .enable_all()
+            .build()
+            .unwrap();
+        let (release, occupied) = std::sync::mpsc::channel::<()>();
+        runtime.block_on(async move {
+            let (_dir, store) = store_with_ca();
+            let (fallback, _) = self_signed_fallback();
+            let listener = listen(
+                DotTls::new(store, fallback).unwrap(),
+                Duration::from_millis(300),
+            )
+            .await;
+            let occupier = tokio::task::spawn_blocking(move || occupied.recv());
+
+            let started = std::time::Instant::now();
+            let handshake = timeout(
+                Duration::from_secs(5),
+                connect(listener.addr, client_accepting_any(), HOST),
+            )
+            .await
+            .expect("the server must close the connection at the handshake deadline");
+            assert!(
+                handshake.is_err(),
+                "no handshake can complete while the only blocking thread is held"
+            );
+            assert!(started.elapsed() >= Duration::from_millis(250));
+            let released = await_gauge(&listener.gauge, |snapshot| snapshot.active == 0).await;
+            assert_eq!(released.peak, 1);
+
+            release.send(()).unwrap();
+            occupier.await.unwrap().unwrap();
+        });
     }
 }

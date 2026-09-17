@@ -5,6 +5,9 @@ S1 the `ConnectionGauge` move, S2 the `eb693e2` hunks no earlier review names,
 S3 instrumentation validity, S4 merge-window tests that could pass with the
 wiring they are meant to prove broken.
 
+Revised 2026-09-17: N2, SP2 and R2 closed, the R1 commit named, and the R1 file
+table completed.
+
 Companion documents, not repeated here:
 [main-phase3-integration-audit.md](main-phase3-integration-audit.md) (F1–F9,
 status-pass 2026-09-14), [plan/plan-merge.md](../../../plan/plan-merge.md)
@@ -59,7 +62,8 @@ status-pass 2026-09-14), [plan/plan-merge.md](../../../plan/plan-merge.md)
   which `apply_one` had no arm for, and the SP6 fix printed one of them on every
   port collision. **RESOLVED the same day** — the two arms landed, the five
   constants moved to `fah-config` where a test can reach them, and both mutation
-  controls fail as they must (§R1 Resolution). R2–R7 stay open as notes.
+  controls fail as they must (§R1 Resolution). R2 closed 2026-09-17; R3–R7 stay
+  open as notes.
 
 ## Decisions
 
@@ -114,6 +118,13 @@ scope — any unknown `FAH__` variable still leaves a defaults-only TOML before
 the load fails.
 
 ### N2 — the three DNS connection gauges have no dashboard consumer
+
+**Status: RESOLVED 2026-09-17.** The Health page's Backpressure card now carries
+the three as `active / peak` rows plus the UDP `shed` count, with a footnote
+naming the ceilings `peak` sizes
+(`dashboard/frontend/src/pages/health/backpressure-card.tsx`); `Counters` in
+`api/types.ts` models the three objects, and `diagnostics-health.test.tsx` pins
+the four rows verbatim. The row below is the state that was found.
 
 | | |
 | --- | --- |
@@ -188,6 +199,18 @@ one. The row below supersedes the earlier one.*
 | Recommended action | Owner decision. Smallest verification is unchanged in shape: a table test driving all ten pairs of `{dns, dot, http, https, api}` through `validate` and requiring an error for each. It fails on **three** pairs today. The `dot` pairs need the table to say what it expects while `dot_enabled = false`, which is where SP7's question about one policy for all five listeners lands |
 
 ### SP2 — the DoT leaf pre-warm is awaited outside the handshake deadline, holding an accept permit
+
+**Status: RESOLVED 2026-09-17.** The pre-warm is awaited inside
+`timeout_at(deadline, …)`, the same deadline that already bounded the
+ClientHello read and `into_stream` on either side of it (`dot.rs:141-150`), so
+a slot is held at most `HANDSHAKE_TIMEOUT` past accept. On expiry the
+connection is closed like any other handshake timeout; a mint already
+dispatched to the blocking pool runs to completion and its leaf still lands in
+the store. Pinned by
+`a_stalled_leaf_pre_warm_is_cut_at_the_handshake_deadline_and_frees_its_slot`:
+a one-thread blocking pool held by a stalled task, one SNI connection, closed at
+the 300 ms deadline with the gauge back to 0. On the pre-fix code the same test
+waits out its 5 s guard and fails. The row below is the state that was found.
 
 | | |
 | --- | --- |
@@ -561,7 +584,7 @@ contract at `CONFIGURATION.md:11-13`, SP2/SP3/SP8 and R2–R7 untouched.
 
 | # | Where | Finding | Direction |
 | --- | --- | --- | --- |
-| R2 | `fah-config/src/lib.rs:811-849` | `every_active_listener_pair_is_compared_for_a_port_collision` drives **5 of the 10 pairs** — `api–dns`, `http–dns`, `http–api`, `https–http`, `dot–https`. `dot–api` is covered at `:753` and the three `https` pairs at `:790`, leaving **`dot–dns` and `dot–http` asserted by nothing**. SP1's §Recommended action asked for all ten. Real risk is low: `validate_listen_sockets` is one uniform double loop, and every socket appears in at least one covered case, so deleting a row from the table still fails the suite | Add the two cases, or rename the test to what it checks |
+| R2 | `fah-config/src/lib.rs:811-849` | `every_active_listener_pair_is_compared_for_a_port_collision` drives **5 of the 10 pairs** — `api–dns`, `http–dns`, `http–api`, `https–http`, `dot–https`. `dot–api` is covered at `:753` and the three `https` pairs at `:790`, leaving **`dot–dns` and `dot–http` asserted by nothing**. SP1's §Recommended action asked for all ten. Real risk is low: `validate_listen_sockets` is one uniform double loop, and every socket appears in at least one covered case, so deleting a row from the table still fails the suite | **RESOLVED 2026-09-17** — both cases added; all ten pairs are asserted: seven here, `dot–api` at `:754`, the three `https` pairs at `:790` |
 | R3 | `lib.rs:505-510` | `addresses_overlap` decides family with `is_ipv4()`, so an IPv4-mapped literal misses: `::ffff:10.0.0.1` beside `10.0.0.1` on one port returns `false` and validates clean. Fail-open, and the bind failure now reports through `bind_error`, so the outcome is a named error rather than a bare errno | Canonicalize v4-mapped v6 before comparing, if the shape is ever worth the line |
 | R4 | `lib.rs:551-562` | The blamed key is the later entry in the table, not the edited one. A `dns–api` collision reports `api.port` even when the operator changed `[dns.listen] port`. The message names both endpoints with address and port, so it stays navigable | None required; recorded so the asymmetry is not read as a bug |
 | R5 | `lib.rs:1113-1118` | The anti-drift floor is `documented.len() >= 3`, exactly today's count. A reformat that leaves 3 of 5 `Env:` names matchable passes silently. The test also reads `../../CONFIGURATION.md` from a lib unit test, so `cargo test -p fah-config` depends on a file outside the crate | Assert an exact count, or keep the floor and accept the window |
@@ -587,7 +610,8 @@ contract at `CONFIGURATION.md:11-13`, SP2/SP3/SP8 and R2–R7 untouched.
 regression of the fix's own logic — it is the N1 class surviving in a second
 population of advertised `FAH__` names, which `2eb5018` made visible on the
 `AddrInUse` path. **R1 is RESOLVED**, same day, on the owner's approval and to a
-shape agreed before any code was written; R2–R7 stay open as notes.
+shape agreed before any code was written; R2 closed 2026-09-17, R3–R7 stay open
+as notes.
 
 ## Established correct
 
@@ -672,7 +696,8 @@ The R1 fix:
 | `crates/fah-http/src/server.rs` | +1 −3 — the same |
 | `crates/fah-http/src/tls_server.rs` | +1 −2 — the same |
 | `crates/fah-api/src/server.rs` | +1 −2 — the same |
-| `CONFIGURATION.md` | +2 — one `Env:` line under each of the two port entries |
+| `CONFIGURATION.md` | +11 −5 — one `Env:` line under each of the two port entries, and the `dot_port` and `[https.listen] port` wording corrected per §Left open on purpose |
+| `ARCHITECTURE.md` | +3 −2 — §HTTPS SNI, the same correction |
 
 The review pass that found R1 changed no code. Its only edit is this file —
 §Independent review of the fix commits, the summary bullet that points at it, the
@@ -680,15 +705,31 @@ The review pass that found R1 changed no code. Its only edit is this file —
 `cargo test -p fah-config --lib` and `cargo test -p fah-common --lib` to confirm
 the 97 / 44 counts §Second-pass resolutions claims, and nothing else.
 
+The 2026-09-17 fixes — N2, SP2 and R2, on the owner's approval:
+
+| File | Change |
+| --- | --- |
+| `crates/fah-config/src/lib.rs` | +10 — the `dot–dns` and `dot–http` rows in the pair-matrix test |
+| `crates/fah-dns/src/dot.rs` | +45 −2 — the pre-warm await inside `timeout_at`, and the stalled-mint test |
+| `dashboard/frontend/src/api/types.ts` | +15 — `DnsConnectionsGauge`, `DnsUdpInflight`, three `Counters` fields |
+| `dashboard/frontend/src/pages/health/backpressure-card.tsx` | +22 — four rows, one footnote line, `activeAndPeak` |
+| `dashboard/frontend/src/pages/diagnostics-health.test.tsx` | +12 — the three gauges in the fixture, one test |
+
+Gates for that batch, Windows dev box: `cargo fmt --all -- --check` clean;
+`cargo clippy --workspace --all-targets -- -D warnings` clean with and without
+`--all-features`; `cargo test --all-features --workspace` **1657 passed, 0
+failed** (1656 before); `tsc --noEmit` clean; `vitest run` 625 passed. Both new
+tests were run red before their fix landed.
+
 ## Remaining TODOs
 
-- N2: owner decision — a Health row for the three DNS gauges, or a line saying
-  they are telemetry-only.
+- N2: **closed** 2026-09-17 — the three gauges are on the Health page's
+  Backpressure card. See §N2.
 - N3: nothing owed; fold into the next touch of `strategy_ab.rs`, if ever.
 - SP1, SP4, SP5, SP6: **closed** 2026-09-15, nothing further owed. See
   §Second-pass resolutions.
-- SP2: nothing owed on the measured evidence; a bound becomes worth it only if a
-  stall is observed.
+- SP2: **closed** 2026-09-17 — the pre-warm sits inside the handshake deadline.
+  See §SP2.
 - SP3: nothing owed.
 - SP7: **closed by SP1's rule** rather than by its own change. One policy now
   covers all five listeners, and it answers both open questions — `address`
@@ -697,9 +738,7 @@ the 97 / 44 counts §Second-pass resolutions claims, and nothing else.
   `CertificatesResponse`, or a documented line saying the boot warning is all
   there is. Excluded from the fix pass by instruction.
 - R1: **closed** 2026-09-15, nothing further owed. See §R1 Resolution.
-- R2: owner decision — two more cases (`dot–dns`, `dot–http`) in
-  `every_active_listener_pair_is_compared_for_a_port_collision`, or a name that
-  matches what it checks.
+- R2: **closed** 2026-09-17 — both cases added; every pair is asserted.
 - R3–R7: nothing owed; fold into the next touch of the files named.
 - The follow-up the fix created is **closed** the same day: `main.rs`'s
   `http_enabled` / `https_enabled` are deleted and the two call sites use
@@ -707,20 +746,19 @@ the 97 / 44 counts §Second-pass resolutions claims, and nothing else.
   not two. The rationale comment that sat above them could not move with the
   match — see §Second-pass resolutions §The duplicate the fix created.
 
-N1, SP1, SP4, SP5, SP6 and R1 are closed and owe nothing further. N1's fix is
-`f32f214`; the SP fixes are `2eb5018`, the commit that also carried the first
-writing of this file; R1's fix is uncommitted at the time of writing and needs
-its own go. `origin/main` and `backup/main` are both on `2eb5018` — read them
-with `git ls-remote`, not from this line, which named `8fec41d` after that had
-stopped being true.
+N1, SP1, SP4, SP5, SP6, R1, N2, SP2 and R2 are closed and owe nothing further.
+N1's fix is `f32f214`; the SP fixes are `2eb5018`, the commit that also carried
+the first writing of this file; R1's fix is `b67ecec`. Where the remotes stand
+is a `git ls-remote` question, not a sentence in this file — an earlier version
+named a commit here after it had stopped being true.
 
 **PASS WITH DEFERRED FINDINGS** — five confirmed defects, **all five resolved
-the same day** (N1, Medium; SP1 and SP4, Medium; SP5 and SP6, Low). Still open:
-one should-fix from the independent review (R1), two coverage gaps (N2 and SP8,
-Low), one potential issue (SP2, Low), six notes (R2–R7), two intentional
-deviations (N3 and SP3, Info). SP7 closed through SP1's rule rather than a change
-of its own. **No defect was found in the DNS or HTTP data path**, by any of the
-four passes, and nothing here blocks further Phase 3 work.
+the same day** (N1, Medium; SP1 and SP4, Medium; SP5 and SP6, Low), and the
+independent review's should-fix (R1) with them. N2, SP2 and R2 closed
+2026-09-17. Still open: one coverage gap (SP8, Low), five notes (R3–R7), two
+intentional deviations (N3 and SP3, Info). SP7 closed through SP1's rule rather
+than a change of its own. **No defect was found in the DNS or HTTP data path**,
+by any of the four passes, and nothing here blocks further Phase 3 work.
 
 The independent review adds the one lesson the fix set did not draw for itself:
 closing a documentation-to-code drift for the names a *document* advertises does

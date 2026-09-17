@@ -14,6 +14,10 @@ pattern at column 0, `grep -n '^#\[cfg(test)\]'`, fixes it; of the 13 files in
 scope only `cache.rs` differs between the two patterns. The recipe lives in
 chat, not in the repo, so nothing here can hold that fix.
 
+Corrected 2026-09-17 after an independent re-read: A3's premise and status,
+A6's account of what the hook commit changed, and three counts — the throttle's
+test count, the memory delta, and the `udp.rs` classification list.
+
 Every `file:line` here is as of `2b03a30`. A1 and A2 were fixed afterwards, so
 the lines they name have moved — each of those two sections ends with what
 shipped, and §Fix verification carries the evidence.
@@ -33,9 +37,9 @@ shipped, and §Fix verification carries the evidence.
   one defect in four places — plus A5 and A6, both documentation. Each entry
   keeps what was found and then states what shipped, including where the
   implementation departed from the proposal and why, and A6 carries two claims
-  filed under it that are withdrawn. **Nothing is open.** A3 is deferred with a
-  named reopening criterion, and A4 was resolved procedurally — neither carries
-  work.
+  filed under it that are withdrawn. **Nothing is open.** A3 was deferred, then
+  closed by measurement the same day (`52eec09`), and A4 was resolved
+  procedurally — neither carries work.
 - All five oracles pass, reported as observed / ceiling / headroom: 8 of 12
   ceiling checks clear by exactly the 4-allocation jitter allowance, so the
   ceilings equal today's measurements. A pass means no regression beyond the
@@ -249,17 +253,18 @@ sustain. The other three are low on their own. No memory growth anywhere; log
 history loss only.
 
 **FIXED.** `LogThrottle` shipped in `fah-common/src/throttle.rs` exactly as the
-contract above specifies, with nine tests: the first event always logs, events
+contract above specifies, with eight tests: the first event always logs, events
 inside the interval are suppressed, the boundary logs again with the cumulative
-total, suppressed events still count toward the next line, a zero interval logs
-everything, real time zero is not mistaken for "never logged", and eight threads
-driving 2000 events produce exactly one line and lose no count.
+total, the total is never reset so successive lines only grow, suppressed events
+still count toward the next line, a zero interval logs everything, real time
+zero is not mistaken for "never logged", and eight threads driving 2000 events
+produce exactly one line and lose no count.
 
 Per site:
 
 | Site | What shipped |
 | ---- | ------------ |
-| `udp.rs` | `is_client_unreachable` demotes `ConnectionRefused`, `HostUnreachable`, `NetworkUnreachable` and `PermissionDenied` to `debug!` and returns; everything else goes through `UdpInflightGauge::send_failures`. `handle_datagram` now takes `&Listener<S>` rather than `&S`, which is how it reaches the gauge |
+| `udp.rs` | `is_client_unreachable` demotes `HostUnreachable`, `NetworkUnreachable` and `PermissionDenied` to `debug!` and returns (`ConnectionRefused` was in the first version; §UDP send errno probe removed it); everything else goes through `UdpInflightGauge::send_failures`. `handle_datagram` now takes `&Listener<S>` rather than `&S`, which is how it reaches the gauge |
 | `response.rs` | `encode` returns `Encoded { bytes, failure: Option<ProtoError> }` and logs nothing. `Pipeline::encoded` logs through `encode_failures` and hands the bytes on; the three call sites in `handle` route through it |
 | `tcp.rs` | `report_connection_end` takes `&TcpConnectionGauge` and throttles the non-disconnect arm. The call sites pass `&open` — `OpenConnection` derefs to the gauge, so nothing new is threaded through |
 | `dot.rs` | `tcp::report_prewarm_failure` throttles the `JoinError` arm through the same gauge. `prewarm` takes `&DotConnectionGauge`, passed down from `serve_connection`, which already had it |
@@ -270,9 +275,10 @@ inventing one would have meant inventing an interval. Because
 `DotConnectionGauge` is an alias, both DNS-over-stream listeners get the fields
 with one change and keep separate instances.
 
-Classification is tested as a pure function, not through the log: the four
-unreachable kinds must demote, and `InvalidInput`, `Other`, `BrokenPipe`,
-`ConnectionReset` and `UnexpectedEof` must not.
+Classification is tested as a pure function, not through the log: the three
+unreachable kinds must demote; `InvalidInput`, `Other`, `BrokenPipe`,
+`ConnectionReset` and `UnexpectedEof` must not; and since the errno probe
+`ConnectionRefused` must not either, in a test named for the reason.
 
 ### A3 — one extra allocation per TCP/DoT reply, and the obvious fix is invalid
 
@@ -282,9 +288,12 @@ unreachable kinds must demote, and `InvalidInput`, `Other`, `BrokenPipe`,
     reply.splice(0..0, len);
 ```
 
-`encode` returns `message.to_vec()` (`response.rs:164`) — an exactly-sized `Vec`
-with no spare capacity, so prepending the two length bytes forces a grow plus a
-memmove. Engineering principle 3. TCP/DoT only, not UDP.
+`encode` returns `message.to_vec()` (`response.rs:164`). This section first
+called that an exactly-sized `Vec`; it is not — hickory starts the buffer at
+`Vec::with_capacity(512)` (`hickory-proto-0.26.1/src/op/message.rs:503`), so
+prepending the two length bytes is a memmove on every reply and a realloc only
+when the reply lands exactly on the capacity. Engineering principle 3. TCP/DoT
+only, not UDP.
 
 **Do not encode at a two-byte offset.** `BinEncoder::with_offset` moves the write
 cursor, and `name_pointers` stores absolute buffer indices that are emitted
@@ -300,12 +309,20 @@ or a framing buffer reused per connection (amortizes the realloc, keeps the
 Severity: low. Small cost, no correct small fix.
 
 **DEFERRED — measure before optimizing. Revisit if DoT becomes a dominant
-transport.** Owner's decision, 2026-09-15. Nothing is owed and no work is
+transport.** Owner's decision, 2026-09-15, superseded the same day by the
+closure below. Nothing is owed and no work is
 tracked: the reasoning is that the obvious fix is invalid, the three valid ones
 each cost more than the realloc, and TCP/DoT are not the dominant transports
 today. The reopening criterion is concrete — Android Private DNS is DoT, so
 household phones moving to it would make DoT the main path and change the
 premise.
+
+**CLOSED the same day, by measurement.** Commit `52eec09` benched the framing
+at 13–16 ns at real reply sizes, an order of magnitude under the 1 µs screening
+gate, with the vectored alternative slower below ~1 KiB; the figures and the
+corpus are in [hot-path-audit-dns-http.md](hot-path-audit-dns-http.md) §TCP
+length-prefix framing (F3). No code change, and the DoT reopening criterion no
+longer applies — the cost is settled, not deferred.
 
 ### A4 — the oracle ceilings equal today's measurements, so a pass carries no margin
 
@@ -390,9 +407,14 @@ Severity: low. One line, no behaviour.
 
 **FIXED.** The reference is now by name rather than by index, so reordering the
 list cannot break it again, and the line records why the old number was wrong.
-The detection logic is untouched and was re-verified after the edit: `// nope`
-is blocked with `exit 2`, and the three intended exemptions still pass — a URL
-inside a string literal, `// SAFETY:`, and any path that is not `.rs`.
+The same commit (`3e97d16`) went further than this finding asked: the gate now
+covers the dashboard's `.ts`/`.tsx` files as well, single-line template
+literals are stripped before the scan so a `${scheme}//${host}` URL is not read
+as a comment, and `no-rust-comments.test.sh` pins 14 cases. CLAUDE.md hard rule
+7 names the TypeScript gate as of 2026-09-17; until then the hook enforced a
+rule no document stated. Re-verified after the edit: `// nope` is blocked with
+`exit 2`, and the exemptions still pass — a URL inside a string literal,
+`// SAFETY:`, and any path outside `.rs`, `.ts` and `.tsx`.
 
 **Two earlier claims under this number are withdrawn.**
 
@@ -439,9 +461,9 @@ anchor, not from the hook.
 | `cache.rs:485` | `domain.into()` | per query | the cache key; pre-lowercased by the caller |
 | `udp.rs:157` | `buf[..len].to_vec()` | per datagram | moved into the spawned task |
 | `tcp.rs:164` | `vec![0u8; len]` | per message | `len` capped at `MAX_MESSAGE_LEN` (16 KiB) |
-| `tcp.rs:183` | `reply.splice(0..0, len)` | per TCP/DoT reply | realloc + memmove — **A3** |
+| `tcp.rs:183` | `reply.splice(0..0, len)` | per TCP/DoT reply | memmove; realloc only at the 512-byte capacity edge — **A3**, closed by measurement |
 | `response.rs:70-129` | 10 × query / record / name clone | per synthesized reply | hickory owns its records |
-| `response.rs:164` | `message.to_vec()` | per reply | exact-size wire buffer |
+| `response.rs:164` | `message.to_vec()` | per reply | wire buffer, 512-byte initial capacity |
 | `cache.rs:600,614` | `answers.clone()`, `authorities.clone()` | per store (miss) | the cached answer itself |
 | `cache.rs:630,640` | `Arc::new(answer)`, `key.clone()` | per store | `Arc` so lookups clone a pointer |
 | `pipeline.rs:442` | `key.clone()` | per claimed stale refresh | handed to a bounded queue |
@@ -632,8 +654,10 @@ A1's test is falsifiable and was shown to fail both ways before being reverted:
 | `drop(permit)` removed | `available_permits()` asserts `left: 0, right: 1` |
 | `tokio::time::sleep(delay)` removed | 10240 accept attempts where the passing run makes 2048 |
 
-Memory delta: three `LogThrottle` instances of 32 bytes each, process-lifetime,
-plus one on the accept loop's frame per listener. Far below the <1 MB threshold.
+Memory delta: six process-lifetime `LogThrottle` instances — one on the UDP
+gauge, two on each of the TCP and DoT gauges, one on the pipeline — of 40 bytes
+each on Linux (`Instant` is 16 bytes there; 32 bytes on the Windows dev box),
+plus one on each HTTP/HTTPS accept loop's frame. Far below the <1 MB threshold.
 
 ### UDP send errno probe — 2026-09-15
 
@@ -745,11 +769,12 @@ A2's follow-ups then changed two more:
 | `fah-dns/examples/udp_send_errno.rs` | new — the errno probe, std only, runnable wherever the container runs |
 | `fah-dns/src/udp.rs` | `ConnectionRefused` dropped from `is_client_unreachable`, one test renamed to carry the reason, and the `Datagrams` wiring test added |
 
-A6 then changed one more, with no behaviour:
+A6 then changed two more, and the hook's behaviour with them:
 
 | File | Change |
 | ---- | ------ |
-| `.claude/hooks/no-rust-comments.sh` | line 3 cites the rule by name instead of by number, and records why the old number was wrong. Detection untouched |
+| `.claude/hooks/no-rust-comments.sh` | cites the rule by name instead of by number and records why the old number was wrong; the same commit extends the gate to `.ts`/`.tsx` and strips single-line template literals before the scan |
+| `.claude/hooks/no-rust-comments.test.sh` | new — 14 cases: blocked, allowed and out of scope |
 
 ## Remaining TODOs
 
@@ -757,7 +782,7 @@ A6 then changed one more, with no behaviour:
 | ------- | ------ | -------- | -------------- |
 | A1 | **fixed** — see §Fix verification | medium | done |
 | A2 | **fixed** — see §Fix verification | medium | done |
-| A3 | **deferred** — measure before optimizing; revisit if DoT becomes a dominant transport | low | deferred |
+| A3 | **closed by measurement** — `52eec09`, 13–16 ns per framing; see A3 | low | done |
 | A4 | **resolved procedurally** — every oracle citation carries observed / ceiling / headroom; no task | low | done |
 | A5 | **fixed** — hard rule 3 names the exception and requires an ADR plus a measurement for any new hot-path lock | low | done |
 | A6 | **fixed** — the hook cites the rule by name now; two claims withdrawn | low | done |
@@ -766,7 +791,6 @@ A1 and A2 shared a dependency — both wanted something in `fah-common`, the ret
 policy and the log throttle — so they landed as one change, keeping the L1
 surface to one review.
 
-**PASS WITH DEFERRED FINDINGS** — A1 and A2 were medium, A5 and A6 low, and all
-four are fixed. A3 is low and deferred, with DoT becoming a dominant transport as
-its reopening criterion. A4 was low and is resolved procedurally, not as work.
-Nothing blocks and nothing is owed.
+**PASS** — A1 and A2 were medium, A5 and A6 low, and all four are fixed. A3 is
+low and was closed by measurement the same day (`52eec09`). A4 was low and is
+resolved procedurally, not as work. Nothing blocks and nothing is owed.

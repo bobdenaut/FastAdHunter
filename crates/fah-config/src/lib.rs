@@ -837,6 +837,16 @@ format = "text"
                 "[https.listen] port",
                 format!("{full}[dns.listen]\ndot_port = 9000\n[https.listen]\nport = 9000\n"),
             ),
+            (
+                "dns.listen.dot_port",
+                "[dns.listen] port",
+                format!("{full}[dns.listen]\nport = 9000\ndot_port = 9000\n"),
+            ),
+            (
+                "dns.listen.dot_port",
+                "[http.listen] port",
+                format!("{full}[http.listen]\nport = 9000\n[dns.listen]\ndot_port = 9000\n"),
+            ),
         ] {
             let config = Config::from_toml_str(&toml).unwrap();
             let message = config.validate().unwrap_err().to_string();

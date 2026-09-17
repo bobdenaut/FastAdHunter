@@ -86,6 +86,9 @@ const TELEMETRY = {
       last_duration_micros: 0,
     },
     lists: { bodies: 17, not_modified: 3, bytes_fetched: 27_580_000 },
+    dns_tcp_connections: { active: 2, peak: 9, closed_oversize: 0 },
+    dns_dot_connections: { active: 1, peak: 6, closed_oversize: 0 },
+    dns_udp_inflight: { active: 0, peak: 0, shed: 4 },
     tasks_died: 0,
   },
   upstreams: [
@@ -375,6 +378,15 @@ describe('the page', () => {
     expect(text).toContain('HTTP requests refused — unusable Host3');
     expect(text).toContain('HTTP requests refused — egress policy0');
     expect(text).toContain('SWR refreshes failed');
+  });
+
+  it('renders the three DNS listener gauges as active / peak, and the shed count', async () => {
+    const dom = await mountPage('adaptive');
+    const text = (dom.textContent ?? '').replace(/\s+/g, ' ');
+    expect(text).toContain('DNS-over-TCP connections — active / peak2 / 9');
+    expect(text).toContain('DoT connections — active / peak1 / 6');
+    expect(text).toContain('UDP queries in flight — active / peak0 / 0');
+    expect(text).toContain('UDP datagrams shed — in-flight ceiling full4');
   });
 
   it('states the three things it will never do', async () => {

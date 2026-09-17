@@ -86,7 +86,8 @@ section is needed.
    update CONTEXT.md in the same change.
 7. **No comments in Rust code.** Not `//`, not `///`, not `//!`, not `/* */`.
    `.claude/hooks/no-rust-comments.sh` rejects the edit. The one exception is
-   the `// SAFETY:` comment `unsafe` requires.
+   the `// SAFETY:` comment `unsafe` requires. The same hook gates the
+   dashboard's `.ts`/`.tsx` files, so the rule applies there too.
 
 ## Engineering principles
 

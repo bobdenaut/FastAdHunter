@@ -90,6 +90,18 @@ export interface ListsCounters {
   bytes_fetched: number;
 }
 
+export interface DnsConnectionsGauge {
+  active: number;
+  peak: number;
+  closed_oversize: number;
+}
+
+export interface DnsUdpInflight {
+  active: number;
+  peak: number;
+  shed: number;
+}
+
 export interface Counters {
   dns: DnsCounters;
   http: HttpCounters;
@@ -97,6 +109,9 @@ export interface Counters {
   swr: SwrCounters;
   cache_cleanup: CacheCleanupCounters;
   lists: ListsCounters;
+  dns_tcp_connections: DnsConnectionsGauge;
+  dns_dot_connections: DnsConnectionsGauge;
+  dns_udp_inflight: DnsUdpInflight;
   /** Supervised long-lived tasks (schedulers, fan-out, sampler, SWR workers)
    *  that ended before shutdown. Lifetime count; the normal value is 0. */
   tasks_died: number;

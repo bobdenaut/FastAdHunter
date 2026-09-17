@@ -36,6 +36,16 @@ export function BackpressureCard({ telemetry }: { telemetry: Telemetry | null })
           <span class="mono num">{counters.swr.dropped.toLocaleString()}</span>
           <span>SWR refreshes failed</span>
           <span class="mono num">{counters.swr.failed.toLocaleString()}</span>
+          <span>DNS-over-TCP connections — active / peak</span>
+          <span class="mono num">{activeAndPeak(counters.dns_tcp_connections)}</span>
+          <span>DoT connections — active / peak</span>
+          <span class="mono num">{activeAndPeak(counters.dns_dot_connections)}</span>
+          <span>UDP queries in flight — active / peak</span>
+          <span class="mono num">{activeAndPeak(counters.dns_udp_inflight)}</span>
+          <span>UDP datagrams shed — in-flight ceiling full</span>
+          <span class="mono num">
+            {counters.dns_udp_inflight.shed.toLocaleString()}
+          </span>
         </div>
       )}
       <p class="note">
@@ -56,7 +66,19 @@ export function BackpressureCard({ telemetry }: { telemetry: Telemetry | null })
           counters are the only standing record that a request was refused at
           all — the reason is in the log line.
         </span>
+        <span class="footnote-line">
+          Peak is the process-lifetime high-water mark of active, and it is the
+          figure that sizes <span class="mono">[dns] tcp_max_connections</span>{' '}
+          and <span class="mono">udp_max_inflight</span> after a soak. The UDP
+          figures stay 0 while <span class="mono">udp_max_inflight</span> is 0,
+          the default: the listener then counts nothing. DoT is bounded by a
+          compiled-in cap of 64 with no config key.
+        </span>
       </p>
     </Card>
   );
+}
+
+function activeAndPeak(gauge: { active: number; peak: number }): string {
+  return `${gauge.active.toLocaleString()} / ${gauge.peak.toLocaleString()}`;
 }
