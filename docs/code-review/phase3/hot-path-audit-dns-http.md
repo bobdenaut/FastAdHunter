@@ -1340,7 +1340,7 @@ owner's approval:
 Gates for that batch, Windows dev box: `cargo fmt --all -- --check` clean;
 `cargo clippy --workspace --all-targets -- -D warnings` clean with and without
 `--all-features`; `cargo test --all-features --workspace` **1659 passed, 0
-failed** (1657 before); `tsc --noEmit` clean; `vitest run` 625 passed. The S1
+failed** (1657 before); `tsc --noEmit` clean; `vitest run` 1056 passed. The S1
 test was run red before its fix landed.
 
 ## Remaining TODOs

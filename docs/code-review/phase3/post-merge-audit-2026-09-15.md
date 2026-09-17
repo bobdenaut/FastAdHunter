@@ -718,7 +718,7 @@ The 2026-09-17 fixes — N2, SP2 and R2, on the owner's approval:
 Gates for that batch, Windows dev box: `cargo fmt --all -- --check` clean;
 `cargo clippy --workspace --all-targets -- -D warnings` clean with and without
 `--all-features`; `cargo test --all-features --workspace` **1657 passed, 0
-failed** (1656 before); `tsc --noEmit` clean; `vitest run` 625 passed. Both new
+failed** (1656 before); `tsc --noEmit` clean; `vitest run` 1056 passed. Both new
 tests were run red before their fix landed.
 
 ## Remaining TODOs
