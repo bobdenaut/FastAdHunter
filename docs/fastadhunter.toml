@@ -69,7 +69,7 @@ address = "::"
 port = 8444
 
 [https.sni]
-no_sni = "block"
+no_sni = "pass"
 
 [egress]
 allow_destinations = []
@@ -186,7 +186,7 @@ sample_interval_seconds = 360
 retention_days = 30
 
 [api]
-address = "0.0.0.0"
+address = "::"
 port = 8443
 tls = true
 
