@@ -29,7 +29,7 @@ Two consumers, one of which cannot be worked around:
   hostname typed into Android Private DNS. It is the only new name Phase 3
   needs: plain DNS is reached by address through DHCP, and DoH rides the API
   server at `https://fah-api.localbox.ro:8443/dns-query`
-  (`fah-api/src/routes.rs:123`). The wildcard already covers it; one label only,
+  (`fah-api/src/routes.rs:125`). The wildcard already covers it; one label only,
   so `fah-dot.localbox.ro` works and `a.fah-dot.localbox.ro` does not. The
   record is `A → 172.17.0.2`, DNS-only — Cloudflare cannot proxy DoT, which is
   raw TLS rather than HTTPS — and it exists, created 2026-09-13. It resolves
@@ -41,8 +41,9 @@ Two consumers, one of which cannot be worked around:
 
   **It only works while no CA exists.** `dot_tls` falls back to the API
   certificate pair, which is this public one, but only when the store holds no
-  CA; with a CA present `MintingResolver` mints a private leaf for the SNI the
-  client sent (`fastadhunter/src/main.rs:892-930`). Android always sends SNI in
+  CA; with a CA present `fah-certs`' `MintingResolver` mints a private leaf for
+  the SNI the client sent (`fastadhunter/src/main.rs:970`, the `store.has_ca()`
+  branch at `999-1008`). Android always sends SNI in
   hostname mode, so generating a CA — to try interception, say — silently
   breaks Private DNS on every device in the house. Interception ships disabled,
   so the shipped state is the working one.
@@ -67,7 +68,9 @@ Two consumers, one of which cannot be worked around:
 | Renew after | **2026-11-08** |
 | Chain | leaf ← `YE2` ← `Root YE` (cross-signed) ← `ISRG Root X2` |
 | Files | `.vscode/lego/` — gitignored, untracked, holds the private key |
-| ACME client | `lego 5.4.1` at `~/bin/lego.exe` |
+| ACME client | `lego 5.4.1` at `~/bin/lego.exe` (not on PATH; call it by full path) |
+| Cloudflare token | `.vscode/cloudflare.token` — **empty, 0 bytes as of 2026-09-17**. Renewal cannot run until it is re-created; see §Renewing |
+| OpenSSL | `C:\Program Files\OpenSSL-Win64\bin\openssl.exe`, 4.0.2, installed 2026-09-17 via `winget install -e --id ShiningLight.OpenSSL.Light`. Ships **no CA bundle** — see §Shells |
 
 ## Shells
 
@@ -82,8 +85,11 @@ Four differences that produce wrong results rather than errors:
 
 - **`curl` is not curl in PowerShell.** It is an alias for `Invoke-WebRequest`,
   which does not understand `-s`, `--resolve` or `-I`. Always type `curl.exe`.
-  On this box that resolves to `C:\Program Files\Git\mingw64\bin\curl.exe`,
-  the same binary Git Bash uses.
+  That resolves to a **different binary in each shell** — `C:\WINDOWS\system32\
+  curl.exe` in PowerShell, `C:\Program Files\Git\mingw64\bin\curl.exe` in Git
+  Bash, because Git puts only `Git\cmd` on the system PATH, not `mingw64\bin`.
+  Both are 8.21.0 and both are Schannel, so the note below still holds for
+  either; the binaries are simply not the same file.
 - **`$env:VAR = …` persists for the whole session.** The Bash form
   `VAR=… command` sets the variable for one command only. After running a
   PowerShell step the API token stays in the session's environment until the
@@ -96,8 +102,28 @@ Four differences that produce wrong results rather than errors:
 - **Redirect with `*>`, not `|`.** Piping lego through anything buffers the log
   until the process exits, which is what made a stall look like normal progress.
 
-`openssl.exe`, `whois.exe` and `nslookup.exe` are on PATH in both shells —
-openssl and curl come from the Git for Windows install, whois from Sysinternals.
+`whois.exe` (Sysinternals) and `nslookup.exe` (System32) are on PATH in both
+shells.
+
+**OpenSSL is a separate install, and it changed on 2026-09-17.** Until that date
+the only copy was Git's, at `C:\Program Files\Git\mingw64\bin\openssl.exe`,
+reachable from Git Bash and **not** from PowerShell — a PowerShell step calling
+`openssl` failed with `The term 'openssl' is not recognized`. It is now
+installed natively (ShiningLight 4.0.2, winget) at `C:\Program Files\
+OpenSSL-Win64\bin`, appended to the **user** PATH by hand because winget does
+not do it. Two consequences:
+
+- A shell opened before that PATH edit will not see it. Re-read the registry
+  with `$env:Path = [Environment]::GetEnvironmentVariable('Path','Machine') +
+  ';' + [Environment]::GetEnvironmentVariable('Path','User')`, or open a new
+  window.
+- **That build ships no CA bundle.** Every verification below that checks a
+  chain must pass `-CAstore 'org.openssl.winstore://'` to borrow the Windows
+  trust store; without it OpenSSL reports `unable to get local issuer
+  certificate` on a certificate that is perfectly fine, which is exactly the
+  failure step 8 exists to detect. Git Bash's OpenSSL 3.5.7 has its own bundle
+  and does not need the flag — another reason the two shells are not
+  interchangeable here.
 
 ## Environment facts the procedure depends on
 
@@ -446,6 +472,38 @@ quota:
 Due **after 2026-11-08**; the certificate dies 2026-12-08. lego refuses early
 with `Skip renewal: The certificate expires at …`, which is not an error.
 
+That date is not something to track by hand. lego 5 has no separate `renew`
+subcommand — `run` is "get or renew" and decides for itself, defaulting to
+one third of the certificate's lifetime remaining, which is 30 days on a 90-day
+certificate and lands exactly on 2026-11-08. `--renew-days N` overrides it.
+Running `run` monthly is therefore safe: outside the window it is a no-op that
+costs one ACME directory fetch.
+
+One flag matters for automation. lego adds a **random sleep before a renewal**
+and its own help recommends against `--no-random-sleep` for automated runs, so a
+real renewal takes considerably longer than the command suggests. That needs no
+action — a `schtasks`-created task allows `PT72H`, measured — but it does mean a
+renewal run is not something to watch and cancel when it seems to hang.
+
+### Before you run anything: the token file is empty
+
+`.vscode/cloudflare.token` is **0 bytes** (checked 2026-09-17). Every command
+below reads it, and an empty token produces a Cloudflare `401` part-way through
+the DNS-01 challenge — after lego has already opened an ACME order, which spends
+one of the five failed validations per hour.
+
+Re-create it first, per §4, and check it is non-empty before starting:
+
+```powershell
+(Get-Item .vscode\cloudflare.token).Length   # must not be 0
+```
+
+The token needs `Zone:DNS:Edit` on `localbox.ro` and nothing else. Keeping the
+file empty between renewals is reasonable hygiene — it just has to be filled
+before, not during.
+
+### The command
+
 Same command as step 7 — the flags are not optional:
 
 ```sh
@@ -476,9 +534,252 @@ $env:CLOUDFLARE_DNS_API_TOKEN = (Get-Content .vscode\cloudflare.token -Raw).Trim
 Then re-run the step 8 verification. A renewal that drops `--preferred-chain`
 produces a working-looking certificate that the probe refuses.
 
+**`--preferred-chain` fails silently.** lego's own help: *"If no match, the
+default offered chain will be used."* A wrong or misspelled chain name is not an
+error — it is a certificate that verifies against the OS store, serves cleanly
+in a browser, and is rejected by `webpki-roots`. Nothing tells you until the
+probe does. Step 8 is the only thing standing between that and a deploy, so it
+is not optional either.
+
 To re-issue before the renewal window — to change the chain, say — delete
 `.vscode/lego/certificates` and run again. `--renew-force` does the same thing.
 Mind the limit below before doing this repeatedly.
+
+### Renewing is not finished until the router has it
+
+A new file in `.vscode/lego/certificates/` changes nothing the household sees.
+The pair has to reach the container's `/config`, and **the container has to
+restart**:
+
+```powershell
+scp .vscode\lego\certificates\_.localbox.ro.crt `
+    bobdenaut:kingston/fastadhunter/config/api-cert.pem
+scp .vscode\lego\certificates\_.localbox.ro.key `
+    bobdenaut:kingston/fastadhunter/config/api-key.pem
+
+ssh bobdenaut '/container/stop [find name~"fastadhunter"]'
+ssh bobdenaut '/container/start [find name~"fastadhunter"]'
+```
+
+The restart is **not optional and cannot be avoided by the API**. `ApiServer::
+bind` takes an `Option<Arc<rustls::ServerConfig>>` and builds its `TlsAcceptor`
+from it once (`fah-api/src/server.rs:59-74`); there is no `ResolvesServerCert`
+and no swap cell, so the loaded pair is fixed for the life of the process. That
+applies to `POST /api/v1/certificates/import` too — the route rewrites the files
+on disk, but the listener keeps serving the old certificate until the container
+comes back.
+
+Budget a short DNS outage for the restart: this container is the household's
+only resolver. From Phase 3 onward the same restart also reloads DoT, which
+serves this certificate.
+
+### Automating it
+
+`scripts/renew-certificate.ps1` wraps everything above for Task Scheduler. It
+is ASCII-only and written for PowerShell 5.1. It derives every path from its own
+location, so it runs correctly from any working directory — which matters,
+because Task Scheduler does not set one. It re-reads PATH from the registry on
+start, since a scheduler session can predate the OpenSSL install.
+
+#### Parameters
+
+| Parameter | Effect |
+| --------- | ------ |
+| *(none)* | Preflight, then lego, then verify. Leaves the result on the dev box and touches nothing remote. |
+| `-CheckOnly` | Report only. Reads the certificate off the **live listener**, logs the days remaining, exits `2` when under the threshold. Runs nothing else. |
+| `-WarnDays <n>` | Threshold for `-CheckOnly`. Default `30`. Ignored in every other mode. |
+| `-Deploy` | After a successful renewal: `scp` the pair to `/config`, restart the container, then confirm the listener serves the new date. |
+| `-Force` | Adds `--renew-force`, re-issuing even when not due. Mind the 5-duplicates-per-week limit. Does **not** deploy on its own — combine with `-Deploy`. |
+
+Two rules about how they combine:
+
+- **`-CheckOnly` wins over everything.** It returns before the renewal logic is
+  reached, so `-CheckOnly -Deploy` reports and exits `0`; it does not deploy.
+- **`-Force` is not a deploy.** `-Force` alone re-issues and stops on the dev
+  box. Reaching the router always requires `-Deploy`.
+
+#### What a full run does, in order
+
+1. Re-reads PATH; fails if `openssl` is still missing.
+2. Checks `lego.exe`, the certificate store, and that the token file is
+   **non-empty** — this stops before lego rather than burning a failed
+   validation on a `401`.
+3. Records the current certificate's fingerprint and expiry.
+4. Runs lego with the flags from §The command, redirecting (not piping) to a
+   per-run log. Clears `CLOUDFLARE_DNS_API_TOKEN` from the environment
+   afterwards, even on failure.
+5. Compares the fingerprint. Unchanged means not due: logs it and exits `0`
+   without deploying.
+6. **Runs step 8 in code** — downloads the ISRG Root X2 root and does
+   `openssl verify -CAfile <root> -untrusted <issuer> <cert>`. A cryptographic
+   path validation, not a text match: the string `ISRG Root X2` also appears in
+   the wrong chain, so a substring test would accept both. Anything other than
+   `OK` aborts before the router is touched.
+7. With `-Deploy` only: copies the pair, restarts the container, then polls the
+   listener for up to 120 s and checks it now serves the new expiry date.
+
+Because of step 6 a renewal run needs to reach `letsencrypt.org` as well as the
+ACME and Cloudflare endpoints.
+
+#### Exit codes
+
+| Code | Meaning |
+| ---- | ------- |
+| `0` | Success, or nothing was due |
+| `2` | `-CheckOnly` only: fewer than `-WarnDays` days remain |
+| `1` | Any failure — empty token, lego error, chain not verified, scp or restart failed |
+
+Task Scheduler shows these in its "Last Run Result" column, so a bad run is
+visible without opening a log.
+
+#### Two failure modes worth knowing
+
+- **`-CheckOnly` reads the live listener, not the local file.** If the container
+  is down it exits `1` with "is the container up?". That makes the daily task a
+  liveness check as well as an expiry check — but it also means exit `1` there
+  usually means "FastAdHunter is not answering", not "renewal is broken".
+- **A half-copied pair.** The certificate and the key are two separate `scp`
+  calls. If the first succeeds and the second fails, `/config` holds a
+  mismatched pair and the script stops *before* restarting — so the running
+  container is unaffected and still serving the old certificate. The log says
+  so explicitly. Fix the pair before restarting anything.
+
+#### Setting up the scheduled tasks
+
+**The default run never touches the router.** Deployment is opt-in precisely
+because it restarts the household's resolver.
+
+Two tasks are enough — daily warning, monthly renewal. Everything below was
+created, run and deleted on this box on 2026-09-17, so the defaults quoted are
+measured rather than assumed.
+
+```powershell
+$ps = 'powershell.exe'
+$sc = 'E:\FastAdHunter\scripts\renew-certificate.ps1'
+
+# Daily 08:00 - warn only, exit code 2 when under 30 days
+schtasks /Create /TN "FAH cert check" /SC DAILY /ST 08:00 /F `
+  /TR "$ps -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$sc`" -CheckOnly"
+
+# Monthly, 1st at 04:00 - renew and deploy if due; a no-op otherwise
+schtasks /Create /TN "FAH cert renew" /SC MONTHLY /D 1 /ST 04:00 /F `
+  /TR "$ps -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$sc`" -Deploy"
+```
+
+Monthly is safe because lego decides: outside the window the run costs one ACME
+directory fetch and exits having changed nothing.
+
+`-WindowStyle Hidden` keeps a console from flashing up every morning. Neither
+task needs elevation — the script writes only inside the repo and talks over the
+network.
+
+#### Three schtasks defaults that are wrong for this job
+
+Measured on the tasks created above. Fix them or know you have accepted them.
+
+| Setting | schtasks default | Why it matters |
+| ------- | ---------------- | -------------- |
+| `LogonType` | **`Interactive`** — "Interactive only" | The task does not run unless that user is logged on. A laptop sitting at the lock screen is fine; one that is logged out is not. |
+| `StartWhenAvailable` | **`False`** | A missed run is **not** made up. If the machine is off at 04:00 on the 1st, the monthly renewal simply never happens that month — silently. This is the one that actually loses you a certificate. |
+| `ExecutionTimeLimit` | `PT72H` (3 days) | Already ample. lego's random pre-renewal sleep is nowhere near this, so nothing needs changing — noted only because it is the setting people reach for first. |
+
+`schtasks` cannot set `StartWhenAvailable`; use the scheduler cmdlets:
+
+```powershell
+foreach ($n in 'FAH cert check','FAH cert renew') {
+  $s = Get-ScheduledTask -TaskName $n
+  $s.Settings.StartWhenAvailable = $true
+  Set-ScheduledTask -TaskName $n -Settings $s.Settings | Out-Null
+}
+```
+
+To run when logged off as well, recreate with stored credentials —
+`schtasks /Create … /RU liviu /RP *` prompts for the password and switches the
+task to `Password` logon type. Storing the password is a real trade; interactive
+only is a defensible choice on a personal dev box, as long as you know a
+logged-out month is a skipped month.
+
+One more thing the defaults get right by accident: `Start In` is `N/A`, meaning
+the task has no working directory. The script does not care — it derives every
+path from its own location — but anything else you schedule here will.
+
+#### Dry-testing a scheduled task
+
+Do this once after creating them. It takes a minute and catches quoting
+mistakes that would otherwise surface in November.
+
+**1. Check the command line the task actually stored.** `schtasks` strips the
+outer quotes, so this is where a path problem shows up:
+
+```powershell
+schtasks /Query /TN "FAH cert check" /V /FO LIST |
+  Select-String 'Task To Run|Run As User|Logon Mode|Start In'
+```
+
+Expected — note the script path is stored *unquoted*, which is fine here only
+because the path has no spaces:
+
+```text
+Task To Run:  powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File E:\FastAdHunter\scripts\renew-certificate.ps1 -CheckOnly
+Run As User:  liviu
+Logon Mode:   Interactive only
+Start In:     N/A
+```
+
+**2. Fire it by hand** rather than waiting for 08:00:
+
+```powershell
+schtasks /Run /TN "FAH cert check"
+Start-Sleep -Seconds 15
+schtasks /Query /TN "FAH cert check" /V /FO LIST | Select-String 'Last Result'
+```
+
+**3. Read the result code.** These are the three you will see:
+
+| `Last Result` | Meaning |
+| ------------- | ------- |
+| `0` | ran, certificate has more than `-WarnDays` left |
+| `2` | ran, renewal is due — this is the warning firing |
+| `1` | the script failed; read the log |
+| `267011` | **never run.** `0x41303`, not an error — it is what a freshly created task reports |
+| `267009` | still running; wait and query again |
+
+`267011` on a new task is the one that looks alarming and is not.
+
+**4. Confirm the script actually logged it**, so you know the result came from
+the script and not from the scheduler failing to launch it:
+
+```powershell
+Get-Content ".vscode\lego\logs\renew-$(Get-Date -f yyyy-MM-dd).log" -Tail 3
+```
+
+**5. Prove the warning path works**, since a daily task that can only ever
+report `0` tells you nothing. Force it by raising the threshold above the days
+remaining — on a fresh 90-day certificate, `-WarnDays 200` always trips:
+
+```powershell
+schtasks /Create /TN "FAH cert DRYTEST" /SC DAILY /ST 08:00 /F `
+  /TR "$ps -NoProfile -ExecutionPolicy Bypass -File `"$sc`" -CheckOnly -WarnDays 200"
+schtasks /Run /TN "FAH cert DRYTEST"
+Start-Sleep -Seconds 15
+schtasks /Query /TN "FAH cert DRYTEST" /V /FO LIST | Select-String 'Last Result'
+schtasks /Delete /TN "FAH cert DRYTEST" /F
+```
+
+`Last Result: 2` is the pass. Delete the throwaway task afterwards — the last
+line does it.
+
+There is no dry test for the renewal task short of a real renewal: `-Deploy`
+cannot be rehearsed without issuing a certificate and restarting the container.
+What the steps above do establish is that the scheduler can launch the script,
+that its exit codes arrive intact, and that it writes a log — which is every
+part of the chain except lego itself.
+
+#### Logs
+
+`.vscode/lego/logs/` (gitignored): one `renew-YYYY-MM-DD.log` per day, plus a
+`lego-YYYY-MM-DD-HHmmss.log` holding the raw lego output of each renewal
+attempt.
 
 ### Rate limits worth knowing
 
@@ -493,7 +794,9 @@ alternates instead of re-issuing — it costs nothing:
 
 ```sh
 # Git Bash
-curl -sI "$(grep -o '"certUrl":"[^"]*"' \
+# lego pretty-prints the JSON, so the pattern has to allow the space after the
+# colon; without it the match is empty and curl fails on a blank argument.
+curl -sI "$(grep -o '"certUrl": *"[^"]*"' \
   .vscode/lego/certificates/_.localbox.ro.json | cut -d'"' -f4)" | grep -i '^link'
 ```
 
@@ -537,28 +840,53 @@ Stop-Process -Name lego -Force
 
 ## Open items
 
-- Two records exist: `router.localbox.ro` → `192.168.10.1` (RouterOS WebFig on
-  8443) and `fah-api.localbox.ro` → `172.17.0.2` (the FastAdHunter API). No name
-  points at a DoT listener; port 853 answers nowhere yet, and the address one
-  will use depends on Runbook 1, which has not run. The deployment is
-  **LAN-only** — see the decision below.
+- Three records exist, all verified 2026-09-17: `router.localbox.ro` →
+  `192.168.10.1` (RouterOS WebFig on 8443), `fah-api.localbox.ro` →
+  `172.17.0.2` (the FastAdHunter API) and `fah-dot.localbox.ro` → `172.17.0.2`
+  (the DoT name decided on 2026-09-13, created the same day). Port 853 still
+  answers nowhere — 0.3.4 has no DoT listener — so a probe gets a refused
+  connection, not a certificate error, until 0.4.0 is deployed. The deployment
+  is **LAN-only** — see the decision below.
+- **Settled 2026-09-17: `fah-dot.localbox.ro` is the DoT name.** Both records
+  point at `172.17.0.2` and either would work, so this is a naming decision
+  rather than a functional one — keeping them apart means the DoT record can be
+  repointed later without moving the dashboard. `docs/0.4.0-install.md` §7 and
+  its §9 verification commands were changed to match; `fah-api.localbox.ro`
+  stays the name for the API, the dashboard and DoH.
 - **Deployed on the API since 2026-09-09.** The pair was copied onto the
   container's `/config` volume as `api-cert.pem` / `api-key.pem` and picked up
   at the restart of `14:15:15` local. `https://fah-api.localbox.ro:8443` now
   verifies strictly — `curl` without `-k` answers `200`. The replaced
   self-signed pair, and the rest of `/config`, is backed up outside the repo.
   The `POST /api/v1/certificates/import` route was **not** used: it does not
-  exist in 0.3.3, which predates Phase 3. Replacing the files on disk is the
-  only route until a Phase 3 build is deployed.
+  exist in 0.3.3, which predates Phase 3. 0.4.0 has it, but it does not remove
+  the restart — see §Renewing. Replacing the files on disk stays the simplest
+  route either way.
 - Two names lost their clean padlock in the swap: `172.17.0.2` and
   `fastadhunter` were SANs of the old self-signed certificate and are not on
   this one, which covers `*.localbox.ro` and `localbox.ro` only. Reach the API
   by name.
-- Renewal is manual. There is no timer, no hook and no CI; 2026-11-08 exists
-  only in this document and in the Let's Encrypt expiry email.
+- Renewal is manual in the sense that nothing in FastAdHunter does it, and
+  nothing will: an ACME client in the binary would need a Cloudflare
+  zone-edit token stored on the router, which is a worse trade than a
+  quarterly task. `scripts/renew-certificate.ps1` automates the dev-box side
+  and is meant to be driven by Task Scheduler; 2026-11-08 otherwise exists only
+  in this document and in the Let's Encrypt expiry email.
 - The private key lives in `.vscode/lego/` on the dev box, gitignored and
   unbacked-up. Losing it means re-issuing, which is cheap — but so is copying it
   somewhere safe.
+- **`_.localbox.ro.json` records `"preferredChain": "ISRG Root X1"`, which is
+  not what this document tells you to pass.** The files on disk are right: the
+  delivered `.crt` runs leaf ← `YE2` ← `Root YE` ← `ISRG Root X2` and verifies
+  against the X2 root, while `.crt.default-chain` holds the longer alternate
+  continuing `ISRG Root X2` ← `ISRG Root X1`. So the deployed certificate is
+  correct and the metadata disagrees with it. Unresolved — found by dry-running
+  these commands on 2026-09-17, not by any failure. Since `--preferred-chain`
+  falls back silently, do not assume the next renewal reproduces this chain:
+  run step 8 and read the result.
+- Step 8 writes `isrg-x2.pem` into whatever directory it runs from, and `*.pem`
+  is **not** gitignored at the repo root. Run it from a scratch directory or
+  delete the file afterwards, or it shows up as untracked.
 
 ## Why the deployment is LAN-only, 2026-09-09
 

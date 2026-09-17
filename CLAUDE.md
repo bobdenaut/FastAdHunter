@@ -287,6 +287,8 @@ docs/          # images/, diagrams/, decisions/ (ADRs); solutions/ = documented
                # learnings (bugs, patterns; YAML frontmatter: module, tags, problem_type)
 dashboard/     # frontend/ — Vite + TypeScript + Preact dashboard (p5-05)
 plan/          # task orchestration — open/ wip/ closed/ phases
+scripts/       # operator scripts (PowerShell); outside the build, not tested
+               # by the gates — see docs/public-certificate.md
 ```
 
 ## Task workflow
