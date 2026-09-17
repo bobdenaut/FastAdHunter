@@ -72,4 +72,3 @@ node_modules/
 __pycache__/
 docs/code-review/**/soak-*/collector.log
 docs/code-review/**/soak-*/pulls/
-docs/0.4.0-install.md
