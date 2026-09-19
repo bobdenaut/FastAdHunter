@@ -148,6 +148,17 @@ dropped after binding, which the start-up log states.
   only device-side check available is the byte count — compare it against the
   build host's `ls -l`; a sha256 taken on the build host says nothing about what
   landed.
+- **`ssh bobdenaut '…'` exits 0 even when RouterOS reports an error.**
+  `no such item` and `input does not match any value of value-name` come back as
+  plain text on stdout with exit code 0, so `$LASTEXITCODE` (or `$?`) only
+  reports ssh-level failures. A successful command prints nothing; treat any
+  output as the error. Confirmed on the device 2026-09-19.
+- **Windows PowerShell 5.1 strips embedded double quotes on the way to ssh.**
+  `ssh bobdenaut '/container/stop [find name~"fastadhunter"]'` reaches the router
+  as `[find name~fastadhunter]`, which matches nothing, and with the trap above
+  the command fails silently. Escape them as `\"` in 5.1; PowerShell 7.3+
+  escapes them itself and takes the line as written. `scripts/renew-certificate.ps1`
+  branches on `$PSNativeCommandArgumentPassing`. Confirmed 2026-09-19.
 
 ## Build and deploy pipeline
 

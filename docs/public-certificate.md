@@ -562,6 +562,15 @@ ssh bobdenaut '/container/stop [find name~"fastadhunter"]'
 ssh bobdenaut '/container/start [find name~"fastadhunter"]'
 ```
 
+The two `ssh` lines work as written from PowerShell 7.3+ and from Bash. From
+Windows PowerShell 5.1 the inner quotes must be escaped —
+`[find name~\"fastadhunter\"]` — because 5.1 copies the argument into ssh's
+command line unescaped, ssh's parser eats the quotes, and the router sees a bare
+word that matches no container. Both commands then do nothing, print nothing and
+exit 0. Verified on the router 2026-09-19: the bare form returned no id, the
+quoted form returned `*2B`. `scripts/renew-certificate.ps1 -Deploy` handles both
+shells and waits for `running=false` before starting.
+
 The restart is **not optional and cannot be avoided by the API**. `ApiServer::
 bind` takes an `Option<Arc<rustls::ServerConfig>>` and builds its `TlsAcceptor`
 from it once (`fah-api/src/server.rs:59-74`); there is no `ResolvesServerCert`
