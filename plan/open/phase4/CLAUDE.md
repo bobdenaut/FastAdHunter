@@ -14,33 +14,36 @@ proven in isolation before it touches the proxy (streaming + bounded memory
 must be solid first). Pipeline integration wires verdicts, policies, events
 and stats together, then proof against budgets.
 
-> **PARKED 2026-09-15 — all five tasks.** Owner decision, recorded with its
-> evidence in [ADR-0009](../../../docs/decisions/0009-phase-4-parked.md).
-> Rewriting HTML needs the response body; an HTTPS body needs TLS termination,
-> which is interception, and interception is off since 2026-09-13 because
-> installing the CA on televisions, WiFi routers and appliances is an
-> operational risk the household will not take. That leaves plain HTTP, which
-> carried 2 900 requests and zero blocks in 3.3 days of real traffic, and the
-> deployed ruleset is 720 URL rules against 1 182 029 DNS ones — 0.06 %.
+> **Built, dormant by default — owner decision 2026-09-19.** All five tasks
+> are implemented and ship with `[html] enabled = false`. The code lands, the
+> gate stays closed, and nothing on the deployed box changes until the owner
+> switches it on at runtime (`POST /api/v1/config {"html": {"enabled": true}}`,
+> no restart). This supersedes the 2026-09-15 park recorded in
+> [ADR-0009](../../../docs/decisions/0009-phase-4-parked.md); its evidence
+> still describes the deployment — interception is off and the deployed lists
+> carry 720 URL rules and no cosmetic ones — which is why the default is off.
 >
-> Nothing here is abandoned: the task files stay as written and a later decision
-> restores them. Reviving the phase needs **both** interception switched on and
-> URL-path lists loaded; either alone leaves the rewriter with nothing to act on.
->
-> Per [plan/CLAUDE.md](../../CLAUDE.md), a phase may close with parked tasks in
-> it. When Phase 3 closes, the selector moves this phase to `wip`, finds no
-> `WAITING` task, and moves it to `closed` — the closure is a recorded
-> consequence, not an ad-hoc folder move.
+> Switching it on later needs **both** interception enabled for real clients
+> **and** cosmetic/URL-path lists loaded; either alone leaves the rewriter with
+> nothing to act on. Building it needs neither: every task is verified on the
+> dev box, and on-device figures come from a probe-container bench run, not a
+> household soak (see the p4-05 plan).
 
 **Always select the first task whose `STATUS` is `WAITING`.**
 
-| # | Task file | Outcome | MODEL | STATUS |
-|---|-----------|---------|-------|--------|
-| 1 | `p4-01-html-scaffold.md` | `[html]` config + gating + doc/diagram updates; rewrite hook stub | Opus | PARKED |
-| 2 | `p4-02-cosmetic-rules-activation.md` | Cosmetic rules compile into per-hostname selector sets (heavy) | Opus | PARKED |
-| 3 | `p4-03-streaming-rewriter.md` | lol_html streaming rewriter: bounded, charset/encoding-aware (heavy) | Opus | PARKED |
-| 4 | `p4-04-pipeline-integration.md` | Selective application in HTTP/HTTPS pipeline; policies, events, stats | Opus | PARKED |
-| 5 | `p4-05-phase4-verification.md` | Rewrite budgets in PERFORMANCE.md, benches, e2e, RB5009 validation | Opus | PARKED |
+| # | Task file | Plan | Outcome | MODEL | STATUS |
+|---|-----------|------|---------|-------|--------|
+| 1 | `p4-01-html-scaffold.md` | [p4-01-html-scaffold-plan.md](p4-01-html-scaffold-plan.md) | `[html]` config + gating + doc/diagram updates; rewrite hook stub | Opus | WAITING |
+| 2 | `p4-02-cosmetic-rules-activation.md` | [p4-02-cosmetic-rules-activation-plan.md](p4-02-cosmetic-rules-activation-plan.md) | Cosmetic rules compile into per-hostname selector sets (heavy) | Opus | WAITING |
+| 3 | `p4-03-streaming-rewriter.md` | [p4-03-streaming-rewriter-plan.md](p4-03-streaming-rewriter-plan.md) | lol_html streaming rewriter: bounded, charset/encoding-aware (heavy) | Opus | WAITING |
+| 4 | `p4-04-pipeline-integration.md` | [p4-04-pipeline-integration-plan.md](p4-04-pipeline-integration-plan.md) | Selective application in HTTP/HTTPS pipeline; policies, events, stats | Opus | WAITING |
+| 5 | `p4-05-phase4-verification.md` | [p4-05-phase4-verification-plan.md](p4-05-phase4-verification-plan.md) | Rewrite budgets in PERFORMANCE.md, benches, e2e, RB5009 validation | Opus | WAITING |
+
+Each plan is the step list for its task: anchors into the code as of 0.4.1,
+decisions settled up front, tests, benches, the doc edits to list after the
+gates, and the review-file hand-off. Read the task file first, then its plan.
+The plans were written 2026-09-19 against workspace 0.4.1 under the
+built-dormant decision above; re-check every line anchor before editing.
 
 ## TASK START / PHASE CONTEXT
 
