@@ -4,8 +4,8 @@
     deploys it to the FastAdHunter container on bobdenaut.
 
 .DESCRIPTION
-    Written for Windows PowerShell 5.1 and Task Scheduler. Safe to run on any
-    cadence: lego decides for itself whether the certificate is due (default
+    Runs under Windows PowerShell 5.1 (Task Scheduler) and PowerShell 7. Safe to
+    run on any cadence: lego decides for itself whether the certificate is due (default
     window is a third of the lifetime, so 30 days on a 90-day certificate) and
     no-ops otherwise. Schedule it weekly - monthly can leave as little as a week
     of margin depending on where the window falls. See
@@ -75,6 +75,10 @@ $Resolver    = '192.168.10.1:53'
 $Chain       = 'ISRG Root X2'
 $RouterHost  = 'bobdenaut'
 $RemoteDir   = 'kingston/fastadhunter/config'
+# The container name carries the version (fastadhunter-0.3.4), so match by
+# regex, never by exact name. The quotes are required: with them stripped the
+# same find matched no container at all when tested on the router.
+$Container   = '[find name~"fastadhunter"]'
 $LiveHost    = 'fah-api.localbox.ro'
 $LivePort    = 8443
 
@@ -103,8 +107,32 @@ $env:Path = [Environment]::GetEnvironmentVariable('Path', 'Machine').TrimEnd(';'
 if (-not (Get-Command openssl -ErrorAction SilentlyContinue)) {
     if (Test-Path (Join-Path $OpenSslDir 'openssl.exe')) { $env:Path += ";$OpenSslDir" }
 }
+if (-not (Get-Command openssl -ErrorAction SilentlyContinue)) {
+    Fail 'openssl is not on PATH  -  see docs/public-certificate.md, Shells'
+}
 
 # -- Helpers -----------------------------------------------------------------
+
+# Router commands carry double quotes ($Container), and the two PowerShells
+# hand them to ssh.exe differently. Windows PowerShell 5.1 (and PowerShell 7 in
+# 'Legacy' mode) copies the argument into the command line unescaped, ssh's own
+# parser eats the quotes, and the router sees a bare word that matches nothing.
+# PowerShell 7.3+ escapes them itself, and escaping twice breaks the command
+# the other way. Pick per session, not per script.
+$EscapeRouterQuotes = -not (
+    (Get-Variable PSNativeCommandArgumentPassing -ErrorAction SilentlyContinue) -and
+    $PSNativeCommandArgumentPassing -ne 'Legacy')
+
+# RouterOS exits 0 on its own errors ("no such item", "input does not match"),
+# so $LASTEXITCODE only reports ssh failures. Whatever the router prints comes
+# back for the caller to judge; a successful stop or start prints nothing.
+function Invoke-Router {
+    param([string] $Command)
+    $arg = if ($EscapeRouterQuotes) { $Command -replace '"', '\"' } else { $Command }
+    $out = & ssh -o BatchMode=yes $RouterHost $arg 2>$null
+    if ($LASTEXITCODE -ne 0) { Fail "ssh to $RouterHost failed (exit $LASTEXITCODE) running: $Command" }
+    ($out | Where-Object { $_ }) -join ' '
+}
 
 # The winget OpenSSL build ships no CA bundle, so anything that verifies a
 # chain has to borrow the Windows trust store.
@@ -168,9 +196,6 @@ Write-Log "renewal run starting (Deploy=$Deploy Force=$Force)"
 
 if (-not (Test-Path $LegoExe))  { Fail "lego not found at $LegoExe" }
 if (-not (Test-Path $CertDir))  { Fail "no certificate store at $CertDir" }
-if (-not (Get-Command openssl -ErrorAction SilentlyContinue)) {
-    Fail 'openssl is not on PATH  -  see docs/public-certificate.md, Shells'
-}
 
 # The token file is routinely left empty between renewals. An empty token fails
 # part-way through the DNS-01 challenge, after an ACME order is already open,
@@ -272,12 +297,24 @@ Write-Log 'pair copied to /config'
 # The loaded pair is fixed for the life of the process: ApiServer::bind builds
 # its TlsAcceptor once and there is no resolver to swap. Only a restart picks
 # the new certificate up.
-& ssh $RouterHost '/container/stop [find name~"fastadhunter"]'
-if ($LASTEXITCODE -ne 0) { Fail 'container stop failed' }
-Start-Sleep -Seconds 5
-& ssh $RouterHost '/container/start [find name~"fastadhunter"]'
-if ($LASTEXITCODE -ne 0) { Fail 'container start failed  -  the resolver may be down, check the router now' }
-Write-Log 'container restarted'
+$err = Invoke-Router "/container/stop $Container"
+if ($err) { Fail "container stop failed: $err" }
+
+# Stopping is asynchronous; a start issued while the container is still going
+# down is refused and leaves the resolver off. Wait for running=false first.
+$stopDeadline = (Get-Date).AddSeconds(60)
+do {
+    Start-Sleep -Seconds 3
+    $running = Invoke-Router ":put [/container/get $Container running]"
+} while ($running -ne 'false' -and (Get-Date) -lt $stopDeadline)
+if ($running -ne 'false') {
+    Fail "the container did not stop within 60 s (running=$running)  -  check the router now"
+}
+Write-Log 'container stopped'
+
+$err = Invoke-Router "/container/start $Container"
+if ($err) { Fail "container start failed: $err  -  the resolver is down, check the router now" }
+Write-Log 'container started'
 
 # -- Confirm the listener actually serves the new certificate ----------------
 $deadline = (Get-Date).AddSeconds(120)
