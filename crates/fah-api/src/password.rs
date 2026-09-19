@@ -228,7 +228,7 @@ impl AuthState {
                 if other.is_none() && !reset {
                     tracing::warn!(
                         path = %data_dir.join(session::SECRET_FILE).display(),
-                        "no session secret in /data — generating one; every existing \
+                        "no session secret in /data: generating one; every existing \
                          session is now invalid and the password is unchanged"
                     );
                 }
@@ -391,7 +391,7 @@ pub fn discard_stray_tmp(tmp: &Path) {
     if tmp.exists() {
         tracing::warn!(
             path = %tmp.display(),
-            "discarding an interrupted auth write — a partial file is not a credential"
+            "discarding an interrupted auth write: a partial file is not a credential"
         );
         let _ = fs::remove_file(tmp);
     }

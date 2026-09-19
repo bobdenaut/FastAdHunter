@@ -55,7 +55,7 @@ fn report_missing_shell(root: &Path) {
         tracing::error!(
             path = %root.join(SHELL).display(),
             "web UI missing: the dashboard will not load. /web is image content, \
-             not a volume — a volume mounted over it hides the bundle the image ships"
+             not a volume: a volume mounted over it hides the bundle the image ships"
         );
     }
 }

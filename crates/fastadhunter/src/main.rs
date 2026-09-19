@@ -174,7 +174,7 @@ fn healthcheck(config_path: &Path) -> ExitCode {
 
     if let Err(err) = probe_dns(probe_target(listen)) {
         eprintln!(
-            "fastadhunter: healthcheck failed: dns-probe: {err} — [dns.listen] is a boot \
+            "fastadhunter: healthcheck failed: dns-probe: {err}; [dns.listen] is a boot \
              setting, so an address or port persisted since the last start applies only \
              after a restart"
         );
@@ -270,7 +270,7 @@ fn run(config: Config, config_path: &Path, data_dir: &Path) -> ExitCode {
         Ok(Some(died)) => {
             tracing::error!(
                 error = %died.last_error,
-                "a DNS listener gave up after repeated socket errors — exiting so the \
+                "a DNS listener gave up after repeated socket errors: exiting so the \
                  process is restarted rather than serving nothing"
             );
             eprintln!("fastadhunter: DNS listener died: {}", died.last_error);
@@ -365,7 +365,7 @@ impl Engine {
             Ok(policies) => rules.set_policies(policies),
             Err(error) => tracing::error!(
                 %error,
-                "policies failed to compile after validation — serving every client the \
+                "policies failed to compile after validation: serving every client the \
                  default policy"
             ),
         }
@@ -495,7 +495,7 @@ impl Engine {
         let (keys, generated) = fah_api::ApiKeyStore::load_or_create(config_dir)?;
         if let Some(key) = generated {
             // Printed exactly once, on first boot (SECURITY.md §API access).
-            tracing::info!(api_key = %key, "generated API key — store it now; it is not shown again");
+            tracing::info!(api_key = %key, "generated API key: store it now; it is not shown again");
         }
 
         let (auth, generated_password) = {
@@ -522,7 +522,7 @@ impl Engine {
         if let Some(password) = generated_password {
             tracing::info!(
                 dashboard_password = %password,
-                "generated dashboard password — store it now; it is not shown again"
+                "generated dashboard password: store it now; it is not shown again"
             );
         }
         let api_pair = if config.api.tls || config.dns.listen.dot_enabled {
@@ -551,7 +551,7 @@ impl Engine {
             api_pair
         } else {
             tracing::warn!(
-                "api.tls is disabled — the API key travels in plaintext, and dashboard \
+                "api.tls is disabled: the API key travels in plaintext, and dashboard \
                  session login is unavailable because the session cookie requires a \
                  Secure __Host- prefix; bearer-key authentication is unaffected and the \
                  other three /api/v1/auth routes stay usable. See SECURITY.md"
@@ -602,7 +602,7 @@ impl Engine {
             tokio::task::spawn_blocking(move || dot_tls(&listen, certs.as_ref())).await?
         } else if config.dns.listen.dot_enabled {
             Err(
-                "the API certificate pair did not load — the DoT listener is closed until \
+                "the API certificate pair did not load: the DoT listener is closed until \
                  /config is repaired and the container restarted"
                     .to_string(),
             )
@@ -629,7 +629,7 @@ impl Engine {
         if config.dns.listen.doh_enabled && !config.api.tls {
             tracing::warn!(
                 "[dns.listen] doh_enabled = true, but [api] tls = false: /dns-query is not \
-                 served — DoH is HTTPS-only and needs the API listener's TLS"
+                 served; DoH is HTTPS-only and needs the API listener's TLS"
             );
         }
 
@@ -961,7 +961,7 @@ fn egress_exceptions(
     if !exceptions.is_empty() {
         tracing::info!(
             count = exceptions.len(),
-            "egress allow-list active — private destinations permitted"
+            "egress allow-list active: private destinations permitted"
         );
     }
     Ok(exceptions)
@@ -975,7 +975,7 @@ fn dot_tls(
         return Ok(None);
     }
     let Some(store) = certs else {
-        let reason = "[dns.listen] dot_enabled = true, but the certificate store did not open — \
+        let reason = "[dns.listen] dot_enabled = true, but the certificate store did not open: \
                       the DoT listener is closed until /config is repaired and the container \
                       restarted"
             .to_string();
@@ -986,7 +986,7 @@ fn dot_tls(
         Ok(key) => key,
         Err(error) => {
             let reason = format!(
-                "the API certificate pair did not load ({error}) — the DoT listener is closed \
+                "the API certificate pair did not load ({error}): the DoT listener is closed \
                  until /config is repaired and the container restarted"
             );
             tracing::error!("{reason}");
@@ -1029,7 +1029,7 @@ fn interception(
         if clients > 0 {
             tracing::warn!(
                 count = clients,
-                "the certificate store did not open — listed clients are spliced, not \
+                "the certificate store did not open: listed clients are spliced, not \
                  intercepted, until /config is repaired and the container restarted"
             );
         }
@@ -1038,7 +1038,7 @@ fn interception(
     if !store.has_ca() && clients > 0 {
         tracing::warn!(
             count = clients,
-            "clients are listed, but no CA is installed — their connections close until one \
+            "clients are listed, but no CA is installed: their connections close until one \
              is generated or imported via /api/v1/certificates"
         );
     }
@@ -1050,7 +1050,7 @@ fn interception(
     tracing::info!(
         clients,
         exclusions = active.scope.exclusion_count(),
-        "HTTPS interception machinery ready — each listed client must hold a static lease"
+        "HTTPS interception machinery ready: each listed client must hold a static lease"
     );
     drop(active);
     Ok(Some(fah_http::Interception::new(
@@ -1363,7 +1363,7 @@ async fn collect_memory(
         tracing::warn!(
             accounted = memory.accounted(),
             rss = ?memory.rss,
-            "memory accounting exceeds RSS — a component heap_bytes is over-reporting",
+            "memory accounting exceeds RSS: a component heap_bytes is over-reporting",
         );
     }
     (memory, cache)

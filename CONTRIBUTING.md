@@ -90,6 +90,9 @@ Consequences to know before you hit them:
   New/changed domain terms update CONTEXT.md in the same change.
 - Hard-to-reverse decisions with real trade-offs get an ADR in
   `docs/decisions/`.
+- Log and stderr messages are ASCII only. RouterOS prints anything else as
+  hex bytes (an em-dash shows as `E28094`), and its log is where the
+  container's output is read.
 
 ## Tests
 

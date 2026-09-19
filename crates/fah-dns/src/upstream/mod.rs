@@ -260,7 +260,7 @@ impl UpstreamPool {
                 upstreams = self.servers.len(),
                 suppressed,
                 error = %err,
-                "all upstreams failed — answers now depend on cached entries"
+                "all upstreams failed: answers now depend on cached entries"
             );
         }
         Err(err)
@@ -334,7 +334,7 @@ impl UpstreamPool {
                     if self.alarm.clear() {
                         info!(
                             upstreams = self.servers.len(),
-                            "upstreams recovered — answering from the network again"
+                            "upstreams recovered: answering from the network again"
                         );
                     }
                     return Ok(ForwardOutcome::new(response, candidate.id));

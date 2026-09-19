@@ -102,7 +102,7 @@ pub fn load_secret(data_dir: &Path) -> Option<SessionSecret> {
         if !text.trim().is_empty() {
             tracing::warn!(
                 path = %path.display(),
-                "session secret is unreadable — regenerating; every session ends"
+                "session secret is unreadable: regenerating; every session ends"
             );
         }
         return None;

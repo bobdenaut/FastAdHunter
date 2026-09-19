@@ -209,7 +209,7 @@ impl InterceptionStore {
             Err(poisoned) => {
                 self.commit_lock.clear_poison();
                 tracing::error!(
-                    "a previous interception commit panicked; lock recovered — file and \
+                    "a previous interception commit panicked; lock recovered: file and \
                      active state are consistent by construction"
                 );
                 poisoned.into_inner()

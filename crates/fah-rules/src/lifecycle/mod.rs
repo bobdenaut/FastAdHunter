@@ -1173,7 +1173,7 @@ impl ListManager {
                     lists = due.len(),
                     unchanged,
                     failed = due.len() - unchanged,
-                    "scheduled refresh complete — no content change, compile skipped"
+                    "scheduled refresh complete: no content change, compile skipped"
                 );
             }
             return;
@@ -1296,7 +1296,7 @@ impl ListManager {
                         format = ?parsed.format,
                         rules = list_stats.active + list_stats.inactive,
                         parse_errors = list_stats.parse_errors,
-                        "list parsed as {:?} but most lines failed — probable format \
+                        "list parsed as {:?} but most lines failed: probable format \
                          misdetection; check the list's syntax",
                         parsed.format,
                     );
