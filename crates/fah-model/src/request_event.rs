@@ -8,6 +8,8 @@ use crate::query_event::QueryEvent;
 
 pub const CLIENT_CERT_REJECTED: u16 = 525;
 pub const UPSTREAM_CERT_FAILURE: u16 = 526;
+pub const HELLO_TIMEOUT: u16 = 408;
+pub const NON_TLS: u16 = 400;
 use crate::verdict::Verdict;
 
 /// One HTTP request received from a client, as the pipeline reports it

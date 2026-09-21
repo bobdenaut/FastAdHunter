@@ -105,8 +105,10 @@ mod tests {
     use fah_common::egress::DestinationPolicy;
     use fah_common::resolve::{HostResolver, Resolving};
     use fah_config::NoSni;
+    use fah_model::{Event, RequestEvent, Verdict, HELLO_TIMEOUT, NON_TLS};
     use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
     use tokio::net::TcpStream;
+    use tokio::sync::mpsc;
 
     use super::*;
 
@@ -142,6 +144,39 @@ mod tests {
             Duration::from_secs(1),
             NoSni::Pass,
         ))
+    }
+
+    fn proxy_with_events(hello_timeout: Duration) -> (Arc<TlsProxy>, mpsc::Receiver<Event>) {
+        let (events, receiver) = mpsc::channel(8);
+        let proxy = TlsProxy::new(
+            Arc::new(NoResolver),
+            DestinationPolicy::new(443, Vec::new()),
+            443,
+            hello_timeout,
+            Duration::from_secs(1),
+            NoSni::Pass,
+        )
+        .with_events(events);
+        (Arc::new(proxy), receiver)
+    }
+
+    async fn closed_session_event(events: &mut mpsc::Receiver<Event>) -> RequestEvent {
+        let event = tokio::time::timeout(Duration::from_secs(5), events.recv())
+            .await
+            .expect("a connection closed before any splice must emit a feed event")
+            .expect("the events channel closed before an event arrived");
+        match event {
+            Event::HttpsSni(event) => *event,
+            _ => panic!("the closed connection must emit an https-sni event"),
+        }
+    }
+
+    fn assert_closed_shape(event: &RequestEvent, client: std::net::IpAddr, status: u16) {
+        assert_eq!(event.request.client_ip, client);
+        assert_eq!(event.request.host, "");
+        assert_eq!(event.status, status);
+        assert!(matches!(event.verdict, Verdict::Pass));
+        assert_eq!(event.bytes, 0);
     }
 
     async fn ip_literal_sni_outcome(allow: bool) -> crate::ProxyStats {
@@ -226,6 +261,81 @@ mod tests {
         let counters = counters.snapshot();
         assert_eq!(counters.hello_timeouts, 1);
         assert_eq!(counters.non_tls, 0);
+        server.shutdown();
+    }
+
+    #[tokio::test]
+    async fn a_stalled_hello_emits_a_timeout_event_naming_the_peer() {
+        let mut server = TlsServer::bind(&config(0)).await.unwrap();
+        let addr = server.local_addr();
+        let (proxy, mut events) = proxy_with_events(Duration::from_millis(150));
+        let counters = proxy.counters();
+        server.serve(proxy);
+
+        let mut stream = TcpStream::connect(addr).await.unwrap();
+        let client = stream.local_addr().unwrap().ip();
+        stream.write_all(&[0x16, 0x03, 0x01]).await.unwrap();
+        let mut response = Vec::new();
+        tokio::time::timeout(Duration::from_secs(5), stream.read_to_end(&mut response))
+            .await
+            .expect("the hello deadline must close a stalled handshake")
+            .unwrap();
+        assert!(response.is_empty());
+
+        let event = closed_session_event(&mut events).await;
+        assert_closed_shape(&event, client, HELLO_TIMEOUT);
+        let counters = counters.snapshot();
+        assert_eq!(counters.hello_timeouts, 1);
+        assert_eq!(counters.non_tls, 0);
+        server.shutdown();
+    }
+
+    #[tokio::test]
+    async fn a_client_that_closes_before_its_hello_emits_a_timeout_event() {
+        let mut server = TlsServer::bind(&config(0)).await.unwrap();
+        let addr = server.local_addr();
+        let (proxy, mut events) = proxy_with_events(Duration::from_secs(5));
+        let counters = proxy.counters();
+        server.serve(proxy);
+
+        let stream = TcpStream::connect(addr).await.unwrap();
+        let client = stream.local_addr().unwrap().ip();
+        drop(stream);
+
+        let event = closed_session_event(&mut events).await;
+        assert_closed_shape(&event, client, HELLO_TIMEOUT);
+        let counters = counters.snapshot();
+        assert_eq!(counters.hello_timeouts, 1);
+        assert_eq!(counters.non_tls, 0);
+        server.shutdown();
+    }
+
+    #[tokio::test]
+    async fn non_tls_bytes_emit_a_non_tls_event_naming_the_peer() {
+        let mut server = TlsServer::bind(&config(0)).await.unwrap();
+        let addr = server.local_addr();
+        let (proxy, mut events) = proxy_with_events(Duration::from_secs(5));
+        let counters = proxy.counters();
+        server.serve(proxy);
+
+        let mut stream = TcpStream::connect(addr).await.unwrap();
+        let client = stream.local_addr().unwrap().ip();
+        stream
+            .write_all(b"GET / HTTP/1.1\r\nHost: example.com\r\n\r\n")
+            .await
+            .unwrap();
+        let mut response = Vec::new();
+        tokio::time::timeout(Duration::from_secs(5), stream.read_to_end(&mut response))
+            .await
+            .expect("non-TLS bytes must be answered by a close, not held")
+            .unwrap();
+        assert!(response.is_empty());
+
+        let event = closed_session_event(&mut events).await;
+        assert_closed_shape(&event, client, NON_TLS);
+        let counters = counters.snapshot();
+        assert_eq!(counters.non_tls, 1);
+        assert_eq!(counters.hello_timeouts, 0);
         server.shutdown();
     }
 

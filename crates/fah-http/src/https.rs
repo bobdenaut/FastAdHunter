@@ -13,6 +13,7 @@ use fah_common::resolve::HostResolver;
 use fah_config::NoSni;
 use fah_model::{
     DecisiveRule, Event, Request as ModelRequest, RequestEvent, ResourceType, Verdict,
+    HELLO_TIMEOUT, NON_TLS,
 };
 use fah_rules::{MatchDecision, PolicyState};
 use tokio::io::{
@@ -138,11 +139,13 @@ impl TlsProxy {
             Ok(Err(err)) => {
                 self.counters.hello_timeouts.fetch_add(1, Ordering::Relaxed);
                 debug!(%peer, error = %err, "no ClientHello arrived; closing");
+                self.emit_closed(peer, started, HELLO_TIMEOUT);
                 return;
             }
             Err(_) => {
                 self.counters.hello_timeouts.fetch_add(1, Ordering::Relaxed);
                 debug!(%peer, "ClientHello deadline expired; closing");
+                self.emit_closed(peer, started, HELLO_TIMEOUT);
                 return;
             }
         };
@@ -152,6 +155,7 @@ impl TlsProxy {
             HelloScan::NotTls => {
                 self.counters.non_tls.fetch_add(1, Ordering::Relaxed);
                 debug!(%peer, "non-TLS bytes on the HTTPS port; closing");
+                self.emit_closed(peer, started, NON_TLS);
                 return;
             }
             HelloScan::NoSni | HelloScan::Incomplete => {
@@ -349,11 +353,20 @@ impl TlsProxy {
         duration: Duration,
         bytes: u64,
     ) {
+        self.publish_session(|| session_event(host, peer, verdict, policy, duration, 0, bytes));
+    }
+
+    fn emit_closed(&self, peer: SocketAddr, started: Instant, status: u16) {
+        self.publish_session(|| {
+            session_event("", peer, Verdict::Pass, None, started.elapsed(), status, 0)
+        });
+    }
+
+    fn publish_session(&self, build: impl FnOnce() -> RequestEvent) {
         let Some(events) = &self.events else {
             return;
         };
-        let event = session_event(host, peer, verdict, policy, duration, 0, bytes);
-        publish(events, &self.counters, Event::https_sni(event));
+        publish(events, &self.counters, Event::https_sni(build()));
     }
 }
 

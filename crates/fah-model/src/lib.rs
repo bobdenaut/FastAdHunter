@@ -41,6 +41,7 @@ pub use protocol::Protocol;
 pub use query::{Query, QueryType};
 pub use query_event::{AnswerOutcome, QueryEvent, StaleServe};
 pub use request_event::{
-    Event, EventKind, Request, RequestEvent, CLIENT_CERT_REJECTED, UPSTREAM_CERT_FAILURE,
+    Event, EventKind, Request, RequestEvent, CLIENT_CERT_REJECTED, HELLO_TIMEOUT, NON_TLS,
+    UPSTREAM_CERT_FAILURE,
 };
 pub use verdict::{DecisiveRule, Verdict};

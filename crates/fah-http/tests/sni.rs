@@ -418,7 +418,7 @@ async fn an_unreachable_upstream_is_reported_within_the_hello_deadline() {
     const HELLO: Duration = Duration::from_millis(500);
     let (tx, mut rx) = mpsc::channel(16);
     let harness = harness_with(
-        443,
+        4443,
         "192.0.2.1".parse().unwrap(),
         None,
         Some(tx),

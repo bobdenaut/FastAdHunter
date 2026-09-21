@@ -1278,7 +1278,13 @@ An `https-sni` item is an HTTPS connection judged at the TLS ClientHello, with
 no decryption. It fills the HTTP-shaped fields it can and empties the rest:
 `domain` is the SNI hostname (empty when the hello carried none), `method` and
 `path` are `""`, `resource_type` is `"unknown"`, `status` is `0` — the outcome
-is connection-level, there is no HTTP status — `bytes` is the upstream→client
+is connection-level, there is no HTTP status — except for a connection closed
+before any hello was judged, which carries a synthesized status so the client
+still appears in the feed: **`408`** — no ClientHello arrived within
+`[https] hello_timeout_ms`, or the client closed first; **`400`** — the bytes
+were not a TLS ClientHello (a plaintext protocol on 443, an SSLv2-format hello,
+a malformed one). Both carry an empty `domain`, verdict `pass`, `bytes 0`, and
+are counted in `hello_timeouts` / `non_tls`, never as blocks. `bytes` is the upstream→client
 total of the spliced session however it ended (clean close, error or idle
 deadline), `0` on a block, a refused destination or a failed connect, and
 `duration_ms` is ClientHello-to-upstream-connected (the request-latency
