@@ -5,7 +5,6 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Clear, Paragraph, Wrap};
 use ratatui::Frame;
 
-use crate::models::events::EventType;
 use crate::models::events::QueryItem;
 use crate::models::lan::LanNames;
 use crate::util::format::{bytes, millis};
@@ -65,23 +64,26 @@ fn detail_lines<'a>(item: &QueryItem, names: &LanNames) -> Vec<Line<'a>> {
     // Keyed on `kind`, which API.md §Events names as the discriminator — not on
     // whether `qtype` happens to be set, which hides every HTTP field the
     // moment a request carries one.
-    if item.kind == EventType::Http {
-        for (label, value) in [
-            ("Method", item.method.clone()),
-            ("Path", item.path.clone()),
-            ("Status", item.status.map(|s| s.to_string())),
-            ("Bytes", item.bytes.map(bytes)),
-        ] {
-            if let Some(value) = value {
-                lines.push(field(label, value));
-            }
-        }
-    } else {
+    if item.kind.is_dns() {
         lines.push(field(
             "Type",
             item.qtype.clone().unwrap_or_else(|| "—".to_string()),
         ));
         lines.push(field("Cache", item.cache_label()));
+    } else {
+        for (label, value) in [
+            ("Method", item.method.clone()),
+            ("Path", item.path.clone()),
+            (
+                "Status",
+                item.status.filter(|s| *s != 0).map(|s| s.to_string()),
+            ),
+            ("Bytes", item.bytes.map(bytes)),
+        ] {
+            if let Some(value) = value.filter(|value| !value.is_empty()) {
+                lines.push(field(label, value));
+            }
+        }
     }
     lines
 }
@@ -96,7 +98,7 @@ fn field<'a>(label: &str, value: impl Into<Span<'a>>) -> Line<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::models::events::Verdict;
+    use crate::models::events::{EventType, Verdict};
 
     fn text(lines: &[Line]) -> String {
         lines
@@ -229,5 +231,42 @@ mod tests {
         )]));
         let resolved = text(&detail_lines(&unnamed, &names));
         assert!(resolved.contains("Alina's Note 10"), "{resolved}");
+    }
+
+    #[test]
+    fn an_https_sni_item_shows_its_status_and_hides_the_empty_request_fields() {
+        let rendered = text(&detail_lines(
+            &QueryItem {
+                method: Some(String::new()),
+                path: Some(String::new()),
+                status: Some(408),
+                bytes: Some(0),
+                ..item(EventType::HttpsSni)
+            },
+            &LanNames::default(),
+        ));
+
+        assert!(rendered.contains("https-sni"), "{rendered}");
+        assert!(rendered.contains("408"), "{rendered}");
+        assert!(!rendered.contains("Method"), "{rendered}");
+        assert!(!rendered.contains("Path"), "{rendered}");
+        assert!(!rendered.contains("Cache"), "{rendered}");
+    }
+
+    #[test]
+    fn a_judged_sni_item_hides_its_zero_status_and_keeps_the_bytes() {
+        let rendered = text(&detail_lines(
+            &QueryItem {
+                method: Some(String::new()),
+                path: Some(String::new()),
+                status: Some(0),
+                bytes: Some(1579),
+                ..item(EventType::HttpsSni)
+            },
+            &LanNames::default(),
+        ));
+
+        assert!(!rendered.contains("Status"), "{rendered}");
+        assert!(rendered.contains("Bytes"), "{rendered}");
     }
 }

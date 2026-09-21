@@ -65,6 +65,15 @@ struct Envelope {
 pub enum EventType {
     Dns,
     Http,
+    #[serde(rename = "https-sni")]
+    HttpsSni,
+    Https,
+}
+
+impl EventType {
+    pub fn is_dns(self) -> bool {
+        matches!(self, EventType::Dns)
+    }
 }
 
 /// One entry of the live feed.
@@ -94,6 +103,8 @@ impl std::fmt::Display for EventType {
         match self {
             EventType::Dns => write!(f, "dns"),
             EventType::Http => write!(f, "http"),
+            EventType::HttpsSni => write!(f, "https-sni"),
+            EventType::Https => write!(f, "https"),
         }
     }
 }
@@ -109,7 +120,7 @@ impl QueryItem {
         match (self.kind, self.cached) {
             (EventType::Dns, true) => Self::CACHE_HIT,
             (EventType::Dns, false) => Self::CACHE_MISS,
-            (EventType::Http, _) => Self::CACHE_NA,
+            (EventType::Http | EventType::HttpsSni | EventType::Https, _) => Self::CACHE_NA,
         }
     }
     /// The appliance's name for the client, else one a provider resolved for
@@ -140,8 +151,11 @@ impl QueryItem {
     pub fn type_label(&self) -> &str {
         self.qtype
             .as_deref()
-            .or(self.method.as_deref())
-            .unwrap_or("-")
+            .or(self.method.as_deref().filter(|method| !method.is_empty()))
+            .unwrap_or(match self.kind {
+                EventType::HttpsSni => "SNI",
+                EventType::Dns | EventType::Http | EventType::Https => "-",
+            })
     }
 }
 
@@ -315,5 +329,38 @@ mod tests {
         };
 
         assert_eq!(item.verdict, Verdict::Unknown);
+    }
+
+    #[test]
+    fn an_https_sni_frame_is_a_rendered_row_not_drift() {
+        let frame = r#"{"type":"query","data":{
+            "kind":"https-sni","ts":"2026-09-21T05:40:00Z","client":"192.168.10.44",
+            "client_name":null,"domain":"","qtype":null,"verdict":"pass","rule":null,
+            "list":null,"duration_ms":3000.0,"upstream":null,"cached":false,
+            "method":"","path":"","resource_type":"unknown","status":408,"bytes":0}}"#;
+        let Decoded::Event(ServerEvent::Query(item)) = decode(frame) else {
+            panic!("expected a query frame");
+        };
+
+        assert_eq!(item.kind, EventType::HttpsSni);
+        assert_eq!(item.kind.to_string(), "https-sni");
+        assert_eq!(item.type_label(), "SNI");
+        assert_eq!(item.cache_label(), "-");
+        assert_eq!(item.status, Some(408));
+    }
+
+    #[test]
+    fn an_https_frame_shows_its_method_like_an_http_one() {
+        let frame = fixtures::EVENTS_QUERY
+            .replace(r#""kind": "dns""#, r#""kind": "https""#)
+            .replace(r#""qtype": "A""#, r#""qtype": null"#)
+            .replace(r#""method": null"#, r#""method": "GET""#);
+        let Decoded::Event(ServerEvent::Query(item)) = decode(&frame) else {
+            panic!("expected a query frame");
+        };
+
+        assert_eq!(item.kind, EventType::Https);
+        assert_eq!(item.type_label(), "GET");
+        assert_eq!(item.cache_label(), "-");
     }
 }
