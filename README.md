@@ -14,12 +14,15 @@ A network filtering engine that sits between every device in a house and the
 internet. One container on the router, no client configuration, no browser
 extension, no per-device agent.
 
-It filters **DNS and HTTP today**. HTTPS filtering at the SNI plus the DoT/DoH
-listeners (Phase 3) are built and on `main`, **not deployed**; they ship with
-interception off, so nothing is ever decrypted. HTML filtering (Phase 4) is
-designed, and **parked** — rewriting a page needs its body, a body needs
-decryption, and decryption is what this deployment declined
-([ADR-0009](docs/decisions/0009-phase-4-parked.md)).
+It filters **DNS, HTTP and HTTPS today**. Phase 3 went live on the reference
+router on 2026-09-21: HTTPS is filtered at the SNI, and the DoT and DoH
+listeners serve Private DNS. **Interception is off**, so a connection is read at
+the SNI and then relayed byte for byte — nothing is ever decrypted. HTML
+filtering (Phase 4) is designed and **built-dormant by an owner decision on
+2026-09-19**, which supersedes the park in
+[ADR-0009](docs/decisions/0009-phase-4-parked.md): none of it is built yet,
+`lol_html` is not in the binary, and when it ships it ships behind
+`[html] enabled = false`.
 
 **Performance is the primary feature.** Every architectural decision is
 evaluated by its effect on throughput, latency and allocations — and the
@@ -38,18 +41,19 @@ numbers below are measured on the target hardware, not estimated.
 | 2.5 | Pre-Adaptive hardening | ✅ done | `v0.2.19-phase2.5` |
 | 2.6 | Adaptive DNS Stage 1 | ✅ done — closed 2026-09-07; `adaptive` is the only strategy since p2.6-12, on `main` from 2026-09-11 | `soak-p2.6-11` |
 | 5 | Web dashboard | ✅ done — closed 2026-09-01, four verification rows deferred to the next deploy window | `0.3.0` |
-| 3 | HTTPS at the SNI + DoT/DoH | 🚧 on `main` since 2026-09-13 — p3-01…p3-05 and p3-07…p3-09 done. **It is SNI-only + DoT/DoH because interception is off**: the owner decided on 2026-09-13 not to use the interception code, so nothing is decrypted and p3-06 and p3-06b are parked. p3-10 and p3-11 open, and it is **not deployed** | `main`, untagged |
-| 4 | HTML filtering | ⏸ **parked 2026-09-15** — it needs the page body, the body needs decryption, and decryption is the thing this deployment declined. Plain HTTP, the one path it could still reach, carried 2 900 requests and zero blocks in 3.3 days ([ADR-0009](docs/decisions/0009-phase-4-parked.md)) | — |
+| 3 | HTTPS at the SNI + DoT/DoH | 🚧 on `main` since 2026-09-13 and **deployed 2026-09-21** as 0.4.1 in `dns+http+https` mode — p3-01…p3-05 and p3-07…p3-09 done. **It is SNI-only + DoT/DoH because interception is off**: the owner decided on 2026-09-13 not to use the interception code, so nothing is decrypted and p3-06 and p3-06b are parked. p3-10 and p3-11 stay open, and the deploy is what unblocks both | `v0.4.1` |
+| 2.7 | Device identity from the RouterOS REST API | 📋 **planned 2026-09-21** — [ADR-0010](docs/decisions/0010-device-identity-from-routeros-rest.md) is approved and six tasks are `WAITING`. A client's durable identity becomes its MAC, read from the router over REST, read-only. Nothing is built; every step ships behind `[routeros] url = ""`, so the deployed behaviour changes only when the owner turns it on | — |
+| 4 | HTML filtering | 📋 **revived built-dormant 2026-09-19**, superseding the 2026-09-15 park: all five tasks are to be built and shipped behind `[html] enabled = false`, switchable at runtime, with nothing changing on the router until it is switched on. **Nothing is built yet** and `lol_html` is still not in the binary. The park's evidence stands and is why the default is off — plain HTTP, the one path it can reach without decryption, carried 2 900 requests and zero blocks in 3.3 days ([ADR-0009](docs/decisions/0009-phase-4-parked.md)) | — |
 
 Rows are in **execution** order, which is not numeric order: the dashboard is
 numbered 5 by capability and scheduled ahead of HTTPS and HTML filtering because
 that is what the household needs next.
 
 Running in production on a MikroTik RB5009 as the household's only resolver, in
-`dns+http` mode, on **0.3.4** since 2026-09-11 (0.3.x since 2026-08-29). Phase
-2's engine work is deployed — the transparent HTTP proxy, URL-path rules,
-per-client Policies and the single JSON telemetry surface — and so is the Phase
-5 dashboard. Since 0.3.2 the HTTP engine runs on **allocation domains**
+`dns+http+https` mode, on **0.4.1** since 2026-09-21T05:37:31 Z (0.3.x from
+2026-08-29, 0.3.4 from 2026-09-11). Phase 2's engine work is deployed — the
+transparent HTTP proxy, URL-path rules, per-client Policies and the single JSON
+telemetry surface — and so are the Phase 5 dashboard and the whole of Phase 3. Since 0.3.2 the HTTP engine runs on **allocation domains**
 ([ADR-0006](docs/decisions/0006-http-allocation-domains.md)): each HTTP
 connection is served end to end on one of two single-thread runtimes, so its
 allocations are freed by the thread that made them — on the RB5009 a third less
@@ -90,8 +94,9 @@ ahead of three healthy ones costs `fallback` 831 ms per query and `adaptive`
 ([strategy-ab-fallback-vs-adaptive.md](docs/code-review/phase2.6/strategy-ab-fallback-vs-adaptive.md)).
 
 Phase 5 is the web dashboard, and it is **built** — thirteen screens across all
-ten tasks, merged and released as 0.3.0. The shipped bundle is **128,730 B
-gzip**, 83.8 % of the 150 KB budget, served by `fah-api` itself from the same
+ten tasks, merged and released as 0.3.0. That release's bundle was 128,730 B
+gzip; the current tree builds **136,921 B**, 89.1 % of the 150 KiB budget, and
+it is served by `fah-api` itself from the same
 image and the same TLS listener: no second container, no Node in the runtime
 image, no new port. On-device verification is **done** — Stage B ran read-only
 against 0.3.1 as deployed at the time, which was already the phase-5 build: `/health`,
@@ -101,38 +106,53 @@ verification sits at ~120 ms p50 with peak RSS unmoved. Four rows are
 peak RSS, RSS deltas above the drift floor, `/cache` at a second occupancy, and
 the real-phone leg. Design record: [docs/dashboard/](docs/dashboard/).
 
-Phase 3 landed on `main` on 2026-09-13 and is **not deployed** — that decision
-has not been taken. What it delivers is HTTPS filtered at the SNI, DoT/DoH
-listeners, and the certificate machinery behind both. The interception code is
-compiled into the build but switched off: the Interception Document's `clients`
-list is empty by owner decision, so every HTTPS connection is read at the SNI
-and then relayed byte for byte. A test in the shipped configuration proves that,
-rather than the configuration file asserting it. Two tasks remain open — p3-10
-for the performance characterization and p3-11 for verification and a seven-day
-soak — and both wait in part on the deploy decision. Before it can go live the
-router has to refuse UDP 443 outbound, or HTTP/3 bypasses the listener.
+Phase 3 landed on `main` on 2026-09-13 and **went live on 2026-09-21**. What it
+delivers is HTTPS filtered at the SNI, DoT and DoH listeners, and the
+certificate machinery behind both. The interception code is compiled into the
+build but switched off: the Interception Document's `clients` list is empty by
+owner decision, so every HTTPS connection is read at the SNI and then relayed
+byte for byte. A test in the shipped configuration proves that, rather than the
+configuration file asserting it. On the router, port 443 is redirected to the
+SNI listener and **UDP 443 is refused ahead of FastTrack**, so HTTP/3 cannot
+bypass it. Two tasks remain open — p3-10 for the performance characterization
+and p3-11 for verification and a seven-day soak — and the deploy is what
+unblocked them.
 
-A fourth soak is running meanwhile, on the deployed 0.3.4 since
-2026-09-11T22:13 Z, reading the container hourly to ~2026-09-18. Its counters
-set the final `dns.tcp_max_connections` default, which today ships at a
-provisional 1024.
+The first day of it cost one device: a heating gateway that talks to Azure on
+443 lost its cloud link within three minutes of the steer and was exempted
+within twenty. It produced **no** feed event while it was being cut, because the
+SNI proxy closed it on a silent path, and that silence is now fixed in the tree —
+both silent closes emit a feed event, with the status drawn on the dashboard
+feed and in the terminal monitor. Those commits are **not in the deployed
+build**.
+
+The fourth soak, on 0.3.4 from 2026-09-11T22:13 Z, was **stopped on day 5 with a
+memory finding**: the residual floor doubled, 19.0 → 38.6 MiB, and stayed
+elevated across every 12 h bucket while the accounted components held flat. The
+mechanism was named and fixed — an upstream connection pool that never reaped
+idle entries — and that fix is in the deployed 0.4.1, so the floor is now being
+re-measured from this boot. A fifth soak opened at 2026-09-21T07:14:50 Z,
+reading the container hourly, with the same reducer and the same
+same-hour-of-day floors; only that build-to-build comparison can close the
+finding. `dns.tcp_max_connections` still ships at a provisional 1024.
 
 ### Measured, on the RB5009
 
 Quad-core ARMv8 @ 1.4 GHz, 1 GB RAM shared with RouterOS. Every figure comes off
 the deployed container, not a dev box. **Measurements are binary (MiB);**
 PERFORMANCE.md writes its budgets in decimal MB, which runs ~4.9 % higher for the
-same reading. **Each row carries the build it was measured on.** The ruleset and
-boot rows are 0.3.0; the steady-state memory, refresh transient, latency and
-throughput rows still describe 0.2.x and have not been re-taken on 0.3.x.
+same reading. **Each row carries the build it was measured on.** The two ruleset
+rows are 0.4.1, read off the deployed container at the fifth soak's t0; the boot
+row is 0.3.0; the steady-state memory, refresh transient, latency and throughput
+rows still describe 0.2.x and have not been re-taken since.
 
 | | Measured | Build | Budget |
 | --- | ---: | :---: | ---: |
 | Resident memory, 50 k-entry cache warm | **53.6 MiB** | 0.2.x | ≤ 128 MB |
 | Peak RSS at boot, compiling from cached lists | **88.6 MiB** | 0.3.0 | ≤ 128 MB |
 | Peak RSS during a list refresh | **171.7 MiB** | 0.2.x | see below |
-| Ruleset compile, 1.20 M parsed rules | **2.87 s** | 0.3.0 | < 3 s |
-| Ruleset heap, resident | **24.06 MiB** | 0.3.0 | ≤ 40 MB |
+| Ruleset compile, 1.20 M parsed rules | **2.92 s** | 0.4.1 | < 3 s |
+| Ruleset heap, resident | **24.48 MiB** | 0.4.1 | ≤ 40 MB |
 | Blocked verdict, in-engine | **0.045 ms** mean | 0.2.x | < 1 ms p99 |
 | Cache hit, fresh + stale-while-refresh | **0.227 ms** mean | 0.2.x | < 1 ms p99 |
 | HTTP proxy, added latency | **+161 µs** min · **+344 µs** p50 | 0.2.x | < 1 ms |
@@ -140,19 +160,21 @@ throughput rows still describe 0.2.x and have not been re-taken on 0.3.x.
 | URL verdict, 8 KiB URL, full EasyList+EasyPrivacy | **554 µs** | 0.2.x | < 1 ms |
 | Sustained DNS throughput, deployed path | **20 k+ QPS** | 0.2.x | ≥ 10 k QPS |
 | Container image, arm64 rootfs, with dashboard | **14.07 MiB** | 0.3.0 | ≤ 30 MB |
-| Dashboard bundle, gzip | **128,730 B** | 0.3.0 | ≤ 150 KB |
+| Dashboard bundle, gzip | **136,921 B** | 0.4.2 | ≤ 150 KiB |
 | Dropped events under real load | **0** | both | 0 |
 
-Rule lists compile **1 200 902 parsed rules into 753 270** after deduplication —
-447 632 duplicates, **37.3 % of the input** across 16 public lists. Deduplication
+Rule lists compile **1 198 086 parsed rules into 766 499** after deduplication —
+431 587 duplicates, **36.0 % of the input** across 16 public lists, as the
+deployed 0.4.1 reports them. Deduplication
 is paid once at compile time and keeps the matcher smaller for the life of the
 process. It also shortens probe chains: a domain carried by two lists occupies
 one slot instead of two that hash to the same place, worth **46 % on lookups for
 shared domains**.
 
 Those counts move with the lists, not with the code: the same 16 sources parsed
-1 148 024 rules into 798 760 at 30 % duplication a month earlier. The overlap
-between public lists is what grew.
+1 148 024 rules into 798 760 at 30 % duplication a month earlier, and
+1 200 902 into 753 270 at 37.3 % in between. The overlap between public lists is
+what moves, and it does not move in one direction.
 
 The 20 k+ QPS figure is `/tool profile` on the live box under a synthetic hammer,
 with all four cores sharing evenly — reception is not the bottleneck, so
@@ -439,8 +461,9 @@ Pass-through: stream origin ⇄ client, byte for byte
 **The body is never parsed and never buffered.** Images, archives, PDFs and video
 stream through untouched — buffering a response to inspect it would make memory
 grow with traffic, which the bounded-everything rule forbids outright. HTML
-rewriting was Phase 4, which is **parked** (ADR-0009), so the body is not parsed
-on any path — not as a default, and not behind an opt-in either.
+rewriting is Phase 4, and **none of it is built**, so today the body is not
+parsed on any path — not as a default, and not behind an opt-in either. When it
+is built it arrives off (`[html] enabled = false`).
 
 The verdict is taken on the **head**, before the origin is resolved, so a blocked
 request costs no DNS lookup and no upstream connection — measured **48–55 %
@@ -461,8 +484,8 @@ Fixed at container start via `engine.mode`:
 | Mode | Filters |
 | ---- | ------- |
 | `dns` | Network-wide DNS filtering |
-| `dns+http` | …plus URL-level filtering of unencrypted HTTP — **deployed today** |
-| `dns+http+https` | …plus SNI-level HTTPS filtering for every client — the connection is read at the SNI and then relayed untouched, never decrypted — and DoT/DoH listeners for Private DNS |
+| `dns+http` | …plus URL-level filtering of unencrypted HTTP |
+| `dns+http+https` | …plus SNI-level HTTPS filtering for every client — the connection is read at the SNI and then relayed untouched, never decrypted — and DoT/DoH listeners for Private DNS — **deployed today** |
 
 The mode opens the HTTPS listener. It does **not** decide interception: that is
 the Interception Document's `clients` list, **empty since 2026-09-13** by owner
@@ -472,7 +495,9 @@ installing our CA on the device, and most mobile apps pin or ignore the user
 store and have to be excluded per host.
 
 Whatever the mode, the router must refuse UDP 443 outbound — otherwise HTTP/3
-bypasses the listener entirely and nothing above applies.
+bypasses the listener entirely and nothing above applies. On the reference
+router two reject rules do that, and they sit **ahead of FastTrack**, which is
+the only placement where they are reached at all.
 
 A mode that does not name an engine means that engine's listener is **never
 bound** — not bound and idle.
@@ -749,7 +774,7 @@ FastAdHunter/
 | Allocator | mimalloc | +27 % throughput, −17 % CPU/query vs mallocng |
 | Scanning | memchr | SIMD single-byte search — not regex |
 | Terminal UI | ratatui | the monitor only; the engine has no UI dependency |
-| HTML | ~~lol_html~~ | the streaming rewriter Phase 4 would have used; **parked 2026-09-15**, never compiled in (ADR-0009) |
+| HTML | lol_html | the streaming rewriter Phase 4 will use; **not in the build today** — the phase is revived as built-dormant and nothing of it is written yet (ADR-0009 and the 2026-09-19 decision that supersedes it) |
 
 > **Rule:** do not reinvent cryptography. rustls, rcgen and x509-parser are the
 > complete crypto surface.
@@ -776,15 +801,15 @@ firewall · a replacement for a good browser extension.
 | **2.5** ✅ | Listener resilience, list-refresh integrity, encrypted-transport fixes, outcome telemetry, failure run-length telemetry — hardening before adaptive upstream selection |
 | **2.6** ✅ | Adaptive DNS Stage 1 — per-endpoint health, penalty and skip on repeated transport failure, on-path recovery probing; in production opt-in since 2026-08-25, closed 2026-09-07; `adaptive` is the only strategy and `fallback` is deleted since p2.6-12 (on `main` from 2026-09-11). Shipped alongside as 0.3.2: HTTP allocation domains (ADR-0006) |
 | **5** ✅ | Web dashboard — thirteen screens, 128,730 B gzip at 0.3.0, served by `fah-api` on one origin, session-cookie auth, every figure backed by an endpoint that exists; released as 0.3.0, closed 2026-09-01 with four verification rows deferred |
-| **3** 🚧 | HTTPS filtered at the SNI with no decryption, certificate management, DoT/DoH listeners, live Interception Document + client-rejection view (ADR-0008) — on `main` since 2026-09-13, **not deployed**. The interception code ships compiled but switched off by owner decision, which is why the delivered capability is SNI + DoT/DoH. p3-10 (performance characterization) and p3-11 (verification and the seven-day soak) are open; both wait in part on the deploy decision |
-| **4** ⏸ | HTML filtering with `lol_html`, cosmetic rules — **parked 2026-09-15**. Reviving it needs **both** interception switched on and URL-path lists loaded; the deployed ruleset is 720 URL rules against 1 182 029 DNS ones ([ADR-0009](docs/decisions/0009-phase-4-parked.md)) |
+| **3** 🚧 | HTTPS filtered at the SNI with no decryption, certificate management, DoT/DoH listeners, live Interception Document + client-rejection view (ADR-0008) — on `main` since 2026-09-13 and **deployed 2026-09-21 as 0.4.1**. The interception code ships compiled but switched off by owner decision, which is why the delivered capability is SNI + DoT/DoH. p3-10 (performance characterization) and p3-11 (verification and the seven-day soak) are open, and the deploy is what unblocked them |
+| **2.7** 📋 | Device identity from the RouterOS REST API ([ADR-0010](docs/decisions/0010-device-identity-from-routeros-rest.md)) — a client's durable identity becomes its MAC, read read-only over REST, polled on demand with a full refresh every 10 min, address and device lifetimes kept separate. Approved 2026-09-21, six tasks `WAITING`, nothing built; every step ships behind `[routeros] url = ""` |
+| **4** 📋 | HTML filtering with `lol_html`, cosmetic rules — parked 2026-09-15, then **revived built-dormant on 2026-09-19**: all five tasks get built and shipped behind `[html] enabled = false`, and nothing changes on the router until it is switched on. **Nothing is built yet.** Turning it on later needs **both** interception switched on and URL-path lists loaded — the deployed ruleset is 720 URL rules against 1 182 029 DNS ones, which is why the default is off ([ADR-0009](docs/decisions/0009-phase-4-parked.md)) |
 
-Execution order was 2.5 → 2.6 → **5** → 3 → 4, and it ends at 3: Phase 4 is
-parked, so Phase 3 is the last one that ships. Phase 3 sent the dashboard back
-for a capability re-review, and the certificate screens and client-rejection
-view landed with p3-09. The second re-review Phase 4 would have forced — cosmetic
-rules leaving `rules_inactive`, and the Lists partition changing meaning — is not
-owed.
+Execution order was 2.5 → 2.6 → **5** → 3, and it continues 2.7 → 4. Phase 3
+sent the dashboard back for a capability re-review, and the certificate screens
+and client-rejection view landed with p3-09. Phase 4 will force a second one —
+cosmetic rules leaving `rules_inactive`, and the Lists partition changing
+meaning — which its revival re-owes.
 
 Detail and per-phase task status: [ROADMAP.md](ROADMAP.md) and `plan/`.
 
@@ -808,7 +833,7 @@ if the decision is being reversed.
 ├── CONTRIBUTING.md       conventions and local quality gates
 │
 └── docs/
-    ├── decisions/            ADRs 0001–0008
+    ├── decisions/            ADRs 0001–0010
     ├── design/               accepted designs not yet built, with their
     │                         benchmark protocols
     ├── dashboard/            capability matrix, information architecture,
