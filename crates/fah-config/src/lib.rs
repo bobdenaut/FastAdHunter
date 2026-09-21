@@ -215,6 +215,12 @@ fn validate(config: &Config) -> Result<(), ConfigError> {
     }
 
     validate_range(
+        "stats.client_idle_expiry_days",
+        config.stats.client_idle_expiry_days,
+        1,
+        3650,
+    )?;
+    validate_range(
         "history.retention_days",
         config.history.retention_days,
         1,
@@ -663,6 +669,7 @@ enabled = true
 
 [stats]
 snapshot_interval_seconds = 300
+client_idle_expiry_days = 7
 
 [history]
 enabled = true
@@ -997,6 +1004,29 @@ format = "text"
         assert!(history.enabled);
         assert_eq!(history.sample_interval_seconds, 60);
         assert_eq!(history.retention_days, 30);
+    }
+
+    #[test]
+    fn client_idle_expiry_defaults_to_seven_days() {
+        assert_eq!(Config::default().stats.client_idle_expiry_days, 7);
+    }
+
+    #[test]
+    fn client_idle_expiry_days_zero_is_rejected() {
+        let mut config = Config::default();
+        config.stats.client_idle_expiry_days = 0;
+        let err = config.validate().unwrap_err();
+        assert!(err.to_string().contains("stats.client_idle_expiry_days"));
+    }
+
+    #[test]
+    fn client_idle_expiry_env_override_applies() {
+        let pairs = vec![(
+            "FAH__STATS__CLIENT_IDLE_EXPIRY_DAYS".to_string(),
+            "30".to_string(),
+        )];
+        let config = apply_env_overrides(Config::default(), &pairs).unwrap();
+        assert_eq!(config.stats.client_idle_expiry_days, 30);
     }
 
     #[test]

@@ -601,6 +601,8 @@ mod tests {
 
         fn apply_history_config(&self, _enabled: bool, _retention_days: u32) {}
 
+        fn set_client_idle_expiry_days(&self, _days: u32) {}
+
         fn heap(&self) -> fah_model::StatsHeap {
             fah_model::StatsHeap::default()
         }

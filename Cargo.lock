@@ -818,6 +818,7 @@ name = "fah-stats"
 version = "0.4.1"
 dependencies = [
  "criterion",
+ "fah-common",
  "fah-config",
  "fah-model",
  "serde",

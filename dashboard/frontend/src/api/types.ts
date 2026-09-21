@@ -463,6 +463,8 @@ export interface ClientsResponse {
 /** `GET /clients?family=`. Absent lists both families. */
 export type ClientFamily = 'v4' | 'v6';
 
+export type ClientSeenWithin = `${number}${'s' | 'm' | 'h' | 'd'}`;
+
 /* --------------------------------------------------------------------- lists */
 
 /**
@@ -626,7 +628,7 @@ export interface Config {
   rules: { refresh_hours_default: number; lists: RuleListConfig[] };
   schedule: { timezone: string };
   policies?: ConfigPolicy[];
-  stats: { snapshot_interval_seconds: number };
+  stats: { snapshot_interval_seconds: number; client_idle_expiry_days: number };
   /** `enabled` and `retention_days` are runtime-mutable;
    *  `sample_interval_seconds` is boot-only and is what one persisted perf row
    *  covers (API.md §History). */

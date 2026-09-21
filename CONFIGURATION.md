@@ -22,9 +22,12 @@ built-in defaults  <  config file  <  environment variables  <  API changes
 | **runtime** | applied live via atomic swap, no restart |
 | **boot** | API accepts + persists, responds `restart_required: true` |
 
-A key is **runtime** only when something re-reads it after the patch. Three do:
+A key is **runtime** only when something re-reads it after the patch. Five do:
 `history.enabled` and `history.retention_days` (pushed into the history
-writers' shared retention atomic) and
+writers' shared retention atomic), `stats.client_idle_expiry_days` (pushed into
+the client registry's atomic, read by the 20 s policy tick that expires idle
+unnamed clients), `schedule.timezone` (the policy set is recompiled and
+republished) and
 `rules.refresh_hours_default`, which `POST /api/v1/config` stores into the list
 manager's own atomic — the value the **refresh scheduler** reads, not merely the
 one `/config` and `/lists` report back — plus the list set, which the
@@ -425,6 +428,9 @@ timezone = "UTC"              # runtime — POSIX TZ string, not an IANA name:
 # ─── Statistics ────────────────────────────────────────────────────────
 [stats]
 snapshot_interval_seconds = 300  # boot    — periodic snapshot to /data
+client_idle_expiry_days = 7      # runtime — an unnamed client unseen this long leaves
+                                 #           the registry on the next 20 s policy tick;
+                                 #           named clients never expire (1–3650)
 
 # ─── History (long-term observability on /data/history) ────────────────
 [history]

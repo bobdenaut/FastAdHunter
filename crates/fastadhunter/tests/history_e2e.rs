@@ -572,6 +572,10 @@ impl StatsSource for StatsPort {
         self.0.set_history_retention_days(retention_days);
     }
 
+    fn set_client_idle_expiry_days(&self, days: u32) {
+        self.0.set_client_idle_expiry_days(days);
+    }
+
     fn heap(&self) -> fah_model::StatsHeap {
         self.0.heap()
     }

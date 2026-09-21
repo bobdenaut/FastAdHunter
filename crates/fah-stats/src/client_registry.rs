@@ -7,7 +7,7 @@
 
 use std::collections::HashMap;
 use std::net::IpAddr;
-use std::time::SystemTime;
+use std::time::{Duration, SystemTime};
 
 use serde::{Deserialize, Serialize};
 
@@ -173,6 +173,14 @@ impl ClientRegistry {
             .collect()
     }
 
+    pub fn expire_idle(&mut self, now: SystemTime, max_age: Duration) -> usize {
+        let before = self.clients.len();
+        self.clients.retain(|_, record| {
+            record.name.is_some() || !fah_common::idle::older_than(record.last_seen, now, max_age)
+        });
+        before - self.clients.len()
+    }
+
     /// Clients ranked by their rolling 24h query count, for the stats
     /// snapshot's `top_clients`.
     pub fn top_by_activity(&self, now: SystemTime, n: usize) -> Vec<ClientView> {
@@ -208,9 +216,64 @@ fn view(ip: IpAddr, record: &ClientRecord, now: SystemTime) -> ClientView {
 #[cfg(test)]
 mod tests {
     use std::net::Ipv4Addr;
-    use std::time::Duration;
 
     use super::*;
+
+    const WEEK: Duration = Duration::from_secs(7 * 86_400);
+
+    fn t0() -> SystemTime {
+        SystemTime::UNIX_EPOCH + Duration::from_secs(1_700_000_000)
+    }
+
+    fn seen_at(ip: IpAddr, at: SystemTime) -> ClientRegistry {
+        let mut registry = ClientRegistry::default();
+        registry.record(ip, at, false, false);
+        registry
+    }
+
+    #[test]
+    fn idle_expiry_keeps_a_fresh_unnamed_entry() {
+        let mut registry = seen_at(ip(1), t0());
+        assert_eq!(
+            registry.expire_idle(t0() + Duration::from_secs(3_600), WEEK),
+            0
+        );
+        assert_eq!(registry.len(), 1);
+    }
+
+    #[test]
+    fn idle_expiry_removes_a_stale_unnamed_entry() {
+        let mut registry = seen_at(ip(1), t0());
+        assert_eq!(registry.expire_idle(t0() + WEEK * 2, WEEK), 1);
+        assert_eq!(registry.len(), 0);
+    }
+
+    #[test]
+    fn idle_expiry_keeps_a_stale_named_entry() {
+        let mut registry = seen_at(ip(1), t0());
+        registry.set_name(ip(1), Some("tv".to_string()));
+        assert_eq!(registry.expire_idle(t0() + WEEK * 10, WEEK), 0);
+        assert_eq!(registry.name(ip(1)).as_deref(), Some("tv"));
+    }
+
+    #[test]
+    fn idle_expiry_keeps_an_entry_whose_age_equals_the_limit() {
+        let mut registry = seen_at(ip(1), t0());
+        assert_eq!(registry.expire_idle(t0() + WEEK, WEEK), 0);
+        assert_eq!(registry.len(), 1);
+        assert_eq!(
+            registry.expire_idle(t0() + WEEK + Duration::from_secs(1), WEEK),
+            1
+        );
+        assert_eq!(registry.len(), 0);
+    }
+
+    #[test]
+    fn idle_expiry_never_fires_when_the_clock_steps_backwards() {
+        let mut registry = seen_at(ip(1), t0());
+        assert_eq!(registry.expire_idle(t0() - WEEK * 2, WEEK), 0);
+        assert_eq!(registry.len(), 1);
+    }
 
     #[test]
     fn intercepted_outcomes_count_per_client_and_keep_their_last_time() {

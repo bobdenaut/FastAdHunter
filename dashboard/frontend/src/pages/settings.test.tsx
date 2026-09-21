@@ -66,7 +66,7 @@ function config(over: Record<string, unknown> = {}): Record<string, unknown> {
       ],
     },
     schedule: { timezone: 'UTC' },
-    stats: { snapshot_interval_seconds: 300 },
+    stats: { snapshot_interval_seconds: 300, client_idle_expiry_days: 7 },
     history: { enabled: true, sample_interval_seconds: 60, retention_days: 30 },
     api: { address: '0.0.0.0', port: 8443, tls: true },
     log: { level: 'info', format: 'text' },

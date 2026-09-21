@@ -133,6 +133,10 @@ impl StatsSource for StatsAdapter {
         self.stats.set_history_retention_days(retention_days);
     }
 
+    fn set_client_idle_expiry_days(&self, days: u32) {
+        self.stats.set_client_idle_expiry_days(days);
+    }
+
     /// Pass-through: both sides speak `fah_model::StatsHeap`, so there is
     /// nothing to translate (p2-07).
     fn heap(&self) -> fah_model::StatsHeap {

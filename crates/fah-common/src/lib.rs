@@ -3,6 +3,7 @@
 pub mod connections;
 pub mod egress;
 pub mod histogram;
+pub mod idle;
 pub mod listen;
 pub mod process;
 pub mod resolve;

@@ -113,6 +113,17 @@ describe('the read-only accessors', () => {
     await getClients(undefined, 'v6');
     expect(calledWith()[0]).toBe('/api/v1/clients?family=v6');
   });
+
+  it('narrows the client list to the recently seen, alone or beside the family', async () => {
+    fetchMock.mockReset();
+    fetchMock.mockResolvedValue(respond(200, {}));
+    await getClients(undefined, undefined, '24h');
+    expect(calledWith()[0]).toBe('/api/v1/clients?seen_within=24h');
+    fetchMock.mockReset();
+    fetchMock.mockResolvedValue(respond(200, {}));
+    await getClients(undefined, 'v4', '7d');
+    expect(calledWith()[0]).toBe('/api/v1/clients?family=v4&seen_within=7d');
+  });
 });
 
 describe('the list mutations', () => {

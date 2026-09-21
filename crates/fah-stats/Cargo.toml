@@ -12,6 +12,7 @@ workspace = true
 # network. fah-model for the QueryEvent DTO the DNS pipeline emits;
 # fah-config for [stats]/[history].
 [dependencies]
+fah-common = { path = "../fah-common" }
 fah-config = { path = "../fah-config" }
 fah-model = { path = "../fah-model" }
 serde = { workspace = true }

@@ -4,6 +4,7 @@ import type {
   ClientFamily,
   ClientPolicyBody,
   ClientPolicyResponse,
+  ClientSeenWithin,
   ClientsResponse,
 } from './types';
 
@@ -20,15 +21,21 @@ export const CLIENTS_PATH = '/api/v1/clients';
  * no accessor for it, because a household with forty observed clients would
  * pay forty extra requests per page load.
  *
- * `family` narrows the list to one address family on the server; absent lists
- * both. The Clients page reads IPv4 by default, the Top-clients card reads all.
+ * `family` narrows the list to one address family on the server and
+ * `seen_within` to the recently seen; absent lists everything. The Clients
+ * page opens on IPv4 seen in the last 24 h, the Top-clients card reads all.
  */
 export function getClients(
   signal?: AbortSignal,
   family?: ClientFamily,
+  seenWithin?: ClientSeenWithin,
 ): Promise<ClientsResponse> {
+  const query = new URLSearchParams();
+  if (family !== undefined) query.set('family', family);
+  if (seenWithin !== undefined) query.set('seen_within', seenWithin);
+  const suffix = query.toString();
   return request<ClientsResponse>(
-    family === undefined ? CLIENTS_PATH : `${CLIENTS_PATH}?family=${family}`,
+    suffix === '' ? CLIENTS_PATH : `${CLIENTS_PATH}?${suffix}`,
     {
       ...(signal === undefined ? {} : { signal }),
     },

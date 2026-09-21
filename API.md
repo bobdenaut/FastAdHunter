@@ -680,6 +680,14 @@ Observed clients (by source IP) with stats and optional names. `family` is
 `v4` or `v6` and keeps one address family; absent keeps both. Any other value
 is `400`.
 
+`seen_within` keeps only clients whose `last_seen` is inside the window: a
+positive integer followed by one unit, `s`, `m`, `h` or `d` (`90s`, `30m`,
+`24h`, `7d`). Absent keeps every registered client. Zero, a missing or unknown
+unit, a sign, a decimal or whitespace is `400`. The two filters combine
+(`?family=v4&seen_within=24h` is what the dashboard's Clients page opens on).
+This is a read filter and deletes nothing; retention is
+`[stats] client_idle_expiry_days` (CONFIGURATION.md).
+
 `intercepted` is what this client did on the terminate leg since the stats
 started: `completed` counts intercepted sessions in which it sent a request
 (so it accepted the minted leaf at that moment), `rejected` counts its
@@ -1092,10 +1100,10 @@ back to `/config/fastadhunter.toml`, and applied:
 ```
 
 Most options are boot-only: `[runtime]`, `[dns.cache]`, `[dns.upstreams]`, `[dns.blocking]`,
-`[stats]`, `log.level` and `history.sample_interval_seconds` are
+`stats.snapshot_interval_seconds`, `log.level` and `history.sample_interval_seconds` are
 each read once during startup, so they persist and ask for a restart rather
 than reporting an apply that no code performs. The runtime set is
-`history.enabled`, `history.retention_days`,
+`history.enabled`, `history.retention_days`, `stats.client_idle_expiry_days`,
 `rules.refresh_hours_default` and `schedule.timezone`. See
 [CONFIGURATION.md](CONFIGURATION.md) for every option and its mutability class.
 

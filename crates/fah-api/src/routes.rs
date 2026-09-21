@@ -415,13 +415,20 @@ async fn clients(
     Query(params): Query<HashMap<String, String>>,
 ) -> ApiResult<Json<ClientsResponse>> {
     let family = parse_family(&params)?;
+    let seen_within = parse_seen_within(&params)?;
+    let now = SystemTime::now();
     let resolver = PolicyResolver::build(&state);
     Ok(Json(ClientsResponse {
         items: state
             .stats
-            .clients(SystemTime::now())
+            .clients(now)
             .into_iter()
             .filter(|entry| family.is_none_or(|family| in_family(entry.ip, family)))
+            .filter(|entry| {
+                seen_within.is_none_or(|window| {
+                    !fah_common::idle::older_than(entry.last_seen, now, window)
+                })
+            })
             .map(|entry| {
                 let ip = entry.ip;
                 client_response(
@@ -450,6 +457,30 @@ fn in_family(ip: IpAddr, family: AddressFamily) -> bool {
         AddressFamily::V4 => ip.is_ipv4(),
         AddressFamily::V6 => ip.is_ipv6(),
     }
+}
+
+fn parse_seen_within(params: &HashMap<String, String>) -> ApiResult<Option<Duration>> {
+    let Some(raw) = params.get("seen_within") else {
+        return Ok(None);
+    };
+    let invalid = || {
+        ApiError::BadRequest(format!(
+            "seen_within must be a positive integer followed by s|m|h|d, got {raw:?}"
+        ))
+    };
+    let (digits, unit_secs) = [('d', 86_400), ('h', 3_600), ('m', 60), ('s', 1)]
+        .into_iter()
+        .find_map(|(unit, secs)| raw.strip_suffix(unit).map(|digits| (digits, secs)))
+        .ok_or_else(invalid)?;
+    let count = if digits.bytes().all(|byte| byte.is_ascii_digit()) {
+        digits.parse::<u64>().ok()
+    } else {
+        None
+    }
+    .filter(|count| *count > 0)
+    .ok_or_else(invalid)?;
+    let secs = count.checked_mul(unit_secs).ok_or_else(invalid)?;
+    Ok(Some(Duration::from_secs(secs)))
 }
 
 async fn set_client_name(
@@ -1466,6 +1497,9 @@ async fn post_config(
     state
         .stats
         .apply_history_config(history.enabled, history.retention_days);
+    state
+        .stats
+        .set_client_idle_expiry_days(state.config.current().stats.client_idle_expiry_days);
 
     // `[schedule] timezone` decides when a window is open, so a change has to
     // recompile the policy set and republish. No ruleset rebuild: the masks
@@ -1761,6 +1795,35 @@ mod tests {
             headers.insert(HOST, HeaderValue::from_str(host).unwrap());
         }
         headers
+    }
+
+    #[test]
+    fn seen_within_accepts_seconds_minutes_hours_and_days() {
+        for (raw, secs) in [
+            ("90s", 90),
+            ("30m", 1_800),
+            ("24h", 86_400),
+            ("7d", 604_800),
+            ("007d", 604_800),
+        ] {
+            let params = HashMap::from([("seen_within".to_string(), raw.to_string())]);
+            assert_eq!(
+                parse_seen_within(&params).unwrap(),
+                Some(Duration::from_secs(secs)),
+                "{raw}"
+            );
+        }
+        assert_eq!(parse_seen_within(&HashMap::new()).unwrap(), None);
+    }
+
+    #[test]
+    fn seen_within_rejects_zero_unitless_and_unknown_units() {
+        for raw in [
+            "0h", "24", "h", "", "1w", "-1h", "+1h", "24H", "1.5h", "1 h", "1_0h",
+        ] {
+            let params = HashMap::from([("seen_within".to_string(), raw.to_string())]);
+            assert!(parse_seen_within(&params).is_err(), "{raw:?}");
+        }
     }
 
     #[test]

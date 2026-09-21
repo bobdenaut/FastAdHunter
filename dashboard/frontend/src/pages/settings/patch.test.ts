@@ -73,7 +73,7 @@ function config(over: Record<string, unknown> = {}): Config {
       ],
     },
     schedule: { timezone: 'UTC' },
-    stats: { snapshot_interval_seconds: 300 },
+    stats: { snapshot_interval_seconds: 300, client_idle_expiry_days: 7 },
     history: { enabled: true, sample_interval_seconds: 60, retention_days: 30 },
     api: { address: '0.0.0.0', port: 8443, tls: true },
     log: { level: 'info', format: 'text' },
@@ -124,7 +124,7 @@ describe('the metadata module', () => {
     expect(tls?.consequence).toContain('bearer');
   });
 
-  it('classifies exactly the four runtime keys as live', () => {
+  it('classifies exactly the five runtime keys as live', () => {
     // CONFIGURATION.md §Mutability classes, cross-checked against
     // `config_store.rs` BOOT_KEYS: everything not listed there is runtime.
     const live = FIELDS.filter((field) => field.mutability === 'live');
@@ -133,6 +133,7 @@ describe('the metadata module', () => {
       'history.retention_days',
       'rules.refresh_hours_default',
       'schedule.timezone',
+      'stats.client_idle_expiry_days',
     ]);
   });
 

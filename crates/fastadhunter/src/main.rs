@@ -1286,6 +1286,10 @@ fn spawn_policy_ticker(
             // The first tick fires immediately, which is what publishes the
             // boot snapshot.
             ticker.tick().await;
+            let expired = stats.expire_idle_clients(std::time::SystemTime::now());
+            if expired > 0 {
+                tracing::debug!(expired, "idle unnamed clients expired");
+            }
             let published = policies.refresh(&rules.policies(), &stats.named_clients());
             if published {
                 tracing::debug!(

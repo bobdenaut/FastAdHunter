@@ -112,6 +112,9 @@ fn apply_one(
         ["stats", "snapshot_interval_seconds"] => {
             config.stats.snapshot_interval_seconds = coerce_u32(var, path, value)?
         }
+        ["stats", "client_idle_expiry_days"] => {
+            config.stats.client_idle_expiry_days = coerce_u32(var, path, value)?
+        }
 
         ["history", "enabled"] => config.history.enabled = coerce_bool(var, path, value)?,
         ["history", "sample_interval_seconds"] => {

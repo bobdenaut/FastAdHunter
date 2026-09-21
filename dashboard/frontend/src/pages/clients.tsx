@@ -46,11 +46,12 @@ import { RenameField } from './clients/rename-field';
  * assign-policy picker, and it carries the selectors and schedules the row
  * notes are worded from.
  *
- * **A family chip re-reads, search does not.** The registry keys on the
- * address, not the device, so one dual-stack machine is two rows and its IPv6
- * privacy addresses churn through as more. `?family=` leaves that half on the
- * server, and the page opens on IPv4 so it is the length of the household
- * rather than of the address space. Search narrows the rows already here.
+ * **A family or last-seen chip re-reads, search does not.** The registry keys
+ * on the address, not the device, so one dual-stack machine is two rows and
+ * its IPv6 privacy addresses churn through as more. `?family=` and
+ * `?seen_within=` leave that on the server, and the page opens on IPv4 seen in
+ * the last 24 h so it is the length of the household rather than of the
+ * address space. Search narrows the rows already here.
  *
  * **Both are re-read after every mutation, together.** The two responses are
  * cross-referenced, so they have to describe one instant: a rename can move a
@@ -64,6 +65,8 @@ import { RenameField } from './clients/rename-field';
  * "window shut" statement is read off `client.policy` rather than evaluated.
  */
 type Family = 'all' | ClientFamily;
+
+type Seen = 'all' | '24h';
 
 type SortColumn = 'address' | 'queries' | 'blocked' | 'share';
 
@@ -110,6 +113,11 @@ const FAMILIES: readonly { value: Family; label: string; noun: string }[] = [
   { value: 'v6', label: 'IPv6', noun: 'IPv6 client' },
 ];
 
+const SEEN: readonly { value: Seen; label: string }[] = [
+  { value: '24h', label: 'last 24 h' },
+  { value: 'all', label: 'all time' },
+];
+
 /** "client", "IPv4 clients" — the empty states name the family they read. */
 function clientNoun(family: Family, count: number): string {
   const noun =
@@ -148,6 +156,7 @@ export function Clients(_props: PageProps) {
   const [mutationError, setMutationError] = useState<Error | null>(null);
   const [search, setSearch] = useState('');
   const [family, setFamily] = useState<Family>('v4');
+  const [seen, setSeen] = useState<Seen>('24h');
   const [sort, setSort] = useState<Sort>({
     column: 'address',
     direction: 'asc',
@@ -166,7 +175,11 @@ export function Clients(_props: PageProps) {
     const next = new AbortController();
     controller.current = next;
     return Promise.all([
-      getClients(next.signal, family === 'all' ? undefined : family),
+      getClients(
+        next.signal,
+        family === 'all' ? undefined : family,
+        seen === 'all' ? undefined : seen,
+      ),
       getPolicies(next.signal),
     ])
       .then(([clientList, policyList]) => {
@@ -179,7 +192,7 @@ export function Clients(_props: PageProps) {
         if (cause instanceof DOMException && cause.name === 'AbortError') return;
         setLoadError(cause instanceof Error ? cause : new Error(String(cause)));
       });
-  }, [family]);
+  }, [family, seen]);
 
   useEffect(() => {
     void load();
@@ -333,6 +346,24 @@ export function Clients(_props: PageProps) {
     </span>
   );
 
+  const seenChips = (
+    <span class="chips" role="group" aria-label="Filter by last seen">
+      {SEEN.map(({ value, label }) => (
+        <Chip
+          key={value}
+          label={label}
+          on={seen === value}
+          onPick={() => setSeen(value)}
+        />
+      ))}
+    </span>
+  );
+
+  const emptyTitle =
+    seen === '24h'
+      ? `No ${clientNoun(family, 1)} has asked anything in the last 24 h`
+      : `No ${clientNoun(family, 1)} has asked anything yet`;
+
   return (
     <>
       <ContentHeader
@@ -357,12 +388,16 @@ export function Clients(_props: PageProps) {
           title={
             <>
               Observed clients
-              <span class="chips-mobile">{familyChips}</span>
+              <span class="chips-mobile">
+                {familyChips}
+                {seenChips}
+              </span>
             </>
           }
           tools={
             <>
               {familyChips}
+              {seenChips}
               <input
                 type="search"
                 class="field-input search-input"
@@ -378,9 +413,7 @@ export function Clients(_props: PageProps) {
           {loadError !== null && clients === null ? (
             <ErrorState error={loadError} />
           ) : items.length === 0 ? (
-            <EmptyState
-              title={`No ${clientNoun(family, 1)} has asked anything yet`}
-            >
+            <EmptyState title={emptyTitle}>
               Clients appear here as they send their first query — there is no
               inventory to read from.
             </EmptyState>

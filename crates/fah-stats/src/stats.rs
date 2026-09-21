@@ -54,6 +54,7 @@ pub struct Stats {
     /// [`Self::set_history_retention_days`] moves the next prune's cut-off for
     /// both without reconstructing either (hard rule 3: atomic swap).
     history_retention_days: Arc<AtomicU32>,
+    client_idle_expiry_days: AtomicU32,
 }
 
 impl Stats {
@@ -83,6 +84,7 @@ impl Stats {
             ),
             history_enabled: AtomicBool::new(history_config.enabled),
             history_retention_days,
+            client_idle_expiry_days: AtomicU32::new(stats_config.client_idle_expiry_days.max(1)),
             data_dir,
         }
     }
@@ -401,6 +403,17 @@ impl Stats {
         self.clients.lock().unwrap().named()
     }
 
+    pub fn expire_idle_clients(&self, now: SystemTime) -> usize {
+        let days = u64::from(self.client_idle_expiry_days.load(Ordering::Relaxed));
+        let max_age = Duration::from_secs(days * 86_400);
+        self.clients.lock().unwrap().expire_idle(now, max_age)
+    }
+
+    pub fn set_client_idle_expiry_days(&self, days: u32) {
+        self.client_idle_expiry_days
+            .store(days.max(1), Ordering::Relaxed);
+    }
+
     pub fn clients(&self, now: SystemTime) -> Vec<ClientView> {
         self.clients.lock().unwrap().list(now)
     }
@@ -446,6 +459,7 @@ mod tests {
     fn config() -> StatsConfig {
         StatsConfig {
             snapshot_interval_seconds: 300,
+            client_idle_expiry_days: 7,
         }
     }
 
@@ -647,6 +661,59 @@ mod tests {
 
         stats.set_client_name(client, Some("liviu-phone".to_string()));
         assert_eq!(stats.client_name(client).as_deref(), Some("liviu-phone"));
+    }
+
+    #[tokio::test]
+    async fn idle_expiry_is_reflected_in_the_next_persisted_snapshot() {
+        let dir = tempfile::tempdir().unwrap();
+        let stale = IpAddr::V4(Ipv4Addr::new(192, 168, 1, 10));
+        let named = IpAddr::V4(Ipv4Addr::new(192, 168, 1, 11));
+        let eight_days_on = SystemTime::now() + Duration::from_secs(8 * 86_400);
+
+        {
+            let stats = Stats::new(
+                &config(),
+                &HistoryConfig::default(),
+                dir.path().to_path_buf(),
+            );
+            stats.boot().await;
+            stats.record(event("example.com", stale, Verdict::Pass));
+            stats.record(event("example.com", named, Verdict::Pass));
+            stats.set_client_name(named, Some("tv".to_string()));
+            assert_eq!(stats.expire_idle_clients(eight_days_on), 1);
+            stats.save_snapshot().await;
+        }
+
+        let restarted = Stats::new(
+            &config(),
+            &HistoryConfig::default(),
+            dir.path().to_path_buf(),
+        );
+        restarted.boot().await;
+        let listed: Vec<IpAddr> = restarted
+            .clients(SystemTime::now())
+            .into_iter()
+            .map(|view| view.ip)
+            .collect();
+        assert_eq!(listed, [named]);
+    }
+
+    #[tokio::test]
+    async fn client_idle_expiry_follows_the_live_setting() {
+        let dir = tempfile::tempdir().unwrap();
+        let stats = Stats::new(
+            &config(),
+            &HistoryConfig::default(),
+            dir.path().to_path_buf(),
+        );
+        let client = IpAddr::V4(Ipv4Addr::new(192, 168, 1, 10));
+        stats.record(event("example.com", client, Verdict::Pass));
+        let two_days_on = SystemTime::now() + Duration::from_secs(2 * 86_400);
+
+        assert_eq!(stats.expire_idle_clients(two_days_on), 0);
+        stats.set_client_idle_expiry_days(1);
+        assert_eq!(stats.expire_idle_clients(two_days_on), 1);
+        assert!(stats.clients(SystemTime::now()).is_empty());
     }
 
     #[tokio::test]

@@ -306,3 +306,154 @@ to a rotating address is a worse failure than a lapsed policy.
 - No interface-identifier correlation: temporary IIDs are random, RFC 7217 stable
   IIDs differ per prefix. Dead end.
 - Fix 1 and Fix 2 are independent; Fix 2 is the owner's call and needs no code.
+
+## Status (2026-09-21)
+
+| Fix | State |
+| --- | --- |
+| 1 — registry bloat | **shipped** in the working tree, not committed, not deployed; the RB5009 was not modified |
+| 2 — `advertise-dns=no` | **declined** by the owner 2026-09-21; IPv6 DNS advertising stays |
+| 3 — durable identity by MAC | **not implemented**; no ADR, no code, no router change. Correction to §Fix 3: way A has an in-repo precedent — `tui-monitor/src/client/routeros.rs` already polls `/rest/ipv6/neighbor` and `/rest/ip/dhcp-server/lease` read-only |
+
+### Fix 1 as shipped
+
+| Item | Where | Rule |
+| --- | --- | --- |
+| Idle expiry, unnamed entries only | `fah-stats` `ClientRegistry::expire_idle` | `now - last_seen > limit`; `last_seen` is written only by a query, request or handshake, never by a read; a backwards clock step is age zero |
+| Runs on the existing 20 s policy tick | `main.rs` `spawn_policy_ticker` | same `clients` Mutex, no new task, timer or I/O path; the next 300 s snapshot write persists the smaller set |
+| `[stats] client_idle_expiry_days` | `fah-config`, default 7, range 1–3650, env `FAH__STATS__CLIENT_IDLE_EXPIRY_DAYS` | runtime class: `POST /api/v1/config` stores it in the registry's atomic. `BOOT_KEYS` entry `stats` narrowed to `stats.snapshot_interval_seconds` |
+| `GET /api/v1/clients?seen_within=<N><s\|m\|h\|d>` | `fah-api` `parse_seen_within` | read filter on `last_seen`, absent keeps all, bad value `400`; tui-monitor and the Top-clients card send no parameter and are unchanged |
+| Clients page | `dashboard/frontend` | opens on `family=v4&seen_within=24h`; chips `last 24 h` / `all time`; settings page lists the key as live |
+
+Finding 2 is moot (dead addresses leave by age, not by cap) and Finding 3 is
+resolved once deployed; both wait for the 0.4.x deploy for on-device evidence.
+Option 1 of §Remaining TODOs (flag a name or assignment whose address is unseen
+for N h) is **not** in this change.
+
+### Tests added
+
+| Where | Covers |
+| --- | --- |
+| `client_registry.rs` | fresh entry kept; stale unnamed removed; stale named kept; age equal to the limit kept, one second past removed; backwards clock never expires |
+| `stats.rs` | expiry visible after `save_snapshot` + `boot`; the live setting moves the cut-off |
+| `routes.rs` | unit parsing of `s\|m\|h\|d`; rejection of `0h`, `24`, `h`, `1w`, `-1h`, `24H`, `1.5h`, `1 h`; a future `last_seen` is kept |
+| `tests/api.rs` | `seen_within` alone and beside `family`; `1y` is `400`; `POST /api/v1/config` reaches the registry with `restart_required: false` |
+| `fah-config` | default 7; zero rejected; env override |
+| `config_store.rs` | the key is runtime, not boot |
+| dashboard | URL building; opens on 24 h; `all time` re-reads without the parameter; empty-state wording; settings metadata lists five live keys |
+
+### Gates (dev box, Windows, 2026-09-21)
+
+| Gate | Result |
+| --- | --- |
+| `cargo fmt --all -- --check` | clean |
+| `cargo clippy --workspace --all-targets -- -D warnings` | clean |
+| `cargo test --all-features --workspace --no-fail-fast` | 59 binaries, 1684 passed, 0 failed |
+| dashboard `tsc --noEmit` | clean |
+| dashboard `vitest run` | 58 files, 1059 passed |
+
+The JSDoc at the top of `pages/clients.tsx` was left stale here and corrected
+in the follow-up below (review Finding 3); the hook only scans added text, so
+the claimed blocker did not exist.
+
+## Review of Fix 1 as shipped (2026-09-21)
+
+Working tree against `e7e905e`, 25 files. Scope checked: registry expiry,
+config key, `seen_within`, dashboard, tests, docs. Gates re-run below.
+
+### Findings
+
+#### 1. MEDIUM — API.md §`POST /config` still says `[stats]` is boot-only
+
+| | |
+| --- | --- |
+| Where | `API.md:1103-1107` |
+| What | "`[stats]` … read once during startup"; the runtime set is listed as four keys without `stats.client_idle_expiry_days` |
+| Why it matters | Docs are binding; `config_store.rs` `BOOT_KEYS` and `post_config` now make the key runtime, so the endpoint's own section contradicts its behavior. CONFIGURATION.md and CONTEXT.md were updated, this paragraph was not |
+| Fix | name `stats.snapshot_interval_seconds` in place of `[stats]`; add the key to the runtime set |
+
+#### 2. LOW — `seen_within` accepts a leading `+`
+
+| | |
+| --- | --- |
+| Where | `routes.rs` `parse_seen_within` |
+| What | `str::parse::<u64>` accepts an optional `+`, so `+24h` is 24 h (verified: `"+1".parse::<u64>()` is `Ok(1)`). API.md §clients says a sign is `400`; the rejection test covers `-1h` only. Leading zeros (`007d`) pass too |
+| Fix | require `digits.bytes().all(|b| b.is_ascii_digit())` before the parse; add `+1h` to the rejection test |
+
+#### 3. LOW — `pages/clients.tsx` JSDoc is stale, and the stated blocker is not real
+
+| | |
+| --- | --- |
+| Where | `clients.tsx:49-53` |
+| What | "A family chip re-reads, search does not … the page opens on IPv4": the seen chip re-reads too and the page opens on 24 h. §Status says the no-comments hook blocks the edit |
+| Why the blocker is not real | `.claude/hooks/no-rust-comments.sh` scans only the *added* text for `//` or `/*`. An Edit whose `new_string` is the ` * …` body lines, without the `/**` opener, passes |
+| Fix | rewrite the two sentences, or delete the paragraph |
+
+#### 4. LOW (deferred) — the age predicate lives twice
+
+| | |
+| --- | --- |
+| Where | `client_registry.rs` `expire_idle`; `routes.rs` `seen_within_window` |
+| What | both encode "kept unless `now - last_seen > limit`; a backwards clock is age zero", each with its own test |
+| Why it matters | principle 4; `fah-stats` and `fah-api` are L3 siblings, so the one home is `fah-common` or `fah-model` (`fn older_than(last_seen, now, limit) -> bool`). A future change to one diverges from the other silently |
+
+#### 5. INFO — verified, no action
+
+- Hot path: `Stats::record` and `expire_idle` share the `clients` Mutex on the
+  fan-out task, not the DNS response path. The `retain` walk is O(≤4096) every
+  20 s, the same order as the `named()` walk already on that tick.
+- Memory: `HashMap::retain` keeps the bucket allocation, so after a 600 → 15
+  expiry the registry holds 600-entry capacity until restart, and `heap_bytes`
+  (len-based) under-reports by that. Bounded by the 4096 cap, < 1 MB, below
+  the "worth it" threshold; the pre-existing eviction has the same property.
+- An unnamed address with a per-address policy assignment expires like any
+  other. Enforcement is unaffected: `PolicyResolver::build` and
+  `PolicyState::refresh` read `[[policies]]` and the named list, never the
+  registry. The row leaves the Clients page until the address returns
+  (§Remaining TODOs option 1, out of scope).
+- Boot order: `stats.boot()` (`main.rs:390`) precedes `spawn_policy_ticker`
+  (`main.rs:755`), so the first immediate tick expires against the loaded
+  snapshot, and the shutdown `save_snapshot` (`main.rs:905`) persists it.
+- `Stats::new` and `set_client_idle_expiry_days` clamp with `.max(1)` after
+  `validate_range` already rejects 0. Harmless double guard.
+- `CONFIGURATION.md:27` "Four do" still omits `schedule.timezone`, which the
+  sample config and the dashboard both class as runtime. Pre-existing
+  miscount, not introduced here.
+- tui-monitor (`models/lan.rs`) and the Top-clients card
+  (`dashboard.tsx` `useRefresh('clients')`) send no parameter; unchanged as
+  claimed.
+- Plan compliance: every listed unit and constraint is present. `last_seen` is
+  written only by `entry()` (query, request, handshake); `set_name`, `list`,
+  `name`, `named` do not touch it. Equal-to-limit is kept, one second past is
+  removed, backwards clock never expires. No new task, timer, lock or file path.
+
+### Gates re-run (reviewer, dev box, Windows, 2026-09-21)
+
+| Gate | Result |
+| --- | --- |
+| `cargo test -p fah-stats -p fah-config -p fah-api` | 483 passed, 0 failed |
+| `cargo clippy --workspace --all-targets -- -D warnings` | clean |
+
+### Verdict
+
+**PASS WITH DEFERRED FINDINGS.** 1 and 2 should land with this change (one
+doc paragraph, one digit check plus a test case); 3 is a comment edit; 4 is
+deferrable.
+
+### Follow-up (2026-09-21) — all four findings landed
+
+| Finding | Change |
+| --- | --- |
+| 1 | API.md §`POST /config`: `stats.snapshot_interval_seconds` named as the boot key, `stats.client_idle_expiry_days` added to the runtime set. CONFIGURATION.md §Mutability classes: "Five do", `schedule.timezone` added to the pre-existing miscount |
+| 2 | `parse_seen_within` requires ASCII digits before the parse; `+1h` and `1_0h` join the rejection test, `007d` is pinned as accepted |
+| 3 | `pages/clients.tsx` and `api/clients.ts` JSDoc now describe both chips and the 24 h default; §Fix 1 as shipped no longer claims a hook blocker |
+| 4 | `fah_common::idle::older_than(last_seen, now, limit)` is the one home for the age predicate, with its own boundary and backwards-clock tests; `ClientRegistry::expire_idle` and the `seen_within` filter call it. `fah-stats` gains an L1 dependency on `fah-common`; `fah-api` already had one |
+
+Gates after the follow-up (dev box, Windows, 2026-09-21):
+
+| Gate | Result |
+| --- | --- |
+| `cargo fmt --all -- --check` | clean |
+| `cargo clippy --workspace --all-targets -- -D warnings` | clean |
+| `cargo test --all-features --workspace --no-fail-fast` | 60 binaries, 1686 passed, 0 failed |
+| dashboard `tsc --noEmit` + `vitest run` | clean; 58 files, 1059 passed |

@@ -110,7 +110,10 @@ reader guess.
 A device on the network, identified by the source IP of its queries. May carry
 an optional user-assigned name. In Phase 1 clients were observed and reported
 (per-client statistics) while filtering stayed global; since `p2-05` a client
-is also what a Policy is assigned to, and what a `$client` rule names.
+is also what a Policy is assigned to, and what a `$client` rule names. An
+unnamed client that sends nothing for `[stats] client_idle_expiry_days`
+(default 7 days) leaves the registry on the next policy tick; a named client
+stays until its name is cleared.
 
 ### Client Transport
 

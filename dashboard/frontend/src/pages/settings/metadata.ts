@@ -362,7 +362,7 @@ export const SECTIONS: readonly SectionMeta[] = [
   },
   {
     id: 'stats',
-    note: 'The periodic snapshot to /data.',
+    note: 'The periodic snapshot to /data, and how long an idle client stays listed.',
     fields: [
       {
         key: 'stats.snapshot_interval_seconds',
@@ -370,7 +370,15 @@ export const SECTIONS: readonly SectionMeta[] = [
         help: 'How often the rolling statistics are written out. The timer is built at startup.',
         control: { kind: 'int', min: 0, max: U32_MAX },
         mutability: 'restart',
-        source: `${CONFIG_REFERENCE} [stats]; u32 in schema/stats.rs; ${BOOT_KEYS} stats`,
+        source: `${CONFIG_REFERENCE} [stats]; u32 in schema/stats.rs; ${BOOT_KEYS} stats.snapshot_interval_seconds`,
+      },
+      {
+        key: 'stats.client_idle_expiry_days',
+        label: 'client_idle_expiry_days',
+        help: 'An unnamed client not seen for this many days leaves the registry on the next 20 s tick. Named clients never expire. Applied live.',
+        control: { kind: 'int', min: 1, max: 3650 },
+        mutability: 'live',
+        source: `${VALIDATE} validate_range(1, 3650); routes.rs post_config set_client_idle_expiry_days; absent from ${BOOT_KEYS}`,
       },
     ],
   },

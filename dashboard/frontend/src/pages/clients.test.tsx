@@ -114,7 +114,7 @@ const fetchMock = vi.fn();
 let host: HTMLElement | null = null;
 
 /** What the page reads on mount: it opens on IPv4. */
-const CLIENTS_V4 = '/api/v1/clients?family=v4';
+const CLIENTS_V4 = '/api/v1/clients?family=v4&seen_within=24h';
 
 function route(path: string, init?: RequestInit): Response {
   const method = init?.method ?? 'GET';
@@ -234,14 +234,33 @@ describe('what loading the page costs', () => {
     await click(chip('IPv6'));
     expect(rows(dom)).toHaveLength(0);
     expect(dom.querySelector('.empty-state-title')?.textContent).toBe(
-      'No IPv6 client has asked anything yet',
+      'No IPv6 client has asked anything in the last 24 h',
     );
     await click(chip('all'));
     expect(rows(dom)).toHaveLength(CLIENTS.length);
     expect(calls().slice(2)).toEqual([
-      ['GET', '/api/v1/clients?family=v6'],
+      ['GET', '/api/v1/clients?family=v6&seen_within=24h'],
       ['GET', '/api/v1/policies'],
-      ['GET', '/api/v1/clients'],
+      ['GET', '/api/v1/clients?seen_within=24h'],
+      ['GET', '/api/v1/policies'],
+    ]);
+  });
+
+  it('opens on the last 24 h and re-reads without `?seen_within=` on all time', async () => {
+    const dom = await mount();
+    const group = dom.querySelector(
+      '.ch-right [aria-label="Filter by last seen"]',
+    );
+    const chip = (label: string) =>
+      [...(group?.querySelectorAll('button') ?? [])].find(
+        (button) => button.textContent === label,
+      );
+    expect(chip('last 24 h')?.getAttribute('aria-pressed')).toBe('true');
+
+    await click(chip('all time'));
+    expect(rows(dom)).toHaveLength(CLIENTS.length);
+    expect(calls().slice(2)).toEqual([
+      ['GET', '/api/v1/clients?family=v4'],
       ['GET', '/api/v1/policies'],
     ]);
   });
@@ -253,12 +272,12 @@ describe('what loading the page costs', () => {
       [...(mobile?.querySelectorAll('button') ?? [])].find(
         (button) => button.textContent === label,
       );
-    expect(mobile?.querySelectorAll('.chip')).toHaveLength(3);
+    expect(mobile?.querySelectorAll('.chip')).toHaveLength(5);
     expect(chip('IPv4')?.getAttribute('aria-pressed')).toBe('true');
 
     await click(chip('IPv6'));
     expect(calls().slice(2)).toEqual([
-      ['GET', '/api/v1/clients?family=v6'],
+      ['GET', '/api/v1/clients?family=v6&seen_within=24h'],
       ['GET', '/api/v1/policies'],
     ]);
   });
@@ -668,7 +687,7 @@ describe('empty states', () => {
     );
     const dom = await mount();
     expect(dom.querySelector('.empty-state-title')?.textContent).toBe(
-      'No IPv4 client has asked anything yet',
+      'No IPv4 client has asked anything in the last 24 h',
     );
     expect(dom.querySelector('.error-state')).toBeNull();
   });

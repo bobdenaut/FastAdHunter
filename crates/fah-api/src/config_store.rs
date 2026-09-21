@@ -54,7 +54,7 @@ const BOOT_KEYS: [&str; 18] = [
     // security policy under in-flight connections — if that is ever wanted it
     // needs an atomic swap and a test, not a reclassification here.
     "egress",
-    "stats",
+    "stats.snapshot_interval_seconds",
     "history.sample_interval_seconds",
     "api.address",
     "api.port",
@@ -397,6 +397,11 @@ mod tests {
                 "rules.refresh_hours_default",
                 "post_config -> ListManager::set_default_refresh_hours, the atomic the \
                  scheduler reads (the lists handlers only report it)",
+            ),
+            (
+                "stats.client_idle_expiry_days",
+                "post_config -> StatsSource::set_client_idle_expiry_days, the atomic the \
+                 policy tick's expiry reads",
             ),
             (
                 "schedule.timezone",

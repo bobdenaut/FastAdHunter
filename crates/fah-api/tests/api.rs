@@ -35,6 +35,7 @@ struct FakeStats {
     /// The `(enabled, retention_days)` last pushed by `apply_history_config` —
     /// lets a test prove `POST /api/v1/config` reaches the history writers live.
     applied_history: Mutex<Option<(bool, u32)>>,
+    applied_client_idle_expiry_days: Mutex<Option<u32>>,
 }
 
 impl FakeStats {
@@ -55,6 +56,7 @@ impl FakeStats {
                 },
             }]),
             applied_history: Mutex::new(None),
+            applied_client_idle_expiry_days: Mutex::new(None),
         }
     }
 }
@@ -141,6 +143,10 @@ impl StatsSource for FakeStats {
 
     fn apply_history_config(&self, enabled: bool, retention_days: u32) {
         *self.applied_history.lock().unwrap() = Some((enabled, retention_days));
+    }
+
+    fn set_client_idle_expiry_days(&self, days: u32) {
+        *self.applied_client_idle_expiry_days.lock().unwrap() = Some(days);
     }
 
     fn heap(&self) -> fah_model::StatsHeap {
@@ -1780,6 +1786,49 @@ async fn clients_narrow_to_one_address_family_on_request() {
 }
 
 #[tokio::test]
+async fn clients_narrow_to_the_recently_seen_on_request() {
+    let harness = start().await;
+    harness.stats.clients.lock().unwrap().push(ClientEntry {
+        ip: "192.168.10.16".parse().unwrap(),
+        name: None,
+        first_seen: SystemTime::now(),
+        last_seen: SystemTime::now(),
+        queries_24h: 1,
+        blocked_24h: 0,
+        intercepted: fah_api::InterceptedHandshakes::default(),
+    });
+
+    let listed = |body: Value| -> Vec<String> {
+        body["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|item| item["ip"].as_str().unwrap().to_string())
+            .collect()
+    };
+
+    assert_eq!(
+        listed(harness.get_json("/api/v1/clients").await),
+        ["192.168.10.15", "192.168.10.16"]
+    );
+    assert_eq!(
+        listed(harness.get_json("/api/v1/clients?seen_within=24h").await),
+        ["192.168.10.16"]
+    );
+    assert_eq!(
+        listed(
+            harness
+                .get_json("/api/v1/clients?family=v4&seen_within=7d")
+                .await
+        ),
+        ["192.168.10.16"]
+    );
+
+    let rejected = harness.get("/api/v1/clients?seen_within=1y").await;
+    assert_eq!(rejected.status().as_u16(), 400);
+}
+
+#[tokio::test]
 async fn clients_carry_the_in_force_policy_and_agree_with_the_per_client_endpoint() {
     let harness = start().await;
 
@@ -3012,6 +3061,33 @@ async fn history_retention_change_is_pushed_live_to_the_writers() {
     assert_eq!(
         *harness.stats.applied_history.lock().unwrap(),
         Some((true, 90))
+    );
+}
+
+#[tokio::test]
+async fn client_idle_expiry_change_is_pushed_live_to_the_registry() {
+    let harness = start().await;
+
+    let body: Value = harness
+        .client
+        .post(harness.url("/api/v1/config"))
+        .bearer_auth(&harness.key)
+        .json(&json!({"stats": {"client_idle_expiry_days": 30}}))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(body["applied"], true);
+    assert_eq!(body["restart_required"], false);
+    assert_eq!(
+        *harness
+            .stats
+            .applied_client_idle_expiry_days
+            .lock()
+            .unwrap(),
+        Some(30)
     );
 }
 
