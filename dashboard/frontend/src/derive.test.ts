@@ -6,6 +6,9 @@ import {
   foldedLabels,
   faultRate,
   listsNeedingAttention,
+  mean,
+  median,
+  overAccounted,
   stackedMemory,
   statsBytes,
   upstreamStateCounts,
@@ -745,98 +748,213 @@ describe('windowTrend (D14)', () => {
   it('answers null, not flat, on a window too short to have a shape', () => {
     // The distinction the verdict pill and the fault rate both depend on:
     // "not enough history" is not the same claim as "steady".
-    expect(windowTrend([100, 100, 100, 100, 100], 0.1)).toBeNull();
-    expect(windowTrend(flat, 0.1)).toBe('flat');
+    expect(windowTrend([100, 100, 100, 100, 100], 0.1, median)).toBeNull();
+    expect(windowTrend(flat, 0.1, median)).toBe('flat');
   });
 
   it('holds flat through jitter inside the tolerance', () => {
-    expect(windowTrend(flat, 0.1)).toBe('flat');
+    expect(windowTrend(flat, 0.1, median)).toBe('flat');
   });
 
   it('reads a climb past the tolerance as rising', () => {
-    expect(windowTrend([100, 100, 100, 130, 130, 130], 0.1)).toBe('rising');
+    expect(windowTrend([100, 100, 100, 130, 130, 130], 0.1, median)).toBe('rising');
     // …and the same climb is flat under a tolerance wide enough to cover it.
-    expect(windowTrend([100, 100, 100, 130, 130, 130], 0.5)).toBe('flat');
+    expect(windowTrend([100, 100, 100, 130, 130, 130], 0.5, median)).toBe('flat');
   });
 
   it('reads a fall past the tolerance as falling', () => {
-    expect(windowTrend([130, 130, 130, 100, 100, 100], 0.1)).toBe('falling');
+    expect(windowTrend([130, 130, 130, 100, 100, 100], 0.1, median)).toBe('falling');
+  });
+
+  it('splits six into two per third and ignores the middle two', () => {
+    expect(windowTrend([40, 40, 90, 90, 41, 41], 0.1, median)).toBe('flat');
+    expect(windowTrend([40, 40, 40, 40, 45, 44], 0.1, median)).toBe('rising');
+  });
+
+  const flat24 = Array.from({ length: 24 }, () => 40);
+
+  it('holds through a transient shorter than half a third at the end', () => {
+    const values = flat24.map((value, index) =>
+      index >= 19 && index < 22 ? 80 : value,
+    );
+    expect(windowTrend(values, 0.1, median)).toBe('flat');
+  });
+
+  it('reads that same transient as rising under mean, which the fault card keeps', () => {
+    const values = flat24.map((value, index) =>
+      index >= 19 && index < 22 ? 80 : value,
+    );
+    expect(windowTrend(values, 0.1, mean)).toBe('rising');
+    expect(windowTrend(values, 0.2, mean)).toBe('rising');
+  });
+
+  it('reads neither a transient in the first third as a fall nor a dip as a climb', () => {
+    const spike = flat24.map((value, index) =>
+      index >= 2 && index < 5 ? 80 : value,
+    );
+    const dip = flat24.map((value, index) =>
+      index >= 2 && index < 5 ? 5 : value,
+    );
+    expect(windowTrend(spike, 0.1, median)).toBe('flat');
+    expect(windowTrend(dip, 0.1, median)).toBe('flat');
+  });
+
+  it('still reads a persistent climb as rising', () => {
+    const ramp = Array.from({ length: 24 }, (_, index) => 40 + (12 * index) / 23);
+    expect(windowTrend(ramp, 0.1, median)).toBe('rising');
+  });
+});
+
+describe('median', () => {
+  it('is the middle value of an odd count', () => {
+    expect(median([3, 1, 2])).toBe(2);
+  });
+
+  it('is the mean of the two middle values of an even count', () => {
+    expect(median([4, 1, 3, 2])).toBe(2.5);
+  });
+
+  it('leaves its input in the order it came', () => {
+    const values = [3, 1, 2];
+    median(values);
+    expect(values).toEqual([3, 1, 2]);
+  });
+});
+
+describe('overAccounted', () => {
+  const memory = {
+    ruleset_bytes: 40,
+    cache_estimated_bytes: 10,
+    stats_aggregates_bytes: 3,
+    stats_clients_bytes: 2,
+  };
+
+  it('is the accounting bug: components claiming more than RSS', () => {
+    expect(overAccounted({ rss_bytes: 54, memory })).toBe(true);
+  });
+
+  it('holds at equality, which is the identity and not the bug', () => {
+    expect(overAccounted({ rss_bytes: 55, memory })).toBe(false);
+  });
+
+  it('cannot be judged without both readings', () => {
+    expect(overAccounted({ memory })).toBe(false);
+    expect(overAccounted({ rss_bytes: 10 })).toBe(false);
+  });
+
+  it('is the one test the chart gap and the verdict omission share', () => {
+    const bug = { rss_bytes: 54, memory };
+    const fine = { rss_bytes: 55, memory };
+    expect(stackedMemory([bug])[0]?.[0]).toBeNull();
+    expect(overAccounted(bug)).toBe(true);
+    expect(stackedMemory([fine])[0]?.[0]).toBe(40);
+    expect(overAccounted(fine)).toBe(false);
   });
 });
 
 describe('restartIndices', () => {
   it('finds nothing in a monotone peak series', () => {
-    expect(restartIndices([10, 10, 12, 12, 15])).toEqual([]);
+    expect(restartIndices([10, 10, 12, 12, 15], [])).toEqual([]);
   });
 
   it('marks the first row of the new process, not the last of the old', () => {
     // 148 -> 89 is the deploy; index 3 is the new process's opening row.
-    expect(restartIndices([120, 140, 148, 89, 93])).toEqual([3]);
+    expect(restartIndices([120, 140, 148, 89, 93], [])).toEqual([3]);
   });
 
   it('finds every restart in a window that spans several', () => {
-    expect(restartIndices([100, 120, 60, 80, 40, 50])).toEqual([2, 4]);
+    expect(restartIndices([100, 120, 60, 80, 40, 50], [])).toEqual([2, 4]);
   });
 
   it('skips gap rows instead of reading them as a fall', () => {
     // A `0` or a nullish peak means the row predates the field or `getrusage`
     // was unavailable. Either read as a drop would invent a restart, and the
     // row after it would invent a second one on the way back up.
-    expect(restartIndices([100, 0, 120])).toEqual([]);
-    expect(restartIndices([100, null, 120])).toEqual([]);
-    expect(restartIndices([100, undefined, 120])).toEqual([]);
+    expect(restartIndices([100, 0, 120], [])).toEqual([]);
+    expect(restartIndices([100, null, 120], [])).toEqual([]);
+    expect(restartIndices([100, undefined, 120], [])).toEqual([]);
     // The real restart on the far side of a gap is still found.
-    expect(restartIndices([100, 0, 120, null, 60])).toEqual([4]);
+    expect(restartIndices([100, 0, 120, null, 60], [])).toEqual([4]);
   });
 
   it('reads a leading gap as no baseline rather than a restart', () => {
-    expect(restartIndices([0, null, 50, 60])).toEqual([]);
+    expect(restartIndices([0, null, 50, 60], [])).toEqual([]);
   });
 
   it('has nothing to say about an empty series', () => {
-    expect(restartIndices([])).toEqual([]);
+    expect(restartIndices([], [])).toEqual([]);
+  });
+
+  it('catches off the fault counter the restart the peak alone misses', () => {
+    expect(
+      restartIndices([91, 91, 93, 93], [60_000, 67_825, 35_615, 39_000]),
+    ).toEqual([2]);
+  });
+
+  it('reports a restart both counters show once, not twice', () => {
+    expect(
+      restartIndices([148, 148, 89], [5_000_000, 5_002_000, 35_000]),
+    ).toEqual([2]);
+  });
+
+  it('keeps a baseline per counter across that counter\'s own gaps', () => {
+    expect(restartIndices([100, 0, 120], [10, 20, 5])).toEqual([2]);
+    expect(restartIndices([100, 90, 120], [10, 0, 5])).toEqual([1, 2]);
   });
 });
 
 describe('sinceLastRestart', () => {
-  type Row = { peak_rss?: number; memory: { residual_bytes: number } };
+  type Row = {
+    peak_rss?: number;
+    minor_page_faults?: number;
+    memory: { residual_bytes: number };
+  };
   // `exactOptionalPropertyTypes` is on: a gap row omits the key rather than
   // setting it to undefined, which is also how a real response carries it.
   const row = (peak: number | null | undefined, residual: number): Row =>
     peak === null || peak === undefined
       ? { memory: { residual_bytes: residual } }
       : { peak_rss: peak, memory: { residual_bytes: residual } };
-  const peakOf = (r: Row) => r.peak_rss;
   const residual = (rows: readonly Row[]) =>
     rows.map((r) => r.memory.residual_bytes);
 
   it('returns the whole series when no restart is in it', () => {
     const rows = [row(10, 1), row(12, 2), row(12, 3)];
-    expect(sinceLastRestart(rows, peakOf)).toEqual(rows);
+    expect(sinceLastRestart(rows)).toEqual(rows);
   });
 
   it('drops everything before the restart, keeping the new process', () => {
     const rows = [row(148, 40), row(148, 44), row(89, 18), row(90, 19)];
-    expect(sinceLastRestart(rows, peakOf)).toEqual([rows[2], rows[3]]);
+    expect(sinceLastRestart(rows)).toEqual([rows[2], rows[3]]);
   });
 
   it('keeps only the newest process when the window spans two restarts', () => {
     const rows = [row(100, 9), row(60, 5), row(70, 6), row(30, 2), row(31, 3)];
-    expect(sinceLastRestart(rows, peakOf)).toEqual([rows[3], rows[4]]);
+    expect(sinceLastRestart(rows)).toEqual([rows[3], rows[4]]);
   });
 
   it('returns the restart row alone when it is the newest row', () => {
     const rows = [row(148, 40), row(89, 18)];
-    expect(sinceLastRestart(rows, peakOf)).toEqual([rows[1]]);
+    expect(sinceLastRestart(rows)).toEqual([rows[1]]);
   });
 
   it('leaves an empty series empty', () => {
-    expect(sinceLastRestart([] as readonly Row[], peakOf)).toEqual([]);
+    expect(sinceLastRestart([] as readonly Row[])).toEqual([]);
+  });
+
+  it('cuts at the restart only the fault counter shows', () => {
+    const rows: Row[] = [
+      { peak_rss: 91, minor_page_faults: 60_000, memory: { residual_bytes: 40 } },
+      { peak_rss: 91, minor_page_faults: 67_825, memory: { residual_bytes: 44 } },
+      { peak_rss: 93, minor_page_faults: 35_615, memory: { residual_bytes: 18 } },
+      { peak_rss: 93, minor_page_faults: 39_000, memory: { residual_bytes: 18 } },
+    ];
+    expect(sinceLastRestart(rows)).toEqual([rows[2], rows[3]]);
   });
 
   it('does not cut the window on a gap row', () => {
     const rows = [row(10, 1), row(null, 2), row(12, 3)];
-    expect(sinceLastRestart(rows, peakOf)).toEqual(rows);
+    expect(sinceLastRestart(rows)).toEqual(rows);
   });
 
   it('feeds windowTrend one lifetime, not the splice of two', () => {
@@ -854,8 +972,8 @@ describe('sinceLastRestart', () => {
       row(89, 18),
       row(90, 18),
     ];
-    expect(windowTrend(residual(rows), 0.1)).toBe('falling');
-    expect(windowTrend(residual(sinceLastRestart(rows, peakOf)), 0.1)).toBeNull();
+    expect(windowTrend(residual(rows), 0.1, median)).toBe('falling');
+    expect(windowTrend(residual(sinceLastRestart(rows)), 0.1, median)).toBeNull();
   });
 
   it('lets a genuine climb inside one lifetime still read as rising', () => {
@@ -870,8 +988,8 @@ describe('sinceLastRestart', () => {
       row(91, 27),
       row(91, 28),
     ];
-    const values = residual(sinceLastRestart(rows, peakOf));
+    const values = residual(sinceLastRestart(rows));
     expect(values).toHaveLength(6);
-    expect(windowTrend(values, 0.1)).toBe('rising');
+    expect(windowTrend(values, 0.1, median)).toBe('rising');
   });
 });

@@ -111,7 +111,7 @@ export function KpiRail({
         aside="high-water"
         value={memory.process_peak_rss}
         tone="peak"
-        description="the startup compile — seconds long, never sampled by the 60 s series"
+        description="the startup compile — seconds long, over before the history series samples it"
         spark={<PeakSpark items={items} />}
         sparkNote="restart resets it"
         marks={

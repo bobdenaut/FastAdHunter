@@ -80,6 +80,10 @@ function mibAxis(theme: ChartTheme, side: 1 | 3): uPlot.Axis {
  * suite asserts the order. The series array below is built from these names, so
  * the constant and the layout cannot drift: change one and the other moves with
  * it.
+ *
+ * `faults` is never drawn. It rides along on its own scale so `restartsOf` can
+ * read the fault counter beside the peak, off the same data the line is drawn
+ * from.
  */
 const SERIES = {
   x: 0,
@@ -88,6 +92,7 @@ const SERIES = {
   stats: 3,
   rss: 4,
   peak: 5,
+  faults: 6,
 } as const;
 
 /** The slots above, back in index order, with every one of them filled. */
@@ -260,9 +265,9 @@ function stateStroke(
 /**
  * The restart rows, read off the plotted peak series (KTD7).
  *
- * The rule itself lives in `restartIndices` — a fall in the high-water mark —
- * and is shared with the residual verdict so the marker and the verdict cannot
- * disagree about where a process ended.
+ * The rule itself lives in `restartIndices` — a fall in the high-water mark or
+ * in the fault counter — and is shared with the residual verdict so the marker
+ * and the verdict cannot disagree about where a process ended.
  *
  * **It reads `u.data`, not the page's `items`, on purpose.** The annotation has
  * to mark the line that is actually drawn. Deriving it from `items` and passing
@@ -273,8 +278,12 @@ function stateStroke(
  */
 function restartsOf(u: uPlot): number[] {
   const peaks = u.data[SERIES.peak];
-  if (peaks === undefined) return [];
-  return restartIndices(peaks as ArrayLike<number | null | undefined>);
+  const faults = u.data[SERIES.faults];
+  if (peaks === undefined || faults === undefined) return [];
+  return restartIndices(
+    peaks as ArrayLike<number | null | undefined>,
+    faults as ArrayLike<number | null | undefined>,
+  );
 }
 
 /** Local midnight after `seconds`, in epoch seconds. */
@@ -719,6 +728,12 @@ export function memoryTrendOptions({
         width: 1.7,
         dash: [5, 3],
         spanGaps: false,
+        points: { show: false },
+      },
+      [SERIES.faults]: {
+        label: 'faults',
+        scale: 'faults',
+        show: false,
         points: { show: false },
       },
     }),

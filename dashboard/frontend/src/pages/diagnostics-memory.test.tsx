@@ -268,6 +268,7 @@ describe('the plot options', () => {
       'stats',
       'RSS',
       'peak',
+      'faults',
     ]);
   });
 });
@@ -803,6 +804,109 @@ describe('the page', () => {
     const pill = dom.querySelector('.memory-verdict');
     expect(pill?.className).toContain('warn');
     expect(pill?.textContent).toContain('residual rising');
+  });
+
+  function overAccountedRow(index: number, peak: number) {
+    const base = perfRow();
+    return {
+      ...base,
+      ts: new Date(Date.UTC(2026, 7, 28, 0, index)).toISOString(),
+      peak_rss: peak,
+      memory: {
+        ...base.memory,
+        ruleset_bytes: base.rss_bytes + 1,
+        residual_bytes: 0,
+      },
+    };
+  }
+
+  it('omits over-accounted rows from the verdict rather than reading their zero', async () => {
+    const items = [
+      ...[40, 40, 41, 40, 41].map((residual, index) =>
+        lifetimeRow(index, 148_000_000, residual * 1_048_576),
+      ),
+      overAccountedRow(5, 148_000_000),
+      overAccountedRow(6, 148_000_000),
+      overAccountedRow(7, 148_000_000),
+    ];
+    const dom = await mountPage(MEMORY, { ...HISTORY, items });
+    const pill = dom.querySelector('.memory-verdict');
+    expect(pill?.className).toContain('neutral');
+    expect(pill?.textContent).toContain('not enough history');
+  });
+
+  it('does not read over-accounted zeros in the first third as a climb', async () => {
+    const items = [
+      overAccountedRow(0, 148_000_000),
+      overAccountedRow(1, 148_000_000),
+      ...[40, 40, 41, 40, 41, 40].map((residual, index) =>
+        lifetimeRow(index + 2, 148_000_000, residual * 1_048_576),
+      ),
+    ];
+    const dom = await mountPage(MEMORY, { ...HISTORY, items });
+    const pill = dom.querySelector('.memory-verdict');
+    expect(pill?.className).toContain('good');
+    expect(pill?.textContent).toContain('residual stable');
+  });
+
+  it('does not let over-accounted zeros in the last third hide a climb', async () => {
+    const items = [
+      ...[40, 44, 48, 50, 51, 52].map((residual, index) =>
+        lifetimeRow(index, 148_000_000, residual * 1_048_576),
+      ),
+      overAccountedRow(6, 148_000_000),
+      overAccountedRow(7, 148_000_000),
+    ];
+    const dom = await mountPage(MEMORY, { ...HISTORY, items });
+    const pill = dom.querySelector('.memory-verdict');
+    expect(pill?.className).toContain('warn');
+    expect(pill?.textContent).toContain('residual rising');
+  });
+
+  it('judges six rows by their first two and last two', async () => {
+    const middle = [40, 40, 90, 90, 41, 41].map((residual, index) =>
+      lifetimeRow(index, 148_000_000, residual * 1_048_576),
+    );
+    const steady = await mountPage(MEMORY, { ...HISTORY, items: middle });
+    expect(steady.querySelector('.memory-verdict')?.textContent).toContain(
+      'residual stable',
+    );
+
+    const tail = [40, 40, 40, 40, 45, 44].map((residual, index) =>
+      lifetimeRow(index, 148_000_000, residual * 1_048_576),
+    );
+    const climb = await mountPage(MEMORY, { ...HISTORY, items: tail });
+    expect(climb.querySelector('.memory-verdict')?.textContent).toContain(
+      'residual rising',
+    );
+  });
+
+  it('cuts the window at a restart the peak alone misses', async () => {
+    const old = [40, 44, 48, 50, 51, 52].map((residual, index) => ({
+      ...lifetimeRow(index, 148_000_000, residual * 1_048_576),
+      minor_page_faults: 5_000_000 + index * 2_000,
+    }));
+    const fresh = [18, 18].map((residual, index) => ({
+      ...lifetimeRow(index + 6, 149_000_000, residual * 1_048_576),
+      minor_page_faults: 35_000 + index * 2_000,
+    }));
+    const dom = await mountPage(MEMORY, {
+      ...HISTORY,
+      items: [...old, ...fresh],
+    });
+    const pill = dom.querySelector('.memory-verdict');
+    expect(pill?.className).toContain('neutral');
+    expect(pill?.textContent).toContain('not enough history');
+  });
+
+  it('holds stable through a refresh transient in the last third', async () => {
+    const items = [40, 40, 40, 40, 40, 40, 40, 40, 40, 80, 40, 40].map(
+      (residual, index) => lifetimeRow(index, 148_000_000, residual * 1_048_576),
+    );
+    const dom = await mountPage(MEMORY, { ...HISTORY, items });
+    const pill = dom.querySelector('.memory-verdict');
+    expect(pill?.className).toContain('good');
+    expect(pill?.textContent).toContain('residual stable');
   });
 
   it('states the unit trap the two budgets create', async () => {

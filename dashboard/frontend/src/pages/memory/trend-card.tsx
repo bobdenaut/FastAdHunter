@@ -62,7 +62,12 @@ export function TrendCard({
     const peak = items.map((item) =>
       item.peak_rss === undefined || item.peak_rss === 0 ? null : item.peak_rss,
     );
-    return [xs, ...bands, peak] as unknown as uPlot.AlignedData;
+    const faults = items.map((item) =>
+      item.minor_page_faults === undefined || item.minor_page_faults === 0
+        ? null
+        : item.minor_page_faults,
+    );
+    return [xs, ...bands, peak, faults] as unknown as uPlot.AlignedData;
   }, [items]);
 
   const hovered = cursor === null ? null : (items[cursor] ?? null);
@@ -137,10 +142,12 @@ export function TrendCard({
         </span>
         <span class="footnote-line">
           <b>A dashed rule marks a restart</b>, with the process's new peak on
-          it. Peak is a high-water mark over a process lifetime, so a fall in
-          that line is always a restart and never a reclaim — and the new
-          process's first peak is its startup compile, which lasts seconds
-          against the sampling interval and so never appears in the area below.
+          it. It is drawn where peak RSS or the minor-fault counter falls: both
+          only ever grow over a process lifetime, so a fall in either is a
+          restart and never a reclaim. The peak alone is not enough, because
+          every process's peak is its startup compile and consecutive processes
+          peak alike — and that compile lasts seconds against the sampling
+          interval, so it never appears in the area below.
         </span>
       </p>
     </Card>

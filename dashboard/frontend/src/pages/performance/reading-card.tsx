@@ -16,7 +16,7 @@ export function ReadingCard() {
       <div>
         <div class="reading-title">Decimation is visible</div>
         <p class="note">
-          At 60 s sampling, one day is 1,440 rows, so a wide range is thinned.
+          One row per sample interval adds up, so a wide range is thinned.
           Only every n-th row is returned — whole rows, never averaged — and the
           chart says when that happens.
         </p>

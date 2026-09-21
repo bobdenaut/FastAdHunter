@@ -7,7 +7,7 @@ import type { DebugMemory, HistoryPerf, Telemetry } from '../api/types';
 import { EmptyState } from '../components/empty-state';
 import { DataAge } from '../components/data-age';
 import { nowMs } from '../lifecycle/timers';
-import { sinceLastRestart, windowTrend } from '../derive';
+import { median, overAccounted, sinceLastRestart, windowTrend } from '../derive';
 import { ErrorState } from '../components/error-state';
 import type { PageProps } from '../router/routes';
 import { ContentHeader } from '../shell/content-header';
@@ -240,15 +240,13 @@ export function DiagnosticsMemory(_props: PageProps) {
  * fresh process then has too few rows to have a shape, and says so.
  */
 function ResidualVerdict({ history }: { history: HistoryPerf | null }) {
-  const values = sinceLastRestart(
-    history?.items ?? [],
-    (item) => item.peak_rss,
-  )
+  const values = sinceLastRestart(history?.items ?? [])
+    .filter((item) => !overAccounted(item))
     .map((item) => item.memory?.residual_bytes)
     .filter((value): value is number => value !== undefined);
   // 10 % of the opening level, so a flat series with allocator jitter does not
   // trip it and a genuine climb does.
-  const trend = windowTrend(values, 0.1);
+  const trend = windowTrend(values, 0.1, median);
 
   if (trend === null) {
     return (

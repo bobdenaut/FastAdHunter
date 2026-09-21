@@ -415,6 +415,23 @@ export function statsBytes(components: {
   return components.stats_aggregates_bytes + components.stats_clients_bytes;
 }
 
+export function overAccounted(item: {
+  rss_bytes?: number;
+  memory?: {
+    ruleset_bytes: number;
+    cache_estimated_bytes: number;
+    stats_aggregates_bytes: number;
+    stats_clients_bytes: number;
+  };
+}): boolean {
+  const memory = item.memory;
+  if (memory === undefined || item.rss_bytes === undefined) return false;
+  return (
+    memory.ruleset_bytes + memory.cache_estimated_bytes + statsBytes(memory) >
+    item.rss_bytes
+  );
+}
+
 export interface Extent {
   min: number;
   max: number;
@@ -499,7 +516,7 @@ export function stackedMemory(
     // from, and the KPI card walks the same readings straight off the row — so
     // a gap here and no gap there is the card and the line disagreeing about a
     // reading, which is exactly what the single state walk exists to prevent.
-    if (stats > item.rss_bytes) {
+    if (overAccounted(item)) {
       bands[0]?.push(null);
       bands[1]?.push(null);
       bands[2]?.push(null);
@@ -522,41 +539,71 @@ export type WindowTrend = 'rising' | 'falling' | 'flat';
  * D14 — the shape of a window, as a word.
  *
  * **A statement about the window, never about its current value.** It compares
- * the mean of the first third against the mean of the last third and answers
+ * the `average` of the first third against that of the last third and answers
  * `rising` or `falling` only when the move clears `tolerance` of the opening
  * level, so allocator jitter on a flat series does not read as a trend.
+ *
+ * **The average is the caller's choice, stated at every call site.** The
+ * residual verdict passes `median`, because a transient is not a trend: on the
+ * device one list refresh held residual about 40 MiB higher for six 360 s
+ * samples, 36 minutes in an 8 h third, and that moved the third's mean by
+ * 8.9 MiB against a 10 % tolerance of 3.8 MiB. A median holds through any
+ * excursion shorter than half a third, and a climb that lasts longer than that
+ * is the signal. The fault-rate card passes `mean`, the semantics its 20 %
+ * tolerance was set against; that decision was never revisited, so the
+ * argument is required rather than defaulted, and neither reading can change
+ * because the other did.
  *
  * `null` is "this window is too short to have a shape", which is a different
  * answer from `flat` and must stay one: the residual verdict and the fault rate
  * both have to say *not enough history* rather than claim steadiness they have
- * not observed. Six is the floor — three per third, so neither mean is a single
- * reading.
+ * not observed. Six is the floor — two per third, so neither average is a
+ * single reading.
  */
 export function windowTrend(
   values: readonly number[],
   tolerance: number,
+  average: (slice: readonly number[]) => number,
 ): WindowTrend | null {
   if (values.length < 6) return null;
   const third = Math.floor(values.length / 3);
-  const mean = (slice: readonly number[]) =>
-    slice.reduce((sum, value) => sum + value, 0) / slice.length;
-  const first = mean(values.slice(0, third));
-  const last = mean(values.slice(-third));
+  const first = average(values.slice(0, third));
+  const last = average(values.slice(-third));
   if (last > first * (1 + tolerance)) return 'rising';
   if (last < first * (1 - tolerance)) return 'falling';
   return 'flat';
 }
 
+export function mean(values: readonly number[]): number {
+  return values.reduce((sum, value) => sum + value, 0) / values.length;
+}
+
+export function median(values: readonly number[]): number {
+  const sorted = [...values].sort((left, right) => left - right);
+  const middle = Math.floor(sorted.length / 2);
+  const upper = sorted[middle] ?? 0;
+  const lower = sorted[middle - 1] ?? upper;
+  return sorted.length % 2 === 0 ? (lower + upper) / 2 : upper;
+}
+
 /**
- * The rows a new process starts at, read off a `peak_rss` series.
+ * The rows a new process starts at, read off the `peak_rss` and
+ * `minor_page_faults` series together.
  *
- * `peak_rss` is `getrusage`'s high-water mark and is monotone within one
- * process lifetime, so a fall is a restart and never a reclaim. Each index
- * returned is the **first row of the new process**, not the last of the old.
+ * Both are `getrusage` counters and monotone within one process lifetime, so a
+ * fall in either is a restart and never a reclaim. Each index returned is the
+ * **first row of the new process**, not the last of the old.
  *
- * Two kinds of row carry no peak and are skipped rather than read as a drop:
- * a nullish one, and a `0`, which means the row predates the field or
+ * **The peak alone is not enough.** The startup compile sets every process's
+ * `peak_rss`, so consecutive processes peak alike and a restart shows there
+ * only when the new compile happened to peak lower. On the device the 05:37
+ * restart was caught that way and the 07:15 one, 91 to 93 MiB, was not, while
+ * the fault counter fell on both. Either counter falling is the rule.
+ *
+ * Two kinds of row carry no reading and are skipped rather than read as a
+ * drop: a nullish one, and a `0`, which means the row predates the field or
  * `getrusage` was unavailable. Reading either as a fall would invent a restart.
+ * Each counter keeps its own baseline across its own gaps.
  *
  * **This is the single restart model.** The trend chart's marker and the
  * residual verdict both resolve here, so the chart cannot draw a restart the
@@ -564,16 +611,32 @@ export function windowTrend(
  */
 export function restartIndices(
   peaks: ArrayLike<number | null | undefined>,
+  faults: ArrayLike<number | null | undefined>,
 ): number[] {
   const out: number[] = [];
-  let previous: number | null = null;
-  for (let index = 0; index < peaks.length; index += 1) {
-    const value = peaks[index];
-    if (value === null || value === undefined || value === 0) continue;
-    if (previous !== null && value < previous) out.push(index);
-    previous = value;
+  let previousPeak: number | null = null;
+  let previousFaults: number | null = null;
+  const length = Math.max(peaks.length, faults.length);
+  for (let index = 0; index < length; index += 1) {
+    const peak = counterReading(peaks[index]);
+    const fault = counterReading(faults[index]);
+    const fell =
+      (peak !== null && previousPeak !== null && peak < previousPeak) ||
+      (fault !== null && previousFaults !== null && fault < previousFaults);
+    if (fell) out.push(index);
+    if (peak !== null) previousPeak = peak;
+    if (fault !== null) previousFaults = fault;
   }
   return out;
+}
+
+function counterReading(value: number | null | undefined): number | null {
+  return value === null || value === undefined || value === 0 ? null : value;
+}
+
+export interface RestartCounters {
+  peak_rss?: number;
+  minor_page_faults?: number;
 }
 
 /**
@@ -588,11 +651,13 @@ export function restartIndices(
  * Rows before the last restart are dropped, never spliced. A series with no
  * restart is returned whole, which is the ordinary case.
  */
-export function sinceLastRestart<T>(
+export function sinceLastRestart<T extends RestartCounters>(
   rows: readonly T[],
-  peakOf: (row: T) => number | null | undefined,
 ): readonly T[] {
-  const restarts = restartIndices(rows.map(peakOf));
+  const restarts = restartIndices(
+    rows.map((row) => row.peak_rss),
+    rows.map((row) => row.minor_page_faults),
+  );
   if (restarts.length === 0) return rows;
   const start = restarts[restarts.length - 1];
   return start === undefined ? rows : rows.slice(start);

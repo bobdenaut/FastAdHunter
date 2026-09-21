@@ -7,7 +7,7 @@ import { useChartTheme } from '../../charts/theme';
 import { Card } from '../../components/card';
 import { Chart } from '../../components/chart';
 import { EmptyState } from '../../components/empty-state';
-import { faultRate, windowTrend } from '../../derive';
+import { faultRate, mean, windowTrend } from '../../derive';
 import { RANGES, type RangeKey } from '../dashboard/ranges';
 
 /**
@@ -82,6 +82,7 @@ export function FaultsCard({
   const trend = windowTrend(
     rates.ys.filter((value): value is number => value !== null),
     0.2,
+    mean,
   );
 
   return (
