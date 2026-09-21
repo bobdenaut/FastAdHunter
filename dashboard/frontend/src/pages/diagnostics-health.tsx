@@ -65,12 +65,7 @@ export function DiagnosticsHealth(_props: PageProps) {
         }
       />
       <main class="wrap">
-        {/* Serving beside Engine: both answer "what is this process doing right
-            now" from one read each, and neither fills a row on its own — the
-            status card is a figure and a line, the engine card five short
-            pairs. Stacked they cost two rows and left the first mostly
-            empty. */}
-        <div class="row c2">
+        <div class="row">
           <Card
             title={
               status === null ? 'Serving' : <>Serving — status {status}</>
@@ -107,19 +102,19 @@ export function DiagnosticsHealth(_props: PageProps) {
               upstreams={telemetry.data?.upstreams ?? null}
             />
           </Card>
-
-          <EngineCard telemetry={telemetry.data} />
         </div>
 
         <div class="row c2">
-          <OutcomesCard telemetry={telemetry.data} />
+          <div class="stack">
+            <EngineCard telemetry={telemetry.data} />
+            <OutcomesCard telemetry={telemetry.data} />
+            <RuleListsCard
+              lists={lists.data}
+              counters={telemetry.data?.counters.lists ?? null}
+            />
+          </div>
           <BackpressureCard telemetry={telemetry.data} />
         </div>
-
-        <RuleListsCard
-          lists={lists.data}
-          counters={telemetry.data?.counters.lists ?? null}
-        />
 
         <NeverCard />
       </main>
