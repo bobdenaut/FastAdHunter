@@ -357,6 +357,45 @@ describe('the row vocabulary', () => {
     expect(dom.textContent).toBe('2 KiB');
   });
 
+  it('draws the synthesized status on an SNI row closed before a hello', () => {
+    const timedOut = mount(
+      <Detail
+        row={event({
+          kind: 'https-sni',
+          domain: '',
+          method: '',
+          path: '',
+          resource_type: 'unknown',
+          status: 408,
+          bytes: 0,
+          qtype: null,
+        })}
+      />,
+    );
+    expect(timedOut.textContent).toBe('408 · 0 B');
+    act(() => {
+      render(null, host as HTMLElement);
+    });
+    host?.remove();
+    host = null;
+
+    const notTls = mount(
+      <Detail
+        row={event({
+          kind: 'https-sni',
+          domain: '',
+          method: '',
+          path: '',
+          resource_type: 'unknown',
+          status: 400,
+          bytes: 0,
+          qtype: null,
+        })}
+      />,
+    );
+    expect(notTls.textContent).toBe('400 · 0 B');
+  });
+
   /**
    * `cached: false` on a Phase 3 row means the cache was never asked, not that
    * it missed. Both kinds must read as "no outcome", exactly like HTTP.

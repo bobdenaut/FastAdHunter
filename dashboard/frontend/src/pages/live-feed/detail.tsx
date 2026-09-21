@@ -11,10 +11,11 @@ import { VerdictPill, type Verdict } from '../../components/verdict-pill';
  *
  * `https-sni` is neither. The SNI leg decides before a request exists, so
  * `ports.rs::as_http` hands it a `RequestEvent` whose method and path are
- * empty and whose status is 0 — placeholders, not observations. Only the
- * relayed byte count is a real reading, so it is the only thing drawn. The
- * empty-part filter covers the same placeholders on an `https` session row,
- * which the failure paths emit with no method and no path.
+ * empty — placeholders, not observations. Its status is 0 on a judged hello
+ * and a synthesized 408 or 400 (API.md §Events) on a connection closed before
+ * one, so the status is drawn only when non-zero, beside the relayed byte
+ * count. The empty-part filter covers the same placeholders on an `https`
+ * session row, which the failure paths emit with no method and no path.
  *
  * DNS is the arm tested for, not HTTP: three of the four kinds carry the
  * request shape, and branching on `kind === 'http'` sent both Phase 3 kinds
@@ -36,7 +37,12 @@ export function Detail({ row }: { row: QueryEvent }) {
   if (row.kind === 'https-sni') {
     return (
       <span class="feed-detail">
-        {row.bytes === null ? '—' : formatBytes(row.bytes)}
+        {[
+          row.status === null || row.status === 0 ? null : String(row.status),
+          row.bytes === null ? '—' : formatBytes(row.bytes),
+        ]
+          .filter((part): part is string => part !== null)
+          .join(' · ')}
       </span>
     );
   }
