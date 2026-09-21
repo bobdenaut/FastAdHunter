@@ -2284,7 +2284,8 @@ table.t tbody tr:hover td {
 }
 
 .client-head .c-queries,
-.client-head .c-blocked {
+.client-head .c-blocked,
+.client-head .c-seen {
   text-align: right;
 }
 
@@ -2336,12 +2337,7 @@ table.t tbody tr:hover td {
 
 .c-seen {
   color: var(--text-muted);
-  text-align: left;
   white-space: nowrap;
-}
-
-.client-head .c-seen {
-  text-align: left;
 }
 
 .c-name.unnamed {
@@ -2352,11 +2348,11 @@ table.t tbody tr:hover td {
    type selector more specific than a bare class, so the blocked hue this rule
    asks for never reached the screen — the bar was painted `--series-permitted`
    while claiming to show the blocked share. */
-.bar > span.c-share-fill {
+.bar > span.c-ratio-fill {
   background: var(--series-blocked);
 }
 
-.c-share-figure {
+.c-ratio-figure {
   margin-top: 3px;
   text-align: center;
 }
@@ -2565,7 +2561,7 @@ table.t tbody tr:hover td {
     font-family: var(--font);
   }
 
-  .c-share {
+  .c-ratio {
     grid-column: 1 / -1;
     grid-row: 5;
     display: flex;
@@ -2573,11 +2569,11 @@ table.t tbody tr:hover td {
     gap: 10px;
   }
 
-  .c-share .bar {
+  .c-ratio .bar {
     flex: 1;
   }
 
-  .c-share-figure {
+  .c-ratio-figure {
     margin-top: 0;
     color: var(--pill-bad-fg);
     flex: 0 0 auto;
@@ -2697,7 +2693,7 @@ table.t tbody tr:hover td {
   flex-wrap: wrap;
 }
 
-/* Same specificity trap as `.c-share-fill`. */
+/* Same specificity trap as `.c-ratio-fill`. */
 .bar > span.policy-traffic-fill {
   background: var(--series-blocked);
 }

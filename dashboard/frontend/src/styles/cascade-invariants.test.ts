@@ -39,12 +39,12 @@ function mediaBlock(source: string, query: string, needle: string): string {
 describe('the blocked-share fills', () => {
   /**
    * `.bar > span` sets the accent and is one type selector more specific than
-   * a bare class, so `.c-share-fill { background: var(--series-blocked) }` lost
+   * a bare class, so `.c-ratio-fill { background: var(--series-blocked) }` lost
    * the cascade and every "blocked share" bar was painted with the *permitted*
    * hue — measured `rgb(31,157,187)` where the artboards draw `#d1504b`.
    */
   it('are qualified by their track, or they lose to `.bar > span`', () => {
-    for (const fill of ['c-share-fill', 'policy-traffic-fill']) {
+    for (const fill of ['c-ratio-fill', 'policy-traffic-fill']) {
       expect(BARE).toContain(`.bar > span.${fill}`);
       expect(BARE).not.toMatch(
         new RegExp(`(?:^|[,}\\s])\\.${fill}\\s*\\{`, 'm'),

@@ -306,7 +306,7 @@ describe('what loading the page costs', () => {
 
     await click(header('c-queries'));
     await click(header('c-queries'));
-    await click(header('c-share'));
+    await click(header('c-ratio'));
     await click(header('c-blocked'));
     await click(header('c-ip'));
     expect(keyBuilds.count).toBe(CLIENTS.length);
@@ -324,7 +324,7 @@ describe('what loading the page costs', () => {
       { cell: 'c-ip', glyph: '▲', idle: false },
       { cell: 'c-queries', glyph: '▼', idle: true },
       { cell: 'c-blocked', glyph: '▼', idle: true },
-      { cell: 'c-share', glyph: '▼', idle: true },
+      { cell: 'c-ratio', glyph: '▼', idle: true },
     ]);
   });
 
@@ -385,7 +385,7 @@ describe('what loading the page costs', () => {
       '192.168.10.7',
     ]);
 
-    await click(header('c-share'));
+    await click(header('c-ratio'));
     expect(addresses()).toEqual([
       '192.168.10.50',
       '192.168.20.11',
@@ -394,10 +394,10 @@ describe('what loading the page costs', () => {
       '192.168.10.7',
     ]);
     expect(
-      rows(dom).map((row) => row.querySelector('.c-share-figure')?.textContent),
+      rows(dom).map((row) => row.querySelector('.c-ratio-figure')?.textContent),
     ).toEqual(['75.7 %', '32.2 %', '13.2 %', '10.0 %', '0 %']);
 
-    await click(header('c-share'));
+    await click(header('c-ratio'));
     expect(addresses()).toEqual([
       '192.168.10.7',
       '192.168.10.15',
@@ -453,9 +453,9 @@ describe('the policy column', () => {
     expect(unnamed?.querySelector('.c-name')?.textContent).toBe('unnamed');
     expect(unnamed?.querySelector('.c-name')?.className).toContain('unnamed');
     const printer = rowFor(dom, '192.168.10.7');
-    expect(printer?.querySelector('.c-share-figure')?.textContent).toBe('0 %');
+    expect(printer?.querySelector('.c-ratio-figure')?.textContent).toBe('0 %');
     expect(
-      (printer?.querySelector('.c-share-fill') as HTMLElement).style.width,
+      (printer?.querySelector('.c-ratio-fill') as HTMLElement).style.width,
     ).toBe('0%');
   });
 });

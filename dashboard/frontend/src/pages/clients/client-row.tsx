@@ -59,14 +59,14 @@ export function ClientRow({
         <span class="c-label">blocked</span>
         {client.blocked_24h.toLocaleString()}
       </div>
-      <div class="c-share">
+      <div class="c-ratio">
         <div class="bar">
           <span
-            class="c-share-fill"
+            class="c-ratio-fill"
             style={{ width: `${String(Math.min(100, share))}%` }}
           />
         </div>
-        <div class="note num mono c-share-figure">
+        <div class="note num mono c-ratio-figure">
           {client.queries_24h === 0 ? '0 %' : `${share.toFixed(1)} %`}
         </div>
       </div>

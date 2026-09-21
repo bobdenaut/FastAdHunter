@@ -100,7 +100,7 @@ const HEAD: readonly {
   { cell: 'c-policy', label: 'Policy in force', column: null },
   { cell: 'c-queries', label: 'Queries 24 h', column: 'queries' },
   { cell: 'c-blocked', label: 'Blocked', column: 'blocked' },
-  { cell: 'c-share', label: 'Blocked share', column: 'share' },
+  { cell: 'c-ratio', label: 'Blocked share', column: 'share' },
   { cell: 'c-seen', label: 'Last seen', column: null },
 ];
 
