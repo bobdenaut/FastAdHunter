@@ -14,11 +14,13 @@ proven in isolation before it touches the proxy (streaming + bounded memory
 must be solid first). Pipeline integration wires verdicts, policies, events
 and stats together, then proof against budgets.
 
-> **Built, dormant by default — owner decision 2026-09-19.** All five tasks
-> are implemented and ship with `[html] enabled = false`. The code lands, the
-> gate stays closed, and nothing on the deployed box changes until the owner
-> switches it on at runtime (`POST /api/v1/config {"html": {"enabled": true}}`,
-> no restart). This supersedes the 2026-09-15 park recorded in
+> **To be built, dormant by default — owner decision 2026-09-19.** All five
+> tasks are to be implemented and shipped with `[html] enabled = false`; as of
+> 2026-09-21 every task is `WAITING` and `lol_html` is not in the build. When
+> the code lands, the gate stays closed, and nothing on the deployed box
+> changes until the owner switches it on at runtime
+> (`POST /api/v1/config {"html": {"enabled": true}}`, no restart). This
+> supersedes the 2026-09-15 park recorded in
 > [ADR-0009](../../../docs/decisions/0009-phase-4-parked.md); its evidence
 > still describes the deployment — interception is off and the deployed lists
 > carry 720 URL rules and no cosmetic ones — which is why the default is off.
