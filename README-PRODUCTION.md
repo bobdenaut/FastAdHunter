@@ -113,7 +113,9 @@ intentionally documented as a bounded operational cost. See
 
 ## Built to be operated, not babysat
 
+<div align="center">
 <img src="docs/images/web-memory.PNG" alt="FastAdHunter memory diagnostics" width="760" />
+</div>
 
 The dashboard is not a decorative shell over privileged internals. It uses the
 same public interfaces as everything else:
